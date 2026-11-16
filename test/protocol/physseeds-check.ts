@@ -207,7 +207,7 @@ if (!only || only.some((x) => x.startsWith("SV"))) {
   ok("RS2", pe({ engine: "eidosim@1.0.0" }) === null && pe({ engine: "eidosim@1.0.0", claimDebounceMs: 200 }) && pe({ engine: "eidosim@1.0.0", liveAuthorityExpiryMs: 5000 }),
     "claimDebounceMs and liveAuthorityExpiryMs on @world.physics-engine are reserved: refused until an authority reads them", [pe({ engine: "eidosim@1.0.0", claimDebounceMs: 200 })]);
   const CS2 = await imp("shared/protocol/componentspec.js");
-  ok("RS3", CS2.COMPONENTS?.grabbable?.defaults?.steal === true && typeof CS2.COMPONENTS?.grabbable?.defaults?.steal === "boolean", "grabbable.steal is the holder's switch, a boolean defaulting to true (the latest grab wins); 'ask' is reserved", CS2.COMPONENTS?.grabbable?.defaults?.steal);
+  ok("RS3", CS2.COMPONENTS?.grabbable?.defaults?.steal === true && typeof CS2.COMPONENTS?.grabbable?.defaults?.steal === "boolean", "grabbable.steal is the holder's switch, a boolean defaulting to true (the latest grab wins)", CS2.COMPONENTS?.grabbable?.defaults?.steal);
 }
 
 // review of #260: a shape's type is read as an own name of the grammar, and only as a string

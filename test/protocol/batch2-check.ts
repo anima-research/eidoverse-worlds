@@ -210,7 +210,7 @@ const cases: Case[] = [
       s.call("olive", "set", { id: "sign", component: "text", value: { text: "hi" } });
       return { big: code(big), thin: code(thin), v: comp(s, "sign", "text") }; },
     good: (o) => o.big === "bounds" && o.thin === "bounds" && o.v?.lit === "self" && o.v?.outline === true && o.v?.billboard === "off" && o.v?.align === "center" && o.v?.size === 0.15 && o.v?.width === 2 },
-  { id: "W8", what: "layoutLines: a CJK line wraps inside the width (avatar.js wrap() can't); Arabic gets rtl; a 40-character URL breaks by character", run() {
+  { id: "W8", what: "layoutLines: a CJK line wraps inside the width (avatar.js wrap() can't); Arabic gets rtl; a 41-character URL breaks by character", run() {
       const m = (t: string) => [...t].length * 10;   // a fake monospace: 10 px a character
       const cjk = TX.layoutLines?.("日本語のテキストはスペースなしで続きます日本語のテキスト", 100, m) ?? [];
       const ar = TX.layoutLines?.("مرحبا بالعالم", 1000, m) ?? [];
@@ -356,14 +356,14 @@ const cases: Case[] = [
       const p = s.call("olive", "set", { id: "statue", component: "look-at:head", value: { target: "@viewer" } });
       return { r: show(r), v: comp(s, "statue", "look-at"), p: show(p), pv: comp(s, "statue", "look-at:head") }; },
     good: (o) => o.r === "ok" && o.v?.mode === "yaw" && JSON.stringify(o.v?.forward) === "[0,0,1]" && JSON.stringify(o.v?.up) === "[0,1,0]" && Math.abs(o.v?.speed - 240 * Math.PI / 180) < 1e-12 && o.v?.range === 12 && o.p === "ok" && o.pv?.mode === "yaw" },
-  { id: "L2", what: "look-at target: 'lmap' refused not-found (did you mean lamp); '@viewers' refused with the list; itself and a thing riding it refused (loop); @nearest and an identity admitted", run(s) { cast(s);
+  { id: "L2", what: "look-at target: 'lmap' refused not-found (did you mean lamp); '@viewers' refused (shape); itself and a thing riding it refused (loop); @nearest and an identity admitted", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } }); s.call("olive", "create", { id: "statue", model: "crate", place: { at: [3, 0] } });
       s.call("olive", "create", { id: "hat", model: "book", components: { parent: { to: "statue" } } });
       const set = (target: string) => s.call("olive", "set", { id: "statue", component: "look-at", value: { target } });
       const typo = set("lmap");
       return { typo: code(typo), dym: typo.refused?.didYouMean, at: code(set("@viewers")), self: code(set("statue")), kid: code(set("hat")), near: show(set("@nearest")), who: show(set("u-" + "a".repeat(20))) }; },
     good: (o) => o.typo === "not-found" && o.dym?.[0] === "lamp" && o.at === "shape" && o.self === "loop" && o.kid === "loop" && o.near === "ok" && o.who === "ok" },
-  { id: "L3", what: "one driver per node: look-at + a spin on the same node refused in either order, naming both; a spinning part + a whole-thing look-at fine; bob + look-at fine; look-at on a dynamic thing refused", run(s) { cast(s);
+  { id: "L3", what: "one driver per node: look-at + a spin on the same node refused in either order (naming the spin); a spinning part + a whole-thing look-at fine; bob + look-at fine; look-at on a dynamic thing refused", run(s) { cast(s);
       s.call("olive", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
       for (const id of ["a", "b", "c", "d", "e"]) s.call("olive", "create", { id, model: "crate", place: { at: [3 + ["a", "b", "c", "d", "e"].indexOf(id) * 2, 0] } });
       const LA0 = { target: "lamp" };
