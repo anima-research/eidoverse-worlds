@@ -1,7 +1,7 @@
 // shared/protocol/authority/occupants.js — who occupies what (presence, never logged): a body occupying a station (sitting,
 // today), setting and clearing it, vacating it when what it occupies is moved or let go, and the occupant rule that keeps a
 // thing someone occupies from being punted, pushed, grabbed or thrown out from under them, and occupyRights (a socket
-// joining a host). lastTouch, lacks, lockCheck and needWords (the write path's and the gate's) are above it, through UP.
+// joining a host). lastTouch, lacks, lockCheck and needWords (followups.js's and the gate's) are above it, through UP.
 import { TRACK } from "../../mover.js";
 import { baseOf } from "../componentspec.js";
 import { offChain } from "../simlayer.js";
@@ -18,7 +18,6 @@ const lastTouch = (...a) => UP.lastTouch(...a);
 const lockCheck = (...a) => UP.lockCheck(...a);
 const needWords = (...a) => UP.needWords(...a);
 
-// A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 // Who sits where (presence, never logged): {to: <socket id>}. A seat whose socket is gone or switched
 // off is no seat (its occupant was let go by every client), so a reader never sees one.
 function occupantOf(w, st, who) { const s = w.presence.occupants?.[who];
@@ -43,6 +42,7 @@ function vacateAt(w, st, who, seat) {
 function occupantOn(w, st, sock, actor) {
   for (const who of Object.keys(w.presence.occupants ?? {})) if (who !== actor && w.presence.bodies[who] && occupantOf(w, st, who)?.to === sock) return { who };
   const thing = Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === sock); return thing ? { thing } : null; }
+// A body that walks more than a metre from its seat has stood up (a seated client sends no steps; standing, it walks)
 function leftOccupied(w, st, actor, to) {
   const s = occupantOf(w, st, actor); if (!s) return clearOccupant(w, actor);
   const p = worldT(st, s.to).pos;

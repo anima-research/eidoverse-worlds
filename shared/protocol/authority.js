@@ -1,5 +1,5 @@
-// The authority. Every request is resolved here once; the log receives the request as sent (an `act` entry) and
-// the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
+// The authority. Every request is resolved here once; the log receives the request as sent (a `request` entry: the act) and
+// the plain results it produced (one `change` entry, `cause` = the act's seq). Replay never runs this file.
 // PROTOCOL L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
 // locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is
@@ -133,7 +133,7 @@ export function request(w, actor, verb, args = {}) {
     if (w.exists && verb !== "help" && verb !== "leave" && CTX.operator !== actor && isBanned(w, actor)) refuse("banned", `${said(actor)} is banned from this world`, "the moderator log says so; ask a moderator");
     w.changedQ = []; w.sayQ = []; w.heldQ = [];
     // the authority's own follow-ups (rests, returns) are its duty, never the asker's budget: the budget starts after them.
-    // They have no budget of their own: they are bounded by the engine (settleSim takes at most 64 rests a request) and by
+    // They have no budget of their own: they are bounded by the engine (settleSim runs at most 64 passes a request, one launch's rests each) and by
     // the returns that are due (each one a thing someone let go of that long ago)
     if (h && w.exists) { CTX.work = { left: Infinity, until: Infinity, k: 0 }; restampEngine(w); settleSim(w); returnDue(w); CTX.work = { left: WORK_BUDGET.units, until: clockMs() + WORK_BUDGET.ms, k: 0 }; }
     args = wire(args);
@@ -205,7 +205,7 @@ function placeholders(w, verb, args) {
   return Object.keys(ids).length ? { args: out, ids } : null;
 }
 
-// R7: a refused write is part of the record (what someone TRIED, in true order): an act whose body is {args, refused: {code}}
+// R7: a refused write is part of the record (what someone TRIED, in true order): an act whose body is {argNames, refused: {code}}
 // inside the actor's byte budget, keeping only the verb, the argument NAMES it takes (VERBSPEC, plus the universal flags)
 // and the code — never a value, or a visitor could write any text into a signed, forkable record (an unknown name is
 // counted as `unknownArgs`). Values go to the in-memory refusalRing only. Never logged: reads, dry runs, and refusals
@@ -327,9 +327,9 @@ const VERBS = {
   ...SCRIPT_VERBS,
   ...BATCH_VERBS,
 };
-/** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
 /** Every verb the authority answers (VERBSPEC must have a row for each: scars-check's verb-row check). */
 export const VERB_NAMES = Object.freeze(Object.keys(VERBS));
+/** The fork's copy acts (server/worldlog.ts copyInto): the batch request, logged as verb fork-copy. */
 export function forkCopy(w, actor, args) { CTX.forking = true; try { return request(w, actor, "fork-copy", args); } finally { CTX.forking = false; } }
 /** A server operator's recorded repair. NARROW: set / delete of @world's door components (roles:<id>, access,
  *  default-role, role-defs) and unban; everything else is refused before the authority is entered.

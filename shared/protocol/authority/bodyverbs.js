@@ -1,4 +1,4 @@
-// shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, leave, wait) as
+// shared/protocol/authority/bodyverbs.js — the verbs a body performs (move, grab, put, throw, drop, punt, force, leave, wait) as
 // EMBODIED_VERBS, which authority.js spreads into VERBS first. They stand on physics.js, occupants.js and manipulate.js;
 // the gate is above them, through UP.
 import { TRACK, volumeFactor, bodyScale, tokensAfter } from "../../mover.js";
@@ -55,7 +55,7 @@ function returnHeld(w, actor, id, why, how, seq) {
 }
 
 // hand acts (grab, put, drop, throw, punt) record the request about the THING (and who handled it), never
-// the body's position (a `hand` the request names stays in its logged args): the put's change carries where the thing went, a launch's sim entry where it left from
+// the body's position (a `hand` the request names stays in its logged args): the put's change carries where the thing went, a launch's physics entry where it left from
 // and how fast (what the engine needs, PHYSICS §4). The gate's view of the body stays presence.
 const EMBODIED_VERBS = {
   move(w, actor, a) {

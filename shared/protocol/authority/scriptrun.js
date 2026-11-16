@@ -1,5 +1,5 @@
 // shared/protocol/authority/scriptrun.js — scripts, the running half (activation): one activation (activate),
-// withAuthority, the server's settle/tick/checkpoint beat, orphan settlement, the presence
+// withAuthority, the server's settle/tick/checkpoint beat, timed grants' end (expireRoles), orphan settlement, the presence
 // and hand events and their drains, the status view, and the script verbs (upload, effect, adopt, scripts) as SCRIPT_VERBS,
 // which authority.js spreads into VERBS (the standing half is authority/scripts.js). The gate, the engine's settle and
 // the returns home are above it, through UP.
@@ -158,7 +158,7 @@ export function settle(w, { maxTicks = 8 } = {}) {
   });
 }
 // A checkpoint is a persisted joiner cut (simSnapshotOf), so a boot need not re-simulate every flight: written at a quiet
-// moment after launches as one `sim:checkpoint` entry naming a blob, or once w.simCheckpointEvery entries of any kind
+// moment after launches as one `physics` entry (verb checkpoint) naming a blob, or once w.simCheckpointEvery entries of any kind
 // follow the last one and something the sim folds is among them. A host with the engine boots from the last valid checkpoint; other readers fold past it.
 const CHECKPOINT_QUIET_MS = 20000;
 /** checkpointSim's scan of the log, advanced to its end (a pure fold of kinds, verbs and ts; a host seeds w.ckptScan from its
@@ -365,7 +365,7 @@ function drainScripts(w) {
   }
   if (w.changedQ) w.changedQ.length = 0; if (w.sayQ) w.sayQ.length = 0;
 }
-// The status view: suspended / paused / stopped / unavailable / dormant (and why, since when) / asleep / active.
+// The status view: not-installed / suspended / paused / stopped / failed / unavailable / dormant (and why, since when) / asleep / active.
 // A view, never logged.
 /** Whether the sandbox here can run a script: true, or why not (its own available()). One with no available() runs
  *  whatever it's given, as activate runs it, so it counts as available. */

@@ -24,8 +24,8 @@ const needWords = (...a) => UP.needWords(...a);
 // declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
 // rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
-// ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
-// reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
+// ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, seq (the log's head), seed, depth,
+// engine, api, reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
 // Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Authority practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
@@ -69,9 +69,6 @@ function scriptRights(w, st, cap, op, at, made) {
   const r = roleOf(st, cap.sponsor); const need = lacks(w, st, cap.sponsor, op, new Set([...(made ?? []), ...(cap.made ?? [])]), { viaCap: true });
   if (need) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${needWords(need)})`, "dormant: a behaviour has its sponsor's rights now, never more (§8). An owner may adopt it: adopt {id, script}");
 }
-// At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
-// rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
-// timer floor, `always` only by an owner, the world's script count.
 // particles: the instance names an effect (an Essential, or a document stored in this world's blobs), and its
 // params are ones that document declares, within their bounds, with the effect still within EFFECT_LIMITS once they're
 // applied. The first protocol's flat bag is read in older values (PROTOCOL §4: a stored value is read forever) and never
@@ -102,6 +99,9 @@ function uploadEffect(w, actor, a) {
   const h = w.putBlob(a.effect);
   return { ok: true, effect: h, next: `set {id, component: 'particles', value: {effect: '${h}'}}` };
 }
+// At install (any set of script:<name>), by whoever's rights carry the write: the scripts permission, a scope within
+// those rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that
+// parses, `always` only by an owner, the world's script count (the timer floor is the registry's range).
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;

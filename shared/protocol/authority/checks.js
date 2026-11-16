@@ -1,7 +1,7 @@
 // shared/protocol/authority/checks.js — what the gate checks a value against: sanity and shape of what the authority's
 // own engine reads (valueCheck), media sources, the typed fields and the terrain's shape, unknown and dropped keys, the
-// registry's schema (schemaCheck, schemaRefusal), particle effects, handlers, and a rest's claim against the engine
-// (restCheck). guess is above it, through UP.
+// registry's schema (schemaCheck, schemaRefusal), particle effects, handlers, a rest's claim against the engine
+// (restCheck), the zone and collider rules (zoneRules, colliderRules) and a bare yaw (bareYaw). guess is above it, through UP.
 import { checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
 import { forecastSpellingRefusal } from "../../forecast.js";
@@ -36,7 +36,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
-  // components compose: a light, model, mesh and socket may share one thing (REGISTRY-CHANGELOG 2026-11-05)
+  // no one-place rule: components compose (a light, model, mesh and socket may share one thing; REGISTRY-CHANGELOG 2026-11-05)
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
     refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`,
       !isIdentity(comp.slice(6)) ? "whois {name} finds a person's identity; then set roles:<identity>" : "whois {name} finds the identity behind a person's name; a person whose identity this server doesn't know has to join or sign in on this server first, and until then this set is refused again", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
@@ -141,10 +141,10 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
-  // a held kind (componentspec reservedKinds: terrain's raster) is refused as reserved, in its own words
   // a flat ground is its height alone (componentspec terrain kind flat): a noise number, a feature or a heightmap has no reader there
   if (comp === "terrain" && obj && v.kind === "flat") { const extra = Object.keys(v).filter((k) => k !== "kind" && k !== "height" && v[k] != null);
     if (extra.length) refuse("shape", `${at} is flat: {kind: 'flat', height} takes no ${extra.join(", ")}`, "terrain {kind: 'flat', height: <m>}; shaped ground is kind noise (features, heightmap)"); }
+  // a held kind (componentspec reservedKinds: terrain's raster) is refused as reserved, in its own words
   if (comp === "terrain" && obj && !carry && Object.hasOwn(COMPONENTS.terrain.reservedKinds, v.kind)) refuse("reserved", `${at}.kind '${v.kind}' is reserved: ${COMPONENTS.terrain.reservedKinds[v.kind]}`, "terrain {kind: 'noise', seed, size, amplitude, …}; an image as the base is heightmap {grid, min, max}", { status: "reserved" });
   // the first protocol's particles bag (preset, origin, count…): its fields left the registry, so say today's
   // spelling in particlesCheck's own words before the schema calls them unknown keys
@@ -288,7 +288,7 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
-// the registered names one letter-slip from an unregistered bare one (R8): a typo, refused at admit; a renamed one, its new name
+// the registered names an edit or two from an unregistered bare one (one edit for names of 4 letters or fewer; R8): a typo, refused at admit; a renamed one, its new name
 const nearMiss = (name) => name === "physics-area" ? ["physics-volume"] : Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the authority takes as it is (sweep). */
@@ -447,7 +447,7 @@ export function colliderRules(s, ids) {
  *  Every door that takes one (set transform, create's at, a copy's at) reaches it through resolve's transform. */
 function bareYaw(yaw) {
   if (!isNum(yaw)) refuse("shape", `yaw must be a number (radians about +Y): got ${JSON.stringify(yaw)}`, "e.g. yaw: 1.5708 for a quarter turn; or q [x, y, z, w]");
-  if (Math.abs(yaw) <= YAW_LIMIT) return;   // YAW_LIMIT: componentspec, the same bound as spawn.yaw; the smallest degree slip (7) is far past it
+  if (Math.abs(yaw) <= YAW_LIMIT) return;   // YAW_LIMIT: componentspec, the same bound as spawn.yaw; degrees typed as radians are past it from 7 up (1–6 pass as radians)
   const within = (r) => +Math.atan2(Math.sin(r), Math.cos(r)).toFixed(4) || 0;   // the same heading, within ±π
   refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `as degrees, ${yaw}° is yaw ${within(yaw * Math.PI / 180)}; as radians, the same heading is yaw ${within(yaw)}`);
 }

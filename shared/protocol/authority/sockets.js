@@ -9,10 +9,8 @@ import { worldT } from "./math.js";
 const liveObj = (v) => !!v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED;
 export const isSocketC = (c) => liveObj(c?.socket);
 export { socketRole } from "../../sockbody.js";
-// what a socket may carry besides its pose and its name: what reads it (label, description), what switches or freezes it
-// (disabled, lock, hidden), a motion of its own, and the blueprint mark every placed part carries
 // one host holds at most this many sockets: a seat map past it is several things. No setting raises it;
-// a socket is an entity, so it also counts in @world.capacity.entities (authority.js CAPACITY)
+// a socket is an entity, so it also counts in @world.capacity.entities (capacity.js CAPACITY)
 export const SOCKETS_PER_HOST = 64;
 const UNIT = (sc) => sc === undefined || (Array.isArray(sc) && sc.length === 3 && sc.every((x) => x === 1));
 
@@ -72,7 +70,7 @@ export function actionRules(s, ids) {
   return null;
 }
 
-/** A host's sockets, in its children's order: [{id, name, sock, host}]. A socket switched off on its own is a closed seat:
+/** A host's sockets, in its children's order: [{id, name, sock, station, host}]. A socket switched off on its own is a closed seat:
  *  not listed. */
 export function socketsOf(st, host, { off = false } = {}) {   // off: switched-off ones too (they're still its sockets to delete or undo)
   if (!st.entities[host]) return [];

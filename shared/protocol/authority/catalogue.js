@@ -15,7 +15,7 @@ import { isNum } from "../is.js";
 //   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
 //   size     absent → a model this server can name but not measure (no placement help, no collisions, said so).
 // request() sets CTX.cat for the duration of one synchronous call; nothing in the authority awaits, so calls can't interleave.
-// own keys only: MODELS["constructor"] is Object (L1's no-prototype rule)
+// a catalogue's get answers own keys only, never a prototype's ("constructor": L1's no-prototype rule)
 export const NO_CATALOGUE = Object.freeze({ get: () => undefined, list: () => [] });
 CTX.cat = NO_CATALOGUE;
 const modelOf = (name) => (typeof name === "string" ? CTX.cat.get(name) : undefined);

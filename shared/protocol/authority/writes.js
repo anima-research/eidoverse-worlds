@@ -122,7 +122,7 @@ function commit(w, actor, verb, args, build) {
     after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 
-// what an engine's start finds in a hand (buildEpoch), lifted out of its world: one sim entry each, naming its holder. Only
+// what an engine's start finds in a hand (buildEpoch), lifted out of its world: one physics entry (verb lift) each, naming its holder. Only
 // the holds the write itself leaves: a thing the same write takes out of the hand (handsLetGo) is where the edit put it,
 // and the replay seats it in the new engine's world, so a lift logged after the change would take it out again
 const liftsOf = (w, ctx, plan) => { const released = new Set(handsLetGo(w, plan, plan.after).map((g) => g.id));
@@ -170,8 +170,8 @@ function needThing(ctx, id) {
   return e;
 }
 
-// @world.bounds as the readers use it: a malformed one already in a log reads as no bounds, never a crash
 const MOTION_AXES = AXES;   // shared/axes.js: all six letters
+// @world.bounds as the readers use it: a malformed one already in a log reads as no bounds, never a crash
 const boundsOf = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 // resolve a component value fully: defaults written out, conveniences converted, stamps applied. Shape and rights are

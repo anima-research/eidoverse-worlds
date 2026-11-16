@@ -29,7 +29,7 @@ const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const gripPoint = (me) => [me.at[0], me.at[1] + HAND_Y, me.at[2]]; // reach is measured from the hand, not the feet
 // P5 + L3: the sequencer logs where unheld motion came to rest. The rest is the engine's value and nothing else: its
 // cause is the launch, it goes through admit like every write, and admit checks it against the engine. The engine
-// digest is its own `sim` entry. Whatever the authority then does about it (attach it to what it rests on, return a thing
+// digest is its own `physics` entry (verb digest). Whatever the authority then does about it (attach it to what it rests on, return a thing
 // that left the world) is a SEPARATE entry caused by a system act, so a rest and a correction never look alike.
 const REST_COALESCE_TICKS = 15;   // ~0.5 s at 33 ms: PHYSICS §4.4's settlement window
 // a child of a NON-UNIFORMLY scaled parent is sheared unless its local rotation keeps the parent's axes (a crate on a flat
@@ -60,7 +60,7 @@ function settleSim(w) {
     let plan = null, group = batch;
     try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: batch.map((r) => r.id), comps: ["transform", "parent"], launch: batch[0].seq } }, batch.flatMap(opsFor)); }
     catch (e) { if (!(e instanceof Refusal)) throw e;
-      if (batch.length === 1) { w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e.code, reason: e.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } // on
+      if (batch.length === 1) { w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e.code, reason: e.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } // alone and refused: it waits in w.unsettled
       group = [batch[0]];
       try { plan = admit(w, st, { actor: "sim", cap: { kind: "rest", ids: [batch[0].id], comps: ["transform", "parent"], launch: batch[0].seq } }, opsFor(batch[0])); }
       catch (e2) { if (!(e2 instanceof Refusal)) throw e2; w.unsettled.push({ id: batch[0].id, launch: batch[0].seq, refused: e2.code, reason: e2.reason }); skip.add(`${batch[0].id}@${batch[0].seq}`); continue; } }
@@ -98,16 +98,17 @@ function settleSim(w) {
     }
   }
 }
-// A deploy changes the versions a server carries, and a world stamped with an old one would be foreign (nothing flies)
-// until an owner rewrote physics-engine. The authority restamps it itself, as system, at the first act or heartbeat after
-// load, when: this server carries an engine of that NAME under another version; that version was STAMPED by an authority,
-// never typed by the owner (the owner's word stays foreign); and nothing is held in presence (it tries again later). A
-// flight does NOT hold it back: the cut ends it where the fold has it and names it in the act. Otherwise the world stays
-// foreign (the owner may restamp by hand, force: true). Checked once per world object and spec.
 export function refuseForeign(spec, what) {
   refuse("foreign-engine", `this world runs ${spec.engine}, which this server doesn't carry: ${what}, and only that engine computes it`,
     `put it down or leave it be; an owner can set one this server carries: set {id: '@world', component: 'physics-engine', value: {engine: '${Object.keys(ENGINES)[0]}'}}`);
 }
+// A deploy changes the versions a server carries, and a world stamped with an old one would be foreign (nothing
+// flies) until an owner rewrote physics-engine. The authority restamps it itself, as system, at the first act
+// or heartbeat after load, when: this server carries an engine of that NAME under another version; that version
+// was STAMPED by an authority, never typed by the owner (the owner's word stays foreign); and nothing is held
+// in presence (it tries again later). A flight does NOT hold it back: the cut ends it where the fold has it and
+// names it in the act. Otherwise the world stays foreign (the owner may restamp by hand, force: true). Checked
+// once per world object and spec.
 const restampTried = new WeakMap();
 function restampEngine(w) {
   const st = w.state(); const spec = st.entities["@world"]?.c["physics-engine"]; const today = spec && typeof spec.engine === "string" ? stampOf(engineName(spec.engine)) : null;
@@ -161,7 +162,7 @@ function restampEngine(w) {
     why: ended.length || unknownFlights ? `engine ${spec.engine} → ${next.engine}: restamped by the server; ${ended.length + unknownFlights} flight(s) it can't compute ended by the cut, where the log has them`
       : `engine ${spec.engine} → ${next.engine}: restamped by the server; bodies at rest` })));
 }
-// P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it waits.
+// P6: an engine change is a real cut. At rest the cut is free (the log already holds every result); in flight it is refused (busy) unless forced.
 function buildEpoch(ctx, v, a) {
   const sf = ctx.w.sim(); const live = [...new Set([...Object.keys(livePoses(sf)), ...sf.rested.map((r) => r.id)])]; // at rest but not on the record counts: P6's "free" needs every result logged
   if (live.length && !a.force) refuse("busy", `${live.length} thing(s) are still in flight or not yet on the record (${live.join(", ")}); all at rest in about ${r3((restEta(sf) ?? 0) / 1000)} s`, "try again then, or force: true to freeze them where they are now (they'll be logged there)");
@@ -226,14 +227,9 @@ function solidAt(w, st, p, except = new Set(), cands = null, box = bodyBox(p)) {
     if (hitsIx(st, box, id, 0.01)) return id; }
   return null;
 }
-// an open openable (a whole door, not a cabinet's part) is out of the way: the fix above says "through a door someone
+// an open openable (a whole door, not a cabinet's part) is out of the way: move's fix (bodyverbs.js) says "through a door someone
 // opens", and every browser's collider follows the drawn leaf (client/lib/realize/openable.js reindexes it at rest)
 const openNow = (st, id) => { const o = st.entities[id]?.c.openable; return !!o && typeof o === "object" && o.open === true && !o.part; };
-// THE GROUND under a body. In a world with terrain (and water), each point of a step is judged with the MOVER's floor law
-// (shared/mover.js floorStep) on the terrain heightfield and any placed top it could step onto: where the feet end up,
-// whether the water's rule holds (then the box is the swimmer's), and a floor that is a wall from here is refused. A move
-// is judged as a chain of sub-strides at least MOVER.track.sweep apart (millimetre steps would walk up any steep slope),
-// and a body that swam earlier in the move is also judged from where it last swam (the haul-out). A flat world skips this.
 // @world's level at p as the browser's walk reads it: none in a pocket that keeps it out (zone.js worldLevelAt)
 const ZONES = new WeakMap();
 function levelAt(st, lv, p) {
@@ -260,6 +256,11 @@ function sizeOf(a, prev) {
 }
 // the walker's own arguments for this body: floorStep's {height, scale}, bodyBox's scale
 const lawOf = (size) => ({ height: size?.height, scale: bodyScale(size?.scale) });
+// THE GROUND under a body. In a world with terrain (and water), each point of a step is judged with the MOVER's floor law
+// (shared/mover.js floorStep) on the terrain heightfield and any placed top it could step onto: where the feet end up,
+// whether the water's rule holds (then the box is the swimmer's), and a floor that is a wall from here is refused. A move
+// is judged as a chain of sub-strides at least MOVER.track.sweep apart (millimetre steps would walk up any steep slope),
+// and a body that swam earlier in the move is also judged from where it last swam (the haul-out). A flat world skips this.
 function groundSteps(st, from, pts, size) {
   const G = groundOf(st); if (!G.terrain && G.level == null) return null;   // water without terrain: the mover's water rule over flat ground
   const { height, scale: s } = lawOf(size), L = (p) => levelAt(st, G.level, p), reachW = (lv) => (lv != null ? lv + MOVER.swim.climb * s : -Infinity);

@@ -1,7 +1,7 @@
 // shared/protocol/authority/storage.js — a world over injected storage, the chain, ops and previews. A leaf below math
 // and the spatial index (qr3 is the rotation a log takes; scratch is the preview the index files). VOLATILE (the
-// spatial index's "indexed whole" mark) and opsQuiet (the rights views' quiet opsOf) live here because this is where
-// they are read.
+// spatial index's "indexed whole" mark) lives here, beside scratch which propagates it; opsQuiet (fold.js's quiet
+// opsOf, for the rights views) is re-exported.
 import { readLog, fold, opsOf, cascadeOf, applyInPlace, cloneState, cowState, applyCow, checkEntry, jcs, sha256, utf8Len, worldIdOf, Malformed, REDACTED, redactedBodies, isE, opsQuiet } from "../fold.js";
 import { sha256Bytes, hexBytes } from "../hash.js";
 import * as R from "../roles.js";
@@ -71,7 +71,7 @@ export function worldOf(io) {
     try { write(); } catch (x) { w.wedged[what] = String(x?.message ?? x); if (what === "log") w.wedgedAt = entries.length; throw x; } };
   w.appendMod = (e) => { const r = { ts: Math.floor(w.now()), ...e }; durably("moderator log", () => io.appendMod?.(r)); w.mod.push(r); };
   let cache = null; // the folded state is a view, rebuilt when the log grows (callers never mutate it)
-  // incremental when the new lines are plain entries this server wrote (state/act/sim/say): clone + apply their ops, which
+  // incremental when the new lines are plain entries this server wrote (change/request/physics/say): clone + apply their ops, which
   // is what the fold does for them; anything else (a purge, a governance entry, a malformed line, or a value stripped to its
   // commit, which only the whole log's purges can read) re-folds from scratch
   w.state = () => { if (cache?.n === entries.length) return cache.st;
@@ -82,7 +82,7 @@ export function worldOf(io) {
         return (cache = { n: entries.length, st }).st; } catch (x) { if (!(x instanceof Malformed)) throw x; } }
     return (cache = { n: entries.length, st: fold(entries) }).st; };
   // §2.4 chain heads as a view over the log (the lab authority doesn't sign them): head(i) = sha256(head(i-1) ‖
-  // sha256(JCS(skeleton(i)))), exactly as conformance/chain.py computes them. A version is {seq, head} (§3d M7).
+  // sha256(JCS(skeleton(i)))), exactly as spec/conformance/chain.py computes them. A version is {seq, head} (§3d M7).
   // heads[k] is head(hb + k); a host that knows head(at) (server/statecache.ts) seeds hb = at, and heads below it are chained
   // from genesis only when one is asked for (low)
   let hb = 0, low = null; const heads = [];
@@ -106,7 +106,7 @@ export function worldOf(io) {
   // over the skeleton, which leaves head/sig out, so headAt reads a signed log and an unsigned one alike.
   const render = (e, seq, chained = false) => {
     const obj = { ...(e.kind === "genesis" ? {} : { world: w.worldId }), ...e, ts: w.pinTs ?? w.nextTs() };
-    // §2.4: the chain commits an act/say/sim body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
+    // §2.4: the chain commits a request/say/physics body as sha256(body.salt ‖ JCS(rest)). Unsalted, a purged chat line (most of
     // the personal data a world holds) can be recovered by guessing it against the commit. So in a chained log every such
     // body carries 16 random bytes. Readers take bodies by field, so the salt is invisible to them.
     if (io.custody?.sign && ["request", "say", "physics"].includes(e.kind) && obj.body && typeof obj.body === "object" && !Array.isArray(obj.body) && !("salt" in obj.body))
@@ -186,9 +186,9 @@ export function txnRefusal(o) {
 }
 // READBACK (verbclasses.js): the act fields the authority reads back for meaning (an
 // undo's chain, a use's capability, a script's sponsor, the request that named an engine build…). §12
-// lets the WHOLE body of an act, say or sim entry be purged, so every such read goes through readback(): the body, or
+// lets the WHOLE body of a request, say or physics entry be purged, so every such read goes through readback(): the body, or
 // null when it is purged — named by a purge entry later in the log (the authority's in-memory entry still holds it), or
-// already rewritten to its {commit} stub on disk. Null is UNKNOWN, and each reader says what unknown means for it (never
+// already rewritten to its {commitment} stub on disk. Null is UNKNOWN, and each reader says what unknown means for it (never
 // "the default": a purged cause act must not make an owner's chosen build look stamped, or a handler's write the visitor's).
 const purgeIx = new WeakMap();   // entries array → {n, seqs}: purge targets whose whole body is gone, kept incrementally
 /** Seed the purge index for a log whose first n lines hold no purge (server/foldviews.ts). */
@@ -210,8 +210,8 @@ export function readback(w, seq) {
 // 16 random bytes as base64url (a genesis nonce, a set's salt). io.random(n) → Uint8Array may be injected (a test that
 // compares two runs byte for byte seeds both alike); otherwise Web Crypto, in bun and browsers alike.
 const nonce16 = (w) => { const b = w?.random ? w.random(16) : globalThis.crypto.getRandomValues(new Uint8Array(16)); let s = ""; for (const x of b) s += String.fromCharCode(x); return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
-// §2.4 "The chain": the skeleton keeps each set's value and salt only as commit = sha256(salt ‖ JCS(value)), and an
-// act/say/sim body only as {commit}; a body or op already {commit} is purged and stays as it is.
+// §2.4 "The chain": the skeleton keeps each set's value and salt only as commitment = sha256(salt ‖ JCS(value)), and a
+// request/say/physics body only as {commitment}; a body or op already {commitment} is purged and stays as it is.
 const opCommit = (o) => ("commitment" in o && !("value" in o) ? o.commitment : sha256((o.salt ?? "") + jcs(o.value)));
 const skelOp = (o) => { const { value, salt, commitment, ...rest } = o; return "value" in o || "commitment" in o ? { ...rest, commitment: opCommit(o) } : rest; };
 const bodyCommit = (b) => { const ks = Object.keys(b); if (ks.length === 1 && ks[0] === "commitment") return b.commitment; const { salt, ...rest } = b; return sha256((salt ?? "") + jcs(rest)); };
@@ -224,7 +224,7 @@ function skeleton(e) {
 const chainStep = (prevHex, e) => { const b = new Uint8Array(64); b.set(hexBytes(prevHex), 0); b.set(hexBytes(sha256(jcs(skeleton(e)))), 32); return sha256Bytes(b); };
 /** Seal a whole log the authority didn't write line by line (a translation): the same salts and chain points render gives
  *  each line it appends (§2.4). entries[0] is genesis (never a chain point: the world id is its
- *  hash); every later entry gets a salt on each set and on its act/say/sim body, then {head, sig}. Returns new objects;
+ *  hash); every later entry gets a salt on each set and on its request/say/physics body, then {head, sig}. Returns new objects;
  *  `sign(msg)` is the sequencer key's, `random(n)` optional. */
 export function seal(entries, { sign, random } = {}) {
   if (typeof sign !== "function") throw new Error("seal needs the sequencer's sign()");
@@ -255,7 +255,7 @@ function versionSeq(w, v, what) {
 const versionOf = (w, seq) => (seq === undefined || seq === null ? null : { seq, head: w.headAt(seq) });
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 // PROTOCOL §5: a lock is on when its value is truthy; the authority stores `true` (an old log's {rank} still reads as on;
-// strength is the setter's rank, gate.js). A purged value is absent, not a lock.
+// strength is the setter's rank, rights.js lockStrength). A purged value is absent, not a lock.
 const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== REDACTED && !!v; };
 // a rotation written to the log: rounded like a position, then made unit again (0.707 per axis is not a unit quaternion,
 // and a reader composing it through a parent drifts off unit)

@@ -2,7 +2,7 @@
 // occupants resettled when a host's shape changes, the stamps a write gets (physics shapes, media, model hashes), the
 // references a deletion clears (refComps, holdsRefs, withoutRefs, clearRefsTo), who last touched what (lastTouch, which
 // reads follow-ups as no author's), touchedOf, historyDiff, and the physical warnings and dangling references a write or
-// lint reports. admit, changeEntry and the world's bounds are above it, reached through UP.
+// lint reports. changeEntry, changeShape and the world's bounds are above it, reached through UP (admit is gate.js's, imported).
 import { REDACTED } from "../fold.js";
 import { baseOf, mapRefs, refsOf, refFields } from "../componentspec.js";
 import { mediaTier, tierWords } from "../../mediasrc.js";
@@ -287,10 +287,6 @@ function clearRefsTo(ctx, gone) {
   if (cleared.length) ctx.notes.push({ cleared, ...(dropped.length ? { removed: dropped } : {}), why: `references to what you deleted were cleared in the same act${dropped.length ? " (a value that can't stand without its reference, or a reset left with nothing to send home, went with it)" : ""}` });
   return ops;
 }
-// Physical checks on every write (A2).
-// The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
-// is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
-// after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 // a stored reference that names nothing: a write can't make one (every ref is checked) and a delete
 // clears them (script scopes excepted), but an old log, an import or a merge can hold one. lint says where it is and what it names.
 function danglingRefs(st, ids) {
@@ -300,6 +296,10 @@ function danglingRefs(st, ids) {
       for (const r of refsOf(k, v)) if (!st.entities[r.id]) out.push({ id, kind: "dangling", at: `${id}.${r.path.replace(/^[^.[]*/, k)}`, names: r.id, fix: `nothing here is called '${r.id}': point it at something that is, or clear it` }); } }
   return out;
 }
+// Physical checks on every write (A2).
+// The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
+// is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
+// after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
   // the ground still loading: no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and

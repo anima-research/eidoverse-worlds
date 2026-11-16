@@ -82,7 +82,7 @@ function partKeys(st, ids, lineage, reserved = []) {
     taken.add(key); out.set(id, key); }
   return (id) => out.get(id) ?? id;
 }
-// Ids for a copy's parts: minted and opaque (§2.3); which part is which lives in each part's blueprint.key.
+// Ids for a copy's parts: minted and opaque (§2.3); which part is which lives in each part's copy-of.key.
 function partIds(st, copy, rootKey, keys) {
   const map = new Map([[rootKey, copy]]); const used = new Set([copy]);
   for (const k of keys) { if (map.has(k)) continue; const id = mint(st, used); used.add(id); map.set(k, id); }

@@ -89,7 +89,7 @@ function gripHow(a, g) {
 }
 // Grabbing what you already hold with your OTHER hand: a two-handed thing takes it in both (the second hand on a
 // secondary grip steers it: Godot SECOND, Unity Multiple); anything else swaps hands (Godot SWAP). The same hand, or no
-// hand named, is a no-op, as before.
+// hand named, is a no-op.
 function secondGrip(w, actor, a, h, e) {
   const g = grabOf(e.c); const hand = a.hand;
   if (!g || hand === undefined || hand === h.hand || hand === h.second?.hand) return { ok: true, recorded: false, holding: a.id, inHandAt: h.pose.pos.map(r3), hand: h.hand, note: "you're already holding it" };
@@ -107,8 +107,7 @@ const fliesIn = (st, id) => !!st.entities["@world"]?.c["physics-engine"] && st.e
 // The socket a released thing snaps into (Resonite Snapper with XRI's radius): the nearest socket, on
 // anything but itself or what it carries, whose `accepts` shares a keyword with its grabbable.fits and whose world point
 // is within the socket's radius of where it's let go. A socket something already sits in, or one on a locked thing, is
-// passed over (and said so). Its transform becomes the socket's pose in the host's frame (a child's transform is
-// local to its parent; the slot names which socket it's in).
+// passed over (and said so). put (bodyverbs.js) parents it to the socket entity, at the socket's own pose.
 function snapTarget(st, id, g, p, w = null) {
   const out = { to: null, notes: [] }; if (!g?.fits?.length || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)) return out;
   const fam = new Set([id, ...descendants(st, id)]);
@@ -172,9 +171,6 @@ function returnDue(w) {
       console.warn(`[authority] ${id} is due to go home (let go at seq ${r.release}) but its return is refused: ${why}; it stays where it is`); }
   }
 }
-// A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
-// that moves a thing whose home was where it stood carries the home with it (a builder moving the key moves its hook…
-// home). A builder may set home outright; one that isn't where the thing stands is left alone.
 // the scale a thing goes home at, in its home parent's frame (a settled crate's local scale is relative to the one under
 // it). Its size in the world is kept: its scale times every ancestor's now, divided by the home parent chain's.
 const vec3s = (v) => (typeof v === "number" ? [v, v, v] : Array.isArray(v) && v.length === 3 ? v : [1, 1, 1]);
@@ -200,6 +196,9 @@ function stampResetHomes(ctx, ops) {
     const home = homeHere(after, t); out.push(setOp(t, "home", home)); ctx.notes.push({ id: t, component: "home", kept: home, why: "stamped for the reset that names it: where it stands now" }); }
   return out;
 }
+// A home is stamped when a grabbable that returns is written without one (its transform and parent then), and an edit
+// that moves a thing whose home was where it stood carries the home with it. A builder may set home outright; one that
+// isn't where the thing stands is left alone.
 // a returning grabbable's home is its home component (grabbable.home is gone)
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;

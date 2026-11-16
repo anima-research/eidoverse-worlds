@@ -112,7 +112,7 @@ const BATCH_VERBS = {
   batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },
   // a fork's copy of its parent (server/worldlog.ts forkWorld): an ordinary batch through the same gate, logged under its
   // own verb so a reader tells inherited things from births (PROTOCOL §13), and carrying what the parent
-  // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
+  // already holds as it is (an old world's bare invention). Only authority.js's forkCopy() reaches it: no request word does.
   "fork-copy"(w, actor, a) {
     if (!CTX.forking) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
     return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));

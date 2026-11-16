@@ -26,7 +26,7 @@ const withoutRefs = (...a) => UP.withoutRefs(...a);
 // throws the index away and rebuilds it, as livehost.ts refolds the state. What it holds:
 //   actsOf    actor → their act seqs, in order          resultOf  act seq → the first change entry it caused
 //   undone    act seqs some `undo` act names (body.undoes)
-//   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${index|-}` → the redaction naming a set value (fold.js redactionsIn)
+//   purged    seqs whose request/say/physics BODY is purged; purgedOps `${seq}:${index|-}` → the redaction naming a set value (fold.js redactionsIn)
 //   changes   every change seq, in order                touch     id → the change seqs that touch it, in order
 //   rests     change seqs that are rests (caused by a sim launch); restAfter: `${rest seq}:${body id}` → the authority's
 //             follow-up act for that body (a rest can carry several bodies, each with its own follow-up, as restsOf reads them)

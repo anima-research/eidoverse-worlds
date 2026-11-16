@@ -1,5 +1,5 @@
 // shared/protocol/authority/reads.js — describe (a thing as an accessibility tree) and the read verbs (help, look, inspect,
-// measure, find, lint, history) as READ_VERBS, which authority.js spreads into VERBS. schema stays in VERBS beside the
+// measure, find, lint, history) as READ_VERBS, which authority.js spreads into VERBS. schema is verbs.js's (SCHEMA_VERBS), beside the
 // capacity it reports. The history readers are above it, reached through UP.
 import { grabOf, describeGrab } from "../../grab.js";
 import { verbHelp, VERBSPEC, REMOVED_VERBS } from "../verbspec.js";
@@ -29,11 +29,11 @@ const resolve = (...a) => UP.resolve(...a);
 const touchedOf = (...a) => UP.touchedOf(...a);
 const warnings = (...a) => UP.warnings(...a);
 
-// a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (a look clips it,
-// inspect has it whole), then what it can do and its state, generated from its components by shared/a11y.js, the reading
-// mcpl's look and the inspector share
 // a surface's size as a placement reads it: a turned top's own rectangle (with its x axis on the ground), else its box
 const surfaceSize = (s) => (s.rect ? { size: [r3(2 * s.rect.hx), r3(2 * s.rect.hz)], xAxis: s.rect.u.map(r3) } : { size: [r3(s.max[0] - s.min[0]), r3(s.max[1] - s.min[1])] });
+// a thing reads like an accessibility tree (PROTOCOL §4): its name, its description (a look clips it, inspect has it
+// whole), then what it can do and its state, generated from its components by shared/a11y.js, the reading mcpl's look and
+// the inspector share
 function describe(st, id, live = {}, holds = {}, { full = false, w = null } = {}) {
   const e = st.entities[id]; const t = worldT(st, id); const g = grabOf(e.c); const name = e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id;
   const ax = readOut(e.c, { name, heldBy: holds[id] ? said(holds[id].by) : null, sockets: socketsOf(st, id) });

@@ -25,8 +25,6 @@ const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
 // → "anon" | "unknown" | null
 const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERVED.has(id)) return null; const k = w.kindOf(id);
   return k === "anon" ? "anon" : k == null ? "unknown" : null; };
-// how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
-// them the write's state s no longer holds (a log view, kept incrementally like everIds)
 /** The scan behind guestMade: made (id → its creator's rights, while it stands) and the ids whose kind isn't read yet
  *  (pending). A host seeds {n, made} from its fold cache (server/foldviews.ts), every id pending, as a scan from genesis has it. */
 export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pending: new Map(), ids: new Map() })) {
@@ -34,6 +32,8 @@ export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pendin
     for (const o of opsQuiet(e)) { if (o.op === "create") { if (rights === undefined) rights = entryBy(w, e).rights; G.made.set(o.id, rights); G.pending.set(o.id, rights); } else if (o.op === "delete" && o.comp === undefined) { G.made.delete(o.id); G.pending.delete(o.id); G.ids.delete(o.id); } } }
   return G;
 }
+// how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
+// them the write's state s no longer holds (a log view, kept incrementally like everIds)
 function guestMade(w, st, s = st) {
   const G = guestScan(w); G.seeded = false;
   for (const [id, r] of G.pending) { const kind = guestKind(w, r); if (kind) G.ids.set(id, kind); } G.pending.clear();   // a kind is read once, at the first call after its create

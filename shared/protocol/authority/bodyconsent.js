@@ -1,7 +1,7 @@
 // shared/protocol/authority/bodyconsent.js — body consent: every act on another body is gated here, before delivery, and
 // the BODY_VERBS (consent, body, reach, inbox) answer for it. Presence only: nothing here goes in the world log (an
-// auto-cooldown goes in the moderator log, noteRefusal). The body's
-// own track (body, dist, gripPoint) lives in the physics section above it, reached through UP.
+// auto-cooldown goes in the moderator log, noteRefusal). The body's own track (body, dist, gripPoint) is physics.js's,
+// above it, reached through UP.
 import * as C from "../consent.js";
 import { REACH, BODY_REACH } from "../physconst.js";
 import { r3 } from "../round.js";
@@ -127,7 +127,7 @@ const BODY_VERBS = {
     syncDefault(w);
     return { ok: true, table: readTable(P, actor), world: { ...C.DEFAULT_GATES, ...C.worldGates(P.bodyDefault) },
       attempts: (P.ring ?? []).filter((r) => r.to === actor).slice(-10) }; },
-  // one shape for every act on a body: pose, anim, shove, drag. Says what happened.
+  // one shape for every act on a body: pose, anim, shove, drag, occupy, carry. Says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to);
     if (!["pose", "anim", "shove", "drag", "occupy", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|occupy|carry}");
     const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "get closer");

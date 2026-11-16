@@ -30,16 +30,15 @@ const serverWritten = (...a) => UP.serverWritten(...a);
 // who = { actor, cap? }. With no cap the asker's own role decides. A cap is a scoped capability the request names:
 //   reaction — a `use` exercises a handler; it may change only the component the handler names, on that thing, and
 //              only while the handler's author could still change it themselves (the cause chain records both);
-//   handle   — a settlement of something you hold (physics.who decides who may), transform/parent of that thing only;
+//   handle   — a settlement of something you hold (grabbable.who decides who may; a punt, physics.who), transform/parent of that thing only;
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   system   — the authority's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
-//   founding — the `new` act's first write to @world, by an owner named in genesis, once.
+//   founding — the create-world act's first write to @world, by an owner named in genesis, once;
+//   script   — an activation's batch: its sponsor's rights NOW, inside the scope it declared (scripts.js scriptRights);
+//   caption  — the caption request: that screen's captions only, by one of its captioners or whoever may edit it.
 // A lock guards EVERYTHING on the locked thing and on anything attached to it (§5) until it is lifted (throughLock). USE
 // stays open: a handler's own writes may change a locked thing's state but never move, re-parent, swap or remove it.
 const RELOCATES = new Set(["transform", "parent", "model"]);   // what even USE may not change on a locked thing
-// L7 rate: per actor, over a 10 s window by the authority's clock, in ENTRIES and in BYTES, talk (say) apart from building
-// (acts) so neither starves the other. An identity with no account (io.kindOf → "anon") gets less. Refused requests are
-// logged inside the same byte budget.
 // The spoken-say trio: display metadata for a voice that already performed as captions. Only inside the protocol
 // (spoken: true and a non-negative safe-integer utt); t0 is a reorder key on every client, so it's clamped to a bounded
 // utterance window ending now. Anything else: all three dropped, and the say is an ordinary say.
@@ -48,6 +47,9 @@ function spokenOf(a, now) {
   if (a.spoken !== true || !Number.isSafeInteger(a.utt) || a.utt < 0) return {};
   return { spoken: true, utt: a.utt, ...(typeof a.t0 === "number" && Number.isFinite(a.t0) ? { t0: Math.round(Math.min(now, Math.max(now - MAX_UTTER_MS, a.t0))) } : {}) };
 }
+// L7 rate: per actor, over a 10 s window by the authority's clock, in ENTRIES and in BYTES, talk (say) apart from building
+// (acts) so neither starves the other. An identity with no account (io.kindOf → "anon") gets less. Refused requests are
+// logged inside the same byte budget.
 // the defaults; a server injects its own policy (io.rate, server/config.ts RATE_POLICY): never process.env here (browsers run this)
 export const RATE_DEFAULT = Object.freeze({ n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 });
 const SAY_MAX = 8192;
@@ -234,12 +236,12 @@ function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
 const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} permission`);
 function rights(w, st, s, who, role, op, at, made, pause) {
   const { actor, cap } = who;
-  // a screen's captions are written by the caption request only; an owner may still set them whole (a copy, a repair)
-  // an imported world's records are carried, never written by a request (nothing reads them as live); an owner may
+  // an imported world's records are carried, never written by a request (nothing reads them as live); an owner may still set one
   if (!cap && op.op === "set" && !R.isOwner(role) && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
   // a server-written component (componentspec writtenBy): no capability ever writes it; a hand set below owner is refused
   // where the request is built (serverWritten)
   if (op.op === "set" && cap && ["reaction", "script"].includes(cap.kind) && defOf(op.comp)?.writtenBy === "server") serverWritten(at);
+  // a screen's captions are written by the caption request only; an owner may still set them whole (a copy, a repair)
   if (!cap && op.comp === "captions" && op.op === "set" && !R.isOwner(role)) refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;

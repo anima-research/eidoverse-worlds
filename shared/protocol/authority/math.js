@@ -100,7 +100,7 @@ function surfacesOf(st, id) {
   // A surface off the world's axes also carries its own rectangle on the ground, rect {c, u, hx, hz} (centre, its x axis, half
   // extents after the inset): min/max stay the axis-aligned box of its corners, the broad phase (near(), the index), and what
   // supports a point or a footprint is read against the rectangle (inRect, rectMeets). A tilted surface (not yaw-only) is
-  // projected onto the ground the same way, an approximation, with y its highest corner's as before.
+  // projected onto the ground the same way, an approximation, with y its highest corner's.
   const rectOf = (cs, k) => { const ex = [cs[2][0] - cs[0][0], cs[2][2] - cs[0][2]], ez = [cs[1][0] - cs[0][0], cs[1][2] - cs[0][2]];
     const lx = Math.hypot(...ex); if (!(lx > 1e-9)) return null; const u = [ex[0] / lx, ex[1] / lx];
     if (Math.abs(u[0]) < 1e-9 || Math.abs(u[1]) < 1e-9) return null;   // on the world's axes: the box is the rectangle
