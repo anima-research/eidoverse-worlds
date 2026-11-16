@@ -49,8 +49,8 @@ const r = await pg.evaluate(async () => {
   // unreachable. A test whose setup silently degrades to a no-op reports the
   // code as broken while proving nothing.
   const vc = await import('./lib/audio/voiceconsent.js');
-  let floor = vc.micFloor();
-  if (!(floor > 0)) { vc.setMicFloor(0.02); floor = vc.micFloor(); }
+  if (!(vc.micFloor() > 0)) vc.setMicFloor(0.12);
+  const floor = vc.gateThreshold();   // the meter latches on the gate's own threshold (bot #333 130)
 
   const out = {};
   out.floor = floor;

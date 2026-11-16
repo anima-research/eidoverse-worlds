@@ -9,7 +9,7 @@
 import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
-  micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
+  micFloor, setMicFloor, pttMode, setPttMode, gateThreshold } from './voiceconsent.js';
 import { micAnalyserLevel as meshMicLevel } from './micstate.js';
 // ask the live transport first (the SFU's own reader); micstate's meter, fed by gateFor, is the fallback
 function micLevelNow() {
@@ -85,7 +85,7 @@ function micFloorRow() {
   row.className = 'sp-row row wide';
   const hint = 'mic level below the marker is treated as room noise, not speech — ' +
     'raise it if typing pings nearby agents; the bar shows your live mic level';
-  const FS = 0.2;  // full-scale mic level = right edge of the meter
+  const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =
     `<span class="nm" title="${hint}">mic sensitivity</span>` +
     `<span class="ctl">` +
@@ -128,9 +128,10 @@ function micFloorRow() {
   const beat = () => {
     if (!row.isConnected) return;
     const level = micLevelNow();
-    lvl.style.width = `${Math.min(100, (level / FS) * 100)}%`;
-    // latch above the floor, release at REL× it; repaint only on a state change (this runs at frame rate)
-    const floor = micFloor();
+    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb), so past the marker = gate open (bot #333 130)
+    lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
+    // latch above the gate's threshold, release at REL× it; repaint only on a state change (this runs at frame rate)
+    const floor = gateThreshold();
     const next = hot ? level > floor * REL : level > floor;
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
