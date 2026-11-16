@@ -5,7 +5,7 @@
 //   2. eye anchor: the whole VRM is translated (root-local) by (hmd − eye), so the eyes sit at the headset and the
 //      body hangs beneath; after the look chain, before any arm solve;
 //   then feet, arms, chest follow and finger curls, numbered at the call sites below.
-// DeviceScale (xr.js) scales the puppet to the player; tracking stays 1:1.
+// DeviceScale (xr-scale.js) scales the puppet to the player; tracking stays 1:1.
 import { THREE, renderer } from '../core.js';
 import { CONFIG, tee } from '../base.js';
 import { myState } from '../player/controller.js';
@@ -289,9 +289,6 @@ function applyLookChain(h, qIn, lk, dt) {
   return pitch;
 }
 
-/** Pose a REMOTE body from its wire sample — same look chain, same arm solve, same curls,
- *  in the remote root's frame (== the sender's facing frame). No latch (the wire yaw already carries it),
- *  no eye anchor (the remote stands on its root). `st` = per-remote state { look: Vector3 }. */
 /** My tracked hand's world position this frame (a simulated grip in a probe), or null when it isn't tracked — what a
  *  socket's reach vr policy compares against its target (shared/sockbody.js reachWins). */
 const _hw = new THREE.Vector3(), _hwO = new THREE.Vector3();
@@ -303,6 +300,9 @@ export function xrHandWorld(side, out = _hw) {
   g.getWorldPosition(out);
   return out.distanceToSquared(xrRig()?.position ?? _hwO) > 1e-4 ? out : null;   // a controller at the rig origin is untracked
 }
+/** Pose a REMOTE body from its wire sample — same look chain, same arm solve, same curls,
+ *  in the remote root's frame (== the sender's facing frame). No latch (the wire yaw already carries it),
+ *  no eye anchor (the remote stands on its root). `st` = per-remote state { look: Vector3 }. */
 export function applyRemoteXR(av, xr, st, dt) {
   const vrm = av?.vrm, h = vrm?.humanoid;
   if (!h || !xr || !Array.isArray(xr.h) || xr.h.length !== 4) return;

@@ -340,7 +340,7 @@ export function sendBodyDrag(target, payload) {
   }
 }
 
-// XR: while presenting the wire carries the avatar's actual yaw and the look pitch (xr.js)
+// XR: while presenting the wire carries the avatar's actual yaw and the look pitch (xr/xrbody.js, wired by main.js)
 let poseOverride = null;
 export const setPoseOverride = (fn) => { poseOverride = fn; };
 // spec/PHYSICS.md §5.1: each pose sample carries its capture time on the authority's clock (once a round trip has
@@ -968,7 +968,7 @@ async function onSnapshot(msg) {
     intentionalClose = net.ws ?? true; try { net.ws?.close(4000); } catch { /* already gone */ }
     return;
   }
-  // what the server says you may do here; live grants keep it fresh via world.js
+  // what the server says you may do here; the 'your-rights' message keeps it fresh after every grant
   net.myRights = msg.yourRights ?? { role: 'builder', gen: true };
   // the body roster rides the snapshot: the avatar panel reads it with no /avatars round-trip (absent on older servers)
   if (msg.avatars) { net.avatars = msg.avatars; bus.emit('avatars', msg.avatars); }
@@ -980,10 +980,10 @@ async function onSnapshot(msg) {
   worldSaved = false;   // every join remembers afresh (after the shadow adopts the snapshot, below)
   net.status = 'live';
   net.myId = msg.you;
-  net.mySub = msg.yourSub ?? null;
+  net.mySub = msg.yourSub ?? null;   // the durable subject the authority vouched for, if any — what guarded things match on
   net.renameAfter = msg.renameAfter ?? null; net.renameCooldownDays = msg.renameCooldownDays ?? null;   // profile.js's name dialog
   if (msg.renameRefused) { const d = new Date(msg.renameRefused.until);
-    toast(`still “${msg.you}”: names change once every ${msg.renameCooldownDays} days — “${msg.renameRefused.tried}” can be yours from ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}`, 'info', 12000); }   // the durable subject the authority vouched for, if any — what guarded things match on
+    toast(`still “${msg.you}”: names change once every ${msg.renameCooldownDays} days — “${msg.renameRefused.tried}” can be yours from ${d.toLocaleDateString([], { month: 'short', day: 'numeric' })}`, 'info', 12000); }
   // the server's `you` is authoritative (a verified identity, or a suffixed name when two people share a nick):
   // adopt it and say so. Renderer/spectator clients strip their transport prefix (base.js nameFromJoinAck).
   const you = nameFromJoinAck(msg.you, { renderer: CONFIG.renderer, spectate: CONFIG.spectate, verified: !!msg.yourSub });

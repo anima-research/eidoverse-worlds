@@ -104,7 +104,7 @@ function evalPart(m, t, obj, pbase) {
 }
 
 /** "id\u0000part" -> part Object3D animated last frame. When a part's motion
- *  vanishes the part returns to its rest pose here (world.js only does wholes). */
+ *  vanishes the part returns to its rest pose here (realize/models.js only does wholes). */
 const _liveParts = new Map();
 const _seenParts = new Set();
 
@@ -181,8 +181,8 @@ export function tickMotion() {
   }
 }
 
-// Motion ended (`{type: null}`): world.js restores the base pose (it owns the
-// bag and the base). Anything that rests AWAY from base (a ferry stopping
+// Motion ended (`{type: null}`): realize/models.js restores the base pose (it owns
+// the base). Anything that rests AWAY from base (a ferry stopping
 // mid-route) gets a `place` from the stopper alongside.
 
 // The inspector's motion fields are declared in shared/editschema.js. No live

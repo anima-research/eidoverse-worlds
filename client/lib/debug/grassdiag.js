@@ -4,7 +4,7 @@
 // So this measures by DIFFERENCE: freeze one component at a time for a few seconds and watch fps / frame-ms
 // recover. Run from the console:
 //
-//   await EW.grassDiag()               // ~30s, prints a table, restores all (terrain and grass come back shown)
+//   await EW.grassDiag()               // ~45s, prints a table, restores all (terrain and grass come back shown)
 //   await EW.grassDiag({ secsPer: 5 }) // longer phases on a noisy machine
 //
 // The phases:
@@ -17,6 +17,8 @@
 //                 2 segments instead of 4 — the §17b lever, forced)
 //   density low   instance count to 35% (the governor's deepest shed)
 //   grass hidden  the whole field skipped — total grass cost, the ceiling
+// Around them: sky hidden, terrain hidden, each stroke hidden (when several), the near ring or the far sea alone at
+// 35%, and render scale 80%.
 //
 // Interpretation on a 60Hz vsync-bound machine: deltas clamp at the vsync
 // floor (16.7ms), so read RECOVERY — the first phase that reaches the

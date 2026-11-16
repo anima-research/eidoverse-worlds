@@ -16,7 +16,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from '../../shared/supportclass.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
-export const colliders = new Map(); // entity id -> { obj, box, pillar, exact?, interior, cell }
+export const colliders = new Map(); // entity id -> { obj, box, pillar, exact?, interior, cells }
 
 // ---- exact (trimesh) colliders ----------------------------------------------
 // Room-scale things (shared/supportclass.js decides; the collider component can force "exact" | "box") collide

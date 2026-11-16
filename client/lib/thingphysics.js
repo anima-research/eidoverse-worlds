@@ -495,7 +495,7 @@ function drawFlights(wall, now) {
   swapFrom.clear();
 }
 
-// "object physics off" (main's ew-phys): this browser stops drawing flights (the replica still folds), predicting its own
+// "object physics off" (the ew-phys preference): this browser stops drawing flights (the replica still folds), predicting its own
 // releases and shoving what it walks into; things stand at their committed poses (the log's). Local only: nobody else is touched.
 let physOn = (() => { try { return localStorage.getItem('ew-phys') !== '0'; } catch { return true; } })();
 export const physicsEnabled = () => physOn;
@@ -578,7 +578,7 @@ export async function grab(name) {
   flashHint(`holding ${called(id)}${r.notes?.some((n) => n.takenFrom) ? ' (taken from someone)' : ''} — T puts it down, Q throws`);
   return r;
 }
-/** Set down what you hold (straight down onto what's below your hand). */
+/** Set down what you hold: at `spot` [x, z] when given, else just in front of your feet (the authority finds the height). */
 export async function put(name, spot = null) {
   const id = name || myHolds()[0]; if (!id) return say('you aren\'t holding anything');
   await track(true);
@@ -607,7 +607,6 @@ export async function drop(name) {
   const pos = letGoAt(heldPos(id)); const r = await sendRequest('drop', { id, ...(pos ? { pos: pos.toArray().map(r3) } : {}) });   // within reach, as a throw lets go
   return r?.ok ? r : refused('drop', r, id);
 }
-/** Throw what you hold along your view, from your hand. */
 /** Throw what I hold (the newest). `aim`: a world point [x, y, z] to land on (where the cursor is): a lob that comes down there, as hard as
  *  the distance needs, up to the engine's limit. No aim: ahead of my body, the way it faces. A number is a speed. */
 export async function throwHeld(arg) {
@@ -724,7 +723,7 @@ async function shove(id, v, now) {
 // The use button while you hold a thing: a request per press and per release (use.down, use.up: each one act; a
 // hose turns on, then off), and, while it's pressed, presence (pose.use) every client draws the thing's fx from. Desktop:
 // the left mouse button while holding something usable (outside build mode); phone: a button that appears while you do;
-// VR: the trigger (xr.js calls useHeld). Rapid effects are never a stream of acts: the authority rate-limits acts on purpose.
+// VR: the trigger (xrHand below calls useHeld). Rapid effects are never a stream of acts: the authority rate-limits acts on purpose.
 const usable = () => myHolds().find((id) => grabOf(compsOf(id))?.use) ?? null;
 let pressing = null;   // the id my use is held down on
 /** Press (phase 'down') or release ('up') the use of what I hold. Returns the authority's reply, or null if nothing to use. */
@@ -871,19 +870,19 @@ export function handsHint() {
   return near ? html`click or <kbd>T</kbd> to pick up <b>${nameOf(near) ?? near}</b>` : null;
 }
 
-/** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
-/** Could my hand set something down at this spot on the floor from where I stand (the authority's reach, with a margin)? */
 // where a let-go starts: the thing as drawn in my hand, but never further from the authority's hand than its reach. A big
 // thing carried two-armed is drawn pushed out from the chest, and the authority's track of a walking body runs a step
 // behind, so an unclamped let-go is refused as out of reach
 const letGoAt = (pos) => { const f = feet(); if (!pos || !f) return pos; const h = new THREE.Vector3(f[0], f[1] + HAND_Y, f[2]);
   const d = pos.distanceTo(h), lim = REACH - 0.15; return d <= lim ? pos : h.lerp(pos, lim / d); };
+/** Could my hand set something down at this spot on the floor from where I stand (the authority's reach, with a margin)? */
 const canPutAt = (x, y, z) => { const f = feet(); return !!f && Math.hypot(x - f[0], y - (f[1] + HAND_Y), z - f[2]) <= REACH - 0.08; };
 /** Can my hand reach it from where I stand (the authority's own measure: hand to thing, within its range)? */
 const inReach = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && inHand(p, f, id) !== null; };
-/** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const canPunt = (id) => { const f = feet(), p = whereIs(id); return !!f && !!p && atFeet(p, f) !== null; };
+/** Where it is and how far along the floor from my feet: {at: [x, y, z], flat} or null. */
 const whereFromMe = (id) => { const f = feet(), p = whereIs(id); return f && p ? { at: p, flat: Math.hypot(p[0] - f[0], p[2] - f[2]) } : null; };
+/** The surface a runtime mod scripts against (mods.js EW.physics): the same requests the keys send. */
 export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, grabNear, release, use: useHeld, xrHand, holds: holdsNow, mine: myHolds, shown: simShown, pending: pendingNow, swaps: () => stats.swaps, tracking: () => !!moving, predict: (on) => (predictOn = on !== false), lag: (ms) => (lagMs = Math.max(0, ms | 0)), settle: (ms) => (SETTLE_MS = Math.max(0, ms | 0)), settling: () => [...settles.keys()], whereIs, inReach, whereFromMe, canPutAt,
   /** body shove: the lab knob, the shoves sent (and how each was answered), the things my body is against now */
   shove: { on: (on) => (shoveOn = on !== false), log: () => shoveLog.slice(), touching: () => shover.touching(), feel: () => shover.feel,

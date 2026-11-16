@@ -537,7 +537,7 @@ export const protoStats = () => ({
 
 // ---- VRMA clips -------------------------------------------------------------
 
-// 'fly' and 'soar' are the airborne pair: fallIdle (limbs trailing, no contact), not a run cycle.
+// (shared/clipdefs.js) 'fly' and 'soar' are the airborne pair: fallIdle (limbs trailing, no contact), not a run cycle.
 
 const vrmaCache = new Map();
 // the seat gate matches this to the server's profile digest: a divergent clip can't wear another's profile

@@ -68,8 +68,9 @@ async function quotaTight() {
 // The queue is discovered from the server's listings, ordered by how soon someone would feel the miss:
 //   1. roster bodies (a new walker materialising instantly)
 //   2. catalog previews (the B picker)
-//   3. everything spawnable: store assets and the model library, smallest first
-//   4. sky + weather sprites (other worlds' atmospheres; this world's are warm already)
+//   3. animation clips
+//   4. everything spawnable: store assets and the model library, smallest first
+//   5. sky + weather sprites (other worlds' atmospheres; this world's are warm already)
 async function buildQueue() {
   const q = [];
   const seen = new Set();

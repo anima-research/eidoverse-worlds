@@ -141,8 +141,8 @@ export function setErrorSink(fn) { errorSink = fn; }
 const seenErrors = new Map(); // key -> { n, nextAt }
 // ---- console tee: what a visitor's page says, where the operator can read it (server/clientlog.ts).
 // report() and window errors post to /clientlog (a repeated line once, then every 20th with its count, tee): queued,
-// one POST per flush, never throws; the key rides the
-// Authorization header, never the URL. A 429 waits its Retry-After (60 s when unsaid) with the lines kept.
+// one POST per flush, never throws; the key rides the Authorization header, never the URL. A 429 waits its
+// Retry-After (60 s when unsaid) with the lines kept.
 let teeQ = [], teeTimer = 0, teeMuted = false, teePausedUntil = 0;
 // batched every 10 s; as the page hides one batch goes at once (keepalive's cap) and the rest waits for the timer
 const TEE_LINES = 2000, TEE_BYTES = 60 * 1024, TEE_DEBOUNCE_MS = 10000;   // 60 KB: under keepalive's 64 KB in-flight cap
@@ -206,7 +206,7 @@ export function report(context, err) {
   const suppressed = now < rec.nextAt;
   if (rec.n === 1 || rec.n % 20 === 0) tee(`[report] ${context}: ${message} ×${rec.n} :: ${String(err?.stack ?? '').split('\n').slice(1, 4).join(' | ').slice(0, 600)}`);
   if (!suppressed) {
-    // 1st, then 2s, 10s, 60s… — enough to show a fault is ongoing, not enough to drown
+    // the 1st, then a gap that grows 2 s per repeat (2 s, 4 s, 6 s… capped at 60 s): enough to show a fault is ongoing, not enough to drown
     rec.nextAt = now + Math.min(60000, 2000 * rec.n);
     console.error(context, err, rec.n > 1 ? `(×${rec.n})` : '');
     errorSink?.(context, rec.n > 1 ? `${message} (×${rec.n})` : message);
@@ -284,5 +284,5 @@ export function assignColors(names) {
 }
 
 /** The 'avatar-worn' payload's name: mybody.announceWorn emits { name, path }, setMe emits a string. Every listener
- *  that keys anything by body name goes through here (bodies.js, xr.js). */
+ *  that keys anything by body name goes through here (bodies.js, xr-scale.js). */
 export const wornNameOf = (v) => (typeof v === 'string' ? v : v?.name) ?? '';

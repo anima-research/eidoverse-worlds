@@ -532,7 +532,7 @@ export function initDebug(p = {}) {
   tabs.group('body', 'hair (while ragdolled)', (body) => buildHairPanel(body));
   tabs.group('body', 'limp hair (no local sim)', (body) => buildLimpPanel(body));
   tabs.group('body', 'wings', (body) => buildWingPanel(body));
-  // perfscope mounts itself when its module is present; without it this is a silent no-op
+  // perfscope's panel mounts after a dynamic import (its groups arrive late); a failure there is a silent no-op
   import('./perfscope.js').then((m) => m.mountPerfPanel(stack, { toast: toastLike, section: (_parent, title, build) => tabs.group('perf', title, build) })).catch(() => {});
 
   // GPU time, measured by the GPU (gputime.js): the number a headless probe cannot give us

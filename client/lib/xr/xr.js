@@ -1,7 +1,7 @@
 // xr — the door into the headset, and everything your hands do inside it.
 //
 // Owns the session and rig, and the hands: stick locomotion only fills xrIntent (the controller does the moving),
-// the right-hand ray feeds sceneSelect (the xr:select event, main.js), grip alone grabs a panel by its background or title (never by a control),
+// either hand's ray feeds sceneSelect (the xr:select event, main.js), grip alone grabs a panel by its background or title (never by a control),
 // and the radial menu opens panels and local acts (recentre, ears, mic, leave). Never navigate mid-session.
 
 import { confirmCenter } from '../edit/confirmcenter.js';
@@ -181,8 +181,8 @@ function makeHand(i) {
   return { grip, ray, aim, smooth: { init: false }, laser, dot, box };
 }
 const _dotP = new THREE.Vector3(), _dotN = new THREE.Vector3(), _dotO = new THREE.Vector3(), _dotD = new THREE.Vector3(), _eyeP = new THREE.Vector3();
-/** What a press would do on this target — the dot's icon (pointer.js DOT_KINDS). */
 const RESIZE_KIND = { 'resize-e': 'resize-ew', 'resize-w': 'resize-ew', 'resize-s': 'resize-ns', 'resize-nw': 'resize-nwse', 'resize-se': 'resize-nwse', 'resize-ne': 'resize-nesw', 'resize-sw': 'resize-nesw' };
+/** What a press would do on this target — the dot's icon (pointer.js DOT_KINDS). */
 export function targetKind({ panel = null, plateDist = null, hit = null } = {}) {
   if (panel) {
     if (panel.control) return typeof panel.control !== 'string' && panel.control.matches?.(TEXT_SEL) ? 'type' : 'click';
@@ -236,7 +236,7 @@ function sourceFor(hand) {
   return null;
 }
 
-// ---- pointer: right-hand ray → entity, trigger selects ---------------------
+// ---- pointer: a hand's ray → entity, trigger selects ------------------------
 const _rc = new THREE.Raycaster();
 function rayHitEntity(handRay, far = 24) {
   _m.identity().extractRotation(handRay.matrixWorld);
@@ -690,7 +690,7 @@ async function enterVR({ retryOf = null } = {}) {
     report('enter VR', e);
     // a granted session whose setSession failed is alive and ours: end it, or every later request is 'already active'
     if (session && !presenting) { try { session.end(); } catch { /* already ending */ } session = null; renderer.xr.enabled = false; }
-    // a sticky toast with the actual message (8 s when the policy supplied a userMessage)
+    // a long toast (30 s) with the actual message; 8 s when the policy supplied a userMessage
     toast(e?.userMessage ?? `VR failed to start: ${e?.message ?? e}`, e?.userMessage ? 'warn' : 'err', e?.userMessage ? 8000 : 30000);
     tee(`[xr] ENTER FAILED: ${e?.name ?? ''} ${e?.message ?? e}`);
   } finally { entering = false; if (!presenting) xrVeilShow(false); }
@@ -783,7 +783,7 @@ export function recentreXR(why = 'verb') {
   bus.emit('xr:recentre', { ...r, why });
   return true;
 }
-/** The one exit. Every path (visor glyph, ring, controller hold) ends here and says so. */
+/** The one exit. Every path (visor glyph, ring, the no-headset timeout) ends here and says so. */
 let lastLeaveAt = -1e9;
 export function leaveVR(why = 'verb') {
   if (entering) { tee(`[xr] leave (${why}) refused: enter still in flight`); return false; }
@@ -825,7 +825,7 @@ export function updateXR(dtSec = 1 / 72) {
       }
     } }
   if (curtainState?.armed) { curtainState.armed = false;
-    // the curtain holds until the entry compileAsync resolves (cap 15 s), then drops after ≥2 presenting frames
+    // the curtain holds until the entry compileAsync resolves (cap 15 s); it drops once it has shown (≥3 frames) and the sky has arrived
     const t0 = performance.now(); const f0 = perf.frameNo ?? 0; const clock = entryClock;
     curtainState = { down: false, resolved: false, t0, f0, clock };
     { let ticks = 0; const tw = performance.now(); const tick = () => { ticks++; if (performance.now() - tw < 3000) requestAnimationFrame(tick); }; requestAnimationFrame(tick);
@@ -1065,7 +1065,7 @@ export function updateXR(dtSec = 1 / 72) {
       eyeVp: (renderer.xr.getCamera().cameras ?? []).map((c) => c.viewport ? [c.viewport.x, c.viewport.y, c.viewport.z, c.viewport.w].map((v) => +v.toFixed(0)) : null),
       renders: renderCensusTake(),   // max renderer.render() calls in one frame since the last line + the last foreign camera
       // 'pitch black' as numbers: my body's materials and the lights that should be lighting them
-      mats: (() => { const out = {}; av?.vrm?.scene?.traverse((o) => { if (!o.isMesh || !o.visible) return; for (const m of [].concat(o.material ?? [])) { const k = `${m.constructor?.name ?? m.type}${m.isOutline ? ':outline' : ''}`; const e = out[k] ||= { n: 0, tex: 0, opaque: 0, needsUpdate: 0 }; e.n++; if (m.map) e.tex++; if (!m.transparent || m.opacity >= 0.99) e.opaque++; if (m.needsUpdate) e.needsUpdate++; } }); return out; })(),   // arrays flattened (multi-material bodies): 12:34's 'undefined / tex 0' was this counter, not the body
+      mats: (() => { const out = {}; av?.vrm?.scene?.traverse((o) => { if (!o.isMesh || !o.visible) return; for (const m of [].concat(o.material ?? [])) { const k = `${m.constructor?.name ?? m.type}${m.isOutline ? ':outline' : ''}`; const e = out[k] ||= { n: 0, tex: 0, opaque: 0, needsUpdate: 0 }; e.n++; if (m.map) e.tex++; if (!m.transparent || m.opacity >= 0.99) e.opaque++; if (m.needsUpdate) e.needsUpdate++; } }); return out; })(),   // arrays flattened (multi-material bodies)
       lights: (() => { const l = []; scene.traverse((o) => { if (o.isLight) l.push(`${o.type.replace('Light', '')}:${+o.intensity.toFixed(2)}${o.visible ? '' : ':hidden'}`); }); return l.slice(0, 8); })(),
       env: !!scene.environment,
       fpSplit: (() => { const n = { fp: 0, tp: 0, both: 0, base: 0 }; av?.vrm?.scene?.traverse((o) => { if (!o.isMesh && !o.isSkinnedMesh) return; const f = o.layers.isEnabled(FP_LAYER), t = o.layers.isEnabled(TP_LAYER); n[f && t ? 'both' : f ? 'fp' : t ? 'tp' : 'base']++; }); return n; })(),   // a body whose meshes are ALL tp is invisible in FP by spec

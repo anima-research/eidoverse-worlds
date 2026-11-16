@@ -16,7 +16,6 @@ import { escapeHtml as esc } from '../ui/markup.js';
 // the fill icon set is optional: without it the loupe button is its word
 const fsvg = (name, size) => (typeof icons.fsvg === 'function' ? icons.fsvg(name, size) : '');
 
-// HTML-attribute escaper for the tooltip strings below
 
 // data colors, not chrome: a CVD-safe cheap→dear ramp that means the same everywhere, so it does NOT follow the accent
 export const TIERS = TIER_COLORS;   // shared/perfrank.js: the server ranks library cards by the same rule
@@ -182,8 +181,8 @@ export const MODES = {
 };
 
 let mode = 'off';
-// tint is an OVERLAY (25% veil + inverted hull in the tier color); originals are never touched. `solid` overrides
-// materials, fabric included; overlay leaves the fabric untinted (a hull would double the grass draw).
+// tint is an OVERLAY (25% veil + inverted hull in the tier color); originals are never touched. `solid` makes the veil
+// opaque, fabric included; the plain overlay leaves the fabric untinted (a hull would double the grass draw).
 let solidOn = false;
 export function setSolid(on) { solidOn = !!on; if (mode !== 'off') applyTint(); onSolidChange?.(); }
 export const isSolid = () => solidOn;

@@ -1,7 +1,8 @@
 // xrpointer — the VR laser's policy as plain functions a test can run without a headset (test/client/xrpointer-test.mjs).
 // xr.js owns the per-hand loop and the scene; this owns three decisions:
 //   1. when the beam is drawn — the "pointer visibility" setting (Settings › VR): always / never / contextual
-//      (on a panel or nameplate, or while grip or trigger is held). 'never' hides only the beam; pointing still works.
+//      (on a panel, nameplate or interactable entity, or while grip or trigger is held). 'never' hides only the beam;
+//      pointing still works.
 //   2. how the ray follows the hand — a frame-rate-independent low-pass (alpha = 1 − exp(−dt/τ)) in the rig's space,
 //      so tremor doesn't shake the far end and walking never lags the beam.
 //   3. how it holds a target — hysteresis: easier to stay on a control or nameplate than to get on; while held the
@@ -12,7 +13,7 @@ import * as THREE from 'three';
 export const POINTER_VIS_MODES = ['always', 'never', 'contextual'];
 export const POINTER_VIS_DEFAULT = 'contextual';
 export const pointerVisibilityMode = (v) => (POINTER_VIS_MODES.includes(v) ? v : POINTER_VIS_DEFAULT);   // an unknown stored value reads as the default
-/** Is the beam drawn this frame? `target`: the ray rests on a panel or a nameplate. `grip`/`trig`: held. */
+/** Is the beam drawn this frame? `target`: the ray rests on a panel, a nameplate or an interactable entity. `grip`/`trig`: held. */
 export function pointerVisible(mode, { target = false, grip = false, trig = false } = {}) {
   const m = pointerVisibilityMode(mode);
   if (m === 'never') return false;

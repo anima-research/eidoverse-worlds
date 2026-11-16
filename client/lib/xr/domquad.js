@@ -240,7 +240,7 @@ export function domQuadsPress(handRay) {
   return { dist: hit.distance, press: { mesh: hit.object, el, data, lastY: data.y, travel: 0, dragging: false } };
 }
 
-/** Trigger held after a press: the panel follows the laser once it has moved DRAG_PX. */
+/** Trigger held after a press: the panel's content scrolls with the laser once it has moved DRAG_PX. */
 export function domQuadsDrag(handRay, press) {
   aim(handRay);
   const hit = _rc.intersectObject(press.mesh, false)[0];
@@ -434,7 +434,7 @@ export function domQuadResizeMove(drag, handRay) {
   pos.needsUpdate = true; drag.outline.geometry.computeBoundingSphere();
   return drag;
 }
-/** Release: commit the size to the frame (windows.js, as a desktop resize does) and rebuild the quad at the same density
+/** Release: commit the VR size to the staged frame (windows.js _setVrSize) and rebuild the quad at the same density
  *  with the anchor where it was. Returns { w, h } (CSS px, the frame's whole box) or null. */
 export function domQuadResizeEnd(drag, rig) {
   if (!drag) return null;
@@ -507,4 +507,4 @@ export function domQuadRelease(q, rig) {
   return p;
 }
 export const domQuadTexture = (id) => quads?.find((q) => q.id === id)?.mesh?.material.map ?? null;
-export const domQuadMesh = (id) => quads?.find((q) => q.id === id)?.mesh ?? null;   // probe window (the material's pass)
+export const domQuadMesh = (id) => quads?.find((q) => q.id === id)?.mesh ?? null;   // xr.js's handle reveal, and the probe window (the material's pass)
