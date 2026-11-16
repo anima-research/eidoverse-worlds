@@ -51,7 +51,10 @@ check("far → lod", chooseTier({ dist: edge * 1.5, radius: R, recipe: REC }) ==
 check("a bigger entity (bigger radius) goes reduced later", chooseTier({ dist: 60, radius: 100, recipe: REC }) === "lod"
   && chooseTier({ dist: 60, radius: 200, recipe: REC }) === "full");
 check("a missing/zero radius falls back to the base radius, never divides by zero",
-  chooseTier({ dist: 1, radius: 0, recipe: REC }) === "full" && chooseTier({ dist: 1e6, radius: 0, recipe: REC }) === "lod");
+  chooseTier({ dist: 1, radius: 0, recipe: REC }) === "full" && chooseTier({ dist: 1e6, radius: 0, recipe: REC }) === "lod"
+  // 30 m: inside the base radius's edge, outside the LOD_NEAR_MIN floor a zero radius would leave
+  && chooseTier({ dist: 30, radius: 0, recipe: REC }) === "full"
+  && chooseTier({ dist: 30, radius: undefined as any, recipe: REC }) === "full");
 
 // ---- hysteresis: the edge you cross depends on what you wear
 const inner = edge * (1 - LOD_HYST), outer = edge * (1 + LOD_HYST);
@@ -111,7 +114,7 @@ check("but neither overrides the resident's 'full'", chooseTier({ dist: 1e6, rad
   check("a choice persists", q.setQuality("eco") === "eco" && store.get("ew-model-quality") === "eco");
   check("…and comes back on the next boot", makeModelQuality(fake).quality === "eco");
   check("an unknown level is refused, the current one stands", q.setQuality("ultra" as any) === "eco");
-  check("the governor's shed is a session dial — never written", q.setShed(true) === true && !store.has("shed") && makeModelQuality(fake).shed === false);
+  check("the governor's shed is a session dial — never written", q.setShed(true) === true && store.size === 1 && makeModelQuality(fake).shed === false);
   check("no store at all → session-only, still works", makeModelQuality(undefined).setQuality("full") === "full");
 }
 
