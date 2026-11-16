@@ -94,14 +94,13 @@ ok(fk?.type === "world-forked" && fk.to === "copy", "FK3 the owner copies it", f
     "FK5 every thing is copied (the same ids), and these component for component: the parent, the locked child, the spot light, the chair's socket child", [Object.keys(b)]);
   ok(b["@world"][`roles:${bobId}`]?.role === "builder" && b["@world"]["default-role"]?.role === "member", "FK5 roles and the default role travel", b["@world"]);
   ok(Number.isFinite(b["@world"].sky?.ts) && canon(a["@world"].sky) === canon(b["@world"].sky), "FK5b a sky an act stamped travels as it stands, its stamped ts with it", [a["@world"].sky, b["@world"].sky]);
-  // FK12 (training consent's per-person keys staying out of a fork) went with training-consent itself (R 10-16 14:16)
   ok(!logOf("copy").some((e) => e.kind === "say"), "FK6 chat does not travel (the source's log stays the record)");
   // review 10-07 H5: the fork's genesis names its parent {world, seq, head} (part of its id: the merge base), and the acts
   // that copied the parent are marked, so a reader tells inherited things from births
   const gp = logOf("copy")[0]?.body?.parent, sl = logOf("src");
   ok(gp && gp.world === fold(sl).worldId && Number.isInteger(gp.seq) && gp.seq < sl.length && /^[0-9a-f]{64}$/.test(gp.head) && (sl[gp.seq]?.head === undefined || sl[gp.seq].head === gp.head)
     && f?.body?.args?.from?.seq === gp.seq, "FK10 the fork's genesis names its parent {world, seq, head}; the head is the parent's chain head at that seq", { gp, at: sl[gp?.seq]?.head });
-  const copyActs = logOf("copy").filter((e) => e.kind === "request" && e.verb !== "create-world" && !(e.actor === "system" && e.verb === "repair-shapes"));   // the founding's shape marker (review r8 M3) copies nothing
+  const copyActs = logOf("copy").filter((e) => e.kind === "request" && e.verb !== "create-world" && !(e.actor === "system" && e.verb === "repair-shapes"));   // a founding repair-shapes act copied nothing (founding no longer writes one)
   ok(copyActs.length > 0 && copyActs.every((e) => e.verb === "fork-copy") && !logOf("src").slice(-1)[0]?.body?.parent, "FK11 every act that copied the parent is a fork-copy (inherited, not born)", copyActs.map((e) => e.verb));
   const after = fs.readdirSync(W).filter((d) => d.startsWith("."));
   ok(after.length === before.length, "FK7 no temporary directory is left behind", after); }

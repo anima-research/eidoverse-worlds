@@ -11,7 +11,7 @@ import { suite } from "../gate/suite.ts";
 const { ok, done } = suite("authority-layers-check", { quiet: true });
 
 const DIR = ENGINE + "shared/protocol/authority/";
-const ORDER = ["ctx", "refuse", "catalogue", "storage", "math", "spatial", "sockets", "rights", "bodyconsent", "moderation", "use", "blueprints", "reads", "undo", "scripts", "scriptrun", "occupants", "physics", "manipulate", "drive", "bodyverbs", "capacity", "checks", "gate", "followups", "writes", "verbs"];   // sockets (10-12 branch, merged 10-14) sits on spatial/catalogue/math/storage/refuse   // leaf-most first; the gate is last
+const ORDER = ["ctx", "refuse", "catalogue", "storage", "math", "spatial", "sockets", "rights", "bodyconsent", "moderation", "use", "blueprints", "reads", "undo", "scripts", "scriptrun", "occupants", "physics", "manipulate", "drive", "bodyverbs", "capacity", "checks", "gate", "followups", "writes", "verbs"];   // sockets (10-12 branch, merged 10-14) sits on spatial/catalogue/math/storage/refuse   // leaf-most first; authority.js (the gate, above them all) isn't listed
 const rank = new Map(ORDER.map((n, i) => [n, i]));
 const importsOf = (src: string) => [...src.matchAll(/^\s*(?:import|export)\s[^;]*?\sfrom\s*["']([^"']+)["']/gm)].map((m) => m[1]);
 

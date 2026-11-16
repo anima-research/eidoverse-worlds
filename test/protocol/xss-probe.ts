@@ -8,9 +8,11 @@
 //   S   the client's own sinks, independent of the door (the input emulated at its seam, the bus): every presence
 //       message that names its sender (knock-over, grab, pose, release) and the chat lines (sender and words) show a
 //       hostile name as TEXT — the literal characters on screen, no element made from them, no script run. (A refused
-//       drag raises no client hint since 10-20; "broke free" shows only to a dragger, which the bus can't make us.)
+//       drag raises no client hint; "broke free" shows only to a dragger, which the bus can't make us.)
 //   C   the page runs under a Content-Security-Policy that refuses inline script: an injected inline handler and an
 //       injected <script> do not run, and the browser reports the violation
+//   M, R, D, P, K, L   each says what it holds at its own stage below (our own markup, what must still run under the
+//       policy, mods need a click, presence by identity, the two gates, the per-person lists)
 // Every stage asserts its trigger FIRED (the hint/line actually shows the name) before it asserts nothing ran — a check
 // whose subject never arrived is not evidence.
 // @ts-nocheck
@@ -51,7 +53,7 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("boot: a world", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  // R 10-20 recut A2: the body accepts by default (it was off, 3b84e149). The exploit under test is the HTML-rendered NAME, which
+  // The body accepts being moved by default (recut A2). The exploit under test is the HTML-rendered NAME, which
   // needs the knock to land — so the victim opts in explicitly below anyway; the default itself is asserted first.
   check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/player/consent.js').then((m) => m.pushable())`)));
   await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);   // a renamed setter throws here, not a silent skip
@@ -98,16 +100,15 @@ try {
       check(`${name}: the hint shows the name as text`, fired && await evalJson(`${hint}.includes(${JSON.stringify(SVG)})`), await evalJson(`document.getElementById('hintbar')?.innerHTML`));
       check(`${name}: …and nothing ran`, await evalJson(clean), await evalJson(`window.__xss`));
     }
-    // Until 10-20 the client refused a drag itself and toasted "<by> tried to drag you"; the authority is now the one decider
-    // (#260 recut A1), so with my switch off an arriving grab raises no client refusal at all (S1/S2 already pin the names
-    // the remaining hints show as text).
+    // The authority is the one decider (#260 recut A1): with my switch off, an arriving grab raises no client refusal
+    // (no "<by> tried to drag you" toast; S1/S2 already pin the names the remaining hints show as text).
     await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
     await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
     await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled
     const after = await waitFor(`${hint}.includes("posed you")`, 3000);
     check("S5 no client-side refusal toast: the authority decided before it arrived (a later bus event was handled first)", after && !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean), { after });
     await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);   // a renamed setter throws here, not a silent skip
-    // the chat log (a whisper line too, until whisper was removed, R 10-18)
+    // the chat log
     await evalJson(`import('/lib/ui/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
     check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000)
       && await evalJson(`(() => { const l = [...document.querySelectorAll('#chatlog [data-author]')].at(-1); return !!l && l.dataset.author === ${JSON.stringify(SVG)} && l.textContent.includes(${JSON.stringify(SVG)}) && !l.querySelector('svg,[onload]'); })()`), await evalJson(`[...document.querySelectorAll('#chatlog [data-author]')].at(-1)?.outerHTML.slice(0, 300)`));
@@ -167,7 +168,7 @@ try {
       await new Promise((r) => { const t = d.transaction('scripts', 'readwrite'); t.objectStore('scripts').delete('byhand'); t.oncomplete = r; }); return true; })()`);
   });
 
-  // ---- P: the page names the people it reaches by identity (H2): puppet, drag and typing carry the actor id (whisper did, until it was removed, R 10-18) ----
+  // ---- P: the page names the people it reaches by identity (H2): puppet, drag and typing carry the actor id ----
   await stage("P", async () => {
     const wren = guest("Wren");
     const { snap } = await wren.join();

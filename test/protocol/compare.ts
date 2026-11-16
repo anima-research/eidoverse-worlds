@@ -1,7 +1,8 @@
 // The JS fold (shared/protocol/fold.js) against the Python reference reader (spec/conformance/reader.py, written from
 // PROTOCOL alone) on every conformance log: status, digest, and diagnostic codes. Ported from
 // the protocol lab's conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_reader.py,
-// test_chain.py; the latter needs python3 `cryptography`). usage: bun test/protocol/compare.ts  (exit 1 on any difference; PYTHON=<interpreter>, default python3 on PATH)
+// test_chain.py, test_gov.py, test_story.py, ed25519/test_vectors.py; the chain and gov ones need python3 `cryptography`),
+// and checks the engine's own log against the spec's readers. usage: bun test/protocol/compare.ts  (exit 1 on any difference; PYTHON=<interpreter>, default python3 on PATH)
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
@@ -53,8 +54,8 @@ for (const t of ["test_reader.py", "test_chain.py", "test_gov.py", "test_story.p
 }
 const drift = files.filter((f) => fs.readFileSync(here + f, "utf8") !== before.get(f));
 if (drift.length) { suiteFails++; console.log(`FAIL test_reader.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
-// The engine's OWN output against the spec's readers (review F1, 2026-10-05: the conformance run checked the lab's
-// logs but never what this server writes). Found a world through the engine authority, write a few kinds of request, then
+// The engine's OWN output against the spec's readers (review F1), not only the conformance logs. Found a world through
+// the engine authority, write a few kinds of request, then
 // the reference reader must say ok with 0 malformed, the Python chain verifier must accept every head and signature,
 // and a value altered after the fact must break the chain.
 { const { openLive } = await import("../harness/labhost.ts"); const { request } = await import("../../shared/protocol/authority.js");

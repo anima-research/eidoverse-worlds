@@ -403,7 +403,7 @@ const cases: Case[] = [
   { id: "C1", what: "creditsOf: bob made it; ann moved it three times within minutes (one session: 'moved it') and lit it; ordered by first contribution", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "builder" } });
       s.call("bob", "create", { id: "lamp", components: { label: "lamp", transform: { pos: [0, 0, 0] } } });
-      for (let i = 0; i < 3; i++) s.call("ann", "set", { id: "lamp", component: "transform", value: { pos: [i, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } }, 60000);   // a light-only thing has no size to place
+      for (let i = 0; i < 3; i++) s.call("ann", "set", { id: "lamp", component: "transform", value: { pos: [i, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } }, 60000);   // a model-less thing has no size to place
       s.call("ann", "set", { id: "lamp", component: "light", value: { kind: "point" } });
       const people = CR.creditsOf?.(s.entries(), "lamp") ?? null;
       return { people: people?.map((p: any) => [p.by, p.did.map((d: any) => `${d.what}${d.n > 1 ? ` ×${d.n}` : ""}`)]) }; },

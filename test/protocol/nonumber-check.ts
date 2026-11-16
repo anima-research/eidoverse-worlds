@@ -2,9 +2,9 @@
 // name"). As data it rides the log's genesis, `{dialect: "eidoverse-log", v: N}` (spec/PROTOCOL.md §2.4), and the hello and version line that repeat it (shared/protocol/hello.js).
 // Every file the repo tracks (code, tests, docs, fixtures, file names) is scanned, and the gate fails on the current
 // protocol's number used as a name: `v` + the number as a word or a word's start (`vN`, `vN-log`, `vNid`), or as a
-// camelCase part (`makeVNClient`, `asVN`), in a path or on any line; an unbroken run of 40+ letters and digits reads as a hash and isn't.
+// camelCase part (`makeVNClient`, `asVN`), in a path or on any line; on a line, an unbroken run of 20+ base64 characters with a digit and both cases (40+ of any, for the camelCase form) reads as a hash and isn't.
 // Not scanned, each with why:
-//   - tools/import-v1/: the old-world importer, whose job is to say which protocol it translates FROM and TO;
+//   - tools/import-v1/ and its tests (test/protocol/import-v1/): the old-world importer, whose job is to say which protocol it translates FROM and TO;
 //   - spec/history/: upstream's earlier protocol texts, kept verbatim as history;
 //   - long base64 / hex runs (signatures, keys, lockfile integrity hashes): a run like `…hWhV…` is not a name.
 // Other numbers aren't this gate's business: "v1" has nov1-check.ts, and IPv4 / a dependency's version / a format's
@@ -32,8 +32,8 @@ const EXEMPT = [["tools/import-v1/", "the old-world importer names the protocols
 // a word-start v/V + N not followed by another digit; or a camelCase part (lowercase, then V + N)
 // (a dotted number after it, `vN.4` or `vN.4.2`, is some tool's release, not the protocol)
 const NAME = new RegExp(`(?<![A-Za-z0-9])[vV]${N}(?![0-9]|\\.[0-9])|(?<=[a-z])V${N}(?![0-9])`);
-// the camelCase part again, on the line with only its 40+ runs blanked (a long identifier like useVNProtocolMode is blanked
-// as opaque below; a 40+ run is a signature or hash, never a name); it must be followed by a Word or end the identifier
+// the camelCase part again, on the line with only its 40+ runs blanked (an identifier of 20+ characters with a digit and
+// both cases is blanked as opaque below; a 40+ run is a signature or hash, never a name); it must be followed by a Word or end the identifier
 const CAMEL = new RegExp(`(?<=[a-z])V${N}(?![0-9])(?=[A-Z][a-z]|[^A-Za-z0-9]|$)`);
 // signatures, keys and integrity hashes: one unbroken run of 20+ base64/hex characters with no word separator in it
 const OPAQUE = /[A-Za-z0-9+/=]{20,}/g, LONG = /[A-Za-z0-9+/=]{40,}/g;

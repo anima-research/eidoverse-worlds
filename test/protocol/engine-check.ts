@@ -75,7 +75,7 @@ for (const ver of carried) {
 { const none = "no-such-engine@0";
   const same = scenarios.filter((s) => { const d = digestOf(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8"), none); return carried.some((ver) => pinned?.[ver]?.[s] === d); });
   check(`EN5 a scenario replays as the version it's given: as ${none}, which nothing carries, it reproduces no carried version's digest`, !same.length, same); }
-// a scenario must actually exercise the engine: every one ends with something at rest that was thrown
+// a scenario must actually exercise the engine: every one ends with something at rest
 for (const s of scenarios) {
   const v: any = simFold(readLog(fs.readFileSync(`${DIR}${s}.jsonl`, "utf8")), 1e15);
   check(`EN3 ${s} has a rest to hold the engine to`, (v.rested?.length ?? 0) > 0, v.rested);

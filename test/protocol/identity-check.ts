@@ -18,7 +18,9 @@
 //   ID  one account is the same identity in every world on the authority (per-world ids, review M6, withdrawn: R 10-06)
 //   TV  a tokens.json enrolment id must be ^[a-z0-9][a-z0-9_-]{0,31}$, and no other id may differ from it only in case (one id
 //       on two tokens is one account); a refused one proves nobody
-//   CS  a collision's tag on a display name carries nothing of the account, and is the same each time
+//   CS  two sections share these letters: a cookie upgrade to /ws from another site's page is refused (CS1–CS3, review
+//       full-260 L7), and a collision's tag on a display name carries nothing of the account, the same each time (CS1)
+//   NM  a typed name with markup characters is refused at the door; M3 the perf beacon keeps no raw address
 //   SA  stored accounts (bans, the directory, sessions) outside the account shapes are refused at boot, named, kept on disk
 //   AU  POST /auth makes sessions for people only: an agent kind, a non-human: sub, a login without worlds:join|spectate refused
 //   AC  one agent credential is one account at the ws join, httpCaller, provenAccount; /auth refuses it (accounts review 10-28)
@@ -111,7 +113,7 @@ for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [
   const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(sf, "utf8"));
   ok(/1 session\(s\) refused .*kept on disk until it expires/.test(said) && disk[A]?.sub === "agent:token:x" && disk[H]?.sub === "human:test:h",
     "C3s a refused session's boot line is true: after a save it is still on disk (until it expires), proving nobody", { said: said.slice(-300), keys: Object.keys(disk).length }); }
-// C3n: an empty HN_NATIVE_ORIGIN is unset for the native pairing page too (auth.ts reads "" as unset; it was `??` there)
+// C3n: an empty HN_NATIVE_ORIGIN is unset, for the socket guard (auth.ts ownOrigin) and for the native pairing page
 { const { ownOrigin } = await import("../../server/auth.ts"), was = process.env.HN_NATIVE_ORIGIN, req = new Request("http://self.test:8940/native/approve", { headers: { host: "self.test:8940" } });
   process.env.HN_NATIVE_ORIGIN = ""; const unset = ownOrigin(req); process.env.HN_NATIVE_ORIGIN = "https://x.test"; const set = ownOrigin(req);
   if (was === undefined) delete process.env.HN_NATIVE_ORIGIN; else process.env.HN_NATIVE_ORIGIN = was;
@@ -255,11 +257,11 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
   ok(ban.ok && g.closed != null && g.msgs.some((m) => m.type === "error" && /banned/.test(m.error ?? "")), "H4 a door ban removes the banned guest at once, telling it on its open socket", [ban, g.closed, g.msgs.filter((m) => m.type === "error")]);
   const again = await sock(S3.port); const ja2 = await again.join("meadow", "someone-new");
   ok(!ja2.snapshot && /banned/.test(ja2.errors.join(" ")), "H4 the banned guest reconnecting as a fresh guest is refused (their connection is named)", ja2.errors);
-  // world-bans reads the authority's moderation record (it read v1 state.bans: a world always said "nobody is banned")
+  // world-bans reads the authority's moderation record
   { const k = own.msgs.length; own.raw({ type: "world-bans" });
     const t = (await tryUntil("the ban list", () => own.msgs.slice(k).find((m) => m.type === "mod")?.text, { ms: 3000, step: 20 })) ?? "";
     ok(/banned from "meadow" \(1\)/.test(t) && /test/.test(t), "world-bans lists the authority's bans (who, and why)", t); }
-  // a live drag is presence gated on the AUTHORITY's role for the person's directory identity (it looked up their name).
+  // a live drag is presence gated on the AUTHORITY's role for the person's directory identity.
   // Proven accounts only here: this world now bans every guest from this address (H4 above)
   { const moss = await sock(S3.port); const jm = await moss.join("meadow", "Moss", { agentToken: "tok-moss" });
     await own.req("set", { id: "@world", component: `roles:${you(jm)}`, value: { role: "member" } });
@@ -270,9 +272,9 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const drags = own.msgs.slice(k).filter((m) => m.type === "drag").map((m) => m.pos[0]);
     ok(!!jm.snapshot && JSON.stringify(drags) === "[2]", "a visitor's live drag isn't relayed; a builder's is (the authority's role for their identity)", [drags, jm.errors]);
     moss.close(); }
-  // muting someone for EVERYONE is the owner's (it read v1 rights by typed name, and a role the v1 table didn't know,
-  // `none`, compared undefined < 2 → false: it passed). A listed member and an unlisted stranger (meadow's newcomer role,
-  // builder) both try; the owner's own mute is the control that the gate is reachable at all.
+  // muting someone for EVERYONE needs the mute permission, read from the authority's role (here only the owner holds it;
+  // RS2: a moderator does too). A listed member and an unlisted stranger (meadow's newcomer role, builder) both try; the
+  // owner's own unmute is the control that the gate is reachable at all.
   { const fern = await sock(S3.port); const jf = await fern.join("meadow", "Fern", { agentToken: "tok-fern" });
     const vis = await sock(S3.port); const jv = await vis.join("meadow", "Moss", { agentToken: "tok-moss" });
     const k = own.msgs.length;
@@ -282,7 +284,7 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
     own.raw({ type: "voice-moderate", id: "Wren", muted: false });
     const owners = () => own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
-    await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed 300 ms (windows-latest 10-29 read [] at 300)
+    await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed pause
     const all = owners();
     ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
       "voice-moderate (mute for everyone) is the owner's alone: a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
@@ -683,9 +685,8 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
     // the spectator path (directory spectatorName) is directory-check D12
   }
 
-// ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 human) leaves; a different account (TRUST_NAMES: a typed
-// name is local:<name>) joins wearing her name: no remembered pose (a held whisper was checked here too, until whisper
-// was removed, R 10-18) ----
+// ---- HB: presence by identity (pass 2 H-B). Marigold (an aid1 agent account) leaves; a different account (TRUST_NAMES: a
+// typed name is local:<name>) joins wearing her name: no remembered pose ----
 { const tokR = () => mint({ kind: "agent", name: "Marigold", sub: "agent:marigold@home.test" });   // an aid1 account (an agent: a person signs in by cookie)
   const r1 = await sock(srv.port); const j1 = await r1.join("garden", "x", { agentToken: tokR() });
   const name = j1.snapshot?.you ?? "marigold";

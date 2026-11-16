@@ -90,7 +90,7 @@ const code = (r: any) => r?.refused?.code;
 const show = (r: any) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 120)}`);
 const launchesOf = (s: any) => s.entries().filter((e: any) => e.kind === "physics" && e.verb === "launch");
 const shovesIn = (s: any, who: string) => (s.call(who, "inbox").messages ?? []).filter((m: any) => m.type === "body" && m.kind === "shove");
-// owner olive, builder bob, member vic; a world running eidosim; a crate (0.6 m) at the origin anyone may punt
+// owner olive, builder bob, members vic and ida; a world running eidosim; a crate (0.6 m) at the origin members may punt
 function cast(s: any, { physics = true } = {}) {
   s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["vic", "member"], ["ida", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });

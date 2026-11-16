@@ -128,7 +128,7 @@ try {
   check("SND1 a store sound 40 m away with radius 12 is exactly silent (gain 0), and the limiter is in the graph", far.g === 0 && far.limiter && far.ratio === 20, { far, me });
   await req("set", { id: "radio", component: "transform", value: { pos: [me[0] + 1, 0, me[2]], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
   check("SND2 …moved beside you, it's heard", await waitFor(`import('/lib/realize/sounds.js').then((s) => (s.tickSounds(), s._playing.get('radio').gain.gain.value > 0.1))`), await page(`const s = await import('/lib/realize/sounds.js'); return s._playing.get('radio')?.gain.gain.value;`));
-  // every create's reply is read, and a `rate` refusal (the busy meter's "slow down") is honoured: Windows run 43010421959 lost 10 unseen
+  // every create's reply is read, and a `rate` refusal (the busy meter's "slow down") is honoured, so no create is lost unseen
   let paced = 0; const refused: any[] = [];
   for (let i = 0; i < 34; i++) {
     const r = await tryUntil(`loop${i}'s create gets past the busy meter`, async () => { const r = await empty(`loop${i}`, [me[0] + 1 + i * 0.1, 0, me[2] + 1], { sound: { src: "eidoverse/assets/audio/crow_caw_single.wav", radius: 30 } });

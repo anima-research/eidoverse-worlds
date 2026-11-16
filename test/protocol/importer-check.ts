@@ -3,7 +3,7 @@
 //   IM-I1   the approval act is written inside translate: every change's cause is the act it answers
 //   IM-I25  the writer refuses an approval (validly countersigned) of a report that isn't this log's
 //   IM-I34  the dry-run report counts the renames the real run makes (and its hash is the writer's)
-//   IM-I6   a v1 ban (lowercased by the v1 fold) lands on the person the grant named, not a fresh identity
+//   IM-I6   a v1 ban (lowercased by the v1 fold) lands on the person the grant named: held by pretrans-check K22, no row here
 //   IM-I6b  …and two different names stay two people: v1 kept roles and acts under the exact name (Ann / ann. / ann_ /
 //           A.N.N, two emoji, Ann and ann with two accounts); a lowered ban key that two names share stays its own
 //   IM-H1   a long name and a raw name equal to its hashed form stay two (house 6340433633)
@@ -21,8 +21,6 @@
 //   IM-E2   a floor where the world already has a terrain: the terrain kept, the floor listed as the conflict
 //   IM-E3   (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor, listed under mapped
 //   IM-E5   two environments: only main's first (localeCompare id order) is drawn; the other rides imported, listed
-//   IM-E3   (#248) a floor below @world.bounds.min.y lowers it to 2 m under the floor, listed under mapped
-//   IM-E5   two environments: only main's first (localeCompare id order) is drawn; the other rides imported, listed
 //   IM-V1   main #248's vehicle → drive on its host + a helm child (station {action: 'drive', input: {move: 'drive'}, exit}); the rest imported, listed
 //   IM-V1b  a valid exit with no helm child rides imported:vehicle, listed (bot review 440)
 //   IM-I36  a spin's rpm is read as the renderer read it ((rpm ?? 6) × 6, coerced); a rate that isn't a number is carried
@@ -32,6 +30,10 @@
 //   IM-I3b  the old fold's whole import closure is frozen beside it (nothing it reads is a live runtime module)
 //   IM-I38  a lone surrogate anywhere in the old log refuses the import, naming the entry (enc maps every lone surrogate alike)
 //   IM-I14  a rest tick from an earlier epoch never dates a later epoch's rest
+//   IM-W1–6 main #248's water volume and air boxes → zone + water / water-exclusion children, sized and turned as main read them
+//   IM-U1   a key no component has rides imported:<component>, listed
+//   IM-I40–45 the ids the dry run reports are the ids the real run writes (keyed per host); the bind advice works as written
+//   F19     an entity id in the reserved person shape refuses the translation
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/importer-check.ts
 // @ts-nocheck
 import fs from "node:fs";

@@ -240,11 +240,11 @@ const authoritySrc = () => [readText("shared/protocol/authority.js"), ...fs.read
 
 // an offline agent body for the M rows (no server: the tool's own door, the agent's own state)
 async function animAgent() {
-  // offline: this sandbox drops a connection to a closed port rather than refusing it, so a fetch would wait out its own
-  // timeout; the M rows need no network (a rig or clip that can't be read is the case they run in)
+  // offline: a fetch to a closed port may be dropped rather than refused and wait out its own timeout, so fetch throws at
+  // once; the M rows need no network (a rig or clip that can't be read is the case they run in)
   globalThis.fetch = (async () => { throw new Error("offline (names-check)"); }) as any;
   const A: any = await import(TREE + "mcpl/agent.ts"); const T: any = await import(TREE + "mcpl/tools.ts");
-  const ag: any = new A.WorldAgent({ name: "Hep", world: "names-bench", url: "ws://127.0.0.1:9/ws" });   // nothing listens: every fetch refuses at once
+  const ag: any = new A.WorldAgent({ name: "Hep", world: "names-bench", url: "ws://127.0.0.1:9/ws" });   // nothing listens there (and fetch is stubbed above)
   const sent: any[] = [];
   ag.ws = { readyState: 1, send: (raw: string) => sent.push(JSON.parse(raw)) };
   const ctx = { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
@@ -574,7 +574,7 @@ const cases: Case[] = [
       const allowed = (h: string) => /^client\/lib\/ui\/ui-dock\.js:\d+: export const ACTIONBAR_OLD_ID = '\w+';$/.test(h)
         // the retired chat command's own row (typed, it says what replaced it) and its test (house config I19)
         || /^client\/lib\/ui\/commands\/registry\.js:\d+: (\/\/ whisper was removed \(R 10-18\); \/\w+ became \/anim|\{ name: '\w+', listed: false, help: '\/\w+ is \/anim now')/.test(h)
-        || /^test\/client\/retired-commands-test\.ts:\d+: /.test(h);   // its args, beside its alias   // a returning person's saved pins/frame carried once (gym 10-17 20:00)
+        || /^test\/client\/retired-commands-test\.ts:\d+: /.test(h);   // the test types the old word. (ACTIONBAR_OLD_ID, first: a returning person's saved pins/frame are carried once)
       const T: any = await import(TREE + "mcpl/tools.ts"); const OA = exists("shared/onceanim.js") ? await import(TREE + "shared/onceanim.js") : null;
       return { stray: hits.filter((h) => !allowed(h)).slice(0, 12), nStray: hits.filter((h) => !allowed(h)).length, kept: hits.filter(allowed).length, alias: T.resolveTool(EM), read: OA?.onceAnimOf({ [EM]: "wave" }) ?? null }; },
     good: (o) => o.nStray === 0 && o.kept >= 1 && o.alias === null && o.read === null },
@@ -626,7 +626,7 @@ const cases: Case[] = [
       const [G, OA, TS, FC, SB, CM, ME] = await Promise.all(["shared/grab.js", "shared/onceanim.js", "shared/terrainshape.js", "shared/forecast.js", "shared/protocol/sandbox.js",
         "shared/components.js", "shared/motioneval.js"].map(imp)) as any[];
       const T = 1_700_000_000_000; const keys = (src: string) => { const r = SB.runScript({ text: src, self: "k", key: "script:k", event: { on: "load" }, now: 0, seed: "0".repeat(64), st: { entities: { k: { born: 0, c: {} } }, diagnostics: [] } }); return r.ok ? r.ops[0].value : r; };
-      // [old key, what the reader gives the old spelling, what it gives today's]: old must be the absent/default reading, today's the value
+      // [old key, the reader's answer to the old spelling, the absent/default reading that must be, its answer to today's, the value that must be]
       const rows: [string, any, any, any, any][] = [
         ["grip fingers", G.gripOf({ pos: [0, 0, 0], fingers: "pinch" }).grasp, "fist", G.gripOf({ pos: [0, 0, 0], grasp: "pinch" }).grasp, "pinch"],
         ["packet's old key", OA.onceAnimOf({ [EM]: "wave" }), null, OA.onceAnimOf({ anim: "wave" }), "wave"],

@@ -29,9 +29,9 @@ for (const carries of [false, true]) { const W = carries ? "tray" : "book";
   const m = st(W).entities.mid.c; const fell = (g.notes ?? []).some((n) => n.fell?.includes("mid"));
   if (!carries) ok(stacked && g.ok && fell && !m.parent && m.transform.pos[1] < 0.05, "SE3 picking up the bottom of a stack takes that one: what the physics stacked on it falls off and lands (a book from a pile)", { stacked, grab: g.ok ?? g.refused, fell, mid: m.transform.pos, parent: m.parent });
   else ok(stacked && g.ok && !fell && m.parent?.to === "bot", "SE4 grabbable.carries ('can carry other entities', a tray): what rests on it comes along", { stacked, grab: g.ok ?? g.refused, fell, parent: m.parent }); }
-// R 10-10 evening (the gym log, 04:23Z): she picked up pyr-1; what was on it fell, and the settle parented it straight
-// back ONTO pyr-1, still standing in the log where it was picked up. She carried the stack off; thrown, the occupants were
-// rigid children of the thrown crate and sank into the ground with it.
+// what falls off a held thing must not settle back ONTO it (it still stands in the log where it was picked up): the stack
+// would be carried off, and thrown, its occupants would sink into the ground as rigid children of the thrown crate
+// (R 10-10, the gym).
 { const W = "held"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   // the gym's shape: 'top' sits across l and r; l is taken; top drops onto r and the floor-high step beside it ('step', as
   // high as l), so its footprint is level with where l still stands in the log
@@ -63,9 +63,8 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(on && g.ok && th.ok && d(vOf("a"), vOf("tray")) > 0.05 && d(vOf("b"), vOf("tray")) > 0.05 && d(vOf("a"), vOf("b")) > 0.05,
     "SE7 thrown with spin, each occupant leaves with its own velocity (the tray's at its spot, and a flick), so the load fans out from the hand", { on, grab: g.ok ?? g.refused, throw: th.ok ?? th.refused, v: { tray: vOf("tray"), a: vOf("a"), b: vOf("b") } });
 }
-// R 10-11 23:36/23:47: a domino that came to rest on a FALLEN domino was parented under it — a child of a rotated,
-// non-uniformly scaled parent is sheared ("splortched"). A rest never parents under a non-uniform host unless the child
-// sits square on its axes.
+// a child of a rotated, non-uniformly scaled parent is sheared (R 10-11: a domino at rest on a fallen one). A rest never
+// parents under a non-uniform host unless the child sits square on its axes.
 { const W = "shear"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "open", build: "member" } });
   const h = Math.sin(Math.PI / 12), c = Math.cos(Math.PI / 12);   // a wide flat slab turned 30° about up, static
   call(W, "rowan", "create", { id: "slab", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [0, 0, 0], q: [0, h, 0, c], scale: [2, 0.3, 1] } } });
@@ -73,8 +72,8 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   const chip = st(W).entities.chip.c; const q = chip.transform.q ?? [0, 0, 0, 1];
   const rested = restsOf(openWorld(root, W).entries).some((x) => x.id === "chip");
   ok(pu.ok && rested && chip.transform.pos[1] > 0.1 && !chip.parent, "SE8 a thing that settles on a turned, non-uniformly scaled slab is NOT its child (it would be sheared); it rests on it all the same", { punt: pu.ok ?? pu.refused, rested, parent: chip.parent ?? null, pos: chip.transform.pos, q }); }
-// R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box dropped from a height
-// falls and rests on the floor; a crate thrown onto a static mesh box rests on it and is parented to it
+// R 10-12 (primitives): a mesh thing is a body to eidosim like a modelled one. A dynamic mesh box punted up comes down
+// and rests on the floor; a crate dropped onto a static mesh box rests on it and is parented to it
 { const W = "mesh"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   call(W, "rowan", "create", { id: "fall", components: { mesh: { shape: "box", size: [0.5, 0.5, 0.5] }, physics: { kind: "dynamic", who: "member" }, transform: { pos: [4, 0, 4] } } });
   call(W, "vic", "move", { to: [4, 0, 3.3] }); const p = call(W, "vic", "punt", { id: "fall", v: [0, 2, 0] }); clock.t += 8000; call(W, "vic", "look", {});
@@ -117,10 +116,9 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(del.ok && (del.notes ?? []).some((n) => n.fell?.includes("crate")) && !(del.notes ?? []).some((n) => n.stamped) && !c5.parent && c5.transform.pos[1] < 0.05, "SE16 deleting the plinth's mesh re-drops the crate (it lands on the floor, unparented); the reply says unstamped, not stamped (r2 S2.3)", { notes: del.notes, pos: c5.transform.pos, parent: c5.parent ?? null });
   ok(q3.ok && on && sc.ok && (sc.notes ?? []).some((n) => n.fell?.includes("crate3")) && Math.abs(w4 - 0.3) < 0.05 && ws.every((v) => Math.abs(v - 1) < 1e-3), "SE13 shrinking a MODEL plinth's scale under a resting crate re-drops it too (its own scale stays 1, it is not sheared): lands at world y = 0.3", { walk, punt: q3.ok ? true : q3.refused, on, set: sc.ok ? sc.notes : sc.refused, pos: c4.transform.pos, worldScale: ws, parent: c4.parent ?? null }); }
 
-// R 10-17 20:05 (the gym log, pyr-7): a crate came to rest leaning across two crates and the settle parented it to ONE of
-// them (pyr-6). She took the OTHER one out from under it (pyr-7), and it stayed in mid-air: a grab let fall only its own
-// descendants and the unparented things over it, so a thing resting on it but parented elsewhere was never launched, and
-// the engine wakes a sleeper only when a moving body touches it (PHYSICS "Waking and knocking"), not when a support leaves.
+// a crate at rest leaning across two crates is parented to ONE of them; taking the OTHER out from under it must still let
+// it fall (R 10-17, the gym): the grab launches what rests on the taken thing though it's parented elsewhere, since the
+// engine wakes a sleeper only when a moving body touches it (PHYSICS "Waking and knocking"), not when a support leaves.
 { const W = "straddle"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
   call(W, "vic", "move", { to: [0, 0, -0.6] }); const p = call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); clock.t += 6000; call(W, "vic", "look", {});
@@ -134,8 +132,8 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(p.ok && ["l", "r"].includes(on) && g.ok && (g.notes ?? []).some((n) => n.fell?.includes("top")) && t.parent?.to !== other && wy < 0.3 && hatOn === "top" && !(g.notes ?? []).some((n) => n.fell?.includes("hat")) && worldPose(s, "hat").pos[1] < 0.7,
     "SE17 taking out the crate a straddling crate is NOT parented to still lets it fall: it rested on both, and with one gone it tips off (R 10-17, pyr-7 under pyr-9); what rides on it is not launched by the grab (it never touched the taken crate) but knocked down by the fall", { punt: p.ok ?? p.refused, on, other, y0, grab: g.ok ?? g.refused, notes: g.notes, parent: t.parent ?? null, worldY: wy, hatOn, hatY: worldPose(s, "hat").pos[1] }); }
 
-// review of PR #260 (writes.js:296): DELETING the crate a straddling crate is not parented to lets it fall too (it rested on
-// both). Before, delete skipped every resting thing with a parent, so it stayed asleep in mid-air at its old pose.
+// review of PR #260: DELETING the crate a straddling crate is not parented to lets it fall too (it rested on both; skipped
+// for having a parent, it would stay asleep in mid-air at its old pose).
 { const W = "straddle-delete"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
   call(W, "vic", "move", { to: [0, 0, -0.6] }); const p = call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); clock.t += 6000; call(W, "vic", "look", {});
@@ -148,8 +146,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
 // house answer on #260 (10-21): under an engine version this server doesn't carry (the owner named it), what only the engine
 // computes is refused, naming the engine and version, never quietly replaced. A straddler settled under the carried engine;
 // then the owner names a version this server doesn't carry. Deleting or grabbing the support it isn't parented to would set
-// it falling, which only that engine computes. Before: the delete skipped the wake and left it asleep in mid-air, the grab
-// set it down kinematically as if the world had no physics.
+// it falling, which only that engine computes (never a skipped wake, nor a kinematic set-down as if the world had no physics).
 for (const verb of ["delete", "grab"]) { const W = `straddle-foreign-${verb}`; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   box(W, "l", [-0.36, 0, 0]); box(W, "r", [0.36, 0, 0]); box(W, "top", [0, 0.6, 0]);
   call(W, "vic", "move", { to: [0, 0, -0.6] }); call(W, "vic", "punt", { id: "top", v: [0, 1.2, 0] }); clock.t += 6000; call(W, "vic", "look", {});
@@ -164,9 +161,9 @@ for (const verb of ["delete", "grab"]) { const W = `straddle-foreign-${verb}`; c
   ok(sw.ok && ["l", "r"].includes(on) && !r.ok && r.refused?.code === "foreign-engine" && r.refused.reason.includes(foreign) && r.refused.reason.includes("top") && /set one this server carries|carries/.test(r.refused.fix ?? "") && !openWorld(root, W).entries.slice(n0).some((e: any) => e.kind === "change") && !!st(W).entities[other],
     `SE${verb === "delete" ? 19 : 20} under a version this server doesn't carry, a ${verb} that would set a resting thing falling is refused, naming the engine and what would fall (only that engine computes the fall); nothing is ${verb === "delete" ? "deleted" : "picked up"}`, { sw: sw.ok ?? sw.refused, on, r, n0, n1, added: openWorld(root, W).entries.slice(n0).map((e: any) => [e.kind, e.verb, e.actor, JSON.stringify(e.body).slice(0, 160)]) }); }
 
-// pre-review of #260 (10-21): the same holds for a reshape. Resizing what a thing rests on re-drops it, which only the
-// world's engine computes; under a version this server doesn't carry it was set straight down kinematically (followups.js's
-// no-engine branch), a quiet substitute. Now it is refused like the delete and the grab, and the host keeps its shape.
+// the same holds for a reshape (pre-review of #260): resizing what a thing rests on re-drops it, which only the world's
+// engine computes; under a version this server doesn't carry it is refused like the delete and the grab (never set straight
+// down kinematically, a quiet substitute), and the host keeps its shape.
 { const W = "reshape-foreign"; call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   call(W, "rowan", "create", { id: "plinth", components: { physics: { kind: "static" }, mesh: { shape: "box", size: [1.5, 0.6, 1.5] }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   call(W, "rowan", "create", { id: "crate", model: "crate", components: { physics: { kind: "dynamic", who: "member" }, transform: { pos: [0, 1.0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });

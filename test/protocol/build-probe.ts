@@ -1,13 +1,13 @@
 // test/protocol/build-probe.ts — ship-list group B (10-07) in a real browser: one headless Chromium against a scratch
 // sequencer (test/harness/harness.ts scratchBench), run under the house guards like client-check:
-//   code/scripts/eido-probe.sh -C <worktree> -t 400 test/protocol/build-probe.ts      (test:protocol's `build-client` does, when the host sets PROTOCOL_HEADLESS_LOCK and PROTOCOL_PERF_GUARD: run.ts:27)
+//   code/scripts/eido-probe.sh -C <worktree> -t 400 test/protocol/build-probe.ts      (a host's own guard script, outside this repo; test:protocol's `build-client` runs guarded when the host sets PROTOCOL_HEADLESS_LOCK and PROTOCOL_PERF_GUARD: test/gate/run.ts)
 //   ST  a building edit lands on the SELECTED building (not the world's first), as ONE act with expect; Ctrl+Z (the
 //       editor's one undo) puts it back; after someone else changes it, Ctrl+Z writes nothing over their work; the
 //       Create panel has no second "undo building edit"
 //   GH  placing a model: Q / E turn it and , / . size it BEFORE the click (the status line says so), and the click
 //       places it turned and sized, as ONE create
-//   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); a
-//       visitor's use runs it; the Inspector lists it
+//   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); another
+//       person's use runs it (bob, a builder here); the Inspector lists it
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck

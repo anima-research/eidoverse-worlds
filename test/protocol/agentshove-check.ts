@@ -23,6 +23,8 @@
 //   AS12 a cup on a table: move {to: "cup"} is accepted and ends beside the table on the floor (review r6 L1)
 //   AS13 a child thing with no physics shape: its destination is its world position; a label two things share is refused with both (r6 L2; R 10-17)
 //   AS14 a misjudged crate rescaled in place is judged afresh (pure; review r6 L3)
+//   AS15 a rejoin keeps the gates the agent chose with consent: what it closed stays closed
+//   AS16 a walk asked while the track's speed allowance is spent waits for it to refill and arrives
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -91,7 +93,7 @@ try {
   ok((await ann.req("set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } })).ok, "(setup) the yard runs eidosim");
   // empty crates (20 and 30 kg): a body's push (BODY_MASS 70 kg, elastic) sends them well along; a full one wouldn't budge much
   // R 10-17: a writer never chooses an id: each thing is made with a placeholder and labelled with its scene name; the
-  // authority mints its id (ID[name]); N(name) reads the scene name as that id
+  // authority mints its id; N(name) reads the scene name as that id (IDS.of)
   const N = (n) => IDS.of(n);
   const mk = (name, args) => ann.req("create", { ...args, id: `$${name}`, components: { label: name, ...(args.components ?? {}) } });
   const crate = (id, model, pos, extra = {}, mass = 20) => mk(id, { model, components: { transform: { pos, q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "member", mass }, ...extra } });

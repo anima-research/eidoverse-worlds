@@ -1,9 +1,7 @@
 // test/protocol/mover-check.ts — ONE walker (shared/mover.js) for the agent, the human client and the authority.
 // usage: bun test/protocol/mover-check.ts
-//   D   drift guard: no caller carries locomotion numbers or stride math of its own; each reads shared/mover.js.
-//       Before the port this was red with three answers to "is a 0.7 m ledge a floor?": the agent had no floors at all
-//       (terrain only), the authority said yes (TRACK.step 0.8), the client said no (colliders STEP 0.55) — and three
-//       radii/heights (none / 0.2 × 1.7 / 0.32 × 1.9).
+//   D   drift guard: no caller carries locomotion numbers or stride math of its own; each reads shared/mover.js
+//       (three walkers once gave three answers to "is a 0.7 m ledge a floor?").
 //   M   the mover alone: a stride's length (walk, run, a cap), the floor rule (onto 0.7, onto 0.8, not 0.9), a wall
 //       (env.blocked refuses the step and the body stays put), arrival (tolerance, its bounds, no overshoot)
 //   A   agreement: every spot the mover walks an agent-shaped body to is a `move` the real authority accepts at the
@@ -15,8 +13,7 @@
 //       standing up on a sunk rock), hauling out onto a dock 0.5 m above the surface (both accept) / 0.6 m (both refuse,
 //       same stride), a dug pit's rim at the waterline (both accept) / a terrain bank 0.6 m above the water (both refuse);
 //       each with the mover's y and with the bed's (the agent's permit). GP: place {at}, create {at: [x, z]} and the old spawn's
-//       words mapped as create takes them (no alias) seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world. Red first: before the fix 19 G rows
-//       failed (G3 bed, G4, G5 bank, GP1-3, GP5); G1/G2-stone/G5-rim/GP4 were seen red under mutations (see the commit)
+//       words mapped as create takes them (no alias) seat a model's bottom on the heightfield (±1 cm), y 0 on a flat world.
 //   G6  the body's own size (holes r3 F2): 1.2 m / 2.2 m / scale 2 / scale 0.5 bodies, the same verdict from stepWalk and from
 //       the authority (which is sent the height and scale with the moves); a size's bounds
 //   G7  the teleport's swimmer box beside a dock, and a stride up a sloped rim judged from where it last swam (holes r3 F8:
@@ -154,11 +151,10 @@ if (M) {
     ok(near(c1.r, m1.r) && near(c1.tall, m1.tall) && near(c2.r, m2.r) && near(c2.tall, m2.tall) && near(c1.r, 0.2) && near(c1.tall, 1.7), "A5 the client's walking capsule is the mover's body (0.2 × 1.7, scaled)", { c1, m1 });
     ok(BS.canMantle === canMantle && canMantle(0.8, 1) === false && canMantle(0.81, 1) === true && canMantle(1.7, 1) === true && canMantle(1.71, 1) === false, "A5 the client's mantle starts where the mover's step ends (0.8 m) and reaches its height (1.7 m)");
   }
-  // A6 the speed track is paced by elapsed time, not by the wall clock (gate 18 navgrid/places too-fast): a host whose wall
-  // clock is stepped back (WSL2's sync pulls it back ~1.4 s every ~30 s on Burrow; NTP does it anywhere) froze the running
-  // server's clock — never backwards — and with it the bucket's refill, so a run's permits were refused too-fast. Run as the
-  // real server opens a world (openLive with no clock of its own), the wall stepped back 1.5 s after the arrival; 2 m every
-  // 0.4 s (5 m/s: under the track's 6) must each be accepted. Red before the fix at the third step (0.0 m left).
+  // A6 the speed track is paced by elapsed time, not by the wall clock: a wall clock stepped back (a host's time sync
+  // does it) froze the running server's clock — never backwards — and with it the bucket's refill, so a run's permits
+  // were refused too-fast. Run as the real server opens a world (openLive with no clock of its own), the wall stepped
+  // back 1.5 s after the arrival; 2 m every 0.4 s (5 m/s: under the track's 6) must each be accepted.
   { const { request } = await import(ENGINE + "shared/protocol/authority.js");
     const { openLive } = await import(ENGINE + "test/harness/labhost.ts");
     const root = scratch("mover-pace"), dir = path.join(root, "worlds", "pace"); fs.mkdirSync(dir, { recursive: true });
@@ -308,8 +304,8 @@ if (M) {
     const over = agree("hill", "ann", [10, 0], [19, 0.5], envH, { claim, h: hH, run: true });
     ok(over.accepted && over.strides > 15 && over.seen.minY < 0.01, `G1 [${claim}] down the far side at a run: the same`, over);
   }
-  // a terrain wall a stride can't climb: (both say no is not asked here: the mover's ledge on continuous ground depends on its
-  // stride length, which the authority never sees; see the report's out-of-scope list)
+  // a terrain wall a stride can't climb is not asked here: the mover's ledge on continuous ground depends on its stride
+  // length, which the authority never sees
 
   // ---- G2–G5 water: a dug pool. A bowl 3 m deep (radius 8) under level 0, a 0.5 m dock and a 0.6 m one in it, a pit with a
   // vertical rim AT the waterline, and a pond whose bank stands 0.6 m above its water
@@ -499,7 +495,7 @@ if (M) {
     ok(call("hm", "ann", "move", { to: [0.5, r3(hHM(0.5, 0)), 0] }).ok, "GH3 the grid here: the walk is accepted", null);
   }
 
-  // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the spawn alias seat a model's BOTTOM on the heightfield
+  // ---- GP placement: on the hill, place {at}, create {at: [x, z]} and the old spawn's words seat a model's BOTTOM on the heightfield
   // the old spawn {lib, x, z, yaw?, id}'s words as create takes them (the alias went, R 10-28; agenttools-check AT9 holds the same)
   const TOOL_ALIAS_ARGS = { spawn: (a: any) => { const id = a.id !== undefined ? { components: { label: String(a.id) } } : {};
     return Number.isFinite(a.yaw) ? { model: a.lib, ...id, place: { at: [a.x, a.z], facing: [a.x + Math.sin(a.yaw), a.z + Math.cos(a.yaw)] } } : { model: a.lib, ...id, at: [a.x, a.z] }; } };

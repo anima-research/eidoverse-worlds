@@ -74,7 +74,7 @@ const SL = await import(TREE + "shared/protocol/simlayer.js");
 const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("drive");
 
-const diskFails = { on: false };   // D14: the log's writes fail while on
+const diskFails = { on: false };   // D14, D18, D19: the log's writes fail while on
 function openWorld(name: string) {
   const logPath = path.join(root, "worlds", `${name}.jsonl`), storeDir = path.join(root, "store");
   const blobPath = (h: string) => path.join(storeDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);

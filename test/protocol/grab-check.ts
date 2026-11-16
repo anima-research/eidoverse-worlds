@@ -16,7 +16,9 @@
 //       socket that accepts it
 //   H   the hold record (slice 3): hand, grip or offset, a second hand; what every client is told
 //   O   a host that stopped while someone held a thing: settled at load as leave settles it
+//   RA  a log changed outside the purge rule: a thing whose transform the record lost is skipped, never moved
 //   U   use while held (down/up, each one act), the grab and release script events, the presence tier (pose.use)
+//   Y   a put, a drop and a handover keep the turn the holder gave the thing while carrying it (yaw)
 //   I   the inspector's Grabbable card: Add Component writes the defaults out of the data; the card's edits are checked
 //   A   what an agent reads: look, inspect and help
 //   F   the independent review's findings (10-06), each red before its fix
@@ -215,7 +217,7 @@ const withSockets = (s: any, actor: string, id: string, socks: Record<string, an
 const tf = (s: any, id: string) => s.w().state().entities[id]?.c.transform;
 const held = (s: any, id: string) => s.w().presence.holds[id] ?? null;
 const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" };
-// owner olive (the founder), builder bob, visitors vic and ann
+// owner olive (the founder), builder bob, members vic and ann
 function cast(s: any, sim = false) {
   s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["vic", "member"], ["ann", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
@@ -268,8 +270,7 @@ const cases: Case[] = [
       const p = s.call("vic", "put", { id: "lantern" });
       return { g: show(g), carrying: w1.carrying, p: show(p), at: tf(s, "lantern")?.pos, held: held(s, "lantern") }; },
     good: (o) => o.g === "ok" && o.carrying?.includes("lantern") && o.p === "ok" && Math.abs(o.at[2] - 2.5) < 1e-6 && o.at[1] === 0 && o.held === null },
-  // R 10-17 20:54 (the gym): "Any reason why the crates always spin around to orient the same way no matter how I put them
-  // down?" A carried thing turns with its holder (every client draws it so); a put lands it as carried. The facing is the
+  // Y: a carried thing turns with its holder (every client draws it so); a put lands it as carried. The facing is the
   // relayed pose's yaw (w.present, as server/world.ts gives it); qYaw of the landed rotation is the turn about up.
   { id: "Y1", what: "a put lands a carried thing turned by as far as its holder turned while carrying it (yaw only), not back as it was taken", run(s) { cast(s);
       const Q = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)].map((n) => +n.toFixed(6));
@@ -888,7 +889,7 @@ const cases: Case[] = [
       const acts = s.entries().filter((e: any) => e.kind === "request" && e.actor === "system").map((e: any) => e.verb);
       return { holds: Object.keys(w2.presence.holds), acts, carrier: carrier(s) }; },
     good: (o) => !o.holds.length && o.acts.includes("return-held") && !o.carrier.disagree },
-  // F5 (10-12): leave passes a banned holder (request() lets leave through), so F2 never reaches the refused-leave branch.
+  // Leave passes a banned holder (request() lets leave through), so F2 never reaches the refused-leave branch.
   // A leave IS refused for a holder the authority can't stamp (a presence file from before today's identity rule, or
   // hand-edited): that hold must still end, or it pins the thing to nobody forever.
   { id: "F2b", what: "an orphaned hold whose holder the authority refuses a leave for (not a stampable identity) still ends at load", run(s) { cast(s, true);

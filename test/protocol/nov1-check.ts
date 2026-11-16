@@ -40,7 +40,7 @@ const RULES = [
   [/\bworld_verb\b/, "names world_verb (the v1 verb tool)"],
   [/\b(foldEntry|stateToEntries|VERB_NEEDS|rightsIn|BehaviorHost|settleLease|publishEntry|onEntryCommitted)\b/, "a v1 fold / rights / log entry point"],
 ];
-// "v1" where it names something that isn't the old protocol: file → a pattern the whole line must match, and why
+// "v1" where it names something that isn't the old protocol: file (or path prefix) → a pattern found in the line, and why
 const UNRELATED = [
   ["server/directory.ts", /directory|v1 → v2|v1 keyed an agent/, "the authority directory's own file format version (v1 → v2), not the protocol"],
   ["shared/seatcore.js", /SEAT_METHOD/, "a seat-measuring method's name"],

@@ -1,6 +1,6 @@
 // The hostile-log suite (PROTOCOL §6 proof 1): every fold probe from 25d and 25e, run against the baseline fold
 // (lab commit 4f62913, the control arm: only with PROTOCOL_LAB, see common.ts) and the strict fold. Each probe must be BAD
-// on the baseline and GOOD now, or be marked `held`: a regression guard, not judged on the baseline (it held there, or has no such code). Ported from the protocol lab's hostile-check.js @ 11db981; only paths changed.
+// on the baseline and GOOD now, or be marked `held`: a regression guard, not judged on the baseline (it held there, or has no such code). Ported from the protocol lab's hostile-check.js @ 11db981; S24 and the R… guards (review of #260) were added here.
 // usage: bun test/protocol/hostile-check.ts [--verbose]
 // @ts-nocheck — lab code, kept as written
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)

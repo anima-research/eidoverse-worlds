@@ -1,5 +1,5 @@
 // test/protocol/shove-check.ts — body shove at the authority: a punt {contact: true} that a walking body sends when it walks
-// into a loose thing (shared/shove.js), through the real door. The shove has its own gate (shoveGate in authority.js) in place
+// into a loose thing (shared/shove.js), through the real door. The shove has its own gate (shoveGate in authority/manipulate.js) in place
 // of the kick's reach; every other gate is the punt's.
 //   bun test/protocol/shove-check.ts                 every case
 //   bun test/protocol/shove-check.ts --only S1,S3    just those

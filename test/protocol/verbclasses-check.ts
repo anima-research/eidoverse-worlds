@@ -1,8 +1,7 @@
-// test/protocol/verbclasses-check.ts — the verb classes have ONE home (shared/protocol/verbclasses.js). The authority's
-// READ_ONLY and the wire's spectator READS/PERSON_ACTS used to be four literals in two files that had already
-// drifted (DEBT-SURVEY 10-12 #10). This pin holds the classes as they stood on 2026-10-12 — the wire's set and the
-// authority's differ only by the wire's own answers (`wait`/`whois`, which write nothing to the log but aren't the
-// authority's reads); since 10-12 a spectator may read `scripts`/`effect` too (no read is gated) — and refuses two copies.
+// test/protocol/verbclasses-check.ts — the verb classes have ONE home (shared/protocol/verbclasses.js): the authority's
+// READ_ONLY and the wire's WIRE_READS/PERSON_ACTS, once literals in two files that drifted. This pins each class, holds
+// that the wire's reads are the authority's plus the wire's own answers (`wait`/`whois`, which write nothing to the
+// log), that a spectator may read every read (none is gated), and that neither consumer spells a second copy.
 //   bun test/protocol/verbclasses-check.ts
 import { readFileSync } from "node:fs";
 import { ENGINE } from "../gate/common.ts";
@@ -14,7 +13,7 @@ const diff = (a: Set<string>, b: Set<string>) => new Set([...a].filter((v) => !b
 const same = (a: Set<string>, b: Set<string>) => a.size === b.size && [...a].every((v) => b.has(v));
 const sub = (a: Set<string>, b: Set<string>) => [...a].every((v) => b.has(v));
 
-// the classes as of 2026-10-12 (behaviour pinned; a change here is a decision, with R)
+// the pinned classes (a change here is a decision, with R)
 const READ_ONLY_PIN = new Set(["help", "look", "inspect", "measure", "find", "lint", "history", "schema", "scripts", "modlog", "bans", "effect"]);
 // LOOK_ONLY (what a role-less `none` might still do) left with none (R 10-21): no rung sits below member
 const WIRE_READS_PIN = new Set(["look", "inspect", "measure", "find", "lint", "history", "schema", "help", "wait", "whois", "modlog", "bans", "scripts", "effect"]);

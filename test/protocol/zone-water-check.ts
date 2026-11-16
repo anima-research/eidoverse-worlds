@@ -278,7 +278,7 @@ await C("ZM", "math-test on zone-built bodies: wet/dry boundaries, a pocket, pat
   s.call("create", { id: "sea", components: { transform: tf([0, -10, 0]), zone: box([100, 20, 100]), water: {} } });
   s.call("create", { id: "box1", components: { transform: tf([0, -5, 0]), zone: box([4, 4, 4]), "water-exclusion": {} } });
   const v = Z.waterVolumes(Z.zonesOf(s.st())), water = v.waters[0], [b1] = v.airs;
-  { const bad = W.waterParams({ size: [NaN, 0, Infinity], waves: [null], absorption: [NaN, 0, 1] });   // was water/math-test
+  { const bad = W.waterParams({ size: [NaN, 0, Infinity], waves: [null], absorption: [NaN, 0, 1] });
     ok("malformed size/absorption come out finite", bad.size.every(Number.isFinite) && bad.absorption.every(Number.isFinite)); }
   eq("above", W.mediumAt([0, 2, 0], [water], []), null); eq("outside", W.mediumAt([70, -5, 0], [water], []), null);
   eq("in the pocket", W.mediumAt([0, -5, 0], [water], [b1]), null); eq("beside it", W.mediumAt([4, -5, 0], [water], [b1]), water);

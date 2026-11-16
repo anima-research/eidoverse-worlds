@@ -1,12 +1,12 @@
 // test/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
-//           (everyone builder, rank and all; the cap at builder)
+//           (once its upgrader claims it, everyone builder, rank and all; with no owner, roles.js caps everyone at member)
 //   W1a-c   #260 item 1: a person's own watch grant (closed or open old world) is refused by name, never dropped or widened
 //   W1d     @36: a person's own role none in an owned world is a ban (its end kept) in the moderator log: still kept out
-//   P17a-f  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
-//   B24a-f  name-only server bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
+//   P17a-h  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed
+//   B24a-g  name-only server bans: bound to main's one account at boot (warned: check it), else kept pending, listed, never
 //           enforced, liftable; a malformed record is refused and kept on disk
-//   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is carried as sky.audio
+//   F50     the report says what becomes of vehicle minY/maxY/probes and water speed; sky audio is mapped (@world.sky.audio), not carried
 //   F50b    the vehicle walls are pinned at [0, y, 0], spanning every legal x/z: a v1 move re-places nothing
 //   F50c    the vehicle walls are locked (builder strength), and the report says so
 //   F51     @37: main's slow water is physics-volume {kind: speed, modes: [swim]} on the water's zone; no drag field anywhere

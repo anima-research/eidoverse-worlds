@@ -1,6 +1,6 @@
 // test/protocol/parity-check.ts — one kind of participant (research agent/human parity, Part B; R 10-17 12:42: no
-// different identities by kind; a status is declared, never inferred). Each row red first (against dfd5107c); every D/M/V/X/W
-// row held by a mutation below, except D7 (no mutant) and the P rows (they pin main's words).
+// different identities by kind; a status is declared, never inferred). Every row is held by a mutation below,
+// except D7 and O1b (no mutant) and the P rows (they pin main's words).
 //   bun test/protocol/parity-check.ts                 every row
 //   bun test/protocol/parity-check.ts --only D1,M1    just those
 //   bun test/protocol/parity-check.ts --tree <dir>    against another checkout in this layout (a mutant); one from before the
@@ -13,7 +13,9 @@
 //       `agent` key is none; the reserved-name rule stays; the log holds no declaration; the agent and the browser read it
 //   M   one declaration channel: `move {client}` is gone (unknown-arg; the authority keeps no client kind; nobody sends it)
 //   V   the spoken trio is any participant's (guard: no kind gate; the say doc says so)
-//   X   the spec and docs say it: §6a's six rules, §8's minted-shaped stand-ins, verbspec's arrival sentence, stale comments
+//   X   the spec and docs say it: §6a's six rules, §8's minted-shaped stand-ins, verbspec's arrival sentence, §1's say and
+//       WIRE.md's `declares`
+//   W   whois names no kind;  O   occupy is the one word family (vacated, occupants);  P   main's words still teach
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -103,7 +105,7 @@ const section = (md: string, head: RegExp) => { const i = md.search(head); if (i
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const root = scratch("parity");
 
-// ---------------- a real server from the tree (D rows) ----------------
+// ---------------- a real server from the tree (D and W rows) ----------------
 const pair = generateKeyPairSync("ed25519");
 const spki = pair.publicKey.export({ type: "spki", format: "der" }) as Buffer;
 const ISSUER = `ed25519:${spki.subarray(spki.length - 32).toString("base64url")}`;
@@ -160,7 +162,7 @@ async function seen(name: string, extra: any) {
 const undeclared = (o: any) => !!o.arrive && !!o.present && !o.arrive.hasDeclares && !o.arrive.hasAgent && !o.present.hasDeclares && !o.present.hasAgent;
 const declared = (o: any, v: string) => o.arrive?.declares === v && o.present?.declares === v && !o.arrive.hasAgent && !o.present.hasAgent;
 
-// ---------------- the authority from the tree (M, V rows) ----------------
+// ---------------- the authority from the tree (M, V, O rows) ----------------
 const D = await import(TREE + "shared/protocol/authority.js");
 D.fixtureIds?.(true);
 const F = await import(TREE + "shared/protocol/fold.js");

@@ -24,7 +24,7 @@ function session(d, name) {
 }
 const ok = (r) => r?.ok === true, crashed = (r) => !!r?.crashed, refused = (r) => r?.ok === false;
 const show = (r) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 90)}`);
-// a world: owner olive, builder bob, visitor vic (zed is a stranger)
+// a world: owner olive, builder bob, member vic (zed is a stranger)
 function cast(s) {
   s.call("olive", "create-world", { title: s.name });
   s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
@@ -212,7 +212,7 @@ const oracles = [
   { id: "H5c", what: "read oracle: the same, through set's `base` (a direct read, not even a guess)", run(s) { cast(s);
       const made = s.call("olive", "create", { id: "diary", model: "crate", place: { at: [3, 3] }, components: { text: { text: "Janus's Kept Kittycat" } } });
       // The base a stale refusal needs is free: inspect returns `versions` for every component, and history is
-      // READ_ONLY + GHOST_OK. It must be genuinely OLD (the check is lt.seq > base), so read a version, change the
+      // READ_ONLY. It must be genuinely OLD (the check is lt.seq > base), so read a version, change the
       // text, and ask with the version from before: zed never needs rights to learn the new value. The lock goes on
       // LAST — a locked thing refuses even its owner's edit, so locking first would make the setup, not the door, fail.
       const v = s.call("zed", "inspect", { id: "diary" });
@@ -225,8 +225,8 @@ const oracles = [
     // and the refusal is the stale branch itself (`stale`, carrying version and by, no text), not one ahead of it (bot #511)
     baseBad: (o) => o.leaked === true, nowGood: (o) => ok(o.made) && ok(o.locked) && ok(o.changed) && o.stale && o.probe.refused?.code === "stale" && typeof o.probe.refused?.version === "number" && !!o.probe.refused?.by && o.leaked === false },
   { id: "H5d", what: "a 32-deep parent chain refuses as a LIMIT, not as a loop (a guard: the message must tell the truth)", guard: true, run(s) { cast(s);
-      // one batch: 40 creates, then 39 parentings. The engine's own walk (`ancestors`) stops at 32, so the 33rd
-      // link is refused — it is a depth limit and nothing is a cycle, which "loop" used to claim.
+      // two batches: 40 creates, then 39 parentings. The engine's own walk (`ancestors`) stops at 32, so the 33rd
+      // link is refused: a depth limit (`deep`), nothing is a cycle.
       const made = s.call("olive", "batch", { requests: Array.from({ length: 40 }, (_, i) => ({ verb: "create", args: { id: "n" + i, model: "crate", components: { transform: { pos: [i * 3, 0, 0] } } } })) });
       const par = s.call("olive", "batch", { requests: Array.from({ length: 39 }, (_, i) => ({ verb: "set", args: { id: "n" + (i + 1), component: "parent", value: { to: "n" + i } } })) });
       // and a REAL cycle still says loop

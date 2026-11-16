@@ -1,9 +1,9 @@
 // test/protocol/r10-check.ts — review round 10 (REVIEW-holes-r10, REVIEW-scars-r10, REVIEW-claims-r10, 2026-10-17): the
-// fixes, each row red first (against caab0868) and most held by a mutation below (F4 has none).
+// fixes, each row red first (against caab0868) and most held by a mutation below (F4 and the X rows have none).
 //   bun test/protocol/r10-check.ts                 every row
 //   bun test/protocol/r10-check.ts --only S1,A1    just those
 //   bun test/protocol/r10-check.ts --tree <dir>    against another checkout's shared/ + mcpl/ (a mutant)
-//   bun test/protocol/r10-check.ts --mutants       remove each fix in turn (a copy of shared/ and mcpl/): its rows must go
+//   bun test/protocol/r10-check.ts --mutants       remove each fix in turn (a copy of shared/, mcpl/ and the client files a mutant edits): its rows must go
 //                                                  red; a no-op control mutation must stay green
 // Rows:
 //   S   a sit is within reach (holes M1): from afar it is refused (no unlogged teleport past the spawn rule); a seat that
@@ -14,6 +14,7 @@
 //   F   the authority's consequences are follow-ups (scars M3): resettle is the system's act; a delete's set-down passes no lock
 //   U   vacated: sent when a socket goes or is switched off (holes L6); the browser and agent stand at its `at` (claims O1);
 //       a follow-up on the seat isn't an edit of the seat's own motion (claims O3)
+//   E   the stand tile pressed and held escapes a script seat, as X held does (claims R6)
 //   L   lows: undo drops references to things gone since (holes L1); a prototype key isn't a body verb (holes L2)
 //   X   the spec says it (holes M4 / scars M1, M2, M5; claims R1–R7)
 // @ts-nocheck
@@ -30,7 +31,6 @@ import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 
-// [name, file under the tree, find, replace, rows]
 // [name, file under the tree, find, replace, rows]
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["a sit from anywhere", "shared/protocol/authority/use.js", "if (!inOccupyReach(from, sp, OCCUPY_REACH.lag)) refuse(", "if (false) refuse(", ["S1"]],

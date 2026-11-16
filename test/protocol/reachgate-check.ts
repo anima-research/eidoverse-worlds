@@ -95,7 +95,7 @@ const head0 = w.log.seq;
   ok(out4 && !out4.reach, "RG4b a block beats Vic's touch gate on: Sly's hand is still stripped", out4);
   req(vic, "consent", { touch: false }); req(vic, "consent", { unlist: sly.actorId }); }
 
-// RT (parity with main, localbody.js:371/:381: the target was told "X tried to knock you over"): a refused act on my body is
+// RT (parity with main, where the target was told "X tried to knock you over"): a refused act on my body is
 // said to ME once per asker per C.TRIED_NOTE_MS, in the body inbox, naming who and which gate; never more often
 { const told = (c, k) => c.got.slice(k).filter((m) => m.type === "body-inbox").flatMap((m) => m.messages).filter((m) => m.type === "body-refused");
   const rav = person("Rav", "rv", [0, 0, 20]), ike = person("Ike", "ik", [0.6, 0, 20]);
@@ -316,7 +316,7 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
 let skipped = null; const SKIP = Symbol("skip");
 // ---- AG: an agent's reach through a real server (a real mcpl/agent.ts WorldAgent): the reply says what the world showed ----
 //   AG1  a stranger agent's hand on a person's chest_front: no frame the person receives carries it, and the reach reply
-//        says it wasn't shown and why (it used to say the hand was reaching)
+//        says it wasn't shown and why
 //   AG2  once the person puts the agent on her allow list (touch gate still off), a hand on their shoulder relays and the reply doesn't claim a refusal
 { const { ENGINE } = await import("../gate/common.ts");
   const W = path.join(root, "ag"), OPT = path.join(root, "agopt"); fs.mkdirSync(W, { recursive: true }); fs.mkdirSync(OPT, { recursive: true });

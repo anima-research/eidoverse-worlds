@@ -22,10 +22,9 @@ ok(Math.abs(d.shown - 1100) < 1, "C3 …and at 2 s it is there", d);
 noteRoundTrip(t - 8, t + 3000 - 4, t);        // a 1.9 s correction (and the best rtt yet): a resync, taken at once
 serverNow(); const e = clockDebug();
 ok(Math.abs(e.shown - 3000) < 1, "C4 a correction over half a second is taken at once", e);
-// a clock that STEPS (this box's wall clock jumps +1.6 s every ~32 s against the page's monotonic one; a laptop waking from
-// sleep does the same): every older sample now names an offset the new one proves impossible (two honest samples agree
-// within their half round trips), so they are retired, not kept as the minimum-RTT "best" for the next 8 asks (80 s of
-// every flight drawn behind the canonical sim: the crate waited in the hand, shiplist PR0/PR1/AC2, 10-18)
+// a clock that STEPS (a host whose wall clock is stepped, a laptop waking from sleep): every older sample now names an
+// offset the new one proves impossible (two honest samples agree within their half round trips), so they are retired,
+// not kept as the minimum-RTT "best" for the next 8 asks (every flight would be drawn behind the canonical sim)
 const s0 = localNow();
 for (let i = 0; i < 8; i++) noteRoundTrip(s0 - 2, s0 + 3000 - 1, s0);   // a full window at +3000, rtt 2
 noteRoundTrip(s0 - 2.4, s0 + 4620 - 1.2, s0);                          // the clock steps +1620; this sample's rtt is a hair worse

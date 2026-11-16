@@ -8,6 +8,8 @@
 //   AP7  a row's "ends ▸" changes only the end (merge): a role someone changed since the panel painted is kept; "no end" removes it
 //   AP5  a refusal (an identity this server doesn't know) is shown in the panel in the authority's words; nothing written
 //   AP6  a non-owner sees the list read-only; pressing add anyway is refused by the authority, and the words are shown
+//   AP8  adding someone already listed with a timed grant, for "no end", removes the end
+//   AP9  the guests select shows member when no guests role is written; AP10  Places' Save keeps the spawn's other fields
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";

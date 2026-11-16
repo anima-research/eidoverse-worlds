@@ -12,6 +12,9 @@
 //   E   events: say, enter/leave, changed, wake                    P   params (seat poses read param.<name>)
 //   C   a script's body effects meet each body's consent (L6)      V   translated v1 behaviours say they need re-installing
 //   H   source hygiene and syntax at upload and install            S   the server: no v1 BehaviorHost; timers tick; use → script
+//   I   isolation (a killable process), the script duty            W   world.use (WL: a script on @world)      N   world.nearby
+//   PA  pausing adopts nothing        Q   the script count and purged installs        UQ  a stored q is a unit quaternion
+//   M   the v1 SDK's three examples, ported
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -167,7 +170,7 @@ if (argv.includes("--mutants")) {
   console.log(`[scripts-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  // the base commit's shared/ (default: the authority before scripts, where every server case must FAIL). --control <commit>
+  // the base commit's shared/ (default: the authority before scripts, where every authority case must FAIL). --control <commit>
   // runs against a later base (a round's start) and lists what is red there, with --want <ids> naming what must be
   const at = opt("control") && !opt("control")!.startsWith("--") ? opt("control")! : BASE; const want = opt("want")?.split(",") ?? null;
   const d = scratch("ctl"); const r0 = archiveTo(ENGINE, at, ["shared"], d);
@@ -196,7 +199,7 @@ const AU = await tryImport(TREE + "shared/protocol/scriptaudit.js");
 const ONLY = opt("only")?.split(",") ?? null;
 // the edit UI's schema and the view record it reads (shared code: from the same tree as the authority, so a mutant reaches it)
 const await_ES = await import(TREE + "shared/editschema.js"), await_RV = await import(TREE + "shared/protocol/view.js");
-// the process-wide script duty (DUTY, authority.js) is about real seconds; these cases fire hundreds of activations in a tight
+// the process-wide script duty (DUTY, authority/scripts.js) is about real seconds; these cases fire hundreds of activations in a tight
 // loop on a simulated clock, so it's opened wide here, and I2 sets it on purpose
 const DUTY0 = D.setScriptDuty ? D.setScriptDuty({ maxMs: 1e9 }) : null;
 // the warm processes started and SAID ready (the pool's own count), not a fixed 800 ms: on a slow host QuickJS takes longer
@@ -239,7 +242,7 @@ const comp = (s: any, id: string, c: string) => s.w().state().entities[id]?.c[c]
 const kinds = (L: any[]) => L.reduce((m: any, e: any) => ((m[e.kind] = (m[e.kind] ?? 0) + 1), m), {});
 const isScriptActor = (a: any) => typeof a === "string" && a.startsWith("script:");
 const ZERO = "sha256:" + "0".repeat(64);
-// owner olive (the founder), builders bob and ann, visitor vic
+// owner olive (the founder), builders bob and ann, member vic
 function cast(s: any, extra: [string, string][] = []) {
   s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "member"], ...extra]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
@@ -1336,7 +1339,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const adopt = s.call("olive", "adopt", { id: "qd", script: "p" });
       return { act, why, bobSet: bobSet?.ok ? "ok" : bobSet?.refused?.code, ownerSame: ownerSame?.ok ? "ok" : ownerSame?.refused?.code, afterSame, adopt: adopt?.ok ? "ok" : adopt?.refused?.code, after: view()?.status }; },
     good: (o) => o.act > 0 && /adopt/.test(o.why ?? "") && !/set it again/.test(o.why ?? "") && o.bobSet === "rights" && o.ownerSame === "ok" && o.afterSame === "not-installed" && o.adopt === "ok" && o.after === "active" },
-  // ---------------- M: v1 parity: the v1 SDK's three examples (sdk/examples), ported to this API ----------------
+  // ---------------- M: v1 parity: the v1 SDK's three examples (today's kit: scripting/examples), ported to this API ----------------
   { id: "M1", what: "v1 parity: bellkeeper (use → a pendulum motion + say), greeter (enter → say, a count), lighthouse (a timer that speaks only if someone's here), ported", run(s) { cast(s);
       if (!D.presenceEvent) return { absent: true };
       // bellkeeper: kv → a component in scope; emit('motion') → set motion (pivot is its own component now); emit('say') → say
@@ -1394,7 +1397,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const named = s.call("vic", "use", { id: "gong", action: "chime" }), bare = s.call("vic", "use", { id: "gong" }), plain = s.call("vic", "use", { id: "rock", action: "chime" });
       return { named: code(named), why: named.refused?.reason, fix: named.refused?.fix, bare: code(bare), plain: code(plain) }; },
     good: (o) => o.named === "no-runtime" && /main's behaviour 'chimer'/.test(o.why ?? "") && /re-install it as script:chimer/.test(o.fix ?? "") && o.bare === "no-runtime" && o.plain === "no-action" },
-  // ---------------- Q: a stored rotation is a unit quaternion, whoever writes it ----------------
+  // ---------------- UQ: a stored rotation is a unit quaternion, whoever writes it ----------------
   { id: "UQ1", what: "a script's set of a transform with a scaled q stores the unit rotation, and the auditor's re-run agrees with the log", run(s) { cast(s);
       s.call("bob", "create", { id: "vane", model: "crate", place: { at: [0, 0] } });
       install(s, "bob", "vane", "turn", onUse(`world.set("self", "transform", { pos: [0, 0, 0], q: [0, 0, 0.5, 0.5], scale: [1, 1, 1] });`), { scope: { ids: "self", comps: ["transform"] }, on: ["use"] });
@@ -1604,8 +1607,9 @@ serverCases.push({ id: "S2", server: true, what: "the server: while a hostile sc
 // ---------------- run ----------------
 const SUITE = suite("scripts-check", { cap: 700 }); let na = 0;
 // The I rows test isolation itself (a killed process, the deadline held against a native builtin). A host without it
-// (Windows: shared/protocol/sandbox.js fifoOk) runs scripts in-process, where those guarantees are the documented gap, so
-// they print OPTIONAL with the reason (the gate receipt shows them). I0 keeps that from hiding a regression: isolation must be on everywhere else.
+// (Windows: shared/protocol/sandbox.js fifoOk) runs scripts only in-process, on the operator's EIDO_SANDBOX=inprocess,
+// where those guarantees are the documented gap, so they print OPTIONAL with the reason (the gate receipt shows them).
+// I0 keeps that from hiding a regression: isolation must be on everywhere else.
 const { SANDBOX: SBX } = await import("../../shared/protocol/sandbox.js");
 const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" && process.env.EIDO_SANDBOX !== "inprocess";
 SUITE.ok(isolating || !mustIsolate, `(I0) isolation is on on every host but Windows (here: ${process.platform}, isolated ${isolating})`);

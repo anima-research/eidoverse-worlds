@@ -15,6 +15,8 @@
 //   T8f a person's founding, a fork (its copied blobs too) and a reset sync each directory a new name lands in (house 6344940039)
 //   T8e …and the directory that holds its name is synced after, as are directories made for it (none on win32, where the
 //       server can't sync a directory)
+//   T8g founding writes the ledger row before the world lands (a second row named T8g: a fork counts imported roles)
+//   T8h an unreadable founders ledger refuses the founding and is left as it was
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
@@ -54,7 +56,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "  try { syncDir(dir); } catch (e) { console.warn(`[world] reset:", "  try { } catch (e) { console.warn(`[world] reset:", ["T8f"]],
   ["CONTROL (no-op: must stay green)", "server/request-capability.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
-// T8c and T8e check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
+// T8c, T8e and T8f check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
 // they would turn red have nothing to catch, so their mutants are skipped
 const DIR_SYNC_ROWS = new Set(["T8c", "T8e", "T8f"]);
 if (process.argv.includes("--mutants")) {

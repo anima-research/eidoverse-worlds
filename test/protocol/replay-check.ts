@@ -1,17 +1,15 @@
 // Fold a world from its log using ONLY shared/protocol/fold.js: no door, no catalogue, no blob store (L1: the fold reads
-// only entries). Ported from the protocol lab's replay-check.js @ 11db981, which printed; this one asserts. The fixture is
-// the lab's cottage world, built through the lab authority; its digest is pinned (the Python reference reader's since the
-// 10-07 names pass, not the lab's: below), so it also checks the engine's hash shim against an independent hash.
+// only entries). The fixture is the lab's cottage world, built through the lab authority; its digest is pinned to the
+// Python reference reader's (below), so it also checks the engine's hash shim against an independent hash.
 // usage: bun test/protocol/replay-check.ts
 import fs from "node:fs";
 import { readLog, fold, digest } from "../../shared/protocol/fold.js";
 import { ENGINE } from "../gate/common.ts";
 
-// The lab's own digest was 22a27ab0…7f663b (bun replay-check.js in the lab @ 11db981; unchanged by the §3d genesis
-// migration, lab 62301b8). The names pass (2026-10-07) rewrote two things in the fixture: genesis states {dialect, v}
-// (so the world id moved; the digest leaves it out), and @world.about's text no longer names the protocol's number,
-// which IS state. The new pin is that state's digest, confirmed independently by the Python reference reader (hashlib):
-// python3 spec/conformance/reader.py spec/conformance/lab-cottage.jsonl --json → the same digest.
+// The pin is the fixture state's digest, confirmed independently by the Python reference reader (hashlib):
+// python3 spec/conformance/reader.py spec/conformance/lab-cottage.jsonl --json → the same digest. It moved from the lab's
+// own 22a27ab0…7f663b in the names pass: @world.about's text no longer names the protocol's number, which IS state
+// (genesis also began stating {dialect, v}, which moved the world id; the digest leaves that out).
 const PINNED_DIGEST = "b17bf98f909347df1024b39ad4cc044b5f08a713f2d4765fb0d3c767253971b8";
 const raw = fs.readFileSync(ENGINE + "spec/conformance/lab-cottage.jsonl");
 const entries = readLog(raw);

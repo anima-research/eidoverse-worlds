@@ -1,7 +1,8 @@
 // test/protocol/reset-race-check.ts — a request that was awaiting warm() when the world was reset must refuse, not
 // append the old world's line into the new world's file (review 10-14 C1). The slow warm is simulated: the request's
 // await is held by a gate; everything after it (the retired log, the real resetWorld, the real file) is production code.
-// Also: a reset that fails at its last step leaves the world live (PR), what a reset keeps and who founds it (RS), durable poses (DW).
+// Also: a connection superseded or closed while its request awaits never writes (SR), a reset that fails at its last step
+// leaves the world live (PR), what a reset keeps and who founds it (RS), durable poses (DW).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/reset-race-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -53,8 +54,8 @@ if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR,
   REQUEST_MESSAGES["world-reset"]({ c, ws: c.ws }, { name: "reopen" });
   const e = sent.find((m) => m.type === "error")?.error ?? "";
   const archived = fs.readdirSync(path.join(process.env.WORLDS_DIR, "reopen")).some((n) => n.startsWith("reset-"));
-  // (review of the house's PR #9: "stays closed" wasn't true: the World stayed registered and a reload was served the erased
-  // world's state from memory) it leaves the registry, everyone present reloads, and the next join opens the fresh world from disk
+  // it leaves the registry (left registered, a reload was served the erased world's state from memory), everyone present
+  // reloads, and the next join opens the fresh world from disk
   const { worlds, getWorld } = await import("../../server/world.ts");
   const gone = !worlds.has("reopen"); const next = gone ? getWorld("reopen") : null;
   const fresh = !!next && next !== rw && !next.log.retired && !!next.log.live.worldId && next.log.live.worldId !== erasedId;   // the fresh world, not the erased one
@@ -73,9 +74,9 @@ if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR,
   ok(threw === 1 && !err && sent.some((m) => m.type === "world-reset") && sw.log.requestSync(owner, "create", { components: { description: "after" } })?.ok === true,
     "RR6b the fresh log opened but the scripts didn't start (the injected failure ran once): the reset stands, everyone present is told, and the fresh world takes requests", { threw, err, sent: sent.map((m) => m.type), fresh }); }
 
-// ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260, requestwire.ts:135;
-// Antra's repro: the old tab's request still committed, wrote:true, ok reply). The await is held by a gate in front of the
-// real WorldLog.request (warm, the recheck, requestSync); the wire handler is the real REQUEST_MESSAGES.request.
+// ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260: the old tab's
+// request still committed). The await is held by a gate in front of the real WorldLog.request (warm, the recheck,
+// requestSync); the wire handler is the real REQUEST_MESSAGES.request.
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "tabs"), "tabs", "olive");
   const tw = new World("tabs");
@@ -92,7 +93,7 @@ if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR,
   hold(); const oldTab = tab(1); const n0 = tw.log.live.entries.length;
   // the setup is asserted: a wait that expires (tryUntil → undefined) must not read as "the request was inside"
   let e0 = entered; send(oldTab, "a1", "from-the-old-tab"); const in1 = await tryUntil("the old tab's request is inside the await", () => entered > e0, { ms: 2000, step: 10 });   // it is inside the await now
-  oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts admitJoin)
+  oldTab.c.superseded = true; tw.clients.delete(oldTab.c); tab(2);   // the takeover path (server.ts installJoin)
   release(); await tryUntil("the old tab's request is answered", () => oldTab.replies.length, { ms: 2000, step: 10 });
   const r1 = oldTab.replies[0];
   ok(in1 === true && r1?.ok === false && r1?.reply?.refused?.code === "superseded" && !described("from-the-old-tab") && tw.log.live.entries.length === n0,

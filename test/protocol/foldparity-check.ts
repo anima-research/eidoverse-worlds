@@ -17,7 +17,7 @@
 //       the whole log, equal to the fold; a stale-guests seed is dropped with it
 //   FP7 a torn last line after a tail boot's covered line is cut, as readLogBytes cuts it
 //   FP8 a log replaced under a live world: a prefix read throws, never reads the other file
-//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the tail boot must be faster);
+//   FP9 boot time, RSS and the first write on a generated large log, with and without the cache (printed; the row counts lines left on disk, not ms);
 //       a reader walking the prefix loads the rest at once (lazylog BULK)
 //   FP10 the readers rewritten not to scan (creatorOf, modlog, chat pages, client cuts) answer as their whole-log formulas
 //   FP11 the boot sweep's script peek (durable.ts fileIncludes) reads in chunks and finds a needle across a chunk's edge

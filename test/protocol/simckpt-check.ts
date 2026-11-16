@@ -1,5 +1,5 @@
 // test/protocol/simckpt-check.ts — periodic sim checkpoints (authority checkpointSim's tail bound; server policy SIM_CHECKPOINT_EVERY):
-// a physics world that builds for a long time without launches still checkpoints once something has moved, so a boot replays at most N entries into the engine once it rests; a live flight defers the checkpoint (PC3).
+// a physics world that builds for a long time without launches still checkpoints once something has moved, so a boot replays at most N entries into the engine once it rests; a live flight defers the checkpoint (no row here drives one).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/simckpt-check.ts   (PC_ENTRIES=205000 for the full bench; PC_FROM=<world dir>
 //        derives the bench from that world's log instead of a generated one, as the 10-28 gym measurement did)
 //   PC1 a physics world with no launches gets a checkpoint once N entries follow the last one, and again after N more
@@ -13,6 +13,7 @@
 //   PC7 the fold cache covers the last checkpoint, so a boot's cut takes its state from the resume (no second fold)
 //   PC8 an older checkpoint (time inside the blob) still boots
 //   PC9 log-size cost on a busy world (printed) and boot before/after on a generated large log (printed; the replay must shrink)
+//   PC10 a boot's clock starts at the checkpoint's: nothing is written behind the engine's clock
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";

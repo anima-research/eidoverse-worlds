@@ -2,8 +2,8 @@
 // REVIEW-consent-permissions-gaps-2026-10-17; R 10-17 02:45 "I like all of these rulings"). Every row was red first.
 //   bun test/protocol/scars-check.ts                 every row
 //   bun test/protocol/scars-check.ts --only L1,O2    just those
-//   bun test/protocol/scars-check.ts --tree <dir>    against another checkout's shared/ (a mutant)
-//   bun test/protocol/scars-check.ts --mutants       remove each fix in turn (a copy of shared/): its rows must go red; a
+//   bun test/protocol/scars-check.ts --tree <dir>    against another checkout's shared/, server/, spec/ and docs/ (a mutant)
+//   bun test/protocol/scars-check.ts --mutants       remove each fix in turn (a copy of those four): its rows must go red; a
 //                                                    no-op control mutation must stay green
 // Rows:
 //   L   a refused request is logged as its verb, its argument NAMES and its code; the values go to an in-memory ring
@@ -15,7 +15,8 @@
 //       and unknown never restamps an owner-chosen build, never flips a creator's rights, never crashes undo
 //   G   the refusal-code registry: every code the authority can refuse with is registered (and every registered one not marked reserved is used)
 //   V   every verb has a VERBSPEC row
-//   X   the spec pins: checkpoint reserved, the readback paragraph, §7a pre-avatar MUSTs, the names reserved, the ladder rule
+//   X   the spec pins: checkpoint reserved, the readback paragraph, body ownership's one rule (the rest is direction in
+//       docs/design/AVATAR-DIRECTION.md), the names reserved, the ladder rule, what a refused act keeps (§7, §8)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -291,7 +292,7 @@ const cases: Case[] = [
   { id: "V1", what: "every verb the authority answers has a VERBSPEC row (names and types; help is generated from it)", run() {
       const names = D.VERB_NAMES ?? []; const V = (globalThis as any).__VS?.VERBSPEC ?? {};
       return { n: names.length, rowless: names.filter((v: string) => !V[v]), extra: Object.keys(V).filter((v) => !names.includes(v) && v !== "*") }; },
-    // the floor catches an empty or broken verb list, not a count: recut B4 removed ghost/unghost (51 → 49)
+    // the floor catches an empty or broken verb list, not a count
     good: (o) => o.n >= 40 && !o.rowless.length && !o.extra.length },
   // ---------------- X: the spec, the registry, the ladder ----------------
   { id: "X1", what: "checkpoint: the name is reserved (gov.py refuses it by name), PROTOCOL §2 pins no unexercised shape", run() {

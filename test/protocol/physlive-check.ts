@@ -5,9 +5,11 @@
 //   S   shapes: the authority stamps physics.shape (its own measurement) so a thrown thing flies in a live world; statics too
 //   K   punt: the kick that physobj offered, as a door tool (reach, rights, locks, in the air, no physics)
 //   R   release pose: throw/drop take the hand's pos (what a VR or desktop hand holds), checked for reach
+//   W   a tracked body's refused steps (too far, into a solid, a refused arrival) are presence: never written to the log
 //   Q   one clock per request: a rest's digest agrees with any carrier re-folding the log, even when the wall clock moves
 //   F   the client's fold (shared/protocol/replica.js): adopt a cut (mid-flight too), fold the authority's entries, and its own
 //       presentation flight comes to rest bit for bit where the authority logs the rest
+//   U   a purge: the live engine's world follows the strict fold, and a fresh replay agrees with it
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -197,7 +199,7 @@ function playground(clock = "pinned") {
 
 // ---- F: the client's fold ----
 {
-  // a world, a cut taken mid-flight (as the server's clientCut would be), then the authority's later entries folded in
+  // a world, a cut taken mid-flight (as the server's clientSnapshot would be), then the authority's later entries folded in
   const { call, w, L, at } = playground("ticking");
   call("rowan", "grab", { id: "ball" }); call("rowan", "throw", { id: "ball", v: [0.3, 3, 2.5] });
   const pre = call("rowan", "look", {}, 120);

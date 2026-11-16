@@ -11,9 +11,9 @@
 // fallback (C10, C11 assert it).
 //
 // Harness: test/shared/blueprint-test.ts's pattern (a scratch world dir, identities with roles, requests through request(), the
-// fold read back), over server/livehost.ts openLive rather than test/harness/scratchworld.ts's filehost, for two reasons
+// fold read back), over openLive (server/livehost.ts, through test/harness/labhost.ts) rather than test/harness/scratchworld.ts's filehost, for two reasons
 // the list needs: scripts run only with a sandbox (openLive's default is QuickJS, SANDBOX), and blobs are PER WORLD DIR
-// there (<dir>/blobs, livehost.ts:52) where filehost's store is per ROOT (filehost.ts:26) — C2 is a test of exactly that.
+// there (<dir>/blobs, livehost.ts blobDir) where filehost's store is per ROOT (filehost.ts storeDir) — C2 is a test of exactly that.
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -132,7 +132,7 @@ let H = "";
   if (red("C5")) USE(W, "copy-a", "increment", "bld-a");
   const E = W.entries().slice(n0).map((e: any, i: number) => ({ seq: n0 + i, kind: e.kind, actor: e.actor, verb: e.verb, cause: e.cause, body: e.body }));
   const use = E.filter((e) => e.kind === "request" && e.verb === "use"), scr = E.filter((e) => e.kind === "request" && e.verb === "script"), ch = E.filter((e) => e.kind === "change");
-  // §8: the visitor's use is ITS act; the activation is one act (actor script:<entity>, cause = the use, naming the sponsor and
+  // §8: the builder's use is ITS act; the activation is one act (actor script:<entity>, cause = the use, naming the sponsor and
   // the trigger) plus ONE change caused by it. Three entries, each once; every cause chain ends at the person.
   check("C5 a builder's use lands as one use act (actor), one script act caused by it (sponsor + trigger named), and ONE change caused by that: three entries, nothing else",
     r.ok && r.script?.status === "ran" && E.length === 3 && use.length === 1 && use[0].actor === "bld-a" && scr.length === 1 && scr[0].actor === "script:copy-a" && scr[0].cause === use[0].seq
@@ -202,7 +202,7 @@ let H = "";
   const hist = W.call("history", { id: "copy-a", limit: 50 }, "bld-a");
   const insp = W.call("inspect", { id: "copy-a" }, "late-comer");
   // the record's BYTES remain in the dir's blob store (a blob is purged by deleting its file, §12); what makes a hash usable here
-  // is @world.blueprints:<hash> (isPublished, authority.js:2340), so the refusal reads `not-published` — the registry entry is gone
+  // is @world.blueprints:<hash> (isPublished, authority/blueprints.js), so the refusal reads `not-published` — the registry entry is gone
   check("C11 the blueprint record deleted from @world and the world reopened: it opens, the copy stands with its text, a new create {from} of that hash is refused (not-published: the registry has no such key), history intact",
     del.ok && st.status === "ok" && !(key in st.entities["@world"].c) && !!W.c("copy-a") && textOf(W, "copy-a") === "2" && mk.ok === false && ["not-found", "not-published"].includes(mk.refused?.code)
     && (hist.entries ?? []).some((h: any) => h.by === "script:copy-a") && insp.ok && W.entries().length === n0 + (del.skipped ? 0 : 2) + 1,   // the delete: its act + its change; the refused create: its act (§7: a refusal is an act carrying it)

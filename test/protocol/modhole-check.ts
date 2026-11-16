@@ -1,7 +1,6 @@
-// test/protocol/modhole-check.ts — nothing a world sends runs as code in a visitor's browser (security pass 3; the
-// private world-mods note of 09-28: on upstream main a world could offer a client mod, and one "run once" could make
-// itself a permanent autorun local mod). This branch removed world-offered mods (client/lib/mods.js header); this check
-// keeps it that way.
+// test/protocol/modhole-check.ts — nothing a world sends runs as code in a visitor's browser. A world doesn't offer
+// client mods (client/lib/mods.js header): were one offered, a single "run once" could make itself a permanent autorun
+// local mod. This check keeps it that way.
 //
 //   MH1  every place the client turns something into running code — a dynamic import of a non-literal, eval, new
 //        Function, importScripts, a Worker from anything but a fixed URL, a blob: URL — is on the list below, with what
@@ -11,6 +10,7 @@
 //   MH3  nothing in the client's message handling (net.js and the modules it emits to) touches the mod store or runner
 //   MH4  EW.mods.put and EW.mods.run need your hand (transient user activation), and no world-offer code is left
 //   MH5  the server has no message that carries a client mod
+//   MH6  every client HTML escaper covers & < > " and '
 // usage: bun test/protocol/modhole-check.ts   (static, a second; the browser half is xss-probe's D stage)
 // @ts-nocheck
 import fs from "node:fs";

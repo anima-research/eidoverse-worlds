@@ -14,7 +14,7 @@
 //                                                              kernel as the first deployed one. No old reader was deployed, so its
 //                                                              vectors are synthetic: <dir>/vectors.json, each {name, entries, verdict},
 //                                                              the verdict the deployed reader gives (negatives, and a clean control)
-//   bun test/protocol/kernel-check.ts --pin --ack "<why>"     a SCOPE EXTENSION only (10-18: model, roles, access joined the kernel):
+//   bun test/protocol/kernel-check.ts --pin --ack "<why>"     a SCOPE EXTENSION only (as roles and access joined the kernel, 10-18):
 //                                                              every change is a kernel component entering the pin with the shape
 //                                                              spec/registry-pin.json already pinned for it; no byte changes meaning, so
 //                                                              no translator or vectors are asked; the ack is, and the pin records the names
@@ -22,10 +22,6 @@
 // command's alone, which refuses without the companions and RECORDS them in the pin; K3 then verifies them at every gate run
 // (the changelog line is in the file, the translator moved, the vectors still run old-red/new-green), so dropping a companion
 // after the re-pin is red too. Every row here was red before its code.
-// Live proof (2026-10-18, on c36fc283): ENVELOPE + "note" → K2 red; `--pin` and `--pin --ack` refused naming the missing
-// companions; with TRANSLATOR @14 → @15 and spec/kernel-vectors/proof-note (an act carrying note: old reader
-// malformed:unknown-field, new reader ok) the re-pin wrote the `kernel:` changelog line and recorded the companions, and the
-// check was 10/10; then the changelog line dropped → K3 red; the translator bump reverted → K3 red; everything reverted → 10/10.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -149,7 +145,7 @@ async function companionsHold(pin: any, log: string) {
   if (c.firstDeploy) { const d = c.firstDeploy.vectors ?? {}; const r = runFixtures(d.dir ?? ""); const names = d.names ?? [];
     const fx = fixturesHold(r.ran) && names.length === r.ran.length && names.every((n: string) => r.ran.some((x: any) => x.name === n));
     return [line && fx, { line, firstDeploy: r.ran ?? r.why }]; }
-  // a scope extension recorded (model, roles, access entered 10-18): its names are still the kernel's, in code and in the registry pin
+  // a scope extension recorded (as roles and access entered, 10-18): its names are still the kernel's, in code and in the registry pin
   const rp = JSON.parse(read("spec/registry-pin.json")); const now = KS.kernelPinOf();
   const scope = !c.scope || (Array.isArray(c.scope.names) && c.scope.names.length >= 1 && c.scope.names.every((n: string) => KS.KERNEL_COMPONENTS.includes(n) && now[n]?.status === "trial-kernel" && rp[n]?.status === "trial-kernel" && CAT.statusOf(n) === "trial-kernel"));
   // a kernel CHANGE recorded (translator + vectors): the translator moved at re-pin time AND is still at least there now (a bump
@@ -213,7 +209,7 @@ await C("K10", "the registry pin agrees: roles and access are trial-kernel there
   return [KS.KERNEL_COMPONENTS.every((n: string) => rp[n]?.status === "trial-kernel") && ["transform", "parent", "model"].every((n) => rp[n]?.status === "trial") && /roles: status trial → trial-kernel/.test(log) && /access: status trial → trial-kernel/.test(log)
     && ["transform", "parent", "model"].every((n) => new RegExp(`${n}: status trial-kernel → trial`).test(log)), Object.fromEntries(["transform", "parent", "model", ...KS.KERNEL_COMPONENTS].map((n: string) => [n, rp[n]?.status]))]; });
 
-// ---- the three that joined (reviewer item 5: model, roles, access): a mutated shape of each is a kernel change, red without the companions ----
+// ---- the components that joined (reviewer item 5: roles, access; model left again with C11b): a mutated shape of each is a kernel change, red without the companions ----
 const mut = (f: (now: any) => void) => { const now = KS.kernelPinOf(); f(now); return now; };
 await C("K11", "a mutated roles or access SHAPE is a kernel change (a roles field dropped, access's join retyped: refused without the three companions); the ladder's VOCABULARY is the registry's since C11: a permission dropped, a reserved id freed, a rank moved, each is a registry break (pinBreaks) refused a re-pin without --ack, and NOT a kernel diff", () => {
   const ms: [string, any][] = [["roles.fields.until", mut((n) => { delete n.roles.fields.until; })], ["access.fields.join", mut((n) => { n.access.fields.join = "int"; })]];

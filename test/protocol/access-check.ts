@@ -16,7 +16,7 @@
 //   A7  a reset keeps an invite-only world's door and the people it lists
 //   A8  a ban in the moderator log closes the door after a restart too, before the world is loaded: a banned caller
 //       still listed in an invite-only world gets 404 from /geom and /heightmap, finds it on no map, and /access says
-//       none — the refusal never loads the world (Antra's review of f91840e5 P1: /geom was 200); a kick closes no door
+//       none — the refusal never loads the world; a kick closes no door
 //   A12 (security review 10-18 H1) an operator's SERVER ban binds to the target's account NOW: a present target is removed and
 //       can't reconnect (4006, "these worlds"), an absent one can't join; the record carries the account; unban lifts it
 //   A12b a server ban by u- identity binds the absent account; days gives it an end; unban by identity lifts it
@@ -55,7 +55,7 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
-  const port = freePort(9410);   // the shared picker (setup-check took 9410 from a parallel shard, 10-30)
+  const port = freePort(9410);   // the shared picker: a fixed port races a parallel shard
   const logf = path.join(root, `srv-${port}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   for (let i = 0; i < 80; i++) { await sleep(150); if (p.exitCode != null) return { port, proc: p, dead: true, log: logf };
@@ -88,7 +88,7 @@ ok(!srv.dead, "(setup) the server is up", srv.dead ? fs.readFileSync(srv.log + "
 
 const own = await sock(srv.port); const jo = await own.join("keep", "Ann");
 ok(!!jo.snapshot && jo.snapshot.yourRights?.role === "owner", "(setup) Ann joins as the owner", [jo.errors, jo.snapshot?.yourRights]);
-// people the world has seen (a role names an identity it knows): Rowan (an enrolled agent), Pip (a person), Moss
+// people the world has seen (a role names an identity it knows): Rowan, Moss, Wren and Fen (enrolled agents), Pip (a typed name)
 const ids: Record<string, string> = {};
 for (const [name, extra] of [["Rowan", { agentToken: "tok-rowan" }], ["Pip", {}], ["Moss", { agentToken: "tok-moss" }], ["Wren", { agentToken: "tok-wren" }], ["Fen", { agentToken: "tok-fen" }]] as const) {
   const s = await sock(srv.port); const j = await s.join("keep", name, extra); ids[name] = you(j); s.close(); }
@@ -304,7 +304,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     "A3 an idle world's door is read from its log (not loaded): a stranger's map lacks it; a member's shows it, members, enter", [anon.map((x) => x.name), member, a1.body]);
   // A14 (security review 10-18 M6): Fen's grant has ended but no sweep ran (the world is unloaded, the log still holds it): the reads refuse
   await pause("Fen's timed grant runs out, with no sweep to write its end", Math.max(0, fenUntil + 51 - Date.now()));
-  // …by the SERVER's clock: WSL's wall clock steps back ~1.4 s now and then (identity RS3, 10-22), so a test-side pause can end
+  // …by the SERVER's clock: WSL's wall clock steps back ~1.4 s now and then, so a test-side pause can end
   // while the server still reads the grant as live; it then answers Fen 'enter', serves her /geom, and that loads the world.
   // /access is a door read (it loads nothing): wait until it says the grant is over
   await tryUntil("the server's own clock has passed Fen's until", async () => (await accessAs(s2.port, "keep", "tok-fen")).body?.code === "world-unavailable", { ms: 5000, step: 100 });
@@ -337,7 +337,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
       "A10 an old native session (nativeWorld water) reads another world as its account does (/geom 200, on /worlds, /access enter): no per-world fence",
       { geom: [gN, gF], map: [mapN.map((x) => x.name), mapF.map((x) => x.name)], access: [aN, aF] }); }
   try { s2.proc.kill(); await s2.proc.exited; } catch {} }
-{ // A11 (review of PR #260, server.ts:742): a server operator (SERVER_OPERATORS) has a NARROW, RECORDED repair capability through the
+{ // A11 (review of PR #260; server/requestwire.ts operator-repair): a server operator (SERVER_OPERATORS) has a NARROW, RECORDED repair capability through the
   // authority: Fen, an operator not listed in the invite-only world, gets in (the bypass) but an ordinary write is still the
   // world's to judge; operator-repair lifts Moss's ban and lists Fen, each the operator's own act / record marked operator;
   // a non-operator's operator-repair is refused
@@ -464,7 +464,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const byOther = bansLiftedBy(R, "aid1:https://id.example.org:agent-7f3a-2", ["aid1:https://id.example.org:agent-7f3a-2"], fold);
   ok(byAgent.length === 1 && byAgent[0] === "old-agent" && byOther.length === 0,
     "A13c …and an unban by the aid1 account it holds against lifts it, while an unban by another account lifts nothing", { byAgent, byOther }); }
-// ---- A13c (door): the operator's global unban, as the door runs it, lifts a ban from before accounts by the aid1 account
+// ---- A13c (door): the operator's server-unban, as the door runs it, lifts a ban from before accounts by the aid1 account
 // it holds against, and by a name that account wears here; a third ban stays ----
 // ---- D12 (door, review of #260, server I14): a spectator's first sight under a 64-character name another account wears
 // is recorded as that name cut to keep a tag from its own account, never as the other account's name ----
@@ -484,7 +484,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const body = await sock(s.port); const jb = await body.join("d12", LONG);   // its account, local:l…l, wears the long name
   const watch = await sock(s.port); const jw = await watch.join("d12", LONG, { spectate: true, account: "watcher" });   // local:watcher
   const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
-  await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });   // the spectator's record is written
+  await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
   ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
@@ -507,7 +507,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   ok(op === other.pub && held === other.pub && after.operator?.pub === other.pub && after.holders?.["u-cccccccccccccccccccc"]?.pub === other.pub,
     "A13d …a key another process wrote after the handle opened is taken, not minted over", { op, held, after }); }
 // ---- A13f–A13h (review of #260, server I5): custody's lock. A lock file is "<pid> <nonce>", linked into place whole
-// (server/custody.ts take); this process holds one the same way, so the children meet a lock held by a live process ----
+// (server/durable.ts take); this process holds one the same way, so the children meet a lock held by a live process ----
 const custodyTs = path.join(ENGINE, "server/custody.ts");
 const lockText = (pid) => { const nonce = crypto.randomBytes(8).toString("hex"); return { nonce, text: `${pid} ${nonce}` }; };
 // take `name` as custody does (fails if it's there), or put a new lock in its place in one step (rename over it)
@@ -571,7 +571,7 @@ const gonePid = await exitedPid();
   const metRight = !!(await tryUntil("the waiter finds the removal right held", () => marks(dir, "met-right") === 1, { ms: 60_000, step: 50 }));   // its own sign: it found the right held
   const kept = textOf(lock).endsWith(stale), waited = kid.exitCode === null;
   const mine = replaceLock(lock); fs.rmSync(`${lock}.${stale}`); const n0 = triesOf(dir, 0);
-  const tried = !!(await tryUntil("the waiter meets the live lock three more times", () => triesOf(dir, 0) >= n0 + 3, { ms: 60_000, step: 50 }));   // …and has met the live lock three times since
+  const tried = !!(await tryUntil("the waiter meets the live lock three more times", () => triesOf(dir, 0) >= n0 + 3, { ms: 60_000, step: 50 }));
   const live = textOf(lock).endsWith(mine), stillWaiting = kid.exitCode === null;
   fs.rmSync(lock, { force: true }); const got = await resultOf(kid);
   ok(metRight && kept && waited && tried && live && stillWaiting && got.code === 0 && !got.error && typeof got["u-p0-0"] === "string" && keysIn(f).holders?.["u-p0-0"]?.pub === got["u-p0-0"] && !besideKeys(f).length,
@@ -610,7 +610,7 @@ const gonePid = await exitedPid();
 { // A9 (final review M1): an invite-only door is not opened by default-role / role-defs powers handed to everyone
   const { entryFor } = await import(path.join(ENGINE, "server/access.ts"));
   const { effectiveOf } = await import(path.join(ENGINE, "shared/protocol/roles.js"));
-  // an owner, or roleIdOf caps everyone at member; the stranger holds the default role, member
+  // an owner, or roleIdOf caps everyone at member; the stranger holds the world's default role
   const base = { access: { join: "listed" }, "roles:u-owner000000000000000000": { role: "owner" } };
   const cases = [
     ["default-role {can:{kick}}", { ...base, "default-role": { role: "member", can: { kick: true } } }],

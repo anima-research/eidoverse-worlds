@@ -9,7 +9,9 @@
 //   M   translated mounts in the authority's shape: where the authority sees a riding thing, place-on and overlap warnings
 //   L   the live world (server/livehost.ts) equals a whole-log re-read after every request: state, sim, the id index
 //   C   the engine catalogue's shape (an off-centre GLB box, measured surfaces) places things where they rest
-//   X   the compatibility projection: the v1 verbs it sends, folded by the client's own fold, reproduce it
+//   K, V  the client's own fold (replica.js) equals the server's after every request; the view diff says what changed
+//   and, each under its own heading below: NR UM E/D/R (expect, duplicate, redo) SKY S3 pivot TN UR HG SW DU WT HS H7 LT SK
+//       T0/T1 CP CA IM BZ MS SKE LK122 SR LG TC BT RA OP ST RF RX CAR SP G SRU F RP
 // @ts-nocheck
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
@@ -247,7 +249,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     { const r = tc("olive", "set", { id: "plinth", component: "trusted-components", value: good }); ok(code(r) === "world-only", "TR6 trusted is a world setting: refused on a thing", r.refused); }
     ok(tc("olive", "delete", { id: "@world", component: "trusted-components" }).ok && TW().entities["@world"].c["trusted-components"] === undefined, "TR7 the owner removes the list (stop trusting the last one)");
   }
-  { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
+  { // translation: a v1 lock and a v1 guard both become `lock` {rank: 'builder'}; guards are counted
     const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
       { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
       { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "statue", lib: "crate", pos: [1, 0, 1] } },
@@ -344,8 +346,8 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(mk.ok && u.r.ok && u.r.undid?.act === mk.act && u.st.entities.tbl.c.label === undefined, "UM6 control: a live act in the translated world undoes as before", [mk.refused, u.r.refused ?? u.r.undid]); }
 
 // ---- M: translated mounts in the authority's shape (research 37, slice 3 #3) ----
-// translate-v1@1 carried v1's parent record and v1's own pos; the authority reads transform as LOCAL to parent, so it saw a
-// riding crate wherever its unused pre-mount pos pointed. Now the authority must see it where v1 draws it.
+// the authority reads transform as LOCAL to its parent: it must see a riding thing where v1 draws it, not at its unused
+// pre-mount pos
 { const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
     { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
     { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
@@ -629,7 +631,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(request(openWorld(root, "c8"), "ann", "create-world", {})) === undefined && code(request(openWorld(root, "c8"), "ann", "create", { id: "q", model: "constructor" })) === "shape", "C8 the lab catalogue no longer answers prototype names (model 'constructor')");
   ok(LAB_CATALOGUE.get("toString") === undefined, "C9 LAB_CATALOGUE.get('toString') is undefined");
   // C10-C12: a target is aimed at by its BODY, not its origin (agent lab 10-04: Wren's chair faced air, Juniper's swing
-  // hung from a corner). "far" is a desk whose origin sits 2.5 m off its body: its box spans x 2..3.2 in its own frame.
+  // hung from a corner). "far" is a desk whose origin sits off its body: its box spans x 2..3.2 in its own frame (centre 2.6).
   const cat2 = { get: (n) => ({ "lib/far.glb": { label: "far desk", box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], size: [1.2, 0.75, 0.8], surfaces: [] },
       "lib/chair.glb": { label: "chair", box: [[-0.25, 0, -0.25], [0.25, 0.9, 0.25]], size: [0.5, 0.9, 0.5], surfaces: [] },
       "lib/gate.glb": { label: "frame", box: [[4, 0, -0.1], [6, 2.2, 0.1]], size: [2, 2.2, 0.2], solids: [[[4, 0, -0.1], [4.1, 2.2, 0.1]], [[5.9, 0, -0.1], [6, 2.2, 0.1]], [[4, 2.1, -0.1], [6, 2.2, 0.1]]], surfaces: [] },
@@ -694,7 +696,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(v9.r.ok && v9.has("tbl", "born"), "V9 undo brings it back: 'born' again", v9.d);
   ok(diffView(held, viewState(w.state())).things.length === 0 && !diffView(held, viewState(w.state())).world.length, "V10 nothing changed says nothing"); }
 
-// ---- S3: a stretched thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
+// ---- S3: a stretched thing in the view (R 10-04 three-axis scale; Wren's agent-lab `look` failure); S3d on: imported:<name> leftovers ----
 { const { viewOf } = await import("../../shared/protocol/view.js");
   const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
   const rec = viewOf("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
@@ -1409,9 +1411,6 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(ob.ok && om.ok && hm.ok && JSON.stringify(kids("bobcrate")) === '["back","drv","side"]', "SR1e the host's own builder still adds seats (alone, in a batch, and on a host made in the same batch)", [ob.refused, om.refused, hm.refused, kids("bobcrate")]);
 }
 
-// SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
-// other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
-// identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
 // review of #260: the byte limits count the UTF-8 bytes the log stores, not JavaScript's UTF-16 string length, so a value
 // whose characters take two bytes each meets the same cap as ASCII
 { const W = () => openWorld(root, "utf8cap"); const R = (actor, verb, args) => { clock.advance(20000); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
@@ -1437,6 +1436,9 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const m = /set (\{.*\})/.exec(full.refused?.fix ?? ""); const args = m ? Function(`return (${m[1].replace("<n>", "5")})`)() : null;
   const raised = args ? R("ann", "set", args) : null; const cap = W().state().entities["@world"].c.capacity;
   ok(full.refused?.code === "full" && raised?.ok && cap?.entities === 5 && cap?.guestEntities === 7, "SR0 the full refusal's fix, followed as written, raises entities and keeps guestEntities", { fix: full.refused?.fix, raised: raised?.ok ?? raised?.refused, cap }); }
+// SR2 (review 10-12 S1-2, re-cut by R 10-15 22:48): a socket is an entity, so it meets the one entity budget like any
+// other: capacity.entities for the world, capacity.guestEntities for all account-less people together (a guest is a fresh
+// identity per connection), and at most SOCKETS_PER_HOST on one host. Only a write that adds is refused (full).
 { const W = () => openWorld(root, "sockcap"); const R = (actor, verb, args) => { clock.advance(2000); const w = W(); w.kindOf = (id) => (id.startsWith("g") ? "anon" : "human"); return request(w, actor, verb, args); };
   const nSock = () => Object.values(W().state().entities).filter((e) => e.c.socket).length;
   const nEnt = () => Object.keys(W().state().entities).length - 1;
@@ -1535,8 +1537,8 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
   ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
 
-// ---- BT: a batch checks every child request against its verb's arguments before building anything (review of PR #260,
-// verbs.js:127; Antra's repro): a delete with a misspelt `componnent` was ok:true and deleted the whole entity, children too
+// ---- BT: a batch checks every child request against its verb's arguments before building anything (review of PR #260;
+// Antra's repro): a delete with a misspelt `componnent` was ok:true and deleted the whole entity, children too
 { const name = "batchtypo";
   const call = callAt(name);
   const ents = () => openWorld(root, name).state().entities;
@@ -1610,7 +1612,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const st2 = err ? null : w.state();
   ok(!err && st1?.entities.sign.c.label === REDACTED && st1.diagnostics.some(([q, c]) => q === at && c === "commitment-unredacted") && st2?.entities.sign.c.label === REDACTED && !st2.diagnostics.some(([, c]) => c === "commitment-unredacted"),
     "RA2 a new line with a value stripped to its commit, after the state was folded, reads as unknown (commitment-unredacted until a purge names it), not a throw from the state view", { err, label: st1?.entities?.sign?.c?.label, d1: st1?.diagnostics?.slice(-2), d2: st2?.diagnostics?.slice(-2) }); }
-// ---- OP: a server operator's recorded repair (review of PR #260, server.ts:742: a server operator entered but could mend nothing).
+// ---- OP: a server operator's recorded repair (review of PR #260: a server operator entered but could mend nothing).
 // operatorRepair is NARROW (@world's roles/access/default-role/role-defs, unban) and RECORDED (the operator's act, body
 // operator: true; the moderator-log record likewise); the operator's ordinary requests stay what their role here allows.
 { const name = "oprepair";
@@ -1641,7 +1643,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const afterOwners = Object.entries(wc()).filter(([k, v]) => k.startsWith("roles:") && v?.role === "owner").length;
   ok(last.ok && code(last2) === "last-owner" && afterOwners === 1, "OP5 not god mode: the world's own checks still hold (the last owner can't be removed)", [last.refused, last2.refused, afterOwners]); }
 
-// ---- ST: persist before publishing (review of PR #260, storage.js:110; Antra's repro): a line whose durable write throws
+// ---- ST: persist before publishing (review of PR #260; Antra's repro): a line whose durable write throws
 // never reaches memory (the live chain never runs ahead of the disk), and the file, its state now unknown, takes no more
 // writes until it is reopened. The moderator log likewise.
 { let failing = true; const lines: string[] = [], mods: object[] = [];

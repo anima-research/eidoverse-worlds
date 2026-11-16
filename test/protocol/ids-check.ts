@@ -4,14 +4,15 @@
 // Rows:
 //   O   opaque: a minted id is 26 base32 characters and nothing else — no slug that can go stale (health-potion-… become a plant)
 //   W   writers never choose ids: a writer-supplied id on create (and create {from}, a batch's create) is refused, the fix named;
-//       no demo or probe in tools/ sends one (W4)
+//       no demo, probe or bench in tools/, test/labs/ or bench/ sends one (W4)
 //   P   placeholders: '$name' (JSON:API lid) is minted in-request, refs to it in the same request resolve, the reply maps it,
 //       and it never reaches the log
 //   Y   system acts keep ids verbatim (a fork's copy)
 //   D   delete nulls incoming typed references in the same act, and the reply says what it cleared
 //   L   lint reports a stored reference that names nothing
-//   T   every field that holds an entity id is typed (imported-behavior.attach)
+//   T   imported-behavior.attach holds an entity id and is typed ref (the one field T1 reads)
 //   S   scripts: world.create mints opaque and takes no id (api 2); an api-1 act re-runs as it was minted
+//   H   handles and names: resolveThing, handleOf, labelTwins; the editor and a lock refusal show names, never opaque ids
 //   G   the fixture seam (fixtureIds) is reachable from tests only: no runtime file calls it (G1, static) and a process
 //       that loads the server's and the agent door's code still refuses a chosen id (G2, at runtime)
 // @ts-nocheck

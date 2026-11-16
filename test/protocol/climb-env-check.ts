@@ -139,7 +139,7 @@ await C("K5", "progress → pose through a moving parent: the point at a progres
   const by = SL.worldPose(s.st(), "ladder"), want0 = CL.toWorld(by, local);
   s.call("set", { id: "boat", component: "transform", value: tf([-4, 1, 2], yawQ(-1.2)) });
   const p1 = at(s.st()), b2 = SL.worldPose(s.st(), "boat"), lad = [b2.pos[0] + Math.cos(-1.2), b2.pos[1], b2.pos[2] - Math.sin(-1.2)];
-  // the third point by hand: the ladder's origin (the boat's yaw turns its [1, 0, 0]) plus [0, 2, -0.5] turned by -1.2
+  // the point at progress 2.5 by hand: the ladder's origin (the boat's yaw turns its [1, 0, 0]) plus [0, 2, -0.5] turned by -1.2
   const hand = [lad[0] + -0.5 * Math.sin(-1.2), lad[1] + 2, lad[2] + -0.5 * Math.cos(-1.2)];
   return [route.length === 3 && near(local, [0, 2, -0.5]) && near(p0, want0) && near(p1, hand, 1e-9) && !near(p0, p1, 1e-3), { p0, want0, p1, hand }]; });
 

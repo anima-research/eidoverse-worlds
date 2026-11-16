@@ -11,6 +11,7 @@
 //   MI5  the reference reader's malformed diagnostics stop the write even when its status is ok (I307)
 //   MI6  a crash between the directory and the logs leaves the logs as they were and the directory already holding the
 //        ids, so nothing names an id the directory lacks (I91)
+//   MI7  a run killed after the backup is finished by the next --apply, from the backup
 //   MI8  the backups and the replacement logs are fsynced before the renames that publish them, the directory after
 //   MI9  a dry run mints nothing: a worlds dir without a custody file is skipped, and none is written
 // MIGRATE_TOOL=<path> runs another copy of the tool (a base, for the rows' red).
@@ -84,7 +85,7 @@ const idWithSub = (root: string, sub: string) => Object.entries<any>(entriesOf(d
 // ================= MI5: the reader's malformed diagnostics are a refusal =================
 { const root = scratch("migmal"); const d = oldWorld(root, "yard"); const before = fs.readFileSync(path.join(d, "world.jsonl"));
   // a python3 that answers the reference reader with status ok and one malformed diagnostic, and runs everything else
-  // the fake is TS behind a launcher (.cmd on Windows: a #!/bin/sh file is no executable there, and the row passed vacuously)
+  // the fake is TS behind a launcher (.cmd on Windows, where a #!/bin/sh file isn't executable)
   const js = path.join(root, "fake-python.ts"); fs.writeFileSync(js, `const a = process.argv.slice(2);
 if (a.some((x) => x.endsWith("reader.py"))) { console.log(JSON.stringify({ status: "ok", digest: "x", diagnostics: [[5, "malformed:shape", "a line it skipped"]] })); process.exit(0); }
 process.exit(Bun.spawnSync([${JSON.stringify(process.env.PYTHON || "python3")}, ...a], { stdio: ["inherit", "inherit", "inherit"] }).exitCode ?? 1);

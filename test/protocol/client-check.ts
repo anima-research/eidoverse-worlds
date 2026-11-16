@@ -1,7 +1,7 @@
 // test/protocol/client-check.ts — slice 3b in a real browser: build mode in a world sends requests, folds the log and
 // waits for the authority. One headless Chromium against a scratch sequencer (test/harness/harness.ts scratchBench: scratch port,
 // scratch WORLDS_DIR, its own profile; never 8968/8970). test:protocol's `client` suite runs it under a host's flock + perf
-// guard only when PROTOCOL_HEADLESS_LOCK and PROTOCOL_PERF_GUARD are set (test/gate/run.ts:332); otherwise unguarded
+// guard only when PROTOCOL_HEADLESS_LOCK and PROTOCOL_PERF_GUARD are set (test/gate/run.ts); otherwise unguarded
 //
 //   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
 //   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
@@ -10,13 +10,15 @@
 //   CL  nearbyClimb follows a route's changes: found, gone when disabled, found where its points moved
 //   KU  U opens People Here; Ctrl+U (the browser's view-source) does not (review r3 F9)
 //   U   Ctrl+Z is the authority's undo {act} of MY act; Ctrl+Shift+Z redoes (undo of my undo)
-//   C   undo refused when someone changed it since: nothing written, the refusal shown in the agents' words
+//   C   undo refused when someone changed it since: nothing written, the refusal shown in plain words (the agents' beside them)
 //   X   Esc mid-drag: the thing goes back, and nothing is written (0 acts)
 //   L   a lock refusal (the cup rides a table someone else locked): the dialog offers Move anyway; it re-sends the
 //       SAME request with throughLock: the log has one act, the lock is still on
 //   D   duplicate (Alt+D) is create {from: <thing>}: one act
 //   M   deleting two selected things is ONE batch act
 //   S   Save as blueprint is the authority's publish; its tile places a copy (create {from: <hash>})
+//   …and the later sections (H lock icons, K my own lock, V visitor, F mesh drag, I Inspector … CP chat parity, CW World
+//   Settings, EK Esc/Tab/F11), each headed where it starts
 // The writes go through the real edit code (build.js, gizmo.js, inspect.js, edit/panels.js); a few gestures are driven
 // at their seams (TransformControls' own events, the panel's buttons, synthetic keydowns).
 // @ts-nocheck
@@ -40,7 +42,7 @@ const IDS = idAliases();
 const NAMES = ["cup", "tbl", "plinth", "pebble", "pv", "pt", "ststool", "ststool-seat", "bell", "msa", "msb", "msc", "msd", "mse", "hphull", "hphull-helm", "clrung"];
 const { cdp, evalJson: evalRaw, cleanup, die, BASE, SCRATCH } = await scratchBench("client", {
   // one page drives a whole editing session on ONE connection; the meter is checked elsewhere (scale-check), so here its time cap
-  // is the operator knob for a slower host (server/readmeter.ts), not a test subject (windows-latest 10-29: 4804 ms of 3000, HT8 + GR1 refused)
+  // is the operator knob for a slower host (server/readmeter.ts), not a test subject (unscaled, Windows CI ran over it and HT8 + GR1 were refused)
   serverEnv: { EIDO_METER_SCALE: "3" },
   prepare: (scratch) => {
     worldsDir = path.join(scratch, "worlds"); fs.mkdirSync(worldsDir, { recursive: true });
@@ -97,7 +99,7 @@ try {
   if (secs < 4) await die(1, "the page never booted");
   await evalJson(`(() => { const s = document.querySelector('#splash'); if (s) s.style.pointerEvents = 'none'; return true; })()`);
   check("B1 the page knows it's in a world (it adopted the cut)", await waitFor(`import('/lib/net.js').then((m) => m.replicaActive())`));
-  // ---- K: U opens People Here; Ctrl+U is the browser's (view-source), never this (review r3 F9) ----
+  // ---- KU: U opens People Here; Ctrl+U is the browser's (view-source), never this (review r3 F9) ----
   {
     const people = `import('/lib/ui/windows.js').then((m) => { const f = m.getFrame('chat'); const c = f?.sidePane?.('cols'); return { vis: !!f?.visible, open: !!c && !c.classList.contains('side-closed') }; })`;
     await page(`const m = await import('/lib/ui/windows.js'); const f = m.getFrame('chat'); const c = f?.sidePane?.('cols');
@@ -109,7 +111,7 @@ try {
     const plain = await evalJson(people);
     check("KU1 Ctrl+U leaves People Here alone; U alone opens it", !before.open && !ctrl.open && !ctrl.vis && plain.vis && plain.open, { before, ctrl, plain });
   }
-  bob.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // a fixed 500 ms raced the snapshot on Windows CI (40976310724): roles: with no id   // replica: a world speaks only to clients that fold its log (3c)
+  bob.send(JSON.stringify({ type: "join", hello: helloOf(), world: WORLD, id: "bob", avatar: "", replica: true })); await tryUntil("bob's snapshot names his id", () => BOB || undefined, { ms: 15000 });   // wait for the snapshot (a fixed wait raced it: the grant below went to roles: with no id)   // replica: a world speaks only to clients that fold its log (3c)
   check("(setup) the owner makes bob a builder", (await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`)) === true && /^u-/.test(BOB));
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`);
   check("B2 build mode opens (the owner may build)", await waitFor(`document.body.classList.contains('build-mode')`));
@@ -134,8 +136,8 @@ try {
   check("G0 the gizmo attaches to it", await waitFor(`globalThis.__gizmo?.().attached === '${crate}'`));
   const start = disk().entities[crate].c.transform;
   // the drag adds 1 m to where the PAGE has the thing; a slow host may still be easing it in from where it was drawn, and
-  // then the record lands off by that gap (Windows, fork run 40067199839: x 1.308, 0.4 short of the 1 m). Wait until the
-  // page agrees with the record; a page that never converges to its own record is a client bug, so that is a row too.
+  // then the record lands off by that gap. Wait until the page agrees with the record; a page that never converges to
+  // its own record is a client bug, so that is a row too.
   const pageX = () => evalJson(`import('/lib/world.js').then((m) => m.entities.get('${crate}')?.position.x ?? null)`);
   const settled = await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.entities.get('${crate}')?.position.x ?? 1e9) - ${start.pos[0]}) < 1e-3)`);
   check("G (setup) the page has the crate where the record does before the drag", settled, { pageX: await pageX(), recordX: start.pos[0] });
@@ -244,7 +246,7 @@ try {
   check("D2 …a copy 0.5 m along x, drawn in the page", !!dup && Math.abs(st1.entities[dup].c.transform.pos[0] - st1.entities[crate].c.transform.pos[0] - 0.5) < 1e-6 && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${dup}'))`), dup);
 
   // ---- D3: a late reply doesn't undo a newer pick. The copy is selected 400 ms after its reply; a person who has picked
-  // something else by then keeps it (CI 10-22: on a slow page the copy's select replaced a two-thing selection) ----
+  // something else by then keeps it ----
   { await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); return true;`);
     const nd = myActs().length; await key("KeyD", { altKey: true });
     await page(`(await import('/lib/scenegraph.js')).sceneSelect('${IDS.of("cup")}'); return true;`);
@@ -264,8 +266,8 @@ try {
   check("M0 two things selected", await waitFor(`import('/lib/edit/panels.js').then((m) => m.selection().length === 2)`), await evalJson(`import('/lib/edit/panels.js').then((m) => m.selection())`));
   await key("Delete");
   check("M1 Delete on both = ONE act, a batch of two deletes", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "batch" && myActs().at(-1).e.body.args.requests.length === 2), myActs().slice(n0).map((a) => a.e.body.args));
-  // the act and its change are two appends (writes.js changeEntry): M1 waits for the act, so the change may not be on disk
-  // yet — wait for it too (anima 40115466089 ubuntu read the log between the two)
+  // the act and its change are two appends (shared/protocol/authority/writes.js changeEntry): M1 waits for the act, so the
+  // change may not be on disk yet — wait for it too
   check("M2 …both are gone, on disk and in the page", await waitDisk(() => !disk().entities[crate] && !disk().entities[dup]) && await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('${crate}') && !m.entities.has('${dup}'))`),
     { onDisk: [crate, dup].filter((id) => disk().entities[id]), inPage: await evalJson(`import('/lib/world.js').then((m) => ['${crate}', '${dup}'].filter((id) => m.entities.has(id)))`) });
   n0 = myActs().length;
@@ -418,7 +420,7 @@ try {
     const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
     await move(m0); await waitFor(`globalThis.__buildDrag?.()?.armed === true`); await frames(2);   // armed, and a frame has applied it (not a fixed 400 ms)
     const p0 = (await geo(0, 0)).P;
-    await move(m1);   // the pebble's move, not a fixed 400 ms (macOS CI 10-29 read dp 0 at 400); a miss is F2's evidence
+    await move(m1);   // wait for the pebble's move, not a fixed time; a miss is F2's evidence
     const p1 = (await tryUntil("the pebble moved", async () => { const P = (await geo(0, 0)).P; return P && Math.hypot(P[0] - p0[0], P[2] - p0[2]) > 0.01 ? P : null; }, { ms: 5000 })) ?? (await geo(0, 0)).P;
     const d = (u: number[], v: number[]) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
     const dp = d(p1, p0), da = A0 && A1 ? d(A1, A0) : null;
@@ -445,16 +447,15 @@ try {
     check("F7 ✕ Cancel puts it back, and nothing is written", await waitFor(`import('/lib/world.js').then((m) => { const p = m.entities.get('pebble').getWorldPosition(new (m.entities.get('pebble').position.constructor)()); return Math.hypot(p.x - ${pAfter[0]}, p.y - ${pAfter[1]}, p.z - ${pAfter[2]}) < 0.02; })`) && (await sleep(600), myActs().length === n0), myActs().slice(n0).map((a) => a.e.body.args)); } }
   await evalJson(`document.querySelector('#confirm-center .cc-no')?.click(), true`);   // a dialog a failed check left open would hold the keys
 
-  // ---- I: the Inspector, as R asked on 10-04 (name first, id dim, no lib/filter/parent rows, one Add Component pop-out) ----
+  // ---- I: the Inspector (R 10-04 … 10-17): the ENABLED box, then the name with its dim #handle; no id/lib/filter/parent rows; one Add Component pop-out ----
   const insp = `document.querySelector('[data-frame="inspector"]')`;
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); return true;`);
   await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`);
   await sleep(600);
   const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
-  // R 10-10 23:48: the name is the first line's title (no label; the eye and padlock beside it), then the id; R 10-12: the
-  // ENABLED box leads that line
+  // the first row is the ENABLED box (R 10-12), the second the name as a title (no label; R 10-10)
   const firstIsTitle = await evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')]; return r[0]?.classList.contains('sp-enabled') && r[1]?.classList.contains('sp-title'); })()`);
-  // R 10-17 ID HARDENING: no id row (it can't be renamed; the label is the name)
+  // no id row (R 10-17: an id can't be renamed; the label is the name)
   check("I1 the Inspector leads with the ENABLED box and the name (its title line); no id row", firstIsTitle && labels?.[0] === "" && labels?.[1] === "" && !labels?.includes("id"), { firstIsTitle, labels: labels?.slice(0, 3) });
   // R 10-17 20:30: the 'show id' button is gone; the name line carries the short #handle, dim, right after the name: the same
   // one the Hierarchy shows twins by and agents use (shared/thingref.js handleOf over every id but the world's)
@@ -684,8 +685,8 @@ try {
   await evalJson(`(() => { const n = [...document.querySelectorAll('[data-frame="inspector"] .sp-f-num .sp-num')].find((x) => !x.disabled); n.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 7 })); return true; })()`);
   await sleep(300);
   check("KH3 …and gives the bar back when the drag ends", await evalJson(`!/Shift finer/.test(document.getElementById('hintbar')?.textContent ?? '') || document.getElementById('hintbar').classList.contains('gone')`), await evalJson(`document.getElementById('hintbar')?.textContent`));
-  // the scrub's release commits a set; on a slow host it reached the record after CD1 had counted the log, and CD1 saw it as
-  // its own extra act (anima 40104935973, macOS: a transform set on pebble, x -0.007 -> 0.597). Wait for it here.
+  // the scrub's release commits a set; wait for it here, or on a slow host it lands after CD1 has counted the log and CD1
+  // sees it as its own extra act
   check("KH (setup) the scrub's release is on the record before the next case counts", await waitDisk(() => myActs().slice(nK).some((a) => a.e.verb === "set" && a.e.body?.args?.id === IDS.of("pebble"))),
     myActs().slice(nK).map((a) => [a.e.verb, a.e.body?.args?.id]));
 
@@ -739,19 +740,16 @@ try {
   const hrows = async () => evalJson(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent)`);
   check("HT3 it lists this thing's acts, newest first, with who and what (pt's motion set and deleted above)", await waitFor(`(() => { const t = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent); const i = t.findIndex((x) => /delete.*motion/.test(x)), j = t.findIndex((x) => /set.*motion/.test(x)); return i >= 0 && j > i; })()`, 5000), await hrows());
   // enough acts to page: 25 label sets on pt, then Older… must reach back to the motion set
-  // each set must land: the authority's rate (60 entries per actor per 10 s; a set is an act and a change) refuses a burst
-  // with code 'rate' and no trace, which left a hole in the history ('"pt 22" → "pt 24"'); a refused set waits out the window
-  // and is sent again, as the refusal says (slow down)
+  // each set must land: the authority's rate (60 entries per actor per 10 s, gate.js RATE_DEFAULT) refuses a burst with code
+  // 'rate' and no trace, which would leave a hole in the history; a refused set waits and is sent again, as the refusal says
   const landed = await page(`const n = await import('/lib/net.js'); let ok = 0, waited = 0;
     for (let k = 0; k < 25; k++) for (let t = 0; t < 15; t++) { const r = await n.sendRequest('set', { id: 'pt', component: 'label', value: 'pt ' + k });
       if (r?.ok) { ok++; break; } if (r?.refused?.code !== 'rate') return { ok, k, refused: r?.refused ?? null }; waited++; await new Promise((z) => setTimeout(z, 1000)); }
     return { ok, waited };`);
   check("(setup) all 25 label sets land (a rate refusal waits out the window and is sent again)", landed?.ok === 25, landed);
-  // the panel re-reads its newest page when the thing changes: HT4/HT5 read it once it has caught up with the last set
-  // (a real condition, not a fixed wait: an 800 ms sleep read a page taken mid-stream, motion still on it)
-  // the ROW for the last set ('→ "pt 24"'), not just the words: the panel's own title says "pt 24" as soon as the label
-  // lands, so /pt 24/ was true while the page on screen was still one taken mid-stream (HT5 failed 3 of 5, 10-23, its
-  // first row "pt 22 → pt 23")
+  // the panel re-reads its newest page when the thing changes: HT4/HT5 read it once it has caught up with the last set.
+  // Wait for the last set's ROW ('→ "pt 24"'), not just the words: the panel's own title says "pt 24" as soon as the label
+  // lands, while the page on screen may still be one taken mid-stream
   const caught = await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /→ "pt 24"/.test(x.textContent))`, 8000);
   if (!caught) throw new Error(`HT4 setup: the panel never showed the last set's row: ${JSON.stringify((await hrows() as string[]).slice(0, 3))}`);
   check("HT4 a long history shows a page and an Older… button", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-btn')].some((b) => /Older/.test(b.textContent))`, 5000), await hrows());
@@ -761,10 +759,9 @@ try {
   await waitFor(`(() => { const b = [...document.querySelectorAll('[data-frame="history"] .sp-btn')].find((x) => /Older/.test(x.textContent)); if (!b) return false; b.click(); return true; })()`, 5000);
   if (process.env.SHOT_DIR) { const r = await cdp.send('Page.captureScreenshot', { format: 'png' }); (await import('node:fs')).writeFileSync(`${process.env.SHOT_DIR}/history-tab.png`, Buffer.from(r.data, 'base64')); }
   check("HT6 …Older… reads further back and finds it", await waitFor(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].some((x) => /set.*motion/.test(x.textContent))`, 5000), (await hrows() as string[]).length);
-  // HT7: a history read the authority refuses (or that times out) said "reading the log…" forever, and nothing asked again
-  // (client-b2 HIS1, 10-22). The page answers this thing's first history read with a refusal itself; the panel must say so,
-  // and the next change must read again.
-  // its setup failing fails HT7, not the whole run (a throw here used to abort every check after it)
+  // HT7: a history read the authority refuses must not leave "reading the log…" up forever. The page itself answers this
+  // thing's history reads with a refusal while __ht7block is set; the panel must say so, and read again by itself once the
+  // block is lifted (HT7b). Its setup failing fails HT7, not the whole run.
   try { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: [3, 0, 3] }, label: 'ht7 stone' } });`);
     const hid = made?.refs?.[0]?.id; if (!hid) throw new Error(`HT7 setup: the stone wasn't created: ${JSON.stringify(made)}`);
     await waitFor(`import('/lib/world.js').then((m) => m.entities.has(${JSON.stringify(hid)}))`);
@@ -780,11 +777,10 @@ try {
     check("HT7b …and once the authority answers again, the panel reads it by itself (no change needed)", await waitFor(`/created/.test(document.querySelector('[data-frame="history"]')?.textContent ?? '')`, 6000),
       await evalJson(`(document.querySelector('[data-frame="history"]')?.textContent ?? '').slice(0, 200)`));
   } catch (e) { check("HT7 (setup)", false, String((e as Error)?.message ?? e)); }
-  // HT8: a re-read still queued for the thing you just left stole the panel from the one you selected (client-b2 HIS1,
-  // 10-23, measured: the world's deferred re-read ran after the selection moved to a thing, took a newer generation, and
-  // both replies were dropped as stale: "reading the log…" until the next change). The page holds back stone A's history
-  // reads (1.5 s × the wait scale) and B's longer (3 s ×), so A's re-read (A changed while its read was out) runs after B's read went out and before
-  // B's answer came back — the order HIS1 recorded; B's history must still arrive.
+  // HT8: a re-read still queued for the thing you just left must not take the panel from the one you selected (it took a
+  // newer generation, and both replies were dropped as stale: "reading the log…" until the next change). The page holds
+  // back stone A's history reads (1.5 s × the wait scale) and B's longer (3 s ×), so A's re-read (A changed while its read
+  // was out) would run after B's read went out and before B's answer came back; B's history must still arrive.
   const holdA = Math.round(1500 * WAIT_SCALE), holdB = Math.round(3000 * WAIT_SCALE);   // in-page holds stretch with the waits
   try { const mk = async (label: string, at: number[]) => { const made: any = await page(`return (await import('/lib/net.js')).sendRequest('create', { components: { transform: { pos: ${JSON.stringify(at)} }, label: ${JSON.stringify(label)} } });`);
       const id = made?.refs?.[0]?.id; if (!id) throw new Error(`HT8 setup: ${label} wasn't created: ${JSON.stringify(made)}`);
@@ -815,8 +811,8 @@ try {
   await page(`(await import('/lib/scenegraph.js')).sceneSelect(null); return true;`).catch(() => null);
   await evalJson(`(document.querySelector('.edit-rtabs .edit-tab[data-tab="inspector"]').click(), true)`);
 
-  // ---- GR: the ground panel writes in a world (R 10-06: ground & grass panels broken). It sent v1 'terrain'/'grass'
-  // verbs, which fromv1 had no spelling for, so the page refused them itself and nothing reached the authority. ----
+  // ---- GR: the ground panel writes in a world (R 10-06): each button is a request the authority records (set @world
+  // terrain / grass) ----
   { const st4 = () => fold(entries());
     const gpanel = `const d = document.createElement('div'); document.body.appendChild(d); (await import('/lib/edit/groundpanel.js')).paintGround(d); window.__gp = d;
       window.__gbtn = (re) => [...window.__gp.querySelectorAll('button, .sp-btn')].find((b) => re.test(b.textContent)); return true;`;
@@ -916,7 +912,7 @@ try {
     // CP7 a refused say is shown (the rate limit: the reply was ignored, and the line just didn't appear)
     { await page(`const m = await import('/lib/net.js'); await Promise.all(Array.from({ length: 24 }, (_, i) => m.say('flood ' + i))); return true;`);
       check("CP7 a say refused by the rate limit is shown, in words", await lineLike(`/slow down — you've said a lot/`), (await lines() as string[]).slice(-3)); }
-    // CP8 the help sheet and the command bar describe the protocol (first-in owners, /grant * visitor closing a world, objects flying with /punt)
+    // CP8 the help sheet and the command bar describe the protocol; v1's wording is gone (first-in owners, "everyone else can still build unless", objects flying with /punt)
     { const help = await evalJson(`fetch('/defs').then((r) => r.json()).then((d) => JSON.stringify(d.uiHelp ?? null))`);
       check("CP8 the help sheet has nothing v1-only left", typeof help === "string" && help.length > 100 && !/whoever steps in first|first in owns|Objects fly with|everyone else can still build unless/.test(help) && /grant \* builder/.test(help), String(help).slice(0, 160));
       const listed = await evalJson(`import('/lib/ui/commands/registry.js').then((m) => m.COMMANDS.filter((c) => c.listed !== false).map((c) => c.name + ' ' + c.help).join('\\n'))`);
@@ -937,7 +933,7 @@ try {
       const cleared = await waitDisk(() => { const a = disk().entities["@world"]?.c.access; return !!a && !("minAccountDays" in a); });
       await evalJson(`(document.getElementById('__acc')?.remove(), true)`);
       check("CA1 World Settings › Access: 'Accounts at least N days old' (0–365) sets access.minAccountDays; emptying it removes it", shown && set && cleared, { shown, set, cleared, access: disk().entities["@world"]?.c.access, refused: await evalJson(`__refused.map((x) => x.text).slice(-2)`) }); }
-    // HP: the helm owns the keys and the camera, never both with photo mode (main ccd5c53fa main.js:474 and :590)
+    // HP: the helm owns the keys and the camera, never both with photo mode (client/main.js: the key:photo binding's run, and the seated frame's updateHelm line)
     { const made = await page(`const n = await import('/lib/net.js');
         const a = await n.sendRequest('create', { id: 'hphull', model: '${CRATE}', components: { drive: { maxSpeed: 4, turnRate: 0.4, climbRate: 4 } }, place: { at: [9, 9] } });
         const b = await n.sendRequest('create', { id: 'hphull-helm', components: { parent: { to: 'hphull' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'helm' }, station: { action: 'drive', input: { move: 'drive' } } } });
@@ -1015,17 +1011,15 @@ try {
         const hs = (b) => [...b.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).map((d) => d.querySelector('.rp-h')?.textContent ?? '(untitled)');
         const out = { people: hs(P), worldParts: [...W.querySelectorAll(':scope > .rp-part')].filter((d) => !d.hidden).length, worldTotal: W.querySelectorAll(':scope > .rp-part').length, peopleFilled: [...P.querySelectorAll('.rp-box')].every((b) => b.childElementCount > 0) }; P.remove(); W.remove(); return out;`);
       check("WS4 World Settings: People & roles shows Roles + Who may come in, both filled; World hides 'Carried over' on a fresh world", JSON.stringify(r?.people) === '["Roles","Who may come in"]' && r?.peopleFilled && r?.worldParts === 1 && r?.worldTotal === 2, r); }
-    // A1 (recut A, #260 21:51Z): the authority decides an act on a body for every kind of body, so what arrives APPLIES — a
-    // browser body doesn't decide again. Today the client refused a shove the authority had allowed (it read only the
-    // everyone row, so a friend's allowed shove never landed). With my pushable switch off locally, an arriving shove
-    // still knocks me over; then I get up.
+    // A1 (recut A, #260): the authority decides an act on a body for every kind of body, so what arrives APPLIES — a
+    // browser body doesn't decide again (it used to, on the everyone row alone, so a friend's allowed shove never landed).
+    // With my pushable switch off locally, an arriving shove still knocks me over; then I get up (upAfter: reported, not asserted).
     { const r = await page(`const C = await import('/lib/player/consent.js'), L = await import('/lib/player/localbody.js'), { bus } = await import('/lib/base.js');
         const was = C.pushable(); C.setPushable(false);
         bus.emit('puppet', { by: 'pal', ragdoll: { lean: [2, 0, 0] } });
         await new Promise((ok) => setTimeout(ok, 600)); const down = L.isDowned();
         L.getUp(); C.setPushable(was); await new Promise((ok) => setTimeout(ok, 400)); return { down, upAfter: !L.isDowned() };`);
       check("A1 an act the authority delivered applies to my browser body: a shove lands though my local switch is off (one decider)", r?.down === true, r); }
-    // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
     // RK1 (review 10-14 K3): picking a role from the Roles panel keeps the person's exceptions — the set merges when the entry exists
     { const grant = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder', can: { pauseScripts: true } } })).ok;`);
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.can?.pauseScripts === true);
@@ -1037,6 +1031,7 @@ try {
       check("RK1 Roles › picking a role from the panel keeps the person's `can` exceptions (merge when the entry exists)", grant && picked === true && moved && after?.can?.pauseScripts === true, { picked, after });
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: '@world', component: 'roles:${BOB}', value: { role: 'builder' } })).ok;`);   // restore for the rows below
       await waitDisk(() => disk().entities["@world"]?.c[`roles:${BOB}`]?.role === "builder"); }
+    // CB1 World Settings › Places: empty Bounds fields write NO bounds (they read as 0 and saved a zero box that refused every move, audit 10-09)
     { await page(`const m = await import('/lib/ui/rolespanels.js'); const b = document.createElement('div'); b.id = '__pl'; document.body.append(b); m._test.paintPlaces(b); return true;`);
       const before = JSON.stringify(disk().entities["@world"]?.c.bounds ?? null);
       await evalJson(`(() => { const q = (s) => document.querySelectorAll('#__pl ' + s); q('[data-k=min],[data-k=max]').forEach((x) => (x.value = '')); const sp = q('[data-k=spawn]'); [3, 0.5, -2].forEach((v, i) => (sp[i].value = String(v))); q('[data-k=radius]')[0].value = ''; q('[data-save]')[0].click(); return true; })()`);

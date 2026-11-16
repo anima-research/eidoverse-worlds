@@ -8,7 +8,7 @@ import { readLog, fold, opsOf } from "../../shared/protocol/fold.js";
 
 export const sha = (t: string) => createHash("sha256").update(t).digest("hex");
 const lines = (t: string) => t.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
-const KEYED = new Set(["world", "head", "sig", "salt", "nonce", "owners", "sequencer"]);   // class 6: re-keyed, re-signed
+const KEYED = new Set(["world", "head", "sig", "salt", "nonce", "owners", "sequencer"]);   // class 5: re-keyed, re-signed
 const blank = (o: any): any => Array.isArray(o) ? o.map(blank) : o && typeof o === "object" ? Object.fromEntries(Object.entries(o).map(([k, v]) => [k, KEYED.has(k) ? "~" : blank(v)])) : o;
 const sorted = (o: any): string => JSON.stringify(o, (_k, v) => v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v);
 const bits = (x: number) => { const b = new DataView(new ArrayBuffer(8)); b.setFloat64(0, x); return b.getBigUint64(0).toString(16); };

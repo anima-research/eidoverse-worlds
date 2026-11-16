@@ -5,9 +5,10 @@
 //   X  particles: a tiny instance {effect, part?, at?, seed?, playing?, scale?, params?} naming an effect document (an
 //      Essential, or one stored in the world), the documents' bounds, the older bag read but never written, the translator
 //   G  the simulation (shared/particlesim.js, Godot 4.7.2's CPUParticles3D ported): its modules do what Godot's do
+//   P  the pins before the trial ships: angles in radians, frames named, world gravity, unknown-field and reserved-name policy
 //   K  kept (green at the base and now)
-//   bun test/protocol/describe-particles-check.ts              every case
-//   bun test/protocol/describe-particles-check.ts --control    at the base (f6777f13): every D/X/G case must be red, every K green
+//   bun test/protocol/describe-particles-check.ts              every case (--only X1,G2: just those)
+//   bun test/protocol/describe-particles-check.ts --control    at the base (f6777f13): every K case must be green, every other red
 //   bun test/protocol/describe-particles-check.ts --mutants    remove each gate in a copy of the tree: its cases go red; a no-op stays green
 //   bun test/protocol/describe-particles-check.ts --tree <dir> against another checkout
 // @ts-nocheck

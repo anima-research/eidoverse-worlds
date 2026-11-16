@@ -12,6 +12,8 @@
 //   CK  one time base: a round-trip clock, a sample's own capture time and sequence, sanitized at the server's fence
 //   SV  against a real server whose world log runs AHEAD of wall time: frames and the clock reply carry the authority's
 //       clock (the one that stamps entries' ts), poses keep t/seq, a state sample is validated and refused as reserved
+//   RS  reservations (PHYSICS §4.1): the verbs cohold / deflect / carry, physics-engine's claimDebounceMs and
+//       liveAuthorityExpiryMs, grabbable.steal as a boolean; SG9 a shape's type is an own name of the grammar, a string
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -57,9 +59,9 @@ ok("SH6", typeof SH.shapeVolume === "function" && Math.abs(SH.shapeVolume([[0, 0
 // ---- PH: physical properties ----
 const CS = await imp("shared/protocol/componentspec.js");
 const ph = CS.COMPONENTS?.physics ?? {};
-// shape audit 10-16 (physics-motion §5): the ten physical properties are RESERVED fields (named, unit-ed, their absence
-// written down, refused until an engine reads them); material is renamed surface; ccd, layers, mask are cut
-// (mass and density stay open fields: the body shove reads them, shared/shove.js massOf)
+// shape audit 10-16 (physics-motion §5): of the ten physical properties, the eight in NEW are RESERVED fields (named,
+// unit-ed, their absence written down, refused until an engine reads them); material is renamed surface; ccd, layers,
+// mask are cut; mass and density stay open fields (the body shove reads them, shared/shove.js massOf)
 const NEW = ["surface", "friction", "restitution", "frictionCombine", "restitutionCombine", "linearDamping", "angularDamping", "centerOfMass"];
 ok("PH1", ph.fields?.mass === "number" && ph.fields?.density === "number" && NEW.every((f) => (ph.reservedFields ?? []).includes(f) && !ph.fields?.[f]) && NEW.every((f) => typeof ph.absentMeans?.[f] === "string" && ph.absentMeans[f].length > 10) && typeof ph.absentMeans?.shape === "string"
   && ["ccd", "layers", "mask", "material"].every((f) => !ph.fields?.[f] && !(ph.reservedFields ?? []).includes(f)),

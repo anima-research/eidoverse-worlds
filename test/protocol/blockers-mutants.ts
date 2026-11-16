@@ -1,21 +1,21 @@
 // test/protocol/blockers-mutants.ts — the RED side of every blocker's row, run (review of PR #260, 2026-10-18: "red mutations").
-// For each of the reviewer's blockers (B1–B10 but B3, whose per-world fence main's #255 removed: 7d3050686), the architecture note's items that have code (M1–M8) and review r14's four
-// (H1, M1–M3), ONE mutation of the fix's code — a text find/replace applied to a scratch copy of the tree, the mechanism
+// For each of the reviewer's blockers (B1–B10 but B3, whose per-world fence main's #255 removed: 7d3050686), the architecture note's items that have code (M1–M8), review r14's three
+// (M1–M3) and the security review's four (H1, H2, M6, L11), ONE mutation of the fix's code — a text find/replace applied to a scratch copy of the tree, the mechanism
 // txn-check --mutants and r10/r11-check MUTANTS use — and the ONE suite whose named row(s) it must turn red. Plus a no-op control
 // that must stay green. Each find text must occur exactly once at HEAD (a fix that moved is a FAIL here, not a silent skip).
 // This suite's output is the PR's red/green table: `id → mutant → row turned red`.
-//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/blockers-mutants.ts            every mutant (the gate's MAIN lane)
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/blockers-mutants.ts            every mutant (the gate runs it in pieces: --group)
 //   … --only B4,M5                                                                        a subset (an id with no row is refused)
 //   … --group a                                                                           one of the gate's pieces (GROUPS); --list prints the ids it would run
 // Bounded: each mutant runs only the one suite it names; the scratch tree links node_modules and copies server/, shared/,
-// client/lib, mcpl/, tools/, spec/, docs/ (the suites read spec and docs as text). No browser.
+// client/lib, mcpl/, tools/, test/, spec/, docs/, defs/ (the suites read spec and docs as text). No browser.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, linkInto, readLF } from "../gate/common.ts";
 
 type Mutant = { id: string; what: string; file: string; find: string; repl: string; suite: string; rows: string[]; expect: number };
-// suite: the gate's name for it (run.ts) → the file to run, relative to the scratch root
+// suite: the gate's name for it (test/gate/suites.ts) → the file to run, relative to the scratch root
 const SUITE_FILE: Record<string, string> = {
   authority: "test/protocol/authority-check.ts", access: "test/protocol/access-check.ts", "reset-race": "test/protocol/reset-race-check.ts",
   r10: "test/protocol/r10-check.ts", "dismount-height": "test/client/dismount-height-test.ts", inplace: "test/protocol/inplace-check.ts",

@@ -1,6 +1,6 @@
 // test/protocol/run-client-settle-check.ts — run-client settles a file on its own exit (plus a grace for output), never
 // WAITING on its pipes closing (a normal close settles it at once): a test whose grandchild keeps stdout open is reported promptly, as a pass when it passed and as a
-// timeout when it hung (client-tools wedged on windows-latest until the gate's 1010 s kill, #260 run 41128035464).
+// timeout when it hung (never wedged until the gate's kill).
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";

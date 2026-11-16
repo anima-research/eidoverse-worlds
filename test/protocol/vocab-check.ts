@@ -8,6 +8,8 @@
 //   - the `comp` bag: `.comp.x`, `.comp?.x`, `.comp[`, `.comp ?? {}`, `comp:` written on a record (a component sits flat).
 // `op.comp` — the log op's field (PROTOCOL §3: set {id, comp, value}) — is the protocol, not the record, and is allowed by
 // name: the variables that carry ops are listed in OPS. Other true exceptions go in EXEMPT, each with why.
+// Further down, each with its own note: operator tools count entities, occupy (not rider), oscillate (not bob),
+// human/participant wording, and the log's retired spellings.
 // usage: bun test/protocol/vocab-check.ts        (prints each offence as file:line; exit 1 if any)
 // @ts-nocheck
 import fs from "node:fs";
@@ -27,7 +29,7 @@ const RULES: [RegExp, string][] = [
   [/\bcomp:\s*(\{|[\w$]+\.comp\b)/, "writes a `comp` bag on a record"],
   [/\blib:\s*(libOf\(|[\w$.]+\.model\b)/, "writes a record's model under `lib` (a reader will say `.model`)"],
 ];
-// true exceptions, each with why (file → a pattern the whole line must match)
+// true exceptions, each with why (file or path prefix → a pattern found in the line)
 const EXEMPT: [string, RegExp, string][] = [
   ["client/lib/", /userData\??\.lib\b/, "three.js userData.lib: the renderer's own tag on a loaded object, not a record"],
   ["client/lib/edit/build.js", /ghost\.lib|params\.lib/, "the placement ghost's own field, and a catalogue entry's"],

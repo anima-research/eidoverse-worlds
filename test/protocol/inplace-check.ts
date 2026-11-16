@@ -81,8 +81,10 @@
 //        `deferred`, and an approval of that report can't override the refusal; nothing is written. The world's water
 //        level (water on @world) is not a volume and does not refuse (control); main's water volume and air box on the same
 //        world translate (listed under `mapped`, absent from the refusal)
-//   IP27 a client that doesn't fold the log: a native (Unreal) session is told to update its client (current builds join through the bridge)
-//        yet; anyone else is told to reload or update (the wire carries the latter; the native text is the pure switch)
+//   IP27 a client that doesn't fold the log: a native (Unreal) session is told to update its client (current builds join
+//        through the bridge); anyone else is told to reload or update (both on the wire: IP27, IP27c)
+//   IP44 `info` is a reader: a torn last line is left for the writer to cut
+//   IP46 two worlds sharing an account, both dry-run first, then applied in turn: each approval still holds, one id
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/inplace-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -98,7 +100,7 @@ import { oldWorldAt, oldWorldsIn, bootNotice, shellWord } from "../../server/old
 import { isWorldDir, isPreNamesDir } from "../../server/livehost.ts";
 import { CACHE_FILE } from "../../server/statecache.ts";
 import { directoryFor, mintId } from "../../server/directory.ts";
-const SWAP_MARKER = "translation.lock";   // the in-progress marker of an in-place swap (tools/world.ts)
+const SWAP_MARKER = "translation.lock";   // the in-progress marker of an in-place swap (server/livehost.ts SWAP_MARKER)
 import { noFoldRefusal } from "../../server/oldworlds.ts";
 import { approvalText, approvalProblem, makeApproval, translateV1World, NO_OWNER } from "../../tools/import-v1/world.ts";
 const operatorPub = () => JSON.parse(fs.readFileSync(path.join(W, ".custody.json"), "utf8")).operator?.pub as string;
@@ -151,7 +153,7 @@ function oldWorld(name: string, { tamper = false, extra = [] as any[] } = {}) {
   fs.writeFileSync(path.join(d, "poses.json"), JSON.stringify({ Ann: { p: [4, 0, 4], yaw: 0 } }));
   return d;
 }
-/** Every file under `d` (and the worlds dir's own files): name → [sha256, inode, mtimeMs, size]. Plus any temp dirs. */
+/** Every entry of `d` (not recursive): name → [sha256, inode, mtimeMs, size], or "dir" for a directory. */
 function fingerprint(d: string) {
   const out: Record<string, any> = {};
   for (const f of fs.readdirSync(d).sort()) { const p = path.join(d, f); const s = fs.statSync(p);
@@ -464,8 +466,7 @@ const waiting = oldWorld("waiting");
     && !/--founder-key </.test(notice) && !/approve-sig/.test(notice) && /keeps its name, so links to it keep working/.test(notice), "IP3 …and its commands are the in-place form, the one path: the dry run, then the operator-only translation (no founder key: none can be bound to the owner)", notice); }
 
 // ================= IP2: the server serves it under its original name =================
-// (the server running since before the translation picks it up with no restart — R's walkthrough keeps it running —
-// and a fresh boot no longer flags it)
+// (the server running since before the translation picks it up with no restart, and a fresh boot no longer flags it)
 { const live = await joinAs(srv1.port, "porch");
   ok(live.snap && !live.err && JSON.stringify(live.snap).includes(JSON.parse((await tool(["info", "porch"])).out).worldId), "IP2 the server that refused \"porch\" before the translation serves it now under the same name (the old link), with no restart", live.types);
   srv1.proc.kill(); await sleep(300);

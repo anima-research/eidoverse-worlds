@@ -1,9 +1,8 @@
 // @ts-nocheck
 // test/protocol/libfile-check.ts — the ONE resolver from a library path to a file (server/libfile.ts) agrees with what
-// /library serves. Port of upstream #213's resolver contract (v1) onto the protocol branch,
-// where the authority REFUSES a model the catalogue can't name (authority.js valueCheck: "no model called …") instead of
-// v1's advisory lint — so the whole of #213 that survives is: the resolver walks /library's own ladder, in its order,
-// and answers exactly what the route would serve. Upstream #220 (ported 2026-10-19): a name is read as the route reads
+// /library serves (upstream #213's resolver contract): the resolver walks /library's own ladder, in its order, and
+// answers exactly what the route would serve. (A model the catalogue can't name is refused by the authority:
+// authority/checks.js valueCheck, "no model called …".) Upstream #220: a name is read as the route reads
 // it, the lib as a client's URL carries it and each run of escapes decoded back to the disk name (libfile.ts
 // libraryRel, which the /library route calls too; test/server/library-decode-test.ts holds the route's own cases).
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/libfile-check.ts

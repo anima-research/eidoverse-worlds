@@ -1,5 +1,5 @@
 // Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
-// Ported from the protocol lab's phys-check.js @ 11db981; only paths changed. usage: bun test/protocol/phys-check.ts
+// usage: bun test/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -31,8 +31,7 @@ const copyOf = (L) => readLog(L.map((e) => JSON.stringify(e)).join("\n") + "\n")
 const insertAt = (L, i, e) => { const C = copyOf(L).map((x) => (typeof x.cause === "number" && x.cause >= i ? { ...x, cause: x.cause + 1 } : x)); C.splice(i, 0, e); return copyOf(C); };
 const rests = (L) => restsOf(L);
 const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim" };   // no version named: stamped by the authority (so a deploy may restamp it, R)
-// a rigid-body engine rests things inside its contact slop (eidosim: 5 mm) and a box doesn't slide far (the first eidosim
-// slid things like pucks and stood them exactly on their support; these bars were exact for it)
+// a rigid-body engine rests things inside its contact slop (eidosim: 5 mm), so "on" is within that, not exact
 const ON = 0.005;
 
 function playground(name) {
@@ -139,7 +138,7 @@ function playground(name) {
       "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
   }
   { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
-    // is never taken, Covenant III); under eidosim it flies as a sphere: thrown, it rolls, and rests turned on the ground
+    // is never taken, Covenant III)
     const W7 = playground("pc-d7");
     const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
     const ph7 = fold(log(W7)).entities.rb?.c.physics?.shape;
@@ -161,7 +160,7 @@ function playground(name) {
     ok(c9.ok && b9.ok && g9.ok && t9.ok && f9.ok && Math.abs(x0 - 10) < 0.01, "D9 setup: a ball on a table at x 10, thrown up, physics forced off", { c: c9.refused, b: b9.refused, g: g9.refused, t: t9.refused, f: f9.refused, x0 });
     ok(Math.abs(x9 - 10) < 0.05 && !st9.entities.kid.c.parent, "D9 a forced cut freezes a parented thrown ball where it was (x 10, not 20) and clears its parent", { x: x9, parent: st9.entities.kid.c.parent ?? null });
   }
-  {
+  { // …and under eidosim it flies as a sphere: thrown, it rolls, and rests turned on the ground
     const W7 = playground("pc-d7r");
     const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
     const g7 = call(W7, "rowan", "grab", { id: "rb" }), t7 = call(W7, "rowan", "throw", { id: "rb", v: [0, 1, 3] });
@@ -427,7 +426,7 @@ function playground(name) {
   ok(d.ok, "R1 a drop is accepted (the world isn't foreign any more)", d); call(W, "rowan", "wait", {}, 3000);
   const r = rests(log(W)).filter((x) => x.id === "ball").at(-1);
   ok(r && Math.abs(r.at[1]) < ON && !view(W).checks.disagree.length, "R1 …and the dropped ball falls and rests on the ground, carriers agreeing", { r, checks: view(W).checks });
-  // R1c — the next checkpoint carries the new build
+  // R1c — the next checkpoint carries the new version
   at(25000); settle(openWorld(root, W));
   const ck = log(W).filter((e) => e.kind === "physics" && e.verb === "checkpoint").at(-1);
   ok(ck?.body?.engine?.engine === NEW, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
@@ -478,27 +477,27 @@ function playground(name) {
   const W5 = fresh("pc-r5"); call(W5, "rowan", "create-world", { title: W5 });
   call(W5, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } }); call(W5, "rowan", "look", {});
   ok(!restamps(W5).length && specOf(W5).engine === OLD, "R5 an owner-named version is the owner's: no restamp", specOf(W5));
-  // R6 — a fork of a physics world (review r2 F4): the copy's fork-copy act carries the source's stamped spec, build and all.
+  // R6 — a fork of a physics world (review r2 F4): the copy's fork-copy act carries the source's stamped spec, version and all.
   // That's inherited, not chosen, so after a deploy the fork is restamped like its source (forkWorld writes exactly this act)
   const W6 = fresh("pc-r6"); call(W6, "rowan", "create-world", { title: W6 }); at(100);
   const fc = forkCopy(openWorld(root, W6), "rowan", { requests: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { engine: OLD, tickMs: 33 } } }], throughLock: true });
   ok(fc.ok && specOf(W6).engine === OLD && log(W6).some((e) => e.kind === "request" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped build", [fc.refused, specOf(W6)]);
   call(W6, "rowan", "look", {});
   ok(restamps(W6).length === 1 && specOf(W6).engine === NEW, "R6 a forked physics world is restamped at its first act (an inherited build isn't the owner's choice)", specOf(W6));
-  // R7 — the owner names a build, then changes only tickMs by merge (review r2 F7): the build is still the one they named
+  // R7 — the owner names a version, then changes only tickMs by merge (review r2 F7): the version is still the one they named
   const W7 = fresh("pc-r7"); call(W7, "rowan", "create-world", { title: W7 });
   call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
   const m7 = call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true });
   call(W7, "rowan", "look", {});
   ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).engine === OLD, "R7 an owner-named build survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
-  // R7b — …but a stamped build stays stamped through a merge: the old server stamped it, the owner merged tickMs, a deploy restamps
+  // R7b — …but a stamped version stays stamped through a merge: the old server stamped it, the owner merged tickMs, a deploy restamps
   const W7b = deployed(() => { const n = fresh("pc-r7b"); call(n, "rowan", "create-world", { title: n });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true }); return n; });
   call(W7b, "rowan", "look", {});
   ok(restamps(W7b).length === 1 && specOf(W7b).engine === NEW && specOf(W7b).tickMs === 20, "R7b a stamped build merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
-  // R7c — an older named build doesn't outlive a later stamp: the owner named one, then re-set the engine without a build
-  // (the old server stamped its own), a deploy restamps (the walk stops at the change that brought the stamped build in)
+  // R7c — an older named version doesn't outlive a later stamp: the owner named one, then re-set the engine without a version
+  // (the old server stamped its own), a deploy restamps (the walk stops at the change that brought the stamped version in)
   const W7c = deployed(() => { const n = fresh("pc-r7c"); call(n, "rowan", "create-world", { title: n });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } }); return n; });
@@ -507,7 +506,7 @@ function playground(name) {
 }
 
 // review of #260: an engine name that is an inherited property of the engine table
-// (toString) is no engine this server carries, so it's refused, never written with build null
+// (toString) is no engine this server carries, so it's refused, never written
 { const W = fresh("unknown-inherited-engine"); call(W, "rowan", "create-world", { title: W });
   const r = call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "toString" } });
   ok(!r.ok && r.refused?.code === "unknown-engine" && !fold(log(W)).entities["@world"].c["physics-engine"], "U1 an inherited name of the engine table is refused as an unknown engine", r.refused ?? r); }
@@ -612,7 +611,7 @@ function playground(name) {
   call(W, "rowan", "grab", { id: "ball" }); call(W, "rowan", "throw", { id: "ball", v: [0, 2, 3] }); call(W, "rowan", "wait", {}, 6000);
   const L = log(W); const last = L[L.length - 1];
   const dg = L.findLastIndex((e: any) => e?.kind === "physics" && e.verb === "digest"), ln = L.findLastIndex((e: any) => e?.kind === "physics" && e.verb === "launch");
-  // as a purged log stands on disk: each body the purge took is its {commit} stub (§12)
+  // as a purged log stands on disk: each body the purge took is its {commitment} stub (§12)
   const stub = { commitment: "0".repeat(64) };
   const P = copyOf([...L.map((e: any, i: number) => (i === dg || i === ln ? { ...e, body: stub } : e)), { world: last.world, kind: "redaction", actor: "system", body: { values: [{ seq: dg }, { seq: ln }] }, ts: last.ts + 100 }]);
   let v: any, rs: any, err = null; try { v = simFold(P, last.ts + 1000); rs = restsOf(P); } catch (x: any) { err = String(x?.message).slice(0, 120); }
@@ -833,8 +832,7 @@ function playground(name) {
   ok(turn.ok && !inTop(0.65, 4) && inTop(0.5 * u[0], 4 + 0.5 * u[1]) && corner.id === "ground" && along.id === "table-1" && Math.abs(along.y - top) < 1e-6,
     "U8 a table turned 45 degrees supports at a point over its top, not at a corner of its bounding box", { turn: turn.ok ?? turn.refused, corner, along });
   // asked to place the 0.6 m crate turned with the table 0.35 m to the side (toward a corner of the box), it is put wholly on
-  // the top: it fits there turned as it is (0.6 m across a 0.8 m top), though its world-axis box (0.85 m) doesn't (house
-  // 6340433633: the test passed on any refusal, and placement tested that box, so it was refused)
+  // the top: it fits there turned as it is (0.6 m across a 0.8 m top), though its world-axis box (0.85 m) doesn't
   const turned = (id: string, yaw: number) => { const c = openWorld(root, W).state().entities[id].c.transform; return call(W, "rowan", "set", { id, component: "transform", value: { ...c, q: yawQ(yaw) } }); };
   const tc = turned("crate-1", Math.PI / 4);
   const put = call(W, "rowan", "place", { id: "crate-1", on: "table-1", offset: [0.35, 0] }); const ct = worldT(openWorld(root, W).state(), "crate-1"), p = ct.pos;
@@ -851,7 +849,7 @@ function playground(name) {
   ok(ms.ok && JSON.stringify(top0?.size) === "[1.2,0.8]" && Array.isArray(top0?.xAxis), "U8 …and measure gives that top's own size, 1.2 × 0.8 m, with its axis, not the box of its corners", top0); }
 
 // house 6340433633: a thing laid on its side and turned offers its up face as that face's own rectangle, as a standing thing
-// offers its top (it offered the axis-aligned box of the face's corners: a point off the face, inside that box, held things)
+// offers its top (not the axis-aligned box of the face's corners: a point off the face, inside that box, holds nothing)
 { const W = playground("lying-turned"); const r = Math.SQRT1_2;
   const side = qmul(yawQ(Math.PI / 4), [r, 0, 0, r]);   // on its side (a quarter turn about x), then turned 45 degrees
   const set = call(W, "rowan", "set", { id: "crate-1", component: "transform", value: { pos: [6, 0.3, 0], q: side, scale: [1, 1, 1] } });

@@ -8,16 +8,18 @@
 //   AT3  act shove reports the server's refusal as an error naming the consent class (shove), and its description no longer
 //        says agents are performers by default (every body is Normal)
 //   AT4  every advertised tool carries a title and honest MCP annotations (readOnly / destructive / idempotent / openWorld)
-//   AT5  look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
+//   AT5  two sections share this number: a light is create {components: {light}} (AT5a–e), and look points at a real tool
+//        where one exists (lock and hidden are edit fields), not at the act hatch
 //   AT6  the surface after the fold (REPOINT-PLAN 10-14 §4; R's standard 09:47: a name intuitive to everyone AND useful in
 //        general situations, or it is an alias): ~30 tools; the flight nine are move {mode: "fly"} + act land; the body
 //        sugar is anim {name|joints|ragdoll|stop} (pose is an unknown tool) / reach {release} / act shove; three library tools are one; moderation is
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
-//        is an unknown tool (Mica 11-05)
-//   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
+//        resolves to no handler and is refused naming the call that does it now (tools.ts TOOL_FOLDS)
+//   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4);
+//        AT8a–c (a second section under this number): one resolveWho for every verb that names a `who`
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
 //   AT9  an old name runs nothing and is refused as an unknown tool (walk_to, spawn, snapshot); world_verb and main's old verbs
-//        are refused as removed, naming the call that does it now (R 10-27); renumbered from a second AT7 (claims r10 O4)
+//        are refused as removed, naming the call that does it now (R 10-27)
 //   AT10 catch_up says speech is arrival-only (decision table row 11)
 //   AT12 /worlds lists agents apart again; the worlds tool counts humans and agents (decision table row 21)
 //   AT11 a timed grant takes main's for: "2h" again through act set (decision table row 14)
@@ -138,9 +140,8 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
     const sayTool = toolsSrc.slice(toolsSrc.indexOf('name: "say"'), toolsSrc.indexOf('name: "say"') + 1200);
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
-  { // AT8 (parity sweep 10-14, verified 19:19): kick/ban/unban resolved a person by NAME through whois, while mute/unmute/
-    // warn/ghost/unghost went through bare `act` and took only a raw identity — two ways to say who. One resolver, used by
-    // both the kick family and `act` for every verb whose arguments name a `who`.
+  { // AT8a–c (parity sweep 10-14): one way to say who. One resolver (a name or a u-… identity), used by `act` for every
+    // verb whose arguments name a `who`.
     const toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(/async function resolveWho\(/.test(toolsSrc), "AT8a tools.ts has ONE resolveWho (name or u-… → identity, via whois)");
     ok((toolsSrc.match(/await ag\.request\("whois", \{ name/g) ?? []).length === 2, "AT8b whois-by-name is called from exactly two places — the resolver and the whois tool itself — not once per verb");
@@ -176,7 +177,7 @@ async function sock(name) {
 const ann = await sock("Ann");
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const ag = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Hep", world: "yard", avatar: "" });
-// AT9's evidence (Windows 11-11: the busy meter refused its creates): ag's requests by the row before them, each round trip (>= its authority ms); the last 10 s at the latest rate refusal
+// AT9's evidence when the busy meter refuses a create: ag's requests by the row before them, each round trip (>= its authority ms); the last 10 s at the latest rate refusal
 const sent: { after: string; verb: string; t: number; ms: number }[] = []; let atRate: any = null;
 const last10 = (now = performance.now()) => { const by: Record<string, number[]> = {}; let ms = 0;
   for (const e of sent) if (now - e.t < 10_000) { const b = (by[`${e.after} ${e.verb}`] ??= [0, 0]); b[0]++; b[1] += Math.round(e.ms); ms += e.ms; }
@@ -241,7 +242,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ag.pos.x = 10; ag.pos.z = -9;
   const stale = await call("move", { to: [10, -8] });
   ok(!stale.isError && /placed you here directly/.test(T(stale)) && Math.abs(ag.pos.z + 8) < 0.05, "AT1d after a move that wasn't a walk, the next walk re-arrives the authority's body there (a teleport, said) and walks on", T(stale));
-  // a visitor in a world with a spawn arrives at the spawn, as a person does
+  // a member in a world with a spawn arrives at the spawn, as a person does
   ok((await ann.req("set", { id: "@world", component: "spawn", value: { pos: [-8, 0, -8], radius: 2 } })).ok, "(AT1e setup) Ann gives the yard a spawn at (-8, -8)");
   // the spawn binds those who can't build (bodyverbs: a builder may arrive anywhere), and a new world's newcomers build (R 10-21)
   ok((await ann.req("set", { id: "@world", component: "default-role", value: { role: "member" } })).ok, "(AT1e setup) the yard's newcomers are members");
@@ -309,7 +310,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const posed = await call("anim", { joints: { head: [0, 0.2, 0, 0.98] }, hold: true });
   const cleared = await call("anim", { stop: true });
   ok(!posed.isError && /"playing":"live","mode":"hold"/.test(T(posed)) && !cleared.isError && ag.heldPose == null, "AT6e anim {joints} holds a live frame; anim {stop: true} releases it (clear_pose folded)", [T(posed).slice(0, 120), T(cleared), ag.heldPose]);
-  // ragdoll = a body going limp: anim {ragdoll: true} (R 10-14: one vocabulary with the browser;: shoving is moving someone else; going limp is a body state)
+  // ragdoll = a body going limp: anim {ragdoll: true} (R 10-14: one vocabulary with the browser: shoving is moving someone else; going limp is a body state)
   const nIn = ag.inbox.length; const limp = await call("anim", { ragdoll: true });
   ok(!limp.isError && /limp|down/.test(T(limp)) && ag.clip === "ragdoll", "AT6p anim {ragdoll: true} drops your own body limp (clip ragdoll)", [T(limp), ag.clip]);
   const limpAct = ag.inbox.slice(nIn).find((i: any) => i.kind === "act");
@@ -328,8 +329,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   // the sequencer's search walks eidoverse/assets/models only (server/routes.ts /library-models): under the library checkout
   // (EIDOVERSE_DIR, ../eidoverse-video by default) when the host has one, and this scratch OPT_DIR has none. With no
   // library the honest answers are "no matches" and the sheet's own words for nothing ("there are no models to show
-  // yet": Antra's run of f91840e5 had no library and this read "0 models", wording the tool never printed). The dispatch
-  // is what this bench can prove; EIDOVERSE_DIR=<an empty dir> runs the no-library branch
+  // yet"). The dispatch is what this bench can prove; EIDOVERSE_DIR=<an empty dir> runs the no-library branch
   const lib = await call("library", { query: "cup" });
   ok(!lib.isError && /no matches|\.glb/.test(T(lib)), "AT6h library {query} searches models (list_library folded)", T(lib));
   const sheet = await call("library", { kind: "models" });
@@ -394,8 +394,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const named = (n) => { const t = ag.thingRef(n); return "id" in t ? t.id : null; };   // the old spawn's id is the thing's label now (R 10-17)
   await tryUntil("the agent knows alias-cup", () => named("alias-cup"), { ms: 3000, step: 50 });
   ok(!sp.isError && !!named("alias-cup") && ag.entities.size === n0 + 1, "AT9 create from the old spawn shape {lib, x, z, id} creates the thing (create {model, at}, the id its label: the authority mints ids)", [busyEvidence(), T(sp).slice(0, 200)]);
-  // M1 (holes review 10-15): with a yaw the alias builds at {pos, yaw}, which buildCreate never read: ok, at the origin.
-  // Mutation (must go red): drop the `a.at` branch in authority.js buildCreate.
+  // M1 (holes review 10-15): create's at must be read, or the thing is made at the origin with ok.
+  // Mutation (must go red): drop createAt's read of `a.at` (shared/protocol/authority/writes.js, called by buildCreate).
   const spAt = async (args, id) => { const r = await handleTool(ctx as any, "create", oldSpawn({ lib: "test/cup.glb", ...args, id })); await tryUntil(`the agent knows ${id}`, () => named(id), { ms: 3000, step: 50 }); return { r, rec: ag.foldRecord(named(id)) as any }; };
   const near = (p, x, z) => Array.isArray(p) && Math.abs(p[0] - x) < 0.05 && Math.abs(p[2] - z) < 0.05;
   const xz = await spAt({ x: x0 - 3, z: z0 + 3 }, "alias-cup-xz");
@@ -403,8 +403,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const yw = await spAt({ x: x0 - 3, z: z0 - 3, yaw: 1 }, "alias-cup-yaw");
   const qy = [0, Math.sin(0.5), 0, Math.cos(0.5)];
   ok(!yw.r.isError && near(yw.rec?.pos, x0 - 3, z0 - 3) && Array.isArray(yw.rec?.q) && yw.rec.q.every((n, i) => Math.abs(n - qy[i]) < 1e-3), "AT9 create from the old spawn shape {lib, x, z, yaw} lands at x, z facing yaw (create {at: {pos, yaw}})", [busyEvidence(), T(yw.r).slice(0, 200), yw.rec?.pos, yw.rec?.q]);
-  // review r2 F8: with a yaw and no y the alias put the origin at y 0 (create {at: {pos: [x, 0, z], yaw}}): never seated on
-  // what's under x, z. Now it is place {at: [x, z], yaw}, the same seat as without a yaw: over the wall (top at 2.4) it lands ON it
+  // review r2 F8: with a yaw and no y the shape is place {at: [x, z], facing} (oldSpawn above), the same seat as without a
+  // yaw, never create {at: {pos: [x, 0, z], yaw}} (the origin at y 0): over the wall (top at 2.4) it lands ON it
   const ywOn = await spAt({ x: 1, z: 3, yaw: 1 }, "alias-cup-yaw-on");
   const noYaw = await spAt({ x: -1, z: 3 }, "alias-cup-on");
   ok(!ywOn.r.isError && near(ywOn.rec?.pos, 1, 3) && Math.abs(ywOn.rec?.pos?.[1] - 2.4) < 0.02 && Math.abs(noYaw.rec?.pos?.[1] - ywOn.rec?.pos?.[1]) < 1e-6
@@ -432,8 +432,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const t0 = rid.redial?.tries;
   rid.ws.close(1000, "a drop");
   await tryUntil("Rid knows it was dropped", () => !rid.joined, { ms: 200, step: 10 });
-  // the try is counted when the close is handled, which a loaded runner takes longer than a fixed 30 ms to get to (CI 10-23:
-  // tries 0). Watch for it instead; the redial waits ≥ a connect, so a 5 ms poll sees 1 before the rejoin resets it
+  // the try is counted when the close is handled, which a loaded runner may take a while to get to: watch for it, not a
+  // fixed pause. The redial waits ≥ a connect, so a 5 ms poll sees 1 before the rejoin resets it
   await tryUntil("the drop counted one try", () => rid.redial?.tries === 1, { ms: 1500, step: 5 });
   ok(t0 === 0 && rid.redial?.tries === 1, "AT8 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
   await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });

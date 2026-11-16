@@ -46,7 +46,7 @@ async function runSelf(tree: string, only: string[] | null) {
   const r = Bun.spawnSync(args, { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-// a mutant tree: shared/, mcpl/ (without node_modules) and client/lib/ + client/lib/ui/commands/ copied; the rest linked back
+// a mutant tree: shared/, mcpl/ (without node_modules), client/lib/, spec/, docs/ and AGENTS.md copied; the rest linked back
 function mutantTree(tag: string) { const d = scratch(tag);
   fs.cpSync(path.join(ENGINE, "shared"), path.join(d, "shared"), { recursive: true });
   fs.cpSync(path.join(ENGINE, "mcpl"), path.join(d, "mcpl"), { recursive: true, filter: (src) => !src.includes(`${path.sep}node_modules`) });
@@ -134,7 +134,7 @@ const cases: Case[] = [
       const doc = VS.VERBSPEC?.consent?.doc ?? ""; const r = s.call("alice", "consent", { delegate: "mallory" }); const r2 = s.call("alice", "consent", { switch: "ask" });
       return { doc: /move and touch/.test(doc) && /allow, block and unlist/.test(doc) && !/delegate|switch|asks? /.test(doc), r: show(r), r2: show(r2) }; },
     good: (o) => o.doc && [o.r, o.r2].every((x) => /^refused shape/.test(x) && /two gates/.test(x)) },
-  // ---------------- X: the spec says it ----------------
+  // ---------------- B: the agent's body (stern L1, L2) ----------------
   { id: "B1", what: "(stern L1) on a seat, anim {bodyMode: stand} never takes you off it (body-mode grants nothing): the reply says you're still attached and to detach; the tool's text says the same", async run() {
       const TL = await import(TREE + "mcpl/tools.ts"); let detached = false, mode: any = null;
       const ag: any = { myOccupancy: { to: "seat1" }, socketName: () => "the bench", anims: [], clip: "sitchair", target: null,

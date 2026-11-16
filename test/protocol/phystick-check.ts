@@ -1,7 +1,7 @@
 // test/protocol/phystick-check.ts — the engine's heartbeat (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2).
 // Before: the sim advanced and rests were logged INSIDE whoever's request came next (503 ms for the first `wait` after a
 // 40-crate knock, then 145–341 ms each), and rests never logged without a request. Now server.ts calls settle(w) on its
-// own beat. usage: bun test/protocol/phystick-check.ts   (NO_TICK=1 runs the old shape: T1, T2 and T3's bounded-pass row go red)
+// own beat. usage: bun test/protocol/phystick-check.ts   (NO_TICK=1 runs the old shape: every row that needs the beat goes red, T1 to T8)
 //   T1  rests log with nobody asking: after the throw only settle() passes run; every launched body rests on the record
 //   T2  a request during the cascade is cheap: max `wait` under the beat is a fraction of the request-path figure
 //   T3  bounded passes: one pass advances at most maxTicks engine ticks, a stall catches up over later passes, and the
@@ -34,7 +34,7 @@ function world(name, N) {
   return { w, call, beat, now };
 }
 
-// T1: throw, then only beats (no request at all) until the beat writes nothing for 2 s; every launched body has a rest
+// T1: throw, then only beats (no request at all) until nothing flies and no rest waits to be logged; every launched body has a rest
 {
   const { w, call, beat } = world("t1", 12);
   ok(call("rowan", "throw", { id: "ball", v: [0, 1, 12] }).ok, "T1 throw");
@@ -91,7 +91,7 @@ function world(name, N) {
   const lost = w.entries.find((e) => e.kind === "request" && e.verb === "return-lost"); const at = w.state().entities.ball.c.transform.pos;
   ok(!!lost && lost.body.home === true && Math.hypot(at[0], at[1], at[2] - 2) < 1e-6, "T5 it rested outside and was sent home, not back to the hand", { lost: lost?.body, at });
 }
-// T6: a checkpoint. After a knock has rested and 20 s of quiet, the beat writes sim:checkpoint naming a blob with the cut;
+// T6: a checkpoint. After a knock has rested and 20 s of quiet (40 s are given), the beat writes sim:checkpoint naming a blob with the cut;
 // opening the same world again starts the sim from it (feeding only later entries), in bounded time (a second open's cost is reported, not compared), and lands on the same bits.
 {
   const { w, call, beat, now } = world("t6", 30);
@@ -140,8 +140,8 @@ function world(name, N) {
   const w2 = openLive(`${root}t7`, "t7", { now });
   ok(w2.bootedFrom === null && digestOf(w2.sim().sim) === digestOf(w.sim().sim), "T7 reopened from genesis (no checkpoint after the purge), same bits", { bootedFrom: w2.bootedFrom });
 }
-// T8: a thing that CROSSES the edge is lost there and then, not when it finally stops rolling 300 m out (attack-physics P1:
-// ball-7 flew 45–66 s outside, untouchable; P2: y was never checked). Within 2 s of sim time it is home and off the engine.
+// T8: a thing that CROSSES the edge is lost there and then, not when it finally stops rolling far outside (attack-physics P1),
+// and y is an edge too (P2: t8y). Within 2 s of sim time it is home and off the engine.
 {
   for (const [name, v] of [["t8", [30, 8, 0]], ["t8y", [0, 40, 0]]]) {
     const { w, call, beat } = world(name, 0);
@@ -159,9 +159,9 @@ function world(name, N) {
   }
 }
 
-// T9: removing the terrain puts the world back on flat ground at y = 0, for the engine as for the client (R 10-11 22:47: crates
-// "sank into the floor" after she removed the gym's terrain: the sim layer re-grounded the engine on terrain {} — the
-// toolkit's DEFAULT HILLS, amplitude 3 — while the client drew the flat default). A/B: a world that never had terrain.
+// T9: removing the terrain puts the world back on flat ground at y = 0, for the engine as for the client (a removed terrain
+// must not read as terrain {}, the toolkit's default hills, or things sink into the floor the client draws). A/B: a world
+// that never had terrain.
 {
   const restY = (name, withTerrain) => { const { w, call, beat } = world(name, 0);
     if (withTerrain) { call("rowan", "set", { id: "@world", component: "terrain", value: { amplitude: 3, seed: 7 } }); call("rowan", "delete", { id: "@world", component: "terrain" }); }

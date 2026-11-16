@@ -12,7 +12,8 @@
 // Cases (worlds open as the server opens them: server/livehost.ts):
 //   S   scale: ten requests timed, each the best of up to 5 tries, at 72 (the Commons' size), then their growth at 500 and 2 000: delete (with what rested on
 //       it set down), a 3.5 m step of a tracked body, check {}, place on a table scaled 20× (a builder; a visitor is
-//       refused), look, create, set, a batch of 50 creates, grab (with what rests on it set down)
+//       refused), look, create, set, a batch of 50 creates, grab (with what rests on it set down). S4–S6 (listed after
+//       R below): look's tree over 2 000 things, rotated furniture at 1 500, a step beside 800 small things
 //   Q   the gates in front of the work: a visitor's place on a 1000× table is refused at once; a search that can't end
 //       inside the work budget is refused (too-costly); check {} on a heap likewise, while a write into it still lands;
 //       reads per connection (server/readmeter.ts); settling orphaned holds at load is bounded
@@ -37,7 +38,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "d374d2ef";
 // cost is judged machine-free: by how a request GROWS (the same op at a small and a large world, timed seconds apart in this
-// process, so the host's speed cancels: at most GROWS×, an index regressed to a scan is 5–200×) and by counted work (the
+// process, so the host's speed cancels: at most GROWS× (a write GROWS_OP×), an index regressed to a scan is 5–200×) and by counted work (the
 // authority's WORK_METER units, log appends). BOUND_MS only catches a hang. Each op: best of 5
 const BOUND_MS = 500, GROWS = 3, FLOOR_MS = 1;
 const bound = () => BOUND_MS;
@@ -163,7 +164,7 @@ function cast(s: any) {
   s.call("olive", "set", { id: "@world", component: "bounds", value: { min: [-500, 0, -500], max: [500, 50, 500] } });
   for (const [who, role] of [["bob", "builder"], ["vic", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
 }
-// n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: the authority's rate window)
+// n crates on a 2 m grid around the origin, 50 to a batch (20 s apart: past the authority's 10 s rate window)
 function fill(s: any, n: number, at = (i: number, side: number) => [(i % side) * 2 - side, 0, Math.floor(i / side) * 2 - side]) {
   const side = Math.ceil(Math.sqrt(n));
   for (let made = 0; made < n;) { const ops = []; for (let k = 0; k < 50 && made < n; k++, made++) ops.push({ verb: "create", args: { id: `c-${made}`, model: "crate", components: { transform: { pos: at(made, side), q: [0, 0, 0, 1], scale: [1, 1, 1] } } } });
@@ -199,10 +200,9 @@ function scaleCase(n: number) {
     op("batch", (i) => s.call("olive", "batch", { requests: Array.from({ length: 50 }, (_, k) => ({ verb: "create", args: { model: "crate", components: { transform: T0([X - 60 - k, 0, -20 - 4 * i]) } } })) }, 20000));
     s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
     // grab a tray WITH its cup on it (so grab's "what rested on it loses support" pass is timed: the cup is set down), walk
-    // it — untimed — to its own clear spot and drop it there straight down (timed). The op is grab + drop, as before. (It
-    // used to drop every tray at vic's feet: they stacked, the third claimed an overlap (implausible) and stayed held, and
-    // the fifth grab met hold-limit. A fast host never repeats grab — best() stops under the bound — so only a slow one hit
-    // it: fork run 40067199839, Windows, grab "hold-limit".)
+    // it (untimed) to its own clear spot and drop it there straight down (timed): the op is grab + drop. Each tray gets its
+    // own spot: dropped at vic's feet they stacked until a drop was refused, the tray stayed held, and a later grab met
+    // hold-limit (only on a host slow enough to repeat the op: the loop stops at the first try within FLOOR_MS)
     { let bestG: any = null;
       for (let i = 0; i < 5; i++) { const t = `tray-${i}`;
         s.call("vic", "move", { to: [X - 20.7, 0, 39.4], teleport: true }, 20000);
@@ -437,7 +437,7 @@ const cases: Case[] = [
     good: (o) => o.put === "ok" && o.nested === "ok" && o.annLeft && o.before?.length === 1 && JSON.stringify(o.after) === JSON.stringify(o.before) },
   { id: "R2", what: "…and a leave nested in another leave (a host callback during its drops) doesn't end the outer leave's settlement: its later drops are still never rate-refused", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "roles:ann", value: { role: "member" } });
-      for (let k = 0; k < 2; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "member", ...(k < 1 ? { release: "return" } : {}) } } });   // one goes home: the second lands alone (two hands: MAX_HELD, 10-10; it was three)
+      for (let k = 0; k < 2; k++) s.call("olive", "create", { id: `b-${k}`, model: "book", components: { transform: T0([0.2 * k, 0, 0]), grabbable: { who: "member", ...(k < 1 ? { release: "return" } : {}) } } });   // one goes home: the second lands alone (two hands: MAX_HELD)
       s.call("olive", "create", { id: "ball", model: "book", components: { transform: T0([3, 0, 0]), grabbable: { who: "member" } } });
       s.call("ann", "move", { to: [3, 0, 0.5] }); s.call("ann", "grab", { id: "ball" });
       for (let i = 0; i < 64; i++) s.call("vic", "move", { to: [0, 0, 0.5 + (i % 2) * 0.1], teleport: true }, 10);   // vic's budget for this window is spent (each an act)
@@ -448,7 +448,7 @@ const cases: Case[] = [
       return { nested: show(nested), dropped: r.dropped?.map((d: any) => d.ok), why: r.dropped?.map((d: any) => d.refused ?? null), held: Object.keys(w.presence.holds) }; },
     good: (o) => o.nested === "ok" && JSON.stringify(o.dropped) === "[true,true]" && o.held.length === 0 },
 
-  // ---------------- G: guards ----------------
+  // ---------------- more S (S5, S6, S4: red at base like the rest), then G: guards ----------------
   { id: "S5", what: `rotated furniture at 1 500 things (300 desks turned 30°, four books on each): look, and placing a book on a turned desk with a box in its middle, each cost at most ${GROWS}× what they do with 20 desks; check {} is held only to the backstop`, run(s) {
       const at = (s: any, desks: number) => { cast(s);
       const yq = (deg: number) => [0, Math.sin(deg * Math.PI / 360), 0, Math.cos(deg * Math.PI / 360)];
@@ -524,7 +524,7 @@ if (argv.includes("--control")) {
   process.exit(wrong ? 1 : 0);
 }
 
-// I4 needs the engine's catalogue (it measures GLBs asynchronously): run before the synchronous cases
+// I4's run is realGlbs() below (the engine's catalogue measures GLBs asynchronously): the run loop awaits it in its turn
 // the G3 scenario: every reply, with what differs between runs by design (chain heads, salts) left out; and the
 // viewer's own consent shield, whose shape recut A2 changed on purpose (a switch, not a preset): G3 is about the index
 function scenario() {
@@ -605,12 +605,11 @@ async function sameAsBase() {
   if (!qs.length) return { same: false, replies: a.length, why: "no written rotation to check (the scan would be vacuous)" };
   const notUnit = qs.find((q) => Math.abs(Math.hypot(...q) - 1) > 1e-9);   // ours must BE unit, not merely compare as one
   if (notUnit) return { same: false, replies: a.length, notUnit };
-  // 2026-10-14: a refusal's code and its fix's shape are the contract; the metres inside its prose are a measurement of
-  // where a body ended up ('mug is 6.316 m from you' here vs 6.349 at the base — put-down-in-front-of-the-body, 2fdadb70,
-  // moved it 3 cm). Prose is compared with its decimals blanked, so a changed number in a reason is not a changed reply.
-  // 2026-10-14 (sockets → child entities, feat/sockets-entities LS4): a create that lands a model with sockets also mints
-  // the socket children, and `after` carries them; the base minted none. Compared without any `after` entry that IS a
-  // socket (a minted id, a `socket` component) — the host's own record still has to match the base's exactly.
+  // a refusal's code and its fix's shape are the contract; the metres inside its prose measure where a body ended up
+  // ('mug is 6.316 m from you' here, 6.349 at the base). Prose (reason, fix) is compared with every number blanked.
+  // Sockets are child entities now: a create that lands a model with sockets also mints the socket children, and `after`
+  // carries them; the base minted none. Compared without any `after` entry that IS a socket (it has a `socket`
+  // component): the host's own entry still has to match the base's exactly.
   const noA11y = (x: any) => JSON.stringify(x, (k, v) => (k === "can" || k === "state" || k === "description" || k === "sockets" || (k === "order" && v === "a0") ? undefined   // parent.order: cut by the shape audit 10-16 (nothing read it)
       // `sockets` on a look row: the children, listed (same addition)
     : k === "after" && v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([, e]: any) => !(e && typeof e === "object" && "socket" in e)))

@@ -1,11 +1,12 @@
 // Four gaps 26 left open (research note 34), as the SAME requests through the authority before this work (c9b4a67,
-// extracted by git into .baseline-gaps/) and through today's. Each case must differ from the baseline as its predicates
+// extracted by git into a scratch dir: common.ts labAt) and through today's. Each case must differ from the baseline as its predicates
 // say (most attacks: accepted there, refused now; some are judged on state or order); a guard (co-building, owner flows)
 // must work now (the baseline isn't judged for guards).
 //   G1  creator rights on keyed components (PROTOCOL §5): "the creator of this key, or an owner", a view over the log
 //   G2  presence plausibility (L6, 25d M3): the authority's own track of each body; settlements check against it
 //   G3  rate per actor (L7): every logged word, not only state writes
 //   G4  two hands, one crate (25c L6 falsifier)
+//   R   the fresh red team's findings (note 33)
 // Ported from the protocol lab's gaps-check.js @ 11db981; the "before" door (lab c9b4a67) is the control arm and runs only
 // with PROTOCOL_LAB (see common.ts). usage: bun test/protocol/gaps-check.ts
 // @ts-nocheck — lab code, kept as written
@@ -42,7 +43,7 @@ const ok = (r) => r?.ok === true, refused = (r) => r?.ok === false, code = (r) =
 const show = (r) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 80)}`);
 const comp = (s, id, c) => s.call("olive", "inspect", { id }).components?.[c];
 const posOf = (s, id) => JSON.stringify(s.call("olive", "inspect", { id }).world?.pos);
-// owner olive, builders bob and ann, visitor vic
+// owner olive, builders bob and ann, member vic
 function cast(s) {
   s.call("olive", "create-world", { title: s.name });
   for (const [who, role] of [["bob", "builder"], ["ann", "builder"], ["vic", "member"]]) s.call("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
@@ -118,10 +119,10 @@ const cases = [
       const arrive = s.call("vic", "move", { to: [0, 0, 0.4] });
       const ok8 = s.call("vic", "move", { to: [0.5, 0, 8] }); const tp = s.call("vic", "move", { to: [0, 0, 0.4], teleport: true });
       const L = s.world().entries; const all = L.filter((e) => e.kind === "request" && e.actor === "vic" && e.verb === "move"); const acts = all.filter((e) => !e.body?.refused);
-      // round-2 R7 recorded refused requests, but a body's track is presence: a refused move (arrival and teleport included)
-      // is never recorded (review 10-06 S0-3: a client indoors wrote one every ~3 s).
+      // a refused request is recorded (round-2 R7), but a body's track is presence: a refused move (arrival and teleport
+      // included) is never recorded (review 10-06 S0-3).
       return { arrive, ok8, tp, moveActs: acts.length, refusedActs: all.filter((e) => e.body?.refused).length, recorded: acts[0]?.body?.presence ?? null }; },
-    // review 10-07 M3: an arrival is presence, never logged (it was an act with where from and to); only a teleport while present is
+    // review 10-07 M3: an arrival is presence, never logged; only a teleport while present is
     baseBad: (o) => ok(o.arrive), nowGood: (o) => code(o.arrive) === "spawn" && ok(o.ok8) && code(o.tp) === "spawn" && o.moveActs === 0 && o.refusedActs === 0 && !o.recorded },
   { id: "G2d", guard: true, what: "walking at a plausible speed while carrying still works, and the put records no body position (review 10-07 M3)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
@@ -287,10 +288,10 @@ const cases = [
       const r = s.call("bob", "batch", { requests: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
       return { r: show(r), code: code(r), written: s.world().entries.length - before }; },
     nowGood: (o) => o.code === "rate" && o.written === 0 },
-  // H1 (holes review 10-15): the cap above kept the authority's array at 200, and forwardInbox forwarded by array LENGTH,
-  // so a browser that never drains its queue stuck at 200 and heard nothing more, ever (every ask to it expired "silence is
-  // no"). This row reads DELIVERY: a real WorldLog (server/worldlog.ts) with a toActor sink that never calls `inbox`.
-  // Mutation (must go red): forward by msgs.length again in forwardInbox, or drop the `n` stamp in authority.js inboxPush.
+  // H1 (holes review 10-15): the authority keeps at most 200 in an inbox, and a browser never drains its own, so delivery
+  // must not go by the array's length. This row reads DELIVERY: a real WorldLog (server/worldlog.ts) with a toActor sink
+  // that never calls `inbox`. Mutation (must go red): forward by msgs.length in forwardInbox, or drop the `n` stamp in
+  // inboxPush (shared/protocol/authority/bodyconsent.js).
   { id: "G3h", guard: true, what: "300 allowed body acts: at most 200 kept in the target's inbox, and all 300 reach their socket (a browser never drains it)", run() {
       const name = `g3h-${++g3hRuns}`; const { owner } = WL.foundWorld(`${WL_DIR}/${name}`, name, "olive");
       const log = new WL.WorldLog(name); const got = [];

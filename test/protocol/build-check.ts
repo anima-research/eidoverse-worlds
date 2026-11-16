@@ -14,7 +14,8 @@
 //    test/protocol/build-probe.ts, a real browser)
 //   U   blueprint updates (Antra's review of f91840e5): a part reparented upstream is reparented by update (U1); a copy
 //       updated to a newer record and re-published keeps its parts' keys, so updating another copy matches part to
-//       part — one child, not two (U2)
+//       part — one child, not two (U2); a dropped part goes only if this copy left it as it came (U3, U3b); a resolve
+//       must name every conflict and only conflicts (U4, U6); publish {from: [one id]} is publish {from: that id} (U5)
 //   G   guards (green at base too)
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -116,7 +117,7 @@ const cases: { id: string; what: string; run: (s: any) => any; good: (o: any) =>
       r.door = code(s.call("vic", "move", { to: [11.5, 0, 13] }));           // through the doorway (x 11..12 at z 14)
       r.inside = code(s.call("vic", "move", { to: [12.5, 0, 11.5] }));
       r.anchor = code(s.call("ann", "move", { to: [10.4, 0, 10.4] }));      // the anchor's corner, where the placeholder crate stood
-      r.outWall = code(s.call("vic", "move", { to: [12.5, 0, 15.5] }));      // south through the wall at x 12.5 (not the authority)
+      r.outWall = code(s.call("vic", "move", { to: [12.5, 0, 15.5] }));      // south through the wall at x 12.5 (not the doorway)
       r.arrive2 = code(s.call("bob", "move", { to: [16, 0, 11.5] }));
       r.window = code(s.call("bob", "move", { to: [12.5, 0, 11.5] }));       // west through the east window (x 14, z 11..12)
       r.tpWall = code(s.call("olive", "move", { to: [14, 0, 13] }));         // an arrival inside the east wall

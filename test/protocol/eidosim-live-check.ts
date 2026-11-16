@@ -1,6 +1,6 @@
 // @ts-nocheck
-// test/protocol/eidosim-live-check.ts — eidosim at the authority: who may be knocked, knocked children, and spheres on the
-// live host (openLive, over the lab catalogue: test/harness/labhost.ts). Review of 8377ec52 #1 #3 #4 #5 #6. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/eidosim-live-check.ts
+// test/protocol/eidosim-live-check.ts — eidosim at the authority: who may be knocked, knocked children, a sphere on the live
+// host (K0-K5), and the surfaces of tumbled or laid-down things (K6-K10). openLive is test/harness/labhost.ts's. Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/eidosim-live-check.ts
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import { request } from "../../shared/protocol/authority.js";

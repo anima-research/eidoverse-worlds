@@ -9,13 +9,15 @@
 //   A   the agent's words match the log's: translated acts are `imported` (M5)
 //   G   governance: a lower tier can never add keys above itself (H4); gov.py runs here
 //   K   the Commons' translation carries its owners; its tier 0 is EMPTY (#260 rereview blocker 1: no key can be bound to the
-//       v1 owner); a world FOUNDED new takes its founder's own key (H4)
+//       v1 owner); a world FOUNDED new takes its founder's own key (H4); no account subject is written (K7–K26)
 //   N   names: bare names belong to the registry; anyone else's carry a namespace; a registered alias works (H1, M7)
 //   D   defaults: a component's parameters are written into the stored value at create/add time (H2), @world settings
 //       store only what was written (D5); meanings are pinned
 //   I   ids: minted ids are ≥ 128 random bits, everywhere (H5)
 //   R   references: typed ref/refs/person fields; duplicate and publish rebind them (H5)
 //   P   privacy: arrivals and grabs log what correctness needs, not where people stood or what they are (M3)
+//   ST  status: held names reserved, the kernel's trial-kernel, the rest trial; PN the registry pin as a tripwire (--ack);
+//       W world-meta tightenings (about, bounds, copy-of, script)
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
@@ -746,7 +748,7 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /reserved/i.test(g) && !/\*\*optional\*\*/.test(g) && /registry-pin/.test(g) && CAT.COMPONENTS.schemas.status === "reserved", g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
-// + the shape audit's wave 2 (attach-interact): sockets (the old map, lift-only) and the names R held (15:16 LOCKED)
+// + the shape audit's wave 2 (attach-interact): the names R held (15:16 LOCKED); sockets (the old map) is no name now (D8s)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
 const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "anim-pose", "anim-clip", "anim-states", "camera", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
 const KSPEC = await import("../../shared/protocol/kernelspec.js");

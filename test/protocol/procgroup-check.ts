@@ -1,7 +1,10 @@
-// The gate finds and kills a suite's processes on Linux, macOS and Windows (review #260, rereview blocker 2; procgroup.ts).
+// The gate finds and kills a suite's processes on Linux, macOS and Windows (review #260, rereview blocker 2;
+// server/procgroup.ts, under the gate's name test/gate/procgroup.ts).
 // PG1 runs for real on whatever OS this is. PG2 proves the macOS path (ps) on any POSIX host by checking it agrees with
 // what the OS reports. PG3/PG4 prove the Windows path's parsing and tree walk on fixed tables, including an orphan whose
-// parent already exited (Windows keeps the dead parent's id on the child).
+// parent already exited (Windows keeps the dead parent's id on the child). PG5–PG12, PG14, PG16 and PG17: zombies, the async
+// table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
+// evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight.
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -52,7 +55,7 @@ check("PG3 the Windows process table parses (pid, parent) rows from CRLF output"
 check("PG5 a zombie in the group is not counted as left running", suiteMembers(7, parsePsTable(" 7 7 1 S\n 8 7 7 Z+\n 9 7 7 R\n 10 10 1 S\n"), "darwin").join() === "7,9");
 
 // PG6: the Windows table, asked asynchronously, gives up within its bound when the query never answers, and the event loop runs
-// meanwhile (CI 10-21: a synchronous WMI query in the kill path froze the gate for two hours, past every timeout it had)
+// meanwhile (a synchronous WMI query in the kill path freezes the gate past every timeout it has)
 {
   let ticks = 0; const tick = setInterval(() => ticks++, 50);
   const t0 = Date.now(); const hung = await (PG as any).processTableAsync?.("win32", { ms: 600, query: () => new Promise(() => {}) });
@@ -81,7 +84,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
     sync.length === 0 && /killSuiteAsync/.test(run) && /suiteMembersAsync/.test(run) && /wouldn't die/.test(run), { sync });
 }
 
-// PG9–PG12 (CI 10-22: the Windows runner "lost communication" mid-gate): the gate sweeps every suite's tree AFTER the suite
+// PG9–PG12, PG14: the gate sweeps every suite's tree AFTER the suite
 // exited, and Windows reuses process ids, so a tree kill aimed at the dead root's id can land on whoever holds it now.
 {
   const plan = (PG as any).winKillPlan as undefined | ((root: number, t: { pid: number; ppid: number; pgid: number; zombie: boolean }[], exited: boolean) => number[]);
@@ -91,7 +94,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG9 a live suite's tree is killed children first, the root last", !!plan && JSON.stringify(plan(100, T, false)) === JSON.stringify([300, 200, 100]), plan && plan(100, T, false));
   check("PG10 after the suite exited, an id that's in the table again is someone else's: nothing is killed", !!plan && plan(100, reused, true).length === 0, plan && plan(100, reused, true));
   check("PG11 after the suite exited, its orphans are killed and the dead root's id never is", !!plan && JSON.stringify(plan(100, gone, true)) === JSON.stringify([300, 200]), plan && plan(100, gone, true));
-  // PG14 (CI 10-23, run 40054616217: the gate died mid-lane, exit 1, no tally): the gate (900) was started by a shell (60)
+  // PG14: the gate (900) was started by a shell (60)
   // whose own parent id is 100 — a long-dead process's number, now the dead suite root's too. 60 → 900 → 950 look like
   // 100's orphans; the gate and its shell must never be in the plan, and neither must anything below them
   const stale = parseWinTable("4 0\r\n60 100\r\n900 60\r\n950 900\r\n200 100\r\n");
@@ -133,7 +136,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG16 a Windows sweep reads whether its suite has exited once the process table has answered, and each caller hands it a reading of its own child (killChild, the gate's three sweeps, run-client's two)",
     readAfter === true && Object.values(live).every(Boolean), { readAfter, live }); }
 
-// PG13: the gate keeps what a failed check SAW, not only its name (scripts I2 failed twice in gate logs with no values, 10-22);
+// PG13: the gate keeps what a failed check SAW, not only its name;
 // a verdict the output cut dropped keeps only its own line (outputKeeper, PG19)
 { const { failLines } = await import("../gate/suites.ts");
   const out = ["ok   A1 fine", "FAIL I2   a whole request", '       {"said":true,"ms":1400}', "ok   I3 next", "  \u2717 HIS1 history", "    History\u2715 reading the log", "[x] 1 passed, 2 failed"];

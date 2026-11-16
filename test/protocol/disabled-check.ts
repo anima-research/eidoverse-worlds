@@ -14,7 +14,7 @@ const { root, clock, call } = labWorld("disabled");
 const code = (r) => (r.ok ? "ok" : r.refused?.code);
 const st = (W) => fold(openWorld(root, W).entries);
 const bodies = (W) => { const w = openWorld(root, W); const sf = simFold(w.entries, w.now()); return Object.keys({ ...(sf?.sim?.bodies ?? {}), ...(sf?.sim?.statics ?? {}) }); };
-// a crate `base` at x=0 with a crate `top` placed on it; `door` with a reaction; a loose crate `c` at x=3
+// a crate `base` at x=0 with a crate `top` placed on it; a loose crate `c` at x=3
 const mk = (W) => { call(W, "rowan", "create-world", { title: W }); call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: ENG }); call(W, "rowan", "set", { id: "@world", component: "access", value: { join: "anyone" } });
   call(W, "rowan", "create", { id: "base", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
   call(W, "rowan", "create", { id: "top", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { on: "base" } });
@@ -59,8 +59,8 @@ const holds = (W) => Object.keys(openWorld(root, W).presence.holds);
   call(W, "rowan", "set", { id: "@world", component: "physics-engine", value: { ...ENG, tickMs: 25 } });
   ok(holds(W).includes("top") && !engineHas(W, "top"), "L4 an engine change doesn't seat a held thing either", { held: holds(W), engine: engineHas(W, "top") }); }
 
-// D6: switching off a PARENT lets go of a held child (attack-editor S2-1: the hold persisted while put/drop/throw were refused
-// "sunk into ground", use/grab said "hangs under p, which is switched off"; only deleting or re-enabling the parent freed the hand)
+// D6: switching off a PARENT lets go of a held child (else the hold outlives it while put/drop/throw/use/grab are all refused:
+// a hand nothing but deleting or re-enabling the parent could free)
 { const W = "offparent"; mk(W);
   call(W, "vic", "move", { to: [0, 0, -0.8] }); const g = call(W, "vic", "grab", { id: "top" });
   const s = call(W, "rowan", "set", { id: "base", component: "disabled", value: true });

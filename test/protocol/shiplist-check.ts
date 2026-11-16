@@ -3,7 +3,7 @@
 //   bun test/protocol/shiplist-check.ts                 every case
 //   bun test/protocol/shiplist-check.ts --only O3,R2    just those
 //   bun test/protocol/shiplist-check.ts --tree <dir>    the cases against another checkout (a mutant, the base); the lab
-//                                                  models (O0's) stay this checkout's test/harness/labmodels.js
+//                                                  models stay this checkout's test/harness/labmodels.js
 //   bun test/protocol/shiplist-check.ts --control       the base (staging 7f1f1934): every case must be red there except the
 //                                                  KEEP cases (today's behaviour, kept), which must be green
 //   bun test/protocol/shiplist-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red;
@@ -301,7 +301,7 @@ await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/pe
     { verb: "spawn", args: { id: "fan", lib: "crate", pos: [0, 0, 0] } }, { verb: "motion", args: { id: "fan", type: "spin", rpm: 3, axis: "y" } },
     { verb: "spawn", args: { id: "boat", lib: "crate", pos: [5, 0, 0] } }, { verb: "motion", args: { id: "boat", type: "orbit", center: [5, 0, 5], radius: 3, period: 20, face: false } },
     { verb: "spawn", args: { id: "cart", lib: "crate", pos: [9, 0, 0] } }, { verb: "motion", args: { id: "cart", type: "path", points: [[9, 0, 0], [9, 0, 6]], speed: 0.5, loop: "pingpong", face: true } }));
-  const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`)).filter((k) => k !== "@world.imported:ownerless"); // ownerless worlds are opened by the translation (row 22)
+  const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`)).filter((k) => k !== "@world.imported:ownerless"); // a leftover filter: the translation no longer writes imported:ownerless (translate-v1.js header)
   const W = world(); const made = ["fan", "boat", "cart"].map((id) => why(W.call("create", { id, model: "crate", components: { motion: (({ t0, ...m }) => m)(v[id].motion) }, place: { at: [id.length, 0] } })));
   return [r.stats.divergences === 0 && v.fan.motion.degPerSec === 18 && !("rpm" in v.fan.motion) && v.boat.motion.period === 20 && v.boat.motion.face === false && v.boat.motion.center?.[2] === 5
     && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];

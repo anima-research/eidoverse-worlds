@@ -9,8 +9,7 @@
 //   - the projection loses nothing: an independent inverse (components → old field names), compared with the
 //     REAL engine fold, entry by entry (every 250th past 2,000 entries), aligned by act. Only representation is
 //     normalised (yaw ↔ q, scalar scale ↔ vector, light spelling) and only translate-v1's DROPPED list may differ.
-//     (Kept from the phase-1 test, b05715f9: the lab sweep had no such check. Without it a translator that silently
-//     dropped grass passed.)
+//     (Without it a translator that silently dropped grass passes.)
 // Plus: her dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world divergences; as many rests as
 // launches; every body's final position is hers; deterministic; strict read-back clean); the hash shim (native =
 // portable = the reference vectors). The sim build has no pin here (engine-check.ts holds the version).
@@ -300,7 +299,7 @@ function lossAt(oldSt: any, st: any, phys: any = null) {
   return { other: true };
 }
 
-// the gate's sweep is hermetic: the repo's own old-format logs (test/fixtures/v1-worlds, spec/fixtures/replay), plus any PROTOCOL_WORLDS a host adds (this
+// the gate's sweep is hermetic: the repo's own old-format logs (test/fixtures/v1-worlds, spec/fixtures), plus any PROTOCOL_WORLDS a host adds (this
 // box's real worlds, say). It never walks outside the checkout unasked: the parent directory is a different place on
 // every host. Not sweeping local worlds is reported as an OPTIONAL line the gate counts.
 const roots = [path.join(ENGINE, "test/fixtures/v1-worlds"), path.join(ENGINE, "spec/fixtures"), ...pathList(process.env.PROTOCOL_WORLDS)];

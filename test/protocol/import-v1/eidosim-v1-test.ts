@@ -1,5 +1,5 @@
 // The deterministic sim fold, held to PROTOCOL_v2's covenants in a vacuum:
-//   bun test/protocol/import-v1/eidosim-v1-test.ts   (suite eidosim-v1 in test/gate/run.ts)
+//   bun test/protocol/import-v1/eidosim-v1-test.ts   (suite eidosim-v1 in test/gate/suites.ts)
 //
 // SELF-AGREEMENT — two independent folds of the same entries are
 // bit-identical; SCHEDULE-INDEPENDENCE — advancing in one jump equals
@@ -105,8 +105,8 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
     f.sim.epoch!.foreign === true && Object.keys(f.sim.bodies).length === 0);
 }
 
-{ // eidosim@0.2.0: terrain-aware ground (§24t-3 — the epoch bump the 0.1
-  // header scheduled, unblocked by shared/terrainmath.js)
+{ // terrain-aware ground (§24t-3): the law since eidosim@0.2.0, run here
+  // under the current SIM_ID (shared/terrainmath.js)
   const { makeHeightField, terrainParams } = await import("../../../shared/terrainmath.js");
   const TARGS = { seed: 7, size: 160, segments: 8, amplitude: 2.6, flatRadius: 16 };
   const HILLS: LogEntry[] = [
@@ -139,7 +139,7 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
 }
 
 { // THE 0.1.0 LAW IS CARRIED, PINNED: an old log's epoch replays flat-floor
-  // — same bits it always produced — even though this build MINTS 0.2.0.
+  // — same bits it always produced — even though this build mints a later law.
   const OLD: LogEntry[] = [
     mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
     mk(1, 5, "terrain", { seed: 7, size: 160, amplitude: 2.6 }),
@@ -156,8 +156,8 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
     pose.resting === true && pose.p[1] === 1.2, String(pose.p[1]));
 }
 
-{ // eidosim@0.3.0: the world's things are colliders (§24t-8 — boxes the
-  // sequencer stamps into history; Covenant III)
+{ // the world's things are colliders (§24t-8 — boxes the sequencer stamps
+  // into history; Covenant III): the law since eidosim@0.3.0, run under SIM_ID
   const CRATE = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
   const WALLBOX = [[-0.25, 0, -2], [0.25, 2, 2]];
   const BOXES = { "crate.glb": CRATE, "wall.glb": WALLBOX };

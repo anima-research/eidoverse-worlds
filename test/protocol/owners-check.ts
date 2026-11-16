@@ -13,12 +13,15 @@
 //   BN1  a main-era world ban of a name nothing else in the log names: bound to main's one account for it, so that account is
 //        still banned after the upgrade (the authority's ban check, as at join); the hashed report lists it, with "check it"
 //   BN2  …a ban-only name main recorded no account for is listed unbound, with why and the bind command
+//   BN3  the bind advice names the identity by id, never by name (shell-safe; one person)
 //   OR1  operator-repair bind <world> <name> <account>: the imported owner is worn by that account (signing in is them, with
 //        their roles); by id too; recorded in world.mod.jsonl as an operator repair, no account printed or logged
 //   OR2  …refuses a target that isn't imported (an account's identity); OR3 a malformed account; OR4 an account already
 //        wearing another id; OR5 an ambiguous or unknown name — each changing nothing
 //   OR7  bind refuses an identity only a third party's entry names (a recipient of translated old speech); OR8 its own entry, role, ban or mute makes it bindable
 //   OR9  …an entry counts only if the reader accepts it: a parseable but invalid row makes nobody bindable
+//   OR10 …nor does a change the fold skips (an unknown op); OR11 nor any entry under a genesis the fold can't read
+//   OR12 world.mod.jsonl unwritable: the bind stands, and the CLI says NOT recorded with the audit line to add by hand
 //   OR6  a directory another process holds (the server, running) takes the bind: its next save keeps it, its next sign-in finds it
 //   UN1  no owner bound to any account: the dry run, the report and the result warn, naming them, and the upgrade still runs
 //   UN2  one owner bound: no warning; UN3 no owner at all and no --claim: refused, naming --claim (every translation ends with an owner)
@@ -39,6 +42,7 @@
 //   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
 //   CL11 the translation writes no imported:ownerless: a builder granted after the claim, once the owner leaves, reads member
 //   CL6  …and operator-repair set of another owner keeps builder's generate (the translation's role-defs), in one write
+//   UW1  the splash says "nothing was changed" only for the CLI's own refusal; any other failure's outcome is unknown
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/owners-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -255,7 +259,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "CL6 operator-repair set of another owner is one write (one act, one change), the role alone; builder keeps generate from the translation's role-defs", { set: set?.refused, n: n.permissions, rd: wc["role-defs"], wrote: wrote.map((e: any) => [e.kind, e.verb ?? e.op]) }));
 }
 
-{ // CL11 (fixF): the translation's ownerless lift (imported:ownerless) ends with the first owner; grants made after it count only while owned
+{ // CL11 (fixF): the translation writes no ownerless lift (imported:ownerless) once claimed; grants made after the claim count only while owned
   const root = scratch("owners-cl11"), W = path.join(root, "worlds"); fs.mkdirSync(path.join(root, "opt"), { recursive: true });
   v1(W, "loft", [["Pip", "spawn", { id: "c", lib: "x.glb" }]]);
   const OPAL = { EIDO_UPGRADER_ACCOUNT: "human:test:op", EIDO_UPGRADER_NAME: "Opal" };

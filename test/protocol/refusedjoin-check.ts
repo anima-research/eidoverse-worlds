@@ -1,8 +1,6 @@
 // test/protocol/refusedjoin-check.ts — a join the server refuses (close 4005) is SHOWN in the browser, in the server's words.
-// R 10-16 00:02: ?world=old-commons&name=Rab opened an empty world with her avatar on the grid and the normal hint bar —
-// no message — though the server had refused the join in 13 ms with the old-format sentence and close 4005. The page
-// lost it: the inline boot script's early socket caught the refusal, and connect() threw that socket away (and with it
-// the refusal) and dialled again.
+// The way it is lost: the inline boot script's early socket catches the refusal, and connect() throws that socket away
+// (and with it the refusal) and dials again, so the page shows an empty world and no message.
 // One headless Chromium against a scratch sequencer (test/harness/harness.ts scratchBench) whose worlds dir holds:
 //   old-x   a first-protocol log.jsonl (an old-format world: the server answers the operator with the "translate" visitor
 //           sentence, a guest with world-unavailable, as nope: F23, Mica 11-05)
@@ -25,7 +23,7 @@
 //   W10 a guest at an old-format world gets nope's answer (world-unavailable) and no old-format splash; W10b the doc's setup-link words
 //   W11 the operator's splash: Upgrade world… → the report → Back up and upgrade → the backup and the rollback command
 //   W12 the world's owner's splash (signed in as "author", its owner by name, not an operator) offers Upgrade world… too; another name is told world-unavailable
-// Run under the house guards: code/scripts/eido-probe.sh -C <worktree> -t 300 test/protocol/refusedjoin-check.ts
+// Run under the house guards (a host's own script, outside this repo): code/scripts/eido-probe.sh -C <worktree> -t 300 test/protocol/refusedjoin-check.ts
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -38,7 +36,8 @@ import { helloOf } from "../../shared/protocol/hello.js";
 process.env.AGENT_BODY_ENGINE = "verlet";
 // any first-protocol log will do (a v1 world is recognised by its genesis line): the repo's own fixture unless V1_LOG names one
 const V1 = process.env.V1_LOG ?? path.resolve(import.meta.dir, "../fixtures/v1-worlds/01-build/log.jsonl");
-// W10/W11: a signed-in server operator (SERVER_OPERATORS) and its session, beside the guest the other rows are
+// the sessions: a signed-in server operator (SERVER_OPERATORS: old-x's W1–W5, W11), the fixture world's owner by name and
+// another account (W12); every other row is a guest
 const OP_SID = "e".repeat(64), AUTHOR_SID = "f".repeat(64), VEE_SID = "9".repeat(64), SESS = path.join(fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "refusedjoin-sess-")), "sessions.json");
 fs.writeFileSync(SESS, JSON.stringify({ [OP_SID]: { sub: "human:test:op", name: "Opal", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [AUTHOR_SID]: { sub: "human:test:author", name: "author", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },

@@ -11,7 +11,7 @@
 //   S4  Text (and a picture) added to a model shows on its front, outside the model, not at its origin inside it
 //   S5  Save as blueprint asks for a name (the thing's label or its model's name, not a hex id)
 //   S7  a thing just placed from the library is the selection
-//   M   /mute /warn /unmute are commands; /bans shows mutes too (ghost was removed in recut B4)
+//   M   /mute /warn /unmute are commands; /bans shows mutes too; another person present doesn't break the frame loop
 //   X   leaving builder mode leaves the old build panel shut; the World inspector's Terrain card offers the ground shapes;
 //       toasts sit above the selection bar
 //   L   the inspector shows a lock; the edit lock and a door's lock read differently; a child of a locked thing
@@ -80,8 +80,8 @@ try {
     window.__refused = []; import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); });` });
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
   // WebGL 2 on Linux/macOS: the headless WebGPU path fails its buffers and climbs in memory there. NOT on Windows: with the
-  // runner's software flags (chrome.ts) a forced WebGL 2 context is null there and the page never boots (3/3, 10-23), while
-  // WebGPU boots and passes (52/0). Cost: the forced-WebGL boot path has no Windows coverage in this suite.
+  // runner's software flags (chrome.ts) a forced WebGL 2 context is null there and the page never boots, while
+  // WebGPU boots and passes. Cost: the forced-WebGL boot path has no Windows coverage in this suite.
   const backend = process.platform === "win32" ? "" : "&webgl=1";
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}${backend}` });
   let secs = 0; for (let i = 0; i < 160 && secs < 4; i++) { secs = (await evalJson(`document.querySelectorAll('.sec').length`).catch(() => 0)) ?? 0; if (secs < 4) await sleep(500); }
@@ -137,7 +137,7 @@ try {
   // ---- B3: World settings in builder mode ----
   await stage("B3", async () => {
     await buildMode(true);
-    // the dock is folded in builder mode since 10-10 (∃, ⋯, wrench): open it to reach the panel buttons
+    // the dock is folded in builder mode (∃, ⋯, wrench): open it to reach the panel buttons
     await evalJson(`(() => { const m = document.querySelector('#dock .dock-more'); if (m && m.getAttribute('aria-expanded') !== 'true') m.click(); return true; })()`); await sleep(300);
     await clickEl(`document.querySelector('#dock button[data-toggles="world-settings"]')`);
     await waitFor(`!!document.querySelector('[data-frame="world-settings"]') && getComputedStyle(document.querySelector('[data-frame="world-settings"]')).display !== 'none'`, 4000);
@@ -305,11 +305,11 @@ try {
     const n0 = await lines();
     await say("/bans");
     if (await evalJson(`!!document.getElementById('chatline').value.trim()`)) { await press("Enter"); }   // the first Enter took the autocomplete's "/bans "
-    await tryUntil("the /bans reply lists the mute", async () => (await lines()) > n0, { ms: 8000 });   // CI 10-22: the line landed after a fixed 1.5 s
+    await tryUntil("the /bans reply lists the mute", async () => (await lines()) > n0, { ms: 8000 });   // waited for: the line can land after any fixed sleep
     const tail = { before: n0, after: await lines(), end: (await log()).slice(-300) };
     check("M2 /bans lists the mute in force, not only bans", tail.after > tail.before, tail);
-    // someone else is here, so the remote-body frame loop runs: it must not throw (staging 10-07: remotes.js re-exported
-    // serverNow without importing it, and every frame failed while anyone else was present)
+    // someone else is here, so the remote-body frame loop runs: it must not throw (a missing import there fails every
+    // frame only while anyone else is present)
     const frameErrs = await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent).filter((t) => /frame remotes|is not defined/.test(t))`);
     check("M3 with another person present, the frame loop draws them without an error", frameErrs.length === 0, frameErrs);
     vic.ws.close();
