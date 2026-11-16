@@ -59,6 +59,7 @@ for unit in deploy/*.service; do
   name=$(basename "$unit" .service); dest=/etc/systemd/system/$name.service
   [ -f "$dest" ] || continue
   [[ " ${units[*]} " == *" $name "* ]] || { systemctl is-active --quiet "$name" && units+=("$name"); optional+=("$name"); }
+  [ "$(systemctl show -p NeedDaemonReload --value "$name")" = yes ] && reload=1   # an install a failed run left unloaded
   cmp -s "$unit" "$dest" && continue
   sudo install -m 644 "$unit" "$dest"; reload=1; echo "unit: re-installed $name.service"
 done
