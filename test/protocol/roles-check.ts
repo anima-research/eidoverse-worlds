@@ -281,10 +281,10 @@ const cases: Case[] = [
       const a = set(s, "bob", "label", "b", "mine"), b = set(s, "bob", "label", "b", "hers");
       return { mine: show(a), hers: code(b), needs: b.refused?.needs }; },
     good: (o) => o.mine === "ok" && o.hers === "rights" && o.needs === "editOthers" },
-  { id: "S2", what: "editWorld: a crew member sets sky and about, but not roles:*, access or sim", run(s) { cast(s, { crew: true });
+  { id: "S2", what: "editWorld: a crew member sets sky and about, but not roles:*, access or physics-engine (the owner may)", run(s) { cast(s, { crew: true });
       return { sky: show(s.call("cy", "sky", { hours: 9 })), about: show(set(s, "cy", "about", { name: "x", text: "y" })), roles: code(set(s, "cy", "roles:vic", { role: "builder" })),
-        access: code(set(s, "cy", "access", { join: "anyone" })), sim: code(set(s, "cy", "sim", { engine: "eidosim@1.0.0" })), bob: code(s.call("bob", "sky", { hours: 3 })) }; },
-    good: (o) => o.sky === "ok" && o.about === "ok" && o.roles === "rights" && o.access === "rights" && o.sim === "rights" && o.bob === "rights" },
+        access: code(set(s, "cy", "access", { join: "anyone" })), sim: code(set(s, "cy", "physics-engine", { engine: "eidosim@1.0.0" })), simOwner: show(set(s, "olive", "physics-engine", { engine: "eidosim@1.0.0" })), bob: code(s.call("bob", "sky", { hours: 3 })) }; },
+    good: (o) => o.sky === "ok" && o.about === "ok" && o.roles === "rights" && o.access === "rights" && o.sim === "rights" && o.simOwner === "ok" && o.bob === "rights" },
   { id: "S3", what: "scripts: can.scripts false refuses a builder's upload and install", run(s) { cast(s);
       role(s, "bob", { role: "builder", can: { scripts: false } });
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
