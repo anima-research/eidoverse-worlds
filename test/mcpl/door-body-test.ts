@@ -211,6 +211,21 @@ console.log("a walk carried across a rejoin");
       JSON.stringify({ late, target: ag.target, refusal: ag.lastWalkRefusal }));
     ag.close();
   }
+  {
+    // Closed while the snapshot's view is still being read (a slow terrain read): the late read must not revive the body (bot #333 13).
+    const ag: any = new WorldAgent({ name: "closedmid", world: "w", url: `ws://127.0.0.1:${world.port}/ws` });
+    let release = () => {}, reading = false;
+    const real = ag.applyView.bind(ag);
+    ag.applyView = async (...a: any[]) => { reading = true; await new Promise<void>((r) => { release = r; }); return real(...a); };
+    const joining = ag.connect().then(() => "resolved", (e: Error) => e.message);
+    await tryUntil("the join reaches applyView", () => reading, { ms: 3000, step: 10 });
+    ag.close();
+    release();
+    const how = await joining;
+    check("a body closed while its snapshot was read stays closed: not joined, no ticker", !ag.joined && !ag.ticker,
+      JSON.stringify({ joined: ag.joined, ticker: !!ag.ticker, how }));
+    if (ag.ticker) clearInterval(ag.ticker);
+  }
   world.stop(true);
 }
 

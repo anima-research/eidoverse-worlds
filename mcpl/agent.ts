@@ -775,6 +775,7 @@ export class WorldAgent {
             // before that, the only ground a body could find is the terrain under the building it is in
             this.feetSettling = true;
             await this.applyView(false, null, null);
+            if (this.closed) { clearTimeout(timeout); reject(new Error("agent closed while it joined")); break; }   // bot #333 13
             void this.ground.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
