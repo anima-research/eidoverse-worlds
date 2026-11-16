@@ -195,8 +195,7 @@ const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
 /** POST an image file through the store door; resolves to the library-relative path. */
 async function uploadPicture(file) {
   const q = new URLSearchParams({ as: 'image', name: file.name });
-  if (CONFIG.token) q.set('token', CONFIG.token);
-  const r = await fetch(`/upload?${q}`, { method: 'POST', body: file });
+  const r = await fetch(`/upload?${q}`, { method: 'POST', body: file, headers: CONFIG.token ? { authorization: `Bearer ${CONFIG.token}` } : {} });   // the key rides a header, never the URL
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
   const { path } = await r.json();
   if (typeof path !== 'string' || !path.startsWith(PICTURE_STORE)) throw new Error(`upload answered with an unexpected path: ${path}`);

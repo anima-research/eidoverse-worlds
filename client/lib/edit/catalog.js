@@ -290,8 +290,7 @@ addEventListener('drop', async (e) => {
   try {
     const q = new URLSearchParams();
     if (isVrm) { q.set('as', 'avatar'); q.set('name', file.name); }
-    if (CONFIG.token) q.set('token', CONFIG.token);
-    const r = await fetch(`/upload${q.size ? `?${q}` : ''}`, { method: 'POST', body: file });
+    const r = await fetch(`/upload${q.size ? `?${q}` : ''}`, { method: 'POST', body: file, headers: CONFIG.token ? { authorization: `Bearer ${CONFIG.token}` } : {} });   // the key rides a header, never the URL
     if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
     const { path, name } = await r.json();
     if (isVrm) {

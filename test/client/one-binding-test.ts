@@ -75,6 +75,9 @@ const ROWS: Row[] = [
     requires: [["mcpl/net-server.ts", /WORLD_NAME_RE\.test\(/], ["server/world.ts", /WORLD_NAME_RE\.test\(/], ["server/routes.ts", /WORLD_NAME_RE\.test\(/]] },  // 333-cm a4: leaving VR restored 60 while the camera is built at 55
   { name: "the desktop camera's field of view is core.js's DESKTOP_FOV", owner: ["client/lib/core.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\bcamera\.fov\s*=\s*\d/], requires: [["client/lib/core.js", /PerspectiveCamera\(DESKTOP_FOV,/], ["client/lib/xr/xr.js", /camera\.fov = DESKTOP_FOV/]] },
+  // 333-cm a8: server/upload.ts deprecates ?token= (a URL lands in access logs)
+  { name: "the authority key rides an Authorization header, never a URL's query", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
+    forbidden: [/\.set\(['"]token['"]/, /\{\s*token:\s*CONFIG\.token\s*\}/] },
 ];
 for (const row of ROWS) {
   const scan = (row.scope ?? files).filter((f) => !row.owner.includes(f) && !(row.exempt ?? []).includes(f));

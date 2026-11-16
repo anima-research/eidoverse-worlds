@@ -183,8 +183,8 @@ export function paintGround(body) {
       if (!f) return;
       flashHint('uploading heightmap…');
       try {
-        const q = new URLSearchParams({ as: 'heightmap', name: f.name, ...(CONFIG.token ? { token: CONFIG.token } : {}) });
-        const r = await fetch(`/upload?${q}`, { method: 'POST', body: f });
+        const q = new URLSearchParams({ as: 'heightmap', name: f.name });
+        const r = await fetch(`/upload?${q}`, { method: 'POST', body: f, headers: CONFIG.token ? { authorization: `Bearer ${CONFIG.token}` } : {} });   // the key rides a header, never the URL
         if (!r.ok) throw new Error(await r.text());
         const up = await r.json();
         const min = up.meta?.min ?? Number(lo.value), max = up.meta?.max ?? Number(hi.value);
