@@ -1,10 +1,7 @@
 // bun test/mcpl/agent-mesh-collision-test.ts — an agent's body collides against
 // the same fitted colliders a browser's does.
 //
-// Agents used to stand on terrain and walk straight lines through everything
-// placed: a raised floor buried them to the shins, a table stood in them, a
-// wall was no obstacle and an upstairs did not exist. Now the agent fits
-// client/lib/colliders.js from each model's own triangles
+// The agent fits client/lib/colliders.js from each model's own triangles
 // (server/geometry.ts collisionTriangles, decoded from the bytes /library
 // serves) and steps its feet the way client/lib/player/controller.js steps a
 // person's. This checks:
@@ -16,7 +13,9 @@
 //      floor and back down, staying downstairs under the upper floor,
 //      standing up and rejoining upstairs, and stopping (saying so) at
 //      something solid that appears in its way. Routing round things is
-//      navgrid-test's subject.
+//      test/server/navgrid-test.ts's subject;
+//   3. model downloads are governed (a few at a time, none over the size limit);
+//   4. a walk into a thing whose shape is still downloading waits for it.
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { collisionTriangles } = await import("../../server/geometry.ts");
@@ -198,7 +197,7 @@ try {
       [-1.1, 0, -1.1, 1.1, 3, -0.9], [-1.1, 0, 0.9, 1.1, 3, 1.1], [-1.1, 0, -1.1, -0.9, 3, 1.1], [0.9, 0, -1.1, 1.1, 3, 1.1]]);
     const wallUp = await fetch(`${h.BASE}/upload?name=pen`, { method: "POST", body: penGlb });
     const wallLib = ((await wallUp.json()) as { path: string }).path;
-    // the door stores the model as its content address (shape audit 10-16): the agent fetches /library/<that>, so the
+    // the door stores the model as its content address: the agent fetches /library/<that>, so the
     // held-up download is matched by either spelling — the path the upload answered or the address of its bytes
     const wallHex = new Bun.CryptoHasher("sha256").update(penGlb as any).digest("hex");
     const isWallFetch = (u: string) => u.includes(`/library/${wallLib}`) || (u.includes("/library/") && u.includes(wallHex));

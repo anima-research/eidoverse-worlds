@@ -1,6 +1,6 @@
 /**
- * Self-pose test — the `pose`/`animate` authoring surface and the one rule
- * that decides whether a pose survives walking.
+ * Self-pose test — the pose and track validators behind anim (shared/humanoid.js)
+ * and the one rule that decides whether a pose survives walking.
  *
  * Run: bun test/mcpl/selfpose-test.ts
  *

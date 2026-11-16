@@ -9,8 +9,8 @@
 //
 // Run: bun test/mcpl/emitter-percept-test.ts
 
-// agent-senses.ts reads the coalescing window from env at module load, set SHORT (folding is under test, not duration):
-// the import must come AFTER this line, which a hoisted static import wouldn't
+// agent-senses.ts reads the coalescing window from env at module load, set SHORT below (folding is under test, not
+// duration): agent.ts is imported dynamically, after the env line, which a hoisted static import wouldn't be
 import { noWorldUrl } from "../harness/no-world.ts";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil } from "../gate/wait.ts";
@@ -157,8 +157,7 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   check("your own authoring is not delivered back to you as an event", events.length === 0);
 }
 {
-  // Two residents beside the same hearth each hear it once — and derive the
-  // same emitter, because the seed is the entity's, not the session's.
+  // Two residents beside the same hearth each hear it once, in the same words.
   const one = await rig("one", [1, 0]);
   const two = await rig("two", [-1, 0]);
   for (const r of [one, two]) { await r.spawn("hearth", [0, 0, 0]); await r.comp("hearth", FIRE); }
@@ -174,7 +173,7 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
   check("other component types narrate nothing (scope fence)", events.length === 0);
 }
 
-// ---------------------------------------------------------------- C: several emitters, a scaled one
+// ---------------------------------------------------------------- E: several emitters, a scaled one
 // Upstream #256 gave a v1 thing several emitters (`particles:<name>`). Here a thing carries one `particles`: emitters
 // that burn together are one effect document's emitters, and one lit and put out on its own is a child thing with its
 // own `particles` (the translator writes particles:<name> that way). Each reads and narrates on its own terms.

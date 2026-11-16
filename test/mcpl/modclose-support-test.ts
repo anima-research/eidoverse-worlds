@@ -1,9 +1,8 @@
 /**
  * Moderation-close support-holder test — #83: a 4006 (kick/ban) must release
  * every support holder the closed instance owns, exactly like a deliberate
- * close(). Before the fix, the 4006 branch set `closed` and returned, and the
- * leaked box held bodies up in LATER worlds at the same coordinates (#17's
- * ghost floor, reached through moderation).
+ * close(): a leaked box holds bodies up in LATER worlds at the same
+ * coordinates (#17's ghost floor, reached through moderation).
  *
  * The whole run rides the REAL moderation path over a real socket — an owner
  * bans and kicks; nothing calls a release helper directly (the issue's

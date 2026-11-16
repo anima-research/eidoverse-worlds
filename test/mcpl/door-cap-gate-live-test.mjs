@@ -19,17 +19,10 @@
 //      granted host receives channels/incoming tagged chat:mention with
 //      metadata.mentioned — the mentionRegexFor path end to end.
 //
-// 🔴 THE HARNESS OWNS ITS PORTS, ITS STATE, AND ITS CHILDREN (#129 re-review:
-// "the owned-scratch harness is neither owned nor scratch-clean"). The first
-// cut used random fixed ports, accepted readiness from unauthenticated
-// endpoints, let the door write the REPOSITORY's mcpl/state.json, and its
-// teardown SIGKILLed without awaiting exit — the same defect class #125 just
-// closed. This is the repository's established pattern from
-// test/mcpl/join-rfc005-test.ts, reused rather than re-invented: free ports from
-// the kernel (harness kernelPort, as main: racy, so readiness checks ownership), per-run instance nonces both children echo, OS port-ownership as a
-// Linux second opinion, scratch-bound tokens/worlds/state, verified
-// termination, and repo-state before/after byte receipts. Once both slices
-// land, the shared pieces deserve extraction into one harness module.
+// The harness owns its ports, its state and its children, the pattern of test/mcpl/join-rfc005-test.ts: free ports
+// (harness kernelPort here; racy, so readiness checks ownership), a per-run nonce both children echo, OS port
+// ownership as a Linux second opinion, scratch-bound tokens/worlds/state, verified termination, and a before/after
+// receipt that the repository's mcpl/state.json was untouched.
 //
 // Run: bun test/mcpl/door-cap-gate-live-test.mjs
 import { fileURLToPath } from "node:url";
@@ -93,14 +86,9 @@ function awaitExit(p, ms = 5000) {
   });
 }
 
-/** PIDs listening on a TCP port, from the OS — Linux second opinion (no `ss`
- *  or /proc ⇒ null, and the per-run nonce remains the portable proof).
- *  Non-Linux returns null without spawning: the second opinion is Linux-only
- *  by design, and a macOS host must not pay a spawn to learn that. On Linux a
- *  missing `ss` surfaces as an ASYNC `error` event on the child (Node/Bun do
- *  not throw ENOENT synchronously from spawn) — an unhandled one is a process
- *  crash via `uncaughtException`, which is exactly the non-portability the
- *  #129 re-review caught. Handle it as: cannot answer ⇒ null. */
+/** PIDs listening on a TCP port, from the OS: a Linux second opinion (elsewhere null, without spawning: the per-run
+ *  nonce is the portable proof). A missing `ss` arrives as an async `error` event on the child, not a throw from
+ *  spawn; unhandled it would crash the harness, so it resolves null too. */
 async function listenerPids(port, cmd = "ss") {
   if (process.platform !== "linux") return null;
   try {
@@ -195,12 +183,8 @@ const doorNonceProbe = (port) => async () => {
 }
 
 // ── NEGATIVE CONTROL 1b: the OS second opinion must DEGRADE, never crash. ──
-// (#129 re-review: on a host without `ss`, spawn ENOENT arrives as an async
-// `error` event; unhandled, it killed the whole harness before any behavioral
-// vector ran.) Force that exact path with a command that cannot exist and
-// require the documented contract: resolve null — the per-run nonce remains
-// the portable proof — with the process still alive to say so. On non-Linux
-// the platform guard answers null before any spawn; same contract, earlier.
+// A command that cannot exist forces the spawn-ENOENT path: listenerPids must resolve null with the process still
+// alive. On non-Linux the platform guard answers null before any spawn.
 {
   const r = await listenerPids(1, "ss-absent-for-portability-vector");
   check("negative control: missing `ss` ⇒ listenerPids resolves null (no crash, nonce stays the proof)",
@@ -321,7 +305,7 @@ try {
     close() { try { this.ws.close(); } catch {} }
   }
 
-  // ---- phase 0: the fences before any grant (from channel-cap-gate): a plain-MCP host never, an 0.4 host keeps all
+  // ---- phase 0: the fences before any grant: a plain-MCP host never, an 0.4 host keeps all
   {
     const plain = gatedRef = new Rpc(`ws://127.0.0.1:${DOOR_PORT}/mcpl?token=gate-token`);
     await plain.init(null);

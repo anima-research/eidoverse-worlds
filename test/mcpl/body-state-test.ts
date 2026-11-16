@@ -1,5 +1,5 @@
 // Owned server -> real WorldAgent -> shared MCP tool, plus independent FK, read/replace races, and one field table
-// (bones, yaw, clip, scale, named pose) from both senders; body size's own rule is the last section.
+// (bones, yaw, clip, scale, named pose) from both senders; then body size's own rule, and models a reader can't use.
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/mcpl/body-state-test.ts   mutations: bun test/mcpl/body-state-mutation-test.ts
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
@@ -16,8 +16,8 @@ const { join } = await import("node:path");
 const { check, tally } = mkCheck();
 const { fixture, postureFixture, glbOf } = await import("../fixtures/body-fixture.ts");
 
-// Includes bones the old reach stand-in collapses: upperChest, shoulders,
-// fingers. Non-unit ancestor scale and a second VRM0 fixture exercise frames.
+// The body fixture (test/fixtures/body-fixture.ts) has upperChest, shoulders and
+// fingers; a non-unit ancestor scale (large-body) and a VRM0 one (old-body) exercise frames.
 
 const lib = mkdtempSync(join(tmpdir(), "body-state-library-"));
 mkdirSync(join(lib, "fixtures"));
@@ -74,7 +74,7 @@ try {
   }
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "idle");
-  // a posture clip is applied, not the standing slot reused (main's live-contact-test rows, deleted in 04c8f3a6a)
+  // a posture clip is applied, not the standing slot reused
   { const standing = await read(owner, { detail: "all" });
     owner.setPosture("sitchair"); owner.tick(); await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "sitchair");
     const own = await read(owner, { detail: "all" }), seen = await read(peer, { who: owner.name, detail: "all" });
@@ -83,10 +83,10 @@ try {
       own.ok && seen.ok && moved(knee(own), knee(standing)) && near(knee(own), knee(seen)), JSON.stringify([knee(standing), knee(own), knee(seen)]));
     owner.setPosture("idle"); owner.tick(); await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "idle"); }
   check("standing again restores contact estimates", (await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] })).contacts?.knee_r?.quality === "anatomical_estimate");
-  // Every channel of a held pose, through owner -> server -> peer -> tool. The
-  // pose tool's own kneeling example used to refuse the whole body.
+  // A translation-only bone (a kneel), through owner -> server -> peer -> tool:
+  // read, not refused.
   const standing = await read(peer, { who: owner.name, detail: "bones" });
-  const kneel = { hips: { t: [0, -0.5, 0] } };   // the pose tool's own example (mcpl/tools.ts)
+  const kneel = { hips: { t: [0, -0.5, 0] } };   // the shape of the anim tool's example (mcpl/tools.ts: "hips": {"t": [0, -0.4, 0]})
   owner.setPose(kneel as any); owner.tick();
   await waitUntil("the peer's sample", () => eq(peer.people.get(owner.name)?.pose?.pose, kneel));
   const knelt = await read(peer, { who: owner.name, detail: "bones" });

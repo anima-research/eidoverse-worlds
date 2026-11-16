@@ -1,4 +1,4 @@
-// The door's media lane is a SECURITY BOUNDARY and nothing tested it.
+// The door's media lane is a SECURITY BOUNDARY.
 //
 // The door forwards media-signalling frames between the world and a voice
 // sidecar. It is "a whitelist, not a pipe" (agent.ts) for the reason #100
@@ -35,20 +35,16 @@ check('outbound refusal returns before the send', /refusing to forward non-media
 const inbound = src.slice(src.indexOf('case "relay-cred":'), src.indexOf('case "snapshot":'));
 for (const fwd of ['relay-cred', 'sfu-offer', 'sfu-ice', 'sfu-route',
                    'voice-consent', 'surface-transition',
-                   // added 2026-08-16 — the server broadcasts both to every
-                   // client and the door dropped them, so an agent could not
-                   // learn its voice had degraded or that it had been muted
+                   // the server broadcasts both to every client: without them an
+                   // agent can't learn its voice has degraded or that it was muted
                    'voice-service', 'voice-moderated']) {
   check(`inbound forwards ${fwd}`, inbound.includes(`case "${fwd}":`));
 }
 check('inbound hands the frames to the sidecar', /this\.onMedia\?\.\(msg\);\s*break;/.test(inbound));
 
 // ---- negative controls: both matchers must be able to fail ----
-// 🔴 The first version tested string literals against themselves — constants
-// that pass regardless of what ships (review agent, 2026-08-17: "the comment
-// claims the matchers were shown falsifiable; they weren't"). A control must
-// run the SAME predicate on a corruption of the REAL extracted text, so it
-// also fails if the extraction anchors ever drift off the source.
+// A control runs the SAME predicate on a corruption of the REAL extracted
+// text, so it also fails if the extraction anchors drift off the source.
 check('control: both extraction anchors were actually found',
   src.indexOf('const t = String(frame?.type ?? "")') >= 0 && src.indexOf('case "relay-cred":') >= 0
   && src.indexOf('this.ws.send(JSON.stringify(frame));') > src.indexOf('const t = String(frame?.type ?? "")')

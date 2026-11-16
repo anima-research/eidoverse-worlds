@@ -1,6 +1,7 @@
 /**
  * The door's own body state: a tracks loop and treading water, a reach the
- * relay holds to more than one body, and a walk carried across a rejoin.
+ * relay holds to more than one body, a walk carried across a rejoin, and
+ * water read at every point of a stride.
  *
  * Run: bun test/mcpl/door-body-test.ts
  *

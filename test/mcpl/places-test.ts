@@ -94,8 +94,8 @@ try {
 
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
-  // protocol merge (owner 22:40/22:43): look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with
-  // distance and floor), each from the model's own description; move {to: "?"} lists them, seen or not (nearest 200: below)
+  // look lists the places this body can SEE (line of sight, ≤ 30 m, nearest 12, with distance and floor), each from
+  // the model's own description; move {to: "?"} lists them, seen or not (nearest 200: below)
   const sightLine = seen.split("\n").find((l) => l.startsWith("Places you can see")) ?? "(no places line)";
   check("look lists the places in sight, from the model's own description, with distance and floor",
     /tower\/entrance \(\d+\.\d m, floor -?\d+\.\d\d m\)/.test(sightLine), sightLine);
@@ -218,9 +218,8 @@ try {
 
   // a long room whose middle is full: reached at the clear floor it has
   const ry = a.heightAt(50, -20);
-  // protocol merge: the furniture in its middle is 2.2 m tall (it was 1 m), so the model is tall enough for the authority to
-  // measure its solid parts (server/solids.ts: under 2 m a model's one box is solid, and a body on the floor at 0.05 m
-  // would be inside it); the room's floor and its furnished middle are the same as before
+  // the furniture in its middle is 2.2 m tall, so the model is tall enough for the authority to measure its solid
+  // parts (server/solids.ts: under 2 m a model's one box is solid, and a body on the floor at 0.05 m would be inside it)
   const rug = await upload("rug", await buildGlb([[-6, 0, -1.5, 6, 0.05, 1.5], [-1.5, 0.05, -1.5, 1.5, 2.2, 1.5]]));
   await legacyVerb(a, "spawn", { id: "rug", lib: rug, pos: [50, ry, -20], yaw: 0, collide: "mesh" });
   await legacyVerb(a, "comp", { id: "rug", type: "places", data: {
@@ -239,9 +238,8 @@ try {
     /arrived at rug\/long_room/.test(r) && near(a.pos.y, ry + 0.05) && Math.abs(a.pos.x - 50) > 1.5 && Math.abs(a.pos.x - 50) < 6, `${r} ${at()}`);
   r = await tool("move", walkWords({ to: "rug/loft" }));
   check("a room whose floor is not there is refused — not the floor beneath it", /nowhere to stand anywhere in it on its floor.*no floor there/.test(r) && !/arrived/.test(r), r);
-  // retired (shape audit 10-16): "a seat on a thing scaled 4× is reached on the floor beside it" read the place's kind:
-  // 'seat'. A component place has no kind now (a seat is a station on a socket; the agent sits by attach), so the stool's
-  // place is a point like any other. A seat a MODEL declares (glTF extras `building`) still reads as one (placesFromModel).
+  // A component place has no kind (a seat is a station on a socket; the agent sits by attach), so the perch's place is a
+  // point like any other. A seat a MODEL declares (glTF extras `building`) still reads as one (placesFromModel).
 
   // name_place's coordinates: x and z, y found; never silently dropped
   r = await tool("name_place", { name: "rug_end", x: 55, z: -20, on: "rug" });

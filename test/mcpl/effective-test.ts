@@ -25,8 +25,8 @@ const check = (label: string, ok: boolean, detail?: string) => {
 const near = (a: number, b: number, eps = 1e-4) => Math.abs(a - b) < eps;
 const near3 = (a: number[], b: number[], eps = 1e-4) => a.length === 3 && a.every((v, i) => near(v, b[i], eps));
 
-// effective.ts does not exist on main — load it dynamically so the
-// look()-level receipts still run there.
+// loaded dynamically, so the look()-level rows still run on a checkout
+// without effective.ts (one that predates #82).
 let EFF: typeof import("./effective.ts") | null = null;
 try { EFF = await import("../../mcpl/effective.ts"); } catch { /* pre-#82 checkout */ }
 
@@ -243,7 +243,7 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
 {
   const a = offlineAgent();
   // near1 sits at 5m — FARTHER than the crate's stale 4.2m, so a sort on
-  // stale positions lists the crate first and this check fails on main
+  // stale positions lists the crate first and this check fails
   await fold(a, { verb: "spawn", args: { id: "near1", lib: "models/rock.glb", pos: [5, 0, 0], yaw: 0 } });
   await fold(a, { verb: "spawn", args: { id: "far1", lib: "models/bench.glb", pos: [30, 0, 30], yaw: 0 } });
   await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
@@ -356,7 +356,7 @@ console.log("\n━━ B1: sequencer-relative clock ━━");
   await fold(a, { verb: "motion", args: { id: "swing1", type: "pendulum", axis: "x", pivot: [0, 2, 0], amp: 1, period: 20, damp: 0, t0 } });
   await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
   await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
-  // crate = base + [0, 2 − 1.45·cosθ, −1.45·sinθ];  θ(7s) = cos(2π·7/20) ≈ −0.5885
+  // crate = base + [0, 2 − 1.45·cosθ, −1.45·sinθ];  θ(7s) = cos(2π·7/20) ≈ −0.5878
   // → (10.0, 0.8, 10.8).  A host-clock evaluation gives θ(0) = 1 → (10.0, 1.2, 8.8).
   const def = crateLine(a.look());
   check("default look() evaluates on sequencer time", def.includes("at (10.0, 0.8, 10.8)"), def);
@@ -423,8 +423,8 @@ console.log("\n━━ precision: mount chain wins over own motion ━━");
   await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
   await fold(a, { verb: "motion", args: { id: "crate1", type: "orbit", center: [3, 0, 3], radius: 4, degPerSec: 90, t0: T0 - 60_000 } });
   await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
-  // the renderer skips a mounted entity's own motion (motion.js tickMotion:
-  // `obj.userData.mountedTo` guard) — the seat, not the orbit, is the truth
+  // effective.ts holds a mounted entity's own root motion inert (the mount chain
+  // wins): the seat, not the orbit, is where it is reported
   const line = crateLine(a.look(T0));
   check("own root motion is inert while mounted (matches the renderer)", line.includes("at (10.0, 0.6, 10.0)"), line);
   await fold(a, { verb: "dismount", args: { id: "crate1", pos: [3, 0, 3], yaw: 0 } });

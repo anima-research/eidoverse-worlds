@@ -2,14 +2,11 @@
 //
 //   bun test/mcpl/stdio-door-test.ts
 //
-// Born with the §24r unification (mcpl/server.ts registers from tools.ts's
-// shared TOOLS + handleTool instead of its own hand-copied 16-tool subset).
-// The stdio door had NO test in its whole life as a drifting copy — this one
-// spawns the real process against a scratch sequencer and speaks real
-// newline-delimited JSON-RPC over its stdin/stdout: initialize, tools/list
-// (the full shared table, travel absent, pending_pings present), and calls
-// through the shared dispatcher — including tools that never existed on this
-// door before the unification.
+// mcpl/server.ts serves tools.ts's shared table (toolList + handleTool), not a
+// copy of its own. This spawns the real process against a scratch sequencer
+// and speaks real newline-delimited JSON-RPC over its stdin/stdout: initialize,
+// tools/list (the full shared table, travel absent, pending_pings present),
+// and calls through the shared dispatcher.
 
 import { scratchSequencer, mkCheck, ROOT } from '../harness/harness.ts';
 import { tryUntil } from '../gate/wait.ts';

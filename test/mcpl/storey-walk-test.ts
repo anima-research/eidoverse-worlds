@@ -178,9 +178,8 @@ console.log("\nstorey-aware walking\n");
 console.log("\na malformed house elsewhere in the world (Greptile on #200, finding 1)\n");
 {
   // comp data is opaque to the server: `structure: "junk"` is accepted and
-  // folded. The agent's walk loop used to hold ONE try around every building,
-  // so a primitive that a WeakMap refuses as a key threw out of planOf and
-  // took the route through the sound house with it — straight through walls.
+  // folded. A primitive is refused by a WeakMap as a key, so planOf throws on
+  // it: that must cost only its own building, not the sound house's route.
   for (const junk of ["junk", true, 7]) {
     const ag = agentIn(upperY, { before: { junk: { model: "junk", structure: junk } } });
     check(`structure: ${JSON.stringify(junk)} learned first: the upstairs walk still detours through the door`,
@@ -212,10 +211,8 @@ console.log("\na corner cut by a diagonal, floored on one half (findings 2 and 3
   check("a floor walk's probe stands on the cut cell's floored half",
     Math.abs(cornerProbe(1.8, 0.2) - up) < 1e-9, String(cornerProbe(1.8, 0.2)));
   check("…and over its hole finds a drop the grid won't take", up - cornerProbe(1.2, 0.8) > NAV_STEP, String(cornerProbe(1.2, 0.8)));
-  // finding 2, from the product side: the router only ever saw an upstairs
-  // start in an unfloored half because the standing clamp had held the body
-  // there. Once the feet read the half, a body over the hole is on the ground
-  // floor, and the ground plan is the right one to route on.
+  // finding 2, from the product side: the feet read the half, so a body over
+  // the hole is on the ground floor, and the ground plan is the one to route on.
   const ag = agentIn(up, { house: CORNER });
   ag.pos = { x: 1.2, y: up, z: 0.8 };
   const legs = legsOf(ag, 0.5, 0.5);
@@ -297,8 +294,8 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // destination its height. The floor a height means is move's own rule
   // for a y (floorMeant): the floor nearest it, no more than a step above it
   // and within the destination's bounds, of the ground and the griddled
-  // storeys at the point. A walk the planner routes in legs used to go to
-  // the same x and z on its floor and report arriving.
+  // storeys at the point. That holds for a walk the planner routes in legs too
+  // (it must not go to the same x and z on its own floor and report arriving).
   const { handleTool } = await import("../../mcpl/tools.ts");
   const walkTool = async (ag: any, args: Record<string, any>) => {
     // move takes its destination as `to`: [x, y, z], [x, z] or a name
@@ -555,8 +552,8 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   // The same on a placed model's upper floor, where the navgrid takes the
   // destination's height and bounds as the floor to arrive on (the place to
   // stand nearest the height, within them). Taken from a limp person's root
-  // alone, 0.7 m below the floor they lie on, it named the hall beneath them,
-  // as on main. The two-storey fixture, placed away from the griddled house;
+  // alone, 0.7 m below the floor they lie on, it would name the hall beneath
+  // them. The two-storey fixture, placed away from the griddled house;
   // the walker on its upper floor, the friend on it above the hall.
   const { boxMesh, boxes, UPPER } = await import("../fixtures/two-storey-fixture.ts");
   const { registerMeshSupport, removeSupport } = await import("../../mcpl/physics.ts");
@@ -768,7 +765,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   // the walk's own floor (walkProbeGround), since the colliders don't hold a
   // griddled floor. A chest in the middle of an open upper room, in
   // the straight line between two cell centres of one row, from the
-  // south wall to past the row's middle, so the way round is north:
+  // north wall (z 0) to past the row's middle, so the way round is south:
   const { boxMesh } = await import("../fixtures/two-storey-fixture.ts");
   const { registerMeshSupport, removeSupport } = await import("../../mcpl/physics.ts");
   const OPEN = { levels: [{ y: 0, tiles, walls: shell, apertures: [] }, { y: 3, tiles, walls: shell, apertures: [] }] };
@@ -911,7 +908,7 @@ console.log("\nwhat is placed on an upper storey is walked round, as it is on th
   // Where the only way round something placed on a deck is off it, a floor
   // walk is refused rather than routed over the ground beside the deck,
   // however close below that ground is. A deck one row wide (z 0-1), and a
-  // chest across it from its south edge to 0.2 m short of its north edge,
+  // chest across it from its north edge (z 0) to 0.2 m short of its south edge,
   // too narrow a gap for a body; the ground beside the deck is a step down.
   const { boxMesh } = await import("../fixtures/two-storey-fixture.ts");
   const { registerMeshSupport, removeSupport } = await import("../../mcpl/physics.ts");

@@ -1,14 +1,12 @@
 // Pose provenance — the agent-side half of #61.
 //
 // The server's settledPose (test/server/settled-pose-test.ts) strips ragdoll frames
-// at every hand-off — but it keys on the CLIP LABEL, and the field showed a
-// tumble frame that had been relabelled "idle" agent-side before it ever
-// reached a sanitizer: princess's settled ragdoll bag rode `heldPose` under
-// clip "idle" for weeks, got remembered by the server as an "enacted pose",
-// re-armed on every restore, and survived every explicit `posture stand`
-// (which only changed the label). These tests pin the invariant that closes
-// that loop: a physics pose may only ever leave the process labelled
-// "ragdoll", and any decision to move sheds the held pose (unless pinned with `hold`: selfpose-test).
+// at every hand-off, but it keys on the CLIP LABEL: a tumble frame relabelled
+// "idle" agent-side passes it, is remembered by the server as an enacted pose,
+// re-armed on every restore, and survives an explicit stand (which only changes
+// the label). These tests pin the invariant that closes that loop: a physics
+// pose may only ever leave the process labelled "ragdoll", and any decision to
+// move sheds the held pose (unless pinned with `hold`: selfpose-test).
 //
 // Deliberately no sockets, no sim, no VRM: WorldAgent is constructed cold and
 // driven through its public methods; wire-level behavior is asserted against
@@ -41,11 +39,11 @@ console.log("authored poses (setPose):");
 
 console.log("the relabelled tumble frame (the exact #61 field state):");
 {
-  // a legacy store hands back clip "idle" + ragdoll bones; pre-fix this was
-  // indistinguishable from an enacted pose and NOTHING could shed it
+  // a legacy store hands back clip "idle" + ragdoll bones: heldPoseAuthored false is what tells it from an enacted
+  // pose, so it can be shed
   const a = agent();
   a.heldPose = { ...BAG }; a.heldPoseAuthored = false; a.clip = "idle";
-  a.setPosture("idle");   // princess's "explicit stand command", seq 4728
+  a.setPosture("idle");   // an explicit stand command
   ok(a.heldPose === null, "posture stand sheds a physics bag even under an idle label");
   ok(a.clip === "idle", "…and actually stands");
 }

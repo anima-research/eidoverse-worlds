@@ -50,7 +50,7 @@ const WINGED = [
   'L_Wing_Lower', 'R_Wing_Lower',
 ];
 const ag: any = new WorldAgent({ name: 'mythos', world: 'is-error-bench', url: noWorldUrl() });
-// a world's bounds fence flight and cap it at their top (shared/flight.js bounds): the founded stage's, ±110 m under 60 m
+// a world's bounds fence flight and cap it at their top (shared/flight.js bounds): here ±110 m under 60 m
 const STAGE_BOX = { min: [-110, -10, -110], max: [110, 60, 110] }; ag.worldBox = () => STAGE_BOX;
 ag.bodyBoneNames = WINGED;
 ag.loadBodyBones = async () => ag.bodyBoneNames;
@@ -114,7 +114,7 @@ check('...and it stops climbing, so the body is where the answer says', !!ag.fli
 ag.flying.flightAwait = realAwait;
 // A climb, a descent and a landing's flare, flown by the agent's own flight tick, each end inside their wait. A climb
 // rises at its lift less the polar's sink once the lift has eased in, about 1.5 m/s where the lift alone is 2 m/s,
-// and a flare comes down at the polar's sink, about 0.46 m/s.
+// and a landing comes down on the spoilers, about 3 m/s (the polar's sink, about 0.46 m/s, plus spoilSink's 2.5).
 /** Fly an act through the agent's own flight tick, 0.1 s a tick as the main tick steps, until it answers. Its waits are
  *  the real flightAwait's, with flight time standing in for the clock: each wait's length is kept, with the flight time it took. */
 const flownByTicks = async (act: () => Promise<any>) => {
@@ -520,7 +520,7 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['down', 'glide_to'
   check('a take_off while a landing flares is refused as airborne, and the landing comes down',
     flaring && failed(takeOff) && /already airborne/.test(said(takeOff)) && ok(r) && / — landed at /.test(said(r)), `${said(takeOff)}; ${said(r)}`);
 }
-// A later command replaces a climb (R: "Yes, replace."), so an earlier climb whose wait then ends, whether it runs
+// A later command replaces a climb, so an earlier climb whose wait then ends, whether it runs
 // out, hears a climb get there or comes down, leaves the course alone and says it was taken over. A take-off aloft is
 // refused and takes nothing over.
 for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to'], ['landed', 'climb_to'], ['cut', 'climb_to'], ['there', 'glide_to']] as const) {
@@ -1116,8 +1116,8 @@ check('naming a place on an unknown thing is failed', failed(r) && /no thing cal
 
 console.log('\nFOLDED AND REMOVED TOOLS');
 // Main's tools that this protocol folds into general tools are refused with the call that does it now, and nothing
-// runs; world_access, folded into @world's own components, says so, and whisper says it was removed with world chat's
-// private channel (#260 r3 I3: a retired name is refused with a pointer, never "no such tool").
+// runs (world_access among them: folded into @world's own components); world_verb and whisper were removed, whisper
+// with world chat's private channel (#260 r3 I3: a retired name is refused with a pointer, never "no such tool").
 for (const name of Object.keys(TOOL_FOLDS)) {   // every folded name, from the table the door answers from
   r = await door(name, {});
   check(`${name} is refused as folded, and nothing runs`, failed(r) && new RegExp(`^${name} folded into a general tool: .* — nothing ran$`).test(said(r)), said(r));

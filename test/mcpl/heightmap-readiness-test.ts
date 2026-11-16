@@ -13,7 +13,7 @@ const { until, tryUntil, pause } = await import("../gate/wait.ts");
 const S = suite("heightmap-readiness");
 const check = (label: string, ok: unknown, detail = "") => S.check(label, ok, detail);
 
-// three grids, each one flat value (white = max), each with its own behaviour
+// four grid refs, all served the same flat white grid (white = max), each with its own behaviour
 const ref = (n: number) => `store/heightmaps/${n.toString(16).padStart(16, "0")}.json`;
 const white = JSON.stringify(encodeGrid({ w: 2, h: 2, data: new Uint16Array([65535, 65535, 65535, 65535]) }));
 const grids: Record<string, { fail: number; delay: number; hits: number; retryDelay?: number }> = {

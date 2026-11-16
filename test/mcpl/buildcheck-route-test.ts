@@ -27,7 +27,7 @@ try {
   const upMs = performance.now() - t0;
   check("an upload answers at once, with where its check will be", typeof up.path === "string" && up.check === `/check?lib=${encodeURIComponent(up.path)}` && upMs < 3000, `${JSON.stringify(up)} in ${upMs.toFixed(0)}ms`);
   // a model with a problem is stored all the same — the check is advice
-  // a 0.3 m door (protocol merge: the mover's body needs more than 0.4 m; it was 0.5 m, under main's 0.64)
+  // a 0.3 m door: narrower than the mover's body gets through (the halls below say how much it needs)
   const narrowBoxes = [...boxes.filter((b: number[]) => !(b[2] === 2.8 && b[5] === 3)), [-3, 0.3, 2.8, -0.15, 6.3, 3], [0.15, 0.3, 2.8, 3, 6.3, 3], [-0.15, 2.4, 2.8, 0.15, 6.3, 3], ROOF];
   const bad = await (await fetch(`${h.BASE}/upload?name=narrow-tower`, { method: "POST", body: await buildGlb(narrowBoxes as any) })).json() as any;
   check("an upload the check will find fault with is still accepted", typeof bad.path === "string" && bad.path !== up.path, JSON.stringify(bad));
@@ -52,15 +52,15 @@ try {
   const said = await tool("measure", { check: true,  id: "tower" });
   check("measure {check: true} reads it out for a placed thing: walk-in, floors, no problems, suggestions and the comp to name them",
     /\[tower\].*walk-in; 2 floors/.test(said) && /No problems found/.test(said) && /Suggested places/.test(said)
-    // the header names it as people do (its label); the act to paste names it by the id the authority minted (R 10-17: never
+    // the header names it as people do (its label); the act to paste names it by the id the authority minted (never
     // chosen by a writer, never renamed, and an exact id is the first thing every tool resolves)
     && said.includes(`act {verb: "set", args: {id: "${sceneId(a, "tower")}", component: "places"`) && sceneId(a, "tower") !== "tower", said);
   // checked as placed: the model scaled, the body not. A one-room hall 8m
   // square and 4m tall, its door `door` wide.
   const hall = (door: number) => [[-4, 0, -4, 4, 0.1, 4], [-4, 0.1, -4, -3.8, 4, 4], [3.8, 0.1, -4, 4, 4, 4], [-4, 0.1, -4, 4, 4, -3.8],
     [-4, 0.1, 3.8, -door / 2, 4, 4], [door / 2, 0.1, 3.8, 4, 4, 4], [-door / 2, 3, 3.8, door / 2, 4, 4], [-4, 4, -4, 4, 4.2, 4]];
-  // protocol merge: the mover's body (radius 0.2, a push under 5 cm a nudge) gets through more than 0.3 m (main's 0.54), so the
-  // doors are 0.45 m and 0.25 m (were 0.9 and 0.5)
+  // the mover's body (radius 0.2, a push under 5 cm a nudge) gets through more than 0.3 m: the doors are 0.45 m and
+  // 0.25 m
   const wide = await (await fetch(`${h.BASE}/upload?name=wide-hall`, { method: "POST", body: await buildGlb(hall(0.45) as any) })).json() as any;
   const slim = await (await fetch(`${h.BASE}/upload?name=slim-hall`, { method: "POST", body: await buildGlb(hall(0.25) as any) })).json() as any;
   // 0.45m door at 0.6×: 0.27m, narrower than a body; 0.25m door at 1.6×: 0.4m, a body fits
@@ -90,7 +90,7 @@ try {
   check("...and on one spawned collider.shape \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collider.shape "box"/.test(saidForced), saidForced.slice(0, 300));
   const saidBad = await tool("measure", { check: true,  lib: bad.path });
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
-  // review r3 F1: the door is public, so new work is rate-limited per address (a cached answer never is)
+  // the door is public, so new work is rate-limited per address (a cached answer never is)
   {
     // the burst is aborted and settled before the server goes: on a slow runner most of these checks are still running at
     // cleanup, and an unawaited fetch the server dies under is an unhandled ECONNRESET that fails the suite after its last row

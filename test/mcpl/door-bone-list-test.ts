@@ -4,10 +4,9 @@
 //   bun test/mcpl/door-bone-list-test.ts
 //
 // An empty list means a body with no bones, so the flight check reads it as
-// a body missing its hips, spine and head. Before this, a failed fetch of the
-// worn model was cached as that empty list until the avatar changed: every
-// flight act was refused for a skeleton the body has, and fold_wings said it
-// had no wings.
+// a body missing its hips, spine and head: a failed fetch kept as that list
+// would refuse every flight act for a skeleton the body has, and fold_wings
+// would say it has no wings.
 
 import { noWorldUrl } from '../harness/no-world.ts';
 import { WorldAgent } from '../../mcpl/agent.ts';

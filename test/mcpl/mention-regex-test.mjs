@@ -100,9 +100,8 @@ check('control: the unescaped form does throw', oldThrew);
 
 // ── malformed ids must DEGRADE, never throw ────────────────────────────────
 // The id comes from JSON.parse of an operator-edited tokens.json, and
-// `id: string` is erased at runtime. A missing or numeric id used to throw
-// `id.replace is not a function` inside the same catch-all that swallowed the
-// unescaped-regex throw — same deafness, different door.
+// `id: string` is erased at runtime: a missing or numeric id must not throw
+// (`id.replace is not a function`) inside the catch-all around the build.
 for (const [label, id] of [['undefined', undefined], ['null', null],
                            ['number', 42], ['empty string', ''],
                            ['object', {}]]) {

@@ -2,9 +2,9 @@
 //
 //   bun test/mcpl/flight-exit-test.ts
 //
-// One row per issue: #287 take_off aloft, #290 an older glide steering, #293 the flare's pitch, #298 a landed or
-// knocked-down flight still owning the body, #300 close or a dropped link leaving a wait to its timer. A bare agent,
-// no world server: its tick is called by hand, 0.1 s a tick.
+// A section per issue: #287 take_off aloft, #290 an older glide steering, #293 the flare's pitch, #298 a landed or
+// knocked-down flight still owning the body, #300 close or a dropped link leaving a wait to its timer; then the
+// 2026-11-10 review's rows. A bare agent, no world server: its tick is called by hand, 0.1 s a tick.
 import { tryUntil } from '../gate/wait.ts';
 import { suite } from '../gate/suite.ts';
 const { WorldAgent } = await import('../../mcpl/agent.ts');
