@@ -71,6 +71,12 @@ function spawnChild(args: string[], env: Record<string, string>) {
   spawned.push(child as unknown as typeof spawned[number]);
   return child;
 }
+// Last-resort net: if anything between here and the try throws (a spawn included: installed before the first; bot #333 203), or the process
+// dies by signal, the children still go. process.exit does NOT run finally
+// blocks, so this cannot be left to the one at the bottom.
+const reap = () => { for (const c of spawned) { try { c.kill(); } catch { /* gone */ } } };
+process.on("exit", reap);
+process.on("uncaughtException", (e) => { reap(); console.error(e); process.exit(1); });
 const world = spawnChild([process.execPath, "server/server.ts"], {
   PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
   // the sequencer reads the SAME credential file as the door (as in production, where both read mcpl/tokens.json): the
@@ -100,12 +106,6 @@ async function restartDoor() {
     return r.ok && (await r.text()).trim() === `ok ${NONCE}`;
   });
 }
-// Last-resort net: if anything between here and the try throws, or the process
-// dies by signal, the children still go. process.exit does NOT run finally
-// blocks, so this cannot be left to the one at the bottom.
-const reap = () => { for (const c of spawned) { try { c.kill(); } catch { /* gone */ } } };
-process.on("exit", reap);
-process.on("uncaughtException", (e) => { reap(); console.error(e); process.exit(1); });
 
 /** PIDs listening on a TCP port, from the OS. Returns null when this platform
  *  cannot answer — which is NOT the same as "nothing is listening", and
@@ -655,6 +655,8 @@ async function shut(h: { ws: WebSocket }) {
     const moved = await plain.request("tools/call", { name: "travel", arguments: { world: "annex" } });
     check("plain-MCP travel ACTUALLY WORKS (was always -32002)",
       !moved.result?.isError && /(Arrived in|Founded and entered) "annex"/.test(txt(moved)), txt(moved));
+    const frames = plain.inbound.filter((m: any) => /^channels\//.test(m.method ?? ""));
+    check("...and the plain-MCP host gets no MCPL frame for it (no channels/changed; bot #333 62)", !frames.length, JSON.stringify(frames));
     plain.ws.close();
 
     // …and the credential still gates it. Authority moved from a capability

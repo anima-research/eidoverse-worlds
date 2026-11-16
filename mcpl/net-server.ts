@@ -379,7 +379,8 @@ class Session {
     this.epoch++;                      // the cutoff instant, after the fact of it
     this.foundedHere = founding;
     // now the departure is a fact: state it, as a NOTIFICATION (the host has no veto over a move already made)
-    try {
+    // a plain-MCP host gets no MCPL frames, ever (granted(); bot #333 62)
+    if (this.mcplClient) try {
       this.conn.sendNotification(method.CHANNELS_CHANGED, { removed: [leaving] });
     } catch { /* peer gone: the close path handles it */ }
     console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" epoch=${this.epoch}${founding ? " (FOUNDED)" : ""} (RFC-005)`);
