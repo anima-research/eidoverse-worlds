@@ -10,6 +10,7 @@ import "../harness/fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree } from "../gate/common.ts";
+import { runMutants } from "../gate/mutants.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
@@ -46,22 +47,8 @@ async function runSelf(tree: string, only: string[] | null) {
   const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/climb-env-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = scratch("kmut"); for (const sub of ["shared", "server"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
-    const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the rule moved?)`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
-    if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-  }
-  console.log(`[climb-env-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
-}
+if (argv.includes("--mutants")) await runMutants("climb-env-check", MUTANTS, { base: "shared", run: runSelf,
+  tree: () => { const d = scratch("kmut"); for (const sub of ["shared", "server"]) copyTree(path.join(ENGINE, sub), path.join(d, sub)); return d; } });
 
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const imp = async (p: string) => { try { return await import(TREE + p); } catch (e) { return { __missing: String(e?.message ?? e).slice(0, 160) }; } };

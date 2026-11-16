@@ -48,7 +48,7 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["in-the-way", "protocol/authority/manipulate.js", "&& sweptCovers(b, a.v, bd.at))", "&& false)", ["S15"]],
   ["reach to the oriented box", "protocol/authority/manipulate.js", "const ob = obbs(st, a.id);", "const ob = [];", ["S16"]],
   ["by mass", "protocol/authority/manipulate.js", "if (vh > cap + 1e-3 ||", "if (vh > SHOVE.maxV + 1e-3 ||", ["S17"]],
-  ["refused shoves unrecorded", "protocol/authority.js", "if (verb === \"punt\" && (args?.contact === true || args?.shove === true)) {", "if (false) {", ["S18"]],
+  ["refused shoves unrecorded", "protocol/authority.js", "if (verb === \"punt\" && args?.contact === true) {", "if (false) {", ["S18"]],
   ["not through a wall", "protocol/authority/manipulate.js", "if (hit) refuse(\"out-of-reach\", `${hit} is between you", "if (false) refuse(\"out-of-reach\", `${hit} is between you", ["S19"]],
   ["CONTROL (no-op: must stay green)", "protocol/physconst.js", "// a contact push (shared/shove.js)", "//  a contact push (shared/shove.js)", []],
 ];

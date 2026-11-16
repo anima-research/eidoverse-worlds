@@ -9,6 +9,7 @@ import "../harness/fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree } from "../gate/common.ts";
+import { runMutants } from "../gate/mutants.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
@@ -32,7 +33,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a passenger's stand-up commits nothing", "protocol/authority/drive.js", "else if (seat && familyOf(st, host).has(seat))", "else if (false)", ["D12"]],
   ["a locked hull drives", "protocol/authority/drive.js", "if (lock) refuse(", "if (false) refuse(", ["D9"]],
   ["two helms taken", "protocol/authority/sockets.js", "if (helms.length > 1) return", "if (false) return", ["D1"]],
-  ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !bag(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
+  ["a helm on nothing to drive", "protocol/authority/sockets.js", "if (helms.length && !liveObj(s.entities[h]?.c.drive)) return", "if (false) return", ["D1"]],
   ["input on any station", "sockbody.js", "v.input.move === 'drive' && v.action === 'drive'))", "v.input.move === 'drive'))", ["D1"]],
   ["the slack per message again", "protocol/authority/drive.js", "slack = slackNow(L.slack)", "slack = slackNow(null)", ["D13"]],
   ["a failed commit drops the lease", "protocol/authority/drive.js", "  commitLease(w, st, host, why, free);   // a throw keeps", "  try { commitLease(w, st, host, why, free); } catch { /* dropped */ }   // a throw keeps", ["D14"]],
@@ -42,7 +43,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a hull meets every wall", "protocol/authority/drive.js", "!fam.has(k) && !solidOff(st.entities[k].c, \"hulls\", mask) && hitsIx(", "!fam.has(k) && hitsIx(", ["D16"]],
   ["a hull scans [1] whatever its mask", "protocol/authority/drive.js", "mask = maskOf(e.c);", "mask = [1];", ["D25", "D26"]],
   ["layers unread (blocks alone decides)", "protocol/simlayer.js", "|| (mask !== null && !scans(mask, c))", "", ["D25", "D26"]],
-  ["the band's walls are in layer 1 (every hull meets them, translate-v1@31)", "tools/import-v1/translate-v1.js", "layer: [bandLayerOf(host)] }", "layer: [1] }", ["D25"]],
+  ["the band's walls are in layer 1 (every hull meets them, translate-v1@31)", "../tools/import-v1/translate-v1.js", "layer: [bandLayerOf(host)] }", "layer: [1] }", ["D25"]],
   ["layer and mask unchecked at the door", "protocol/authority/checks.js", "if (odd !== undefined || new Set(v).size !== v.length) return { code: \"shape\", reason: `${id}.collider.${f}", "if (false) return { code: \"shape\", reason: `${id}.collider.${f}", ["D27"]],
   ["a dynamic thing may leave layer 1", "protocol/authority/checks.js", "if (c.physics?.kind === \"dynamic\" && !scans(LAYER_DEFAULT, c)) return", "if (false) return", ["D27"]],
   ["bodies meet every layer", "protocol/authority/spatial.js", "solidOff(st.entities[id]?.c, \"bodies\");", "solidOff(st.entities[id]?.c);", ["D15"]],
@@ -60,22 +61,8 @@ async function runSelf(tree: string, only: string[] | null) {
   const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/drive-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
-if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = scratch("dmut"); for (const sub of ["shared", "server", "tools/import-v1"]) copyTree(path.join(ENGINE, sub), path.join(d, sub));
-    const f = file.startsWith("tools/") ? path.join(d, file) : path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the rule moved?)`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
-    if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-  }
-  console.log(`[drive-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
-}
+if (argv.includes("--mutants")) await runMutants("drive-check", MUTANTS, { base: "shared", run: runSelf,   // a tools/ file is named ../tools/…
+  tree: () => { const d = scratch("dmut"); for (const sub of ["shared", "server", "tools/import-v1"]) copyTree(path.join(ENGINE, sub), path.join(d, sub)); return d; } });
 
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const imp = async (p: string) => { try { return await import(TREE + p); } catch (e) { return { __missing: String(e?.message ?? e).slice(0, 160) }; } };

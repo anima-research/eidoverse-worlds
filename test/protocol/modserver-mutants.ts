@@ -14,7 +14,7 @@ const M: [string, string, string | string[][], string, string[]][] = [
   ["a voice mute is applied at the SFU", "server/server.ts", "try { setSfuModeratorMute(w.name, c.id, voice); }", "try { void 0; }", ["RS2"]],
   ["a rejoining identity is muted again (join, relay-credential mint and the 2 s sweep each re-apply it: all three removed)", "server/server.ts", [["if (w.log) sanctionSweep(w);   // a voice mute in force is re-applied on join", "if (false) sanctionSweep(w);   //"], ["c.sfuMuted = undefined;\n            if (c.world.log) sanctionSweep(c.world);", "c.sfuMuted = undefined;\n            if (false) sanctionSweep(c.world);"], ["registerSystem({ name: \"sanctions\", everyMs: 2000,", "void ({ name: \"sanctions\", everyMs: 2000,"]], "", ["RS2"]],
   ["a kick names no length", "shared/protocol/authority/moderation.js", "if (a.minutes !== undefined) refuse(\"shape\", \"a kick has no length", "if (false) refuse(\"shape\", \"a kick has no length", ["RS3"]],
-  ["no backscroll on join", "server/server.ts", "state: { recentChat: [], chatTotal:", "state: { recentChat: w.state.recentChat ?? [], chatTotal:", ["RS10"]],
+  ["no backscroll on join", "server/server.ts", "chat: { recentChat: [], chatTotal:", "chat: { recentChat: w.state.recentChat ?? [], chatTotal:", ["RS10"]],
   ["a warning reaches its person", "server/requestwire.ts", "const notice = verb === \"warn\" ?", "const notice = false ?", ["RS5"]],
   ["mod-state badges", "server/server.ts", "if (w.modStateKey !== key) {", "if (false) {", ["RS5"]],
   ["access: listed", "shared/protocol/access.js", "join === \"listed\" && !listedIn(wc, who.actor, now) ?", "false ?", ["RS6"]],
@@ -30,8 +30,8 @@ const M: [string, string, string | string[][], string, string[]][] = [
   ["an owner reads the master log", "server/world.ts", "if (this.isAdmin(c)) return null; if (Number.isInteger", "if (false) return null; if (Number.isInteger", ["RS10"]],
   // RETIRED 10-20: "presence messages from a role-less (none) person are dropped" — RS9's ghost half tested it; no row does now (BUG-HUNT gap)
   ["the ban list is for moderation holders", "server/messages.ts", "if (!e || !(isOwner(e) ||", "if (false && !(isOwner(e) ||", ["RS9"]],
-  ["a guest's ban names its address", "server/requestwire.ts", "          if (verb === \"ban\" && t.anonymous && t.addr) {", "          if (false) {", ["RS9"]],
-  ["a guest's kick names no address", "server/requestwire.ts", "          if (verb === \"ban\" && t.anonymous && t.addr) {", "          if (t.anonymous && t.addr) {", ["RS9"]],
+  ["a guest's ban names its address", "server/requestwire.ts", "if (r?.ok && verb === \"ban\" && typeof args.who === \"string\") for (const t of w.clients)", "if (false) for (const t of w.clients)", ["RS9"]],
+  ["a guest's kick names no address", "server/requestwire.ts", "if (r?.ok && verb === \"ban\" && typeof args.who === \"string\") for (const t of w.clients)", "if (r?.ok && typeof args.who === \"string\") for (const t of w.clients)", ["RS9"]],
   ["reset is the most senior owner's", "server/requestwire.ts", "if (w.log.seniorOwner() !== actorOf(c)) return err(", "if (false) return err(", ["RS7"]],
   // a guest's mute by address; minimum account age (R 10-07)
   ["a guest's sanction is carried to the next guest at join", "server/server.ts", "for (const s of addrSanctionsFor(w.name, c.addr)) {", "for (const s of [] as any[]) {", ["GG1", "GG5"]],

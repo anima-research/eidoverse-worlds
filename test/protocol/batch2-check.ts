@@ -21,11 +21,12 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
+import { runMutants } from "../gate/mutants.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 
 const argv = process.argv.slice(2);
@@ -36,7 +37,7 @@ const BASE = "7f1f1934";
 const MUTANTS: [string, string, string, string, string[]][] = [
   ["the authority checks a picture's or sound's src", "shared/protocol/authority/checks.js", 'if (t.tier === "bad") refuse("shape", `${at}.src: ${t.why}`, t.fix); }', "}", ["P2", "S1"]],
   ["a link must be https", "shared/mediasrc.js", "if (u.protocol !== 'https:') return", "if (false) return", ["P2", "M1"]],
-  ["a link may not name an address or a local host", "shared/mediasrc.js", "if (/^\\[|^\\d+(\\.\\d+){3}$|^\\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host))", "if (false)", ["P2", "M1"]],
+  ["a link may not name an address or a local host", "shared/mediasrc.js", "if (/^\\[|^\\d+(\\.\\d+){3}$|^\\d+$|^0x/i.test(host) || !host.includes('.') || LOCAL.test(host) || /(^|[^0-9])\\d{1,3}([.-]\\d{1,3}){3}([^0-9]|$)/.test(host))", "if (false)", ["P2", "M1"]],
   ["an untrusted link is fetched only with the viewer's opt-in", "shared/mediasrc.js", "(t.tier === 'link' && allowUntrusted === true)", "(t.tier === 'link')", ["M2"]],
   ["the allowlist decides trusted", "shared/mediasrc.js", "return { tier: hosts.some((p) => hostMatch(host, p)) ? 'host' : 'link'", "return { tier: 'link'", ["M1", "S1"]],
   ["text length caps count graphemes", "shared/protocol/authority/checks.js", "const n = typeof x === \"string\" ? graphemes(x) : Array.isArray(x) ? x.length : 0;", "const n = typeof x === \"string\" ? x.length : Array.isArray(x) ? x.length : 0;", ["P3", "W5"]],
@@ -83,28 +84,12 @@ async function runSelf(tree: string, only: string[] | null, extra: string[] = []
 }
 function mutantTree(tag: string) {
   const d = scratch(tag);
-  for (const sub of ["shared", "server", "tools", "test", "defs", "client/lib"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));
+  for (const sub of ["shared", "server", "tools", "test", "defs", "client/lib", "mcpl"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // mcpl: server/auth.ts imports it (P6 reads upload.ts)
   for (const f of ["package.json", "tsconfig.json", "bunfig.toml"]) if (fs.existsSync(path.join(ENGINE, f))) fs.copyFileSync(path.join(ENGINE, f), path.join(d, f));
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
-if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  const only = opt("only")?.split(",") ?? null;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("b2mut"); const f = path.join(d, file); const src = readLF(f);
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the gate moved?)`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
-    if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-  }
-  console.log(`[batch2-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
-}
+if (argv.includes("--mutants")) await runMutants("batch2-check", MUTANTS, { tree: () => mutantTree("b2mut"), run: runSelf });
 if (argv.includes("--control")) {
   const d = scratch("b2ctl"); const r0 = (() => { const r = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "client/lib"], d); if (r.exitCode === 0) linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return r; })();
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }

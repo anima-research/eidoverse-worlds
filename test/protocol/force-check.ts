@@ -11,6 +11,7 @@ import "../harness/fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
+import { runMutants } from "../gate/mutants.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
@@ -32,7 +33,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
   ["a blast within the caster's body reach only", "protocol/authority/bodyverbs.js", "    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", "    { const me = w.presence.bodies[actor]; if (me && Math.hypot(...me.at.map((v, i) => v - a.at[i])) > 2.5) refuse(\"out-of-reach\", \"too far\", \"walk closer\"); }\n    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", ["F13"]],
-  ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "if (!d.listed && P.throttle?.[`${from}:${cls}`] > now)", "if (P.throttle?.[`${from}:${cls}`] > now)", ["F14"]],
+  ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "(!d.listed && P.throttle?.[`${from}:${cls}`] > now", "(P.throttle?.[`${from}:${cls}`] > now", ["F14"]],
   ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F15"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
 ];
@@ -47,21 +48,7 @@ function mutantTree(tag: string) {
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
-if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = mutantTree("fmut"); const f = path.join(d, "shared", file); const src = fs.readFileSync(f, "utf8");
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
-    if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-  }
-  console.log(`[force-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
-}
+if (argv.includes("--mutants")) await runMutants("force-check", MUTANTS, { base: "shared", tree: () => mutantTree("fmut"), run: runSelf });
 if (argv.includes("--control")) {
   const d = scratch("fctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }

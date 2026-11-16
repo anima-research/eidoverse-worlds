@@ -25,11 +25,12 @@ import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from "node:fs";
 import { ENGINES } from "../../shared/protocol/simlayer.js";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
+import { runMutants, type Mutant } from "../gate/mutants.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 
 const argv = process.argv.slice(2);
@@ -64,7 +65,7 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["home follows an edit that moves it from home", "protocol/authority/manipulate.js", "else if (!setsH && was && sameHome(ctx.st, id, was) && !sameHome(after, id, was)) home = homeHere(after, id);", "", ["R4"]],
   ["returnAfter runs at each request", "protocol/authority.js", "settleSim(w); returnDue(w); CTX.work", "settleSim(w); CTX.work", ["R4"]],
   ["returnAfter: not while held", "protocol/authority/manipulate.js", "if (!g?.home || w.presence.holds[id] || lostPlace(st, id)) continue;", "if (!g?.home || lostPlace(st, id)) continue;", ["R4"]],
-  ["returnAfter: only a hand or physics moving it counts", "protocol/authority/manipulate.js", "const byManipulation = (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", "const byManipulation = true || (c.kind === \"act\" && (MANIPULATE_VERBS.has(c.verb)", ["R4"]],
+  ["returnAfter: only a hand or physics moving it counts", "protocol/authority/manipulate.js", "const byManipulation = (c.kind === \"request\" && (MANIPULATE_VERBS.has(c.verb)", "const byManipulation = true || (c.kind === \"request\" && (MANIPULATE_VERBS.has(c.verb)", ["R4"]],
   ["returnAfter: the time", "protocol/authority/manipulate.js", "now - r.ts < g.returnAfter * 1000 ||", "", ["R4"]],
   ["snapping", "protocol/authority/bodyverbs.js", "const snap = snapTarget(st, a.id, g, a.pos ?? h.pose.pos, w);", "const snap = { to: null, notes: [] };", ["R5", "R5s", "R6", "R7", "R9"]],
   ["snapping: within the radius", "protocol/authority/manipulate.js", "if (d > socketRadius(sk)) continue;", "", ["R5", "R5s"]],
@@ -86,9 +87,9 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["every client is told the hand", "grab.js", "...(h.hand ? { hand: h.hand } : {}),", "", ["H1", "H4"]],
   ["orphans: a hold whose holder isn't here is settled", "protocol/authority/scriptrun.js", ".filter((who) => !here.has(who));", ".filter(() => false);", ["O1"]],
   ["orphans: the log's lift is settled", "protocol/authority/scriptrun.js", "for (const [id, lift] of orphanLifts(w)) {", "for (const [id, lift] of []) {", ["O2", "O3d"]],
-  ["orphans: a lift is settled once", "protocol/authority/scriptrun.js", "for (const o of ops) { if (o.verb === \"create\" || ends(o)) lifted.delete(o.id);", "for (const o of ops) { if (false) lifted.delete(o.id);", ["O2"]],
+  ["orphans: a lift is settled once", "protocol/authority/scriptrun.js", "for (const o of ops) { if (o.op === \"create\" || ends(o)) lifted.delete(o.id);", "for (const o of ops) { if (false) lifted.delete(o.id);", ["O2"]],
   ["orphans: a hold ends under a thing switched off", "protocol/authority/scriptrun.js", "if (endsUnder(o)) for (const k of [...lifted.keys()]) if (under(k, o.id)) lifted.delete(k); }", "}", ["O3", "O3b", "O3c"]],
-  ["orphans: a returning thing goes home", "protocol/authority/scriptrun.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { returnHome(w, id, plan, lift.seq);", ["O2", "O3d"]],
+  ["orphans: a returning thing goes home", "protocol/authority/scriptrun.js", "if (g?.release === \"return\" && g.home) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { const back = returnHome(w, id, plan, lift.seq);", "if (false) { const { plan } = returnPlan(w, w.state(), id, g); if (plan) { const back = returnHome(w, id, plan, lift.seq);", ["O2", "O3d"]],
   ["orphans: a holder who's here keeps it", "protocol/authority/scriptrun.js", "if (w.presence.holds[id] || !st.entities[id] || lostPlace(st, id)) continue;", "if (!st.entities[id] || lostPlace(st, id)) continue;", ["O2"]],
   ["use while held fires grabbable.use", "protocol/authority/use.js", "if (a.action === undefined && g?.use) { const action", "if (false) { const action", ["U1"]],
   ["use while held: up fires the up", "protocol/authority/use.js", "const action = phase === \"up\" ? g.use.up : g.use.down;", "const action = g.use.down;", ["U1"]],
@@ -103,7 +104,7 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["the card's edits are checked as the authority checks them", "editschema.js", "const bad = checkGrabbable(next);\n      if (bad)", "const bad = null;\n      if (bad)", ["I2"]],
   ["look says what a hand may do with it", "protocol/authority/reads.js", "    ...(g ? { grab: describeGrab(g, typeof name === \"string\" ? name : id) } : {}),", "", ["A1"]],
   ["review: a put's pos is reach-checked before it snaps", "protocol/authority/bodyverbs.js", "const d0 = dist(gripPoint(me), a.pos); if (d0 > REACH) refuse(", "const d0 = 0; if (d0 > REACH) refuse(", ["F1"]],
-  ["review: a refused orphan's hold still ends", "protocol/authority/scriptrun.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) delete w.presence.holds[id];", ["F2b"]],
+  ["review: a refused orphan's hold still ends", "protocol/authority/scriptrun.js", "if (!r.ok) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) {", "if (false) { for (const [id, h] of Object.entries(w.presence.holds)) if (h.by === who) {", ["F2b"]],
   ["review: the up from whoever pressed down", "protocol/authority/use.js", "const lateUp = a.args?.phase === \"up\" && P[a.id]?.by === actor && hold?.by !== actor;", "const lateUp = false;", ["F3"]],
   ["review: a copy goes home where it was made", "protocol/authority/manipulate.js", "(born && !sameHome(after, id, h))", "false", ["F4"]],
   // the put's own check, then the hand's settlement in the gate: either refuses the demoted holder
@@ -131,33 +132,15 @@ function mutantTree(tag: string) {
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   return d;
 }
-if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  const only = opt("only")?.split(",") ?? null;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
-    ran++; const d = mutantTree("gmut");
-    const edits: [string, string, string][] = (Array.isArray(find) ? find : [[find, repl]]).map(([a, b, g]) => [path.join(d, "shared", g ?? file), a, b]);
-    const miss = edits.find(([f, a]) => readLF(f).split(a).length !== 2);
-    if (miss) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${path.relative(path.join(d, "shared"), miss[0])} (the gate moved?)`); continue; }
-    for (const [f, a, b] of edits) fs.writeFileSync(f, readLF(f).replace(a, () => b));
-    const r = await runSelf(d, cases.length ? cases : null);
-    const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    let good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
-    let others = "";
-    if (cases.includes("M1")) { // the migration proof: the suites that test physics today go red without the fallback
-      const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
-      const reds = ["phys-check.ts", "physlive-check.ts"].map((s) => { const x = Bun.spawnSync(["bun", path.join(d, "test/protocol", s)], { cwd: d, env });
-        const out = x.stdout.toString() + x.stderr.toString(); return { s, code: x.exitCode, fails: (out.match(/^\s*FAIL\b/gm) ?? []).length }; });
-      others = ` · ${reds.map((x) => `${x.s}: exit ${x.code}, ${x.fails} FAIL`).join(", ")}`;
-      if (reds.some((x) => x.code === 0 || x.fails === 0)) good = false;
-    }
-    if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}${others}`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-  }
-  console.log(`[grab-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
-}
+// the migration mutant (no physics fallback) must also turn phys-check and physlive-check red in its tree: they test what it keeps
+const migrationProof = ([, , , , cases]: Mutant, d: string) => {
+  if (!cases.includes("M1")) return null;
+  const env = { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
+  const reds = ["phys-check.ts", "physlive-check.ts"].map((s) => { const x = Bun.spawnSync(["bun", path.join(d, "test/protocol", s)], { cwd: d, env });
+    const out = x.stdout.toString() + x.stderr.toString(); return { s, code: x.exitCode, fails: (out.match(/^\s*FAIL\b/gm) ?? []).length }; });
+  return { good: !reds.some((x) => x.code === 0 || x.fails === 0), note: reds.map((x) => `${x.s}: exit ${x.code}, ${x.fails} FAIL`).join(", ") };
+};
+if (argv.includes("--mutants")) await runMutants("grab-check", MUTANTS, { base: "shared", tree: () => mutantTree("gmut"), run: runSelf, also: migrationProof });
 if (argv.includes("--control")) {
   // the base commit's shared/ (the authority before grabbable): every NEW case must be red there, every M case green
   const d = scratch("gctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server/posecheck.ts"], d);

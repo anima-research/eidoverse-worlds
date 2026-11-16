@@ -20,9 +20,10 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, archiveTo, linkInto, readLF } from "../gate/common.ts";
+import { ENGINE, scratch, archiveTo, linkInto } from "../gate/common.ts";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
+import { runMutants } from "../gate/mutants.ts";
 import { LAB_CATALOGUE } from "../harness/labmodels.js";   // the suites' model table (a base or mutant tree reads it from here)
 
 const argv = process.argv.slice(2);
@@ -57,20 +58,7 @@ function copyTree(tag: string) {
 }
 const runSelf = (tree: string, only: string[] | null) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/build-check.ts"), "--tree", tree, ...(only ? ["--only", only.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
-if (argv.includes("--mutants")) {
-  let bad = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    const d = copyTree("bmut"); const f = path.join(d, file); const src = readLF(f);
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
-    fs.writeFileSync(f, src.replace(find, () => repl));
-    const r = runSelf(d, cases); const red = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = r.code !== 0 && cases.every((c) => red.includes(c)); if (!good) bad++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → red: ${red.join(",") || "(none)"} (want ${cases.join(",")})`);
-    if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
-    fs.rmSync(d, { recursive: true, force: true });
-  }
-  console.log(`[build-check --mutants] ${MUTANTS.length} mutations, ${bad} wrong`); process.exit(bad ? 1 : 0);
-}
+if (argv.includes("--mutants")) await runMutants("build-check", MUTANTS, { tree: () => copyTree("bmut"), run: runSelf });
 if (argv.includes("--base")) {
   const d = scratch("bbase"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "tools", "defs", "client", "package.json"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}`); process.exit(1); }

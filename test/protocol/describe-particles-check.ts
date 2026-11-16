@@ -14,12 +14,13 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import fs from "node:fs";
 import path from "node:path";
-import { ENGINE, scratch, copyTree, archiveTo, linkInto, readLF } from "../gate/common.ts";
+import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "../../tools/import-v1/translate-v1.js";
 import { labClock, pinned } from "../gate/clock.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
+import { runMutants } from "../gate/mutants.ts";
 
 const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
@@ -64,9 +65,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["params are the effect's declared ones", "shared/particle_effects.js", "if (!Object.hasOwn(decl, k)) return `params.${k}:", "if (false) return `params.${k}:", ["X4"]],
   ["a document's amount is bounded", "shared/particle_effects.js", "S.amount >= 1 && S.amount <= L.amount)", "S.amount >= 1)", ["X6"]],
   ["a document's total is bounded", "shared/particle_effects.js", "if (total > L.totalAmount) return", "if (false) return", ["X6"]],
-  ["the authority checks particles at all", "shared/protocol/authority/gate.js", "if (!CTX.forking) for (const op of norm) if (op.verb === \"set\") particlesCheck(w, op);", "", ["X3", "X4"]],   /* X2 and X8 have a second gate (checks.js) since the shape audit */
-  ["the translator modernizes particles", "tools/import-v1/translate-v1.js", "k === \"particles\" ? newParticles(v) : k === \"captions\"", "k === \"particles\" ? v : k === \"captions\"", ["X10"]],
-  ["a named emitter becomes a child thing", "tools/import-v1/translate-v1.js", "if (k.startsWith(\"particles:\") && EMITTER_NAME.test(k.slice(10)))", "if (false)", ["X13"]],
+  ["the authority checks particles at all", "shared/protocol/authority/gate.js", "if (!CTX.forking) for (const op of norm) if (op.op === \"set\") particlesCheck(w, op);", "", ["X3", "X4"]],   /* X2 and X8 have a second gate (checks.js) since the shape audit */
+  ["the translator modernizes particles", "tools/import-v1/translate-v1.js", "const p = particlesOf(v, `${id}:${v?.preset ?? \"\"}`); c.particles = p.value;", "const p = particlesOf(v, `${id}:${v?.preset ?? \"\"}`); c.particles = v;", ["X10"]],
+  ["a named emitter becomes a child thing", "tools/import-v1/translate-v1.js", "if (k.startsWith(\"particles:\") && EMITTER_NAME.test(k.slice(10))) { if (v != null) emitters.push(", "if (false) { if (v != null) emitters.push(", ["X13"]],
   ["a scaled emitter says its scale", "shared/particles.js", "inst.scale !== 1) bits.push(", "inst.scale !== 1 && false) bits.push(", ["X14"]],
   ["openable's state is generated", "shared/a11y.js", "if (isObj(c.openable)) out.state.push(", "if (false) out.state.push(", ["D2", "D3"]],
   ["openable's affordance is generated", "shared/a11y.js", "if (isObj(c.openable)) out.can.push(", "if (false) out.can.push(", ["D2"]],
@@ -74,23 +75,12 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["look clips a description", "shared/protocol/authority/reads.js", "full || graphemes(ax.description) <= 200 ? ax.description", "true ? ax.description", ["D4"]],
   ["CONTROL (no-op: must stay green)", "shared/a11y.js", "// a11y — how", "//  a11y — how", []],
 ];
-if (argv.includes("--mutants")) {
-  let wrongs = 0;
-  for (const [name, file, find, repl, want] of MUTANTS) {
-    const d = scratch("dpmut");
+if (argv.includes("--mutants")) await runMutants("describe-particles-check", MUTANTS, {
+  tree: () => { const d = scratch("dpmut");
     for (const sub of ["shared", "server", "tools", "test", "defs", "client/lib", "spec", "AGENTS.md"]) if (fs.existsSync(path.join(ENGINE, sub))) copyTree(path.join(ENGINE, sub), path.join(d, sub));   // spec + AGENTS: P8 reads them
-    linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
-    const f = path.join(d, file); const src = readLF(f);
-    if (src.split(find).length !== 2) { wrongs++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file}`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
-    const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/describe-particles-check.ts"), "--tree", d, ...(want.length ? ["--only", want.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
-    const red = [...(r.stdout.toString()).matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
-    const good = want.length ? want.every((c) => red.includes(c)) : r.exitCode === 0;
-    if (!good) wrongs++;
-    console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${want.length ? `red: ${red.join(",") || "(none)"} (want ${want.join(",")})` : `exit ${r.exitCode} (want 0)`}`);
-  }
-  console.log(`[describe-particles-check --mutants] ${MUTANTS.length} mutations, ${wrongs} wrong`); process.exit(wrongs ? 1 : 0);
-}
+    linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules")); return d; },
+  run: (d, only) => { const r = Bun.spawnSync(["bun", path.join(ENGINE, "test/protocol/describe-particles-check.ts"), "--tree", d, ...(only ? ["--only", only.join(",")] : [])], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+    return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; } });
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 // a client file at its path in the tree under test: a pre-reorg --tree keeps client/lib flat
 const inTree = (...ps: string[]) => TREE + (ps.find((p) => fs.existsSync(TREE + p)) ?? ps[0]);

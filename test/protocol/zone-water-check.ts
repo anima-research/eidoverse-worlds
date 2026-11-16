@@ -27,7 +27,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["priority orders the bodies", "zone.js", "const cmp = (a, b) => a.priority - b.priority ||", "const cmp = (a, b) =>", ["Z3"]],
   ["an exclusion's priority", "water.js", "&& !(w.priority > b.priority);", ";", ["Z4"]],
   ["an exclusion's bodies", "water.js", "(!Array.isArray(b.bodies) || b.bodies.includes(w.id))", "true", ["Z4"]],
-  ["the carrier's pose", "zone.js", "const pose = poseOf(id); if (!pose) continue;", "const pose = { pos: c.transform?.pos ?? [0, 0, 0], q: c.transform?.q, scale: c.transform?.scale };", ["Z5"]],
+  ["the carrier's pose", "zone.js", "offChain(st, id)) continue;\n    const pose = poseOf(id); if (!pose) continue;", "offChain(st, id)) continue;\n    const pose = { pos: c.transform?.pos ?? [0, 0, 0], q: c.transform?.q, scale: c.transform?.scale };", ["Z5"]],
   ["rebuild on every change (the old bug)", "zone.js", "if (ev?.type !== \"change\") return false;", "return true;", ["Z7"]],
   ["a pocket beats @world's level", "zone.js", "&& !volumes.airs.some((a) => inBox(p, a) && excludes(a, AT_WORLD))", "", ["Z4w"]],
   ["ties by id", "zone.js", "|| (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)", "", ["Z3t"]],

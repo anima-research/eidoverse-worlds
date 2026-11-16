@@ -27,7 +27,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["any zone holds a volume", "protocol/authority/checks.js", "if (c[\"physics-volume\"] !== undefined && !(c.zone?.shape === \"box\" || c.zone?.global === true)) return", "if (false) return", ["A1"]],
   ["modes are ignored", "zone.js", "if (a.kind !== \"speed\" || (mode && a.modes && !a.modes.includes(mode))) continue;", "if (a.kind !== \"speed\") continue;", ["A6"]],
   ["the walk asks no mode", "mover.js", "env.speedAt(pos, st0?.swimming ? \"swim\" : \"walk\")", "env.speedAt(pos)", ["A6"]],
-  ["any modes pass the door", "protocol/authority/checks.js", "if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) return", "if (false) return", ["A7"]],
+  ["any modes pass the door", "protocol/authority/checks.js", "if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) {", "if (false) {", ["A7"]],
   ["the old name gets no pointer", "protocol/authority/checks.js", "name === \"physics-area\" ? [\"physics-volume\"] :", "false ? [] :", ["A10"]],
   ["CONTROL (no-op: must stay green)", "zone.js", "// shared/zone.js — a world's", "//  shared/zone.js — a world's", []],
 ];
