@@ -61,11 +61,11 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
 // anim {bodyMode} beside stop or ragdoll runs them too, after declaring the mode
 { const calls: string[] = [];
   const ag: any = { anims: [{ name: "dance", kind: "clip" }], clip: "dance", myOccupancy: null, target: null, heldPose: null,
-    restClip: () => "sit", bodyModeNow: () => ag.bodyMode, stopAnims: async (w: unknown) => { calls.push(`stop:${w}`); ag.anims = []; return ["dance"]; },
-    animEnded: (why: string) => calls.push(`ended:${why}`), knockDown: () => calls.push("fell") };
+    restClip: () => "sit", bodyModeNow: () => ag.bodyMode, stopAnims: async (w: unknown) => { calls.push(`stop:${w}:${ag.bodyMode}`); ag.anims = []; return ["dance"]; },
+    animEnded: (why: string) => calls.push(`ended:${why}`), knockDown: () => calls.push(`fell:${ag.bodyMode}`) };
   await handleTool({ agent: ag } as any, "anim", { bodyMode: "sit", stop: true });
   await handleTool({ agent: ag } as any, "anim", { bodyMode: "sit", ragdoll: true });
-  ok(ag.bodyMode === "sit" && calls.includes("stop:null") && calls.includes("fell"), "bodyMode with stop stops, and with ragdoll falls", calls); }
+  ok(ag.bodyMode === "sit" && calls.includes("stop:null:sit") && calls.includes("fell:sit"), "bodyMode with stop stops, and with ragdoll falls, each after the mode is declared", calls); }
 
 // a held frame says what validation left out, as animate does
 { const ag: any = { anims: [], setPose: () => {}, animBegan: () => {}, animEnded: () => {} };
