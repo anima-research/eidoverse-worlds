@@ -28,9 +28,8 @@ git reset --hard origin/main
 after=$(git rev-parse --short HEAD)
 echo "code: $before -> $after"
 
-# deps only when the manifests/lockfiles moved (bun migrated package-lock.json
-# to bun.lock — watching only the old name once shipped a client that imported
-# a module the VPS had never installed, and boot hung at "waking the engine")
+# deps only when the manifests/lockfiles moved (bun.lock: a lockfile change that goes unwatched
+# ships a client importing a module the VPS never installed, and boot hangs)
 if ! git diff --quiet "$before" "$after" -- client/package.json client/bun.lock 2>/dev/null; then
   (cd client && "$BUN" install)
 fi
@@ -40,8 +39,8 @@ fi
 # plain `bun install` in mcpl/ dropped a missing optional sibling without a word and the door stopped on restart; this
 # fails here instead, under set -e, before the restarts.
 "$BUN" test/gate/run.ts --siblings
-# root deps power server/optimize.ts (the store's GLB diet); the sequencer
-# itself stays dependency-free. Under set -e a failed install stops this
+# root deps: server/optimize.ts (the store's GLB diet) and what the sequencer imports (werift,
+# pngjs, quickjs-emscripten, three). Under set -e a failed install stops this
 # script here, before the chat bridge's install and the restarts.
 if ! git diff --quiet "$before" "$after" -- package.json bun.lock 2>/dev/null; then
   "$BUN" install

@@ -2,11 +2,9 @@
 // devtools plumbing that asks the questions, so it can be tested without a browser
 // (test/server/render-health-test.ts).
 //
-// The verdict is the watchdog's whole job, and it has been wrong before. It scraped "NNfps" from
-// #hud, and when the client moved fps into the debug panel it read 0 forever: every healthy
-// renderer was killed on schedule, for a week, before anyone noticed (docs/history/INCIDENTS.md,
-// 2026-10-24). Each probe below asks the page something that depends on nothing the client
-// displays.
+// Each probe below asks the page something that depends on nothing the client displays: a verdict
+// scraped from #hud read 0 forever once the client moved its fps line, and every healthy renderer
+// was killed on schedule (docs/history/INCIDENTS.md, 2026-10-24).
 
 export const TIMEOUT = Symbol("timeout");
 /** Evaluate an expression in the page (awaiting a promise), or TIMEOUT after `ms`. */

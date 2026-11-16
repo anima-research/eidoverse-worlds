@@ -1,11 +1,9 @@
 // render-watchdog — keep the /snap renderer alive AND current.
 //
-// The old run-mac-renderer.sh relaunched Chrome only when it EXITED. But the
-// renderer's real failure mode is not a crash — it is a HANG: after a day or
+// The renderer's real failure mode is not a crash but a HANG: after a day or
 // two the client leaks (measured 6.8 GB RSS), the main thread pegs, and Chrome
 // keeps its websocket open (so the server still thinks it has a renderer) while
-// answering no snap requests. A crash-only loop never notices, so the box sat
-// with a dead renderer indefinitely.
+// answering no snap requests. A relaunch-on-exit loop never notices.
 //
 // This watchdog OWNS the renderer's lifecycle and restarts it on any of:
 //   - crash        — Chrome process gone
@@ -41,13 +39,10 @@ const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
 // lite=0: the client's boot tripwire (index.html, `ew-boot-attempt:<world>`)
 // demotes a device to the engine-less LITE client when its last full boots were
 // killed before the dwell, and this watchdog kills renderers for a living, in
-// a profile that persists. A couple of early kills and every relaunch came up
-// lite: no EW, "not joined", kill, lite again, forever. A lite roamer was worse
-// than none: it still joined as a renderer, the server sent it to a world, and
-// every snapshot there answered "this client has no renderer". The client now
-// never makes a ?renderer page lite (index.html rule 0); asking for the full
-// client here as well keeps a renderer whole against a sequencer still serving
-// a client from before that, since the URL outranks the tripwire.
+// a profile that persists: a lite renderer never joins, is killed, and comes up
+// lite again. The client never makes a ?renderer page lite (index.html rule 0);
+// asking here as well keeps a renderer whole against a sequencer serving an
+// older client, since the URL outranks the tripwire.
 const URL = `${SHOW_URL}/?world=${WORLD}&renderer&lite=0&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const log = (m: string) => console.log(`[watchdog ${new Date().toISOString().slice(11, 19)}] ${m}`);
@@ -92,14 +87,10 @@ for (;;) {
   await launch();
   const started = Date.now();
   await sleep(BOOT_GRACE_SEC * 1000);
-  // The version marker may be unreadable at boot — the sequencer could be
-  // mid-restart, or (as happened here) running a build that predates the
-  // /client-version route and answers 500. That used to pin bornVersion at
-  // null for the renderer's whole life, and the deploy check below requires
-  // it, so a renderer launched during that window NEVER picked up a deploy
-  // again: exactly the "prod is serving stale client" failure this watchdog
-  // exists to prevent, reintroduced by its own baseline. So the baseline
-  // binds LATE — the first reading we can actually get becomes it.
+  // The version marker may be unreadable at boot (the sequencer mid-restart,
+  // or a build without /client-version). A baseline left null for the
+  // renderer's life would never see a deploy, so it binds LATE: the first
+  // reading we can get becomes it.
   let bornVersion = await clientVersion();
   let strikes = 0, reason = "";
 
