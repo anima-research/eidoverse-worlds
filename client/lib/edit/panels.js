@@ -97,10 +97,13 @@ const envFocus = () => { const k = Sel.selection().kind; return String(k).starts
 /** Create ▸ Environment (layout.js): select the world with one of its cards open and the Build tab's World presets
  *  in view — the same places a click on the World row and on Build ▸ World lead to. */
 export function openWorldCard(key) {
-  const g = key === 'weather' ? 'weather' : key; if (g && !isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g);
+  if (key) openEnvCard(key);
   if (buildFolds.world) buildFolds.world = false;
   selectWorld(key);
 }
+const openEnvCard = (key) => { const g = `c:${key}`; if (!isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g); };   // a card folds under c:<its key> (pushCards)
+/** An Inspector card's header, found by its title. */
+const cardHeader = (title) => [...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => b.textContent.replace(/^[▸▾]\s*/, '').trim().startsWith(title));
 function selectWorld(env = null) {
   arming = null; armingRef = null;
   Sel.set([WORLD_ID], env ? `env:${env}` : 'world');
@@ -342,9 +345,9 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     case 'wsel': {   // the pinned World row, and its environment rows (env:<key>)
       if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
       const env = String(payload ?? '').startsWith('env:') ? String(payload).slice(4) : null;
-      if (env) { const g = env === 'weather' ? 'weather' : env; if (!isOpen(WORLD_ID, g)) toggleFold(WORLD_ID, g); }
+      if (env) openEnvCard(env);
       selectWorld(env);
-      if (env) requestAnimationFrame(() => document.querySelector(`#ew-inspector [data-group="${env}"], .sp-group[data-k="${env}"]`)?.scrollIntoView?.({ block: 'nearest' }));
+      if (env) { const title = schemaFor(WORLD_ID)?.sections?.list?.find((x) => x.key === env)?.title ?? env; requestAnimationFrame(() => cardHeader(title)?.scrollIntoView?.({ block: 'nearest' })); }
       return;
     }
     case 'envdel': removeEnv(String(payload ?? '').slice(4)); return;   // ✕ on an environment row
@@ -789,7 +792,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     repaintAll();
     const title = schemaFor(id)?.sections?.list?.find((x) => wireOf(x) === payload)?.title ?? String(payload);   // found by component, not by words
     requestAnimationFrame(() => {
-      const h = [...document.querySelectorAll('[data-frame="inspector"] .sp-group')].find((b) => b.textContent.replace(/^[▸▾]\s*/, '').trim().startsWith(title));
+      const h = cardHeader(title);
       if (h) { h.scrollIntoView({ block: 'center' }); h.classList.add('sp-flash'); setTimeout(() => h.classList.remove('sp-flash'), 900); } });
     return;
   }
