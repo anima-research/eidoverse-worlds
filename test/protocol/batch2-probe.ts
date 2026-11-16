@@ -144,9 +144,9 @@ try {
   // ---- TXT: signs ----
   await empty("sign", [3, 1.5, -3], { text: { text: "Welcome · ようこそ · مرحبا", size: 0.2 } });
   await empty("post", [-3, 1.5, -3], { text: { text: "this way", billboard: "yaw" } });
-  check("TXT1 a flat sign is drawn: two planes (readable from behind), wrapped lines", await waitFor(`import('/lib/realize/texts.js').then((t) => { const s = t._signs.get('sign'); return !!s && s.group.children.length === 2 && s.lines >= 1 && s.w > 0; })`),
+  check("TXT1 a flat sign is drawn: two planes (readable from behind), with its text laid out (a line or more)", await waitFor(`import('/lib/realize/texts.js').then((t) => { const s = t._signs.get('sign'); return !!s && s.group.children.length === 2 && s.lines >= 1 && s.w > 0; })`),
     await page(`const t = await import('/lib/realize/texts.js'); const s = t._signs.get('sign'); return s ? { kids: s.group.children.length, lines: s.lines, w: s.w, h: s.h } : null;`));
-  check("TXT2 a yaw billboard is one plane that turns toward the viewer", await waitFor(`import('/lib/realize/texts.js').then((t) => { const s = t._signs.get('post'); if (!s) return false; t.tickTexts(); return s.group.children.length === 1 && Math.abs(s.group.quaternion.y) > 0.01; })`),
+  check("TXT2 a yaw billboard is one plane, turned off its rest pose by the text tick (toward the viewer)", await waitFor(`import('/lib/realize/texts.js').then((t) => { const s = t._signs.get('post'); if (!s) return false; t.tickTexts(); return s.group.children.length === 1 && Math.abs(s.group.quaternion.y) > 0.01; })`),
     await page(`const t = await import('/lib/realize/texts.js'); const s = t._signs.get('post'); return s ? s.group.quaternion.toArray() : null;`));
 
   // ---- LA: look-at the viewer ----

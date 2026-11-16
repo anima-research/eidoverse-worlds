@@ -102,7 +102,7 @@ async function C(id: string, what: string, fn: () => any) {
   if (good) { pass++; console.log(`ok   ${id} ${what}`); } else { fail++; console.log(`FAIL ${id} ${what}`); if (info !== undefined) console.log("     ", JSON.stringify(info).slice(0, 900)); }
 }
 
-await C("Z1", "a thing with zone {box} + water is a water body; a child with zone + water-exclusion a pocket; a zone of every shape is taken", () => {
+await C("Z1", "a thing with zone {box} + water and a child with zone + water-exclusion are taken, as is a zone of every shape (later rows read them as a body and a pocket)", () => {
   const s = session();
   const r = [s.call("create", { id: "pool", components: { transform: tf([0, -2, 0]), zone: box([10, 4, 10]), water: { kind: "pool", color: 0x2a6070 } } }),
     s.call("create", { id: "pocket", components: { transform: tf([0, 0, 0]), parent: { to: "pool" }, zone: box([2, 2, 2], { priority: 1 }), "water-exclusion": {} } }),

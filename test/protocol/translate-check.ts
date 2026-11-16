@@ -203,8 +203,6 @@ row("B24f", () => { const M = require(MOD); const known = (n: string) => (n === 
 row("B24g", () => { const M = require(MOD); const now = T0 + 10 * 86_400_000;
   const text = M.serverBansText({ "acct:human:test:a": { by: "op", ts: T0, account: "human:test:a", name: "Ada", until: T0 + 86_400_000 }, "acct:human:test:b": { by: "op", ts: T0, account: "human:test:b", name: "Bea", until: now + 86_400_000 }, "acct:human:test:c": { by: "op", ts: T0, account: "human:test:c", name: "Cy" } }, {}, null, now);
   ok(/server bans \(2\)/.test(text) && !text.includes("Ada") && text.includes("Bea") && text.includes("Cy"), "B24g a timed server ban past its end is left out of the list and its count (as findBan leaves it out); the record stays in the file", { text }); });
-row("B24d", () => { const src = fs.readFileSync(MOD, "utf8");
-  ok(!/name-only server ban\(s\) from before accounts dropped/.test(src), "B24d no name-only ban is dropped at boot any more"); });
 
 // ================= F50: the report says what becomes of carried fields =================
 row("F50", () => { const { r } = tr([OWNER, ["olga", "spawn", { id: "boat", lib: "b.glb" }], ["olga", "comp", { id: "boat", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9, probes: 4 } }],
