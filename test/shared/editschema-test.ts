@@ -16,7 +16,7 @@
 // with a `light` component, guard merged into lock. A lock no longer makes the pose read-only in the schema: the
 // door refuses the move (code `locked`), so that is now checked at the door.
 
-import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry } from "../../shared/editschema.js";
+import { inspectSchema, channels, editOps, describeSchema, fieldAt, parseEntry, addOps } from "../../shared/editschema.js";
 import { scratchWorld, flat, foldRecordOf } from "../harness/scratchworld.ts";
 import { qHeading } from "../../shared/rot.js";
 import { registerDraft } from "../../shared/drafts.js";
@@ -368,6 +368,20 @@ console.log("\nMaterial, the draft hesperus/material (docs/contributing/COMPONEN
   const r = editOps(crate, "t", { "home.pos.y": 2, "home.turn": 180 });
   const v = sets(r, "home")[0]?.args.value;
   check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
+  // "set home here" reads where the thing is now, which only the client knows: not offered as an action, refused as a gesture
+  const here = editOps(crate, "t", { "home.sethere": true }), told = describeSchema(inspectSchema(crate, "t"));
+  check("HM3 home.sethere is the client's: not listed as an action an agent can edit, and an edit of it is refused as a gesture",
+    f("sethere")?.client === true && !/home\.sethere/.test(told) && /viewport gesture/.test(here.errors.join(" ")), JSON.stringify({ here, told: told.match(/.*sethere.*/)?.[0] }));
+}
+
+// user-visible words carry no internal review tags like "(R 10-11)"
+console.log("\nno review tags in what people read:");
+{
+  const thing = { model: "a.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1 };
+  const ct = inspectSchema(thing, "a").groups.flatMap((g: any) => g.fields).find((f: any) => f.k === "clickthrough");
+  const pa = addOps(thing, "a", "Annotation", "physics-area").errors.join(" ");
+  const tag = /\bR \d{1,2}-\d{2}\b/;
+  check("RT1 the clickthrough hint and the physics-area refusal name no review tag", !!ct?.hint && !tag.test(ct.hint) && /physics-volume/.test(pa) && !tag.test(pa), JSON.stringify({ hint: ct?.hint, pa }));
 }
 
 // R 10-12 (primitives): the mesh card, its ops, the Material card on a mesh thing, Add Component on and beside a mesh

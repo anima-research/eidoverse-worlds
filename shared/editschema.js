@@ -352,7 +352,7 @@ export function inspectSchema(ent, id, live = {}) {
   groups.push({ group: 'flags', label: 'Flags', fields: [...flags,
     { t: 'check', k: 'lock', label: 'locked in place', value: locked, hint: 'nail it down: nobody\'s drags, edits or scripts change it (server-enforced); sitting on it and using it (doors, handlers) stay open, and a builder who may lift the lock edits through it. Not a door\'s lock (that is Openable\'s "door locked")' },
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
-    { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it (R 10-11)' },
+    { t: 'check', k: 'clickthrough', label: 'clicks go through', value: c.clickthrough === true, hint: 'a pointer click passes through it to what is behind; it is still drawn, collides, and a hand or a tool can still take it' },
     { t: 'check', k: 'disabled', label: 'switched off', value: c.disabled === true, hint: 'switched off: kept in the record and the Hierarchy, but nobody downloads, sees or touches it, and it has no physics; what hangs under it goes with it. Switch it on again to bring it back' },
     // selection layer (the draft hesperus/layer): 'auto' is its default by kind; a builder may set it
     { t: 'enum', k: 'layer', label: 'layer', value: LAYERS.includes(c[LAYER_KEY]) ? c[LAYER_KEY] : 'auto', options: [{ v: 'auto', label: `auto (${defaultLayer(ent)})` }, ...LAYERS.map((v) => ({ v, label: v }))],
@@ -558,7 +558,7 @@ export function inspectSchema(ent, id, live = {}) {
       ...(sc ? (sc[0] === sc[1] && sc[1] === sc[2] ? [{ t: 'num', k: 'scale', label: 'size', value: round(sc[0]), def: 1, step: 0.05, dp: 3, compact: true, hint: 'Its size at home (1 is the model as made).' }]
         : ['x', 'y', 'z'].map((ax, i) => ({ t: 'num', k: `scale.${ax}`, label: `size ${ax}`, axis: ax, value: round(sc[i]), def: 1, step: 0.05, dp: 3, compact: true }))) : []),
       { t: 'info', label: 'under', value: h.parent ? String(h.parent) : 'nothing: the world', hint: 'What it hangs under at home; set by "set home here".' },
-      { t: 'btn', k: 'sethere', label: 'set home to where it is now', hint: 'Records its current place, turn, size and parent as home (Edit ▸ set home here does the same).' },
+      { t: 'btn', k: 'sethere', label: 'set home to where it is now', client: true, hint: 'Records its current place, turn, size and parent as home (Edit ▸ set home here does the same).' },
     ];
     groups.push({ group: 'home', label: 'Home', types: ['home'], fields });
   }
@@ -1037,7 +1037,7 @@ function addOwnOps(ent, id, name, value) {
   }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] };
     // PROTOCOL §4: a bare name is the registry's; your own carries a namespace (local/recipe, example.org/recipe)
-    if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [type === 'physics-area' ? "'physics-area' is called physics-volume (renamed before deploy, R 11-09)" : `'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
+    if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [type === 'physics-area' ? "'physics-area' is called physics-volume" : `'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
     return { ops: [OP.set(id, type, {})], errors: [] }; }
   return { ops: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
@@ -1318,7 +1318,7 @@ export function editOps(ent, id, edits, live = {}) {
       case 'hmat': HAND.Material.write({ k, raw, c, comps, errors, ops, live }); break;
       case 'home': {
         const next = comps.get('home') ?? JSON.parse(JSON.stringify(c.home ?? {}));
-        const n = num(f, raw); if (n == null) break;   // (home.sethere is the client's: it reads where the thing is now)
+        const n = num(f, raw); if (n == null) break;
         if (k.startsWith('pos.')) { next.pos = [...(next.pos ?? [0, 0, 0])]; next.pos['xyz'.indexOf(k[4])] = round(n, 4); }
         else if (k === 'turn') { const a = n * Math.PI / 360; next.q = [0, round(Math.sin(a), 6), 0, round(Math.cos(a), 6)]; }
         else if (k === 'scale') next.scale = round(n, 4);
