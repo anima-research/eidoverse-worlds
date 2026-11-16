@@ -28,7 +28,7 @@ import {
 } from "./declaration.ts";
 import { WorldAgent, DEFAULT_WORLD_URL } from "./agent.ts";
 import { shown } from "../shared/shown.js";
-import { toolList, handleTool, type ToolCtx } from "./tools.ts";
+import { toolList, handleTool, cutSpeech, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { eventTags, catchupHeaderTags, catchupReplayTags } from "./event-wire.ts";
 import { TypingRelay } from "./typing-relay.ts";
@@ -810,7 +810,7 @@ class Session {
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text).join("\n").trim();
     if (!text) return { delivered: false };
-    this.agent.say(text.slice(0, 4000));
+    this.agent.say(cutSpeech(text));   // the say tool's cut: 4000, never half a surrogate pair
     return { delivered: true };
   }
 

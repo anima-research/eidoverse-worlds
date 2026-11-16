@@ -350,7 +350,7 @@ const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 /** The most speech say sends in one call, as it always has: 4000 UTF-16 units. A cut never ends in half of a
  *  surrogate pair. */
 const SPEECH_MAX = 4000;
-const cutSpeech = (t: string) => {
+export const cutSpeech = (t: string) => {
   if (t.length <= SPEECH_MAX) return t;
   const end = /[\uD800-\uDBFF]/.test(t[SPEECH_MAX - 1]!) ? SPEECH_MAX - 1 : SPEECH_MAX;
   return t.slice(0, end);

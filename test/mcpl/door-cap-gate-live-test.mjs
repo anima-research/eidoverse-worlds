@@ -417,6 +417,14 @@ try {
     JSON.stringify(seen.slice(-3)));
   check("nothing leaked: the observer saw NO say from the gated session (read past the granted say)",
     landed && !seen.some((s) => String(s.text).includes("LEAK")), JSON.stringify(seen).slice(0, 160));
+  // a publish is cut as the say tool cuts (tools.ts cutSpeech): never in half of a surrogate pair
+  await pause("the say rate between two says", 1500);
+  const long = "y".repeat(3999) + "\u{1F600}";
+  r = await full.request("channels/publish", { channelId: "world:commons", content: [{ type: "text", text: long }] });
+  const cut = await tryUntil("the long say lands", () => seen.find((s) => s.who === "claude" && String(s.text).startsWith("yyyy")), { ms: 6000, step: 200 });
+  const t = String(cut?.text ?? "");
+  check("a publish cut at 4000 never ends in half of a surrogate pair", r.result?.delivered === true && t.length === 3999 && !/[\uD800-\uDBFF]$/.test(t),
+    JSON.stringify({ delivered: r.result?.delivered, len: t.length, tail: [...t.slice(-2)].map((c) => c.codePointAt(0).toString(16)) }));
   r = await full.request("channels/open", { channelId: "world:commons", history: { limit: 5 } });
   check("granted: channels/open answers with the channel", !!r.result?.channel, JSON.stringify(r).slice(0, 120));
 
