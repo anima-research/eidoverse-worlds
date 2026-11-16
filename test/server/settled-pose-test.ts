@@ -86,14 +86,10 @@ const ck = (n: string, got: unknown, want: unknown) => ok(JSON.stringify(got) ==
 }
 
 // ── the asymmetry that WAS the bug ─────────────────────────────────────────
-// Both lines below call this file's mirror, so the first row cannot fail; that
-// both server paths reach settledPose is pinned by the source checks at the end.
+// That both server paths (restore and present) reach settledPose is pinned by the source checks at the end.
 {
   const live = { clip: "ragdoll", pose: { hips: [0, 0, 0, 1] }, p: [2, 0.8, 2] };
-  const whatSheSees   = settledPose(live);          // restore, via rememberPose
-  const whatTheySee   = settledPose(live);          // present, now via settledPose too
-  ck("a body looks the same to its owner and to a joiner", whatTheySee, whatSheSees);
-  ck("  ...and that shared answer is upright", whatTheySee!.clip, "idle");
+  ck("a ragdolled body's settled answer (what owner and joiner both get) is upright", settledPose(live)!.clip, "idle");
 }
 
 // ── degenerate inputs must not throw on the join path ──────────────────────
