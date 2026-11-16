@@ -335,7 +335,7 @@ const cases: Case[] = [
   { id: "O1", what: "(R 14:41) the agent and the client speak the occupy family: no seatOf/seatName/mySeat/mayLeaveSeat/mySeatBody in agent.ts, no setSeatHook/inSitReach anywhere, seats.js/seatedit.js/seatbody.js renamed", run() {
       const ag = agentText(), tl = readText("mcpl/tools.ts"), ctl = readText("client/lib/player/controller.js"), sk = readText("shared/sockbody.js"), cu = readText("client/lib/player/clickuse.js");
       return { ag: /\b(seatOf|seatName|mySeat|mayLeaveSeat|mySeatBody)\b/.test(ag + tl), hooks: /\bsetSeatHook\b/.test(ctl) || /\binSitReach\b/.test(sk) || /\bseatOf\b/.test(cu),
-        files: ["client/lib/seats.js", "client/lib/seatedit.js", "client/lib/seatbody.js"].filter(exists), now: ["client/lib/player/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
+        files: (fs.readdirSync(TREE + "client/lib", { recursive: true }) as string[]).map((f) => f.split(/[\\/]/).pop()!).filter((f) => ["seats.js", "seatedit.js", "seatbody.js"].includes(f)), now: ["client/lib/player/occupants.js", "client/lib/edit/socketedit.js", "client/lib/avatar/occupybody.js"].every(exists) }; },
     good: (o) => !o.ag && !o.hooks && !o.files.length && o.now },
   { id: "O2", what: "…a socket with a station is a `station` (socketRole): inspect lists a host's sockets as station | snap | attach", run(s) {
       s.call("olive", "create-world", { title: s.name });
