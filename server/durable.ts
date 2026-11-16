@@ -95,7 +95,7 @@ export function replaceDurable(file: string, data: string | Uint8Array, mode = 0
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }
-// ---- the one cross-process file lock (was custody.ts's): pid + nonce written to a file of its own and synced, then linked to the
+// ---- the one cross-process file lock: pid + nonce written to a file of its own and synced, then linked to the
 // lock name, so the lock never exists without its holder; a dead holder (its pid exited) is removed, never one merely old ----
 /** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
 function holderOf(f: string): { pid: number; nonce: string } | null {

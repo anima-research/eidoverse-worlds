@@ -340,7 +340,7 @@ export function createScreenshotBroker({ timeoutMs = 12_000, cooldownMs = 2000, 
   }
   /** The server's client registry, for finding roaming renderers in other worlds. */
   function setClients(fn: () => Iterable<Client>) { allClients = fn; }
-  /** Would `world` let this renderer in? Injected by the server (access.ts canEnter) so the broker loads no server
+  /** Would `world` let this renderer in? Injected by the server (access.ts entryFor, watching) so the broker loads no server
    *  state; until wired, every world admits. */
   function setAdmission(fn: (world: World, c: Client) => boolean) { admits = fn; }
   /** The frame window (config.ts SNAP_TIMEOUT_SEC), injected by the server like the admission check, so this module

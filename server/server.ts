@@ -9,7 +9,7 @@ import { nameAtDoor } from "./display-names.ts";
 import { existsSync, appendFileSync, readdirSync } from "node:fs";
 import { fileIncludes } from "./durable.ts";
 import { join } from "node:path";
-// config first: import order is boot order (config's WORLDS_DIR mkdir → auth.ts session restore → moderation.ts ban restore)
+// config before auth and moderation: import order is boot order (config's WORLDS_DIR mkdir → auth.ts session restore → moderation.ts ban restore)
 import { TRUST_NAMES } from "./config.ts";
 import { checkHello, missingFeatures, versionLine } from "../shared/protocol/hello.js";
 import { featureDecision, KNOWN_FEATURES } from "../shared/protocol/features.js";
@@ -586,17 +586,17 @@ function rightsFor(w: World, c: Client) {
   return { role: e.role, roleName: e.name, rank: e.rank, permissions: e.permissions, ...(c.anonymous ? { guest: true } : {}), gen: op || e.permissions.includes("generate"), fly: op || e.permissions.includes("fly"), open,
     ...(m ? { muted: { channels: m.channels, until: m.until } } : {}) };
 }
+/** who is muted here now, by identity → until (the people list's muted glyph) */
+function mutedIn(S: Record<string, unknown>): Record<string, number> {
+  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
+  return muted;
+}
 /** The sanctions sweep: every couple of seconds, and right after a moderation act, make
  *  each world's live state match the moderator log by the authority's clock. Nothing is written when a sanction ends;
  *  this is what notices. Per connection it keeps what it last applied, so it acts only on a change:
  *   - voice: the SFU's moderator mute (enforced at ingress) is on while a voice mute is in force;
  *   - rights: the person is told their own state again (your-rights carries muted);
  *   - the muted badges every client draws (mod-state: identity → until), when the set changes. */
-/** who is muted here now, by identity → until (the people list's muted glyph) */
-function mutedIn(S: Record<string, unknown>): Record<string, number> {
-  const muted: Record<string, number> = {}; for (const [id, x] of Object.entries(S)) if ((x as any).mute) muted[id] = (x as any).mute.until ?? 0;
-  return muted;
-}
 export function sanctionSweep(w: World) {
   if (!w.log) return;
   const S = w.log.sanctions();   // one pass over the moderator log per world per sweep
@@ -907,8 +907,7 @@ const server = Bun.serve({
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
             // the mint retired the old leg, and a retirement resets the id's mute at the SFU (sfuadapter.ts revokeSfuLeg):
-            // forget what this connection last applied, its mute and deafness both, so the sweep applies the sanctions in
-            // force to the new leg
+            // forget what this connection last applied, so the sweep applies the sanctions in force to the new leg
             c.sfuMuted = undefined;
             if (c.world.log) sanctionSweep(c.world);
             const transition = JSON.stringify({ type: "surface-transition",
@@ -940,7 +939,7 @@ const server = Bun.serve({
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
-              const unsaved = guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);   // R 10-07
+              const unsaved = guestSanctionByAddress(w, actorIdOf(c), c.id, muted ? "mute" : "unmute", target, typeof msg.reason === "string" ? msg.reason : undefined);
               if (unsaved) ws.send(JSON.stringify({ type: "mod", text: `that mute's address record is ${notPersisted(unsaved)}` }));
               if (muted) for (const t of w.clients) if (t.actorId === target) { try { t.ws.send(JSON.stringify({ type: "moderated", verb: "mute", by: c.id, you: true, channels: ["voice"], until: r.until })); } catch { /* gone */ } }
               // moderation is world-visible by design: a silence nobody can see the cause of is indistinguishable from a bug

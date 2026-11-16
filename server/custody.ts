@@ -61,7 +61,7 @@ function openCustody(file: string) {
       return crypto.sign(null, Buffer.from(msg, "utf8"), key).toString("base64url");
     },
     /** This host's secret for `purpose` (HMAC-SHA256 keyed by the sequencer's private bytes): the same on every run here, never
-     *  the key itself, and nothing another host can derive (import-v1/world.ts identitySalt). */
+     *  the key itself, and nothing another host can derive (tools/import-v1/world.ts identitySalt). */
     secret(purpose: string): Buffer {
       minting(() => !c.sequencer, () => { c.sequencer = mk(); });
       return crypto.createHmac("sha256", Buffer.from(c.sequencer!.priv, "base64")).update(`eidoverse-secret:${purpose}`).digest();

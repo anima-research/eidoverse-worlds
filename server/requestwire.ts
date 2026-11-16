@@ -71,7 +71,7 @@ function modLine(w: World, by: string, verb: string, who: string) {
   return verb === "ban" ? `${by} banned ${name} from this world` : verb === "kick" ? `${by} removed ${name} from this world` : verb === "mute" ? `${by} muted ${name}`
     : verb === "unmute" ? `${by} unmuted ${name}` : verb === "warn" ? `${by} warned ${name}` : `${by} lifted the ban on ${name}`;
 }
-/** The presence types a mute may gag; only `caption` is gagged today (a speech bubble), the rest pass (gagged). Applied by server.ts before any handler. */
+/** The presence types a mute may gag; only `caption` is gagged today (a speech bubble), the rest pass. Applied by server.ts before any handler. */
 const QUIET = new Set(["typing", "anim", "puppet", "bodydrag", "drag", "caption"]);
 export function gagged(c: Client, type: string): boolean {
   const w = c.world; if (!w?.log || !c.actorId || !QUIET.has(type)) return false;
@@ -273,7 +273,7 @@ export const REQUEST_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
     if (w.log.seniorOwner() !== actorOf(c)) return err("erasing a world is for its most senior owner (its founder) — ask them");
     if (String(msg.name ?? "") !== w.name) return err(`confirmation mismatch — reset must name "${w.name}"`);
     let arch: string; try { arch = w.resetWorld(); } catch (e: Any) {
-      // where the logs are now, as worldlog.ts resetWorld left them ()
+      // where the logs are now, as worldlog.ts resetWorld left them
       if (e?.movedTo) console.error(`[world:${w.name}] reset failed partway: ${e.logMoved ? `no world.jsonl here (moved aside before this reset); the fresh log is in ${e.freshAt}` : "nothing moved: the old log is where it was"}:`, e);
       if (e?.resetDone && e.opened) {   // the fresh world is open: the reset stands, and its scripts (it has none yet) are the operator's to look at
         console.error(`[world:${w.name}] reset by ${c.id}: the fresh world is open, but its scripts didn't start:`, e.cause ?? e); arch = e.resetDone; }

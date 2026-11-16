@@ -3,7 +3,7 @@
 // them); optimized copies live in assets/opt/store-min/<hash>.glb and /library serving prefers them.
 //
 // RUN AS A SUBPROCESS (see CLI at the bottom): draco and image encoding are CPU-seconds of synchronous wasm that would
-// freeze pose relay and every world inside the sequencer. server.ts spawns `bun run server/optimize.ts <in> <out>`.
+// freeze pose relay and every world inside the sequencer. upload.ts's pump spawns `bun run server/optimize.ts [mode] <in> <out>`.
 //
 // VRMs never go through a Document (springbone/MToon extensions would be dropped): their only arm is --ktx2-vrm's
 // raw-container texture swap, which byte-preserves everything else.
@@ -959,7 +959,7 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
-// ---- CLI: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img] <in> <out>
+// ---- CLI: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img|--lod] <in> <out>
 // Exit codes:
 //   0  wrote out.
 //   1  failure, reason on stderr.

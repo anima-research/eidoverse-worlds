@@ -18,11 +18,11 @@ export type Entry = { name: string; subs: string[]; kind: "account" | "anon" | "
 type File = { v: 1 | 2; ids: Record<string, Entry> };
 
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";
-/** The one id shape from 20 (or more) bytes: random here (mintId), keyed in import-v1/world.ts (stable). */
+/** The one id shape from 20 (or more) bytes: random here (mintId), keyed in tools/import-v1/world.ts (stable). */
 export const idOfBytes = (bytes: Uint8Array) => "u-" + Array.from(bytes.subarray(0, 20), (b) => B32[b & 31]).join("");
 export const mintId = () => idOfBytes(crypto.randomBytes(20));
 export const isMinted = (s: string) => /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(s);
-// the ONE shape of an id: a person, never a world, a name or a kind (PROTOCOL §6a rule 2). Minted here, and by import-v1/world.ts for an old log.
+// the ONE shape of an id: a person, never a world, a name or a kind (PROTOCOL §6a rule 2). Minted here, and by tools/import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
 /** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
@@ -150,7 +150,7 @@ export function foldName(s: string): string {
   return String(s).normalize("NFKD").replace(/(?<=\p{Script=Latin}\p{M}*)\p{M}/gu, "").normalize("NFKC").toLowerCase().replace(/[\p{Cf}\p{Z}\p{P}\p{S}_]/gu, "");
 }
 
-/** The world ids already standing in a worlds dir (each world's genesis hash, read from its log's second line). */
+/** The world ids already standing in a worlds dir (each world's genesis hash, read from its log's first line). */
 function worldIdsIn(worldsDir: string): string[] {
   const out: string[] = [];
   if (!fs.existsSync(worldsDir)) return out;

@@ -43,7 +43,7 @@ export function noFoldRefusal(world: string, native: boolean): string {
 const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // stricter than WORLD_NAME_RE: a letter or digit first ("-x" would read as a flag to the CLI)
 const TOOL = "bun tools/world.ts";
 export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
-/** Who claims a world with no owner (world.ts --claim): the operator running the commands, as the browser path's upgrader does. */
+/** Who claims a world with no owner (tools/world.ts --claim): the operator running the commands, as the browser path's upgrader does. */
 export const CLAIMER = "EIDO_UPGRADER_ACCOUNT=<your-account>";
 const CLAIMS = "<your-account> is your account as SERVER_OPERATORS lists it (e.g. human:<provider>:<id>): a world with no owner becomes yours, and everyone else keeps building there as in main; a world with owners keeps them.";
 const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. Read it; then translate it, bound to that hash:";

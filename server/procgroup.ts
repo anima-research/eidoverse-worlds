@@ -1,6 +1,6 @@
 // server/procgroup.ts — a suite's processes, found and killed the same way on Linux, macOS and Windows.
 //   Linux:   /proc/<pid>/stat (no subprocess per suite)
-//   macOS and other POSIX: `ps -A -o pid=,pgid=,stat=`
+//   macOS and other POSIX: `ps -A -o pid=,pgid=,ppid=,stat=`
 //   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
 //            parent links in Win32_Process (they survive the parent's exit, so orphans still count); killed with taskkill.
 import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
@@ -86,8 +86,6 @@ async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { 
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
-/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
- *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
  *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
  *  the id is free, only its orphans are. */
@@ -102,6 +100,8 @@ export function winKillPlan(root: number, table: Row[], exited: boolean, self: n
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
   return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
+/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
+ *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
 export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
   const table = await tableOrNull("win32", { query, ms }), gone = () => (typeof exited === "function" ? exited() : exited);

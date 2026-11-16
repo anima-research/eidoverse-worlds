@@ -25,7 +25,7 @@ export function foldKey(): string {
   return key;
 }
 
-/** The fold as JSON: a purged value is {purged: true}, a value {v} (canonicalView's shape, plus born and the diagnostics). */
+/** The fold as JSON: a purged value is {redacted: true}, a value {v} (canonicalView's shape, plus born and the diagnostics). */
 export function encodeState(st: Any) {
   const entities: Any = {};
   for (const id of Object.keys(st.entities)) { const e = st.entities[id], c: Any = {};

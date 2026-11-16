@@ -15,7 +15,7 @@ export const VIEW_FILES = ["./foldviews.ts", "./livehost.ts", "../shared/protoco
   "../shared/protocol/simlayer.js"];
 
 /** The host's own views (livehost.ts): id → the change seqs touching it, actors in first-seen order, say seqs, sim checkpoint
- *  seqs, the last change seq, and how many purge / governance entries the log holds. */
+ *  seqs, the last change seq, and how many redaction entries the log holds. */
 export function logIndex() {
   const X = { touching: new Map<string, number[]>(), actors: new Set<string>(), says: [] as number[], ckpts: [] as number[], lastChange: -1, purges: 0, n: 0,
     add(seq: number, e: Any) { X.n = seq + 1; if (e && typeof e.actor === "string") X.actors.add(e.actor);

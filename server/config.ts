@@ -1,5 +1,5 @@
 // Boot constants: env knobs, directories, cadences and server policy, plus the one side effect (WORLDS_DIR must exist
-// before anything touches it). server.ts's FIRST import, so this runs before any other module's boot work.
+// before anything touches it). server.ts imports it ahead of every module with boot work, so this runs first.
 
 import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -17,7 +17,7 @@ export const RENDERER_TOKEN = process.env.RENDERER_TOKEN ?? "";
 export const UPLOAD_CAP = envNumber("UPLOAD_CAP_MB", 20, (n) => n >= 0) * 1_000_000;
 // narrower than the model door: a hung image is decoded into GPU memory on every client that sees it
 export const IMAGE_CAP = envNumber("IMAGE_CAP_MB", 8, (n) => n >= 0) * 1_000_000;
-// RECORD_FRAMES=1: stage frames + roster deltas to worlds/<name>/frames-<bootTs>.jsonl. Clients are told at join.
+// RECORD_FRAMES=1: stage frames + roster deltas to worlds/<name>/frames-<startTs>.jsonl. Clients are told at join.
 export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod).
 export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
@@ -46,9 +46,9 @@ export const SNAP_SWEEP_EVERY_MS = envNumber("SNAP_SWEEP_EVERY_SEC", 15, (n) => 
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the live worlds' logs.
 export const WORLDS_DIR = resolve(process.env.WORLDS_DIR ?? join(ROOT, "worlds"));
-// The eidoverse-video checkout = the asset library (models, VRMs, animations).
 // Where a world's verified copy goes before an in-place upgrade (server/backups.ts): beside WORLDS_DIR, never inside it.
 export const BACKUPS_DIR = resolve(process.env.BACKUPS_DIR || join(WORLDS_DIR, "..", "backups"));
+// The eidoverse-video checkout = the asset library (models, VRMs, animations).
 export const LIBRARY_DIR = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
 // As WORLDS_DIR: a dev or test instance points this elsewhere.
 export const OPT_DIR = resolve(process.env.OPT_DIR ?? join(ROOT, "assets", "opt"));

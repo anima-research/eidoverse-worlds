@@ -5,7 +5,7 @@
 //   sim      the sim layer as a running folder (simFolder), viewed at the authority's clock
 //   index    id → seqs of the change entries that touch it
 //   clock    monotonic: max(wall clock, every ts already written)
-//   presence the authority's presence plane (bodies, holds): memory only, except consent (consentFileIn below)
+//   presence the authority's presence plane (bodies, holds): memory only, except consent (CONSENT_FILE below)
 // The log is <dir>/world.jsonl (spec/PROTOCOL.md §2.4); blobs are <dir>/blobs/sha256-<hex>.json, named by the hash of their JCS
 // bytes, verified on read. Each line is appended and fsynced (durable.ts) before the request returns.
 import fs from "node:fs";
@@ -76,7 +76,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   if (lazy) { entries = lazy.entries; genEnd = cfile.at.g; logEnd = lazy.size; lastStart = lazy.lastStart; }
   else { const buf = readLogBytes(logPath, { cut: !opts.readOnly }); entries = readLog(buf).map(posAt);
     logEnd = buf.length; genEnd = buf.indexOf(0x0a) + 1; lastStart = logEnd ? buf.lastIndexOf(0x0a, logEnd - 2) + 1 : 0; }
-  // governance is reserved (§13): this server neither writes nor validates `sequencer` entries, so it refuses to serve a world
+  // governance is reserved (§13): this server neither writes nor validates governance entries, so it refuses to serve a world
   // holding one rather than fold past it and write on (a cache with views is never written over one)
   { let g = -1; for (let s = from0; s < entries.length; s++) if (isE(entries[s]) && entries[s].kind === "governance") { g = s; break; }
     if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
@@ -268,8 +268,6 @@ function genesisAt(p: string): any {
     return isE(g) && g.kind === "genesis" ? g : null;
   } catch { return null; }
 }
-/** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
- *  (§2.4: the protocol's number is stated there and nowhere else). */
 // consent outlives a restart, the rest of presence doesn't: a block is a safety tool (spec/PROTOCOL.md §5 "Consent")
 export const CONSENT_FILE = "consent.json";
 const CONSENT_KEYS = ["consent", "consentShape"] as const;
@@ -293,6 +291,8 @@ function saveConsent(dir: string) {
     if (s === last) return; writePrivate(path.join(dir, CONSENT_FILE), s); last = s; };
 }
 
+/** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
+ *  (§2.4: the protocol's number is stated there and nowhere else). */
 export function isWorldDir(dir: string): boolean {
   const g = genesisAt(path.join(dir, "world.jsonl"));
   return !!g && g.body?.dialect === DIALECT && g.body?.v === VERSION;

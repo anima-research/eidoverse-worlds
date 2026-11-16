@@ -111,7 +111,7 @@ export const EXPORT_CACHE = 6;
 export const EXPORT_PER_ADDRESS = 6;
 export const EXPORT_PER_MINUTE = 30;
 const exportCache = new Map<string, { png: Uint8Array; meta: HeightmapMeta }>();
-const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts, shared with /check
+const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts: the limiter /check uses too, each door its own budget
 let exporting = false;
 
 const exportKey = (terrainArgs: Record<string, unknown>, n: number, world?: string) => `${n}|${world ?? ""}|${JSON.stringify(terrainArgs)}`;
@@ -159,10 +159,10 @@ export function heightRange(terrainArgs: Record<string, unknown>): HeightmapMeta
   return { min: lo, max: hi > lo ? hi : lo + 1, size: P.size };
 }
 
-/** A world's current ground, sampled into a 16-bit PNG. `res` samples a side, spanning the terrain's `size`
- *  square edge to edge — so a re-import at the same size lands every sample back where it was taken. */
 /** Exports sampled in this process, so a test counts the work a refusal skipped (terrainshape-test). */
 export const exportStats = { made: 0 };
+/** A world's current ground, sampled into a 16-bit PNG. `res` samples a side, spanning the terrain's `size`
+ *  square edge to edge — so a re-import at the same size lands every sample back where it was taken. */
 export function exportHeightmap(terrainArgs: Record<string, unknown>, res: number, world?: string):
     { png: Uint8Array; meta: HeightmapMeta } {
   exportStats.made++;

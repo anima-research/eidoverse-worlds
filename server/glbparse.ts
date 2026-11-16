@@ -1,5 +1,5 @@
-// glbparse — the GLB container and raster-header readers, dependency-free (moved out of optimize.ts so the catalog
-// route can rank models without importing gltf-transform/sharp).
+// glbparse — the GLB container and raster-header readers, dependency-free, so the catalog route can rank
+// models without importing gltf-transform/sharp.
 export const GLB_MAGIC = 0x46546c67;
 export const CHUNK_JSON = 0x4e4f534a;
 export const CHUNK_BIN = 0x004e4942;

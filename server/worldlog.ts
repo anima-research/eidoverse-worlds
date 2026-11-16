@@ -161,15 +161,14 @@ export class WorldLog {
     if (this.retired || SIM_CHECKPOINT_EVERY <= 0 || this.live.state().status !== "ok") return;
     try { authorityCheckpointNow(this.live, { every: Math.ceil(SIM_CHECKPOINT_EVERY / 10) }); } catch (x) { console.warn(`[world:${this.name}] sim checkpoint at shutdown not written: ${(x as Error).message}`); }
   }
-  /** The last seq. */
   /** the position of the last entry (a `seq`; the chain hash is `headAt`) */
   get seq(): number { return this.live.entries.length - 1; }
   /** The last chat number this world could have issued (seq × 1000 + 999): legs opened after it number above it. */
   get snapSeq(): number { return this.seq * 1000 + 999; }
 
   /** One request, as `actor` (an identity the caller has already encoded). Warms any model it names first, so
-   *  the authority can measure it; the authority call itself is synchronous. */
-  /** `still` (optional): the asker's capability (server/request-capability.ts recheck), re-validated after the await and immediately
+   *  the authority can measure it; the authority call itself is synchronous.
+   *  `still` (optional): the asker's capability (server/request-capability.ts recheck), re-validated after the await and immediately
    *  before the synchronous authority call: null while the asker may still act, else the refusal's words (nothing written).
    *  Never throws: every request ends in a reply carrying its transaction outcome (requestSync). */
   async request(actor: string, verb: string, args: Record<string, unknown> = {}, still?: () => string | null) {
@@ -249,12 +248,12 @@ export class WorldLog {
     if (this.retired) return false;
     return reachLetGo(this.live, from, aimed);
   }
-  /** The authority's body inbox (acts delivered, revocations, refused reaches, a seat let go: PROTOCOL §5) reaches its person: what's new since we
-   *  last sent is pushed to their socket as {type: "body-inbox", messages}. The inbox itself is left as the authority keeps it, so `inbox` still answers an agent that polls. */
   /** per person: the `n` of the last message forwarded (authority.js inboxPush numbers each one, and the count outlives the
    *  200 cap and an `inbox` drain), so a queue that is full, or was emptied, still forwards what is new (not the array's
    *  length, which sticks at 200) */
   private inboxSent = new Map<string, number>();
+  /** The authority's body inbox (acts delivered, revocations, refused reaches, a seat let go: PROTOCOL §5) reaches its person: what's new since we
+   *  last sent is pushed to their socket as {type: "body-inbox", messages}. The inbox itself is left as the authority keeps it, so `inbox` still answers an agent that polls. */
   private forwardInbox() {
     const box = this.live.presence?.inbox as Record<string, { n?: number }[]> | undefined; if (!box || !this.host?.toActor) return;
     for (const [who, msgs] of Object.entries(box)) {
@@ -510,7 +509,7 @@ const canonOf = (st: Any, skipWorld: (k: string) => boolean) => JSON.stringify(O
   Object.keys(st.entities[id].c).filter((k) => id !== "@world" || !skipWorld(k)).sort().map((k) => [k, st.entities[id].c[k]])]));
 
 /** Fork: a NEW world (its own genesis, so its own identity) whose founding act names where it came from
- *  ({world, name, head}), holding a copy of the source's current state. Built in a hidden directory and renamed into
+ *  ({world, name, seq, head}), holding a copy of the source's current state. Built in a hidden directory and renamed into
  *  place only once its state equals the source's, so a failed fork leaves nothing. Chat history isn't copied: the
  *  source's log stays the record, and the fork links to it. */
 export function forkWorld(src: WorldLog, to: string, forker: string): { ok: true; worldId: string; things: number; acts: number; importedRoles: number } | { ok: false; err: string } {

@@ -228,7 +228,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     c.world.broadcast({ type: "caption", id: c.id, text: capText,
       utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
   },
-  // no `rtc` handler: SFU signaling lives in server.ts's switch.
+  // no SFU or voice handlers here (sfu-*, relay-cred, voice-*): that signalling lives in server.ts's switch.
   "attest": ({ c, ws, now, expel }, msg) => {
     // The per-utterance performance receipt, for the leg's own identity's says. Verified, then broadcast as
     // `performed` (unlogged); listeners holding local TTS for it skip, and a timeout recovers the fallback.

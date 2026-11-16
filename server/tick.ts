@@ -1,5 +1,5 @@
 // The server's heartbeat (docs/design/OVERHAUL-CHARTER.md §4): one scheduler for the cadenced systems (the screenshot
-// sweep, server.ts, and worldindex.ts's sweep keep their own timers). Each system is
+// sweep in server.ts and worldindex.ts's sweep keep their own timers). Each system is
 // named, error-isolated (a throw costs it one beat) and measured at GET /tick. Cadences are "at least everyMs apart", not a fixed timestep.
 
 export type TickSystem = {

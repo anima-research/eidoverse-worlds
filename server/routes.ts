@@ -43,9 +43,9 @@ import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
+const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 // client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
-const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need the authority key as a Bearer header, or a caller the door takes (access.ts httpCaller: a scoped
@@ -383,8 +383,7 @@ const ROUTES: Route[] = [
     // answers 500. Lands in $CLIENTLOG_DIR (default WORLDS_DIR/.clientlogs).
     match: (u, req) => u.pathname === "/clientlog" && req.method === "POST",
     handler: async ({ req, url, srv }) => {
-      const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
-      // An unknown label shares one bucket and file (a new world's pre-join lines too: shared, not lost).
+      const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (limits.ts WORLD_NAME_RE)
       // The key rides the Authorization header, never the URL (query tokens leak into proxy logs); a query key is refused.
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
       const key = bearerOf(req);
@@ -777,7 +776,7 @@ const ROUTES: Route[] = [
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
           const big = existsSync(dest) && Bun.file(dest).size > 5_000_000;
           if (!big) {
-            // the address HASHED, like everywhere else this server keeps one : enough to tell one
+            // the address HASHED, like everywhere else this server keeps one: enough to tell one
             // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
             const ip = addressOf(req, srv);
             const addr = sha256(`eidoverse-perflog:${ip}`).slice(0, 24);
@@ -795,7 +794,7 @@ const ROUTES: Route[] = [
     match: (u, req) => u.pathname === "/rebuild" && req.method === "POST",
     handler: ({ req, url, srv }) => {
       // Who may ask: the sign-ins /upload accepts (the authority key, an agent token, an aid1 credential) plus a signed-in
-      // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
+      // session cookie — a person who came in through the home node carries no door key. The key rides
       // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A ?token= is never read (not refused: it counts for nothing).
       if (JOIN_TOKEN) {
         const key = bearerOf(req);

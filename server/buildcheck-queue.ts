@@ -159,7 +159,7 @@ function cached(key: string): unknown {
   return undefined;
 }
 
-/** Read a stream to its end, keeping at most `cap` bytes (the head, or with `tail` the last ones); always draining, so the writer never blocks. */
+/** Read a stream to its end, keeping the first `cap` bytes (or with `tail` the last `cap`, in whole chunks); always draining, so the writer never blocks. */
 async function drain(stream: ReadableStream<Uint8Array>, cap: number, tail = false): Promise<{ text: string; over: boolean }> {
   const parts: Uint8Array[] = [];
   let kept = 0, over = false;

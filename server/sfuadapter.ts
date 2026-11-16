@@ -142,7 +142,7 @@ export function setSfuConsent(world: string, listenerId: string, listenerGen: nu
     }
     return r;
   }
-  // standing answer too, so joinSfuLeg honours it for later speakers
+  // standing answer too, so applyStandingConsent honours it for later speakers
   s.standingConsent.set(listenerId, recv);
   for (const speakerId of s.legs.keys()) {
     if (speakerId === listenerId) continue;
