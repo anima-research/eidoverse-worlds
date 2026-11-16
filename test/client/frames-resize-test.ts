@@ -53,6 +53,13 @@ function dragEast(by: number, endWith: "up" | "nothing" | "cancel" | "blur") {
   return f.state.w - w0;
 }
 
+// a bare move after a drag ended: a drag still live would follow it
+function strayMove() {
+  const w0 = f.state.w;
+  document.dispatchEvent(pm(edgeX() + 35, edgeY()));
+  return f.state.w - w0;
+}
+
 // --- baseline: a normal drag resizes
 check("a normal drag resizes the frame", dragEast(60, "up") !== 0,
   `w now ${f.state.w}`);
@@ -62,17 +69,20 @@ const abandoned = dragEast(40, "nothing");  // pointer left the window, no up
 check("an abandoned drag still moved the edge", abandoned !== 0, String(abandoned));
 // nothing cleaned it up yet — now the recovery paths
 window.dispatchEvent(new Event("blur"));
+check("...and the blur ended it: a stray move does not resize", strayMove() === 0, `w ${f.state.w}`);
 const after = dragEast(50, "up");
 check("a NEW drag works after one ended without pointerup", after !== 0,
   `delta ${after} — if 0, _resizing is wedged`);
 
 // --- pointercancel is a full citizen
 dragEast(30, "cancel");
+check("pointercancel ends the drag: a stray move does not resize", strayMove() === 0, `w ${f.state.w}`);
 const afterCancel = dragEast(30, "up");
 check("a new drag works after pointercancel", afterCancel !== 0, String(afterCancel));
 
 // --- blur alone finishes
 dragEast(30, "blur");
+check("blur ends the drag: a stray move does not resize", strayMove() === 0, `w ${f.state.w}`);
 const afterBlur = dragEast(30, "up");
 check("a new drag works after window blur", afterBlur !== 0, String(afterBlur));
 
