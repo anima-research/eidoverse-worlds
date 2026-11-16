@@ -130,7 +130,7 @@ export async function waitJoined(pg, { timeout = 90000 } = {}) {
   await pg.waitForFunction(() => globalThis.__ewEngineUp === true, null, { timeout });
   await pg.waitForFunction(() => import('/lib/net.js').then((n) => n.net.joined === true), null, { timeout: Math.max(1000, timeout - (Date.now() - t0)) });
   const reloads = [], joinedAt = Date.now();
-  pg.on('framenavigated', (f) => { if (f === pg.mainFrame()) reloads.push(`${f.url().slice(0, 80)} at +${((Date.now() - joinedAt) / 1000).toFixed(0)}s`); });
+  pg.on('framenavigated', (f) => { if (!pg.mainFrame || f === pg.mainFrame()) reloads.push(`${f.url().slice(0, 80)} at +${((Date.now() - joinedAt) / 1000).toFixed(0)}s`); });   // cdp-pw has no mainFrame(): it emits top-level navigations only
   return reloads;
 }
 
