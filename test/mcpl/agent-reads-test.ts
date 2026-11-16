@@ -45,6 +45,17 @@ try {
   const kept = seen.filter((s) => s.url.includes("slow.glb")).length;
   check("...and the server's answer is kept: it isn't asked a third time", kept === 2, `${kept} read(s)`);
   ag.close();
+
+  // a terrain.js that came back an error page isn't cached: the next build asks again (bot #333 107)
+  const ag2: any = new WorldAgent({ name: "reader2", world: "reads-bench", url: "ws://127.0.0.1:1/ws" });
+  seen.length = 0;
+  answer = async () => new Response("<html>503</html>", { status: 503 });
+  await ag2.ground.buildTerrain({ seed: 1, size: 40 }).catch(() => {});
+  answer = async (url) => url.endsWith("/library/eidoverse/terrain.js") ? new Response("") : new Response("no", { status: 404 });
+  await ag2.ground.buildTerrain({ seed: 1, size: 40 }).catch(() => {});
+  const tries = seen.filter((s) => s.url.endsWith("/library/eidoverse/terrain.js")).length;
+  check("a terrain.js that answered 503 isn't kept: the next build fetches it again", tries === 2 && ag2.ground.terrainSrc === "", `${tries} read(s), cached ${JSON.stringify(ag2.ground.terrainSrc)}`);
+  ag2.close();
 } finally {
   globalThis.fetch = realFetch;
 }

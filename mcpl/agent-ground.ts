@@ -102,8 +102,10 @@ export class AgentGround {
     const rev = ++this.terrainRev;
     if (!this.terrainSrc) {
       const r = await fetch(`${this.a.httpBase}/library/eidoverse/terrain.js`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
-      this.terrainSrc = await r.text();
-      (0, eval)(this.terrainSrc);
+      if (!r.ok) throw new Error(`terrain.js: HTTP ${r.status}`);
+      const src = await r.text();
+      (0, eval)(src);
+      this.terrainSrc = src;   // cached only once it ran: a failed load is retried (bot #333 107)
     }
     // Placed features and heightmaps (shared/terrainshape.js): the agent stands on the same shaped law the
     // client's mesh and the sim use. A heightmap's grid is fetched first; until it is here, the last ground
