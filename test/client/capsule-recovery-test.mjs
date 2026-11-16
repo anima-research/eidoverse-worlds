@@ -73,8 +73,6 @@ probe.reset();
 let r = await R.ensureRemote('alice', PATH);
 check('a failed body load leaves a capsule on screen', !!r.avatar?.isCapsule);
 check('the record records the debt it still owes (capsuleFor)', r.capsuleFor === PATH);
-check('the record does NOT claim the intended body is worn',
-  r.avatar?.isCapsule === true && r.capsuleFor === PATH);
 
 // ---------------------------------------------------------------- the door back out
 // The network comes back. A same-path reannounce is evidence the peer is live.

@@ -58,8 +58,13 @@ check('every call returns the SAME instance', a === b && b === c);
 for (let i = 0; i < 40; i++) audioCtx();
 check('40 further calls (the mic-toggle loop) still one context', made === 1, `made=${made}`);
 
-// audioContextState() reads the shared instance's state and builds nothing. (audioContext() resumes a suspended
-// context on each call; `resumed` counts that and nothing here asserts it.)
+// resumed opportunistically: a suspended context is resumed by the call that finds it so, a running one is left alone
+check('the first call resumed the suspended context, once; the running one was left alone', resumed === 1 && a.state === 'running', `resumed=${resumed}`);
+a.state = 'suspended';   // the browser suspended it (a tab in the background)
+audioCtx();
+check('a call that finds it suspended again resumes it', resumed === 2 && a.state === 'running', `resumed=${resumed}`);
+
+// audioContextState() reads the shared instance's state and builds nothing
 check('audioContextState() reports the shared instance', mod.audioContextState() === a.state,
       `${mod.audioContextState()} vs ${a.state}`);
 
