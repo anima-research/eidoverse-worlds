@@ -1,4 +1,5 @@
 import {THREE,frameBody,rigNamed,frame} from '../fixtures/reach-frame-fixture.ts';
+import {tryUntil} from '../gate/wait.ts';
 const {initReachNet,setMyReach,clearMyReach,myReachBag,applyRemoteReach,dropRemoteReach}=await import('../../client/lib/player/reachnet.js');
 let current:any=null;const messages:string[]=[];
 const dispatch=await(await import('../fixtures/reach-command-fixture.ts')).commandsFor(()=>current,messages);
@@ -28,7 +29,7 @@ for(const order of ['follower-first','producer-first']){
 }
 check('same final relations give insertion-order independent hand position',Math.hypot(...results[0].map((v:number,i:number)=>v-results[1][i]))<1e-5);
 const receiptBody=body();setMyReach('leftHand',{p:[.02,1.12,.24],space:'self'},{palm:false});dispatch('touch','self hand_l right');for(let f=0;f<100;f++)frame(receiptBody,f);
-await new Promise(r=>setTimeout(r,650));
+await tryUntil('the human receipt is reported',()=>messages.some(m=>m.includes('endpoint gap')),{ms:3000,step:20});
 check('human receipt reports endpoint distance rather than rest',messages.some(m=>m.includes('endpoint gap'))&&!messages.some(m=>m.includes('rests on')));
 for(const order of ['left-first','right-first'])for(const warmed of [false,true]){
  const av=body(),label=`${order}/${warmed?'previously-solving':'cold'} cycle`;

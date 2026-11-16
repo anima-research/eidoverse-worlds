@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { chromeArgs, findChrome, cdpOn, type Cdp } from "../gate/chrome.ts";
 import { MOVER, TRACK } from "../../shared/mover.js";
 import { idAliases } from "./idalias.ts";
+import { tryUntil } from "../gate/wait.ts";
 export { cdpOn, type Cdp };
 
 export const ROOT = resolve(import.meta.dir, "..", "..");
@@ -36,6 +37,15 @@ export function freePort(from: number, tries = 40, start = from + Math.floor(Mat
     catch { /* occupied */ }
   }
   throw new Error(`no free port in ${start}..${start + tries}`);
+}
+/** A scratch `bun server/server.ts` on a free port: env is the whole environment (PORT is added), logs go to
+ *  <logDir>/srv-<port>.log(.err). Resolves once `probe` answers 200, or with `dead` if it exits or never does. */
+export async function startServer(env: Record<string, string | undefined>, logDir: string, opts: { from?: number; probe?: string; ms?: number } = {}) {
+  const port = freePort(opts.from ?? 9300), log = join(logDir, `srv-${port}.log`);
+  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ROOT, env: { ...env, PORT: String(port) }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
+  const up = await tryUntil(`the server on ${port} answers ${opts.probe ?? "/version"}`, async () => proc.exitCode != null
+    || (await fetch(`http://127.0.0.1:${port}${opts.probe ?? "/version"}`, { signal: AbortSignal.timeout(800) })).ok, { ms: opts.ms ?? 76_000, step: 150 });
+  return { port, proc, log, dead: !up || proc.exitCode != null };
 }
 
 /** Found worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005

@@ -24,8 +24,9 @@ const { FLOOR, UPPER, boxes, buildGlb, boxMesh } = await import("../fixtures/two
 const { Document, NodeIO } = await import("@gltf-transform/core");
 const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
 type Box = [number, number, number, number, number, number];
-const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId, trackTicks } = await import("../harness/harness.ts");
-const { tryUntil, pause } = await import("../gate/wait.ts");
+const { scratchSequencer, mkCheck, legacyVerb, sceneId, trackTicks } = await import("../harness/harness.ts");
+const { tryUntil, until, pause } = await import("../gate/wait.ts");
+const { supportShape } = await import("../../mcpl/physics.ts");
 const { check, tally } = mkCheck();
 
 const bounds = (p: Float32Array) => {
@@ -98,6 +99,11 @@ const { WorldAgent } = await import("../../mcpl/agent.ts");
 const URL_ = h.BASE.replace("http", "ws") + "/ws";
 let a: any = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_, tickEveryMs: trackTicks() });
 const near = (v: number, want: number, tol = 0.03) => Math.abs(v - want) <= tol;
+/** The server holds the body's pose as it stands now: a pose sent after this call, then a reply behind it on the same socket. */
+const poseLanded = async () => { const t = Date.now(); await until("a pose sent after the walk", () => a.selfObservedAt > t, { ms: 3000, step: 20 }); await a.request("help"); };
+/** Close the body and wait for its socket to finish closing (the server remembers the pose on close, server.ts). */
+const leave = async () => { a.close(); await until("the walker's socket is closed", () => a.ws?.readyState === 3, { ms: 3000, step: 20 }); };
+const fitted = (n: string) => supportShape(`${a.world}/${sceneId(a, n)}`);
 try {
   await a.connect();
   // the protocol: a founded world has bounds (±20 m); the test ground is at x 19–21
@@ -110,7 +116,7 @@ try {
   await legacyVerb(a, "spawn", { id: "tower", lib: path, pos: [0, gy, 0], yaw: 0 });
   await tryUntil("the tower's support is registered", () => a.ground.supportIds?.get(sceneId(a, "tower")), { ms: 5000, step: 50 });
   await a.ground.supportReady();
-  await sleep(300);                                     // the fit itself is a detached registration
+  await until("the tower is fitted exact", () => fitted("tower") === "exact", { ms: 5000, step: 25 });   // the fit is a detached registration
   // y: which floor at the destination, where it has more than one (navgrid)
   const walk = async (x: number, z: number, y?: number) => a.walkTo(x, z, false, 30_000, 0.01, y);
 
@@ -127,7 +133,6 @@ try {
   check("standing still upstairs does not drop it to the ground floor", near(a.pos.y, gy + UPPER), `y ${a.pos.y.toFixed(3)}`);
   // a seat is a socket child of the tower (its station's anim is the pose)
   await a.request("create", { id: "$bench", components: { parent: { to: sceneId(a, "tower") }, transform: { pos: [-0.8, UPPER + 0.45, -2.4], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: "bench" }, station: { anim: "sitchair" } } });
-  await sleep(200);
   await legacyVerb(a, "mount", { id: "walker", to: "tower", slot: "bench" });
   await tryUntil("the walker is seated", () => !!a.myOccupancy, { ms: 2000, step: 50 });
   await pause("seated for a few ticks", 500);
@@ -137,13 +142,12 @@ try {
   // leave upstairs, come back: the body wakes where it was, at that height,
   // and holds it until the building's collider is fitted again — not on the
   // terrain under the building, which is all a fresh process knows at first
-  await sleep(1500);                                    // the server's settled memory catches the pose
-  a.close();
-  await sleep(500);
+  await poseLanded();
+  await leave();
   a = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_, tickEveryMs: trackTicks() });
   await a.connect();
   await a.ground.supportReady();
-  await sleep(500);
+  await tryUntil("the rejoined body stands upstairs", () => near(a.pos.y, gy + UPPER) && fitted("tower") === "exact", { ms: 3000, step: 25 });
   check("rejoins upstairs, standing on the upper floor it left from",
     near(a.pos.y, gy + UPPER) && Math.hypot(a.pos.x + 0.2, a.pos.z + 2.4) < 0.1, `at (${a.pos.x.toFixed(2)}, ${a.pos.y.toFixed(3)}, ${a.pos.z.toFixed(2)})`);
   {
@@ -172,7 +176,7 @@ try {
   const bar = await (await fetch(`${h.BASE}/upload?name=barrier`, { method: "POST",
     body: await buildGlb([[-1.4, 0, -0.1, 1.4, 1.4, 0.1]]) })).json() as { path: string };
   const crossing = walk(0, 1.8);
-  await sleep(300);
+  await until("the walk has set off (planned without the barrier)", () => a.pos.z > -2.3, { ms: 3000, step: 10 });
   await legacyVerb(a, "spawn", { id: "barrier", lib: bar.path, pos: [-1.3, gy + UPPER, -0.6], yaw: 0, collide: "box" });
   const t0 = Date.now();
   check("a walk that something solid blocks after it set off stops at it",
@@ -180,7 +184,7 @@ try {
   check("...says why it stopped", /blocked at .* something solid/.test(a.walkStall ?? ""), String(a.walkStall));
   check("...and promptly, not at the walk timeout", Date.now() - t0 < 4_000, `${Date.now() - t0}ms`);
   await legacyVerb(a, "remove", { id: "barrier" });
-  await sleep(300);
+  await until("the barrier's collider is gone", () => fitted("barrier") === null && !a.ground.supportIds.has(sceneId(a, "barrier")), { ms: 3000, step: 25 });
   await walk(0, -2.4);
   check("goes back down the stair", await walk(2.2, -2.4) && await walk(2.2, 2.4) && near(a.pos.y, gy + FLOOR), `y ${a.pos.y.toFixed(3)}`);
   check("and out the door to the terrain", await walk(0, 2) && await walk(0, 5) && near(a.pos.y, a.heightAt(0, 5)), `y ${a.pos.y.toFixed(3)}`);
@@ -201,7 +205,7 @@ try {
     const realFetch = globalThis.fetch;
     let delayed = 0;
     globalThis.fetch = (async (u: any, o?: any) => {
-      if (isWallFetch(String(u))) { delayed++; await sleep(2500); }
+      if (isWallFetch(String(u))) { delayed++; await pause("the pen's model download, held up", 2500); }
       return realFetch(u, o);
     }) as typeof fetch;
     try {
@@ -220,8 +224,8 @@ try {
 
       // a cold join: a body that left beside the wall comes back, and its
       // first walk is through the wall while the wall's shape is downloading
-      await sleep(1500);                                // the server's settled memory catches the pose
-      a.close(); await sleep(500);
+      await poseLanded();
+      await leave();
       forgetMeshCache();
       delayed = 0;
       a = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_, tickEveryMs: trackTicks() });

@@ -1,7 +1,4 @@
 {
- "test/client/animnames-retry-test.ts": {
-  "bare-wait": 1
- },
  "test/client/avatar-test.ts": {
   "own-ok": 1
  },
@@ -31,7 +28,6 @@
   "own-ok": 1
  },
  "test/client/dismount-height-test.ts": {
-  "bare-wait": 1,
   "own-ok": 1
  },
  "test/client/editcommit-test.ts": {
@@ -96,9 +92,6 @@
  "test/client/predict-pending-test.ts": {
   "own-ok": 1
  },
- "test/client/reach-order-test.ts": {
-  "bare-wait": 1
- },
  "test/client/retired-commands-test.ts": {
   "own-ok": 1
  },
@@ -125,9 +118,6 @@
  "test/harness/inspectharness.ts": {
   "bare-wait": 1
  },
- "test/mcpl/agent-mesh-collision-test.ts": {
-  "bare-wait": 10
- },
  "test/mcpl/buildcheck-route-test.ts": {
   "bare-wait": 1
  },
@@ -149,21 +139,12 @@
   "bare-wait": 1,
   "own-ok": 1
  },
- "test/mcpl/places-test.ts": {
-  "bare-wait": 7
- },
  "test/mcpl/support-swap-test.ts": {
   "bare-wait": 2,
   "own-ok": 1
  },
  "test/protocol/access-check.ts": {
-  "bare-wait": 7
- },
- "test/protocol/agentshove-check.ts": {
-  "bare-wait": 39
- },
- "test/protocol/agenttools-check.ts": {
-  "bare-wait": 5
+  "bare-wait": 6
  },
  "test/protocol/batch2-probe.ts": {
   "bare-wait": 6
@@ -192,9 +173,6 @@
  "test/protocol/force-check.ts": {
   "own-ok": 1
  },
- "test/protocol/fork-reset-check.ts": {
-  "bare-wait": 2
- },
  "test/protocol/freeze-check.ts": {
   "own-ok": 1
  },
@@ -203,9 +181,6 @@
  },
  "test/protocol/hello-refused-check.ts": {
   "own-ok": 1
- },
- "test/protocol/identity-check.ts": {
-  "bare-wait": 42
  },
  "test/protocol/inplace-check.ts": {
   "bare-wait": 3
@@ -223,13 +198,13 @@
   "own-ok": 1
  },
  "test/protocol/presence-check.ts": {
-  "bare-wait": 10
+  "bare-wait": 3
  },
  "test/protocol/reachgate-check.ts": {
   "bare-wait": 1
  },
  "test/protocol/refusedjoin-check.ts": {
-  "bare-wait": 11
+  "bare-wait": 8
  },
  "test/protocol/reset-race-check.ts": {
   "own-ok": 1
@@ -239,9 +214,6 @@
  },
  "test/protocol/scripts-check.ts": {
   "bare-wait": 15
- },
- "test/protocol/server-check.ts": {
-  "bare-wait": 28
  },
  "test/protocol/shiplist-probe.ts": {
   "bare-wait": 103
@@ -269,9 +241,6 @@
  },
  "test/protocol/zone-water-check.ts": {
   "own-ok": 1
- },
- "test/server/buildcheck-queue-test.ts": {
-  "bare-wait": 6
  },
  "test/server/knockdown-test.ts": {
   "bare-wait": 9,

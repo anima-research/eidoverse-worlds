@@ -6,7 +6,7 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/lantern-test.ts
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import { pause } from "../gate/wait.ts";
+import { pause, tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register();
 
@@ -124,7 +124,7 @@ console.log('LANTERN — a slow click on a toggle closes it (the rail\'s search,
   check('a quick click closes it too, and nothing reopens it', !L.isLanternOpen());
   const plain = document.createElement('button'); document.body.append(plain);
   L.openLantern(''); plain.focus();
-  await pause("a held click", 200);
+  await tryUntil("the blur closes the lantern", () => !L.isLanternOpen(), { ms: 2000, step: 10 });
   check('focus moving to anything that is not a toggle still closes it', !L.isLanternOpen());
   check('the resting pill is a toggle', document.getElementById('lantern-pill')!.hasAttribute('data-lantern-toggle'));
   tog.remove(); plain.remove();

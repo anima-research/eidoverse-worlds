@@ -16,23 +16,21 @@ import { readLog, fold } from "../../shared/protocol/fold.js";
 import { idAliases } from "../harness/idalias.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
+import { startServer } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 const IDS = idAliases();   // R 10-17: the suite's names ride as placeholders and minted ids
 
 const root = scratch("forkreset");
 const MODEL = "eidoverse/assets/models/crate_large_red.glb";   // a real catalogue model (the engine measures it)
 const { ok, done } = suite("fork-reset-check", { quiet: true });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 async function start(extra = {}) {
-  let port = 9410; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
-  const logf = path.join(root, `srv-${port}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port), ...extra }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
-  if (await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 })) return { port, proc: p };
-  throw new Error("server didn't start: " + (fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-600) : ""));
+  const s = await startServer(env(extra), root, { from: 9410, probe: "/worlds" });
+  if (!s.dead) return s;
+  throw new Error("server didn't start: " + (fs.existsSync(s.log + ".err") ? fs.readFileSync(s.log + ".err", "utf8").slice(-600) : ""));
 }
 async function sock(port) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
@@ -40,7 +38,7 @@ async function sock(port) {
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
   return { msgs,
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
-      await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 }); await sleep(50);
+      await tryUntil(`${id}'s join is answered`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error"), { ms: 3000, step: 50 });
       return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, (r) => res(IDS.back(r))); ws.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, timeout: true }), 5000); }),
     async raw(m, wantType, ms = 3000) { const k = msgs.length; ws.send(JSON.stringify(m)); return (await tryUntil(`a ${wantType} (or an error) in answer to ${m.type}`, () => msgs.slice(k).find((x) => x.type === wantType || x.type === "error"), { ms, step: 50 })) ?? null; },

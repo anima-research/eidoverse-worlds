@@ -32,7 +32,7 @@ import path from "node:path";
 import os from "node:os";
 import { OLD_FORMAT_SPLASH } from "../../shared/oldformat.js";
 import { scratchBench, mkCheck, sleep } from "../harness/harness.ts";
-import { tryUntil } from "../gate/wait.ts";
+import { tryUntil, pause } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 process.env.AGENT_BODY_ENGINE = "verlet";
@@ -74,6 +74,9 @@ try {
   // old-x is shown to the operator (F23, Mica 11-05: an old world is said only to the operator and its owner; to a guest it is
   // world-unavailable, W10)
   await cdp.send("Network.enable", {});
+  // W5's page: the splash's 45 s ceiling (boot.js) is run at 3 s, and the page says when it has run (no 48 s wait)
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `if (/[?&]w5=1/.test(location.search)) { const st = window.setTimeout;
+    window.setTimeout = function (f, ms, ...a) { if (ms === 45000 && typeof f === 'function') { window.__ceilingSeen = true; return st.call(this, () => { f(); window.__ceilingRan = true; }, 3000, ...a); } return st.call(this, f, ms, ...a); }; }` });
   for (const world of ["old-x", "nope"]) {
     const said = await serverSays(world);
     check(`(setup) ${world}: the server refuses with words and 4005`, said.code === 4005 && said.error.length > 10, said);
@@ -81,7 +84,7 @@ try {
       const tag = `${world} ${early ? "early socket" : "fresh connect"}`;
       if (world === "old-x") await cdp.send("Network.setCookie", { name: "ew_sess", value: OP_SID, url: BASE });
       else await cdp.send("Network.deleteCookies", { name: "ew_sess", url: BASE });
-      await cdp.send("Page.navigate", { url: `${BASE}/?world=${world}&name=${world === "old-x" ? "Opal" : "T"}${early ? "" : "&earlysock=0"}` });
+      await cdp.send("Page.navigate", { url: `${BASE}/?world=${world}&name=${world === "old-x" ? "Opal" : "T"}${early ? "" : "&earlysock=0"}${world === "old-x" && early ? "&w5=1" : ""}` });
       // on screen = in the page's text AND the topmost thing where it is drawn (a toast UNDER the splash is in the text
       // and invisible: that was the bug)
       const visible = `(() => { const want = ${JSON.stringify(world === "old-x" ? OLD_FORMAT_SPLASH : said.error)};
@@ -90,9 +93,8 @@ try {
           if (r.width < 1 || r.height < 1 || getComputedStyle(host).visibility === 'hidden') continue;
           const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); if (top && (host === top || host.contains(top) || top.contains(host))) return true; }
         return false; })()`;
-      let seen = false; const t0 = Date.now();
-      while (!seen && Date.now() - t0 < 20000) { seen = !!(await evalJson(visible).catch(() => false)); if (!seen) await sleep(250); }
-      await sleep(6000);
+      const seen = !!(await tryUntil(`${tag}: the refusal is on screen`, () => evalJson(visible).catch(() => false), { ms: 20000, step: 250 }));
+      await pause("the refusal must outlast a toast's life on screen", 6000);
       const stays = !!(await evalJson(visible).catch(() => false));
       const st = await evalJson(`import('/lib/net.js').then((m) => ({ status: m.net.status, joined: m.net.joined, joins: window.__joins,
         toasts: [...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 160)),
@@ -102,8 +104,9 @@ try {
       check(`W3 ${tag}: the client is refused (status 'rejected'), never joined`, st.status === "rejected" && st.joined === false, st);
       check(`W4 ${tag}: no redial (one join sent)`, st.joins === 1, st);
       if (world === "old-x" && early) {   // the splash's 45 s ceiling and its "go in anyway" never lift it onto an empty world
-        while (Date.now() - t0 < 48000) await sleep(1000);
-        // read after the ceiling: the skip is offered AT 45 s, so a read before it can't see it
+        const ran = await tryUntil("the splash's ceiling has run", () => evalJson(`window.__ceilingSeen && window.__ceilingRan ? true : null`).catch(() => null), { ms: 10000, step: 250 });
+        check(`(W5 setup) ${tag}: the page armed the splash's 45 s ceiling, and it has run`, ran === true, { ran });
+        // read after the ceiling: the skip is offered AT the ceiling, so a read before it can't see it
         const skip = await evalJson(`(() => { const b = document.querySelector('.sp-skip'); return !!b && getComputedStyle(b).display !== 'none' && getComputedStyle(b).pointerEvents !== 'none'; })()`).catch(() => null);
         const late = !!(await evalJson(visible).catch(() => false));
         check(`W5 ${tag}: still on screen past the splash's 45 s ceiling, with no "go in anyway"`, late && skip === false, { late, skipOffered: skip });

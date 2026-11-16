@@ -19,6 +19,7 @@ import path from "node:path";
 import { ENGINE, scratch } from "../gate/common.ts";
 import { tryUntil, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
+import { startServer } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("presence");
@@ -29,12 +30,9 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
 const r0 = Bun.spawnSync(["bun", "tools/world.ts", "found", "glade", "--owner", "Ann"], { cwd: ENGINE, env: env() });
 ok(r0.exitCode === 0, "(setup) found glade, Ann owns it", r0.stderr.toString().slice(-300));
-let port = 9420; for (; port < 9500; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
-const logf = path.join(root, "srv.log");
-const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+const { port, proc, dead } = await startServer(env(), root, { from: 9420 });
 process.on("exit", () => { try { proc.kill(); } catch {} });
-const up = !!(await tryUntil("the server answers /version", async () => (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 }));
-ok(up, "(setup) the server is up");
+ok(!dead, "(setup) the server is up");
 
 async function sock(name) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
@@ -51,20 +49,21 @@ async function sock(name) {
       const r = await tryUntil(`the reply to ${verb}`, () => msgs.find((m) => m.type === "reply" && m.id === id), { ms: 4000, step: 50 }); return r ? r.reply : { ok: false, timeout: true }; } };
 }
 const named = (s) => s.snap?.you;   // the display name the server settled on
+const leave = async (s) => { s.close(); await tryUntil("the socket is closed", () => s.ws.readyState === 3, { ms: 3000, step: 20 }); };
 
 // ---- PN: no one appears under a name another account claimed ----
-{ const ann = await sock("Ann"); ok(named(ann) === "Ann", "(PN setup) Ann arrives as Ann", named(ann)); ann.close(); await sleep(300);
+{ const ann = await sock("Ann"); ok(named(ann) === "Ann", "(PN setup) Ann arrives as Ann", named(ann)); await leave(ann);
   const imp = await sock("Ann.");   // folds to "ann"; a different account (local:ann.)
   ok(!!imp.snap && named(imp) !== "Ann." && /^Ann\./.test(named(imp)) && named(imp).length > 4, "PN an account arriving as an absent person's name (folded) is shown with a disambiguator", named(imp));
-  imp.close(); await sleep(300);
-  const ann2 = await sock("Ann"); ok(named(ann2) === "Ann", "PN …and the claimant still arrives as herself", named(ann2)); ann2.close(); await sleep(300); }
+  await leave(imp);
+  const ann2 = await sock("Ann"); ok(named(ann2) === "Ann", "PN …and the claimant still arrives as herself", named(ann2)); await leave(ann2); }
 
 // ---- PR: presence targets resolve by identity ----
 { const bob = await sock("Bob"), carol = await sock("Carol"), mal = await sock("Mallory");
   // within reach, and both open pose and move to strangers (BC: the server checks a body's consent before forwarding)
   bob.at(0, 0); carol.at(1, 0); mal.at(0.5, 0.5);
   for (const s2 of [bob, carol]) await s2.req("consent", { move: true, touch: true });
-  await sleep(300);
+  await mal.req("help");   // Mallory's pose is handled before this reply (Bob's and Carol's before their consent replies)
   ok(/^u-/.test(bob.actor ?? "") && /^u-/.test(carol.actor ?? ""), "(PR setup) every joiner knows its own actor id", [bob.actor, carol.actor]);
   const arrive = mal.msgs.find((m) => m.type === "arrive" && m.id === "Carol") ?? null;
   const carolActor = arrive?.actorId ?? carol.actor;
@@ -98,7 +97,7 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
 
 // ---- BC: body consent and range at the server, before anything is forwarded ----
 { const vic = await sock("Vic"), sly = await sock("Sly");
-  vic.at(0, 0); sly.at(1, 0); await sleep(300);
+  vic.at(0, 0); sly.at(1, 0); await vic.req("help"); await sly.req("help");   // each pose is handled before its socket's reply
   const got = (k, t) => vic.since(k).filter((m) => m.type === t);
   // the gates are exercised by Vic setting them, never by leaning on a default
   const r0 = await vic.req("consent", { move: false, touch: false }); ok(r0?.ok, "(BC1 setup) Vic turns both gates off", r0);
@@ -125,11 +124,11 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0, "BC2b …but a pose is not: posing is behind the touch gate, never move", sly.since(ks));
   // range: none unless the world sets one (R 10-28 13:44; reachgate RR2 sets one)
-  sly.at(20, 0); await sleep(300); k = vic.msgs.length;
+  sly.at(20, 0); await sly.req("help"); k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over from 20 m", () => got(k, "puppet").length, { ms: 2000 });
   ok(got(k, "puppet").length === 1, "BC3 a knock-over from 20 m is forwarded: no range by default, consent decides", vic.since(k).map((m) => m.type));
   // the lists, at the server: block beats an open gate, allow beats a closed one
-  sly.at(1, 0); await vic.req("consent", { block: sly.actor }); await sleep(300);
+  sly.at(1, 0); await vic.req("consent", { block: sly.actor }); await sly.req("help");
   k = vic.msgs.length; ks = sly.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Sly is told the knock-over is refused", () => sly.since(ks).some((m) => m.type === "error" && /shove/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /isn't taking shove/.test(m.error) && !/block|never/.test(m.error)), "BC4 Vic blocks Sly: his knock-over is refused though her move gate is on, in the one uniform sentence", sly.since(ks));

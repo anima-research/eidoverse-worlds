@@ -29,13 +29,13 @@ import path from "node:path";
 import { ENGINE, scratch } from "../gate/common.ts";
 import { tryUntil, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
+import { startServer } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("agenttools");
 const S = suite("agenttools-check", { quiet: true, cap: 600 }), { done } = S;
 let lastRow = "(start)";   // the row before a request: busyEvidence() names the section that sent it
 const ok = (cond, what, detail?) => { lastRow = String(what).split(" ")[0]; S.ok(cond, what, detail); };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const T = (r) => { const t = r?.content?.[0]?.text ?? ""; if (process.env.AT_SHOW) console.log(`    · ${t.slice(0, 400)}`); return t; };
 
 async function writeBoxGlb(file, [sx, sy, sz]) {
@@ -156,12 +156,9 @@ const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, SKIP
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", EIDO_FLIGHT_REHEARSAL: "", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
 const r0 = Bun.spawnSync(["bun", "tools/world.ts", "found", "yard", "--owner", "Ann"], { cwd: ENGINE, env: env() });
 ok(r0.exitCode === 0, "(setup) found yard, Ann owns it", r0.stderr.toString().slice(-300));
-let port = 9540; for (; port < 9640; port++) { try { const s = Bun.listen({ hostname: "127.0.0.1", port, socket: { data() {} } }); s.stop(true); break; } catch {} }
-const logf = path.join(root, "srv.log");
-const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: env({ PORT: String(port) }), stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+const { port, proc, dead } = await startServer(env(), root, { from: 9540 });
 process.on("exit", () => { try { proc.kill(); } catch {} });
-const up = !!(await tryUntil("the server answers /version", async () => (await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok, { ms: 76_000, step: 150 }));
-ok(up, "(setup) the server is up");
+ok(!dead, "(setup) the server is up");
 
 async function sock(name) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
@@ -283,8 +280,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 { const yard = (await (await fetch(`http://127.0.0.1:${port}/worlds`, { headers: ag.readHeaders })).json()).worlds?.find((w) => w.name === "yard");
   const line = T(await call("worlds")).split("\n").find((l) => l.startsWith("- yard")) ?? "";
   ok(JSON.stringify(yard?.agents) === JSON.stringify([ag.name]) && yard.people?.length === 2 && /1 human, 1 agent: /.test(line), "AT12 /worlds' agents lists the declared agent; people is everyone; the worlds tool says 1 human, 1 agent", [yard, line]); }
-{ const vic = await sock("Vic"); await sleep(200);
-  vic.at(ag.pos.x + 1, ag.pos.z); await sleep(300);   // beside the agent (act shove is forwarded at any distance unless the world sets one: physconst.js BODY_RANGE)
+{ const vic = await sock("Vic"); const vx = ag.pos.x + 1, vz = ag.pos.z;
+  vic.at(vx, vz); const seesVic = await tryUntil("the agent sees Vic beside it", () => [...ag.people.values()].some((p) => p.pose?.p && Math.hypot(p.pose.p[0] - vx, p.pose.p[2] - vz) < 0.01), { ms: 3000, step: 20 });
+  ok(!!seesVic, "(AT3 setup) the agent folds Vic's pose beside it");   // beside the agent (act shove is forwarded at any distance unless the world sets one: physconst.js BODY_RANGE)
   const sw = await vic.req("consent", { move: false }); ok(sw?.ok, "(AT3 setup) Vic turns her move gate off (its default is on)", sw);
   const no = await call("act", { verb: "shove", args: { target: "Vic" } });
   ok(no.isError && /shove/.test(T(no)) && /consent|nobody/.test(T(no)), "AT3a Vic's body refuses: act shove is refused, and the tool says so as an error naming the class", T(no));
@@ -349,9 +347,10 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ok(noName.isError && /no-such-thing/.test(T(noName)), "AT6k …and an unknown name is an error naming it", T(noName));
   // moderation through act: the agent becomes an owner, kicks Vic by NAME (resolved to an identity), reads what's in force, unbans
   ok((await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "owner" } })).ok, "(AT6 setup) Ann makes the agent an owner");
-  await sleep(300);
-  const kicked = await call("act", { verb: "kick", args: { who: "Vic", reason: "test" } }); await sleep(300);
-  ok(!kicked.isError && /done|kick/.test(T(kicked)) && /u-/.test(T(kicked)), "AT6l act kick {who: a name} resolves the name to an identity and the authority does it", T(kicked));
+  await tryUntil("the agent folds its owner role", () => ag.replica?.st?.entities?.["@world"]?.c?.[`roles:${HEP}`]?.role === "owner", { ms: 3000, step: 20 });
+  const kicked = await call("act", { verb: "kick", args: { who: "Vic", reason: "test" } });
+  const vicGone = !!(await tryUntil("Vic's socket is closed by the kick", () => vic.ws.readyState === 3, { ms: 3000, step: 20 }));
+  ok(!kicked.isError && /done|kick/.test(T(kicked)) && /u-/.test(T(kicked)) && vicGone, "AT6l act kick {who: a name} resolves the name to an identity and the authority does it", T(kicked));
   const banned = await call("act", { verb: "ban", args: { who: "Vic", days: 1, reason: "test" } }), inforce = await call("act", { verb: "bans" });
   ok(!banned.isError && !inforce.isError && /banned: Vic/.test(T(inforce)), "AT6m act bans lists the ban in force (list_bans folded)", [T(banned), T(inforce)]);
   const lifted = await call("act", { verb: "unban", args: { who: "Vic" } });

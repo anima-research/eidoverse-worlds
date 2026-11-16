@@ -11,6 +11,7 @@
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { fileURLToPath } from 'node:url';
+import { tryUntil } from '../gate/wait.ts';
 const THREE_PATH = fileURLToPath(new URL('../../client/node_modules/three/build/three.module.js', import.meta.url));
 const STUBS: Record<string, string> = {
   core: `import * as THREE from ${JSON.stringify(THREE_PATH)}; export { THREE }; export const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 100); globalThis.__dm.THREE = THREE;`,
@@ -77,8 +78,7 @@ check('D1 stood up at vacated.at on the upper floor: x, y and z as the authority
   G.__dm.me = me;
   seatOn({ action: 'sit', leave: 'stand-up' });
   const ok3 = lb.dismountMe('script', [4.6, 3.0, -2.1]);
-  await new Promise((r) => setTimeout(r, 15));
-  lb.updateMountedMe(1 / 60);
+  await tryUntil("the 1 ms leave clip runs out", () => { lb.updateMountedMe(1 / 60); return !lb.seatLeaving(); }, { ms: 2000, step: 5 });   // stepLeaving reads performance.now
   const p3 = ctl.myState.pos;
   check('D3 a leave clip finishes where the authority let me go, at its height (3.0), not 0', ok3 && !lb.seatLeaving() && Math.abs(p3.y - 3.0) < 1e-9 && Math.abs(p3.x - 4.6) < 1e-9, `${ok3} leaving=${lb.seatLeaving()} [${p3.x}, ${p3.y}, ${p3.z}]`);
   G.__dm.me = null; }

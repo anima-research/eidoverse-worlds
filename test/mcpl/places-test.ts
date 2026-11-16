@@ -18,8 +18,9 @@ process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { FLOOR, UPPER, boxes, building, buildGlb } = await import("../fixtures/two-storey-fixture.ts");
 const P = await import("../../shared/places.js");
-const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId } = await import("../harness/harness.ts");
-const { tryUntil } = await import("../gate/wait.ts");
+const { scratchSequencer, mkCheck, legacyVerb, sceneId } = await import("../harness/harness.ts");
+const { tryUntil, until } = await import("../gate/wait.ts");
+const { supportShape } = await import("../../mcpl/physics.ts");
 const { check, tally } = mkCheck();
 
 console.log("places.js (pure):");
@@ -75,6 +76,8 @@ const tool = async (name: string, args: Record<string, any>) => {
 };
 const near = (v: number, want: number, tol = 0.05) => Math.abs(v - want) <= tol;
 const at = () => `(${a.pos.x.toFixed(2)}, ${a.pos.y.toFixed(2)}, ${a.pos.z.toFixed(2)})`;
+// each thing's collider is fitted in the agent (physics.ts supportShape) before a walk plans against it
+const fitted = (...ns: string[]) => until(`${ns.join(", ")} fitted`, () => ns.every((n) => supportShape(`${a.world}/${sceneId(a, n)}`)), { ms: 5000, step: 25 });
 try {
   await a.connect(); await friend.connect();
   // the protocol: a founded world has bounds (±20 m); this test walks to x 50
@@ -87,7 +90,7 @@ try {
   // a second, identical tower 30m east, for "the nearest of two"
   await legacyVerb(a, "spawn", { id: "tower2", lib, pos: [30, a.heightAt(30, 0), 0], yaw: 0 });
   await tryUntil("the towers' supports are registered", () => a.ground.supportIds?.get(sceneId(a, "tower")) && a.ground.supportIds?.get(sceneId(a, "tower2")), { ms: 5000, step: 50 });
-  await a.ground.supportReady(); await sleep(300);
+  await a.ground.supportReady(); await fitted("tower", "tower2");
 
   await a.walkTo(0, 7, true);
   const seen = await tool("look", {});
@@ -135,7 +138,7 @@ try {
   await tool("move", walkWords({ x: 2.2, z: -2.3, y: gy + UPPER, run: true }));
   r = await tool("name_place", { name: "landing", label: "the top of the stair" });
   check("name_place names the spot where the body stands, on the thing it is in", /named this spot "landing" on \[tower\]/.test(r), r);
-  await sleep(300);
+  await tryUntil("the landing is folded into tower's places", () => Array.isArray(a.entities.get(sceneId(a, "tower"))?.places?.landing?.at), { ms: 3000, step: 20 });
   check("...as an entry in that thing's places component, in its own frame",
     Array.isArray(a.entities.get(sceneId(a, "tower"))?.places?.landing?.at) && near(a.entities.get(sceneId(a, "tower")).places.landing.at[1], UPPER, 0.06),
     JSON.stringify(a.entities.get(sceneId(a, "tower"))?.places));   // "tower" is its label: the authority minted its id (R 10-17)
@@ -146,7 +149,7 @@ try {
   // a raw comp edit: re-point the name, retire a model place
   const cur = { ...a.entities.get(sceneId(a, "tower")).places, landing: { at: [-2, FLOOR, -2], label: "the corner" }, upstairs: null };
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: cur });
-  await sleep(400);
+  await tryUntil("the re-pointed landing is folded", () => a.entities.get(sceneId(a, "tower"))?.places?.landing?.label === "the corner", { ms: 3000, step: 20 });
   r = await tool("move", walkWords({ to: "tower/landing", run: true }));
   check("a builder can re-point a name with a plain comp — the walk follows", /arrived at tower\/landing/.test(r) && near(a.pos.y, gy + FLOOR) && near(a.pos.x, -2, 0.2), `${r} ${at()}`);
   r = await tool("move", walkWords({ to: "tower/upstairs" }));
@@ -159,7 +162,8 @@ try {
   await legacyVerb(a, "spawn", { id: "stool", lib: stool, pos: [-1.5, gy + FLOOR, 1.0], yaw: 0, collide: "box" });
   await legacyVerb(a, "comp", { id: "tower", type: "places", data: { ...a.entities.get(sceneId(a, "tower")).places, by_stool: { at: [-1.0, FLOOR, 1.0] } } });
   await tryUntil("the stool's support is registered", () => a.ground.supportIds?.get(sceneId(a, "stool")), { ms: 2000, step: 50 });
-  await a.ground.supportReady(); await sleep(400);
+  await a.ground.supportReady(); await fitted("stool");
+  await tryUntil("by_stool is folded", () => a.entities.get(sceneId(a, "tower"))?.places?.by_stool, { ms: 3000, step: 20 });
   await tool("move", walkWords({ to: "tower/entrance", run: true }));
   r = await tool("move", walkWords({ to: "tower/by_stool", run: true }));
   check("a named spot on the floor is reached on the floor, not on the footstool beside it",
@@ -206,7 +210,7 @@ try {
   // moved things take their places with them
   await legacyVerb(a, "place", { id: "tower2", pos: [30, a.heightAt(30, -20), -20], yaw: Math.PI / 2 });
   await tryUntil("tower2 has moved to z = -20", () => a.entities.get(sceneId(a, "tower2"))?.pos?.[2] === -20, { ms: 2000, step: 50 });
-  await a.ground.supportReady(); await sleep(400);
+  await a.ground.supportReady(); await fitted("tower2");
   r = await tool("move", walkWords({ to: "Belfry/entrance", run: true }));   // tower2 is labelled Belfry since the C1 rows
   // entrance [0,0,5] in the model frame, turned a quarter and moved to (30, -20)
   const want = P.toWorld({ id: "tower2", pos: [30, 0, -20], yaw: Math.PI / 2 }, [0, 0, 5]);
@@ -228,7 +232,8 @@ try {
   check("a place's kind is gone: an entry with one is refused (shape audit 10-16: a seat is a station)", kr?.refused?.code === "schema", JSON.stringify(kr?.refused ?? kr));
   await legacyVerb(a, "comp", { id: "perch", type: "places", data: { seat: { at: [0, 0.32, 0] } } });
   await tryUntil("the rug's and perch's supports are registered", () => a.ground.supportIds?.get(sceneId(a, "rug")) && a.ground.supportIds?.get(sceneId(a, "perch")), { ms: 3000, step: 50 });
-  await a.ground.supportReady(); await sleep(400);
+  await a.ground.supportReady(); await fitted("rug", "perch");
+  await tryUntil("the rug's and perch's places are folded", () => a.entities.get(sceneId(a, "rug"))?.places?.long_room && a.entities.get(sceneId(a, "perch"))?.places?.seat, { ms: 3000, step: 20 });
   r = await tool("move", walkWords({ to: "the long room", run: true }));
   check("a room whose middle is furnished is reached at its clear floor, toward an end",
     /arrived at rug\/long_room/.test(r) && near(a.pos.y, ry + 0.05) && Math.abs(a.pos.x - 50) > 1.5 && Math.abs(a.pos.x - 50) < 6, `${r} ${at()}`);
@@ -280,7 +285,7 @@ try {
       return orig(ops, extra);
     };
     try { r = await tool("name_place", { name: "rug_end", remove: true, on: "rug" }); } finally { a.sendOps = orig; }
-    await sleep(300);
+    await tryUntil("both writes are folded", () => { const pl = a.entities.get(sceneId(a, "rug"))?.places; return pl?.late && pl.rug_end === null; }, { ms: 3000, step: 20 });
     const pl2 = a.entities.get(sceneId(a, "rug")).places;
     check("name_place remove, raced by another write: the name written in between survives, and the remove still lands",
       /retired "rug_end"/.test(r) && !!pl2.late && pl2.rug_end === null, `${r} | ${JSON.stringify(pl2)}`);

@@ -9,7 +9,7 @@
 //   - a worker that ignores SIGTERM and never answers is killed after the
 //     grace, the ask fails, the process is gone, and the next check runs;
 //   - output past the cap is no report.
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const dir = mkdtempSync(join(tmpdir(), "checkq-"));
@@ -17,11 +17,14 @@ process.env.OPT_DIR = join(dir, "opt");
 const Q = await import("../../server/buildcheck-queue.ts");
 const { boxes, buildGlb } = await import("../fixtures/two-storey-fixture.ts");
 const { mkCheck } = await import("../harness/harness.ts");
+const { until, tryUntil } = await import("../gate/wait.ts");
 const { check, tally } = mkCheck();
 
 const real = Q.checkConfig.runner;
 const worker = (name: string, body: string) => { const f = join(dir, `${name}.ts`); writeFileSync(f, body); return f; };
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+// a worker's wait for a gate file the test writes (a condition, in the child; no fixed sleep)
+const gated = (g: string) => `await new Promise((go) => { const t = setInterval(() => { if (require("node:fs").existsSync(${JSON.stringify(g)})) { clearInterval(t); go(0); } }, 20); });`;
 const outcome = (p: Promise<unknown>) => p.then((r: any) => ({ ok: true as const, r }), (e: Error) => ({ ok: false as const, e: e.message }));
 
 try {
@@ -49,15 +52,18 @@ try {
 
   console.log("\nthe bytes that were asked about, not the bytes there later:");
   {
-    // a worker that reports what it read, slowly enough to queue behind
-    Q.checkConfig.runner = worker("seer", `await Bun.sleep(400); console.log(JSON.stringify({ seen: await Bun.file(process.argv[2]).text() }));`);
-    const f = join(dir, "mutable.glb");
+    // a worker that reports what it read, held until the test lets it go so the next ask queues behind
+    const seerGate = join(dir, "seer-gate");
+    Q.checkConfig.runner = worker("seer", `${gated(seerGate)} console.log(JSON.stringify({ seen: await Bun.file(process.argv[2]).text() }));`);
+    const f = join(dir, "mutable.glb"), jobs = join(dir, "opt", "checks", "jobs");
     writeFileSync(f, "PPPP");
     const ahead = Q.checkFile(f, 4);           // occupies the worker
+    await until("P's snapshot is taken", () => existsSync(jobs) && readdirSync(jobs).length === 1, { ms: 3000, step: 10 });
     writeFileSync(f, "AAAA");
     const askA = Q.checkFile(f, 4.5);          // A is hashed now, its check waits in the queue
-    await Bun.sleep(50);
+    await until("A's snapshot is taken", () => readdirSync(jobs).length === 2, { ms: 3000, step: 10 });
     writeFileSync(f, "BBBB");                  // replaced before A's worker starts
+    writeFileSync(seerGate, "go");
     const [, first] = await Promise.all([outcome(ahead), outcome(askA)]);
     writeFileSync(f, "AAAA");                  // the original back
     const second = await outcome(Q.checkFile(f, 4.5));
@@ -115,31 +121,32 @@ setInterval(() => {}, 1000);`);
   }
   console.log("\nbounded (review r3 F1): a public door can't fill the disk or the queue:");
   {
-    const { readdirSync } = await import("node:fs");
     const jobsDir = join(dir, "opt", "checks", "jobs");
     // a worker that waits to be let go: the queue holds still while we look at it
     const gate = join(dir, "gate");
-    Q.checkConfig.runner = worker("held", `const g = ${JSON.stringify(gate)}; while (!require("node:fs").existsSync(g)) await Bun.sleep(20); console.log(JSON.stringify({ levels: [], scale: Number(process.argv[3]) }));`);
+    Q.checkConfig.runner = worker("held", `${gated(gate)} console.log(JSON.stringify({ levels: [], scale: Number(process.argv[3]) }));`);
     const big = join(dir, "big.glb");
     writeFileSync(big, new Uint8Array(1 << 20).fill(7));
     Q.resetCheckBudget();
     // one address, a burst of distinct scales: the first CHECK_PER_ADDRESS are taken, the next is refused
     const burst = Array.from({ length: Q.CHECK_PER_ADDRESS + 1 }, (_, i) => outcome(Q.checkFile(big, 0.05 + i * 0.01, undefined, { address: "10.9.9.9" })));
-    await Bun.sleep(300);
+    const settled: any[] = [];
+    burst.forEach((p) => p.then((r) => settled.push(r)));
+    // the refusal comes after every ask of the burst has read the file (they share one read)
+    await tryUntil("the ask past the limit is refused, and a snapshot is on disk", () => settled.some((r) => !r.ok) && existsSync(jobsDir) && readdirSync(jobsDir).length > 0, { ms: 5000, step: 10 });
     const snaps = readdirSync(jobsDir).length;
     check("queued jobs of one model share ONE snapshot on disk, whatever their scales", snaps === 1, `${snaps} snapshot files for ${Q.CHECK_PER_ADDRESS} queued scales of one model`);
     // (never wait on the held worker: a refusal is at once, an accepted ask waits behind the gate; which ask of the
     // burst is the one past the limit is whichever finished reading the file last)
-    const settled: any[] = [];
-    burst.forEach((p) => p.then((r) => settled.push(r)));
-    await Bun.sleep(200);
     const limited = settled.filter((r) => !r.ok);
     check(`a burst from one address: the one ask past ${Q.CHECK_PER_ADDRESS} a minute is refused, in words, with a retry`,
       limited.length === 1 && /rate limit .* try again in \d+s/.test(limited[0].e), JSON.stringify(settled));
     // many addresses: the queue fills to its cap, then 503s
     const more: Promise<any>[] = [];
+    const moreDone: any[] = [];
     for (let i = 0; i < Q.checkConfig.queueMax + 4; i++) more.push(Q.checkFile(big, 5 + i * 0.01, undefined, { address: `10.8.0.${i}` }).then((r) => ({ ok: true, r }), (e: any) => ({ ok: false, e: e.message, status: e.status })));
-    await Bun.sleep(100);
+    more.forEach((p) => p.then((r) => moreDone.push(r)));
+    await tryUntil("the asks past the queue's cap are refused before the worker is let go", () => moreDone.length >= 4, { ms: 5000, step: 10 });
     writeFileSync(gate, "go");
     const all = await Promise.all([...burst, ...more]);
     const full = all.filter((r: any) => !r.ok && r.status === 503);
@@ -168,7 +175,6 @@ setInterval(() => {}, 1000);`);
     Q.checkConfig.runner = real;
   }
 
-  const { readdirSync } = await import("node:fs");
   const left = readdirSync(join(dir, "opt", "checks", "jobs"));
   check("no job snapshots are left behind, finished or failed", left.length === 0, left.join(","));
 } finally {

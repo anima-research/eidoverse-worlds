@@ -71,7 +71,8 @@ async function sock(port) {
     msgs, get closed() { return closed; },
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
       await tryUntil(`${id}'s join is answered (or its socket closes)`, () => msgs.slice(k).some((m) => m.type === "snapshot" || m.type === "error") || closed != null, { ms: 10_000, step: 50 });   // an upper bound: it returns as soon as the answer lands
-      await sleep(80); return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
+      if (!msgs.slice(k).some((m) => m.type === "snapshot")) await tryUntil(`${id}'s refused socket closes`, () => closed != null, { ms: 2000, step: 20 });   // a refusal's close code follows its error
+      return { snapshot: msgs.slice(k).find((m) => m.type === "snapshot"), errors: msgs.slice(k).filter((m) => m.type === "error").map((m) => m.error) }; },
     req: (verb, args = {}) => new Promise((res) => { const id = `r${++n}`; waiters.set(id, res); ws.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, timeout: true }), 4000); }),
     raw: (m) => ws.send(JSON.stringify(m)),
     close: () => ws.close(),
