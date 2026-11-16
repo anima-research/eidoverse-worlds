@@ -11,12 +11,9 @@
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { scratchWorld, socketChild } from "../harness/scratchworld.ts";
 import { makeReplica, wireState } from "../../shared/protocol/replica.js";
+import { suite } from "../gate/suite.ts";
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => {
-  if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
-  else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
-};
+const { check, done } = suite("replica-hierarchy");
 
 const W = scratchWorld("hier").seed({
   truck: { model: "truck.glb", pos: [0, 0, 0], yaw: 0 },
@@ -94,5 +91,4 @@ check("…the gone carrier still lists its child, the child still names it, and 
   !r.st.entities.truck && r.childrenOf("truck").includes("box") && r.parentOf("box") === "truck" && r.ancestors("rock").join() === "box",
   JSON.stringify([r.childrenOf("truck"), r.parentOf("box"), r.ancestors("rock")]));
 
-console.log(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
+done();
