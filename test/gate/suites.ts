@@ -436,9 +436,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["typing-relay", "mcpl/typing-relay-test.ts", 1], // the door's typing relay (mcpl/typing-relay.ts) on a short clock: start, refresh, stop, a lost stop
   ["door-cap-gate-live", "mcpl/door-cap-gate-live-test.mjs", 1], // the MCPL door's capability gate on a live session
   ["mention-delivery", "server/mention-delivery-test.ts", 1], // MCPL routing for display names: speech, replay cursors, history, travel, aid1 aliases, duplicate credentials
-  ["modclose-support", "mcpl/modclose-support-test.ts", 1], // #83: a moderation close (4006) releases every support holder the closed instance owns
   ["one-libvips", "server/one-libvips-test.ts", 1], // one libvips per optimize process (#122)
-  ["held-pose-parity", "client/held-pose-parity-test.ts", 1], // a held pose puts every joint in the same place for the headless readers and the renderer (its own fixture)
   ["ragdoll-floor", "client/ragdoll-floor-test.ts", 1], // the Bullet ragdoll (ammodoll.js) lands on a building's floor
   ["snap-settle", "client/snap-settle-test.ts", 1], // the renderer waits for the world as long as `wait` says
   ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed

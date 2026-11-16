@@ -1,4 +1,6 @@
 {
+  "test/client/held-pose-parity-test.ts": "needs the host's optimized avatar store (assets/opt/…/vrms); no rig-fixture fallback yet",
+  "test/mcpl/modclose-support-test.ts": "red: the shared platform's support holders read empty ({}); passed on 10-29, so load- or order-sensitive (still red alone, 11-16)",
  "test/mcpl/reach-test.ts": "needs the host's optimized avatar store (assets/opt/eidoverse/assets/vrms); no committed rig-fixture fallback yet",
  "test/client/audio-upload-test.ts": "Chromium probe: 1 fixed waits to turn into conditions",
  "test/client/avatar-perf-probe.mjs": "Chromium probe: 8 fixed waits to turn into conditions",

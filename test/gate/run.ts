@@ -275,7 +275,7 @@ if (SUITES.some(([n]) => selected(n) && laneOf(n) === "browser")) {
 let LIBRARY: string | null = null, LIBRARY_HEAD: string | null = null;
 // suites outside the browser lane that read the asset library, read-only: knockdown's ragdoll needs a real rig (with none
 // it falls back to the canned slump, which is what its rows reject)
-const READS_LIBRARY = new Set(["knockdown"]);
+const READS_LIBRARY = new Set(["knockdown", "body-runtime"]);
 if (SUITES.some(([n]) => selected(n) && (laneOf(n) === "browser" || READS_LIBRARY.has(n)))) {
   const want = process.env.EIDOVERSE_DIR;
   const fix = `bun test/gate/run.ts --library <dir>, then EIDOVERSE_DIR=<dir>`;
