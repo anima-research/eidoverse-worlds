@@ -4,6 +4,7 @@
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";
+import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 const STUB = fileURLToPath(new URL("../stubs/core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
@@ -101,7 +102,7 @@ for (const row of ROWS) {
   const from = { x: row.from[0], y: row.from[1], z: row.from[2] };
   const t0 = performance.now(); const r: any = g.route(from, row.to); const ms = performance.now() - t0;
   const said = "points" in r ? `arrived at ${JSON.stringify(r.points.at(-1))}` : r.refusal;
-  if (row.refused) check(row.name, "refusal" in r && row.refused.test(r.refusal) && (row.withinMs === undefined || ms < row.withinMs), `${ms.toFixed(0)} ms: ${said}`);
+  if (row.refused) check(row.name, "refusal" in r && row.refused.test(r.refusal) && (row.withinMs === undefined || ms < row.withinMs * WAIT_SCALE), `${ms.toFixed(0)} ms: ${said}`);
   else { const why = "points" in r ? row.arrives!(r.points.at(-1), r, from) : "refused"; check(row.name, why === null, `${said} ${why ?? ""}`); }
 }
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);

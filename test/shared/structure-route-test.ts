@@ -13,6 +13,7 @@ let checks = 0;
 function check(ok: unknown, name: string) { assert.ok(ok, name); checks++; console.log("✓ " + name); }
 
 import { valid, type P } from "./structure-oracle.ts";
+import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 
 const terrain = (heightAt: (x: number, z: number) => number = () => 0, step = .5) => ({ kind: "terrain", heightAt, step });
 const flat = (h = 0) => terrain(() => h);
@@ -163,8 +164,8 @@ check(paddedCells(fieldPlan) === ROUTE_MAX_CELLS, "the worst-case field is padde
 const worstFrom = performance.now();
 const worst = prepareRouteLocal(fieldPlan, flat()).route(-.5, -.5, 63.5, 63.5);
 const worstMs = performance.now() - worstFrom;
-check(worst.kind === "blocked" && NO_PATH.test(worst.reason) && worst.reason.endsWith("pick a destination you can reach through an opening") && worstMs < 2000,
-  `a search of every cell at the limit, among ${field.length} walls, finishes in ${worstMs.toFixed(0)} ms (bound 2000)`);
+check(worst.kind === "blocked" && NO_PATH.test(worst.reason) && worst.reason.endsWith("pick a destination you can reach through an opening") && worstMs < 2000 * WAIT_SCALE,
+  `a search of every cell at the limit, among ${field.length} walls, finishes in ${worstMs.toFixed(0)} ms (bound ${2000 * WAIT_SCALE}; PROTOCOL_TIMEOUT_SCALE stretches it)`);
 
 // ---- 3. support bases: the crossing height is the terrain AT the crossing, and the band is the feet-to-step band
 console.log("3. support bases");

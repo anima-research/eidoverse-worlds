@@ -2,6 +2,7 @@
 import { test, expect } from "bun:test";
 import { createScreenshotBroker, captureCapability, pngFromDataURL } from "../../server/screenshots.ts";
 import type { World, Client } from "../../server/world.ts";
+import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
@@ -416,7 +417,7 @@ test("at most maxQueued asks wait; past that, busy at once (marked retryable)", 
   void broker.request(world, "agent"); await Bun.sleep(5);
   void broker.request(world, "agent"); await Bun.sleep(5);   // the one allowed to wait
   const t0 = Date.now(); const third = await broker.request(world, "agent");
-  expect(third).toMatchObject({ ok: false, status: 429, retryAfter: 2 }); expect(Date.now() - t0).toBeLessThan(50);
+  expect(third).toMatchObject({ ok: false, status: 429, retryAfter: 2 }); expect(Date.now() - t0).toBeLessThan(50 * WAIT_SCALE);
   broker.retire(donor.c);
 });
 test("retryAfter marks only what asking again soon can fix", async () => {
@@ -515,7 +516,7 @@ test("a journey longer than the caller's budget: answered early, retryable, and 
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent");
   const t0 = Date.now(); const r = await broker.request(w, "agent", "first", "auto", {}, undefined, 1_000);
   expect(r).toMatchObject({ ok: false, status: 503, retryAfter: 2, err: expect.stringMatching(/a roaming renderer is on its way/) });
-  expect(Date.now() - t0).toBeLessThan(1_200);                       // the 1 s budget, less a frame's minimum
+  expect(Date.now() - t0).toBeLessThan(1_200 * WAIT_SCALE);                       // the 1 s budget, less a frame's minimum
   expect(roamer.messages.filter((m) => m.type === "renderer-travel")).toEqual([{ type: "renderer-travel", world: "far" }]);   // it keeps coming
   expect(roamer.messages.some((m) => m.type === "capture")).toBe(false);
 });
@@ -603,7 +604,7 @@ test("the queue cap is per world: waiters in one world do not turn another world
   join(a, "agentA"); join(b, "agentB");
   void broker.request(a, "agentA"); await Bun.sleep(5);                  // a's renderer busy
   void broker.request(a, "agentA"); await Bun.sleep(5);                  // a's one allowed waiter
-  const t0 = Date.now(); expect(await broker.request(a, "agentA")).toMatchObject({ status: 429 }); expect(Date.now() - t0).toBeLessThan(50);
+  const t0 = Date.now(); expect(await broker.request(a, "agentA")).toMatchObject({ status: 429 }); expect(Date.now() - t0).toBeLessThan(50 * WAIT_SCALE);
   void broker.request(b, "agentB"); await Bun.sleep(5);                  // b's renderer busy
   const waitsInB = broker.request(b, "agentB"); await Bun.sleep(30);     // b still has room to wait
   let settled = false; void waitsInB.then(() => { settled = true; });
