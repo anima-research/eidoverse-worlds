@@ -2,10 +2,8 @@
 //
 //   bun test/fixtures/flight-fixture.ts
 //
-// mica: "the body test hardcodes a claimed bone list; it does not parse the
-// actual 24,755,464-byte mythos-wings artifact... Do not call a literal array
-// 'the shipped body'." Right -- an array typed into a test cannot go stale
-// against a file, so it proves nothing about the file.
+// An array typed into a test cannot go stale against a file, so it proves
+// nothing about the file (review, mica).
 //
 // This reads the VRM and writes test/fixtures/mythos-wings-rig.json: SHA-256
 // (integrity), byte size, and the full bone map. The ASSET is not in the branch

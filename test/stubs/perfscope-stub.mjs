@@ -4,7 +4,7 @@
 // renderer whose render() COUNTS what it is handed into renderer.info the way a GPU
 // renderer would — so render.js's measured drawStats feed can be driven with no adapter.
 //
-// core-stub.js's THREE has no MeshBasicNodeMaterial (that class ships only in the WebGPU
+// core-stub.mjs's THREE has no MeshBasicNodeMaterial (that class ships only in the WebGPU
 // build); perfscope's silhouette hull is one, so a plain-material stand-in with the node
 // flags is added here — the hull's TSL positionNode is built, never compiled.
 import * as THREE_RAW from '../../client/node_modules/three/build/three.module.js';

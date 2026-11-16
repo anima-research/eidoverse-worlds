@@ -9,18 +9,15 @@ class Obj3 {
   add(c) { this.children.push(c); } remove() {} traverse(f) { if (f) f(this); }
   updateMatrixWorld() {} getWorldPosition() { return new V3(); } lookAt() {} removeFromParent() {}
 }
-// EVERY class the two modules construct — gathered in one grep across build.js
-// and socketedit.js rather than discovered one failed run at a time. build.js
-// runs a lot at import (Raycaster, Plane, Box3Helper, setPointerClaim,
-// claimEscape, three addEventListeners) and socketedit adds its own Vector3 and
-// two Matrix4s, so every one of these has to be constructible or nothing loads.
+// EVERY class build.js and socketedit.js construct at import (socketedit adds its
+// own Vector3 and two Matrix4s): each has to be constructible or nothing loads.
 export const THREE = {
   Vector3: V3,
   Group: Obj3,
   Mesh: class extends Obj3 { constructor() { super(); this.geometry = { dispose() {} }; this.material = { dispose() {} }; } },
   Object3D: Obj3,
   Box3: class { constructor() { this.min = new V3(); this.max = new V3(); } setFromObject() { return this; } getSize() { return new V3(); } getCenter() { return new V3(); } isEmpty() { return false; } },
-  // outline.box.setFromObject(obj) + .visible + .userData — build.js:117-188
+  // build.js's selection outline: outline.box.setFromObject(obj) + .visible + .userData
   Box3Helper: class extends Obj3 { constructor(box) { super(); this.box = box ?? { setFromObject() {} }; this.geometry = { dispose() {} }; this.material = { dispose() {} }; } },
   Plane: class { constructor() {} setFromNormalAndCoplanarPoint() { return this; } },
   Raycaster: class { constructor() { this.ray = { intersectPlane: () => null }; } setFromCamera() {} intersectObjects() { return []; } intersectObject() { return []; } },
@@ -48,10 +45,9 @@ export const libLabels = new Map();
 export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
 export const makeLightGizmo = () => new THREE.Object3D();
 
-// world.js also exports findPart, which socketedit.js imports — build.js pulls in
-// socketedit at line 31, so the thirteenth module has to be remapped too or the
-// REAL socketedit loads and demands a symbol this stub never had. (My first run
-// died on exactly that: I stopped reading build.js's imports at line 30.)
+// world.js also exports findPart, which socketedit.js imports: build.js pulls in
+// socketedit, so that module has to be remapped too or the REAL socketedit loads
+// and demands a symbol this stub never had.
 export const findPart = () => null;
 export const entities = new Map();
 export const entityMeta = new Map();
@@ -82,7 +78,7 @@ export const sceneSelected = () => null;   // build.js: Del/X/F act on the inspe
 export const sceneDeselect = () => {};   // build.js: Esc / Edit ▸ deselect clear it
 export const claimEscape = () => {};
 
-// socketedit.js — build.js imports ten symbols from it at line 31
+// socketedit.js — build.js imports ten symbols from it
 export const refreshSocketGizmos = () => {};
 export const resetSockets = () => {};
 export const armSocketPlacement = () => {};

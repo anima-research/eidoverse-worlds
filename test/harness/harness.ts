@@ -89,7 +89,7 @@ export function requester(ws: WebSocket, ms = 8000) {
 
 let failedChecks = 0;
 // Headless Chromes that are NOT this process's descendants: another suite's or an agent's browser sharing the box.
-// Five gate reds on 2026-10-14 were rows green solo; each cost a solo re-run to classify. The tally line now says so.
+// The tally line counts them, so a red under load can be read as load without a solo re-run.
 function foreignHeadless(): number {
   try {
     const out = Bun.spawnSync(["ps", "-eo", "pid,ppid,args"]).stdout.toString();
@@ -264,7 +264,7 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   const throttle = Number(process.env.EIDO_CPU_THROTTLE);
   if (throttle > 1) await cdp.send("Emulation.setCPUThrottlingRate", { rate: throttle });
   // THE SKY GUARD, before any module reads localStorage: a cloudy sky bakes on the CPU in headless Chromium and has
-  // frozen Burrow (memory: feedback_headless_sky_oom). Every page this browser loads from here on starts clouds-off.
+  // frozen the host (out of memory). Every page this browser loads from here on starts clouds-off.
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: "try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {}" });
   // THE GPU GUARD: headless Chrome can't present WebGPU, so it destroys the device ~1 s into every page. The client's
   // recovery (client/lib/render/gpulost.js) answers a browser-destroyed device with a reload, which would yank the page out

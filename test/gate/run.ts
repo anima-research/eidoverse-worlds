@@ -95,8 +95,6 @@ const timeoutOf = (name: string) => Math.max(1, Math.round(baseTimeout(name) * T
 // ---- the declared runtimes (package.json "engines": the one place) ----
 const ENGINES: Record<string, string> = JSON.parse(fs.readFileSync(ENGINE + "package.json", "utf8")).engines ?? {};
 const verOf = (s: string | undefined) => (s?.match(/\d+(?:\.\d+)*/)?.[0] ?? "").split(".").map(Number);
-// what launching a Chromium looks like in a suite or a local module it imports (test/harness/harness.ts defines scratchBench, so it
-// counts only where it is CALLED); a runner that starts other files says so with the marker comment `gate: launches a browser`
 
 type Result = { name: string; lane: Lane; status: "pass" | "fail" | "skip"; why?: string; ms: number; rowSkips: string[]; optional: string[]; leftovers: number; outSha256?: string };
 

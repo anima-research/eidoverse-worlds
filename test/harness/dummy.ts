@@ -7,7 +7,7 @@
 //   WORLD_URL=ws://127.0.0.1:8940/ws WORLD_TOKEN=<join token> \
 //   AGENT_NAME=phys-dummy WORLD_NAME=commons bun run test/harness/dummy.ts
 //
-// Runs as eidoverse-dummy.service on the show VPS (deploy/).
+// Runs as eidoverse-dummy.service on the show VPS.
 
 import { WorldAgent } from "../../mcpl/agent.ts";
 

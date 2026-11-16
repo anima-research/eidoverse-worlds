@@ -12,7 +12,7 @@
 // file is the whole stub-contract test. Exit 1 on any dead-at-import file (and, in the full mode, on any red or timed-out one:
 // a hang is usually a broken feature, #260 review I65; a file that is merely long belongs in the SLOW table).
 // Every run lists the files no other runner reaches (test/gate/run.ts, package.json scripts): this one is theirs.
-// gate: launches a browser — even --import-only RUNS each file (up to 15 s), and some tools/*-test files start a headless
+// gate: launches a browser — even --import-only RUNS each file (up to 15 s), and some test files start a headless
 // Chromium at their top level. So the files that launch one (the file or a local module it imports calls scratchBench,
 // playwright, puppeteer, a --remote-debugging-port Chrome) run one at a time in their own lane, beside the --jobs others:
 // never two Chromiums at once from here. test/gate/run.ts keeps this runner in its browser lane.

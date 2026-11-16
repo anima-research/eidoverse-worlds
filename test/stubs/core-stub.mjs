@@ -1,6 +1,6 @@
 // Test stand-in for client/lib/core.js (see test/client/ragdoll-test.ts): core.js builds a WebGPURenderer at import, so
 // headless tests swap in this module, exporting what the dependency cones touch. three is imported by explicit path
-// (tools/ is outside client/'s install) so it's the SAME instance colliders.js gets for bare 'three'.
+// (test/ is outside client/'s install) so it's the SAME instance colliders.js gets for bare 'three'.
 import * as THREE_RAW from '../../client/node_modules/three/build/three.module.js';
 
 // MeshPhysicalNodeMaterial ships ONLY in three's WebGPU build (which wants a GPU at import); without a stand-in the

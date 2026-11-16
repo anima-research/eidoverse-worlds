@@ -135,7 +135,7 @@ export async function waitJoined(pg, { timeout = 90000 } = {}) {
 }
 
 // IWER under the real client: its device loop pinned to a native rAF, refused unless the pattern matched exactly once
-// (memory: reference_iwer_headless_probe.md §2; an IWER bump that moves the line must turn every IWER probe red)
+// (an IWER bump that moves the line must turn every IWER probe red)
 export const IWER_LOOP = 'globalThis.requestAnimationFrame(this[P_SESSION].onDeviceFrame)';
 export function iwerSource(raw = readFileSync(new URL('../../node_modules/iwer/build/iwer.js', import.meta.url), 'utf8')) {
   const n = raw.split(IWER_LOOP).length - 1;

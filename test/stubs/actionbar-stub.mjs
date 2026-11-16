@@ -60,7 +60,7 @@ export function registerXRPanel(p) { xrPanels.push(p); }
 // This suite drives the real actionbar.js against recorders, and roomFor()'s whole
 // job is the anchor arithmetic chromeCost() performs. A stubbed copy would make
 // every assertion a statement about THIS FILE rather than about the product.
-// The specifier is deliberately '../client/lib/...': actionbar-test's resolver
-// filter is `^\./windows\.js$`, anchored to a leading './', so this is not
+// The specifier goes through client/lib/ on purpose: actionbar-test's resolver
+// filter takes only relative dots then `[ui/]windows.js`, so this is not
 // rewritten back to the stub.
 export { chromeCost } from '../../client/lib/ui/windows.js';

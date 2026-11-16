@@ -66,13 +66,13 @@ export const RULES: Record<string, RegExp> = {
   "lab-clock": /\bdelete\s+process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])|process\.env(?:\.PROTOCOL_NOW|\[\s*["'`]PROTOCOL_NOW["'`]\s*\])\s*=(?!=)/g,
   "slash-path": /[^\n]*\\\/(?:tools|test|shared|server|client|mcpl|spec|worlds?)\\\/[^\n]*\.test\(\s*(?:p|f|file|abs|full|dir|d)\s*\)|^(?![^\n]*(?:\.replace\(\/\\\\\/g|\bslashed\(|\bfwd\(|\[\\\\\/\]))[^\n]*(?<!\\)\/[A-Za-z_][\w-]*\\\/(?:[^\/\n\\]|\\.)*\\\.(?:ts|js|mjs|json)\$\/[^\n]*|\bnew RegExp\(\s*(?:(["'])\/\1\s*\+|`\/\$\{)/gm,
   "chrome-flags": /["'`]--(?:headless\b|remote-debugging-port\b)/g,
-  // the gate runs under Bun, and under Bun on Windows playwright neither launches (its pipe descriptors don't pass through
-  // Bun's spawn) nor connects over CDP: browser-check hung to its timeout on every Windows run until 10-22. Gate suites drive
-  // Chrome with chrome.ts cdpPage / harness scratchBench. Benches run under node may use it.
   "agent-url": /\bnew\s+WorldAgent\s*\(\s*(?:\{(?![^{}]*\burl\b)[^{}]*\})?\s*\)/g,
   "own-ok": /\blet\s+(?:pass|passes|passed)\s*=\s*0\s*,\s*(?:fail|fails|failed)\s*=\s*0\b|\blet\s+(?:fail|fails|failed)\s*=\s*0\s*,\s*(?:pass|passes|passed)\s*=\s*0\b/g,
   "redaction-parse": /\.body\??\.values\b/g,
   "posix-mode": /^(?![^\n]*(?:win32|\bWIN\b|NO_MODES))[^\n]*===?\s*0o[0-7]{3}\b[^\n]*/gm,
+  // the gate runs under Bun, and under Bun on Windows playwright neither launches (its pipe descriptors don't pass through
+  // Bun's spawn) nor connects over CDP. Gate suites drive Chrome with chrome.ts cdpPage / harness scratchBench. Benches run
+  // under node may use it.
   "playwright": /\bfrom\s+["']playwright(?:-core)?["']|\b(?:require|import)\(\s*["']playwright(?:-core)?["']/g,
 };
 const SELF = "test/gate/hygiene-check.ts";   // its fixtures are the bad shapes on purpose
@@ -208,10 +208,10 @@ if (import.meta.main) {
     "slash-path": 'if (/\\/tools\\/[^/]+\\.(ts|mjs)$|\\/tools\\/protocol\\//.test(p)) walk(p);\nconst ALLOWED = [/mcpl\\/agent\\.ts$/, /client\\/lib\\/controller\\.js$/];\nb.onLoad({ filter: new RegExp(\'/\' + m.file + \'$\') }, f);',
     // split: the whole flag in this file would make suites.ts read the hygiene suite as one that launches a browser
     "chrome-flags": 'Bun.spawn([CHROME, "--headless=new", `--remote-' + 'debugging-port=${port}`, url]);',
-    // split, like chrome-flags: the whole import in this file would make suites.ts read hygiene as a browser suite
     "agent-url": 'new WorldAgent({ name: "a", world: "w" }); new WorldAgent(); new WorldAgent({\n  name: "b",\n  avatar: "",\n});',
     "own-ok": "let pass = 0, fail = 0; let fails = 0, passes = 0;",
     "redaction-parse": 'if (e.kind === "redaction") for (const t of e.body.values) p.add(t.seq); const v = e.body?.values;',
+    // split, like chrome-flags: the whole import in this file would make suites.ts read hygiene as a browser suite
     "playwright": 'import { chromium } from "play' + 'wright"; const { chromium: c2 } = await import("playwright-core");',
     "posix-mode": 'check("W10 private", (statSync(f).mode & 0o777) === 0o600);\nok(st.mode == 0o644, "D9");',
   };
@@ -219,8 +219,8 @@ if (import.meta.main) {
   const good = 'const ALLOWED = ["mcpl/agent.ts"]; ALLOWED.includes(slashed(f));\nb.onLoad({ filter: new RegExp(pathEnd(m.file)) }, f);\n(/\\/client\\/lib\\/x\\.js$/.test(a.importer.replace(/\\\\/g, "/")));\nS.mode("W10 private", f, 0o600);\nok(WIN ? isFile : st.mode === 0o600);\nok(process.platform === "win32" || m === 0o600);\nawait until("the crate rests", () => crate.rest); await pause("the 2 s refractory window", 2000); const d = fileURLToPath(new URL("../f/", import.meta.url)); Bun.spawnSync(["sh", "-c", \'git archive "$1"\', "sh", c]); linkInto(t, at); if (/[\\\\/]tools[\\\\/]/.test(p)) walk(p); const poll = (p) => post("/native/poll", p); const r = pathList(process.env.PROTOCOL_WORLDS); ok(translatorVersion(TRANSLATOR) >= 14); Bun.spawn([CHROME, ...chromeArgs({ port, profile }), url]); const n = rows.filter((r) => /chrom(e|ium).*--headless/.test(r)); // a --headless Chrome clock.advance(100); pin(LAB_EPOCH); const t = pinned(); if (process.env.PROTOCOL_NOW === "1") unpinned(f); const { ok, done } = suite("x"); let pass = rows.length; new WorldAgent({ name: "a", url: noWorldUrl() }); new WorldAgent({ url, name }); new WorldAgent(opts); const red = redactionsIn(E); const body = redactedBodies(E, red); const values = Object.values(body);';
   let i = 1;
   for (const k of Object.keys(RULES)) check(`H${i++} ${k}: caught in its known-bad form (${want[k]}), and not in the right way`, (scan(bad[k])[k] ?? 0) === want[k] && !(scan(good)[k] ?? 0), { bad: scan(bad[k]), good: scan(good) });
-  // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test); it's a request, not a loop
-  // and isn't a gate suite. The good string carries it so a broadened pattern shows up here first.
+  // own-until has one false friend in the tree ('const poll = (p: any) => post(...)', native-login-test): a request, not a
+  // loop. The good string carries it so a broadened pattern shows up here first.
 
   // role words (R 10-27): the server's operator is a "server operator", never an admin or world admin; the legacy variable
   // is named only where it's read, its compatibility test, and the migration notes. Checked over every text file.

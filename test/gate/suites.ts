@@ -7,17 +7,17 @@ import { ENGINE } from "./common.ts";
 
 export type Lane = "core" | "main" | "browser";
 export const SUITES: [string, string, number][] = [ // name, file, tail lines to show
-  ["kernel", "protocol/kernel-check.ts", 1],
-  ["trig", "protocol/trig-check.ts", 1],
+  ["kernel", "protocol/kernel-check.ts", 1], // the kernel (envelope, kinds, ops, identity grammar, version, roles, access) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
+  ["trig", "protocol/trig-check.ts", 1], // the heading law's trig is data: spec/conformance/trig.json, bit for bit
   ["simmath", "shared/simmath-test.ts", 1], // Covenant I: the numerics kernel's accuracy, its digest under a second engine (node or deno), and the committed golden
-  ["laws", "protocol/laws-check.ts", 1],            // the ground's height and the sky's forecast are data: spec/conformance/laws.json            // the heading law's trig is data: spec/conformance/trig.json, bit for bit
+  ["laws", "protocol/laws-check.ts", 1],            // the ground's height and the sky's forecast are data: spec/conformance/laws.json
   ["engine", "protocol/engine-check.ts", 1],          // what "carries" means: every carried engine version reproduces its conformance digests
-  ["normative", "protocol/normative-check.ts", 1], // spec/NORMATIVE.md is the closed set, and its consent/roles tables equal the reference (10-20, nissa-seru)     // the kernel (envelope, kinds, ops, identity grammar, version, transform, parent) is trial-kernel: a change is red unless the same change carries a translator, a changelog line and old-red/new-green vectors (spec/kernel-pin.json)
-  ["gov-reserved", "protocol/gov-reserved-check.ts", 1],
-  ["freeze", "protocol/freeze-check.ts", 1],       // docs/decisions/LOG-VOCABULARY.md §F: feature declarations, provenance, the hello order, a key is not admission, custody read-only (F22–F31, P3) // governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
-  ["diffcheck", "gate/diffcheck.ts", 1],
+  ["normative", "protocol/normative-check.ts", 1], // spec/NORMATIVE.md is the closed set, and its consent/roles tables equal the reference (10-20, nissa-seru)
+  ["gov-reserved", "protocol/gov-reserved-check.ts", 1], // governance is RESERVED; the server refuses to serve a log holding a `sequencer` entry, truthfully
+  ["freeze", "protocol/freeze-check.ts", 1],       // docs/decisions/LOG-VOCABULARY.md §F: feature declarations, provenance, the hello order, a key is not admission, custody read-only (F22–F31, P3)
+  ["diffcheck", "gate/diffcheck.ts", 1], // the range is clean under `git diff --check`; two documented exemptions only
   ["stub-guard", "harness/stub-test.ts", 1], // a test stub that never applied, or applied to an import naming no file (a stale path after a move), fails its run
-  ["hygiene", "gate/hygiene-check.ts", 1],       // patterns that broke the gate site by site (Windows paths, sh -c, symlinks, fixed sleeps), refused as a class; debt only goes down        // the range is clean under `git diff --check`; two documented exemptions only
+  ["hygiene", "gate/hygiene-check.ts", 1],       // patterns that broke the gate site by site (Windows paths, sh -c, symlinks, fixed sleeps), refused as a class; debt only goes down
   ["paths", "gate/paths-check.ts", 1],          // every repo path a tracked doc, script or comment cites resolves (CONTRIBUTING "Style")
   ["body-state-bundle", "mcpl/body-state-bundle-test.ts", 1], // the built MCP entry points carry body_state and none of the test rig, corpus scanner or fixture paths
   ["run-client-settle", "protocol/run-client-settle-check.ts", 1],   // run-client settles a file on its exit, never on its pipes: a grandchild holding them can't wedge client-tools
@@ -101,9 +101,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["seats-store", "server/seats-store-test.ts", 1], // the rights-bearing seats store (#105 B2/B3)
   ["seatcore", "client/seatcore-test.ts", 1], // the seat-profile contract as hand math (#101 B): schema, contact height, the verdict cache
   ["seatlab-measure", "client/seatlab-measure-test.ts", 1], // tools/seatlab measureSeat reports the seat's pose and anchor from its station
-  ["msgrate", "server/msgrate-test.ts", 1],
+  ["msgrate", "server/msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
   ["upload-cap", "server/upload-cap-test.ts", 1], // /upload's whole-body cap bites at UPLOAD_CAP, with a length or chunked (MUTATION-SAMPLE S2)
-  ["clientlog", "server/clientlog-test.ts", 1], // the /clientlog tee's door and budget (server/clientlog.ts: rate, size, scrub, disk; no read path) and the client's side of it // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
+  ["clientlog", "server/clientlog-test.ts", 1], // the /clientlog tee's door and budget (server/clientlog.ts: rate, size, scrub, disk; no read path) and the client's side of it
   ["shape-render", "shared/shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the v1 importer's; ran only as an import before
   ["originof", "client/originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
   ["renderer-cred", "server/renderer-cred-test.ts", 1], // #260 I143/I144: the renderers' credential (flag + key) watches an invite-only world; a stranger's /snap and /heightmap of it are 404
@@ -112,13 +112,13 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["replay", "protocol/replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["replica-freeze", "shared/replica-freeze-test.ts", 1], // the client's fold is frozen in dev: a reader writing into a record throws, and later entries still apply (C7a)
   ["conformance", "protocol/compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
-  ["sweep", "protocol/sweep.ts", 4],
+  ["sweep", "protocol/sweep.ts", 4], // the old-world importer (tools/import-v1/) on every local old world log + her dialect-3 goldens + pins
   ["oracle", "../tools/import-v1/snapshot-oracle.ts", 2], // owner 10-15: the translator against the OLD ENGINE — every old world whose snapshot.json is a complete fold of its log, compared with its translation (and the server's lifted load)
   ["inplace", "protocol/inplace-check.ts", 1],   // translate <world> in place (the name and links kept, the old log beside it as log.original.jsonl), verified before the swap, everything put back on any failure
   ["oneshot", "protocol/oneshot-check.ts", 1],   // Mica 11-05: a one-shot world.ts child (the server's owner lookup and upgrade) is framed; a post-answer stall is bounded forced cleanup, a handle, a partial frame or a descendant refused
   ["version-route", "client/version-route-test.ts", 1],   // its own suite, not client-tools' 15 s import-only run: a kill there left its nonces (#260 review)
   ["migrate-identities", "protocol/migrate-identities-check.ts", 1],   // migrate-identities.ts: one id per person everywhere (actors, role keys, say.to, capability, sponsor, the moderator log), a gate that reads the two logs side by side, refused twice
-  ["oldworlds", "server/oldworlds-test.ts", 1], // owner 10-15: an old-format world is found and named at boot (the exact translate command), and a visitor is told in plain words             // the old-world importer (tools/import-v1/) on every local old world log + her dialect-3 goldens + pins
+  ["oldworlds", "server/oldworlds-test.ts", 1], // owner 10-15: an old-format world is found and named at boot (the exact translate command), and a visitor is told in plain words
   ["browser", "protocol/browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["descriptors", "shared/descriptor-defaults-test.ts", 1], // C5 (DEBT 10-12 #3a): every record and inspector default is the registry's, through the editor translation
   ["schema-layers", "shared/schema-layers-test.ts", 1], // one description per component field (componentspec.js): the inspector, the door's refusals and limitsOf all read it
@@ -181,8 +181,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["verbclasses", "protocol/verbclasses-check.ts", 1], // one home for READ_ONLY/GHOST_OK/WIRE_READS/PERSON_ACTS (DEBT 10-12 #10); classes pinned as of 10-12
   ["authority-layers", "protocol/authority-layers-check.ts", 1], // C11 (DEBT 10-12 #4b): the authority split is a DAG — a leaf under shared/protocol/authority/ never imports the gate or a leaf above it
   ["authority", "protocol/authority-check.ts", 1],
-  ["ids", "protocol/ids-check.ts", 1],
-  ["scars", "protocol/scars-check.ts", 1],       // 02:45 engine-scars + consent gaps: refused acts keep names + code, look's own table, an edit that moves a seat unseats its occupants (sitting is consent), READBACK vs purge, the refusal-code registry, a VERBSPEC row per verb, the spec pins           // ID HARDENING: opaque minting, writers never choose ids ($placeholders), delete clears refs, lint finds dangling ones
+  ["ids", "protocol/ids-check.ts", 1], // ID HARDENING: opaque minting, writers never choose ids ($placeholders), delete clears refs, lint finds dangling ones
+  ["scars", "protocol/scars-check.ts", 1],       // 02:45 engine-scars + consent gaps: refused acts keep names + code, look's own table, an edit that moves a seat unseats its occupants (sitting is consent), READBACK vs purge, the refusal-code registry, a VERBSPEC row per verb, the spec pins
   ["r8", "protocol/r8-check.ts", 1],             // review round 8 (10-17): a delete never re-sponsors a script; a fork copies no new model-hash; ref clears are the authority's follow-up (no third-party veto); the shape marker is the system's act; enter/leave record no identity
   ["r9", "protocol/r9-check.ts", 1],             // review round 9 (10-17): authorship never comes from a follow-up (cascade in the entry); the seat's own motion as it was when you sat; a script seat keeps the escape; two stand-ins; the agent hears unseated; a seat re-anchors the track
   ["r10", "protocol/r10-check.ts", 1],            // review round 10 (10-17): a sit is within reach; a follow-up restore keeps its author; two stand-ins of two shapes (rerun-anon); the authority's consequences are follow-ups (resettle is the system's act, a delete's set-down passes no lock); unseated on a socket gone and at its `at`
@@ -222,15 +222,15 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["shove-walker", "shared/shove-test.ts", 1], // …the walker's side (shared/shove.js): one punt per contact, bounded, none standing still or for what may not be shoved
   ["own-names", "shared/own-names-test.ts", 1], // #297: a bone or contact-point name is an own key; constructor, __proto__, toString never read as one
   ["rand", "shared/rand-test.ts", 1], // #299: the shared seeded stream (shared/rand.js), and no glibc-multiplier product (past 2^53) left in the tree to collapse into a short cycle
-  ["force", "protocol/force-check.ts", 1],
-  ["physconst", "shared/physconst-test.ts", 1], // one binding for reach and hand numbers (the authority's, the client's); R 10-28: the punt's reach is KICK's alone       // force {at, radius, power} (/boom): bodies through their consent, loose things through the punt
+  ["force", "protocol/force-check.ts", 1], // force {at, radius, power} (/boom): bodies through their consent, loose things through the punt
+  ["physconst", "shared/physconst-test.ts", 1], // one binding for reach and hand numbers (the authority's, the client's); R 10-28: the punt's reach is KICK's alone
   ["agentshove", "protocol/agentshove-check.ts", 1], // …an agent's walk shoves too, through the same punt (a real WorldAgent on a real server)
   ["hands", "protocol/hands-check.ts", 1],       // what is in a hand and where a put lands: held things are not ground, no perching, an edit takes it from the hand, two hands
   ["track-teleport", "client/track-teleport-test.ts", 1], // a forced track re-arrives by teleport at most once in 3 s
   ["put-settle", "client/put-settle-test.ts", 1], // a thing leaving a hand eases from where it was drawn to where the fold puts it
   ["reset", "protocol/reset-check.ts", 1],       // a reset button: reactions kind reset, the home component
-  ["settle", "protocol/settle-check.ts", 1],
-  ["disabled", "protocol/disabled-check.ts", 1],   // a switched-off thing: no handling, no body, nothing stands on it; back on, all returns     // what a thing at rest is attached to
+  ["settle", "protocol/settle-check.ts", 1], // what a thing at rest is attached to
+  ["disabled", "protocol/disabled-check.ts", 1],   // a switched-off thing: no handling, no body, nothing stands on it; back on, all returns
   ["histdiff", "protocol/history-diff-check.ts", 1], // history {id}: each entry says what changed (a field, from what to what)
   ["reachgate", "protocol/reachgate-check.ts", 1], // design review 10-15 item 1: a hand on another body relays only with their consent (the relay strips it, the reacher is told)
   ["consent", "protocol/consent-check.ts", 1],   // the consent tool never writes through a prototype (security pass 2, H-0); a refused change changes nothing
@@ -243,8 +243,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["scale", "protocol/scale-check.ts", 1],       // the authority at scale: ten requests timed (best of up to 5 tries): growth 72 → 500/2 000 things, a 500 ms hang backstop; gates before work; capacity; indoors (review 10-06)
   ["roles", "protocol/roles-check.ts", 1],       // roles + moderation (research roles 10-06): ranks, permissions, the grant rule, sanctions
   ["access", "protocol/access-check.ts", 1],     // who may come in (upstream #258/#259 in our terms): @world.access join/watch, per-caller /worlds and /access, the settle (4010), timed grants (expire-roles), reset keeps the door
-  ["batch2", "protocol/batch2-check.ts", 1],
-  ["describe-particles", "protocol/describe-particles-check.ts", 1], // R 10-07: description (the accessibility reading) and particles as effect documents (Godot's CPUParticles3D ported)     // build mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
+  ["batch2", "protocol/batch2-check.ts", 1], // build mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
+  ["describe-particles", "protocol/describe-particles-check.ts", 1], // R 10-07: description (the accessibility reading) and particles as effect documents (Godot's CPUParticles3D ported)
   ["client-b2", "protocol/batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
   ["picture-note", "client/picture-note-test.ts", 1], // the picture block's status line: survives a repaint and a demote/promote, not a remove; an agreeing echo keeps it, a disagreeing one retires it
   ["access-panel", "protocol/access-panel-probe.ts", 1], // World Settings › Who may come in › Listed here in headless Chromium: listed rows, add by a name seen here or an exact identity, the authority's refusal in words
@@ -302,8 +302,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["door-bone-list", "mcpl/door-bone-list-test.ts", 1], // the door's list of the worn body's bones
   ["author-wire", "shared/author-wire-test.mjs", 1], // "who said this" on the wire: an admitted name wins over the token registry's
   ["selfpose", "mcpl/selfpose-test.ts", 1], // the pose/animate authoring surface: canonical bone names, suggestions, the walk-shed rule
-  ["effective-mcpl", "mcpl/effective-mcpl-test.ts", 0.3],
-  ["headless-core", "mcpl/headless-core-test.ts", 0.3], // the agent's stand-in core exports each shared name as core.js does: a function where it is a function   // the agent's composed transforms (mounts, stretch, shear, stored rotation)
+  ["effective-mcpl", "mcpl/effective-mcpl-test.ts", 0.3], // the agent's composed transforms (mounts, stretch, shear, stored rotation)
+  ["headless-core", "mcpl/headless-core-test.ts", 0.3], // the agent's stand-in core exports each shared name as core.js does: a function where it is a function
   ["effective", "mcpl/effective-test.ts", 0.5],   // the same seen from a seated body (occupant size, seat correction)
   ["stretched-support", "mcpl/stretched-support-test.ts", 1], // a stretched thing's support (box, heightfield, triangles, lying down) holds a body where it's drawn
   ["stretched-places", "mcpl/stretched-places-test.ts", 1], // a named place on a stretched thing is stretched with it; a region's floor slack stays 0.1 m
@@ -447,10 +447,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
 // CORE runs first, in this order, and a failure there stops the gate
 export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reserved", "diffcheck", "hygiene", "procgroup", "nov1", "vocab", "authority", "access", "identity", "scars", "reset-race", "txn", "txn-mutants"];
 // every suite that launches a Chromium (directly, through playwright, or through test/harness/harness.ts scratchBench). The
-// gate checks this list against the files themselves (browserMarkers), so a new browser suite can't hide in MAIN.
-// refusedjoin (scratchBench) and client-tools (run-client.ts runs every test/**/*-test file, browser tests among them, those one
-// at a time) once
-// sat in the non-browser list: a host without Chromium failed them, and this box ran Chromes it didn't budget for.
+// gate checks this list against the files themselves (browserLauncher), so a new browser suite can't hide in MAIN:
+// a host without Chromium would fail it there, and a host with one would run Chromes it didn't budget for.
 export const BROWSER = ["browser", "comps-parity", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
@@ -470,8 +468,9 @@ export function localImports(f: string, seen = new Set<string>()): Set<string> {
 
 export function suitePath(file: string) { return path.resolve(ENGINE, "test", file.split(" ")[0]); }
 
-/** A file that launches a Chromium, directly or through the bench helpers; run.ts keeps every such suite in the browser
- *  lane, run-client.ts runs such files one at a time. */
+/** A file that launches a Chromium, directly or through the bench helpers (a helper counts where it is CALLED; a runner
+ *  that starts other files says so with the marker comment `gate: launches a browser`). run.ts keeps every such suite in
+ *  the browser lane, run-client.ts runs such files one at a time. */
 const BROWSER_MARK = /\bscratchBench\s*\(|\bbrowserBench\s*\(|chromium\.launch|from ["']playwright["']|import\(["']playwright["']\)|puppeteer|--remote-debugging-port|gate: launches a browser/;
 
 /** The first file `f` pulls in (itself included) that launches a Chromium, or null. This file is skipped: it holds the
@@ -509,8 +508,7 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
   };
 }
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
- *  (where checks print what they saw), at most `per` each. The evidence used to be dropped: a FAIL said WHICH row failed
- *  and never WHAT it saw (scripts I2, 10-22: two gate failures, no values to compare with a passing run). */
+ *  (where checks print what they saw), at most `per` each, so a FAIL says WHAT it saw as well as which row failed. */
 export function failLines(lines: string[], per = 3): string[] {
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {

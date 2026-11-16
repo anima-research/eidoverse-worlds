@@ -70,20 +70,14 @@ export function platformArgs(platform: NodeJS.Platform = process.platform): stri
     // Ubuntu 23.10+ (GitHub's ubuntu-latest) disables the unprivileged user namespaces Chrome's sandbox needs: "No usable
     // sandbox!" at launch. playwright passes this on Linux for the same reason.
     ...(platform === "linux" ? ["--no-sandbox"] : []),
-    // run.ts gives each suite a fresh HOME, and Chrome then waits on a new login keychain forever (proven 10-19 in CI: the
-    // same suite failed with a fresh HOME and passed with this flag; playwright passes it too)
-    // macOS: the keychain (a launch hung on it, 10-19), and vsync. On a display-less runner VM Chrome's vsync source barely
-    // ticks: the page got 4 animation frames in 2 s (264 decoupled), so anything that moves on frames ran at ~2 fps (10-22,
-    // fork exp/mac-gl runs 39853908965 and 39854960274). Not --disable-frame-rate-limit too: unbounded frames starved party B2
-    // on the 3-core runner (run 39866082490); vsync alone ran the lane fastest (614 s, run 39873667367)
+    // macOS: run.ts gives each suite a fresh HOME, and Chrome then waits forever on a new login keychain (playwright passes
+    // --use-mock-keychain too). On a display-less runner VM Chrome's vsync source barely ticks, so anything that moves on
+    // frames ran at ~2 fps: vsync off. Not --disable-frame-rate-limit too: unbounded frames starved a 3-core runner.
     ...(platform === "darwin" ? ["--use-mock-keychain", "--disable-gpu-vsync"] : []),
     // Windows: a GPU-less host (GitHub's windows-latest) has no WebGPU adapter, and current Chrome no longer falls back to
-    // SwiftShader for WebGL on its own: getContext() returned null and the page threw in three's WebGLExtensions at boot,
-    // "the page never booted" in every browser suite (10-23, fork run 39998895713, browser.events.jsonl). This allows the
-    // software fallback; a host with a GPU keeps its GPU. --use-angle=d3d11 (Chrome's default backend on a Windows GPU) makes
-    // the fallback fast enough: client 205/0 in 60-68 s; without it, or with ANGLE's swiftshader backend, the suite ran past
-    // its 300 s. Both flags are needed: d3d11 alone never booted. --disable-gpu-vsync changed nothing here (62 vs 60 s).
-    // Fork probe runs 40016549160, 40017129818 and the 4-way matrix before them (10-23)
+    // SwiftShader for WebGL on its own: getContext() returns null and the page never boots. The first flag allows the
+    // software fallback (a host with a GPU keeps its GPU); --use-angle=d3d11 makes it fast enough. Both are needed:
+    // d3d11 alone never booted.
     ...(platform === "win32" ? ["--enable-unsafe-swiftshader", "--use-angle=d3d11"] : []),
     ...(process.env.EIDO_CHROME_ARGS ?? "").split(/\s+/).filter(Boolean),
   ];
