@@ -43,6 +43,7 @@ export function suite(tag: string, o: Opts = {}) {
     get pass() { return pass; }, get fail() { return fail; },
     // the summary line and the exit: 1 on any failed row, or when the suite says so (red: e.g. nothing was read)
     done(note = "", red = false): never {
+      if (only && pass + fail + nas === 0) { console.log(`FAIL --only ${only.join(",")}: no row ran`); fail++; }   // a selection of nothing is never green
       console.log(`[${tag}] ${pass} passed, ${fail} failed${nas ? `, ${nas} not applicable` : ""}${note}`);
       process.exit(fail || red ? 1 : 0);
     },
