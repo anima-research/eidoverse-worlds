@@ -1748,7 +1748,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const mk = call("ann", "create", { id: "shelf", model: "crate", place: { at: [2, 2] } });
   const hook = call("bob", "create", { id: "bobhook", components: { parent: { to: "shelf" }, transform: { pos: [0, 1, 0] }, socket: { name: "hook" } } });
   const u = call("ann", "undo", {}); const st = openWorld(root, name).state();
-  ok(mk.ok && hook.ok && !!st.entities.bobhook && !!st.entities.shelf, "SRU3 undoing ann's shelf leaves bob's socket on it, and the shelf with it", { mk: mk.ok, hook, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
+  ok(mk.ok && hook.ok && u.refused?.code === "conflict" && !!st.entities.bobhook && !!st.entities.shelf, "SRU3 undoing ann's shelf leaves bob's socket on it, and the shelf with it", { mk: mk.ok, hook, u, shelf: !!st.entities.shelf, bobhook: !!st.entities.bobhook }); }
 // SRU3b: the same when bob's socket is made in two writes: a child under the shelf, then its socket component, or (SRU3c)
 // a socket made on another thing, then hung on the shelf, or (SRU3d) both in one batch
 for (const [name, steps] of [
