@@ -29,6 +29,7 @@ plugin({
 
 const { THREE } = await import('../stubs/core-stub.mjs');
 const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { G_FINGER } = await import('../../client/lib/ragdoll/ammodoll-tuning.js');
 const { ensureAmmo } = await import('../../client/lib/ragdoll/ammo-load.js');
 const { rigs, makeAvatar, toppleLean } = await import('../../tools/assets/rig-load.mjs');
 const { dollGltf, wingRig, bareRig } = await import('../fixtures/doll-fixture.mjs');
@@ -194,7 +195,7 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
   check('sim twist stays sane (renders as zero regardless)', none('twist'), bad.twist.join(' '));
   check('folds no more than the Verlet on the same rig', none('crumple'), bad.crumple.join(' '));
   check('no hidden spin late in the fall (≤12 rad/s)', none('spin'), bad.spin.join(' '));
-  check('knees never FOLD backwards (positions, not quats)', none('knees'), bad.knees.join(' '));
+  check('knees never hyperextend (positions, not quats)', none('knees'), bad.knees.join(' '));
 }
 
 // ---------------------------------------------------------------------------
@@ -503,7 +504,7 @@ console.log('\nfingers (spring phalanges, additive by absence):');
   if (bare.length) {
     const rig: any = bare[0];
     const { rd } = run(makeAvatar(rig.P, { realParent: rig.realParent }), toppleLean());
-    check('a rig without digit bones builds a clean 16-body doll and rests',
+    check('a rig without digit bones builds a doll with no finger bodies and rests',
       rd.done && rd._fingerSegs.length === 0, `fingers=${rd._fingerSegs?.length}`);
   }
 
@@ -825,6 +826,11 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     check('every anchor is kinematic (one-way, no reaction on the chest)',
       rd._wingAnchors.every((a: any) => (a.anchor.getCollisionFlags() & 2) !== 0));
 
+    // what dispose() removes and destroys, recorded while the doll is live (capture disposes it)
+    const wingBodies = [...rd._wingSegs.map((w: any) => w.body), ...rd._wingAnchors.map((a: any) => a.anchor)];
+    const wingTracked = wingBodies.length > 0
+      && wingBodies.every((b: any) => rd._bodies.includes(b) && rd._refs.includes(b));
+
     let steps = 0;
     while (!rd.done && steps < 900) { rd.step(1 / 60); steps++; }
     check('the body still falls and settles', rd.done, `${steps} steps`);
@@ -862,7 +868,9 @@ console.log('\nlifecycle (one rig, every downstream contract):');
       check('...having re-derived the spring state so it resumes smoothly', didReset);
     }
     rd.dispose();
-    check('dispose frees the wing bodies too', rd._freed === true);
+    check('dispose frees the wing bodies too (each was tracked for removal and destroy)',
+      wingTracked && rd._freed === true && rd._bodies.length === 0 && rd._refs.length === 0,
+      `${wingBodies.length} wing bodies, tracked=${wingTracked}`);
   }
 }
 
@@ -880,6 +888,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 {
   console.log('\nwing boxes (sized by the mesh, not the bone):');
   const { AmmoRagdoll } = await import('../../client/lib/ragdoll/ammodoll.js');
+const { G_FINGER } = await import('../../client/lib/ragdoll/ammodoll-tuning.js');
   const BONE_LEN = 0.15, MESH_LEN = 0.60, MESH_SPAN = 0.40;
 
   const rigW: any = wingRig;
@@ -938,7 +947,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     (rd._hairSegs?.length ?? 0) > 0 && (rd._wingSegs?.length ?? 0) > 0,
     `hair ${rd._hairSegs?.length ?? 0}, wings ${rd._wingSegs?.length ?? 0}`);
   const seg = rd._wingSegs.find((s: any) => s.node.name === 'L_Wing_Upper_1');
-  check('the rig under test has geometry 4x its bone length',
+  check('the 4x-mesh fixture builds its outer wing segment',
     !!seg, seg ? '' : 'no outer wing segment built');
   if (seg) {
     const he = rd._vol.find((v: any) => v.body === seg.body).boxes[0].he;
@@ -955,8 +964,12 @@ console.log('\nlifecycle (one rig, every downstream contract):');
   // and the fallback still works where there is nothing to measure
   const bare = makeAvatar(P, { realParent: { ...rigW.realParent, ...wingParent } });
   const rdBare: any = new AmmoRagdoll(bare, toppleLean(), bare.restBonePositions());
+  const bseg = rdBare._wingSegs?.find((s: any) => s.node.name === 'L_Wing_Upper_1');
+  const bhe = bseg && rdBare._vol.find((v: any) => v.body === bseg.body)?.boxes[0]?.he;
+  const blong = bhe ? 2 * Math.max(bhe.x, bhe.y, bhe.z) : NaN;
   check('a rig with no skinned mesh still gets bone-length boxes',
-    rdBare._wingSegs?.length === 2, `${rdBare._wingSegs?.length ?? 0} segments`);
+    rdBare._wingSegs?.length === 2 && Math.abs(blong - BONE_LEN) < 0.05,
+    `${rdBare._wingSegs?.length ?? 0} segments; box ${blong.toFixed(3)}m vs bone ${BONE_LEN}m`);
 }
 
 // ---- the sim's writes must SURVIVE matrixAutoUpdate = false ----------------
@@ -1055,7 +1068,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     groups.every((g) => asShort(g) > 0),
     groups.filter((g) => asShort(g) < 0).join(','));
   check('the dressing group survives too',
-    asShort(1 << 14) === 1 << 14);
+    asShort(G_FINGER) === G_FINGER && G_FINGER > 0, String(G_FINGER));
   rd.dispose();
 }
 
