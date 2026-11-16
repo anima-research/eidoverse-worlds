@@ -26,7 +26,7 @@
 // teardown SIGKILLed without awaiting exit — the same defect class #125 just
 // closed. This is the repository's established pattern from
 // test/mcpl/join-rfc005-test.ts, reused rather than re-invented: free ports from
-// a window (harness freePort: racy, so readiness checks ownership), per-run instance nonces both children echo, OS port-ownership as a
+// the kernel (harness kernelPort, as main: racy, so readiness checks ownership), per-run instance nonces both children echo, OS port-ownership as a
 // Linux second opinion, scratch-bound tokens/worlds/state, verified
 // termination, and repo-state before/after byte receipts. Once both slices
 // land, the shared pieces deserve extraction into one harness module.
@@ -37,7 +37,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, kernelPort } from "../harness/harness.ts";
 import { createServer as createHttpServer } from "node:http";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil, pause } from "../gate/wait.ts";
@@ -45,7 +45,7 @@ import { capabilityMatches, CAP, MCPL_ADVERTISEMENT, FEATURE_SETS } from "../../
 import { helloOf } from "../../shared/protocol/hello.js";
 
 // racy in principle, which is why readiness below verifies ownership rather than trusting whatever answers
-const SEQ_PORT = freePort(9400), DOOR_PORT = freePort(11400);
+const SEQ_PORT = kernelPort(), DOOR_PORT = kernelPort();
 const JOIN = "cap-gate-test-door";
 const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 const scratch = mkdtempSync(join(process.env.PROTOCOL_SCRATCH || tmpdir(), "capgate-"));
@@ -184,7 +184,7 @@ const doorNonceProbe = (port) => async () => {
 // A plain HTTP server answering the pre-nonce "ok" on a fresh port stands in
 // for a stale door; the readiness probe must throw rather than proceed.
 {
-  const impostorPort = freePort(13400);
+  const impostorPort = kernelPort();
   const impostor = createHttpServer((_q, res) => { res.writeHead(200); res.end("ok\n"); });
   await new Promise((r) => impostor.listen(impostorPort, "127.0.0.1", r));
   let refused = false;
