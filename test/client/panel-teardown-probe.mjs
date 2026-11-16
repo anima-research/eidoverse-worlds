@@ -11,8 +11,8 @@
 // clicks, and looks for its own tags afterwards. A rebuilt panel loses them.
 //
 // It also checks the meter NODE survives: micFloorRow's beat() loop ends itself
-// on !row.isConnected, so a teardown silently restarts the animation. The rAF
-// loop itself is not sampled (a stopped loop on a kept node passes).
+// on !row.isConnected, so a teardown silently restarts the animation. After the
+// clicks the loop itself must still ask for frames (a stopped loop on a kept node fails).
 //
 //   bun test/client/panel-teardown-probe.mjs [origin]
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';
@@ -57,6 +57,9 @@ const r = await pg.evaluate(async () => {
   // whether the rAF loop is still ticking after the click.
   const meterEl = body.querySelector('[data-lvl]');
   if (meterEl) meterEl.__probeTag = 'meter';
+  // …and count the meter's own rAF loop (audiopanel.js beat): a kept node whose loop stopped is a dead meter
+  const raf0 = window.requestAnimationFrame; let beats = 0;
+  window.requestAnimationFrame = (f) => { if (f?.name === 'beat') beats++; return raf0.call(window, f); };
 
   // 🔴 CLICK EVERY CHECKBOX, NOT A REPRESENTATIVE ONE (R, 2026-08-16: "looks
   // like panel is tearing down when you click the text-to-speech model
@@ -101,18 +104,21 @@ const r = await pg.evaluate(async () => {
   const after = rows();
   const kept = after.filter((el) => typeof el.__probeTag === 'string').length;
   const meterKept = body.querySelector('[data-lvl]')?.__probeTag === 'meter';
+  const b0 = beats;   // ten frames: the loop asks for every one
+  for (let i = 0; i < 10 && beats <= b0; i++) await new Promise((f) => raf0.call(window, () => f()));
+  const meterTicking = beats > b0; window.requestAnimationFrame = raf0;
 
-  return { before, after: after.length, kept, meterKept, perBox };
+  return { before, after: after.length, kept, meterKept, meterTicking, perBox };
 });
 
-let ok = r.meterKept;
+let ok = r.meterKept && r.meterTicking;
 for (const b of r.perBox) {
   const good = b.survived === b.before;
   ok = ok && good;
   console.log(`  ${String(b.label).padEnd(24)} ${b.survived}/${b.before} rows survived  ${good ? '✅' : '❌ TEARDOWN'}`);
 }
-console.log(`  meter node kept: ${r.meterKept ? '✅' : '❌'}`);
+console.log(`  meter node kept: ${r.meterKept ? '✅' : '❌'}; its loop still ticking: ${r.meterTicking ? '✅' : '❌'}`);
 console.log(ok ? '✅ PER-ELEMENT UPDATE — every checkbox leaves the panel standing'
-               : '❌ FULL TEARDOWN on at least one control (R\'s jumping)');
+               : '❌ FULL TEARDOWN on at least one control (R\'s jumping), or the meter stopped');
 await shut();
 process.exit(ok ? 0 : 1);

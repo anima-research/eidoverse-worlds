@@ -90,7 +90,7 @@ try {
     dom.removeEventListener('click', onClick, true);
     // 4. a checkbox is a press like anything else (review P2): it toggles on RELEASE, exactly once, and a drag that
     //    starts on it scrolls instead of toggling (the debug panel is mostly checkbox rows)
-    let cbMoved = null, cb = null, cbFlip = null, cbPress = 'n/a', cbEarly = null, cbDragFlip = null, cbDragging = null;
+    let cbMoved = null, cb = null, cbFlip = null, cbPress = 'n/a', cbEarly = null, cbDragFlip = null, cbDragging = null, cbScrolled = null;
     for (const qid of dq.domQuadIds()) { const d = dq.domQuadTexture(qid)?.dom; const c = [...(d?.querySelectorAll('input[type=checkbox]') ?? [])].find((e) => e.getBoundingClientRect().height > 0); if (c) { cb = { qid, c }; break; } }
     if (cb) {
       for (const q of dq.domQuadIds()) dq.domQuadShow(q, q === cb.qid); await new Promise((res) => setTimeout(res, 300));
@@ -104,10 +104,14 @@ try {
       cbFlip = cb.c.checked !== was;
       if (cbFlip) cb.c.click();
       const was2 = cb.c.checked;
+      // the box a drag from the checkbox scrolls: its nearest scrollable ancestor
+      const sb = (() => { let e = cb.c; while (e && !(e.scrollHeight > e.clientHeight && /auto|scroll/.test(getComputedStyle(e).overflowY))) e = e.parentElement; return e; })();
+      const cbS0 = sb ? sb.scrollTop : null;
       const p5 = dq.domQuadsPress(rayAt(cb.qid, cx, cy));
       if (p5?.press) for (let i = 1; i <= 6; i++) dq.domQuadsDrag(rayAt(cb.qid, cx, cy - i * 10), p5.press);
       cbDragging = !!p5?.press?.dragging;
       if (p5?.press) dq.domQuadsRelease(p5.press);
+      cbScrolled = sb ? sb.scrollTop - cbS0 : null;
       await new Promise((res) => setTimeout(res, 200));
       cbDragFlip = cb.c.checked !== was2;
       if (cbDragFlip) cb.c.click();
@@ -131,7 +135,7 @@ try {
     // rounded corners: the raster leaves a frame's border-radius corners clear, and the material cuts them out
     let corner = null;
     { const t = dq.domQuadTexture(id), c = t.image; try { corner = { a: c.getContext('2d').getImageData(1, 1, 1, 1).data[3], test: meshOf(id).material.alphaTest, radius: getComputedStyle(t.dom).borderTopLeftRadius }; } catch (e) { corner = { err: String(e) }; } }
-    return { corner, dbg: globalThis.__dbg, id, spot, s0, s1, s2, clicksAfterDrag, clicksAfterTap, clicksAfterCancel, cbMoved, cb: !!cb, cbFlip, cbEarly, cbPending: cbPress !== null && cbPress !== 'n/a', cbDragFlip, cbDragging, dragging: pr.press?.dragging };
+    return { corner, dbg: globalThis.__dbg, id, spot, s0, s1, s2, clicksAfterDrag, clicksAfterTap, clicksAfterCancel, cbMoved, cb: !!cb, cbFlip, cbEarly, cbPending: cbPress !== null && cbPress !== 'n/a', cbDragFlip, cbScrolled, cbDragging, dragging: pr.press?.dragging };
   });
   console.log('  ·', JSON.stringify(r));
   check('a VR panel has a scrollable box to test', !r.none && !r.nospot, JSON.stringify(r));
@@ -140,7 +144,7 @@ try {
   check('a tap (jitter under the threshold) is a click, and does not scroll', r.clicksAfterTap === 1 && r.s2 === 0, JSON.stringify({ clicks: r.clicksAfterTap, moved: r.s2 }));
   check('a grab that takes over a press cancels its click', r.clicksAfterCancel === 1, r.clicksAfterCancel);
   check('a trigger on a checkbox toggles it on release, exactly once (not on the press)', r.cb && r.cbEarly === false && r.cbPending && r.cbFlip === true, JSON.stringify({ cb: r.cb, early: r.cbEarly, pending: r.cbPending, flip: r.cbFlip }));
-  check('a drag that starts on a checkbox scrolls and never toggles it', r.cb && r.cbDragging && r.cbDragFlip === false, JSON.stringify({ dragging: r.cbDragging, flipped: r.cbDragFlip }));
+  check('a drag that starts on a checkbox scrolls and never toggles it', r.cb && r.cbDragging && r.cbScrolled >= 40 && r.cbDragFlip === false, JSON.stringify({ dragging: r.cbDragging, scrolled: r.cbScrolled, flipped: r.cbDragFlip }));
   check('content moving under a held press cancels the click (the release lands on what was pressed, or nothing)', r.cbMoved?.pressed && r.cbMoved.clicks === 0 && !r.cbMoved.flipped, JSON.stringify(r.cbMoved));
   check('rounded corners: the corner texel is clear and the material cuts it out (not black)', r.corner?.a === 0 && r.corner?.test > 0, JSON.stringify(r.corner));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
