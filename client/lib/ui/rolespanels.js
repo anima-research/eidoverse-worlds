@@ -201,7 +201,7 @@ function paintAccess(body) {
   const a = wc().access ?? {}, dr = wc()['default-role'] ?? {}; const edit = isOwner();
   const roles = R.rolesOf(wc()).filter((r) => r.id !== 'owner');
   const def = R.roleDef(wc(), dr.role ?? 'member');
-  const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.gen ? "spend the world's generation credit" : ''}.</p>` : '';
+  const warn = def && (R.MOD_POWERS.some((k) => def.can[k]) || def.can.generate || dr.can?.generate) ? `<p class="rp-warn">Everyone who arrives is ${esc(def.name)}: they ${R.MOD_POWERS.some((k) => def.can[k]) ? 'may moderate people ranked below them (guests and visitors)' : ''}${R.MOD_POWERS.some((k) => def.can[k]) && (def.can.generate || dr.can?.generate) ? ' and ' : ''}${def.can.generate || dr.can?.generate ? "spend the world's generation credit" : ''}.</p>` : '';
   const sel = (k, opts, v) => `<select data-k="${k}" ${edit ? '' : 'disabled'}>${opts.map(([x, l]) => `<option value="${esc(x)}" ${x === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
   // the four doors (shared/protocol/access.js DOORS), the current one marked; closing while people with no role are
   // here asks first and says how many will have to leave
@@ -220,7 +220,7 @@ function paintAccess(body) {
     const out = d === 'invite-only' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, serverNow())).length : 0;
     if (out && !confirm(`${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}. Close the door?`)) return;
     const ops = doorWrites(d, wc()).map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
-    act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { ops }, `door: ${d}`).then(() => paintAccess(body)); }; });
+    act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { requests: ops, label: `door: ${d}` }, `door: ${d}`).then(() => paintAccess(body)); }; });
   body.querySelectorAll('[data-k]').forEach((x) => { x.addEventListener('keydown', (e) => e.stopPropagation()); x.onchange = () => {
     const k = x.dataset.k;
     if (k === 'role' || k === 'guests') act('set', { id: '@world', component: 'default-role', value: { [k]: x.value }, merge: true }, `${k === 'role' ? 'arrivals' : 'guests'}: ${x.value}`).then(() => paintAccess(body));
