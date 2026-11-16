@@ -9,12 +9,13 @@ import { tryUntil } from '../gate/wait.ts';
 import { suite } from '../gate/suite.ts';
 const { WorldAgent } = await import('../../mcpl/agent.ts');
 const { handleTool } = await import('../../mcpl/tools.ts');
+const { noWorldUrl } = await import('../harness/no-world.ts');
 
 const { check, done } = suite('flight-exit');
 const WINGED = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
 const agents: any[] = [];
 const bench = (name = 'flyer', world = 'flight-exit-bench') => {
-  const ag: any = new WorldAgent({ name, world });
+  const ag: any = new WorldAgent({ name, world, url: noWorldUrl() });
   ag.bodyBoneNames = WINGED; ag.loadBodyBones = async () => WINGED;
   ag.myRights = { role: 'builder', fly: true };
   ag.joined = true;

@@ -234,7 +234,7 @@ console.log("water at every point of a stride (#101)");
 {
   // From a dry pocket under the level, a ledge too high to step onto is deep water a swimmer floats over: the world's
   // level is asked where the stride lands (the mover's and the authority's law), not once where it started.
-  const ag: any = new WorldAgent({ name: "me", world: "w" });
+  const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
   ag.joined = true; ag.water = { level: 2 }; ag.bodyH = 0.8;
   ag.st = { entities: { dome: { pos: [0, -1, 0], zone: { shape: "box", size: [4, 4, 4] }, "water-exclusion": {} } } };
   ag.heightAt = (x: number) => (x > 2 ? 1.2 : 0);

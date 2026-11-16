@@ -29,7 +29,7 @@
 //                 test/gate/clock.ts (labClock().advance, pin, unpinned).
 //   agent-url     a WorldAgent built without `url`: it falls back to 127.0.0.1:8940, whatever runs there (or a closed port,
 //                 which hangs ~2 min on a mirrored-network host). Pass the test's own server: test/harness/no-world.ts noWorldUrl().
-//                 Checked over tools/ and bench/ only.
+//                 Checked over tools/, bench/ and test/.
 //   own-ok        a suite counting its own rows (`let pass = 0, fail = 0`) instead of importing suite.ts.
 //   posix-mode    a file's mode asserted equal to an octal literal (`=== 0o600`) on a line that doesn't say what Windows does:
 //                 NTFS has no POSIX modes (stat says 666), so the row fails there or passes vacuously. Use suite.ts `mode()`,
@@ -150,7 +150,7 @@ export function measure(): Record<string, Record<string, number>> {
   for (const f of [...files].sort()) {
     const counts = scan(fs.readFileSync(path.join(ENGINE, f), "utf8"));
     for (const k of Object.keys(counts)) {
-      if (f === SELF || EXEMPT[k]?.includes(f) || (SUITE_ONLY.has(k) && !suites.has(f)) || (TOOLS_ONLY.has(k) && !/^(tools|bench)\//.test(f)) || (!ALL_TOOLS.has(k) && !gate.has(f))) continue;
+      if (f === SELF || EXEMPT[k]?.includes(f) || (SUITE_ONLY.has(k) && !suites.has(f)) || (TOOLS_ONLY.has(k) && !/^(tools|bench|test)\//.test(f)) || (!ALL_TOOLS.has(k) && !gate.has(f))) continue;
       (out[f] ??= {})[k] = counts[k];
     }
   }
