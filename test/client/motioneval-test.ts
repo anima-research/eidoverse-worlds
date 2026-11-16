@@ -170,6 +170,8 @@ console.log("\n━━ refusals ━━");
     ["unknown type", { type: "wiggle", t0: T0 }],
     ["path with one point", { type: "path", points: [[0, 0, 0]], t0: T0 }],
     ["path with no points", { type: "path", t0: T0 }],
+    ["path with a null point (bot #333 253)", { type: "path", points: [null, [0, 0, 0]], t0: T0 }],
+    ["path with a short point", { type: "path", points: [[0, 0], [1, 0, 0]], t0: T0 }],
     ["pendulum with period 0 (non-finite phase)", { type: "pendulum", amp: 1, period: 0, t0: T0 }],
     ["pendulum with NaN pivot", { type: "pendulum", amp: 1, pivot: [NaN, 0, 0], t0: T0 }],
     ["no type at all", {}],
