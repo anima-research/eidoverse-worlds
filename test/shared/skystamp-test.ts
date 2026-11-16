@@ -20,7 +20,8 @@ const res = W.send({ verb: "sky", args: { forecast: { seed: 7, states: ["clear",
 check("(setup) the owner sets a forecast", res?.ok === true, res);
 const got = r.ingest(JSON.parse(JSON.stringify(W.entries().slice(from))), from);
 const stored = r.st.entities["@world"]?.c.sky;
-check("the stored value carries no seq/by (the log does)", stored && stored.forecast && stored.forecast.seq === undefined, stored?.forecast);
+check("the stored value carries no seq/by (the log does)", !!stored?.forecast && stored.forecast.seq === undefined && stored.forecast.by === undefined
+  && stored.seq === undefined && stored.by === undefined, stored);
 check("the replica names the entry that wrote the sky: its seq and who", Number.isInteger(got.sky?.seq) && typeof got.sky?.by === "string" && got.sky.by.length > 0, got.sky);
 const eff = effectiveSky(stored, Date.now());
 check("the forecast is live from that value (so the stamp is what names it)", eff.source === "forecast", eff.source);
