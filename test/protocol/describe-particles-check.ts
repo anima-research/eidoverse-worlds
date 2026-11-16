@@ -229,7 +229,7 @@ const cases: Case[] = [
       // the authority takes the child's shape as it is (a thing with no model: parent, label, particles)
       cast(s); thing(s, "hearth", { particles: { effect: "fire" } });
       const made = s.call("olive", "create", { id: "smoke-k", components: { transform: { pos: [0, 0, 0] }, parent: { to: "hearth" }, label: "smoke", particles: { effect: "smoke", at: [0, 0.9, 0] } } });
-      return { div: [r.stats?.divergences, r2.stats?.divergences], host: E.hearth, kids: kids(E), after: kids(E2), keys: Object.keys(E.hearth ?? {}), made: show(made), same: TV1.emitterChildId?.("hearth", "smoke") === TV1.emitterChildId?.("hearth", "smoke"),
+      return { div: [r.stats?.divergences, r2.stats?.divergences], host: E.hearth, kids: kids(E), after: kids(E2), keys: Object.keys(E.hearth ?? {}), made: show(made), same: [kids(E), kids(E2)].every((ks) => ks.find((k) => k.label === "smoke")?.id === TV1.emitterChildId("hearth", "smoke")),   // the derived id, in both translations
         seed: PE.hashSeed?.("hearth:particles:smoke:smoke") }; },
     good: (o) => o.div[0] === 0 && o.div[1] === 0 && o.host?.particles?.scale === 0.5 && /^sha256:/.test(o.host?.particles?.effect) && o.host?.["imported:particles"] === undefined
       && !o.keys.some((k: string) => k.startsWith("particles:")) && o.kids.length === 2
