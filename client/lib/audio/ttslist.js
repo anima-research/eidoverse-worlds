@@ -155,15 +155,15 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
     clock.style.opacity = '.7';
     // prefer the engine's own progress text; our clock fills the gap before the first event
     const t0 = loading.since || Date.now();
-    const tick = () => {
-      if (!clock.isConnected) return clearInterval(timer);
+    const paint = () => {
       const s = Math.round((Date.now() - t0) / 1000);
       clock.textContent = loading.status
         ? (/\d+s/.test(loading.status) ? loading.status : `${loading.status} — ${s}s`)
         : `starting — ${s}s`;
     };
-    const timer = setInterval(tick, 1000);
-    tick();
+    // the first paint skips the isConnected stop: the row isn't in the page yet
+    const timer = setInterval(() => (clock.isConnected ? paint() : clearInterval(timer)), 1000);
+    paint();
     row.append(mark, name, clock);
     host.appendChild(row);
   }
@@ -196,15 +196,14 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
         const st = document.createElement('span');
         st.className = 'vl-note';
         const t0 = loading.since || Date.now();
-        const tickRow = () => {
-          if (!st.isConnected) return clearInterval(rowTimer);
+        const paintRow = () => {
           const s = Math.round((Date.now() - t0) / 1000);
           st.textContent = loading.status
             ? (/\d+s/.test(loading.status) ? loading.status : `${loading.status} — ${s}s`)
             : `starting — ${s}s`;
         };
-        const rowTimer = setInterval(tickRow, 1000);
-        tickRow();
+        const rowTimer = setInterval(() => (st.isConnected ? paintRow() : clearInterval(rowTimer)), 1000);
+        paintRow();
         row.append(mark, name, st, x);
       } else {
         row.append(mark, name, x);

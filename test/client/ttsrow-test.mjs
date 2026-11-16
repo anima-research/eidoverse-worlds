@@ -177,5 +177,17 @@ for (const [name, st, wantNote, wantDim] of [
   t('select __pending resumes the import whatever the enable state', calls.join() === 'file' && loaded.at(-1) === 'piper.onnx+piper.onnx.json', `${calls} / ${loaded}`);
 }
 
+{ // a loading row's clock ticks on its own (it was cleared on its first tick, run before the row was in the page)
+  const { renderVoiceList } = await import(M('audio/ttslist.js'));
+  const since = Date.now() - 5_000, clocks = () => [...document.querySelectorAll('.vl-clocks .vl-loading .vl-note')].map((e) => e.textContent);
+  const solo = document.createElement('div'), listed = document.createElement('div'); solo.className = listed.className = 'vl-clocks';
+  document.body.append(solo, listed);
+  renderVoiceList(solo, { items: [], selected: null, on: {}, loading: { id: 'new', name: 'new', since } });
+  renderVoiceList(listed, { items: [{ id: 'v', name: 'v' }], selected: null, on: {}, loading: { id: 'v', name: 'v', since } });
+  const first = clocks(); await new Promise((r) => setTimeout(r, 2_200)); const later = clocks();
+  t('clock: a new voice\'s loading row and a listed voice\'s both count up by themselves', first.length === 2 && later.every((x, i) => x !== first[i]), JSON.stringify({ first, later }));
+  solo.remove(); listed.remove();
+}
+
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
