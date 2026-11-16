@@ -27,7 +27,7 @@ const near3 = (a: number[], b: number[], eps = 1e-4) => a.length === 3 && a.ever
 
 // loaded dynamically, so the look()-level rows still run on a checkout
 // without effective.ts (one that predates #82).
-let EFF: typeof import("./effective.ts") | null = null;
+let EFF: typeof import("../../mcpl/effective.ts") | null = null;
 try { EFF = await import("../../mcpl/effective.ts"); } catch { /* pre-#82 checkout */ }
 
 const T0 = 1_700_000_000_000;                       // fixed epoch; all time injected
