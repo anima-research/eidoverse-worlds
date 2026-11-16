@@ -43,9 +43,9 @@ console.log("\nlegacy grass bags (world logs replay forever)");
     ["bladeHeight", "spacing", "perCell", "colorTip", "windSpeed"].every((k) => !(k in legacy)));
 
   // density is the interesting one: half the spacing = 4x the plants
+  const half = mapGrassArgs({ spacing: 0.13, perCell: 2 });   // 4x from the spacing, ½ from perCell: 2, under the ceiling
+  check("half spacing ≈ 4x density", near(half.density, 2, 1e-9), String(half.density));
   const dense = mapGrassArgs({ spacing: 0.13, perCell: 4 });
-  check("half spacing ≈ 4x density", near(dense.density, 4, 1e-9) || dense.density === 2.2,
-    String(dense.density));
   check("density is clamped to a sane ceiling", dense.density <= 2.2, String(dense.density));
   const sparse = mapGrassArgs({ spacing: 0.52, perCell: 2 });
   check("sparse bag thins below 1", sparse.density < 1, String(sparse.density));
