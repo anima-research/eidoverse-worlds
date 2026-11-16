@@ -278,7 +278,7 @@ const cases: Case[] = [
       for (let i = 0; i < 30; i++) s.step(1 / 60); const before = alive(s).length; s.setEmitting(false); for (let i = 0; i < 60; i++) s.step(1 / 60); const off = alive(s).length;
       s.setEmitting(true); for (let i = 0; i < 40; i++) s.step(1 / 60); return { before, off, on: alive(s).length }; },
     good: (o) => o.before > 20 && o.off === 0 && o.on > 10 },
-  { id: "G8", what: "the same seed is the same effect on two machines; another seed is another", run() { const e = em({ velocity: { spread: 180, speed: [0, 2] } });
+  { id: "G8", what: "the same seed is the same effect on two machines; another seed is another", run() { const e = em({ velocity: { spread: Math.PI, speed: [0, 2] } });
       const a = run(e, 0.7, 11), b = run(e, 0.7, 11), c = run(e, 0.7, 12); return { same: a.pos.join() === b.pos.join(), diff: a.pos.join() !== c.pos.join() }; },
     good: (o) => o.same && o.diff },
 
