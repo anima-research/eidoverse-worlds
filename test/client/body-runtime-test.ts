@@ -144,6 +144,7 @@ check("dispose + pooled rewear retakes constraints from the limp owner", !mgr.co
 // 8. exact external body metadata, when the library is supplied.
 const lib = process.env.EIDOVERSE_DIR;
 if (lib) {
+  check("EIDOVERSE_DIR has eidoverse/assets/vrms (a mistyped library isn't n/a)", existsSync(join(lib, "eidoverse/assets/vrms")), lib);
   for (const [name, sha] of Object.entries(BODY_SHA)) {
     const file = join(lib, "eidoverse/assets/vrms", `${name}.vrm`);
     if (!existsSync(file)) { na(`${name}.vrm has the reviewed content hash and CC BY metadata`, `not in this library (${lib}); the gate's pinned library predates it`); continue; }
