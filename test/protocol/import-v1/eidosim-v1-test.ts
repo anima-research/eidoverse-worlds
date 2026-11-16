@@ -94,7 +94,7 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
     simPose(rel.sim, "crate") === null && rel.st.entities.crate.pos[0] === 9);
   const re = fold([...SCRIPT, mk(4, 700, "punt", { id: "crate", dir: [-1, 0.5, 0], power: 8 })]);
   advanceSim(re.sim, 600);
-  check("a re-punt kicks the FLYING body onward (continuity, not reset)",
+  check("a re-punt reaches the FLYING body (it carries the re-punt's seq)",
     simPose(re.sim, "crate") !== null && re.sim.bodies.crate.seq === 4);
 }
 
@@ -117,7 +117,7 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
     mk(4, 500, "punt", { id: "barrel", dir: [1, 0.9, 0], power: 6 }),
   ];
   const { sim } = fold(HILLS);
-  check("a 0.2 epoch adopts the world's standing terrain", !!sim.terrain
+  check("an epoch adopts the world's standing terrain", !!sim.terrain
     && (sim.terrain as any).seed === 7 && (sim.terrain as any).amplitude === 2.6);
   advanceSim(sim, 600);
   const pose = simPose(sim, "barrel")!;
@@ -128,7 +128,7 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
   // schedule-independence holds under the terrain law too
   const b2 = fold(HILLS);
   advanceSim(b2.sim, 123); advanceSim(b2.sim, 600);
-  check("0.2 schedule-independence (terrain law)", digest(b2.sim) === digest(sim));
+  check("schedule-independence (terrain law)", digest(b2.sim) === digest(sim));
   // a terrain entry mid-epoch re-grounds the world: every body released
   const c2 = fold([...HILLS, mk(5, 900, "terrain", { ...TARGS, seed: 8 })]);
   advanceSim(c2.sim, 600);
