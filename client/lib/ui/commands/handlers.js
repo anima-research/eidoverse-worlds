@@ -234,7 +234,7 @@ register('punt', (arg) => {
   }
   puntThing(arg);
 });
-// carrying (requests; T and C are the keys)
+// carrying (requests; T and Q are the keys)
 register('grab', (arg) => grab((arg || '').trim() || undefined));
 register('put', (arg) => put((arg || '').trim() || undefined));
 register('drop', (arg) => drop((arg || '').trim() || undefined));
@@ -344,7 +344,7 @@ function shovePerson(target, pow, word) {
 // ---- /touch — the human hand on the reach surface (shared/reachwire.js).
 // The same descriptor an agent's `reach` tool streams: every client
 // re-solves it, the arm tracks the person, and THEY hear about it (a
-// "reaches toward you" line, then a "rests on" line when the hand lands).
+// "reaches toward your …" line, then a "touches your …" line when the hand lands: initCommands).
 const LIMB_WORD = { leftHand: 'left hand', rightHand: 'right hand', leftFoot: 'left foot', rightFoot: 'right foot' };
 const pointOf = (words) => {
   const joined = words.join(' ');
@@ -494,7 +494,7 @@ register('use', (arg) => {
   const t = thingNamed(word); if (t?.err) return logChat('*', t.err);
   if (!t) return logChat('*', `nothing here called "${word}"`);
   const id = t.id;
-  // no action: the authority does the thing's one action, or says what it offers (it was sent 'use', which most don't)
+  // no action: none is sent, and the authority does the thing's one action or says what it offers
   send(OP.use(id, action || null), { what: action ? `${action} ${id}` : `use ${id}` });
 });
 

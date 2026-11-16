@@ -1,6 +1,8 @@
-// rolespanels — the Moderation (only while you hold a moderation right) and World Settings (everyone reads, owners
-// edit) dock panels. Writes only on Save, a section at a time (the card's name and text together; spawn and bounds
-// together), never on open (absence = the server's default, PROTOCOL §9.2). In a headset these are quads: buttons, selects, checkboxes and text fields (no hover, no long-press).
+// rolespanels — the Moderation (only while you hold a moderation right) and World Settings (everyone reads; owners edit,
+// and Card and Places also take editWorld) dock panels. Nothing is written on open (absence = the server's default,
+// PROTOCOL §9.2). Roles, access and the World dials write each change as it is made; Card and Places write on Save, a
+// section at a time (the card's name and text together; spawn and bounds together). In a headset these are quads:
+// buttons, selects, checkboxes and text fields (no hover, no long-press).
 import { bus, report, CONFIG } from '../base.js';
 import { net, sendRequest, replica, identities, personName } from '../net.js';
 import { makeSection, moderationFrame, worldSettingsFrame, toast } from './ui.js';
@@ -183,7 +185,7 @@ function addRole(body) {
 function deleteRole(rid, body) {
   const ids = holdersOf(rid); const d = defsValue(); delete d[rid];
   if (!ids.length && wc()['default-role']?.role !== rid) return writeDefs(d, `delete ${rid}`).then(() => paintRoles(body));
-  // a held role: move its people to another role, and delete it, as one act
+  // a held role (or the newcomers' default): move its people to another role, repoint the default, and delete it, as one act
   const box = document.createElement('div'); box.className = 'pm-form';
   const others = R.rolesOf(wc()).filter((r) => r.id !== rid && r.id !== 'owner');
   box.innerHTML = `<p>${ids.length} ${ids.length === 1 ? 'person holds' : 'people hold'} ${esc(rid)}. Move them to <select>${others.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select> and delete it?</p><div class="pm-btns"><button type="button" class="pm-cancel">Cancel</button><button type="button" class="pm-go danger">Move and delete</button></div>`;

@@ -31,7 +31,7 @@ export const recentChat = () => recent.slice();
 let onTyping = () => {};
 let getPeople = () => [];
 // the person menu and badges (client/lib/ui/people.js), injected by main.js: a static import here would close the
-// chat → people → net → chat cycle. Absent (a page without it), rows are plain and the menu is Message alone.
+// chat → people → net → chat cycle. Absent (a page without it), rows are plain: no badges and no person menu.
 let personUi = null;
 
 // 'all' | 'mentions' | 'system'. Every tab is a view of the one public room: world chat has no private channel
@@ -294,7 +294,7 @@ const renderedSeqs = new Set();
 
 export function logChat(who, text, kind = '', meta = {}) {
   if (typeof meta.seq === 'number' && meta.seq >= 0) {
-    // ...or trimmed off the top: a re-join's window can replay it, and appending would put it under newer talk
+    // already shown, or trimmed off the top: a re-join's window can replay it, and appending would put it under newer talk
     if (renderedSeqs.has(meta.seq) || meta.seq <= trimmedThrough) return;
     renderedSeqs.add(meta.seq);
   }
@@ -1090,7 +1090,7 @@ export function initChat({ send, typing, people, person }) {
     }
 
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();                      // a textarea now: Enter sends, Shift+Enter is a new line
+      e.preventDefault();                      // a textarea: Enter sends, Shift+Enter is a new line
       const v = inputEl.value.trim();
       setInput('');
       historyIdx = -1;

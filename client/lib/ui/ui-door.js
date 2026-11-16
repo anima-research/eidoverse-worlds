@@ -1,4 +1,4 @@
-// ui-door — the front door: the overlay that asks your name (and a door key or a sign-in) before you enter.
+// ui-door — the front door: the overlay that asks your name and avatar (and a door key or a sign-in) before you enter.
 import { CONFIG, setName, setToken } from '../base.js';
 import { paint, escapeHtml } from './markup.js';
 import { closeOverlay, el, openOverlay, sheet } from './ui.js';

@@ -14,14 +14,14 @@ const $ = (id) => document.getElementById(id);
 
 // ---- the ∃ menu: a File-style waterfall -------------------
 // It pops out beside the ∃/dock, over the mic/headphones/visor icons. Top level: Save world · Load world · Panels ▸ ·
-// Log in · Help · Keys · About ▸. Settings and Profile stay on the rail. Panels ▸ holds HUD layout mode, the pins, the
+// Lite client · Log in · Help · Keys · About ▸. Settings and Profile stay on the rail. Panels ▸ holds HUD layout mode, the pins, the
 // lock and reset layout. An item never dismisses the menu unless it takes you to another window (help, a login page);
 // the menu goes on mouse-away (desktop), a press outside it, and Esc.
 addEventListener('keydown', (e) => { if (e.key === 'Alt') document.body.classList.add('altgrab'); });
 addEventListener('keyup', (e) => { if (e.key === 'Alt') document.body.classList.remove('altgrab'); });
 addEventListener('blur', () => document.body.classList.remove('altgrab'));
 
-// What the menu needs to know that ui.js cannot import (net.js is above this rung): INJECTED by main.js, like the
+// What the menu needs to know that it cannot import (net.js is above this rung): INJECTED by main.js, like ui.js's
 // load list. Defaults are the truth for a client with no server: no build rights, no sign-in.
 let menuSrc = { buildRights: () => false, loginUrl: () => null };
 export function setMenuSources(src) { menuSrc = { ...menuSrc, ...src }; if (!emenuEl()?.hidden) paintEMenu(); }
@@ -75,8 +75,8 @@ function initEMenu() {
   addEventListener('resize', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
   bus.on('dock-moved', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
 
-  // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (windows.js yields Esc to all
-  // three: escapeIsClaimed sees the open menu and body.arranging)
+  // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (windows.js's Tab toggle stands
+  // aside for all three: escapeIsClaimed sees the open menu and body.arranging)
   addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (!m.hidden) { if (subFor) closeSub(); else toggleEMenu(false); }
@@ -200,7 +200,7 @@ function placeSub() {
 
 // ---- rows
 const fsvgOr = (name, size, fallback = 'puzzle-piece') => fsvg(name, size) || fsvg(fallback, size);
-/** a top-level item: { id, icon, label, key?, detail?, sub?, dead?, away?, run? } */
+/** a top-level item: { id, icon, label, key?, tag?, detail?, title?, sub?, dead?, away?, run? } */
 function topRow(it) {
   const row = document.createElement('button');
   row.className = `mrow${it.dead ? ' dead soft' : ''}${it.sub ? ' hassub' : ''}`;
@@ -253,7 +253,7 @@ function topItems() {
     { id: 'load', icon: 'folder-open', label: 'Load world', dead: rights ? LOAD_WHY : NEEDS_RIGHTS, tag: rights ? 'not yet' : 'builders' },
     'sep',
     { id: 'panels', icon: 'layout', label: 'Panels', sub: true },
-    // the way down to the light version, asked first; back up
+    // the way down to the lite client, asked first; its ∃ logo is the way back up
     { id: 'lite', icon: 'chat-circle', label: 'Lite client', title: "the lite client: chat, the action bar and who's here, with no 3D world", run: () => confirmCenter({
       title: 'Switch to the lite client?',
       body: "Chat, the action bar and who's here, with no 3D world. Useful on a slow or struggling machine. Click the \u2203 logo there to come back.",

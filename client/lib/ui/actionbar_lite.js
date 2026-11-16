@@ -6,7 +6,7 @@ import { bus } from '../base.js';
 const GLYPH_FALLBACK = '\u2728';
 
 /** @param {(name: string) => void} gesture fires ONE gesture. NOT a verb sender: there is no
- *  gesture verb (the set is closed by design; the server answers "verb not allowed: gesture").
+ *  gesture verb (the set is closed by design; the authority refuses 'gesture' as unknown-verb).
  *  A gesture is a one-shot field on the presence pose - see lite.js. */
 export function initLiteActions(host, gesture) {
   const row = document.createElement('div');

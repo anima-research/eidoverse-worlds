@@ -9,7 +9,7 @@
 //
 // The brand is a module-private Symbol, so nothing that arrives as data (a name, a label, a JSON message) can pass for
 // markup: JSON has no symbols. A value that is itself markup (an icon svg built with `markup`) nests without escaping.
-// No imports: edit/keyhints.js and other import-free modules use it.
+// No imports, so any module can use it without closing a cycle (edit/keyhints.js does).
 
 const BRAND = Symbol('markup');
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };

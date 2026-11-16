@@ -137,7 +137,7 @@ export function initStylePanel() {
       FIELDS.forEach((f, i) => { inputs[i].value = currentHex(f); });
       vis.repaint(); xrVis.repaint();
       bus.emit('style', { key: '*', value: null });   // the VR quads re-raster at the sheet's values
-      // ui.js's 1s sweep repaints the --p fill; dispatching input here would
+      // ui.js's 200 ms sweep repaints the --p fill; dispatching input here would
       // re-save the default into the just-emptied store
     };
     body.appendChild(reset);

@@ -16,7 +16,7 @@ import { bus } from '../base.js';
 
 const SEEN_LS = 'ew-lantern-seen';
 const isMac = typeof navigator !== 'undefined' && /Mac|iP(hone|ad|od)/.test(navigator.platform || navigator.userAgent || '');
-export const CHORD = isMac ? '⌘K' : 'Ctrl K';   // the rail's search entry shows it too (ui.js)
+export const CHORD = isMac ? '⌘K' : 'Ctrl K';   // the rail's search entry shows it too (ui-dock.js)
 
 let root = null, input = null, listEl = null, pill = null;
 let rows = [];        // what is on screen, selectable, in display order
@@ -42,7 +42,7 @@ export function openLantern(text = '') {
   input.focus();
   try { localStorage.setItem(SEEN_LS, '1'); } catch { /* private mode */ }
   if (pill?.classList.contains('fresh')) { pill.classList.remove('fresh'); paintPill(); }
-  bus.emit('lantern');   // the rail's search entry lights with it (ui.js)
+  bus.emit('lantern');   // the rail's search entry lights with it (ui-dock.js)
 }
 
 export function closeLantern() {

@@ -437,7 +437,7 @@ function rememberWorld() {
   try { localStorage.setItem(LAST_WORLD_KEY, CONFIG.world); } catch { /* private mode */ }
 }
 
-/** This page entered signed in and someone since logged this browser out (ui.js logOut clears ew-authed): a tab
+/** This page entered signed in and someone since logged this browser out (ui-menu.js logOut clears ew-authed): a tab
  *  still open must not write that person's world back for the next visitor. */
 function loggedOutElsewhere() {
   try { return !!CONFIG.authed && localStorage.getItem('ew-authed') !== '1'; } catch { return false; }

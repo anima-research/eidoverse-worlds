@@ -1,4 +1,5 @@
-// icons — one Lucide registry, three renderers, no font dependency anywhere.
+// icons — the icon registries (Lucide stroke here; Phosphor fill and regular further down) and their renderers, with
+// no font dependency anywhere.
 //
 // Why: canvas `fillText` of an emoji silently paints NOTHING when the platform lacks that glyph (no error, no
 // fallback), and headless Chromium may rasterize it fine, so tests can't see it. Any emoji that carries meaning in
@@ -10,6 +11,7 @@
 //   stroke(ctx, name, size)  → canvas / 3D sprite (Path2D, cached)
 //   svg(name, size)          → inline <svg> markup for DOM chrome
 //   has(name)                → registry probe
+//   fsvg / rsvg / fillPath   → the Phosphor sets (below), with hasFill / hasLine
 //
 // Adding an icon: curl raw.githubusercontent.com/lucide-icons/lucide/main/icons/<name>.svg and paste its path `d`
 // strings here (a <rect> goes in RECT below, as mic's does). Do NOT hand-draw replacements: they read as blobs at 26px.

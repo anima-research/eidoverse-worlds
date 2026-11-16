@@ -9,7 +9,6 @@
 
 export const COMMANDS = [
   // RETIRED: kept unlisted so a typed name is told why (chat.js says `retired`) instead of "unknown command" or silence.
-  // whisper was removed (R 10-18); /emote became /anim; ghost was removed (2dc8932f, R 10-20)
   { name: 'w', aliases: ['whisper', 'r', 'reply'], listed: false, help: 'whisper was removed — world chat is public', retired: 'whisper was removed — world chat is public' },
   { name: 'emote', listed: false, help: '/emote is /anim now', retired: '/emote is /anim now: /anim <name> plays one of the action bar\'s anims (🎭, or number keys)' },
   { name: 'ghost', aliases: ['unghost'], listed: false, help: 'ghost was removed', retired: 'ghost was removed: there is no hidden presence in a world' },
@@ -65,7 +64,7 @@ export const COMMANDS = [
 ];
 
 /** Resolve a typed word (name or alias) to its row — the ONE alias truth.
- *  Lazy map, rebuilt never: the table is a module-load constant. */
+ *  Built once at load: the table is a module-load constant. */
 const byWord = new Map();
 for (const row of COMMANDS) {
   byWord.set(row.name, row);
@@ -81,7 +80,7 @@ export function register(name, fn) { handlers.set(name, fn); }
 
 /** Run a command. Returns false for an unknown name — the caller decides
  *  whether silence or a complaint is the right answer (the bus path stays
- *  silent, exactly as the old if-chain's fall-through did). */
+ *  silent). */
 export function dispatch(cmd, arg) {
   const fn = handlers.get(cmd);
   if (!fn) return false;

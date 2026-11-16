@@ -17,7 +17,7 @@
 //     group    the heading it lists under ("gestures", "panels", "world", …)
 //     key      the keyboard key that does the same thing, shown right-aligned —
 //              the keys teach themselves
-//     run      () => void. Required (unless merging into an entry that has one).
+//     run      () => void. Required unless `fill` is given (or merging into an entry that has either).
 //     when     () => bool — hidden while false (a builder-only wrench)
 //     fill     text a prompt should put in its line instead of running (a command
 //              that needs an argument: '/w ')
@@ -54,7 +54,7 @@ const visible = (a) => { try { return a.when ? !!a.when() : true; } catch { retu
 // Tiers, highest first — the ranking contract the tests pin:
 //   exact (1000) > prefix (900) > key (850) > word-start (700) > all-words (650)
 //   > substring (400) > subsequence (100..199, tighter spans higher).
-// A KEYWORD match (word-start or better) counts a tier lower (-100) than the same match on the title,
+// A KEYWORD match (all-words or better) counts a tier lower (-100) than the same match on the title,
 // so "mute" finds the mic through its keyword but a title that says "mute" wins,
 // and a keyword merely STARTING with what you typed ("hi" → "hide") is never STRONG.
 //

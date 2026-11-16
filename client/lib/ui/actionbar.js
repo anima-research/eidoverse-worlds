@@ -4,7 +4,7 @@
 import { makeFrame, chromeCost } from './windows.js';
 import { bus } from '../base.js';
 import { ANIM_ORDER, ANIM_ICONS } from './animnames.js';
-import { escapeHtml } from './markup.js';   // names + glyphs, no engine
+import { escapeHtml } from './markup.js';   // for names and glyphs, which come from the world's defs
 import { getMe } from '../player/mybody.js';
 import { registerXRPanel } from '../xr/xrpanels.js';
 import { register as registerAction } from './actions.js';

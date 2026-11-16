@@ -251,8 +251,7 @@ export const WIDGETS = {
         st.key = f.k; st.commitRun = (pairs) => edit('__run', pairs);
         st.peers = () => (row.classList.contains('chan-sel') ? [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])].map((r) => r._st).filter((x) => x && x !== st) : []);
         // selecting channels, as in Maya's channel box: a click selects one; Ctrl toggles one; Shift selects
-        // the run from the last one clicked; dragging UP or DOWN the names selects the run under the pointer (sideways
-        // is still the scrub)
+        // the run from the last one clicked
         const chans = () => [...(row.parentElement?.children ?? [])].filter((r) => r.classList?.contains('sp-row') && r.querySelector('.sp-chan'));
         const selectRun = (a, b, keep) => { const L = chans(); const i = L.indexOf(a), j = L.indexOf(b); if (i < 0 || j < 0) return;
           if (!keep) for (const r of L) r.classList.remove('chan-sel'); for (let k = Math.min(i, j); k <= Math.max(i, j); k++) L[k].classList.add('chan-sel'); };
@@ -636,8 +635,8 @@ export const WIDGETS = {
   },
   pop: {
     dom(f, D) { const { row, edit, el, openPop } = D;
-      // one button that opens a searchable list (Add Component): {label, items:[{k, label, category, hint,
-      // disabled}], recentKey}. Typing filters on name and hint, Enter takes the first, Esc or a click outside closes.
+      // one button that opens a searchable list (Add Component): {label, items:[{k, label, category, hint, keywords,
+      // chip, disabled}], recentKey}. Typing filters on name, keywords and hint, Enter takes the first, Esc or a click outside closes.
       const b = el('button', `sp-btn sp-pop-btn${f.icon ? ' sp-btn-ico' : ''}`, f.label);
       if (f.icon) b.insertAdjacentHTML('afterbegin', iconSvg(f.icon, 14));
       b.title = f.hint ?? '';
@@ -667,7 +666,7 @@ export const WIDGETS = {
         box.append(b);
       }
       row.append(box);
-      // a hint is not shape (a saved blueprint's "2 copies placed" changes under it): kept current in place
+      // a hint is not shape (the station tile's names the selected thing): kept current in place
       row.update = (nf) => {
         const byV = new Map((nf.options ?? []).map((o) => [String(o.v), o]));
         for (const b of box.querySelectorAll('.sp-tile')) {

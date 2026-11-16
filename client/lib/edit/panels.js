@@ -48,7 +48,7 @@ import { isMineHidden, toggleMineHidden, showAllMine, myHiddenCount } from './my
 import { agoWords, touchWords } from '../../../shared/protocol/refusal.js';
 import { recordComponents } from '../../../shared/protocol/view.js';
 import { RANK, lockWord } from '../../../shared/protocol/roles.js';
-import { KEYHINTS, withKeys } from './keyhints.js';   // these panels' writes are requests
+import { KEYHINTS, withKeys } from './keyhints.js';
 import { called } from '../ui/plainwords.js';
 
 const _wp = new THREE.Vector3();
@@ -473,7 +473,7 @@ function resetTransform(what) {
 
 // ---------------------------------------------------------------- inspector
 let painted = [];      // the inspector's last field list (a canvas stepper's delta resolves against it)
-let gesture = null;    // { before } while a transform drag is in flight (the local preview's start pose)
+let gesture = null;    // { before, cur } while a transform drag is in flight (the start pose, and the pose the preview shows)
 
 /** Is a whole-entity motion composing onto this thing's rest pose? */
 function drivenBy(id, obj) {
@@ -481,7 +481,7 @@ function drivenBy(id, obj) {
   const m = bagOf(id)?.motion;
   return m?.type && !m.part ? 'motion' : null;
 }
-/** The pose `place` edits — the FOLD's, which is the rest pose by definition. */
+/** The pose a transform edit writes — the FOLD's, which is the rest pose by definition. */
 function restPose(id, obj) {
   const rec = foldRecord(id);
   return rec
@@ -561,12 +561,12 @@ function pushCards(f, schema, id, opts = {}) {
     const key = `c:${sec.key ?? sec.type}`;
     const prov = sec.present !== false ? touchLine(touched[wireOf(sec)]) : null;
     const acts = sec.removable && sec.key ? [{ k: `ed:remove.${sec.key}`, icon: 'x', title: `remove ${sec.title}`, danger: true }] : [];
-    // provenance dot: amber = a draft this client reads (docs/contributing/COMPONENT-LADDER.md), hollow = a namespaced component nothing
-    // here reads; a core component has none
+    // provenance pill (docs/contributing/COMPONENT-LADDER.md): amber = a draft this client reads, blue = a draft trusted in this
+    // world, hollow = a namespaced component nothing here reads; a core component has none
     const dot = sec.trusted ? 'trusted' : sec.draft ? 'draft' : (sec.key && String(sec.key).includes('/') ? 'foreign' : null);
     f.push({ t: 'group', k: key, actions: acts, ...(dot ? { dot } : {}), label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, ...(away && sec.type === 'Transform' ? away : {}), hint: `${prov ? `${prov}\n` : ''}${sec.summary} — ${sec.category} · engine record ${(sec.hash ?? 'draft').slice(0, 12)}${sec.status ? ` · ${sec.status}${sec.status === 'trial' ? ' (its shape may change during the alpha)' : ''}` : ''}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key), ...(prov ? { prov } : {}) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
-    // an alias (pos.yaw) stays addressable for agents but isn't drawn; the Quaternion row folds shut except in quaternion mode
+    // an alias (pos.yaw) stays addressable for agents but isn't drawn; rotation order and the quaternion wait for the group below
     const quat = [];
     for (const addr of sec.fields) {
       const r = cardRow(schema, id, addr); if (!r || r.alias) continue;
@@ -585,9 +585,8 @@ function pushCards(f, schema, id, opts = {}) {
   }
 }
 
-/** The world entity in the Inspector: a header, then its Sky / Weather /
- *  Terrain / Grass cards from shared/worldentity.js — edited through the sky,
- *  weather, terrain and grass verbs (inspect.js commitEdit routes @world). */
+/** The world entity in the Inspector: a header, then its Sky / Weather / Terrain / Grass / Trusted components cards
+ *  from shared/worldentity.js worldSchema (inspect.js commitEdit routes @world edits). */
 function worldFields() {
   const schema = schemaFor(WORLD_ID);
   const f = [
@@ -675,7 +674,7 @@ function inspectorFields() {
     { t: 'info', label: 'placed by', value: placedBy(id), hint: 'who first made it' },
   ];
 
-  // one card per component (schema.sections), each owning its fields by group.k address, then Add Component
+  // one card per component (schema.sections), each owning its fields by group.k address
   if (schema.sections) {
     // the name line: title, id, then the eye (my view only, the Hierarchy's switch) and the padlock
     let nameRow = null;
@@ -723,7 +722,7 @@ function inspectorFields() {
     // the cards' foot: this thing's latest change in one line, the doorway to History (which lives beside the Inspector)
     const lc = lastChange(id);
     if (lc) f.push({ t: 'btn', k: 'history', label: `last change: ${lc} — History ›`, hint: 'the most recent change to this thing, from the world log. History lists them all, newest first; each card\'s tooltip says who last set it' });
-  } else {   // a schema without sections (an older authority): the channels lane, then the groups
+  } else {   // a schema without sections (inspect.js schemaFor found no record): the channels lane, then the groups
   // CHANNELS — the numeric lane: every num in the schema, transform first
   f.push({ t: 'group', k: 'channels', label: `Channels${locked ? ' 🔒' : ''}${obj.userData.mountedTo ? ' (mounted)' : ''}`, open: isOpen(id, 'channels') });
   for (const c of channels(schema)) {
@@ -978,7 +977,7 @@ const libTiles = (pics) => ({ t: 'tiles', k: 'place', value: null, empty: libQ ?
   options: libModels().map((m) => ({ v: m.path, label: m.name, ...(pics && m.preview ? { img: `/library/${m.preview}` } : {}),
     hint: `${pics ? 'a blueprint of one Model — click, then click the world to place it' : 'a blueprint of one Model — places it 1.5 m ahead of you'}${m.credits ? `\n${creditLine(m.credits)}` : ''}` })) });
 
-// the transform tools, as the rail draws them (layout.js TOOLS) — the same ids build.js setTool takes
+// the rail's transform tools (layout.js TOOLS) less pivot — the same ids build.js setTool takes
 const TRANSFORM_TILES = [
   { v: 'select', label: 'select', icon: 'mousePointer2', hint: 'Q — click picks, a drag never moves' },
   { v: 'move', label: 'move', icon: 'move', hint: 'G — drag moves; Shift+drag raises' },
@@ -1129,7 +1128,7 @@ function histLoad(id, more = false) {
   hist.loading = true;
   return sendRequest('history', id ? { id, limit: 20, ...(before != null ? { before } : {}) } : { limit: 30 }).then((r) => {
     if (hist.id !== id || (!more && gen !== hist.gen)) return;   // a newer read owns the panel now
-    // refused or timed out: say so and ask again later, not at once: a `rate` refusal is only met by more reads
+    // refused or timed out: say so and ask again later, not at once (histFailed)
     if (!r?.ok) { histFailed(id, r?.refused?.reason ?? 'no answer', more); return; }
     hist.failed = null; histRetry.reset();
     const rows = id ? r.entries : worldHistoryRows(r.entries, Edits.nameOf);
@@ -1140,7 +1139,7 @@ function histLoad(id, more = false) {
 }
 // A refused or unanswered read says so and asks again, backing off (2 s, 4 s, … 30 s): a `rate` refusal met with steady reads
 // stays refused. An Older… read isn't re-asked (that would fetch the NEWEST page again); the person can press Older… again.
-// The whole world's view needs no timer: its key changes every 3 s and re-reads by itself.
+// The whole world's view needs no timer: its key changes every 3 s, so the next repaint re-reads.
 function histFailed(id, why, more = false) {
   hist.loading = false; hist.failed = why;
   if (more) { flashHint(`couldn't read older history: ${why}`, 3000); repaintAll(); return; }
@@ -1340,7 +1339,7 @@ export function initEditPanels() {
     shown = !!on;
     for (const p of PANELS) { const sf = frames.get(p.id); if (!sf) continue; if (!on) sf.frame.hide(); else if (!p.optional) sf.frame.show(); }
     clearInterval(rosterTimer); rosterTimer = 0;
-    // the roster every 5 s; a watched log every 2.5 s while the console is open (someone is reading it)
+    // the roster every 5 s; with the console open (someone is reading it), the roster and a watched log every 2.5 s
     if (on) { refreshBehaviors(); let n = 0; rosterTimer = setInterval(async () => {
       const open = frames.get('console')?.frame.visible;
       if (!open && (n++ % 2)) return;

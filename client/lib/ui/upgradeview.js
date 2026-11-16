@@ -58,7 +58,7 @@ function reportView(report, hash) {
   return box;
 }
 
-/** Fill the refused splash for an old-format world. `refused`: the join's structured reason; `words`: the server's sentence. */
+/** Fill the refused splash for an old-format world. `refused`: the join's structured reason; `world`: its name, sent with the review and upgrade requests. */
 export function showOldFormat(root, refused, world) {
   if (!root) return;
   root.querySelector('.sp-upgrade')?.remove();

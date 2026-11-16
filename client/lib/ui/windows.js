@@ -200,12 +200,6 @@ export function setLocked(v) {
 }
 document.body.classList.toggle('ui-locked', locked);
 
-/**
- * @param id       stable key for the saved layout
- * @param opts     { title, x, y, w, h, minW, minH, resizable, collapsible,
- *                   closable, hidden, onResize }
- *                 x/y accept negatives to anchor from the right/bottom edge.
- */
 // The newcomer's layout: a hand-arranged desktop exported from a live session and anchored to edges so it holds on
 // other screens. Chat and the action bar are open; everything else is closed but pinned to the dock (World opens from
 // the rail button or the lantern). A frame's own saved state still wins; resetLayout returns HERE.
@@ -249,6 +243,12 @@ function fitsDefaults() {
   return innerWidth - 16 >= Math.max(widest, sideBySide, centredRow) && innerHeight - 16 >= tallest + bar;
 }
 
+/**
+ * @param id       stable key for the saved layout
+ * @param opts     { title, x, y, w, h, minW, minH, resizable, closable, hidden, onResize, className }
+ *                 x/y accept negatives to anchor from the right/bottom edge, and 'center'. DEFAULT_LAYOUT[id]
+ *                 overrides what it names. (collapsible is accepted and unused.)
+ */
 export function makeFrame(id, opts = {}) {
   let docked = null;   // declared FIRST: paint()/fit() read it, and a let in the TDZ throws at construction
   if (frames.has(id)) return frames.get(id);
@@ -522,7 +522,7 @@ export function makeFrame(id, opts = {}) {
     root.style.cursor = (!_hit(e) && _grabbableAt(e)) ? 'grab' : '';
   });
   root.addEventListener('pointerdown', (e) => {
-    if (locked || docked || !e.isTrusted) return;                // isTrusted: our own
+    if (locked || docked || !e.isTrusted) return;                // isTrusted: not our own re-dispatch (below)
     if (!e.altKey && (_hit(e) || !_grabbableAt(e))) return;
     // the re-dispatch below bubbles back through this capture handler: isTrusted guards the recursion
     e.preventDefault(); e.stopPropagation();

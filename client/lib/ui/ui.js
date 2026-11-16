@@ -1,6 +1,6 @@
 // ui — everything that isn't the 3D scene and isn't the chat window.
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames and the help overlay. The rail is
-// ui-dock.js, the ∃ menu ui-menu.js, the front door ui-door.js. The menu and the door import this file; it imports only
+// ui-dock.js, the ∃ menu ui-menu.js, the front door ui-door.js. The menu and the door import this file; of those three it imports only
 // the dock, which imports neither.
 
 import { bus, setErrorSink, report } from '../base.js';
@@ -92,18 +92,17 @@ bus.on('loading', () => {
 
 export function setHud(parts) { el.hud.innerHTML = parts; }
 
-// The hint bar shows TEXT unless it is handed markup built with html`` (markup.js): a plain string — a person's name, a
-// thing's label, an error from anywhere — is shown as the characters it is, never parsed (security pass 3, H1).
 // ============================================================ ONE status bar
 // #hintbar is the one bar at the lantern's spot, and everything CLAIMS it with a priority:
 //   1 attn      a refusal (attention colour, copy pill, holds while pointed at)
 //   2 keys      the engaged gesture's keys (keyhints `during`)
-//   3 flash     a moment's notice ("panels hidden · Tab", "locked", the authority's warnings on my own edit)
+//   2.5 flash   a moment's notice ("panels hidden · Tab", "locked")
+//   3 warn/hint the authority's warnings on my own edit; setHint
 //   4 selection build mode's selection line (name · keys · lock)
 //   5 ambient   the standing offer from the world ("X — sit")
 // The lowest number live shows; when it ends, the next live one shows (no stacking, no gaps). The lantern pill is the
 // resting content: it yields while any claim shows and comes back when none does. Content: text (shown as the
-// characters it is — security pass 3, H1), markup built with html``, or a node (the selection line, with its checkbox).
+// characters it is, never parsed — security pass 3, H1), markup built with html`` (markup.js), or a node (the selection line, with its checkbox).
 const claims = new Map();   // id → { id, priority, content, node, tone, hold, ttl, timer }
 let hovering = false;
 const winner = () => { let w = null; for (const c of claims.values()) if (!w || c.priority < w.priority) w = c; return w; };
@@ -288,7 +287,7 @@ new MutationObserver(() => {
 
 // ============================================================ panel frames
 
-// World and Settings hold their sections as TABS:
+// World, Settings, Moderation and World Settings hold their sections as TABS:
 // a strip on top, one pane below. The strip is the profile's own recipe (.pf-tabs/.pf-tab — one tab
 // mechanism in this client, not three), and it tightens as the frame narrows: full labels → the chosen
 // tab alone keeps its label → icons only → the strip scrolls. Every tab keeps its name as a tooltip.
@@ -328,8 +327,7 @@ export function panelFrame() {
   return worldFrame;
 }
 
-// engine settings — machine-noun home (video, sound, controls). First tenant:
-// the audio panel, moved out of the world menu. Same tabbed shape.
+// engine settings — machine-noun home (video, sound, controls). Same tabbed shape.
 let settingsFrameApi = null;
 export function settingsFrame() {
   if (!settingsFrameApi) {
@@ -343,11 +341,6 @@ export function settingsFrame() {
   return settingsFrameApi;
 }
 
-/** A section of the world (or settings) frame: a TAB in its strip and a pane under it. onOpen is
- *  awaited each time the tab is chosen, so rosters and catalogs re-fetch instead of going stale.
- *  The api is the accordion's: `box` (#sec-<id>, the pane, .open while chosen) holds `body`; `head`
- *  is the tab button (#sec-<id>-tab); toggle(true) chooses it, toggle(false) folds the pane away,
- *  toggle() flips. */
 // Moderation and World Settings: tabbed frames like settings, each with its own dock entry. Moderation's entry
 // exists only while you hold a moderation power (setDockEntry); World Settings is everyone's (owners edit).
 let moderationFrameApi = null, worldSettingsFrameApi = null;
@@ -360,6 +353,11 @@ export function worldSettingsFrame() {
   return worldSettingsFrameApi;
 }
 const HOSTS = { settings: () => settingsFrame(), moderation: () => moderationFrame(), 'world-settings': () => worldSettingsFrame() };
+/** A section of a tabbed frame (`host`; the world frame by default): a TAB in its strip and a pane under it. onOpen is
+ *  awaited each time the tab is chosen, so rosters and catalogs re-fetch instead of going stale.
+ *  The api is the accordion's: `box` (#sec-<id>, the pane, .open while chosen) holds `body`; `head`
+ *  is the tab button (#sec-<id>-tab); toggle(true) chooses it, toggle(false) folds the pane away,
+ *  toggle() flips. */
 export function makeSection(title, onOpen, { id = '', host: hostName = 'world' } = {}) {
   const hostFrame = (HOSTS[hostName] ?? panelFrame)();
   const box = document.createElement('div');
@@ -436,9 +434,6 @@ export function collapseAll() {
   for (const f of [worldFrame, settingsFrameApi]) for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
 }
 
-// ============================================================ who's here
-
-// (the roster frame is gone — 'present' lives in Chat's side pane)
 export { escapeHtml };   // markup.js's: the one escaper (kudzu C1)
 
 // ============================================================ overlays
@@ -464,7 +459,7 @@ export function resetHudLayout() { resetLayout(); resetPillPlace(); }
 // ---- help ------------------------------------------------------------------
 // The overlay's content is a def (defs/ui/_help.json): title, subtitle, the key table, the prose sections, so a world
 // can reword its welcome without forking the client. Defs are server-owned, so the fragments are trusted markup.
-// "Your layout" stays code-side (a live button wired to resetLayout). No baked-in fallback prose.
+// "Your layout" stays code-side (a live button wired to resetHudLayout). No baked-in fallback prose.
 
 export function buildHelp() {
   const paint = () => defsRegistry().then((reg) => {
@@ -493,13 +488,13 @@ export function toggleHelp() {
   el.help.classList.contains('open') ? closeOverlay(el.help) : openOverlay(el.help);
 }
 
-// Tab: the people pane (the chat frame's side pane replaced the old roster)
+// U: the people pane (the chat frame's side pane)
 export function togglePeopleHere() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
   // ask the frame for the nodes chat.js built rather than finding them by class: .chat-cols and .chat-side-tog are
   // public class contract (docs/guide/MODDING-UI.md §3), so a mod may mount markup carrying them in this body
   const cols = f?.sidePane?.('cols');
   const closed = cols?.classList.contains('side-closed');
-  // Tab opens: only a closed pane needs the toggler (clicking an open one would close it)
+  // U opens: only a closed pane needs the toggler (clicking an open one would close it)
   if (closed) f.sidePane('tog')?.click();
 }

@@ -65,7 +65,7 @@ export function emptyWorldNotice({ world, params, worldRemembered }) {
   return `you are in "${world}", which is empty. Add ?world=<name> to the link to go somewhere else.`;
 }
 
-/** Forget where this person has been (ui.js logOut): the memory is the person's,
+/** Forget where this person has been (ui-menu.js logOut): the memory is the person's,
  *  and the browser may be the next person's. */
 export function forgetRememberedWorlds() {
   try { globalThis.localStorage?.removeItem(LAST_WORLD_KEY); } catch { /* private mode */ }

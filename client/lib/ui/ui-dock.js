@@ -67,8 +67,6 @@ if (typeof window !== 'undefined') {
   window.eido = Object.assign(window.eido ?? {}, { ui: { registerPanel } });
 }
 
-/** The rail as DATA, for the VR ring (the radial is the dock rendered radially, same pins). Open ∪ pinned, in dock
- *  order; action entries (the wrench) are not frames and stay out. */
 /** The profile button wears a presence dot in its bottom-right corner. */
 bus.on('presence:me', (v) => paintPresence(v));
 export function paintPresence(state) {
@@ -80,6 +78,8 @@ export function paintPresence(state) {
 
 // one resolver for the rail AND the VR ring, so frames whose glyph comes from the id/emoji fallbacks get it in VR too
 export const iconOf = (e) => e.icon ?? ID_ICON[e.id] ?? EMOJI_ICON[(e.label ?? '').replace(/\uFE0F/g, '')];
+/** The rail as DATA, for the VR ring (the radial is the dock rendered radially, same pins). Open ∪ pinned, in dock
+ *  order; action entries (the wrench) are not frames and stay out. */
 export function dockPins() {
   return dockEntries
     .filter((e) => !e.action && (pins.has(e.id) || !!getFrame(e.id)?.visible))
@@ -127,8 +127,9 @@ function addDockButton(entry) {
  *  Called from initDock so they exist wherever the dock does: main.js lists the dock, the UI owns
  *  what's behind it. Returns the entries that lead the rail (profile sits right under ∃). */
 function initPanels() {
-  // dynamic, not static: profile/videopanel reach controller.js through xrpanels/mybody, and a static edge from
-  // ui.js closed an import loop that read controller's `pointerClaimed` before initialization (rung-4 boot).
+  // dynamic, not static: profile/videopanel reach controller.js through xrpanels/mybody, and controller.js imports
+  // ui.js, which imports this file: a static edge here closes a loop that reads controller's `pointerClaimed` before
+  // initialization.
   // The dock entry is pushed now; the frames land a tick later and the dock repaints so the button shows.
   Promise.all([import('./profile.js'), import('./stylepanel.js'), import('./videopanel.js'), import('./capnotice.js'), import('../edit/dropdown.js')])
     .then(([p, st, v, c, d]) => { p.initProfile(); st.initStylePanel(); v.initVideoPanel(); c.initCapNotice(); d.initDropdowns(); paintDock(); })
@@ -210,7 +211,7 @@ export function initDock(entries) {
     }
     paintDock();
   });
-  setInterval(paintDock, 2000);   // role grants land async; the wrench follows (module-scope timer, as above)
+  setInterval(paintDock, 2000);   // role grants land async; the wrench follows (a timer that never ends, as ui.js's slider sweep)
   menuHooks.init();
 
 }
@@ -298,7 +299,7 @@ function snapDock(ev) {
   applyDockEdge(pos);
 }
 // write a title only when it changes: the tooltip chip borrows the attribute while hovered, and a rewrite every 2 s
-// would re-arm the native one (the MutationObserver above routes a real change into the borrow)
+// would re-arm the native one (ui.js's tooltip MutationObserver routes a real change into the borrow)
 function setTitle(b, t) { if ((b._tip ?? b.getAttribute('title')) !== t) b.setAttribute('title', t); }
 export function paintDock() {
   // the rail never hides — it carries the ∃, which is always visible

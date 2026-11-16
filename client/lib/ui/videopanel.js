@@ -13,12 +13,12 @@ import { allowUntrusted, setAllowUntrusted, UNTRUSTED_WORDS } from '../mediapref
 import { initConsentPanel } from './consentpanel.js';
 import { myShadowPref, setMyShadowPref } from '../render/materials.js';
 
-// same markup contract as the audio section (label right of centre, control
-// left of it — index.html owns .row.wide / .nm / .ctl)
 // storage can throw (private mode, quota) — never let a preference read kill the panel
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } };
+// same markup contract as the audio section (label right-aligned in the left column, control left-aligned beside it —
+// index.html owns .row.wide / .nm / .ctl)
 function selectRow(label, hint, options, value, onChange) {
   const row = document.createElement('div');
   row.className = 'row wide';
@@ -57,7 +57,7 @@ function needsReload(row) {
 const pct = (v) => v === 'auto' ? 'auto (adaptive)' : `${Math.round(v * 100)}%`;
 
 // The same dials as a VR quad (rail id 'settings'), through the same getters and setters the desk's rows call.
-// Discrete choices are list rows with a 'use' action: 'auto' appears in all three lists, so a bare row click is ambiguous.
+// Discrete choices are list rows with a 'use' action: 'auto' appears in four of the lists, so a bare row click is ambiguous.
 function videoFields() {
   const pick = (k, values, cur, label) => ({ t: 'list', label,
     rows: values.map((v) => ({ id: String(v), label: String(v), active: String(v) === String(cur),

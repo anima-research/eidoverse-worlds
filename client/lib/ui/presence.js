@@ -1,11 +1,11 @@
 // presence — present / away / busy, for the profile icon's corner dot. Automatic between present and away
-// (tab hidden, or no input for AWAY_S); busy is chosen in the profile and held until changed. Rides every
+// (tab hidden, or no input for AWAY_S); away or busy chosen in the profile holds until present is chosen. Rides every
 // pose packet as `presence` (net.js; shared/presencewire.js validates, remotes.js applies).
 import { bus } from '../base.js';
 
 export const STATES = ['present', 'away', 'busy'];
 const AWAY_S = 180;
-let manual = null;            // 'busy' (or a forced 'present'/'away') — null = automatic
+let manual = null;            // 'away' or 'busy' when chosen (setPresence) — null = automatic
 let auto = 'present';
 let lastInput = performance.now();
 
