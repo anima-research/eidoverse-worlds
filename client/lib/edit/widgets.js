@@ -192,7 +192,7 @@ const ROW = {
       const bx = width - pad - V.minHit, by = y + IN;
       if (r.locked) box(g, bx, by, V.minHit, V.minHit, T.press, null);
       icon(g, r.locked ? 'lock' : 'lockOpen', bx + V.minHit / 2, by + V.minHit / 2, 20, r.locked ? T.accent : T.dim);
-      regions.push({ x: bx, y: by, w: V.minHit, h: V.minHit, action: 'lock', payload: r.id });
+      if (r.lockable !== false) regions.push({ x: bx, y: by, w: V.minHit, h: V.minHit, action: 'lock', payload: r.id });   // drawn, but not offered above my rank
     }
   },
 };
