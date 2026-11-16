@@ -353,7 +353,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   ok(r.code === 0 && !fs.existsSync(path.join(d, CACHE_FILE)), "IP24c a fold cache (derived, not history) neither blocks the rollback nor is left behind", r.out.slice(-400));
   ok(r.code === 0 && same(after, fp) && !isWorldDir(d) && oldWorldAt(W, name)?.kind === "translatable" && fs.readFileSync(dirf, "utf8") === dirBefore && !temps().length && /rolled back/.test(r.out) && /forgot 3 identities/.test(r.out),   // Ann, Bob and the banned Troll
     "IP24 rollback: every file is byte-identical to before (same bytes, inode, mtime; nothing made is left), the shared directory is byte-identical (the minted identities forgotten), and it is an old world again", { code: r.code, out: r.out.slice(-700), same: same(after, fp), dir: fs.readFileSync(dirf, "utf8") === dirBefore, keys: Object.keys(after) });
-  ok((eidoBefore === null) === !fs.existsSync(path.join(OPT, "eido-index.json")) || fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") === eidoBefore, "IP24 the content-address index is left as it was (no model bytes on this host, so it never changed)");
+  ok(eidoBefore === null ? !fs.existsSync(path.join(OPT, "eido-index.json")) : fs.existsSync(path.join(OPT, "eido-index.json")) && fs.readFileSync(path.join(OPT, "eido-index.json"), "utf8") === eidoBefore, "IP24 the content-address index is left as it was (no model bytes on this host, so it never changed)");
   const again = await xlate([name]);
   ok(again.code === 0 && isWorldDir(d), "IP24 …and it translates again after the rollback", again.out.slice(-300));
   // IP25: the server has written to the translated world since
