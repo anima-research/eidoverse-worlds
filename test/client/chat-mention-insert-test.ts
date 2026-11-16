@@ -21,7 +21,7 @@ GlobalRegistrator.register();
 
 const { frameStub } = await import("../stubs/chat-frames-stub.mjs");
 const chat = await import("../../client/lib/ui/chat.js");
-chat.initChat({ send: () => {}, whisper: () => {}, people: () => [{ id: "me", me: true }] });
+chat.initChat({ send: () => {}, people: () => [{ id: "me", me: true }] });
 const input = frameStub.body!.querySelector("#chatline") as HTMLTextAreaElement;
 const logEl = frameStub.body!.querySelector("#chatlog") as HTMLElement;
 

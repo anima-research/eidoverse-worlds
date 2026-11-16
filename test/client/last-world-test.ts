@@ -244,7 +244,7 @@ function pageLoad(search: string, stored: string | null, steps: Step[], tab: str
     const net = await import(L + "net.js");
     const { CONFIG } = await import(L + "base.js");
     // the door's yes: the authority's cut of the world (wire state: {id: {born, c: {comp: {v}}}}), at head 0
-    const yes = (wire) => net._dispatch({ type: "snapshot", you: "helen", present: [], state: null, entries: [], throughSeq: 0,
+    const yes = (wire) => net._dispatch({ type: "snapshot", you: "helen", present: [], entries: [], throughSeq: 0,
       dialect: "eidoverse-log", v: 4, state: wire, seq: 0, world: "w", actor: "helen" });
     // a live entry, the next one after what this client has folded
     const live = (e) => net._dispatch({ type: "log", from: net.replica.seq + 1, entries: [{ ts: Date.now(), actor: "helen", ...e }] });
