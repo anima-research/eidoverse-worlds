@@ -619,16 +619,16 @@ const cases: Case[] = [
       s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
       return { del, zed: eff(s, "zed")?.role, zedBuild: code(set(s, "zed", "label", "z", "crate")) }; },
     good: (o) => o.del === "ok" && o.zed === "member" && o.zedBuild === "rights" },
-  { id: "PL4", what: "visitor is just a word now: a grant of it, a default-role of it and a grabbable's who naming it are refused where the world defines no such role, as any unknown role is", run(s) {
+  { id: "PL4", what: "visitor is just a word now: a grant of it, a default-role of it and a grabbable's who naming it are refused (shape) where the world defines no such role", run(s) {
       s.call("olive", "create-world", { title: s.name });
       const g = code(role(s, "vic", { role: "visitor" })), d = code(set(s, "olive", "default-role", { role: "visitor" }));
       const b = code(s.call("olive", "create", { id: "ball", model: "crate", components: { grabbable: { who: "visitor" } }, place: { at: [0, 0] } }));
       return { g, d, b }; },
-    good: (o) => !!o.g && !!o.d && !!o.b },
+    good: (o) => o.g === "shape" && o.d === "shape" && o.b === "shape" },
   { id: "PL5", what: "none is gone: a grant of none is refused (a ban or a mute does that job); a person with no grant is the world's newcomer role, never a silent look-only body", run(s) {
       s.call("olive", "create-world", { title: s.name }); set(s, "olive", "default-role", { role: "member" });
       return { none: code(role(s, "nn", { role: "none" })), dnone: code(set(s, "olive", "default-role", { role: "none" })), say: show(s.call("zed", "say", { text: "hi" })) }; },
-    good: (o) => !!o.none && !!o.dnone && o.say === "ok" },
+    good: (o) => o.none === "shape" && o.dnone === "shape" && o.say === "ok" },
   { id: "PL8", what: "guest is orthogonal to role (R 10-21): an owner may give a guest any role, builder included, for as long as that connection lasts; a world gated to member still holds an ungranted guest there", run(s) {
       s.call("olive", "create-world", { title: s.name }); set(s, "olive", "default-role", { role: "member" });
       s.call("olive", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
@@ -648,8 +648,8 @@ const cases: Case[] = [
     good: (o) => o.cy === "ok" && o.mo === "rights" && o.olive === "ok" },
   { id: "W3", what: "a who that names nothing real is refused at the door: an unknown permission, an empty roles list, a role this world doesn't define", run(s) { cast(s);
       const mk = (who: any) => code(s.call("olive", "create", { model: "ball", components: { grabbable: { who } }, place: { at: [1, 1] } }));
-      return { perm: mk({ permission: "teleport" }), empty: mk({ roles: [] }), ghostRole: mk({ roles: ["nosuch"] }), both: mk({ permission: "build", roles: ["builder"] }) }; },
-    good: (o) => !!o.perm && !!o.empty && !!o.ghostRole && !!o.both },
+      return { perm: mk({ permission: "teleport" }), empty: mk({ roles: [] }), ghostRole: mk({ roles: ["nosuch"] }), both: mk({ permission: "build", roles: ["builder"] }), real: mk({ permission: "build" }) }; },
+    good: (o) => [o.perm, o.empty, o.ghostRole, o.both].every((c) => c === "shape") && o.real === undefined },
   { id: "W4", what: "a plain role id keeps meaning that rank or above (nothing stored changes meaning)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { grabbable: { who: "builder" } }, place: { at: [0, 0] } });
       s.call("bob", "move", { to: [0, 0, 0.5] }); s.call("vic", "move", { to: [0, 0, 0.5] });
