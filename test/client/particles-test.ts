@@ -86,13 +86,13 @@ console.log("\nlifecycle — attach, replace, remove, late join, no hook growth\
 // Stand-in for the host's build (emitters.js build, over particlefx.js buildEmitter): a handle with update and dispose(),
 // the stub's dispose counting so the registry's retire can be seen. Like the real build it pushes its own update into the
 // hook array (the registry never pushes, only releases). A browserless run can't load the real one (THREE, core.js's scene).
-type Sys = { update: () => void; disposed: number; count: number; inScene: boolean };
+type Sys = { update: () => void; disposed: number; count: number; seed?: number; inScene: boolean };
 function makeUpstreamStub(autos: (() => void)[]) {
   const built: Sys[] = [];
   return {
     built,
-    build(emitter: { count: number }) {
-      const sys: Sys = { update: () => {}, disposed: 0, count: emitter.count, inScene: true };
+    build(emitter: { count: number; seed?: number }) {
+      const sys: Sys = { update: () => {}, disposed: 0, count: emitter.count, seed: emitter.seed, inScene: true };
       autos.push(sys.update);                     // as emitters.js's build does
       built.push(sys);
       return {
@@ -143,7 +143,8 @@ function makeUpstreamStub(autos: (() => void)[]) {
   // late join: the whole log replays, every entry through the same path
   await reg.apply("hearth", fireE);
   check("a late joiner folding the same log gets one emitter", reg.size === 1 && up.built.length === 3);
-  check("...with the same seed the live clients have", up.built.length === 3 && fireE.seed === emitterSeed("hearth", { preset: "fire" }));
+  check("...with the same seed the live clients have", up.built.length === 3 && up.built[2].seed === up.built[0].seed
+    && up.built[2].seed === emitterSeed("hearth", { preset: "fire" }), `late ${up.built[2]?.seed} live ${up.built[0]?.seed}`);
   check("...and one hook", autos.length === base + 1);
 
   // ten replaces in a row — the shape of someone tuning a live emitter
