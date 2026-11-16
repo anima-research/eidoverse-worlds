@@ -179,7 +179,7 @@ ok(u.ok && u.after?.[IDS.of("cup")] && u.after[IDS.of("cup")].label === null, "S
 const u2v = await vic.req("undo", { act: c1.act });
 ok(u2v.ok === false && u2v.refused?.code === "rank", "S4 a visitor can't undo someone else's act (rank)", u2v);
 const u2 = await ann.req("undo", { act: c1.act });
-ok(u2.refused?.code !== "rank", "S4 …an owner may revert it (here only the lock decides)", u2);
+ok(u2.refused?.code === "locked", "S4 …an owner may revert it (here only the lock decides)", u2);
 const ins = await vic.req("inspect", { id: "cup" });
 ok(ins.ok && ins.derived?.madeBy === BOB, "S4 inspect says who made it (a view over the log)", ins);
 const diskDigest = () => digest(fold(readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")))));
