@@ -139,13 +139,13 @@ try {
         return appendFileSyncReal(path, data);
       },
     });
-    const revBefore = A.rev;
+    const revBefore = A.rev, bRevBefore = B.rev;
     const logBefore = logOf(), snapBefore = snapshotOf();
     const a = A.propose(profile("seatdummy"), "writer-A") as any;
     check("A's write completes under its lock", a.ok === true && a.rev === revBefore + 1, JSON.stringify(a));
     check("B, overlapped inside A's transaction, REFUSES instead of forking history",
       overlapResult && overlapResult.ok === false && /lock/.test(overlapResult.why), JSON.stringify(overlapResult));
-    check("B's refusal changed nothing (rev held)", B.rev <= revBefore + 1);
+    check("B's refusal changed nothing (rev held)", B.rev === bRevBefore, `${bRevBefore} -> ${B.rev}`);
     const b = B.propose(profile("seatdummy"), "writer-B") as any;
     check("B retried after the release succeeds at the NEXT revision", b.ok === true && b.rev === a.rev + 1, JSON.stringify(b));
     const revs = logOf()!.trim().split("\n").map((l) => { try { return JSON.parse(l).rev; } catch { return null; } }).filter((r) => r !== null);
@@ -181,6 +181,7 @@ try {
     // stamp from an hour ago: age says stale, liveness says wait. B must
     // time out with nothing written — exclusion outranks patience.
     writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: process.pid, nonce: "live-but-slow-writer", ts: Date.now() - 3_600_000 }));
+    const liveLock = readFileSync(join(seatsDir, ".write-lock"), "utf8");
     const lb = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 250 });
     const logLive = logOf(), snapLive = snapshotOf(), lbRevBefore = lb.rev;
     const liveOld = lb.propose(profile("seatdummy"), "impatient") as any;
@@ -188,7 +189,7 @@ try {
       !liveOld.ok && /lock/.test(liveOld.why), JSON.stringify(liveOld));
     check("…with log, snapshot, and memory untouched", logOf() === logLive && snapshotOf() === snapLive && lb.rev === lbRevBefore);
     check("…and the live holder's lock survives, byte-identical",
-      JSON.parse(readFileSync(join(seatsDir, ".write-lock"), "utf8")).nonce === "live-but-slow-writer");
+      readFileSync(join(seatsDir, ".write-lock"), "utf8") === liveLock);
     rmSync(join(seatsDir, ".write-lock"), { force: true });
 
     // …while a DEAD holder's lock is broken by verified pid-death, not age:
