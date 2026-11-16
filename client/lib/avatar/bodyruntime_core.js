@@ -30,9 +30,10 @@ const INITED = new WeakSet();
 const TAKEN = new WeakMap();   // vrm -> the node constraints the module took over at init (handed back while limp)
 
 /** @param {string} kind @param {Record<string, any>} mod the imported module
- *  @param {{ joints?: any, report?: (msg: string, err?: unknown) => void }} [opts]
- *  @returns {{ kind: string, init(vrm: any): void, afterMixer(vrm: any, mixer: any): void,
- *             beforeVrmUpdate(vrm: any, dt: number): void, stats: Record<string, number>, dead: Set<string> } | null} */
+ *  @param {{ joints?: any, report?: (msg: string, err?: unknown) => void, skip?: string[] }} [opts]
+ *  @returns {{ kind: string, init(vrm: any): void, setLimp(vrm: any, on: boolean): void, dispose(vrm: any): void,
+ *             afterMixer(vrm: any, mixer: any): void, beforeVrmUpdate(vrm: any, dt: number): void,
+ *             stats: Record<string, number>, dead: Set<string> } | null} */
 export function makeBodyRuntime(kind, mod, { joints = null, report = (m, e) => console.warn(m, e), skip = [] } = {}) {
   if (kind !== 'claude-robot-dof' || !mod) return null;
   const stats = {};

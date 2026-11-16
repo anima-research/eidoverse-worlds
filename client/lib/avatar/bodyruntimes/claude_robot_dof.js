@@ -19,6 +19,8 @@
 //   the clip's mixer.update(dt), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
 //   rehomeBody(vrm), applyHardwareDOF(vrm, LEG_JOINTS), applyLegClearance(vrm, stats, dt) (THE LEGS' CLEARANCE, below),
 //   applyArmDOF(vrm, stats, dt), vrm.update(dt)
+//   (the hands, the head's expression and the crown have passes too; the whole order as this client runs it:
+//   ../bodyruntime_core.js)
 
 const D = Math.PI / 180;
 

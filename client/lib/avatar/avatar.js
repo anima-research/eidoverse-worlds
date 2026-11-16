@@ -1109,7 +1109,8 @@ export class Avatar {
     this.userScale = v; this._applyBodyScale();
     return true;
   }
-  /** The VR device fit (xr-scale.js puppetScale, 1/k), composed under the chosen size. xrbody.js is its one writer. */
+  /** The VR device fit (xr-scale.js puppetScale, 1/k), composed under the chosen size. xrbody.js sets it while
+   *  presenting; xr.js puts it back to 1 when the session ends. */
   setPuppetScale(p) {
     const v = p > 0 && Number.isFinite(p) ? p : 1;
     if (v === (this._puppet ?? 1)) return false;
