@@ -114,12 +114,9 @@ const agents: any[] = [];
 async function agent(name: string) {
   const a: any = new WorldAgent({ name, avatar: "fixtures/body.vrm", world: "puppet-test", url: h.BASE.replace("http", "ws") + "/ws" });
   agents.push(a); await a.connect();
-  // the server checks a request to pose or knock over a body against that body's consent table (pose; a knock-over is
-  // shove): each body here opens both to everyone, as presence-check's do
-  for (const cls of ["pose", "shove"]) {
-    const r = await a.request("consent", { move: true, touch: true });
-    if (!r?.ok) throw new Error(`${name}: consent ${cls} refused: ${JSON.stringify(r)}`);
-  }
+  // the server checks a pose against the body's touch gate and a knock-over against its move gate: each body here opens both
+  const r = await a.request("consent", { move: true, touch: true });
+  if (!r?.ok) throw new Error(`${name}: consent {move, touch} refused: ${JSON.stringify(r)}`);
   return a;
 }
 const holds = async (fn: () => boolean, ms = 4000) => !!(await tryUntil("the condition", fn, { ms, step: 20 }));

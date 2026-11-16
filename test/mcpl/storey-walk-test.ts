@@ -517,11 +517,11 @@ console.log("\nthe feet keep the storey when the walk ends, after a tumble and a
   check("setup: the tables are colliders", fitted);
   const bare = await tryWalk(furnished, 2.5, 0.5, 0.75), overTable = await tryWalk(agentIn(upperY), 3.5, 0.5, 0.75), upTable = await tryWalk(agentIn(upperY), 3.5, 1.5, upperY + 0.75);
   const underUpTable = await tryWalk(agentIn(upperY), 3.5, 1.5, 0.75);
-  check("…and so is one to a table's height on the ground floor under the table upstairs",
-    /is at ground level, not on the floor you stand on/.test(underUpTable.refusal), JSON.stringify(underUpTable));
   const passed = (w: { refusal: string; setOff: boolean }) => w.setOff || (w.refusal !== "" && !/not on the floor you stand on/.test(w.refusal));
   check("from the upper floor, a walk to a table's height on the ground floor is refused, where nothing is placed and over the table itself, and one to a table upstairs isn't refused by this check",
     /is at ground level, not on the floor you stand on/.test(bare.refusal) && /is at ground level, not on the floor you stand on/.test(overTable.refusal) && passed(upTable), `${JSON.stringify(bare)} ${JSON.stringify(overTable)} ${JSON.stringify(upTable)}`);
+  check("…and so is one to a table's height on the ground floor under the table upstairs",
+    /is at ground level, not on the floor you stand on/.test(underUpTable.refusal), JSON.stringify(underUpTable));
   for (const id of ["table", "upper-table"]) await removeSupport("storey-walk-test", `${furnished.world}/${id}`);
   // someone lying limp on a high bed upstairs, a sim's root 0.7 m under its
   // top, is on the upper floor: the walk goes to them there

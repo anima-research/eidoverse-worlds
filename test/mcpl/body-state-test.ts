@@ -90,7 +90,7 @@ try {
   owner.setPose(kneel as any); owner.tick();
   await waitUntil("the peer's sample", () => eq(peer.people.get(owner.name)?.pose?.pose, kneel));
   const knelt = await read(peer, { who: owner.name, detail: "bones" });
-  check("the pose tool's kneeling example is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
+  check("a kneeling pose is read, not refused", knelt.ok && eq(knelt.publishedRotations, kneel) && eq(knelt.unreadableBones, []), knelt.error);
   const standingJoints = Object.entries(standing.joints ?? {});
   check("kneeling lowers every joint by 0.5 m and moves none sideways", standing.ok && standingJoints.length >= 10 && standingJoints.every(([k, j]: [string, any]) =>
     near(knelt.joints?.[k]?.position, [j.position[0], j.position[1] - 0.5, j.position[2]])), `${standingJoints.length} joints read standing`);
