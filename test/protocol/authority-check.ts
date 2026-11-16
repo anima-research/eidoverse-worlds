@@ -593,13 +593,13 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "create-world", { title: "erased" });   // a new world: newcomers build
   call("bob", "create", { id: "box", model: "crate", place: { at: [3, 3] } });
   call("bob", "set", { id: "box", component: "reactions", value: { evolve: { kind: "set", component: "reactions", value: { tag: { kind: "set", component: "label", value: "tagged" } } } } });
-  ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "E1 (setup) vic's use of bob's evolve installs bob's tag handler");
+  ok(call("vic", "use", { id: "box", action: "evolve" }).ok, "EV1 (setup) vic's use of bob's evolve installs bob's tag handler");
   const useSeq = [...w.entries].reverse().find((e) => e?.kind === "request" && e.verb === "use" && e.actor === "vic")?.seq;
   now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: useSeq }] } });
-  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "member" } }).ok, "E1 (setup) bob is made a member");
+  ok(call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "member" } }).ok, "EV1 (setup) bob is made a member");
   const r = call("vic", "use", { id: "box", action: "tag" });
   ok(!r.ok && r.refused?.code === "rights" && /erased/.test(r.refused?.reason ?? "") && w.state().entities.box.c.label !== "tagged",
-    "E1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
+    "EV1 the purge erased whose rights installed tag: it acts for nobody (not as a newcomer, which here builds), and says why", r); }
 
 // ---- R: a per-op redaction reaches undo (review 11-05 B1: undo read the pre-rename `op` key and wrote the value back) ----
 { let now = clock.t + 7500; const w = openLive(root + "redact-undo/", "redact-undo", { kindOf: LABKIND, now: () => now, catalogue: LAB_CATALOGUE });
@@ -611,7 +611,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "set", { id, component: "label", value: "safe" }); const after = w.entries.length;
   call("ann", "undo", {});
   ok(!w.entries.slice(after).some((e) => JSON.stringify(e).includes("my phone number")) && w.state().entities[id].c.label !== "my phone number",
-    "R1 undoing the edit after a redacted value never writes that value back", w.state().entities[id]?.c.label); }
+    "RD1 undoing the edit after a redacted value never writes that value back", w.state().entities[id]?.c.label); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
@@ -807,40 +807,40 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const pw = callAt("pivots");
   pw("ann", "create-world", { title: "pivots" });
   pw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
-  ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the authority takes a pivot {pos: [x,y,z]}");
-  ok(code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [1, 2] } })) === "shape" && code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } })) === "shape", "P2 …and refuses a bad one (two numbers; an extra field), saying the shape");
+  ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "PV1 the authority takes a pivot {pos: [x,y,z]}");
+  ok(code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [1, 2] } })) === "shape" && code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } })) === "shape", "PV2 …and refuses a bad one (two numbers; an extra field), saying the shape");
   const tr = openWorld(root, "pivots").state().entities.gate.c.transform;
-  ok(JSON.stringify(tr.pos) === "[0,0,0]", "P3 setting a pivot never moved the thing", tr);
+  ok(JSON.stringify(tr.pos) === "[0,0,0]", "PV3 setting a pivot never moved the thing", tr);
   const ent = { model: "x.glb", pos: [0, 0, 0], pivot: { pos: [0.3, 0, 0] } };
   const sortK = (v) => (Array.isArray(v) ? v.map(sortK) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortK(v[k])])) : v);
-  ok(JSON.stringify(sortK(entityOf(componentsOf(ent)))) === JSON.stringify(sortK(ent)), "P4 pivot round-trips through the component view (componentsOf ∘ entityOf)", entityOf(componentsOf(ent)));
+  ok(JSON.stringify(sortK(entityOf(componentsOf(ent)))) === JSON.stringify(sortK(ent)), "PV4 pivot round-trips through the component view (componentsOf ∘ entityOf)", entityOf(componentsOf(ent)));
   const live = { box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], doorLocks: true };
   const c1 = val(editOps(ent, "g", { "pivot.centre": true }, live));
-  ok(JSON.stringify(c1) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P5 'centre' snaps the pivot to the middle of the model's own box (an off-origin model)", c1);
+  ok(JSON.stringify(c1) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "PV5 'centre' snaps the pivot to the middle of the model's own box (an off-origin model)", c1);
   const c2 = val(editOps(ent, "g", { "pivot.base": true }, live));
-  ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "P6 'base' snaps it to the middle of the bottom face", c2);
+  ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "PV6 'base' snaps it to the middle of the bottom face", c2);
   const c3 = editOps(ent, "g", { "pivot.reset": true }, live).ops[0];
-  ok(c3?.verb === "delete" && c3.args.component === "pivot", "P7 'origin' removes it (turn about the origin again)", c3);
+  ok(c3?.verb === "delete" && c3.args.component === "pivot", "PV7 'origin' removes it (turn about the origin again)", c3);
   const sc = inspectSchema(ent, "g", live);
-  ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
+  ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "PV8 the Inspector draws a Pivot card with its channels");
   const a = addOps({ model: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
-  ok(a.ops[0]?.args?.component === "pivot" && JSON.stringify(a.ops[0].args.value) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
+  ok(a.ops[0]?.args?.component === "pivot" && JSON.stringify(a.ops[0].args.value) === '{"pos":[0,0,0]}', "PV9 Add Component ▸ Pivot starts at the origin (then centre/base)", a);
   const bare = { model: "x.glb", pos: [0, 0, 0] };
   const c4 = editOps(bare, "g", { "pivot.centre": true }, live);
-  ok(!c4.errors.length && JSON.stringify(val(c4)) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
+  ok(!c4.errors.length && JSON.stringify(val(c4)) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "PV10 pivot.centre works on a thing with NO pivot yet (Hazel: needed a dummy pivot first)", c4);
   const c5 = editOps(bare, "g", { "pivot.y": 1.5 }, live);
-  ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "P11 …as does pivot.y", c5);
+  ok(!c5.errors.length && JSON.stringify(val(c5)) === JSON.stringify({ pos: [0, 1.5, 0] }), "PV11 …as does pivot.y", c5);
   // the channel edits honour the pivot too (Maya's channel box; agent lab round 2, Rowan: 'edit rot.y +=90' swung the gate about its origin)
   const gate = { model: "x.glb", pos: [10, 0, 10], yaw: 0, pivot: { pos: [1, 0, 0] } };
   const placeOf = (r) => r.ops.find((o) => o.verb === "set" && o.args.component === "transform")?.args.value;   // the whole transform
   const r1 = placeOf(editOps(gate, "g", { "rot.y": 90 }, live));
-  ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "P12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
+  ok(r1 && Math.abs(r1.pos[0] - 11) < 1e-6 && Math.abs(r1.pos[2] - 11) < 1e-6, "PV12 rot.y = 90 on a pivoted thing turns it ABOUT the pivot: its origin goes to (11, 0, 11)", r1);
   const r2 = placeOf(editOps(gate, "g", { "pos.scale": 2 }, live));
-  ok(r2 && Math.abs(r2.pos[0] - 9) < 1e-6 && Math.abs(r2.pos[2] - 10) < 1e-6, "P13 …and scale 2 grows it about the pivot (the pivot stays at 11): origin to (9, 0, 10)", r2);
+  ok(r2 && Math.abs(r2.pos[0] - 9) < 1e-6 && Math.abs(r2.pos[2] - 10) < 1e-6, "PV13 …and scale 2 grows it about the pivot (the pivot stays at 11): origin to (9, 0, 10)", r2);
   const r3 = placeOf(editOps(gate, "g", { "rot.y": 90, "pos.x": 5 }, live));
-  ok(r3 && r3.pos[0] === 5 && r3.pos[2] === 10, "P14 …but a typed translate in the same edit wins (the pivot never second-guesses it)", r3);
+  ok(r3 && r3.pos[0] === 5 && r3.pos[2] === 10, "PV14 …but a typed translate in the same edit wins (the pivot never second-guesses it)", r3);
   const r4 = placeOf(editOps({ model: "x.glb", pos: [10, 0, 10], yaw: 0 }, "g", { "rot.y": 90 }, live));
-  ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "P15 …and with no pivot, a turn stays about the origin, as before", r4); }
+  ok(r4 && r4.pos[0] === 10 && r4.pos[2] === 10, "PV15 …and with no pivot, a turn stays about the origin, as before", r4); }
 
 // ---- TN: turn {id, axis, deg, space, about} — the gizmo's rotate for agents (agent lab: Juniper #3) ----
 { const tw = callAt("turns");
@@ -1070,24 +1070,24 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const drop = R("ann", "delete", { id: pannier });
     const la = S().entities.eye?.c["look-at"];
     ok(!!pannier && eye.ok && code(old) === "schema" && kept && drop.ok && !S().entities[pannier] && !(la && la.target === pannier), "SK8 a sockets-map write is refused (schema) and leaves the pannier; a delete of it takes it away and leaves no reference to it behind (look-at cleared)", { pannier, eye: eye.ok ?? eye.refused, old: old.refused, kept, drop: drop.ok ?? drop.refused, gone: !S().entities[pannier], la }); }
-  // SK4-8: what a person's body does at a socket is its child's station, checked whole at the door; the rest of the
+  // SS4-8: what a person's body does at a socket is its child's station, checked whole at the door; the rest of the
   // research shape (reach, look, enter…) is reserved
   const bad = (st, st2 = null) => seats("ann", "horse", [["s", [0, 1, 0], st], ...(st2 ? [["s2", [1, 1, 0], st2]] : [])]).refused?.code;
   const badSock = (sock) => R("ann", "create", { components: { parent: { to: "horse" }, transform: { pos: [0, 1, 0] }, socket: { name: "s", ...sock } } }).refused?.code;
-  ok(badSock({ pose: "sit" }) === "schema" && badSock({ body: { action: "sit" } }) === "schema", "SK4 a socket's pose is its station's anim: socket.pose is an unknown key, and socket.body is refused for the station (schema)");
-  ok(bad({ action: "Ride Now" }) === "shape", "SK4 station.action is a lower-case verb");
-  ok(bad({ who: "king" }) === "shape", "SK4 station.who is visitor, builder or owner");
+  ok(badSock({ pose: "sit" }) === "schema" && badSock({ body: { action: "sit" } }) === "schema", "SS4 a socket's pose is its station's anim: socket.pose is an unknown key, and socket.body is refused for the station (schema)");
+  ok(bad({ action: "Ride Now" }) === "shape", "SS4 station.action is a lower-case verb");
+  ok(bad({ who: "king" }) === "shape", "SS4 station.who is visitor, builder or owner");
   ok(R("ann", "set", { id: kidOf("horse", "saddle"), component: "station", value: { action: "ride", anchor: "hips", anim: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] }, leaveBy: "jump" } }).ok
-    && bad({ action: "ride", reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, fromSeat: true }) === "reserved", "SK5 a saddle with a blend by speed and leaveBy is taken; reins, look limits, a driver's input are reserved");
-  ok(bad({ anchr: "hips" }) === "schema" && bad({ reach: { leftHand: { at: [0, 1, 0], grip: 1 } } }) === "reserved", "SK6 closed keys: an unknown station key is refused (schema), and a reach is reserved whole");
+    && bad({ action: "ride", reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, fromSeat: true }) === "reserved", "SS5 a saddle with a blend by speed and leaveBy is taken; reins, look limits, a driver's input are reserved");
+  ok(bad({ anchr: "hips" }) === "schema" && bad({ reach: { leftHand: { at: [0, 1, 0], grip: 1 } } }) === "reserved", "SS6 closed keys: an unknown station key is refused (schema), and a reach is reserved whole");
   ok(bad({ leaveBy: "teleport" }) === "shape" && bad({ look: { pitch: [10, -10] } }) === "reserved"
-    && bad({ anim: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } }) === "shape" && bad({ enter: 42 }) === "reserved", "SK7 enums and signals are checked; look and enter are reserved");
+    && bad({ anim: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } }) === "shape" && bad({ enter: 42 }) === "reserved", "SS7 enums and signals are checked; look and enter are reserved");
   const att = R("bob", "use", { id: "horse", action: "ride" }).attach;
-  // SK9: a part's motion runs on the authority's clock too (a seat locked to its phase needs every client to agree on it)
+  // SS9: a part's motion runs on the authority's clock too (a seat locked to its phase needs every client to agree on it)
   const pm = R("ann", "create", { id: "swingset", model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 }, motion: { type: "pendulum", amp: 0.1, period: 2 } } });
   const pmc = R("ann", "inspect", { id: "swingset" });
-  ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SK9 the authority stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
-  ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.pose?.by === "speed", "SK8 use {ride} answers attach with what the station does there", att); }
+  ok(pm.ok && Number.isFinite(pmc.components?.["motion:plank"]?.t0) && Number.isFinite(pmc.components?.motion?.t0), "SS9 the authority stamps t0 on a part's motion (motion:<part>) as on the whole thing's", pmc.components);
+  ok(att?.anchor === "hips" && att.leaveBy === "jump" && att.pose?.by === "speed", "SS8 use {ride} answers attach with what the station does there", att); }
 const w0 = () => openWorld(root, "tier0");
 // T0 (component review, tier 0): values that would freeze or break every visitor, or wedge the world, are refused
 { clock.advance(100); const R = (verb, args) => request(openWorld(root, "tier0"), "ann", verb, args);
@@ -1199,23 +1199,23 @@ const w0 = () => openWorld(root, "tier0");
   const sess = "2026-10-07T00:00:00.000Z-abc123";
   const line = (n, extra = {}) => ({ id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}`, ...extra });
   const v1r = cw("vic", "caption", line(1));
-  ok(code(v1r) === "rights", "CA1 a member who isn't one of the screen's captioners can't caption it", v1r.refused);
-  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CA2 whoever may edit the screen names its captioners");
+  ok(code(v1r) === "rights", "CC1 a member who isn't one of the screen's captioners can't caption it", v1r.refused);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } }).ok, "CC2 whoever may edit the screen names its captioners");
   const c1 = cw("vic", "caption", line(1, { title: "the talk" }));
   const bag = () => openWorld(root, "captions").state().entities.screen.c.captions;
-  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CA3 …and a listed captioner (a member) writes a line", [c1.refused, bag()]);
+  ok(c1.ok && bag()?.line?.text === "line 1" && bag().title === "the talk" && bag().n === 1, "CC3 …and a listed captioner (a member) writes a line", [c1.refused, bag()]);
   const dup = cw("vic", "caption", line(1));
-  ok(code(dup) === "caption" && bag().n === 1, "CA4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
-  ok(cw("vic", "caption", line(2)).ok && bag().line?.text !== undefined && bag().n === 2 && !("window" in bag()), "CA5 the next n is the screen's line now (each line logged once: shape audit 10-16)");
-  ok(cw("vic", "caption", line(3, { gen: 5 })).ok, "CA6 (setup) a newer leg (the server stamps each connection's generation) writes");
+  ok(code(dup) === "caption" && bag().n === 1, "CC4 a resend of a line already written is refused (that refusal is the bot's receipt), nothing written twice", dup.refused);
+  ok(cw("vic", "caption", line(2)).ok && bag().line?.text !== undefined && bag().n === 2 && !("window" in bag()), "CC5 the next n is the screen's line now (each line logged once: shape audit 10-16)");
+  ok(cw("vic", "caption", line(3, { gen: 5 })).ok, "CC6 (setup) a newer leg (the server stamps each connection's generation) writes");
   const stale = cw("vic", "caption", line(4, { gen: 2 }));
-  ok(code(stale) === "caption" && /newer leg/.test(stale.refused?.reason), "CA6 a superseded leg (a lower generation) can't write over its successor", stale.refused);
+  ok(code(stale) === "caption" && /newer leg/.test(stale.refused?.reason), "CC6 a superseded leg (a lower generation) can't write over its successor", stale.refused);
   const forged = cw("bob", "set", { id: "screen", component: "captions", value: { session: sess, n: 99, gen: 99, line: { t0: 0, t1: 1, text: "forged" } } });
-  ok(code(forged) === "caption-only" && bag().n === 3, "CA7 a builder can't forge the bag with a plain set (only the caption request writes it)", forged.refused);
-  ok(code(cw("vic", "caption", { id: "screen", session: "nope", n: 1, t0: 0, t1: 1, text: "x" })) === "shape", "CA8 a malformed line is refused by shape (the session's form, shared/captions.js)");
+  ok(code(forged) === "caption-only" && bag().n === 3, "CC7 a builder can't forge the bag with a plain set (only the caption request writes it)", forged.refused);
+  ok(code(cw("vic", "caption", { id: "screen", session: "nope", n: 1, t0: 0, t1: 1, text: "x" })) === "shape", "CC8 a malformed line is refused by shape (the session's form, shared/captions.js)");
   const end = cw("vic", "caption", { id: "screen", session: sess, end: true, gen: 5 });
-  ok(end.ok && bag() === undefined, "CA9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
-  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CA10 taken off the list, they can't caption it any more"); }
+  ok(end.ok && bag() === undefined, "CC9 end clears the screen (the history keeps every line)", [end.refused, bag()]);
+  ok(cw("bob", "set", { id: "screen", component: "captioners", value: { ids: [] } }).ok && code(cw("vic", "caption", line(1, { session: "2026-10-07T00:00:01.000Z-def456" }))) === "rights", "CC10 taken off the list, they can't caption it any more"); }
 
 // ---- IM: an imported world's records are carried, written by hand by an owner only (review 10-07 M1: a request could plant a guard,
 // imported-bans:<id>, imported-behavior:<name> or imported:* and wake readers that no longer mean anything) ----
@@ -1496,7 +1496,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const fill = R("ann", "batch", { requests: Array.from({ length: 64 }, (_, j) => ({ verb: "create", args: { id: `big-${j}`, components: { parent: { to: "big" }, socket: { name: `s${j}` } } } })) });
   const over = R("ann", "create", { id: "big-64", components: { parent: { to: "big" }, socket: { name: "s64" } } });
   const map = R("ann", "batch", { requests: Array.from({ length: 70 }, (_, j) => addSocket("w-host", { name: `m${j}` }, { pos: [0, 1, 0] })) });
-  ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2d one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks, alone or in a batch", [fill.refused, over.refused, map.refused]);
+  ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2e one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks, alone or in a batch", [fill.refused, over.refused, map.refused]);
 }
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
 // socket children; only authority/sockets.js reads socket children, and the door's legacy refusal (refuse("legacy", …)) names
