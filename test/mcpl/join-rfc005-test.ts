@@ -561,7 +561,7 @@ async function shut(h: { ws: WebSocket }) {
       refused.result?.isError === true && /^travel refused, so you're still in "commons": world "annex" is outside the worlds this credential is limited to/.test(txt(refused)), txt(refused));
     const noCreate = await plainBound.request("tools/call", { name: "travel", arguments: { world: "never-made" } });
     check("plain-MCP founding outside the credential's narrowing is refused",
-      noCreate.result?.isError === true && /^travel refused, so you're still in "commons": /.test(txt(noCreate)), txt(noCreate));
+      noCreate.result?.isError === true && /^travel refused, so you're still in "commons": .*outside the worlds this credential is limited to/.test(txt(noCreate)), txt(noCreate));
     check("…and refused founding left nothing on disk", !existsSync(join(worldsDir, "never-made")));
     plainBound.ws.close();
   }
@@ -588,7 +588,7 @@ async function shut(h: { ws: WebSocket }) {
     const closed = await owner.request("tools/call", { name: "act", arguments: { verb: "set", args: { id: "@world", component: "access", value: { join: "listed" } } } });
     check("the owner agent closes it (set @world.access {join: listed})", !closed.result?.isError, txt(closed));
     const refused = await free.request("tools/call", { name: "travel", arguments: { world: "keep" } });
-    check("travel into the closed world is refused, saying only that it isn't open",
+    check("travel into the closed world is refused, saying only that no world it may enter has that name",
       refused.result?.isError === true && /no accessible world is named "keep"/.test(txt(refused)), txt(refused));
     const still = await free.request("channels/list", {});
     check("…and nothing moved", still.result?.channels?.[0]?.id === "world:commons", JSON.stringify(still.result));
