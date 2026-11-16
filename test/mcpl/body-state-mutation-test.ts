@@ -8,6 +8,7 @@ const cases = [
   { name: "tool discards requested detail", file: "mcpl/tools.ts", from: 'a.detail ?? "summary", a.points', to: '"summary", a.points', test: BODY, witness: "eight exact quaternions round-trip" },
   { name: "FK ignores root yaw", file: "mcpl/body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale)", to: "item.body.poseAt(o.pose!.p, 0, null, o.pose!.scale)", test: BODY, witness: "world joints include root translation and yaw" },
   { name: "self leaks unpublished physics", file: "mcpl/agent.ts", from: 'const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;', to: 'const bones = this.heldPose;', test: BODY, witness: "internal retired physics does not leak into self readback" },
+  { name: "posture not applied", file: "mcpl/body-state.ts", from: "if (item.animation) this.clips.apply", to: "if (false) this.clips.apply", test: BODY, witness: "sitchair changes the current knee" },
   { name: "missing clip is silently replaced by rest geometry", file: "mcpl/body-state.ts", from: "animation = await this.clips.load(slot)", to: "animation = null; void Promise.resolve()", test: BODY, witness: "a reach toward an unevaluated seated body" },
   { name: "the headless sender's tick drops its yaw", file: "mcpl/agent.ts",
     from: 'type: "pose",\n      pose: {\n        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw,', to: 'type: "pose",\n      pose: {\n        p: [this.pos.x, this.pos.y, this.pos.z], yaw: 0,',

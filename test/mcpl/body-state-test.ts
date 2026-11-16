@@ -24,6 +24,8 @@ mkdirSync(join(lib, "fixtures"));
 mkdirSync(join(lib, "defs/animations"), { recursive: true });
 writeFileSync(join(lib, "fixtures/idle.vrma"), postureFixture("idle"));
 writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fixtures/idle.vrma" }));
+writeFileSync(join(lib, "fixtures/sitchair.vrma"), postureFixture("sitchair"));   // sit stays missing: the unevaluated-seated rows need it
+writeFileSync(join(lib, "defs/animations/sitting_normal_chair.json"), JSON.stringify({ vrma: "fixtures/sitchair.vrma" }));
 writeFileSync(join(lib, "fixtures/test-body.vrm"), fixture());
 writeFileSync(join(lib, "fixtures/large-body.vrm"), fixture(2));
 writeFileSync(join(lib, "fixtures/old-body.vrm"), fixture(1, true));
@@ -72,6 +74,14 @@ try {
   }
   owner.clip = "idle"; owner.setPose(null); owner.tick();
   await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "idle");
+  // a posture clip is applied, not the standing slot reused (main's live-contact-test rows, deleted in 04c8f3a6a)
+  { const standing = await read(owner, { detail: "all" });
+    owner.setPosture("sitchair"); owner.tick(); await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "sitchair");
+    const own = await read(owner, { detail: "all" }), seen = await read(peer, { who: owner.name, detail: "all" });
+    const knee = (r: any) => r.joints?.rightLowerLeg?.position, moved = (a: number[], b: number[]) => !!a && !!b && Math.hypot(...a.map((v, i) => v - b[i])) > 0.05;
+    check("sitchair changes the current knee instead of reusing the standing slot, for self and peer alike",
+      own.ok && seen.ok && moved(knee(own), knee(standing)) && near(knee(own), knee(seen)), JSON.stringify([knee(standing), knee(own), knee(seen)]));
+    owner.setPosture("idle"); owner.tick(); await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.pose?.clip === "idle"); }
   check("standing again restores contact estimates", (await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] })).contacts?.knee_r?.quality === "anatomical_estimate");
   // Every channel of a held pose, through owner -> server -> peer -> tool. The
   // pose tool's own kneeling example used to refuse the whole body.
