@@ -213,7 +213,7 @@ for (const row of WAITED) {
   const label = `while-${row.id}`, rid = `q-${row.id}`, args = row.verb === "create" ? { components: { description: label } } : { text: label };
   X.g.hold(); const e0 = X.g.entered;
   REQUEST_MESSAGES.request({ c: t.c, ws: t.c.ws, now: Date.now(), expel: () => {}, sweep: () => {} }, { id: rid, verb: row.verb ?? "say", args });
-  await tryUntil(`${row.id}'s request is held at the await`, () => X.g.entered > e0, { ms: 3000, step: 10 });
+  ok(!!await tryUntil(`${row.id}'s request is held at the await`, () => X.g.entered > e0, { ms: 3000, step: 10 }), `(${row.id} setup) the request reached the await within 3 s`);
   row.while(X, t);
   X.g.release(); await tryUntil(`the reply to ${row.id}'s request`, () => t.replies.length, { ms: 3000, step: 10 });
   const r = t.replies[0], log = X.w.log.live, wrote = said(X, label) || described(X, label) || (X.old && (X.old.live.entries.some((e) => e?.body?.text === label)));
@@ -347,7 +347,7 @@ for (const row of WAITED) {
 
 // ---------------- T9 ----------------
 { const X = world("t9"); const opie = idOf("local:opie", "opie"); const t = tab(X, opie, { account: "local:opie" }); const bea = idOf("local:bea", "bea");
-  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "ahead-in-the-queue" }); await tryUntil('"ahead-in-the-queue" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 });
+  X.g.hold(); const e0 = X.g.entered; send(t, "say", { text: "ahead-in-the-queue" }); ok(!!await tryUntil('"ahead-in-the-queue" is held at the await', () => X.g.entered > e0, { ms: 3000, step: 10 }), '(setup) ahead-in-the-queue reached the await within 3 s');
   send(t, "set", { id: "@world", component: `roles:${bea}`, value: { role: "owner" } }, "operator-repair");   // queued behind the held request
   OPERATORS.delete("local:opie");   // the account stops being an operator while the repair waits
   X.g.release(); await tryUntil('the reply to "operator-repair owner"', () => t.replies.length > 1, { ms: 3000, step: 10 }); OPERATORS.add("local:opie");
@@ -359,7 +359,7 @@ for (const row of WAITED) {
   // an operator's right is the account's, never the world's role: a second repair queued behind one that changed the
   // operator's own role is not refused for it
   const k0 = t.replies.filter((m) => m.operator).length; const fen = idOf("local:fen", "fen");
-  X.g.hold(); const e1 = X.g.entered; send(t, "say", { text: "ahead-again" }); await tryUntil('"ahead-again" is held at the await', () => X.g.entered > e1, { ms: 3000, step: 10 });
+  X.g.hold(); const e1 = X.g.entered; send(t, "say", { text: "ahead-again" }); ok(!!await tryUntil('"ahead-again" is held at the await', () => X.g.entered > e1, { ms: 3000, step: 10 }), '(setup) ahead-again reached the await within 3 s');
   send(t, "set", { id: "@world", component: `roles:${opie}`, value: { role: "moderator" } }, "operator-repair");
   send(t, "set", { id: "@world", component: `roles:${fen}`, value: { role: "builder" } }, "operator-repair");
   X.g.release(); await tryUntil('the operator-repair reply (operator-repair builder)', () => t.replies.filter((m) => m.operator).length >= k0 + 2, { ms: 3000, step: 10 });
@@ -369,7 +369,7 @@ for (const row of WAITED) {
   // change it; granted (an ordinary request queued while the account became an operator), sending again is decided anew
   ok(/stopped being a server operator/.test(rep?.reply?.refused?.reason ?? "") && /won't change this/.test(rep?.reply?.refused?.fix ?? ""), "T9d revoked: said so, and that sending it again won't change it", rep?.reply?.refused);
   const gus = idOf("local:gus", "gus"); const tg = tab(X, gus, { account: "local:gus" });
-  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); await tryUntil('"ahead-a-third-time" is held at the await', () => X.g.entered > e2, { ms: 3000, step: 10 });
+  X.g.hold(); const e2 = X.g.entered; send(t, "say", { text: "ahead-a-third-time" }); ok(!!await tryUntil('"ahead-a-third-time" is held at the await', () => X.g.entered > e2, { ms: 3000, step: 10 }), '(setup) ahead-a-third-time reached the await within 3 s');
   const n0 = tg.replies.length; send(tg, "say", { text: "queued" }); OPERATORS.add("local:gus");
   X.g.release(); await tryUntil('the reply to "queued"', () => tg.replies.length > n0, { ms: 3000, step: 10 }); OPERATORS.delete("local:gus");
   const gr = tg.replies[n0];
@@ -394,7 +394,7 @@ for (const row of WAITED) {
 // a connection's queue behind a stalled warm is bounded: past 256 waiting, a request is refused at arrival (busy), and once the
 // stall ends every queued one is answered and the queue is empty again
 { const X = world("t12"); const guest = directoryFor(W).resolve({ sub: null, name: "guest12" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
-  X.g.hold(); send(t, "say", { text: "stalled" }); await tryUntil('"stalled" is held at the await', () => X.g.entered > 0, { ms: 3000, step: 10 });
+  X.g.hold(); send(t, "say", { text: "stalled" }); ok(!!await tryUntil('"stalled" is held at the await', () => X.g.entered > 0, { ms: 3000, step: 10 }), '(setup) stalled reached the await within 3 s');
   for (let i = 0; i < 300; i++) send(t, "say", { text: `q${i}` });   // writes: no arrival meter, so each one meets the queue
   const early = t.replies.filter((m) => m.reply?.refused?.code === "busy").length;   // a refusal at arrival is sent before send() returns
   X.g.release(); await tryUntil("every request is answered", () => t.replies.length === 301, { ms: 5000, step: 10 });
