@@ -15,8 +15,9 @@
 //   T8f a person's founding, a fork (its copied blobs too) and a reset sync each directory a new name lands in (house 6344940039)
 //   T8e …and the directory that holds its name is synced after, as are directories made for it (none on win32, where the
 //       server can't sync a directory)
-//   T8g founding writes the ledger row before the world lands (a second row named T8g: a fork counts imported roles)
+//   T8g founding writes the ledger row before the world lands
 //   T8h an unreadable founders ledger refuses the founding and is left as it was
+//   T8i a fork counts the roles it copied that imported identities hold
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
@@ -301,7 +302,7 @@ for (const row of WAITED) {
   const src2 = world("t8f-src2"), ghost = directoryFor(W).imported("Ghost");
   ownerDo(src2, "set", { id: "@world", component: `roles:${ghost}`, value: { role: "builder" } });
   const k2 = WL.forkWorld(src2.w.log, "t8f-fork2", src2.owner);
-  ok(k?.ok && k.importedRoles === 0 && k2?.ok && k2.importedRoles === 1, "T8g a fork counts the roles it copied that imported identities hold (0 for a world of accounts, 1 with Ghost's)", { k, k2 });
+  ok(k?.ok && k.importedRoles === 0 && k2?.ok && k2.importedRoles === 1, "T8i a fork counts the roles it copied that imported identities hold (0 for a world of accounts, 1 with Ghost's)", { k, k2 });
   // reset
   const rs = world("t8f-reset"); watch(); let arch = null; try { arch = WL.resetWorld(rs.w.log); } finally { unwatch(); }
   const dir = path.join(W, "t8f-reset");
