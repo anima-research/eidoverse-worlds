@@ -10,6 +10,7 @@ import { renderDOM } from '../edit/fieldpanels.js';
 import { makeFrame, fitTabStrip } from './windows.js';
 import { fsvg } from './icons.js';
 import { net } from '../net.js';
+import { serverNow } from '../serverclock.js';   // renameAfter is the authority's stamp
 import { escapeHtml as escape } from './markup.js';
 
 let frame = null;
@@ -149,7 +150,7 @@ const renameKind = () => (CONFIG.authed ? 'signin' : net.renameAfter != null ? '
 function openRenameDialog() {
   document.querySelector('.pf-rename-dlg')?.remove();
   const kind = renameKind();
-  const days = net.renameCooldownDays ?? 7, after = net.renameAfter ?? 0, wait = kind === 'signin' || (kind === 'account' && after > Date.now());
+  const days = net.renameCooldownDays ?? 7, after = net.renameAfter ?? 0, wait = kind === 'signin' || (kind === 'account' && after > serverNow());
   const when = new Date(after).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
   const dlg = document.createElement('div'); dlg.className = 'pf-rename-dlg'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true');
   dlg.innerHTML = `<div class="pf-rename-card panel">

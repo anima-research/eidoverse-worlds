@@ -56,7 +56,9 @@ const ROWS: Row[] = [
   { name: "a retired command's line is said before dispatch", owner: [], scope: [], forbidden: [], requires: [["client/lib/ui/chat.js", /row\?\.retired\)\s*\{\s*logChat\('\*',\s*row\.retired\)/]] },
   // a sky's ts, a role's until, an access list's end are the authority's stamps (test/client/server-clock-readers-test.ts runs inspect.js's)
   { name: "a server stamp is read on serverNow, never this machine's Date.now()", owner: ["client/lib/serverclock.js"],
-    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/render/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js"], forbidden: [/\bDate\.now\(\)/, /\bnew Date\(\s*\)/] },
+    scope: ["client/lib/sky/sky.js", "client/lib/edit/skypanel.js", "client/lib/render/materials.js", "client/lib/ui/rolespanels.js", "client/lib/edit/panels.js", "client/lib/edit/inspect.js", "client/lib/ui/profile.js"],
+    // agoWords/touchWords default `now` to Date.now(), so a call without one is the same read (bot #333 20, 26)
+    forbidden: [/\bDate\.now\(\)/, /\bnew Date\(\s*\)/, /\b(agoWords|touchWords)\([^,()]*\)/] },
   { name: "an HTML escaper is markup.js's escapeHtml (it escapes ')", owner: ["client/lib/ui/markup.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\.replace\(\/\[&<>"'?\]\/g/] },
   // exempt: the boot trip keys read the live URL (a rename's replaceState changes ?name); breadcrumbs and warmqueue are leaves
