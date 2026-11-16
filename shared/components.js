@@ -130,7 +130,7 @@ const DEFS = [
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: paramsOf('Light'),
     fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
-    note: 'wire: comp.light {color, intensity, range, important, day}, on any thing (beside a model or a mesh too); Add Component ▸ Light on a model or a mesh puts it on a child a metre up, so its pose is its own' },
+    note: 'wire: comp.light {color, intensity, range, decay, important, daytime}, on any thing (beside a model or a mesh too); Add Component ▸ Light on a model or a mesh puts it on a child a metre up, so its pose is its own' },
   // the motions' READS: a whole thing swings and turns about its Pivot component, else its origin; a part about its own
   // origin; an orbit's part circles at 1 m
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',

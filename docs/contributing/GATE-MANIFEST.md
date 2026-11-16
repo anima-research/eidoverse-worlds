@@ -591,26 +591,27 @@ time.
 | 410 | ragdoll-floor | main | `test/client/ragdoll-floor-test.ts` | bun | 33 s | 180 s |
 | 411 | snap-settle | main | `test/client/snap-settle-test.ts` | bun | 5 s | 180 s |
 | 412 | lod-normals | main | `test/server/lod-normals-test.ts` | bun | ? | 300 s |
-| 413 | level-dive | browser | `test/water/level-dive-check.ts` | Chromium | ? | 300 s |
-| 414 | water-cross | browser | `test/water/crossing-pipelines-check.ts` | Chromium | 60 s | 300 s |
-| 415 | toast-group | browser | `test/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
-| 416 | browser | browser | `test/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
-| 417 | client | browser | `test/protocol/client-check.ts` | Chromium | 60 s | 300 s |
-| 418 | refusedjoin | browser | `test/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
-| 419 | harness | browser | `test/client/harness-test.ts` | Chromium | ? | 300 s |
-| 420 | client-b2 | browser | `test/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
-| 421 | access-panel | browser | `test/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
-| 422 | lock-strength | browser | `test/client/lock-strength-test.ts` | Chromium | 10 s | 180 s |
-| 423 | swim-lists | browser | `test/client/swim-lists-test.ts` | Chromium | 10 s | 180 s |
-| 424 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 425 | comps-parity | browser | `test/client/comps-parity-test.ts` | Chromium | ? | 300 s |
-| 426 | shiplist-probe | browser | `test/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 427 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 428 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 429 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 430 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
-| 431 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
-| 432 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
+| 413 | help-words | main | `test/shared/help-words-test.ts` | bun | ? | 300 s |
+| 414 | level-dive | browser | `test/water/level-dive-check.ts` | Chromium | ? | 300 s |
+| 415 | water-cross | browser | `test/water/crossing-pipelines-check.ts` | Chromium | 60 s | 300 s |
+| 416 | toast-group | browser | `test/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
+| 417 | browser | browser | `test/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
+| 418 | client | browser | `test/protocol/client-check.ts` | Chromium | 60 s | 300 s |
+| 419 | refusedjoin | browser | `test/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
+| 420 | harness | browser | `test/client/harness-test.ts` | Chromium | ? | 300 s |
+| 421 | client-b2 | browser | `test/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
+| 422 | access-panel | browser | `test/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
+| 423 | lock-strength | browser | `test/client/lock-strength-test.ts` | Chromium | 10 s | 180 s |
+| 424 | swim-lists | browser | `test/client/swim-lists-test.ts` | Chromium | 10 s | 180 s |
+| 425 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 426 | comps-parity | browser | `test/client/comps-parity-test.ts` | Chromium | ? | 300 s |
+| 427 | shiplist-probe | browser | `test/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 428 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 429 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 430 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 431 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
+| 432 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
+| 433 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 394 (~2272 s), browser 20 (~1228 s); 432 suites in all.
+Lanes: core 18 suites (~79 s), main 395 (~2272 s), browser 20 (~1228 s); 433 suites in all.
 <!-- END GENERATED -->

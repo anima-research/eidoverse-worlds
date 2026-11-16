@@ -303,7 +303,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // you mean"; a versioned one (light@2) says a new meaning is registered first; anything else is someone's own
   // component, which carries a namespace (example.org/heart), so a later registry word never rereads old values.
   // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
-  if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
+  if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
   if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
     const ver = /^(.*)@[1-9][0-9]*$/.exec(name);

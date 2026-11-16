@@ -38,7 +38,7 @@ export const VERBSPEC = {
     },
   },
   // a typo'd undo argument (undo {acts: 9}) is refused, never read as "undo your latest act"
-  undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or visitor's if you're a builder, anyone's if you're an owner; never someone above you",
+  undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or member's if you're a builder, anyone's if you're an owner; never someone above you",
     args: { act: { type: "int", doc: "the act's number (history and inspect show them); someone else's needs the rank to revert it" }, label: { type: "string", doc: "the label you gave a batch" },
       actor: { type: "string", doc: "owners: roll back everything this person did since `since` (their identity; history shows it)" }, since: { type: "any", doc: "with actor: a version {seq, head} (history gives them)" },
       confirm: { type: "bool", doc: "with actor: needed to roll back more than 20 acts" }, dry: { type: "bool" } },
