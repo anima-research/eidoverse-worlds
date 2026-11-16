@@ -152,7 +152,8 @@ setInterval(() => {}, 1000);`);
     const all = await Promise.all([...burst, ...more]);
     const full = all.filter((r: any) => !r.ok && r.status === 503);
     check("the queue has a cap: past it a check is refused 503, saying the queue is full", full.length > 0 && full.every((r: any) => /queue is full/.test(r.e)), JSON.stringify(full[0] ?? all.slice(-1)));
-    check("...and the jobs it took all answered", all.filter((r: any) => r.ok).length >= Q.CHECK_PER_ADDRESS, `${all.filter((r: any) => r.ok).length} answered`);
+    const lost = all.filter((r: any) => !r.ok && r.status !== 503 && !/rate limit/.test(r.e));   // neither answered nor refused at the door
+    check("...and the jobs it took all answered", !lost.length && all.filter((r: any) => r.ok).length >= Q.CHECK_PER_ADDRESS, `${all.filter((r: any) => r.ok).length} answered; ${JSON.stringify(lost.slice(0, 2))}`);
     check("an address that was refused is still answered from the cache (a cached answer is never refused)",
       (await outcome(Q.checkFile(big, (all.find((r: any) => r.ok && r.r.scale < 1) as any).r.scale, undefined, { address: "10.9.9.9" }))).ok);
     // the report cache is bounded: fill past the cap, memory and disk stay under it
