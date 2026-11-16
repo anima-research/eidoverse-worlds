@@ -32,7 +32,7 @@ let ws: WebSocket | null = null, keepPose: ReturnType<typeof setInterval> | unde
 // picks it (port 0) and writes it to DevToolsActivePort in its profile, so no other process can take it between the
 // choosing and the binding; that is why this is a persistent context, in a profile this check owns.
 const profile = mkdtempSync(join(tmpdir(), 'roam-check-'));
-const exe = process.env.SFU_TEST_CHROME;   // this check's override (probe-harness reads CHROME now); else the installed Chrome
+const exe = process.env.SFU_TEST_CHROME;   // the probes' override (probe-harness reads it too); else the installed Chrome
 const browser = await chromium.launchPersistentContext(profile, { headless: true, ...(exe ? { executablePath: exe } : { channel: 'chrome' }), viewport: { width: 960, height: 540 },
   args: playwrightArgs({ extra: ['--enable-unsafe-webgpu', ...(process.platform === 'darwin' ? ['--use-angle=metal'] : [])] }) });
 let dbg = 0;

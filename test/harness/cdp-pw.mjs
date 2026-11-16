@@ -50,9 +50,8 @@ function cdpClient(ws) {
   };
 }
 
-/** Launch one Chromium. `page({ initScripts, permissions, viewport })` opens a page in a fresh browser context. */
-export async function launchCdp({ args = [] } = {}) {
-  const exe = findChrome();
+/** Launch one Chromium (`exe`, else findChrome). `page({ initScripts, permissions, viewport })` opens a page in a fresh browser context. */
+export async function launchCdp({ args = [], exe = findChrome() } = {}) {
   if (!exe) throw new Error("no Chromium to launch: set CHROME, or install playwright's (bun node_modules/playwright/cli.js install chromium)");
   const port = await new Promise((res, rej) => { const s = net.createServer(); s.on('error', rej); s.listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }); });
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cdp-pw-'));

@@ -1,5 +1,5 @@
 // probe-harness: the owned foundations every browser probe shares (#131).
-// 1. Browser: chrome.ts findChrome (CHROME, else playwright's managed build, else the OS's), driven over raw CDP by
+// 1. Browser: SFU_TEST_CHROME (main's probe override), else chrome.ts findChrome (CHROME, else playwright's managed build, else the OS's), driven over raw CDP by
 //    cdp-pw.mjs: the gate never runs playwright (chrome.ts cdpPage says why). Never a hardcoded Linux path.
 // 2. `ownedWorld()` spawns a child bound to a per-run nonce in scratch state and REFUSES to proceed unless the responder
 //    proves it is ours (as boot-check), never an ambient fixed port. A LIVE deployment is explicit: pass its origin,
@@ -17,13 +17,13 @@ import { randomUUID } from 'node:crypto';
 
 // vrMicChoice: the pre-VR mic step (client/lib/xr/vrmic.js) would stop every visor-clicking probe, so contexts start as a
 // browser that answered "not now"; test/client/vrmic-probe.mjs passes null to drive it
-/** One Chromium (chrome.ts findChrome). `mic: true` adds the fake-media flags (and mic permission). */
+/** One Chromium (SFU_TEST_CHROME, else chrome.ts findChrome). `mic: true` adds the fake-media flags (and mic permission). */
 export async function launchBrowser({ mic = false, vrMicChoice = 'later', args: extra = [] } = {}) {
   // no GPU watchdog: a software-rendered sky bake is a 4–7 s frame here, and the watchdog's kill loses every page's
   // WebGL context (gpulost.js then reloads the page mid-probe, 11-03)
   const args = ['--disable-gpu-watchdog', ...(mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required'] : []), ...extra];
-  const b = await launchCdp({ args });
+  const b = await launchCdp({ args, ...(process.env.SFU_TEST_CHROME ? { exe: process.env.SFU_TEST_CHROME } : {}) });
   // BOOT_CHECK_VIEWPORT=390x844 drives a probe at any viewport (default 1280x720, the authoring viewport)
   const vp = (process.env.BOOT_CHECK_VIEWPORT || '').match(/^(\d+)x(\d+)$/);
   const viewport = vp ? { width: +vp[1], height: +vp[2] } : null;
