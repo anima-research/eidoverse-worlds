@@ -203,8 +203,9 @@ console.log("generation guard (epoch)");
   check("resolution under the departure epoch applies", g.accept("claude", s0, 1) === true);
   const s1 = g.begin();
   g.bump("claude");                       // avatar-updated lands mid-flight
+  g.bump("kestrel");                      // …and one for a name no response has carried yet
   check("resolution stamped before a bump is discarded — even for a name never seen before",
-    g.accept("claude", s1, 2) === false);
+    g.accept("claude", s1, 2) === false && g.accept("kestrel", s1, 2) === false);
   check("…while an unbumped name from the same response still applies", g.accept("aletheia", s1, 2) === true);
   const s2 = g.begin();
   check("post-bump fetch applies at rev 5", g.accept("claude", s2, 5) === true);
@@ -245,7 +246,8 @@ console.log("verdict cache (shared browser/agent implementation)");
   resolveB(accepted(6));                            // the fresh post-event state applies
   await noted; await settle();
   check("vector 1 setup: fresh post-event verdict is in place", cache.get("claude")?.status === "accepted");
-  resolveA({ rev: 4, entries: [                     // …then the stale pre-event snapshot arrives
+  // the same rev as B, so only the epoch (not the rev line) can refuse it
+  resolveA({ rev: 6, entries: [                     // …then the stale pre-event snapshot arrives
     { name: "claude", seat: { pose: "sitchair", status: "proposed" } },
     { name: "aletheia", seat: { pose: "sitchair", status: "accepted", contactY: 0.2791 } },
   ] });
