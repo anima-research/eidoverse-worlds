@@ -40,17 +40,27 @@ class FakeAudioCtx {
 
 console.log("\n— model/config pairing: wrong combinations refuse, and say why —");
 {
+  // the real roster: without it every load fails "none registered" and the refusals below prove nothing
+  // (Piper's supported() needs navigator.storage.getDirectory)
+  const realStorage = (navigator as unknown as Record<string, unknown>).storage;
+  Object.defineProperty(navigator, "storage", { value: { getDirectory: async () => ({}) }, configurable: true });
+  await import("../../client/lib/audio/engines.js");
   const ve = await import("../../client/lib/audio/voiceengines.js");
   const onnx = new File([new Uint8Array(64)], "voice.onnx");
+  const pairCfg = new File(["{}"], "voice.onnx.json");
   const stray = new File([new Uint8Array(64)], "readme.txt");
+  check("control: a valid .onnx + .onnx.json pair gets past matching (Piper)",
+    ve.matchEngine([onnx, pairCfg])?.id === "piper");
   let err = "";
   try { await ve.loadFromFiles([stray]); } catch (e) { err = String(e); }
   check("a stray file alone is refused", err.length > 0);
   check("the refusal names known formats (teachable, not just 'no')",
-    /onnx|format|engine/i.test(err), err.slice(0, 80));
+    /Known formats: Piper \(\.onnx/.test(err), err.slice(0, 80));
   err = "";
   try { await ve.loadFromFiles([onnx]); } catch (e) { err = String(e); }
-  check("a model without its config is refused (pairing is mandatory)", err.length > 0, err.slice(0, 60));
+  check("a model without its config is refused (pairing is mandatory)",
+    /needs voice\.onnx\.json/.test(err), err.slice(0, 60));
+  Object.defineProperty(navigator, "storage", { value: realStorage, configurable: true });
 }
 
 console.log("\n— OPFS refusal: storage failure is a truthful error, not a ready state —");
@@ -68,7 +78,7 @@ console.log("\n— OPFS refusal: storage failure is a truthful error, not a read
   const cfg = new File([JSON.stringify({ audio: { sample_rate: 22050 } })], "voice.onnx.json");
   let err: unknown = null, result: unknown = null;
   try { result = await ve.loadFromFiles([onnx, cfg], () => {}); } catch (e) { err = e; }
-  check("quota failure rejects the load (no silent success)", err !== null && result === null,
+  check("quota failure rejects the load (no silent success)", /Quota exceeded/.test(String(err)) && result === null,
     err ? String(err).slice(0, 60) : "resolved?!");
   const tts = await import("../../client/lib/audio/tts.js");
   const vsrc = await import("../../client/lib/audio/voicesource.js");
