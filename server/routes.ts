@@ -427,7 +427,10 @@ const ROUTES: Route[] = [
     handler: async ({ req, url }) => {
       if (!HN_ISSUER_KEY) return new Response(JSON.stringify({ error: "identity door not configured" }), { status: 503, headers: { "content-type": "application/json" } });
       let tok = "";
-      try { tok = String((JSON.parse((await readCapped(req, 64 * 1024)) ?? "") as { token?: string }).token ?? ""); } catch { /* fall through */ }   // an id token is ~1 KB; a body over the cap reads as no token (403, not 413)
+      let text: string | null = "";
+      try { text = await readCapped(req, 64 * 1024); } catch { /* a broken body reads as no token */ }   // an id token is ~1 KB
+      if (text === null) return new Response(JSON.stringify({ error: "too large" }), { status: 413, headers: { "content-type": "application/json" } });
+      try { tok = String((JSON.parse(text) as { token?: string }).token ?? ""); } catch { /* fall through */ }
       const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD });
       if (!v.ok) {
         console.log(`[auth] login token rejected: ${v.reason}`);

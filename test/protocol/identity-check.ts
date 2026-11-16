@@ -577,7 +577,9 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   ok(notHuman.status === 403 && !notHuman.cookie && /isn't a human account/.test(notHuman.body.error ?? ""), "AU3 /auth refuses a person whose sub isn't human:… (it would be an enrolled agent's account), by that rule", notHuman);
   const watch = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:42", scopes: ["worlds:spectate"] }));
   const join = await postAuth(srv.port, mint({ kind: "human", sub: "human:discord:43" }));
-  ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]); }
+  ok(watch.status === 200 && watch.cookie && join.status === 200 && join.cookie, "AU4 …a person with worlds:spectate or worlds:join gets a session", [watch.status, join.status]);
+  const big = await fetch(`http://127.0.0.1:${srv.port}/auth`, { method: "POST", body: JSON.stringify({ token: mint({ kind: "human", sub: "human:discord:44" }), pad: "x".repeat(70 * 1024) }) });
+  ok(big.status === 413 && !big.headers.get("set-cookie"), "AU5 a body over /auth's 64 KiB cap is 413, not a token refusal", big.status); }
 { const quill = mint({ kind: "agent", sub: "agent:quill@home.test", name: "Quill" });
   const wrenAid1 = mint({ kind: "agent", sub: "agent:wren@home.test", name: "Wren" });
   const q = await sock(srv.port); const jq = await q.join("garden", "x", { agentToken: quill });
