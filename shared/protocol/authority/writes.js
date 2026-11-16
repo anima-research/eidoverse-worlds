@@ -507,7 +507,7 @@ function buildPlace(ctx, a) {
     pos = ok; a.__level = (b ? b.min[1] : t.pos[1]) + 0.02;
   } else if (a.at) {
     pos = [a.at[0], 0, a.at[1]];
-  } else refuse("shape", "place needs one of: on, against, near, at", "e.g. place {id, on: 'table-1'} or {id, near: 'bed-2', facing: 'door-1'}");
+  } else refuse("shape", "place needs one of: on, beside, hang, against, near, at", "e.g. place {id, on: 'table-1'} or {id, near: 'bed-2', facing: 'door-1'}");
   if (!a.on && !a.beside && !a.hang && !a.__mounted) { if (a.facing && !a.against) yaw = faceYaw(pos); const sup = supportBelow(st, pos[0], pos[2], a.__level ?? a.at?.[2] ?? 10, fam); pos[1] = sup.y; support = sup.id;
     const hit = free(pos[0], pos[1], pos[2], yaw, new Set()); if (hit) relaxed.push(`overlaps ${hit}: nothing nearer was free`); }
   const off = qrot(yawQ(yaw), C); const restsAt = pos[1];
