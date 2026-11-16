@@ -30,7 +30,7 @@ const ev = (fn, arg) => Promise.race([
   pg.evaluate(fn, arg),
   new Promise((_, rej) => setTimeout(() => rej(new Error('page main thread pinned for 20 s')), 20000)),
 ]);
-await iwerInit(pg);
+await iwerInit(pg, { cloud: 'off' });   // the sky guard: no unrelated sky bake (bot #333 118)
 await pg.addInitScript(() => {
   if (!window.__iwerDevice) { window.__probe = { fatal: 'IWER did not load' }; return; }
   window.__probe = { grants: 0 };
