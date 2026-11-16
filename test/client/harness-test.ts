@@ -79,7 +79,7 @@ try {
   // pending set empties and a failure names its URL (xr-lifecycle-probe's tracking)
   const { launchCdp } = await import('../harness/cdp-pw.mjs');
   const dead = Bun.serve({ port: 0, fetch: () => new Response('') }); const deadPort = dead.port; dead.stop(true);
-  const srv = Bun.serve({ port: 0, fetch: (r) => new URL(r.url).pathname === '/' ? new Response(`<img src="/a.png"><script src="http://127.0.0.1:${deadPort}/gone.js"></script>`, { headers: { 'content-type': 'text/html' } }) : new Response('x') });
+  const srv = Bun.serve({ port: 0, fetch: (r) => new URL(r.url).pathname === '/' ? new Response(`<link rel="icon" href="data:,"><img src="/a.png"><script src="http://127.0.0.1:${deadPort}/gone.js"></script>`, { headers: { 'content-type': 'text/html' } }) : new Response('x') });
   const b = await launchCdp(); const pending = new Set<any>(), failed: string[] = [];
   try {
     const pg = await b.page();
