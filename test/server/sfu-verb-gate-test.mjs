@@ -16,29 +16,25 @@
 // websocket and a world; booting all that to test a guard would test the boot).
 // It reads the shipped file — it cannot pass against a copy.
 import { readFileSync } from 'fs';
+import { suite } from '../gate/suite.ts';
 const src = readFileSync(new URL('../../server/server.ts', import.meta.url), 'utf8');
 
 const GATE = /c\.spectator \|\| \(c\.surface \?\? "world"\) !== "world"/;
 const VERBS = ['sfu-answer', 'sfu-ice', 'sfu-pos', 'sfu-want-negotiate', 'relay-cred'];
 
-let pass = 0, fail = 0;
+const S = suite('sfu-verb-gate');
 for (const verb of VERBS) {
   const i = src.indexOf(`case "${verb}":`);
-  if (i < 0) { console.log(`FAIL ${verb} — case not found`); fail++; continue; }
+  if (i < 0) { S.check(`${verb} gates on spectator/surface`, false, 'case not found'); continue; }
   // the verb's body: up to its `return;\n        }` terminator
   const end = src.indexOf('\n        }', i);
-  if (end < 0) { console.log(`FAIL ${verb} — its body's terminator not found (a re-indent would read to the end of the file)`); fail++; continue; }
+  if (end < 0) { S.check(`${verb} gates on spectator/surface`, false, "its body's terminator not found (a re-indent would read to the end of the file)"); continue; }
   const body = src.slice(i, end);
-  const gated = GATE.test(body);
-  gated ? pass++ : fail++;
-  console.log(`${gated ? 'ok  ' : 'FAIL'} ${verb} gates on spectator/surface`);
+  S.check(`${verb} gates on spectator/surface`, GATE.test(body));
 }
 
 // Negative control: prove the matcher can actually fail.
 const control = 'case "sfu-pos": { if (!c.world) return; }';
 const controlCaught = !GATE.test(control);
-controlCaught ? pass++ : fail++;
-console.log(`${controlCaught ? 'ok  ' : 'FAIL'} negative control — an ungated verb is detected`);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+S.check('negative control — an ungated verb is detected', controlCaught);
+S.done();

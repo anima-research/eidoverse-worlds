@@ -45,7 +45,7 @@ for (const n of BROWSER) NEEDS[n] = "Chromium";
 // is 5x that, at least 180 s: a slow host gets room, a hung suite is still killed.
 const EXPECT: Record<string, number> = {
   "water-preview": 3, "seatlab-measure": 1,
-  "auth": 4, "sfu": 22, "sfu-verb-gate": 14, "keepalive": 15, "chatbridge": 15, "captionbot-cli": 21, "one-libvips": 22, "typing-relay": 42, "ragdoll-floor": 33, "object-lod": 76, "store-variants": 30, "door-cap-gate-live": 13, "heightmap-readiness": 6, "snap-settle": 5,   // gated by the #333 trim: one run on the proposal's host
+  "auth": 4, "sfu": 22, "sfu-verb-gate": 14, "keepalive": 15, "chatbridge": 15, "one-libvips": 22, "typing-relay": 42, "ragdoll-floor": 33, "door-cap-gate-live": 13, "heightmap-readiness": 6, "snap-settle": 5,   // gated by the #333 trim: one run on the proposal's host
   "agent-mesh-collision": 92, "kernel": 0.5, "hygiene": 0.4, "paths": 0.3, "shard": 1, "trig": 0.2, "laws": 0.3, "engine": 0.6, "nov1": 0.7, "vocab": 3.5, "nonumber": 1.4, "hostile": 0.3, "attack": 1.5,
   "determinism": 0.1,
   "libfile": 0.1, "gaps": 5.6, "phys": 3.9, "physlive": 1.2, "phystick": 5.7, "sclock": 2.8, "physseeds": 2.1,

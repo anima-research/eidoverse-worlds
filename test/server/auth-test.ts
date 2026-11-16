@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "../harness/harness.ts";
 import { tryUntil } from "../gate/wait.ts";
+import { suite } from "../gate/suite.ts";
 import { verifyToken } from "../../server/aid1.ts";
 import { accountTag } from "../../server/directory.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -45,11 +46,8 @@ function mint(over: Record<string, unknown> = {}): string {
   return `aid1.${seg}.${sig.toString("base64url")}`;
 }
 
-let passed = 0, failed = 0;
-function check(name: string, ok: boolean, detail = "") {
-  if (ok) { passed++; console.log(`  ✓ ${name}`); }
-  else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); }
-}
+const S = suite("auth");
+const check = (name: string, ok: boolean, detail = "") => S.check(name, ok, detail);
 
 async function auth(token: string): Promise<{ status: number; cookie: string; body: any }> {
   const r = await fetch(`${HTTP}/auth`, {
@@ -231,5 +229,4 @@ try {
   proc.kill();
 }
 
-console.log(`\n${passed} passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+S.done();

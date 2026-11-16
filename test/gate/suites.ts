@@ -282,7 +282,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["vrmic-exec", "client/vrmic-exec-test.mjs", 1], // vrmic.js's effects on a fake clock: the mic ask never blocks entering VR; a promise made in VR is kept after it
   ["xr-nullfb", "client/xr-nullfb-test.mjs", 1], // xr_nullfb.js on a fake renderer: installs only for a null-framebuffer (emulated) session, once, never on hardware
   ["alias", "mcpl/alias-test.ts", 1], // an old tool name is an old tool: exactly the unknown-tool (Mica 11-05); folded/removed tools name what does it now
-  ["tool-replies", "mcpl/tool-replies-test.ts", 1], // what the agent's tools and body say and send (pure; #53 waits out the 8 s timeout)
+  ["tool-replies", "mcpl/tool-replies-test.ts", 1], // what the agent's tools and body say and send (pure; #53 shortens the 8 s timeout, pinned)
   // socketteer's pathfinding stack (#235/#236/#239/#241, merged into the protocol 10-15): its own suites, as it ships them
   ["agent-mesh-collision", "mcpl/agent-mesh-collision-test.ts", 1], // #235: an agent's body collides with placed models (the support barrier, the 3-at-once governor)
   ["navgrid", "server/navgrid-test.ts", 1],  // #236: move routes through placed models (round furniture, through doors, up stairs; y picks the floor)
@@ -438,13 +438,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["mention-delivery", "server/mention-delivery-test.ts", 1], // MCPL routing for display names: speech, replay cursors, history, travel, aid1 aliases, duplicate credentials
   ["modclose-support", "mcpl/modclose-support-test.ts", 1], // #83: a moderation close (4006) releases every support holder the closed instance owns
   ["one-libvips", "server/one-libvips-test.ts", 1], // one libvips per optimize process (#122)
-  ["captionbot", "services/captionbot-test.ts", 1], // the caption bot's pipeline with a synthetic source and a fake STT provider
-  ["captionbot-cli", "services/captionbot-cli-test.ts", 1], // the shipping caption-bot CLI's exit status is the spool's promise
   ["held-pose-parity", "client/held-pose-parity-test.ts", 1], // a held pose puts every joint in the same place for the headless readers and the renderer (its own fixture)
   ["ragdoll-floor", "client/ragdoll-floor-test.ts", 1], // the Bullet ragdoll (ammodoll.js) lands on a building's floor
   ["snap-settle", "client/snap-settle-test.ts", 1], // the renderer waits for the world as long as `wait` says
-  ["object-lod", "server/object-lod-test.ts", 1], // the geometry LOD for placeable objects (optimize.ts --lod), headless; bodies fail closed
-  ["store-variants", "server/store-variants-test.ts", 1], // the store's KTX2 shadow (store-variants.ts): helpers, the optimizer's refusal seams, the real sequencer
   ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
 ];

@@ -135,10 +135,6 @@
  "test/mcpl/event-wire-test.ts": {
   "own-ok": 1
  },
- "test/mcpl/lying-support-test.ts": {
-  "bare-wait": 1,
-  "own-ok": 1
- },
  "test/mcpl/support-swap-test.ts": {
   "bare-wait": 2,
   "own-ok": 1
@@ -196,9 +192,6 @@
  },
  "test/protocol/physics-volume-check.ts": {
   "own-ok": 1
- },
- "test/protocol/presence-check.ts": {
-  "bare-wait": 3
  },
  "test/protocol/reachgate-check.ts": {
   "bare-wait": 1
