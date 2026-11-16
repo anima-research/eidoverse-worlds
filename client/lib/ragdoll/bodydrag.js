@@ -34,12 +34,12 @@ const GRAB_RANGE = 5;        // how far a body may be from ME to grab (m)
 const STREAM_MS = 66;        // sim → owner cadence, matches presence
 const SILENCE_MS = 1200;     // owner resumes itself after this much quiet
 
-let hooks = null;            // main.js: my own body's state and effects
+let hooks = null;            // localbody.js: my own body's state and effects
 export function initBodyDrag(h) { hooks = h; }
 
 // ---------------------------------------------------------------- dragger
 
-let drag = null;             // { id, rd, joint, depth, sentAt }
+let drag = null;             // { id, rd, joint, depth, off, sentAt }
 const _ray = new THREE.Raycaster();
 const _ndc = new THREE.Vector2();
 const _pt = new THREE.Vector3();
@@ -234,7 +234,7 @@ canvas.addEventListener('wheel', (e) => {
 let draggedBy = null;        // who currently drives MY body
 let lastSampleAt = 0;
 
-/** True while someone else's sim owns this body — main.js consults it. */
+/** True while someone else's sim owns this body — localbody.js consults it. */
 export function beingDragged() { return draggedBy != null; }
 
 /** Break free (movement key, getUp): tell the dragger and take myself back. */

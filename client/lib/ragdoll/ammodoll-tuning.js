@@ -57,7 +57,7 @@ export const HAIR_TUNING = {
   damping: 0.31,    // both the spring's and the body's angular damping
   gravity: 0.45,    // fraction of world gravity
   limit: 25,        // degrees at the TIP
-  rootExp: 1.2,     // ramp exponent: lim = limit * (j/n)^rootExp
+  rootExp: 1.2,     // ramp exponent: lim = limit * ((j+1)/n)^rootExp
 };
 
 /** Wing tuning, live (retuneWings). Same shape as HAIR_TUNING; the target is dead weight that swings from the

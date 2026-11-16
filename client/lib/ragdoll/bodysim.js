@@ -68,7 +68,7 @@ export function setBodyEngine(name) {
 
 /** The one door every browser fall goes through (an agent's body picks its class in mcpl/physics.ts). Same signature
  *  as `new Ragdoll`.
- *  seedVel is LOAD-BEARING: main.js passes the drag-release handover as the 4th argument (`msg?.sim ?? dragVel`);
+ *  seedVel is LOAD-BEARING: localbody.js passes the drag-release handover as the 4th argument (`msg?.sim ?? dragVel`);
  *  drop it and every release restarts the body at zero velocity. The parity suites construct engines directly and
  *  would not notice. */
 export function makeRagdoll(avatar, lean = null, rest = null, seedVel = null) {

@@ -163,8 +163,8 @@ function applyFrom(id, data) {
   }
 }
 
-/** Per-frame: the distance gain (silent at radius), the VOICES loudest heard, panners follow their entities, the listener
- *  follows the camera. */
+/** Every other frame (main.js): the distance gain (silent at radius), the VOICES loudest heard, panners follow their
+ *  entities, the listener follows the camera. */
 export function tickSounds() {
   if (!playing.size) return;
   const ctx = audioContext();

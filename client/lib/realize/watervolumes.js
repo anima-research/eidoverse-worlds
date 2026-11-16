@@ -15,7 +15,7 @@ const { uniform, uniformArray, positionWorld, cameraPosition, output, Fn, Loop, 
   array, select, min, max, exp, exp2, distance, all } = TSL;
 let objects = () => new Map();
 export function setWaterObjects(fn) { objects = fn; }
-// the shared wave clock (server time), injected by main.js: importing remotes.js here closes an import cycle
+// the shared wave clock (server time, serverclock.js), injected by main.js (setWaterClock)
 let serverNow = () => Date.now();
 export function setWaterClock(fn) { serverNow = fn; }
 const waters = [], airs = [], airMasks = [], surfaces = [];

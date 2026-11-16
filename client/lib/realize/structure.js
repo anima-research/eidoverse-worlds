@@ -133,7 +133,7 @@ function paintGeometry(geo, shade) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
 }
 
-const tracked = new Map(); // entity id -> { group, sig, geoms: BufferGeometry[] }
+const tracked = new Map(); // entity id -> { group, sig, geoms: BufferGeometry[], plan }
 let cutaway = false;
 
 /** Hide every roof while building. Idempotent; buildGroup applies it to buildings that appear during the mode. */

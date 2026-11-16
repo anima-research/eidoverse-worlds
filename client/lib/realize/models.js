@@ -5,8 +5,8 @@
 // notices the id is gone. A mount whose ends aren't both live yet stays in the fold (state is the pending list) and
 // re-checks when a spawn realizes (mountsTouching). Nothing is remembered twice.
 //
-// This module writes the maps every consumer shares (world.js entities / avatarMounts; components are the fold's own
-// record, world.js bagOf) and emits the bus events they subscribe to ('entity', 'comp', 'mount'). Loads go through
+// This module writes the map every consumer shares (world.js entities; components are the fold's own record,
+// world.js bagOf) and emits the bus events they subscribe to ('entity', 'comp', 'mount'). Loads go through
 // the scheduler: keyed, owned, prioritized by live camera distance at dequeue, cancelled on remove.
 //
 // Fold-faithfulness: a removed carrier's cargo lands at the pose the fold stamped, and an entity is whatever the fold

@@ -9,7 +9,7 @@
 // retired and re-created while its bytes flew.
 import { bus } from '../base.js';
 
-/** id → {kind, lib?, gen, loading?, failedAt?, retierAt?} */
+/** id → {kind, model?, gen, loading?, failedAt?, retierAt?} */
 export const tracked = new Map();
 let nextGen = 1;
 

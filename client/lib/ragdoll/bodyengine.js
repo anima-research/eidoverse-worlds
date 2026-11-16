@@ -20,7 +20,7 @@ import { THREE } from '../core.js';
 
 const _iv = new THREE.Vector3();
 
-/** Wire-borne shoves are capped at the trust boundary (main.js) and again here, for the sim's own stability. m/s. */
+/** Wire-borne shoves are capped at the trust boundary (localbody.js MAX_PUSH) and again here, for the sim's own stability. m/s. */
 const IMPULSE_CAP = 8;
 
 export class BodyEngineBase {
