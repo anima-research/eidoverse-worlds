@@ -239,8 +239,11 @@ try {
     JSON.stringify({ ps, prow2 }));
   check('phone: …and every row in it can be reached (it scrolls inside the screen)', await ph.pg.evaluate(() => { const s = document.getElementById('emenu-sub'); return s.scrollHeight <= s.clientHeight + 1 || getComputedStyle(s).overflowY === 'auto'; }));
   await shot(ph.pg, '07-phone-panels-390x844.png');
+  const pinBefore = (await state(ph.pg)).pins.world;
   await ph.pg.tap('#emenu-sub .mpin[data-pin="world"]'); await sleep(250);
-  check('phone: a pin taps on and the menu stays', (await state(ph.pg)).menu);
+  const afterPin = await state(ph.pg);
+  check('phone: a pin taps on and the menu stays', afterPin.menu && typeof pinBefore === 'boolean' && afterPin.pins.world === !pinBefore,
+    JSON.stringify({ before: pinBefore, after: afterPin.pins.world, menu: afterPin.menu }));
   await ph.pg.tap('#emenu-sub .mpin[data-pin="world"]'); await sleep(250);
   await ph.pg.touchscreen.tap(300, 700); await sleep(300);
   check('phone: a tap outside dismisses it', !(await state(ph.pg)).menu);
