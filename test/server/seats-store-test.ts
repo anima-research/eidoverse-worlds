@@ -151,8 +151,9 @@ try {
     const revs = logOf()!.trim().split("\n").map((l) => { try { return JSON.parse(l).rev; } catch { return null; } }).filter((r) => r !== null);
     check("vector 1: log revisions are unique and strictly monotonic",
       revs.every((r, i) => i === 0 || r > revs[i - 1]), JSON.stringify(revs));
-    check("vector 2: both writes survive, reconstructible",
-      new SeatStore(OPT, LIB).list().records.some((x) => x.name === "seatdummy" && x.slot === "proposed"));
+    check("vector 2: both writes survive, reconstructible (each writer's line is in the provenance log)",
+      logOf()!.trim().split("\n").map((l) => { try { return JSON.parse(l).actor; } catch { return null; } }).filter((x) => x === "writer-A" || x === "writer-B").length >= 2
+      && new SeatStore(OPT, LIB).list().records.some((x) => x.name === "seatdummy" && x.slot === "proposed"));
 
     // vector 3: a proposal lands between the operator's review and the
     // countersign — the reviewed revision has moved, the acceptance refuses

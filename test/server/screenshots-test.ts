@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test";
 import { createScreenshotBroker, captureCapability, pngFromDataURL } from "../../server/screenshots.ts";
 import type { World, Client } from "../../server/world.ts";
-import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
+import { WAIT_SCALE, pause } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=";
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
@@ -511,14 +511,17 @@ test("a pinned renderer leaving starts its grace at once, before any sweep has s
 });
 // ---- second review of #279 ----
 test("a journey longer than the caller's budget: answered early, retryable, and no snap is sent to the arriving roamer", async () => {
-  const { broker, worldOf, join } = roamSetup({ travelMs: 10_000, timeoutMs: 200, pollMs: 10 });
+  const { broker, worldOf, join, leave } = roamSetup({ travelMs: 10_000, timeoutMs: 200, pollMs: 10 });
   const lobby = worldOf("lobby"), w = worldOf("far");
   const roamer = join(lobby, "roam", { renderer: true, roam: true, spectator: true }); join(w, "agent");
   const t0 = Date.now(); const r = await broker.request(w, "agent", "first", "auto", {}, undefined, 1_000);
   expect(r).toMatchObject({ ok: false, status: 503, retryAfter: 2, err: expect.stringMatching(/a roaming renderer is on its way/) });
   expect(Date.now() - t0).toBeLessThan(1_200 * WAIT_SCALE);                       // the 1 s budget, less a frame's minimum
   expect(roamer.messages.filter((m) => m.type === "renderer-travel")).toEqual([{ type: "renderer-travel", world: "far" }]);   // it keeps coming
-  expect(roamer.messages.some((m) => m.type === "capture")).toBe(false);
+  // it arrives (a new connection in far): the answered request sends it no snap
+  leave(roamer.c); const arrived = join(w, "roam", { renderer: true, roam: true, spectator: true });
+  await pause("the broker polls every 10 ms: a snap for the arrived roamer would be sent well inside 200 ms", 200);
+  expect(roamer.messages.some((m) => m.type === "capture") || arrived.messages.some((m) => m.type === "capture")).toBe(false);
 });
 test("a capture-donating player leaving is not a pinned renderer restarting, and a roamer beside one is still needed", async () => {
   let time = 0;

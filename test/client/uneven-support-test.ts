@@ -76,11 +76,18 @@ const worldsDir = mkdtempSync(join(tmpdir(), "ew-uneven-"));
 foundWorlds(worldsDir, [WORLD], "warden");   // joining never founds a world
 const server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1" },
-  stdio: "ignore",
+  stdio: ["ignore", "pipe", "inherit"],
 });
 const stop = () => { try { server.kill(); } catch {} };
 process.on("exit", stop);
-await sleep(1500);
+// the door is ours only when OUR child says it serves this port (a listener already on it would take our writes)
+await new Promise<void>((res, rej) => {
+  let out = "";
+  server.stdout!.on("data", (d) => { out += d; if (new RegExp(`sequencer on http://\\S+:${PORT}\\b`).test(out)) res(); });
+  server.on("exit", (code) => rej(new Error(`the scratch sequencer exited (${code}) before serving :${PORT}:\n${out.slice(-800)}`)));
+  setTimeout(() => rej(new Error(`the scratch sequencer said nothing about serving :${PORT} within 30 s:\n${out.slice(-800)}`)), 30_000).unref();
+});
+server.stdout!.resume();
 
 const warden = new WebSocket(URL_);
 const rq = requester(warden);

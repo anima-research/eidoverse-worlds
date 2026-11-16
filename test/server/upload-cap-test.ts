@@ -1,5 +1,5 @@
 // upload-cap-test — /upload's whole-body cap (UPLOAD_CAP, server/upload.ts readCappedBytes) on a scratch door at UPLOAD_CAP_MB=1:
-// one byte over is refused in the cap's own words, with a length or chunked, and nothing is stored; exactly the cap is read.
+// one byte over is refused in the cap's own words, with a length or chunked (a stream far past it is cancelled near the cap), and nothing is stored; exactly the cap is read.
 // (image-upload-test's oversize row is refused by the narrower IMAGE_CAP, so it never reaches this one.)
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/upload-cap-test.ts
 import { mkdirSync, readdirSync } from "node:fs";
@@ -24,6 +24,10 @@ try {
   const chunks = [over.subarray(0, 400_000), over.subarray(400_000, 800_000), over.subarray(800_000)];
   u = await up(new ReadableStream({ pull(c) { const n = chunks.shift(); if (n) c.enqueue(n); else c.close(); } }));
   check("...and chunked, with no length to trust: 413, the same cap", u.status === 413 && /^too large \(1MB cap\)/.test(u.text), `${u.status} ${u.text.slice(0, 80)}`);
+  // a body far past the cap is cancelled where it passes it: the sender is asked for little more than the cap, never the whole 10 MB
+  let pulls = 0; const block = new Uint8Array(100_000);
+  u = await up(new ReadableStream({ pull(c) { if (++pulls > 100) c.close(); else c.enqueue(block); } }));
+  check("...and a 10 MB stream is cancelled near the cap, not read to its end", u.status === 413 && pulls < 40, `${u.status} after ${pulls} pulls of 100 kB`);
   const stored = (() => { try { return readdirSync(join(OPT, "store"), { recursive: true }).length; } catch { return 0; } })();
   check("...and nothing refused was stored", stored === 0, `${stored} entries under store/`);
   u = await up(new Uint8Array(1_000_000));

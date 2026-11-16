@@ -112,9 +112,10 @@ try {
     watcher!.onerror = () => rej(new Error("watcher ws failed"));
   });
   watcher.onmessage = (ev) => { try { const m = JSON.parse(String(ev.data)); if (m.type === "avatar-profile-updated") watcherEvents.push(m); } catch { /* not ours */ } };
-  const owned = await tryUntil("our scratch world dir is written", () => existsSync(join(WORLDS, "seatlab")), { ms: 6000 });
-  if (!owned) bail(`the listener on :${PORT} did not write our scratch WORLDS_DIR — wrong door`);
-  check("door ownership: the responder writes THIS run's scratch worlds dir", true);
+  // the world dir is founded before the child starts, so only the child's own words prove the door is ours
+  const owned = await tryUntil("our child says it serves this port", () => existsSync(CHILD_LOG) && new RegExp(`sequencer on http://\\S+:${PORT}\\b`).test(require("node:fs").readFileSync(CHILD_LOG, "utf8")), { ms: 6000 });
+  if (!owned || server.exitCode !== null) bail(`our child did not say it serves :${PORT} (or exited) — the listener there is not ours`);
+  check("door ownership: our child logged it serves this port, and is still running", true);
 
   console.log("write authority (B4) + dangerous keys (#105 B2)");
   const claudeSha = await sha(join(LIB, "eidoverse/assets/vrms/claude.vrm"));

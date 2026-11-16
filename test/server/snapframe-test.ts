@@ -347,7 +347,7 @@ console.log("broker (a scratch server with a capture donor, then scratch sequenc
     // a renderer watches a world that EXISTS (watching an unfounded name is 4011, retried): other-world is founded above
     const other = await connect("other-renderer", { renderer: true }, "other-world");
     // a distinct image from the wrong renderer: were it taken, the response below would carry it (#260 house I338)
-    other.send({ type: "capture-result", id: request.id, dataUrl: forged });
+    other.send({ type: "capture-result", id: request.id, dataUrl: forged }); await handled(other.ws);   // the stray reply is handled before the donor's
     // the stray reply finished nothing: the donor is still busy, so a second ask WAITS for it (server/screenshots.ts)
     let queuedDone = false;
     const queued = fetch(url, KEY).then((q) => { queuedDone = true; return q; });

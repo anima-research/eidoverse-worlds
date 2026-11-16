@@ -384,6 +384,7 @@ try {
     check("a late joiner's snapshot carries the size into geometry", lateRead.ok && lateRead.scale === 2
       && close(lateRead.contacts?.hand_r?.position, add(ROOT, mul(sub(base.contacts.hand_r.position, ROOT), 2))), show(lateRead.contacts?.hand_r));
     // never trust the wire: the fence clamps, the reader clamps, absence means 1
+    await ownerAt(peer, 1.5, 1.5);   // a size other than the clamp's, so a dropped 7 can't leave a 2 behind to read
     await ownerAt(peer, 7, 2, {}, true);
     check("an out-of-range size is clamped to 2 by the relay and read as 2", (await readAll(peer, { who: OWNER, points: ["hand_r"] })).scale === 2);
     await ownerAt(peer, "huge", undefined, {}, true);
