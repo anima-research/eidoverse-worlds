@@ -46,4 +46,11 @@ const iconFor = avatarSrc.match(/ICON_FOR = \{([^}]*)\}/)?.[1] ?? "";
 for (const m of iconFor.matchAll(/:\s*'(\w+)'/g))
   check(`ICON_FOR '${m[1]}' resolves in the registry`, has(m[1]));
 
+// every fill-set entry renders through fsvg (each is an array of paths; a bare string throws in d.map: 333-cm a10)
+const iconsSrc = await Bun.file(new URL("../../client/lib/ui/icons.js", import.meta.url)).text();
+const pfBlock = iconsSrc.slice(iconsSrc.indexOf("const PF = {"), iconsSrc.indexOf("\n};", iconsSrc.indexOf("const PF = {")));
+const pfNames = [...pfBlock.matchAll(/^\s*'?([\w-]+)'?\s*:/gm)].map((m) => m[1]);
+check("setup: the fill set's names are read from icons.js", pfNames.length >= 10 && pfNames.includes("goggles"), pfNames.join(" "));
+const fsvgBroken = pfNames.filter((n) => { try { return !/<path d="M/.test(I.fsvg(n)); } catch { return true; } });
+check("every fill-set icon renders a path through fsvg", fsvgBroken.length === 0, fsvgBroken.join(" "));
 S.done();
