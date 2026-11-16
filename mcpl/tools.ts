@@ -1137,14 +1137,14 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
       if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       // What the world server did, as far as the door can see it: no answer,
-      // an answer that isn't geometry (a body that times out after the headers lands here too), or its own error.
+      // an answer that isn't geometry (a body that stalls past the read bound says so), or its own error.
       // as this identity (readHeaders): an invite-only world's geometry answers only the people it lists. One request
       let d: any;
       let status = 0;
       try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders, ...READ() }); status = r.status;
         // who this body is, which calling again doesn't change: say who can
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
-        try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
+        try { d = await r.json(); } catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
       if (d.error) return fail(`measure: the world server answered ${status} (${d.error}), so nothing was measured`);
       const g = d.geometry ?? d;
