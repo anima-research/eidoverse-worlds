@@ -58,6 +58,7 @@ check('harness handle advertised', globalThis.__raysWorker === workers[0]);
 check('raysActive while the splash is up', raysActive() === true);
 resizeListeners.forEach((fn) => fn());
 check('a resize forwards a size message', workers[0].msgs.some((m) => m.type === 'size'));
+const staleResize = [...resizeListeners][0];   // held past teardown: a late resize event still reaches it
 finishBoot('ready');
 check('finishBoot marks done', bootDone() === true && splash.classList.contains('gone'));
 check('the worker was told to stop — exactly once', stops(workers[0]) === 1, `${stops(workers[0])} stop(s)`);
@@ -66,8 +67,8 @@ check('harness handle cleared (a closed worker is not the instrument)', !globalT
 check('raysActive false after', raysActive() === false);
 finishBoot('ready'); stopRays();
 check('a repeated finish / stop is a no-op (still one stop)', stops(workers[0]) === 1 && resizeListeners.size === 0);
-resizeListeners.forEach((fn) => fn());
-check('nothing posts after teardown', !workers[0].msgs.slice(workers[0].msgs.findIndex((m) => m.type === 'stop') + 1).length);
+staleResize();
+check('nothing posts after teardown, even from a listener held past it', !workers[0].msgs.slice(workers[0].msgs.findIndex((m) => m.type === 'stop') + 1).length);
 
 console.log('SPLASH — the worker reports nogl');
 { const before = workers.length; startRays(splash);
@@ -99,7 +100,7 @@ console.log('SPLASH — startRays twice');
 // fails to parse does NOT throw synchronously, so a dead worker read as healthy. The worker now
 // posts {type:'ready'} after its first real drawArrays, and the three outcomes must stay APART.
 const rays = () => ({ ack: globalThis.__raysAck === true, nogl: globalThis.__raysNoGl === true });
-const clearRays = () => { globalThis.__raysAck = false; globalThis.__raysNoGl = false; };
+const clearRays = () => { globalThis.__raysAck = false; globalThis.__raysNoGl = false; globalThis.__raysStarted = false; };
 
 console.log('SPLASH — the worker acknowledges (first-frame ready)');
 { cv.style.display = ''; clearRays(); const before = workers.length; startRays(splash);
