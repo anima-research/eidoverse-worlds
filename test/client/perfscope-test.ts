@@ -215,8 +215,11 @@ console.log('DRAWSTATS — render.js measures the main pass through renderer.inf
   ps.setMode('off');
   render.renderWorld(); s = render.drawStats();
   check('off: the feed is back to 8', s.render.drawCalls === 8, String(s.render.drawCalls));
+  fountain.userData.lib = 'fountain.glb';   // a library basename on the entity root, inherited by its meshes
   const src = render.drawStats({ sources: true }).sources;
-  check('sources survey lists the instanced crowd and the library basenames', src.types.some((t: any) => t.type === 'instanced' && t.visibleObjects === 1) && src.types.some((t: any) => t.type === 'other'), JSON.stringify(src.types));
+  delete fountain.userData.lib;
+  check('sources survey lists the instanced crowd and the library basenames', src.types.some((t: any) => t.type === 'instanced' && t.visibleObjects === 1) && src.types.some((t: any) => t.type === 'other')
+    && src.libraries.some((l: any) => l.lib === 'fountain.glb' && l.materialGroups > 0), JSON.stringify(src));
 }
 
 console.log('PERFSCOPE — a tier threshold is CROSSED, not reached (tierOf: v > th)');
