@@ -146,6 +146,17 @@ console.log("lying down");
   await tryUntil("the ground under 6, 4.05, 0 reads 4 m", () => near(g2 = groundAt(6, 4.05, 0), 4), { ms: 500, step: 10 });
   check("...and one mirrored along its length stands at its size, as unmirrored", near(g2, 4), String(g2));
   ag.ground.dropSupport("stump");
+  // unstretched (merged from lying-support): a 1 × 2 × 0.5 slab on its side lies along x in [18, 20], 1 m tall. Built
+  // from its position and yaw alone it stood as a 2 m column at its origin (review of b398d7e3 #1)
+  ag.ground.geomFor = async () => ({ bbox: { min: [-0.5, 0, -0.25], max: [0.5, 2, 0.25], size: [1, 2, 0.5] } });
+  ag.entities.set("slab", { id: "slab", model: "zz/slab.glb", kind: "thing", pos: [20, 0.5, 0], yaw: 0, actor: "x", scale: 1, q: [0, 0, s, s] });
+  await ag.ground.syncSupport("slab");
+  let g3: number | null = null;
+  await tryUntil("the ground under 19, 1.05, 0 reads 1 m", () => near(g3 = groundAt(19, 1.05, 0), 1), { ms: 500, step: 10 });
+  check("an unstretched slab lying on its side holds a body at its true top (y 1)", near(g3, 1), String(g3));
+  const ph = groundAt(20.3, 2.05, 0);
+  check("...and nothing stands where its yaw alone would put a 2 m deck", near(ph, 0), String(ph));
+  ag.ground.dropSupport("slab");
 }
 
 console.log("a summary's floors");

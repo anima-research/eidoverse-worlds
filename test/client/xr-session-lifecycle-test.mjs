@@ -2,8 +2,8 @@
 //
 // Required by the #197 round-two review (Blocker 2). The reviewer mutated the product's install to
 //     if (false && shouldShim({ emulated: !!globalThis.IWER })) {
-// and xr-frame-clock-test passed 29/29, because it drove the pure pieces and then source-checked the
-// wiring. The ORDER — capture (save-once) → restore listener BEFORE setSession → shim — was never
+// and the old xr-frame-clock-test (merged in below) passed 29/29, because it drove the pure pieces and then
+// source-checked the wiring. The ORDER — capture (save-once) → restore listener BEFORE setSession → shim — was never
 // executed by any test.
 //
 // This drives client/lib/xr/xr_frame_clock.js's installFrameClock(), the same function xr.js calls, over
@@ -13,7 +13,7 @@
 //
 // The sessions are minimal fakes (IWER is only a `globals` flag here; requestSession/setSession are not
 // called): the install function runs for real, and xr.js's call order is source-checked at the end.
-import { installFrameClock, installEntryClock, clockIsRestored } from '../../client/lib/xr/xr_frame_clock.js';
+import { installFrameClock, installEntryClock, clockIsRestored, captureNative, makeFrameShim } from '../../client/lib/xr/xr_frame_clock.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
 
@@ -49,7 +49,7 @@ function fakeSession({ throwOnRaf = false, throwOnCaf = false } = {}) {
   s.addEventListener = (t, cb, o) => { if (t === 'end') s._end.push({ cb, once: o?.once, tag: s._tag }); };
   s.tagNext = (tag) => { s._tag = tag; return s; };   // label a listener so ORDER is observable
   s.end = () => { s.ended = true; s._end.splice(0).forEach(({ cb, tag }) => { s.endOrder.push(tag ?? '?'); cb(); }); };
-  s.tick = (t) => s.calls.splice(0).forEach((cb) => cb(t));
+  s.tick = (t, frame) => s.calls.splice(0).forEach((cb) => cb(t, frame));
   return s;
 }
 
@@ -200,6 +200,29 @@ console.log('\n— the emulator drives its own frames —');
   check('under IWER the shim is NOT installed', fc.installed === false);
   check('…so frames keep going to the window', w.requestAnimationFrame(() => {}) === 'win-1');
   check('…but the restore listener is still registered', s._end.length === 1);
+}
+
+console.log('\n— the pieces (merged from xr-frame-clock-test) —');
+{ // the shim stands in for window.rAF, whose callback takes ONE argument: the XRFrame is dropped on purpose
+  const w = fakeWindow(), s = fakeSession(); const n = captureNative(null, w);
+  w.requestAnimationFrame = makeFrameShim({ session: s, native: n, hasEnded: () => false });
+  let gotT, gotF; w.requestAnimationFrame((t, f) => { gotT = t; gotF = f; }); s.tick(1234.5, { pose: 'x' });
+  check('a shimmed frame gets the session timestamp FIRST, and no XRFrame (window.rAF shape)', gotT === 1234.5 && gotF === undefined, `t=${gotT} f=${gotF}`);
+  // clockIsRestored, each clock on its own (gutting it to `return true` passed green when only the restored state was read)
+  check('clockIsRestored: not before the restore', clockIsRestored(w, n) === false);
+  w.requestAnimationFrame = n.raf;
+  check('…nor with only rAF back (cancel must come back too)', clockIsRestored(w, n) === false);
+  w.cancelAnimationFrame = n.caf;
+  check('…and a null native is never "restored"', clockIsRestored(w, null) === false && clockIsRestored(w, n) === true);
+}
+{ // save-once only BITES on a re-enter before the first teardown: the second entry's capture must not save session 1's shim
+  const w = fakeWindow(), a = fakeSession(), b = fakeSession(); let saved = null, ended2 = false;
+  saved = captureNative(saved, w); w.requestAnimationFrame = makeFrameShim({ session: a, native: saved, hasEnded: () => false });
+  saved = captureNative(saved, w); w.requestAnimationFrame = makeFrameShim({ session: b, native: saved, hasEnded: () => ended2 });
+  ended2 = true;
+  const id = w.requestAnimationFrame(() => {});
+  check('re-enter before teardown: a frame after the second session reaches the WINDOW', String(id).startsWith('win-'), `went to ${id}`);
+  check('…and the first session never sees a frame it cannot serve', a.calls.length === 0, `session 1 received ${a.calls.length}`);
 }
 
 console.log('\n— THE INSTALL SEAM, including what `emulated` MEANS —');

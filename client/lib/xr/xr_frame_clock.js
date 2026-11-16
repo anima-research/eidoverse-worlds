@@ -1,7 +1,7 @@
 // Who owns window.requestAnimationFrame while a session presents. While presenting, frames must come
 // from the session's clock (the window's is throttled behind a headset), so window.rAF is shimmed onto
 // the session and restored at teardown. xr.js calls installEntryClock; this owns the rules, with no
-// imports. test/client/xr-frame-clock-test.mjs and xr-session-lifecycle-test.mjs drive them.
+// imports. test/client/xr-session-lifecycle-test.mjs drives them.
 //
 // The rules that matter:
 //  • restore BEFORE three's own 'end' listener (registered in setSession), which restarts the desktop

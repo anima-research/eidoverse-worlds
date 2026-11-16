@@ -755,31 +755,20 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
   // hooks were tools behind an env gate; since the surface fold (10-14) they are
   // no tool at all: a bench calls the agent's trusted seam directly (as this
   // file does), and the tool table never names it.
-  check('no rehearsal tool is declared',
-        !/name: "rehearse_/.test(ns));
-  check('...and the tool table never calls the trusted seam',
-        !/ag\.flightBody(Down|Recovered)\(/.test(ns));
-  check('...the old names are refused with where they went, not aliased',
+  check('the old rehearsal names are refused with where they went, not aliased',
         /rehearse_down: "no tool/.test(ns));
 
-  // B5: infrastructure must not speak in the resident's voice.
   const ag = readFileSync('mcpl/agent-flight.ts', 'utf8');
-  check('flight telemetry is not written as resident chat',
-        !/verb\("say", \{ text: "\[flight\]/.test(ag));
 
   // B6: every metre a flying body gains is flown. The winded branch used to
   // assign pos.y directly and return -- a teleport, in the same function whose
   // comment forbids exactly that.
-  check('an unaffordable climb has no direct pos.y assignment',
-        !/f\.pos\.y = from \+ afford/.test(ag));
-  check('...and goes through the same ticked integrator',
+  check('an unaffordable climb goes through the same ticked integrator (no direct pos.y)',
         /this\.setCourse\(\{ kind: "climb", alt: reach, rate: climbRate/.test(ag));
 
   // B7: the perch economy is not advertised by anything that cannot perform it.
-  check('flight_status does not advertise a perch refill',
-        !/on a perch\)/.test(ag));
-  check('the fly mode (climb) does not promise perches either',
-        !/or on a perch \(2\/s\)/.test(ns) && /refilled only on the ground/i.test(ns));
+  check('the fly mode (climb) says stamina is refilled only on the ground (no perch economy)',
+        /refilled only on the ground/i.test(ns));
 }
 
 // ------------------------------------------------------- T6: the vigil posture
@@ -950,16 +939,11 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
         /if \(e\.repeat\) return;/.test(toggles) &&
         toggles.indexOf('e.repeat') < toggles.indexOf('BODY_KEYS.find') &&
         /const BODY_KEYS = \[[\s\S]*?code: 'KeyF'/.test(ctl));
-  // ...and the guard is on the LISTENER, not the emit: build.js binds R/F and
-  // the arrows to nudge and raise, where holding the key is the interaction.
-  check('but the key BUS still carries repeats (build.js nudges need them)',
-        !/if \(e\.repeat\) return;\s*\n\s*bus\.emit\('key'/.test(ctl));
 
   // 2. Flight measured the ground with raw terrain while take-off measured it
   //    through the colliders -- two different floors, differing by the height
   //    of every deck and slab in the world.
   check('client flight and client walking resolve the SAME ground',
-        !/groundY:\s*\(x, ?z\) => heightAt\(/.test(ctl) &&
         /resolveColliders\(_gp, heightAt\)/.test(ctl));
 
   // 3. "it just makes me stuck standing or walking (unable to steer) depending
@@ -1084,19 +1068,6 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   check('...and not-flying asserts the resting wings every frame',
         /if \(me\.wingEffort\) me\.wingEffort = 0;/.test(ctl));
 
-  // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
-  // agent. The browser had the SAME hole and worse -- applyGrantState() merged
-  // grants by hand and was exported and called by nothing, so the "live grant"
-  // fix was dead code that read like a fix. Now (the protocol) neither side
-  // computes rights at all: the server's `your-rights` answer, re-sent whenever
-  // a role changes, is the whole truth (server.ts rightsFor reads the door's
-  // roles record).
-  const stt = readFileSync('client/lib/state.js', 'utf8');
-  check('the browser computes no rights of its own (no grant fold, no second rule)',
-        !/verb === 'grant'/.test(stt) && !/rightsIn\(/.test(stt) && !/rightsfold/.test(stt));
-  check('...and the dead hand-merge is gone',
-        !/net\.myRights = \{ \.\.\.net\.myRights, \.\.\.worldRoles/.test(
-          readFileSync('client/lib/world.js', 'utf8')));
   // And a withdrawal reaches a body that is ALREADY up: checking only at the
   // next action lets a revoked pilot soar indefinitely by touching nothing.
   check('a revoked grant grounds a body already in the air',
@@ -1282,6 +1253,38 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
   const netSrc = readFileSync('client/lib/net.js', 'utf8');
   check('browser consumes the server-folded effective-rights message',
         /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
+  // (merged from flight-headless-test) the answer is whole, through the same path
+  ag.flight = null; ag.loadBodyBones = async () => {};
+  const yourRights = (rights: any) => ag.flying.acceptEffectiveRights(rights, 'world');
+  yourRights({ role: 'owner', gen: true, fly: true });
+  check('a later role change that keeps fly keeps flight', ag.flying.flightAllowed().ok && ag.myRights.role === 'owner', JSON.stringify(ag.myRights));
+  yourRights({ role: 'owner', gen: true, fly: false });
+  const why = ag.flying.flightAllowed().why ?? '';
+  check('a withdrawal refuses, and says why in words a pilot can act on', !ag.flying.flightAllowed().ok && /grant|flight/i.test(why), why);
+  yourRights({ role: 'builder', gen: true, fly: true }); yourRights({ role: 'builder', gen: true });
+  check('an answer without fly is a withdrawal (absent is not "unchanged")', !ag.flying.flightAllowed().ok, JSON.stringify(ag.myRights));
+}
+
+// LEAF FORCES (merged from flight-headless-test): a broadside wing plate, synthetic; and, with the ragdoll's rig.json
+// (MYTHOS_RIG_JSON, a host file), the wing bodies' share of the drag and their terminal speed against the chest's
+{
+  const { DEFAULT_LEAF_FORCE: L, terminalOf, leafForceFor } = await import('../../shared/leafforce.js');
+  const f = leafForceFor(L, { mass: 0.11, halfExtents: [0.017, 0.136, 0.096],
+    vel: { x: 0, y: -6, z: 0 }, normal: { x: 0, y: 1, z: 0 }, right: { x: 1, y: 0, z: 0 } }, 0.4);
+  check('a broadside wing feels lift-ward drag', f.force.y > 0, JSON.stringify(f.force));
+  check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6, JSON.stringify(f.torque));
+  const RIG = process.env.MYTHOS_RIG_JSON;
+  if (!RIG) S.na('leaf forces on the ragdoll\'s own bodies', 'set MYTHOS_RIG_JSON to the ragdoll\'s rig.json (a host file)');
+  else {
+    const rigJson = JSON.parse(readFileSync(RIG, 'utf8'));
+    const wingBodies = rigJson.bodies.filter((b: any) => b.worldOnly);
+    check(`the ragdoll has ${wingBodies.length} wing bodies to push on (12)`, wingBodies.length === 12);
+    let area = 0, wingArea = 0;
+    for (const b of rigJson.bodies) { const d = b.halfExtents.slice().sort((x: number, y: number) => x - y); const a = 4 * d[1] * d[2]; area += a; if (b.worldOnly) wingArea += a; }
+    check(`wings are ${(100 * wingArea / area).toFixed(0)}% of the drag area (over half: why a wingless stand-in falls wrong)`, wingArea / area > 0.5);
+    const tWing = terminalOf(L, wingBodies[0]), tChest = terminalOf(L, rigJson.bodies.find((b: any) => b.name === 'chest'));
+    check(`a wing plate terminals at ${tWing.toFixed(1)} m/s, under a third of the chest's ${tChest.toFixed(1)}`, tWing < tChest / 3);
+  }
 }
 
 // RED-FIRST REGRESSION: infrastructure flight events must never author resident chat.

@@ -98,18 +98,8 @@ console.log("mounted things");
   const r = at("c", view({ p: { pos: [5, 0, 0], yaw: 0, q: qX90 }, c: { pos: [0, 0, 0], yaw: 0 } }, { c: { to: "p", offset: [0, 1, 0] } }));
   check("a pitched parent's rotation turns the offset", r.ok && near3(r.pos, [5, 0, 1]), show(r));
 }
-{
-  // grandparent (0,0,0); parent 1 up; child 1 up from the parent: (0,2,0)
-  const r = at("c", view({ g: { pos: [0, 0, 0], yaw: 0 }, p: { pos: [0, 0, 0], yaw: 0 }, c: { pos: [0, 0, 0], yaw: 0 } },
-    { p: { to: "g", offset: [0, 1, 0] }, c: { to: "p", offset: [0, 1, 0] } }));
-  check("nested mounts compose recursively", r.ok && near3(r.pos, [0, 2, 0]), show(r));
-}
 
-console.log("refusals");
-{
-  const r = at("a", view({ a: { pos: [0, 0, 0] }, b: { pos: [0, 0, 0] } }, { a: { to: "b" }, b: { to: "a" } }));
-  check("a mount cycle is refused, not composed", !r.ok && /cycle/.test(r.why), show(r));
-}
+console.log("refusals (nesting and a cycle: effective-test)");
 {
   const r = at("nobody", view({}));
   check("an unknown id is refused", !r.ok && r.link === "nobody", show(r));
