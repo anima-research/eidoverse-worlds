@@ -84,7 +84,7 @@ const WALK = PLAN.levels[0].y;
   check('ids are owned by the building',
     structureBoxIds('house').length === n && structureBoxIds('house').every((i) => i.startsWith('house#')));
   check('entries carry their owner back',
-    [...colliders.values()].every((e: any) => !e.structOwner || e.structOwner === 'house'));
+    structureBoxIds('house').every((id) => (colliders.get(id) as any)?.structOwner === 'house'));
 }
 
 // 2. THE PILLAR TRAP — same box, both doors, different verdict
@@ -225,11 +225,12 @@ const WALK = PLAN.levels[0].y;
   // laid on its back (90° about x): the wall is a slab at grade, not a wall where it stood
   clean();
   const h = Math.SQRT1_2;
-  fitStructureBoxes('tilt', PLAN.boxes, { ...AT, q: [h, 0, 0, h] });
+  const nTilt = fitStructureBoxes('tilt', PLAN.boxes, { ...AT, q: [h, 0, 0, h] });
   const atOld = new THREE.Vector3(1.5, WALK, 0);
   resolveColliders(atOld, flat);
-  check('q tilted 90° about x: no upright wall stands where the untilted one would', Math.abs(atOld.z) < 1e-6 && Math.abs(atOld.x - 1.5) < 1e-6,
-    `(${atOld.x.toFixed(3)}, ${atOld.z.toFixed(3)})`);
+  check('q tilted 90° about x: no upright wall stands where the untilted one would (and every box still registers)',
+    nTilt === PLAN.boxes.length + 1 && Math.abs(atOld.z) < 1e-6 && Math.abs(atOld.x - 1.5) < 1e-6,
+    `n=${nTilt} (${atOld.x.toFixed(3)}, ${atOld.z.toFixed(3)})`);
 }
 
 // 8. totality — a malformed declaration registers nothing, never throws
