@@ -85,7 +85,7 @@ try {
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, (r: any) => res(IDS.back(r))); bob.send(JSON.stringify({ type: "request", id, verb, args: IDS.out(verb, args) })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
-    window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
+    window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[replica\\] can't continue this client's cut \\(gap /.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
     // every reader runs under a catch-all that lands in console.error (state.js subscribers, the realizer's report()), so a
     // frozen-write throw (C7a: the fold's records are frozen on a dev host) never reaches the window's error event: catch it here.
     // three.js's WebGPU destroyAttribute TypeError on sky dispose is not a reader's and is filtered by its message.
@@ -194,7 +194,9 @@ try {
     const [rel, und] = myActs().slice(n0);
     check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", await waitDisk(() => ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.args.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before), myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.args])); }
 
-  check("N0 by now (a create, a dozen moves, undos and redos) no '[state] seq gap' warning (N1 checks again at the end)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
+  // the hook's pattern is net.js's own resync warning, or the N rows watch for a line nothing prints
+  const gapWarned = /console\.warn\(`\[replica\] can't continue this client's cut \(\$\{r\.why\}\)/.test(fs.readFileSync(path.join(ENGINE, "client/lib/net.js"), "utf8"));
+  check("N0 by now (a create, a dozen moves, undos and redos) the replica never resynced on a seq gap (N1 checks again at the end)", gapWarned && await evalJson(`__gaps.length === 0`), { gapWarned, gaps: await evalJson(`__gaps.slice(0, 4)`) });
 
   // ---- C: undo refused when someone changed it since ----
   const moved = disk().entities[crate].c.transform;
@@ -1079,7 +1081,7 @@ try {
       const r = await page(`const m = await import('/lib/net.js'); return await Promise.race([m.say('after removal'), new Promise((res) => setTimeout(() => res('pending'), 3000))]);`);
       check("CP10 a say after removal answers at once, in words, and isn't queued", r?.ok === false && await lineLike(`/“after removal” wasn't sent: not connected/`, 2000) && !(await lines() as string[]).some((l) => /queued “after removal”/.test(l)), { r, last: (await lines() as string[]).slice(-2) }); } }
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
-  check("N1 no '[state] seq gap' noise: the v1 numbering a client derives is sparse by design (seq×1000+k), and the log stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
+  check("N1 …nor by the end: no seq-gap resync over the whole run", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   check("errors: no reader threw into a frozen record (console.error carries what the catch-alls swallow)", await evalJson(`__cerr.length === 0`), await evalJson(`__cerr.slice(0, 3)`));
   bob.close();
