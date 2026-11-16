@@ -70,8 +70,8 @@ export function gateStream(stream, levelFn) {
     _gain.connect(_dest);
     _gatedStream = _dest.stream;
 
-    // muting operates on the raw track (micstate.js), so both streams stay live and the gate only decides how much
-    // of the raw signal reaches the destination
+    // muting closes this gate too (micstate.js toggleMute → driveGate), so both streams stay live and the gain only
+    // decides how much of the raw signal reaches the destination
     return _gatedStream;
   } catch (e) {
     report('mic gate graph', e);

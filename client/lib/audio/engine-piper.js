@@ -137,7 +137,7 @@ registerEngine({
       const opts = { graphOptimizationLevel: 'all' };
       let ortSession = null, usedEP = 'wasm';
       try {
-      // backend: localStorage.eidoTtsBackend = 'wasm' | 'webgpu' | 'auto' (default)
+      // backend: WASM unless localStorage.eidoTtsBackend = 'webgpu'
       const pref = (() => { try { return localStorage.getItem('eidoTtsBackend'); } catch { return null; } })();
       // WebGPU is opt-in (localStorage.eidoTtsBackend = 'webgpu'): its EP fails some VITS kernels at inference time,
       // and WASM often wins on short utterances anyway. Verbose ORT logging shows which ops ran where.

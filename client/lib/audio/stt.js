@@ -24,7 +24,7 @@ function micIsLive() {
 let rec = null;
 let wanted = false;
 let uttSeq = 0;                 // one id per transcribed utterance (log plane)
-// under PTT the key is the gate for captions too (bot #333 131); `draining` = stop() flushing what was heard while held
+// under PTT the key is the gate for captions too; `draining` = stop() flushing what was heard while held
 let draining = false, listening = false;
 const keyAllows = () => !pttMode() || pttHeld() || draining;
 // diagnostics readable from /audio on a device with no console; the tally persists across toggles

@@ -36,7 +36,7 @@ export function setTtsEnabled(on) {
   // voicesfu.js does the takeover); enabling with the mic off hands the generator over here.
   if (ttsEnabled !== was && typeof window !== 'undefined') {
     import('./micstate.js').then((v) => {
-      // ask the live transport first (micstate's micOn() is null on an SFU client)
+      // ask the live transport first, then micstate (as stt.js and mictoggle.js do)
       const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
         ? !!window.__sfuMicOn() : v.micOn?.();
       if (ttsEnabled && canSynthesize() && !micLive) {

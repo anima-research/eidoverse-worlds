@@ -59,7 +59,8 @@ export function updateVoiceMouths(now) {
 }
 
 // captions are the live performance (bubble + mouth); the logged say carries spoken:true and
-// world.js never re-performs it. caption and speech are one routine on two bus names.
+// realize/livechat.js does not re-perform it once the voice leg's receipt lands. caption and
+// speech are one routine on two bus names.
 function performSpeech({ actor, text }) {
   const av = actor === CONFIG.name ? getMe() : remotes.get(actor)?.avatar;
   av?.say(text);

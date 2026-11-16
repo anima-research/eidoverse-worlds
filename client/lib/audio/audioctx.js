@@ -1,6 +1,6 @@
 // ONE AudioContext for the whole page. Chrome caps a document at roughly six and a refused
-// context never throws, it just never sounds. Remote voices aren't in its graph: voicesfubridge.js
-// sets each speaker's <audio> volume.
+// context never throws, it just never sounds. Remote voices don't play through it (only their level
+// analysers live here, voicesfu.js): voicesfubridge.js sets each speaker's <audio> volume.
 let ctx = null;
 
 /** The page's AudioContext. Created on first use, resumed opportunistically. */
