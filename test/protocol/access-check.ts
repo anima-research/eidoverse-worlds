@@ -181,7 +181,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     "F23-O7 …and to a guest (no credential) too", { gNone, gOld, gHalf });
   const jOld = await raw("attic", { agentToken: "tok-ivy" }), jHalf = await raw("halfway", { agentToken: "tok-ivy" });
   const aOld = await accessAs(s3.port, "attic", "tok-ivy"), aHalf = await accessAs(s3.port, "halfway", "tok-ivy"), aNone = await accessAs(s3.port, "nowhere", "tok-ivy");
-  ok(/"code":"old-format"/.test(jOld) && /"operator":true/.test(jOld) && /older version of Eidoverse/.test(jOld) && /^close 4005 old-format world$/m.test(jOld)
+  ok(/"code":"old-format"/.test(jOld) && /"operator":true/.test(jOld) && /"may":true/.test(jOld) && /older version of Eidoverse/.test(jOld) && /^close 4005 old-format world$/m.test(jOld)
     && /interrupted/.test(jHalf) && /^close 4005 interrupted conversion$/m.test(jHalf)
     && aOld.status === 200 && aOld.body?.state === "old-format" && aHalf.status === 200 && aHalf.body?.state === "interrupted" && aNone.status === 404 && aNone.body?.code === "world-unavailable",
     "F23-O8 the operator is told the specific state: the join says old-format (operator, may) or that its conversion was interrupted, and /access says state old-format / interrupted; a missing name is still world-unavailable", { jOld, jHalf, aOld: aOld.body, aHalf: aHalf.body });
