@@ -88,21 +88,18 @@ const out = await pg.evaluate(async (offerSdp) => {
   // pre-negotiation (currentDirection null). Round 1's direction-based match
   // latched onto a sendrecv transceiver JSEP had associated with a recv
   // route; currentDirection === 'recvonly' excludes it.
-  {
-    const mine = pc.getTransceivers().find(t =>
-      t.currentDirection === 'sendonly'
-      || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv')));
-    if (mine) await mine.sender.replaceTrack(synthTrack);
-  }
+  const mine = pc.getTransceivers().find(t =>
+    t.currentDirection === 'sendonly'
+    || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv')));
+  if (mine) await mine.sender.replaceTrack(synthTrack);
   r.ownedSenderCarriesSynth = pc.getTransceivers()
     .some(t => t.currentDirection === 'sendonly' && t.sender?.track === synthTrack);
   // round-2 control: a transceiver whose ASK is sendrecv but whose NEGOTIATED
   // answer is recvonly (a route JSEP associated with our addTrack) must be
   // invisible to the hunt.
-  r.recvAssociatedExcluded = !pc.getTransceivers().some(t =>
-    t.currentDirection === 'recvonly' && t.direction === 'sendrecv'
-    && (t.currentDirection === 'sendonly'
-        || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv'))));
+  // the control exists (an ask of sendrecv negotiated to recvonly) and the hunt did not pick it
+  r.recvAssociatedPresent = pc.getTransceivers().some(t => t.currentDirection === 'recvonly' && t.direction === 'sendrecv');
+  r.recvAssociatedExcluded = !!mine && mine.currentDirection !== 'recvonly';
   return r;
 }, server.localDescription.sdp);
 console.log('  FIRST answer (no mic yet):', out.first);
@@ -113,5 +110,5 @@ console.log(`  STAGE 3 — old hunt hijacks a recv route: ${reproduced ? `✅ re
 console.log(`  STAGE 3 — fixed hunt swaps in place:     ${out.ownedSenderCarriesSynth ? '✅ owned sendonly sender carries the synth track' : '❌'}`);
 await b.close();
 pageSrv.close();
-console.log(`  STAGE 3 — recv-associated sendrecv excluded: ${out.recvAssociatedExcluded ? '✅' : '❌'}`);
+console.log(`  STAGE 3 — recv-associated sendrecv excluded: ${out.recvAssociatedExcluded ? '✅' : '❌'} (control present: ${out.recvAssociatedPresent})`);
 process.exit(reproduced && out.ownedSenderCarriesSynth && out.recvAssociatedExcluded ? 0 : 1);
