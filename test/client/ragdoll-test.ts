@@ -404,7 +404,7 @@ console.log('\nthe solver:');
   check('a launched body settles and captures a pose', rd.done && !!rd.finalPose, `steps=${steps}`);
   check('...without stretching the skeleton (≤10%)', stretchOf(rd) <= 0.10,
     `${(stretchOf(rd) * 100).toFixed(1)}%`);
-  check('...and the owner saw its own flop every frame', rd.avatar.poses > 0);
+  check('...and the owner saw its own flop every frame', rd.avatar.poses >= steps, `${rd.avatar.poses} poses for ${steps} steps`);
 }
 
 // ---- proportions: the root-follow offset is measured, not assumed
@@ -420,7 +420,7 @@ console.log('\nthe solver:');
     const up = new THREE.Vector3(0, 1, 0)
       .applyQuaternion(av.nodes.hips.getWorldQuaternion(new THREE.Quaternion()));
     check(`${label}: pelvis lies down with the body (tilt > 30°)`,
-      Math.acos(Math.min(1, Math.abs(up.y))) > 30 * Math.PI / 180 || rd.p.hips.y > 0.3,
+      Math.acos(Math.min(1, Math.abs(up.y))) > 30 * Math.PI / 180,
       `tilt ${deg(Math.acos(Math.min(1, Math.abs(up.y))))}°`);
   }
 }
