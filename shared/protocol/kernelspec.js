@@ -7,7 +7,7 @@
 //   envelope   the entry's fields (§1 "The envelope") and its kinds
 //   fold       the four operations and their fields; the batch body (§3)
 //   identity   the grammar of an identity, an entity id and a component name (§3.1)
-//   version    {dialect, v} and the minors this reader knows (§13; genesis's fields)
+//   version    {dialect, v} and genesis's fields (§13)
 //   roles      who may do what (§7): the component's shape. Its VOCABULARY (ranks, built-in ids, permissions, the custom-id
 //              pattern, reserved ids) is the registry's (componentspec roles.vocab), not the kernel's (the kernel holds
 //              what the fold reads; the ladder is read by the authority, and a registry break still needs --ack)
@@ -26,9 +26,8 @@ import { ENVELOPE, KINDS, IDENT, ENTITY, COMP, OP_FIELDS, BATCH_FIELDS, GENESIS_
 import { COMPONENTS, pinOf } from "./componentspec.js";
 
 export const TRIAL_KERNEL = "trial-kernel";
-/** The component names that belong to the kernel (their registry status is trial-kernel). */
-/** The component names that belong to the kernel: what every reader rests on (the kernel is what the fold reads;
- *  transform, parent and model left it, as the fold never reads them). */
+/** The component names that belong to the kernel (their registry status is trial-kernel): what every reader rests on (the
+ *  kernel is what the fold reads; transform, parent and model left it, as the fold never reads them). */
 export const KERNEL_COMPONENTS = Object.freeze(["roles", "access"]);
 /** The kernel's shapes that aren't components: the pin's other keys. */
 export const KERNEL_SHAPES = Object.freeze(["envelope", "fold", "identity", "version"]);
@@ -68,8 +67,9 @@ export function kernelDiff(pin, now = kernelPinOf()) {
 export const translatorN = (name) => { const m = /@(\d+)$/.exec(String(name ?? "")); return m ? +m[1] : null; };
 
 /** May `now` be pinned over `pin`? {ok, diff, why?, companions?}. With no diff: yes (the old companions are kept). With a
- *  diff, only with all three companions: {ack, translator: {from, to}, vectors: {dir, ran: {old: [...], new: [...]}}}, where
- *  each vector's `old` verdict is a refusal (not "ok") and its `new` verdict is "ok". `date` stamps the changelog line.
+ *  diff, only with all three companions: {ack, translator: {from, to} | {step}, vectors: {dir, ran: [{name, old, new}]}}, where
+ *  each vector's `old` verdict is a refusal (not "ok") and its `new` verdict is "ok"; a scope-only diff (companions.trim or
+ *  companions.scope, below) needs the ack alone. `date` stamps the changelog line.
  *  The companions the pin will record: {changelog, translator, vectors}. */
 export function kernelVerdict(pin, now = kernelPinOf(), companions = null, date = new Date().toISOString().slice(0, 10)) {
   if (!pin) return { ok: true, diff: [], companions: null, initial: true };   // the first pin: nothing changed yet, so nothing to carry

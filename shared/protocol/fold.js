@@ -14,7 +14,7 @@ import { checkProvenance } from "./provenance.js";
 export const DIALECT = "eidoverse-log";
 export const VERSION = 4;
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
-// §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
+// §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points
 // The KERNEL (trial-kernel, PROTOCOL §4; shared/protocol/kernelspec.js pins these): the envelope, the kinds, the identity
 // grammar, the ops, genesis. A change to any of them is refused by the gate unless the same commit carries a translator,
 // a changelog line and old-reader/new-reader vectors (test/protocol/kernel-check.ts)
@@ -194,8 +194,8 @@ export function checkEntry(e, seq) {
   if (e.kind === "change" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
   if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
 }
-export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commitment"] };
-export const BATCH_FIELDS = ["ops", "cascade"]; // `commitment` replaces value+salt once redacted
+export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commitment"] };   // `commitment` replaces value+salt once redacted
+export const BATCH_FIELDS = ["ops", "cascade"];
 // A change entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
 export function opsOf(e) {
   const { op: verb, body } = e;
@@ -211,8 +211,9 @@ export function opsOf(e) {
   }
   return [shapeOne(verb, body, false, "")];
 }
-/** A line that read as an entry (not a Malformed stand-in); its ops, or none when it has none to give. */
+/** A line that read as an entry (not a Malformed stand-in). */
 export const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
+/** An entry's ops, or [] when it has none to give (not a change, or malformed). */
 export const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // `cascade`: the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
 // asker's own ops (clearing the references to a thing the batch deleted; an undo putting such a reference back). The fold

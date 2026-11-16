@@ -101,7 +101,7 @@ export function dec(s) {
 }
 
 // ---- display names for actors ----
-// A actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
+// An actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
 // directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
 // process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
 // person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.

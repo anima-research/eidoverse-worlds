@@ -1,7 +1,7 @@
 // shared/protocol/sandbox.js — the script sandbox: real JavaScript in QuickJS compiled to WASM, a SEPARATE VM (never
 // same-VM compartments). The authority never imports this file (browsers import the
-// authority); a host injects `runScript` as io.scripts (server/livehost.ts, test/harness/filehost.ts), and an auditor calls it
-// directly to re-run an activation from what its act records (shared/protocol/scriptaudit.js).
+// authority); a host injects SANDBOX (below) as io.scripts (server/livehost.ts, test/harness/filehost.ts), and an auditor calls
+// runScript directly to re-run an activation from what its act records (shared/protocol/scriptaudit.js).
 //
 // One activation = one FRESH runtime and context: evaluate the source (which registers handlers with world.on), deliver
 // the one event, collect the proposed writes. Nothing survives between activations, so a re-run from the act's inputs

@@ -486,14 +486,14 @@ export const COMPONENTS = {
                help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1), modes? (walk | swim | fly | climb; absent, every mode)}. Where speed volumes overlap, only those whose modes take the body's current mode count, and the highest zone priority among them decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
-  // a behaviour. Keyed, so §5's creator rule decides who may change it and who its SPONSOR is. The install check's lists
+  // a behaviour. Keyed, so §4's creator rule decides who may change it and who its SPONSOR is. The install check's lists
   // are here so the pin sees them: itemEnums.on ('changed:*' = changed:<component>), itemEnums["scope.bodies"], scopeFields
   script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
                required: ["src", "scope"], grammar: { src: "sha256" }, units: { every: "s" }, ranges: { every: { min: 5 } },
                itemEnums: { on: ["use", "say", "enter", "leave", "grab", "release", "changed:*"], "scope.bodies": ["shove", "pose"] },
                scopeFields: { ids: "scope", comps: "array", create: "bool", say: "bool", bodies: "array" },
                docs: { src: "the source blob's name", scope: "what it may touch: {ids, comps, create?, say?, bodies?}", on: "the events that wake it (use, say, enter, leave, grab, release, changed:<comp>)", every: "seconds between ticks (≥ 5)", always: "true: it runs with nobody present (owner)", knobs: "its settings (≤ 4 KiB)", paused: "true: it doesn't run" }, help: "keyed <name>: a script (JavaScript; docs/guide/SCRIPTS.md). {src: the source blob's name (upload {text} gives it), scope: {ids: 'self'|'subtree'|[ids], comps: [names, 'name:*'], create?, say?, bodies?: ['shove'|'pose']}, on: ['use', 'say', 'enter', 'leave', 'grab', 'release', 'changed:<comp>'], every?: s (>= 5; it gets tick, and wake after sleeping), always?: bool (run with nobody present; owner), knobs?: {…} (<= 4 KiB), paused?}. It acts with its sponsor's rights now, never beyond its scope; a `use` reaches it through a reactions handler {kind: 'script', script: <name>}" },
-  // keyed names say which kind of key they are (§5): instance = the creator rule; partition = one shared surface
+  // keyed names say which kind of key they are (§4): instance = the creator rule; partition = one shared surface
   schemas:   { status: "reserved", instead: "nothing yet: the pinned registry (spec/registry-pin.json) carries a name's meaning; schemas:<name> waits for a definition document format", on: "world", keyed: true, key: "instance", help: "reserved: on @world, keyed by component name, for the content hash of that name's written definition once a format for one exists. Not written yet (PROTOCOL §4)" },
   blueprints: { on: "world", keyed: true, key: "instance", help: "on @world, keyed by a blueprint's hash: {name, …} (publish writes it)" },
   "terrain-paint": { status: "reserved", on: "world", keyed: true, key: "partition", help: "keyed <i>-<j>: paint channels for one tile (research 40 §3; not built in the lab)" },
@@ -522,7 +522,8 @@ export const COMPONENTS = {
 };
 
 // ---- status (PROTOCOL §4 Status, docs/contributing/COMPONENT-LADDER.md) ----
-// Every registered name has one: trial (admitted; its shape may still change during the alpha), reserved (the name is
+// Every registered name has one: trial (admitted; its shape may still change during the alpha), trial-kernel (roles and
+// access: trial, with their field shape also in the kernel's pin, kernelspec.js), reserved (the name is
 // held; every write refused, `instead` says what to use meanwhile), stable (promised, additions only; none yet). A
 // namespaced DRAFT has no status here: kept as someone's own (checks.js), never judged. STATUSES below spells each out.
 // held names: reserved so no write can squat a name the alpha means to give a settled shape
@@ -551,7 +552,7 @@ export const STATUSES = {
   stable: "promised: its meaning never changes; it only grows by additions",
 };
 for (const d of Object.values(COMPONENTS)) d.status ??= "trial";
-/** A name's status (trial | reserved | stable), or null for a name the registry doesn't know. */
+/** A name's status (trial | trial-kernel | reserved | stable), or null for a name the registry doesn't know. */
 export const statusOf = (comp) => { const d = defOf(comp); return d ? d.status ?? "trial" : null; };
 
 // ---- names (PROTOCOL §4) ----
@@ -619,7 +620,7 @@ export function refsOf(comp, v) {
   return out;
 }
 /** The value with each thing reference x replaced by f(x, path); f returning null drops it (a list entry is removed; a
- *  single reference's field is removed, and if that field is required the whole value is: returns undefined). Returns
+ *  single reference's field is removed, and if that field is required the whole value goes: `value` is undefined). Returns
  *  {value, dropped: [paths]}. Never touches people or @words. */
 export function mapRefs(comp, v, f) {
   if (!v || typeof v !== "object" || Array.isArray(v)) return { value: v, dropped: [] };

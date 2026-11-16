@@ -34,7 +34,8 @@ export function requiresAdd(current, add) {
 }
 
 /** Walk a log's declarations: genesis `requires`, then each governance `requiresAdd` in order, against the ids this reader
- *  knows. {requires, declaredAt: {id: seq}, unsupported: null | {seq, ids}}. From `unsupported.seq` on, nothing is applied. */
+ *  knows. {requires, declaredAt: {id: seq}, unsupported: null | {seq, ids}, malformed?: {seq, code, detail}}. The walk stops
+ *  at the first unsupported or malformed declaration; from `unsupported.seq` on, nothing is applied. */
 export function featureDecision(entries, known) {
   const declaredAt = Object.create(null); let requires = [];
   const unknownIn = (ids, seq) => { const u = ids.filter((id) => !known.has(id)); return u.length ? { seq, ids: u } : null; };

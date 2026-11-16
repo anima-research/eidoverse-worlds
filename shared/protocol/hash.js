@@ -3,7 +3,7 @@
 // The protocol core hashes in three places: the world id (sha256 of genesis JCS), the state digest (§2.4) and blob names
 // (§2.2). A reader verifying a chain hashes once per entry, so it must be synchronous (awaiting WebCrypto per entry
 // measured ~18× slower): the browser uses the pure-JS sha256hex from ../sha256.js, the server Bun's native hasher.
-// test/gate/run.ts proves both agree.
+// test/protocol/sweep.ts proves both agree.
 // No node: import here — the browser imports this file as-is.
 import { sha256hex, sha256hexBytes } from '../sha256.js';   // the leaf (components.js re-exports it): no cycle back through particle_effects
 

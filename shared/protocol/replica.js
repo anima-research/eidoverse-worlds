@@ -2,18 +2,18 @@
 // suites (test/protocol/authority-check.ts) run the same code.
 //
 // The client folds the log itself, from the server's own log stream:
-//   adopt(snap)        the join snapshot: {dialect, v, world, seq, state: wireState(fold), physics, mine?}, the fold as the
+//   adopt(snap)        the join snapshot: {dialect, v, world, seq, state: wireState(fold), physics, actor?, names?, …}, the fold as the
 //                      server holds it at `seq` (a client can't refold the whole log on join; it adopts a snapshot). An unknown
 //                      {dialect, v} is refused before anything is folded: status `unknown-version`, no state
-//   ingest(entries, from, held)
+//   ingest(entries, from, names)
 //                      the `log` message: the raw entries the authority just wrote, folded with the fold's own ops
 //                      (opsOf + applyInPlace, the strict reader's code). A gap, a redaction (retroactive by law, L1), a
 //                      governance entry or a genesis means this client can't continue: it asks for a fresh snapshot (`resync`).
 //
 // What the renderer reads: the VIEW of this fold (view.js viewState), recomputed from the fold itself,
 // so there's nothing held beside it to drift; client/lib/state.js diffs successive views and tells the realizers
-// what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, text,
-// to?}): chat isn't world state, it's the log's own kind.
+// what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, by, text,
+// to?} plus spokenOf's fields): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, REDACTED, Malformed, DIALECT, VERSION } from "./fold.js";
 import { simFolder, simSnapshotOf, advanceSim, tickOf, carried } from "./simlayer.js";
 import { viewState, idOut } from "./view.js";
@@ -130,7 +130,7 @@ export function makeReplica({ freeze = true } = {}) {
   };
   /** The view the renderer and panels read, carrying a chat window (chat isn't in the fold). */
   v.view = (chat) => viewState(v.st, { recentChat: chat?.recentChat ?? [], chatTotal: chat?.chatTotal ?? 0 });
-  /** Fold the authority's fresh entries. Returns {changed, says: [chat lines], resync, why?, ts?, actor?}. */
+  /** Fold the authority's fresh entries. Returns {changed, says: [chat lines], resync, why?, ts?, actor?, sky?}. */
   v.ingest = (entries, from, names) => {
     learn(names);
     if (!v.active) return { changed: false, says: [], resync: false };

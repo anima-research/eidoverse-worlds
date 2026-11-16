@@ -1,6 +1,6 @@
 // shared/protocol/ids.js — the ONE way an entity id is minted, by the authority (writers never choose ids). An id is
 // world-scoped (PROTOCOL §3.1), but forks copy ids verbatim and a merge meets both sides' ids, so a minted id must not
-// collide by construction: 26 base32 characters (130 random bits; 2^-65 odds at a billion ids per world pair).
+// collide by construction: 26 base32 characters (130 random bits; about 2^-70 odds at a billion ids per world pair).
 // OPAQUE: no readable slug (a slug goes stale; an id never changes). What a thing is called is its label; ids already
 // minted with a slug stay valid. Ids stay [a-z0-9-]{1,64}.
 const B32 = "abcdefghijklmnopqrstuvwxyz234567";

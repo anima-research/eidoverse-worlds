@@ -1,6 +1,6 @@
 // shared/protocol/access.js — who may come INTO a world.
 //
-// Pure: no state, no clock, no imports but roles.js. The server's door (server/access.ts) asks it at every join, after any
+// Pure: no state, no clock, no imports but roles.js and is.js. The server's door (server/access.ts) asks it at every join, after any
 // change to the world's roles or access, and for every HTTP read of a world; the client's /access, /members and the World
 // panel read the same function, so "may I be here" never has two answers.
 //

@@ -21,7 +21,7 @@
 export const SHAPE_TYPES = ["box", "sphere", "capsule", "cylinder", "convex", "mesh", "compound"];
 const KEYS = { box: ["half"], sphere: ["radius"], capsule: ["radius", "halfHeight"], cylinder: ["radius", "halfHeight"], convex: ["blob"], mesh: ["blob"], compound: ["blob"] };
 export const BLOB_ADDRESS = /^sha256:[0-9a-f]{64}$/;
-const MAX = 1e4;   // metres: the same bound a transform's pos takes is generous for a collider's size
+const MAX = 1e4;   // metres: generous for a collider's size (a transform's pos takes 1e5)
 const fin = (x) => typeof x === "number" && Number.isFinite(x);
 const vec3 = (a) => Array.isArray(a) && a.length === 3 && a.every(fin) && a.every((x) => Math.abs(x) <= MAX);
 const size = (x) => fin(x) && x > 0 && x <= MAX;

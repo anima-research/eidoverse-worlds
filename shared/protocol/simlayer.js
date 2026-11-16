@@ -94,7 +94,7 @@ export const maskOf = (c) => listOr1(c?.collider?.mask);
 export const scans = (mask, c) => layerOf(c).some((x) => mask.includes(x));
 // a purged physical value is no body: the strict fold holds REDACTED there, and this layer follows it
 const purgedPhysical = (c) => [...PHYSICAL].some((k) => c[k] === REDACTED);
-// a place the record lost: a transform or parent purged, or stripped to its commit with no purge naming it (§12), on the
+// a place the record lost: a transform or parent purged, or stripped to its commitment with no purge naming it (§12), on the
 // thing or on anything it hangs from. Its pose is unknown (§1), so nothing derives a place or a scale from it: it has no
 // body here, and the authority's sweeps (a return, an orphaned lift's settling) leave it where the record lost it
 export function lostPlace(st, id) {
@@ -135,7 +135,7 @@ function boxesForM(st, models = {}) {
 const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof Malformed) return []; throw x; } };
 const isEntry = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 // A sim (or act) entry's body as a replay may read it, or null when a purge took it whole (§12): the purge names it, or the
-// body on disk is already its {commit} stub. Null is unknown, as in the authority's readback: never a value to compare with.
+// body on disk is already its {commitment} stub. Null is unknown, as in the authority's readback: never a value to compare with.
 const isCommitStub = (b) => !!b && typeof b === "object" && !Array.isArray(b) && Object.keys(b).length === 1 && "commitment" in b;
 const bodyIn = (entries, purged, seq) => { const e = entries[seq]; if (!isEntry(e) || !e.body || typeof e.body !== "object") return null;
   return purged?.has(`${seq}:-`) || isCommitStub(e.body) ? null : e.body; };
@@ -154,8 +154,8 @@ export function simFold(entries, now, opts = {}) {
 // on append), in log order; view(now) advances the engine to `now` and returns what simFold returned. `now` must not
 // run backwards relative to later entries' ts (the server's clock is monotonic and every ts it writes is ≥ it), so
 // advancing early for a read and then folding a later entry is the same as folding it first: advancement is
-// schedule-independent. opts.models: the catalogue whose models count as colliders (default the lab's; the server
-// passes {} so geometry enters the sim only through the log's physics.shape, Covenant III).
+// schedule-independent. opts.models: the catalogue whose models count as colliders (default none, and the server passes
+// none, so geometry enters the sim only through the log's physics.shape, Covenant III; the lab's suites pass theirs).
 // opts.from: start from a cut instead of the empty world ({st, clock, spec, foreign, sim, launched, lifted, unknownEpoch,
 // unknownHold}, simSnapshotOf's shape):
 // a joining client can't refold the whole log, so it adopts the authority's sim where the authority's clock stood, then feeds
@@ -329,8 +329,8 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
-// @world.bounds as a reader uses it: malformed = none (the authority's boundsOf, kept apart so this file imports nothing of it)
 const outside = (B, p) => p[0] < B.min[0] || p[0] > B.max[0] || p[2] < B.min[2] || p[2] > B.max[2] || p[1] > B.max[1];   // x, z and the sky; the floor is the terrain's
+// @world.bounds as a reader uses it: malformed = none (the authority's boundsOf, kept apart so this file imports nothing of it)
 const boundsIn = (st) => { const B = st.entities["@world"]?.c.bounds; const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
   return B && v3(B.min) && v3(B.max) ? B : null; };
 // A view over the log alone (no engine): every rest, where it put the body, and what the authority did after it.

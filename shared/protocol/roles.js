@@ -62,13 +62,13 @@ const LIST = [
 ];
 export const PERMISSIONS = Object.freeze(Object.fromEntries(LIST.map(([k, text, needs]) => [k, Object.freeze({ text, needs: Object.freeze(needs) })])));
 export const PERMISSION_NAMES = Object.freeze(LIST.map(([k]) => k));
-/** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
 /** Owner-only powers go through this one test: a grant value or effective rights whose role is the built-in owner. */
 export const OWNER = "owner";
 /** The base rung, through one test like owner: "anyone here" for a who, the badge that isn't shown. */
 export const BASE = "member";
 export const isBase = (x) => (typeof x === "string" ? x : x?.role) === BASE;
 export const isOwner = (x) => (typeof x === "string" ? x : x?.role) === OWNER;   // a role string, a grant or effective rights
+/** The powers that act on people: holding any of them shows the Moderation panel and the moderation log. */
 export const MOD_POWERS = Object.freeze(["mute", "kick", "ban", "pauseScripts"]);
 /** The powers that may warn (warn isn't a permission; the gentlest act comes with any of these). */
 export const WARN_POWERS = Object.freeze(["mute", "kick", "ban"]);
@@ -148,7 +148,7 @@ export function brokenNeed(can) {
 
 /** The role a person holds in a world, by id: the roles:<id> entry, else (a guest) the guests role, else the default
  *  role, else member. A role the world doesn't define reads as member. A world with no owner caps everyone at member:
- *  nobody could have granted more (§7). `anon` = a guest (no account). Mirrors the authority's roleOf exactly; the authority calls this. */
+ *  nobody could have granted more (§7). `anon` = a guest (no account). The authority's roleOf calls this. */
 export function roleIdOf(wc, id, { anon = false, owners = null } = {}) {
   if (!wc) return "member";
   const dr = isObj(wc["default-role"]) ? wc["default-role"] : null;
@@ -261,8 +261,8 @@ export function personActions(me, them, state = {}) {
   return out;
 }
 const article = (n) => (/^[aeiou]/i.test(n) ? `an ${n.toLowerCase()}` : `a ${n.toLowerCase()}`);
-/** The roles `me` may give (grantRoles): ranked below me, holding only permissions I hold. Owners may give any but owner
- *  through ownership's own path (seniority), so owner is listed for owners. */
+/** The roles `me` may give (grantRoles): ranked below me, holding only permissions I hold. An owner may give any role,
+ *  owner included: ownership follows its own rule (the authority's seniority check), not this filter. */
 export function grantableRoles(wc, me) {
   return rolesOf(wc).filter((r) => isOwner(me) ? true : r.rank < me.rank && PERMISSION_NAMES.every((k) => !r.can[k] || (me.permissions ?? []).includes(k)));
 }

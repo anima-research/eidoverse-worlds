@@ -42,7 +42,7 @@ export function plainRefusal(what, reply, nameOf = () => null) {
   return namedFor(`Couldn't ${what}: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
 }
 
-// ---- the lock question (PROTOCOL §5) ----
+// ---- the lock question (PROTOCOL §7, Locks) ----
 // A lock refusal asks a person who may lift locks "This is locked. Move anyway?" with three answers. An agent gets the
 // same refusal text and the same two ways through in the authority's fix (throughLock, or unlock first).
 

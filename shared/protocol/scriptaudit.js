@@ -17,8 +17,9 @@
 //             such reads that differs is still flagged `rerun`. Soundness: everything but the identities is still checked
 //             (sponsor, depth, seed, src, the read shape); but an act that read who was near and differs is skipped even
 //             when its result didn't depend on them (a forged constant write after near() is not flagged).
-//   arrivals — an `enter` / `leave` activation records no identity: the script heard `by` live, the act keeps
-//             neither a trigger actor nor event.by. A re-run gets a stand-in identity; a result that doesn't depend on who
+//   arrivals — an `enter` / `leave` activation (and a `grab` / `release` whose event names no `by`) records no
+//             identity: the script heard `by` live, the act keeps neither a trigger actor nor event.by. A re-run gets a
+//             stand-in identity; a result that doesn't depend on who
 //             came is verified. One that differs from the log is re-run again with a SECOND stand-in of another shape (a
 //             minted-shaped one, then one of another valid shape), and each part that differs from the log (writes, says,
 //             world.use calls, body effects) is judged on its own: a part the two re-runs agree on is flagged `rerun-anon`

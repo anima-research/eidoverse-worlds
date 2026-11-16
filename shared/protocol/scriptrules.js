@@ -6,8 +6,8 @@
 //   seedOf   the activation's seed = H(world ‖ act seq ‖ entity/script key): what Math.random runs from.
 //   elide    PROTOCOL §3d: dropping no-op writes in a SCRIPT batch is a stated rule, not free authority practice,
 //            because an audit re-run must drop exactly the same writes. In order, against the batch so far, by JCS.
-//   paramKey a component's `param.<name>` field: a number a script writes for something else to read (seat poses
-//            that blend by signals read `param.<name>`).
+//   PARAM_NAME a `params` key: a number a script writes (world.param) for something else to read (a seat pose
+//            blends by the signal `param.<name>`).
 import { cowState, applyCow, jcs } from "./fold.js";
 import { sha256 } from "./hash.js";
 
