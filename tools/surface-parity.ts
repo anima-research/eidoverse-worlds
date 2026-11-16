@@ -59,6 +59,9 @@ const OLD_REF = opt("old-ref", process.env.SURFACE_OLD_REF ?? "main")!;
 const OLD_GIVEN = opt("old", process.env.SURFACE_OLD_TREE);   // undefined: a worktree of OLD_REF in the temp dir (named once the ref resolves)
 const CHECK = has("check"), HEADED = has("headed"), KEEP_UI = has("keep-ui"), PIN = !has("no-pin-clock"), CONTROL = !has("no-control");
 const THRESHOLD = Number(opt("threshold", "0.5")), TOLERANCE = Number(opt("tolerance", "16")), READY_S = Number(opt("timeout", "150"));
+// a NaN compares false, so a typo would PASS every frame (bot #333 128)
+for (const [k, v] of [["threshold", THRESHOLD], ["tolerance", TOLERANCE], ["timeout", READY_S]] as const)
+  if (!Number.isFinite(v) || v < 0) { console.error(`--${k} ${opt(k)}: want a number ≥ 0`); process.exit(2); }
 const ONLY = opt("only");   // one world for a quicker run
 const STAMP = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
 const OUT = resolve(opt("out", join(NEW, "notes", "surface-parity", STAMP)));
