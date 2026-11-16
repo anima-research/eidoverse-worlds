@@ -50,7 +50,7 @@ export function suiteMembers(root: number, table: Row[] = processTable(), platfo
 /** Kill what a suite started (`root` and everything with it). Never throws: a gone process is the goal. */
 export function killSuite(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
-  // Windows has no signals or groups: kill the tree, children first (taskkill /T can't find orphans of a dead root)
+  // Windows has no signals or groups: the root's tree first (/T), then each member by id (/T can't find orphans of a dead parent)
   const members = suiteMembers(root, processTable("win32"), "win32");
   for (const pid of (members.length ? members : [root]).reverse()) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 15_000 });
 }
