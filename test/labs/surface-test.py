@@ -97,13 +97,14 @@ async def main():
     await asyncio.sleep(0.5)
     check("T4 toSurface:'voice' reaches exactly the voice leg", any(m.get("type") == "rtc" for m in e3), str(e3[-2:]))
 
-    # T5: roster honesty — human sees ONE hesp (aux invisible)
-    arrivals = [m for m in e5 if m.get("type") == "snapshot"]
-    ppl = arrivals[0].get("state", {}).get("people", None) if arrivals else None
-    # fall back: count arrive broadcasts for hesp seen by human1 (joined after both)
-    snap_ok = True  # roster shape varies; assert via arrive events instead
-    hesp_arrivals = [m for m in e5 if m.get("type") == "arrive" and m.get("id") == "hesp"]
-    check("T5 aux never broadcast as arrival", len(hesp_arrivals) == 0, f"got {len(hesp_arrivals)}")
+    # T5: roster honesty — a person whose legs join while human1 watches arrives ONCE (the aux is invisible)
+    t5p, _, _, _ = await join("t5", agent_token="surf-lab-t5")
+    t5v, e5v, c5v, _ = await join("t5", "voice", agent_token="surf-lab-t5")
+    await asyncio.sleep(0.3)
+    t5_arrivals = [m for m in e5 if m.get("type") == "arrive" and m.get("id") == "t5"]
+    check("T5 setup: the voice leg was taken", c5v() is None and any(m.get("type") == "snapshot" for m in e5v), str(c5v()))
+    check("T5 aux never broadcast as arrival", len(t5_arrivals) == 1, f"got {len(t5_arrivals)} (1 = the primary only)")
+    await t5v.close(); await t5p.close()
 
     # T6: primary dies → voice leg reaped 4007
     await p1.close()

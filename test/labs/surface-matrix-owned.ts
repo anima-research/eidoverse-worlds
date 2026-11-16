@@ -29,6 +29,7 @@ writeFileSync(agentTokensPath, JSON.stringify({
   "surf-lab-hesp2": { id: "hesp2" },
   "surf-lab-hesp3": { id: "hesp3" },
   "surf-lab-w2o": { id: "watcher2-owner" },
+  "surf-lab-t5": { id: "t5" },
 }));
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
