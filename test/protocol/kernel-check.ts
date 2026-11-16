@@ -219,7 +219,7 @@ await C("K11", "a mutated roles or access SHAPE is a kernel change (a roles fiel
   const vs: [string, any][] = [["permissions", vm((v) => { v.permissions = v.permissions.filter((p: string) => p !== "ban"); })], ["reserved", vm((v) => { v.reserved = v.reserved.filter((p: string) => p !== "banned"); })],
     ["rank", vm((v) => { v.rank.owner = 254; })], ["customId", vm((v) => { v.customId = "^[a-z]{1,8}$"; })]];
   const vgot = vs.map(([k, now]) => { const br = CAT.pinBreaks(reg, now); const bare = CAT.pinVerdict(reg, now, null); const acked = CAT.pinVerdict(reg, now, "x", "2026-10-21");
-    return { k, red: br.some((t: string) => t.startsWith(`roles.${k}: vocabulary`)) && !bare.ok && /--ack/.test(bare.why) && acked.ok, kernel: KS.kernelDiff(KS.kernelPinOf(), KS.kernelPinOf()).length === 0 }; });
+    return { k, red: br.some((t: string) => t.startsWith(`roles.${k}: vocabulary`)) && !bare.ok && /--ack/.test(bare.why) && acked.ok, kernel: !JSON.stringify(KS.kernelPinOf()).includes(JSON.stringify(reg.roles.vocab[k])) }; });   // the kernel pin carries none of it
   return [got.every((g) => g.red) && vgot.every((g) => g.red && g.kernel), { got, vgot }]; });
 await C("K12", "the scope path is not a loophole: a kernel component ENTERING the pin with the registry's shape re-pins on the ack alone (scope recorded, no translator/vectors asked), but entering with a changed shape, entering a name that isn't the kernel's, or a scope that doesn't name every entrant, needs all three", () => {
   const base = { kernel: Object.fromEntries(Object.entries(KS.kernelPinOf()).filter(([k]) => k !== "access")), companions: null, translator: TV1.TRANSLATOR };   // a pin from before access joined
