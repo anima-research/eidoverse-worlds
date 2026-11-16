@@ -11,8 +11,9 @@ const { check, tally } = mkCheck();
 
 const ROOF = [-3.2, 6.3, -3.2, 3.2, 6.5, 3.2];
 // a fresh store and check cache: every report here is computed by this run
-const { mkdtempSync } = await import("node:fs");
-const OPT = mkdtempSync((await import("node:path")).join((await import("node:os")).tmpdir(), "checkroute-"));
+const { mkdtempSync, readdirSync, readFileSync, statSync } = await import("node:fs");
+const { join } = await import("node:path");
+const OPT = mkdtempSync(join((await import("node:os")).tmpdir(), "checkroute-"));
 const h = await scratchSequencer("buildcheck-route", { serverEnv: { SKIP_OPT_SWEEP: "1", OPT_DIR: OPT, TRUST_NAMES: "1" }, worlds: ["checks"], owner: "inspector", portFrom: 9540 });
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const { handleTool } = await import("../../mcpl/tools.ts");
@@ -35,9 +36,13 @@ try {
   check("GET /check serves the report: no problems, two floors, a room on each, a door and a stair",
     r.ok === true && r.levels.length === 2 && r.suggested.rooms.length === 2 && r.suggested.doors.length >= 1 && r.suggested.stairs.length === 1,
     JSON.stringify({ ok: r.ok, warnings: r.warnings, levels: r.levels, rooms: r.suggested?.rooms?.length }));
-  const t1 = performance.now();
+  // a run writes its report (buildcheck-queue.ts atomicWrite, a new inode): an answer from the cache leaves the file as it was
+  const stored = () => { const dir = join(OPT, "checks"); for (const n of readdirSync(dir)) { if (!n.endsWith(".json")) continue;
+    const f = join(dir, n), d = JSON.parse(readFileSync(f, "utf8")), st = statSync(f);
+    if (d.scale === 1 && String(d.file).split(/[\\/]/).pop() === up.path.split("/").pop()) return `${st.ino}|${st.mtimeMs}`; } return null; };
+  const before = stored();
   const again = await (await fetch(`${h.BASE}${up.check}`)).json() as any;
-  check("a second ask is answered from the cache", JSON.stringify(again) === JSON.stringify(r) && performance.now() - t1 < 500, `${(performance.now() - t1).toFixed(0)}ms`);
+  check("a second ask is answered from the cache: the same report, and no check run (its stored report untouched)", JSON.stringify(again) === JSON.stringify(r) && before !== null && stored() === before, JSON.stringify({ before, after: stored() }));
   const rb = await (await fetch(`${h.BASE}${bad.check}`)).json() as any;
   check("the faulty one's report names the narrow doorway", rb.warnings?.some((w: any) => w.kind === "narrow"), JSON.stringify(rb.warnings));
   check("an unknown asset is a 404 with a reason", (await fetch(`${h.BASE}/check?lib=store/nope.glb`)).status === 404);

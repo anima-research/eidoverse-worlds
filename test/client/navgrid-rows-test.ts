@@ -4,13 +4,12 @@
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";
-import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 const STUB = fileURLToPath(new URL("../stubs/core-stub.mjs", import.meta.url));
 plugin({ name: "core-stub", setup(b) { stubResolve(b, /^(\.\.?\/)+core\.js$/, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const { mergeGeometries } = await import("../../client/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js");
 const C: any = await import("../../client/lib/colliders.js");
-const { makeNavGrid, NAV_NUDGE } = await import("../../shared/navgrid.js");
+const { makeNavGrid, NAV_NUDGE, NAV_MAX_PROBES, navStats } = await import("../../shared/navgrid.js");
 const P = await import("../../shared/places.js");
 const { mkCheck } = await import("../harness/harness.ts");
 const { check, tally } = mkCheck();
@@ -77,7 +76,7 @@ const steps: number[][] = [];
 for (let k = 1; k <= 37; k++) steps.push([-20 + k * 0.3, 0, -1, -20 + (k + 1) * 0.3, k * 0.5, 1]);
 const CRATE = [[-0.5, 0, -0.5, 0.5, 1, 0.5]];
 type Row = { name: string; boxes: number[][]; collide?: string; from: number[]; to: any;
-  refused?: RegExp; withinMs?: number; arrives?: (end: any, r: any, from: any) => string | null };
+  refused?: RegExp; maxProbes?: number; arrives?: (end: any, r: any, from: any) => string | null };
 const ROWS: Row[] = [
   // the gap sits between two lattice columns (x = 0.0131, 0.2131): both stand at 1 m, only the floor BETWEEN says no
   { name: "two platforms at one height with a gap between them are no path across", boxes: [[-3, 0.8, -1, 0.04, 1.0, 1], [0.19, 0.8, -1, 3, 1.0, 1]],
@@ -86,8 +85,8 @@ const ROWS: Row[] = [
     from: [0.45, 1.0, 0.45], to: { x: 4.55, z: 4.55, y: 1.0 }, arrives: (_e, r, from) => r.points.length >= 2 ? walks(from, r.points) : "one point" },
   { name: "a destination a hand's width inside a crate's reach ends where a body can stand, snapped", boxes: CRATE, collide: "box",
     from: [3, 0, 0], to: { x: 0.5 + 0.32 - 0.07, z: 0, y: 0 }, arrives: (e, r) => { const st = probe.stand(e.x, e.y, e.z); return st.push < NAV_NUDGE && r.snapped ? null : `push ${st.push.toFixed(3)} snapped ${r.snapped}`; } },
-  { name: "a destination 100 km away is refused for its size, quickly", boxes: CRATE, collide: "box",
-    from: [3, 0, 0], to: { x: 100_000, z: 0 }, refused: /too far to plan/, withinMs: 5000 },
+  { name: "a destination 100 km away is refused for its size, inside the probe budget (not after searching it all)", boxes: CRATE, collide: "box",
+    from: [3, 0, 0], to: { x: 100_000, z: 0 }, refused: /too far to plan/, maxProbes: NAV_MAX_PROBES },
   { name: "a 20× room whose declared floor (20 m) isn't there is refused, not reached on the platform 1.5 m beneath it", boxes: [[-8, 0, -8, 8, 18.5, 8], ...steps],
     from: [-6, 18.5, 0], to: P.destinationOf(thing(20), LOFT), refused: /on its floor/ },
   { name: "a 0.05× room whose floor is 4 cm off its declared height is still reached (the tolerance doesn't shrink to 5 mm)", boxes: [[-3, 0, -3, 3, 0.26, 3]],
@@ -100,9 +99,9 @@ const ROWS: Row[] = [
 for (const row of ROWS) {
   const g = boxWorld(row.boxes, row.collide);
   const from = { x: row.from[0], y: row.from[1], z: row.from[2] };
-  const t0 = performance.now(); const r: any = g.route(from, row.to); const ms = performance.now() - t0;
+  const t0 = performance.now(), n0 = navStats.probes; const r: any = g.route(from, row.to); const ms = performance.now() - t0, probes = navStats.probes - n0;
   const said = "points" in r ? `arrived at ${JSON.stringify(r.points.at(-1))}` : r.refusal;
-  if (row.refused) check(row.name, "refusal" in r && row.refused.test(r.refusal) && (row.withinMs === undefined || ms < row.withinMs * WAIT_SCALE), `${ms.toFixed(0)} ms: ${said}`);
+  if (row.refused) check(row.name, "refusal" in r && row.refused.test(r.refusal) && (row.maxProbes === undefined || probes <= row.maxProbes), `${probes} probes, ${ms.toFixed(0)} ms: ${said}`);
   else { const why = "points" in r ? row.arrives!(r.points.at(-1), r, from) : "refused"; check(row.name, why === null, `${said} ${why ?? ""}`); }
 }
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);

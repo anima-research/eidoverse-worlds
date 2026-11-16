@@ -1,6 +1,6 @@
 // GET /heightmap through a real scratch sequencer: the public export door's budget is a gate in front of
 // the work, not a report after it. Six new exports a minute are served; the seventh is refused WITHOUT
-// sampling (asking for it again is still refused — nothing was cached); a cached answer still serves.
+// sampling (asking for it again is still refused — nothing was cached; terrainshape-test counts that nothing was sampled); a cached answer still serves.
 //   bun test/server/heightmap-route-test.ts
 import { join } from "node:path";
 const { scratchSequencer, mkCheck } = await import("../harness/harness.ts");
@@ -34,10 +34,8 @@ try {
   const six = [];
   for (let res = 507; res <= 512; res++) six.push(await get(`res=${res}`));
   check("six new near-maximum exports are served", six.every((r) => r.status === 200 && r.bytes > 100_000), six.map((r) => r.status).join(","));
-  const slowest = Math.max(...six.map((r) => r.ms));
   const seventh = await get("res=513");
-  check("the seventh is refused with 429 and a Retry-After", seventh.status === 429 && Number(seventh.retry) > 0);
-  check(`...in a fraction of an export's time (${seventh.ms.toFixed(1)} ms vs ${slowest.toFixed(0)} ms)`, seventh.ms < slowest / 3);
+  check("the seventh is refused with 429 and a Retry-After", seventh.status === 429 && Number(seventh.retry) > 0, `${seventh.ms.toFixed(1)} ms vs ${Math.max(...six.map((r) => r.ms)).toFixed(0)} ms for the slowest export`);
   const again = await get("res=513");
   check("asking again is refused again: the refused export was never made or cached", again.status === 429, `${again.status} ${again.bytes}B`);
   const cached = await get("res=509");

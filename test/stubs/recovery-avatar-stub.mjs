@@ -29,9 +29,9 @@ function body(kind) {
 export async function makeAvatar(id, libPath) {
   probe.attempts++;
   probe.made.push({ id, libPath });
-  // `loadMs` lets a test hold a load IN FLIGHT, which is the only way to reach the guard that runs
-  // AFTER the await — a supersede during the backoff is caught by the earlier guard instead.
-  if (probe.loadMs) await new Promise((r) => setTimeout(r, probe.loadMs));
+  // `hold` (a promise) keeps a load IN FLIGHT until the test settles it, which is the only way to reach the guard that
+  // runs AFTER the await — a supersede during the backoff is caught by the earlier guard instead.
+  if (probe.hold) await probe.hold;
   if (probe.failing) throw new Error(`stub: body load refused (${libPath})`);
   const b = body('real');
   probe.bodies.push(b);   // the caller may dispose it; the test reads that

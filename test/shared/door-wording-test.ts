@@ -8,7 +8,7 @@
 import { noWorldUrl } from "../harness/no-world.ts";
 import { mkCheck } from "../harness/harness.ts";
 import { tryUntil } from "../gate/wait.ts";
-import { handleTool, screenshotTool, snapCallBudgetMs, TOOLS } from "../../mcpl/tools.ts";
+import { handleTool, screenshotTool, snapCallBudgetMs, snapClock, TOOLS } from "../../mcpl/tools.ts";
 import { shown } from "../../shared/shown.js";
 import { WorldAgent } from "../../mcpl/agent.ts";
 import { BodyStateReader } from "../../mcpl/body-state.ts";
@@ -191,38 +191,41 @@ try {
   check("...and an answer of nothing but whitespace gives the status alone",
     blank === "screenshot: no picture was taken; the world server answered 502, so try again in a while", blank);
   // A first call should come back with a picture: "not yet" answers are asked again within the call's budget.
+  // The retry loop's pauses run on a virtual clock (tools.ts snapClock): each is recorded and moves it at once.
+  const pauses: number[] = []; let vt = 0; const realNow = snapClock.now;
+  snapClock.now = () => realNow() + vt; snapClock.pause = async (ms) => { pauses.push(ms); vt += ms; };
+  const paused = () => pauses.splice(0).join(",");
   const img = (r: any) => r?.content?.some((c: any) => c.type === "image") && r.isError !== true;
-  for (const [who, what] of [["loading-1", "a renderer still loading the world (503)"], ["busy-1", "busy renderers (429, after its retry-after)"],
-    ["slow-1", "a frame that came too late (504)"], ["proxied-1", "a proxy cutting the wait (502)"]] as const) {
-    const t0 = Date.now(); const r = await screenshotTool({ ...agent, name: who }, "first", undefined, "auto", {}, { budgetMs: 20_000 });
-    check(`a first call that met ${what} once still comes back with the picture`, img(r) && snapTries.get(who) === 2, `${said(r)} tries=${snapTries.get(who)} ${Date.now() - t0}ms`);
+  for (const [who, what, wait] of [["loading-1", "a renderer still loading the world (503)", "2000"], ["busy-1", "busy renderers (429, after its retry-after)", "1000"],
+    ["slow-1", "a frame that came too late (504)", "1000"], ["proxied-1", "a proxy cutting the wait (502)", "2000"]] as const) {
+    const r = await screenshotTool({ ...agent, name: who }, "first", undefined, "auto", {}, { budgetMs: 20_000 }), p = paused();
+    check(`a first call that met ${what} once still comes back with the picture, after its ${wait} ms pause`, img(r) && snapTries.get(who) === 2 && p === wait, `${said(r)} tries=${snapTries.get(who)} pauses=${p}`);
   }
   {
-    const t0 = Date.now(); const r = await screenshotTool({ ...agent, name: "loading-2" }, "first", undefined, "auto", {}, { budgetMs: 20_000 });
-    const ms = Date.now() - t0;
-    check("…and one refused twice, after two pauses of about 2 s", img(r) && snapTries.get("loading-2") === 3 && ms >= 3500 && ms < 8000, `${said(r)} ${ms}ms`);
+    const r = await screenshotTool({ ...agent, name: "loading-2" }, "first", undefined, "auto", {}, { budgetMs: 20_000 }), p = paused();
+    check("…and one refused twice, after two pauses of 2 s", img(r) && snapTries.get("loading-2") === 3 && p === "2000,2000", `${said(r)} pauses=${p}`);
   }
   {
     // a budget that runs out: the last answer, saying how many tries and how long
-    const r = await screenshotTool({ ...agent, name: "loading-99" }, "first", undefined, "auto", {}, { budgetMs: 8_000 });
-    check("a world still loading after the whole budget gives its answer, how many tries, and how long",
-      r.isError === true && /^screenshot: no picture was taken; the world server answered 503 \(the renderer is still loading this world — 1 model still loading \(0 in\); try again in a few seconds\) after 2 tries over [0-9]+ s, so try again in a while$/.test(said(r)), said(r));
+    const r = await screenshotTool({ ...agent, name: "loading-99" }, "first", undefined, "auto", {}, { budgetMs: 8_000 }), p = paused();
+    check("a world still loading after the whole budget gives its answer, how many tries, and how long (one 2 s pause: a second would leave under 5 s to try)",
+      r.isError === true && p === "2000" && /^screenshot: no picture was taken; the world server answered 503 \(the renderer is still loading this world — 1 model still loading \(0 in\); try again in a few seconds\) after 2 tries over 2 s, so try again in a while$/.test(said(r)), `${said(r)} pauses=${p}`);
   }
   {
     // what asking again cannot change is not asked again
-    const t0 = Date.now();
+    paused();
     const gone = await screenshotTool({ ...agent, name: "gone" }, "first", undefined, "auto", {}, { budgetMs: 20_000 });
     const unreal = await screenshotTool(agent, "first", undefined, "unreal", {}, { budgetMs: 20_000 });
     const bad = await screenshotTool(agent, "first", undefined, "Unreal", {}, { budgetMs: 20_000 });
     const noRoamer = await screenshotTool(agent, "first", undefined, "auto", {}, { budgetMs: 20_000 });
     check("a body that isn't there (404), an Unreal-only ask with none serving, bad arguments, and no renderer with no roamer to send (no Retry-After) are answered at once",
-      [gone, unreal, bad, noRoamer].every((r) => r.isError) && !/tries/.test(said(gone) + said(unreal) + said(bad) + said(noRoamer)) && Date.now() - t0 < 1500, `${Date.now() - t0}ms`);
+      [gone, unreal, bad, noRoamer].every((r) => r.isError) && !/tries/.test(said(gone) + said(unreal) + said(bad) + said(noRoamer)) && paused() === "", "a pause was taken");
   }
   {
     // a proxy's bare 502, again and again (a server restarting behind it): tried once more, then answered
-    const t0 = Date.now(); const r = await screenshotTool({ ...agent, name: "proxied-9" }, "first", undefined, "auto", {}, { budgetMs: 20_000 });
+    const r = await screenshotTool({ ...agent, name: "proxied-9" }, "first", undefined, "auto", {}, { budgetMs: 20_000 }), p = paused();
     check("a proxy's 502 without Retry-After is tried once more, then answered: not held for the whole budget",
-      r.isError === true && snapTries.get("proxied-9") === 2 && /after 2 tries over 2 s/.test(said(r)) && Date.now() - t0 < 4000, `${said(r)} ${Date.now() - t0}ms`);
+      r.isError === true && snapTries.get("proxied-9") === 2 && /after 2 tries over 2 s/.test(said(r)) && p === "2000", `${said(r)} pauses=${p}`);
     const own = await screenshotTool({ ...agent, name: "badimage" }, "first", undefined, "auto", {}, { budgetMs: 20_000 });
     check("…but the world server's own 502 (no valid image) is answered at once, not asked again",
       own.isError === true && snapTries.get("badimage") === 1 && !/tries/.test(said(own)), `${said(own)} tries=${snapTries.get("badimage")}`);
@@ -249,10 +252,9 @@ try {
   {
     // a server asking for a long pause (Retry-After: 60) is waited at most 10 s; with 17 s of budget that still leaves a
     // try (without the cap, 60 s would not fit and the call would be answered at once, with no picture)
-    const t0 = Date.now(); const r = await screenshotTool({ ...agent, name: "busy60-1" }, "first", undefined, "auto", {}, { budgetMs: 17_000 });
-    const ms = Date.now() - t0;
+    const r = await screenshotTool({ ...agent, name: "busy60-1" }, "first", undefined, "auto", {}, { budgetMs: 17_000 }), p = paused();
     check("a Retry-After past 10 s is waited 10 s, and a try that fits the budget still comes back with the picture",
-      img(r) && snapTries.get("busy60-1") === 2 && ms >= 9_500 && ms < 12_000, `${said(r)} ${ms}ms`);
+      img(r) && snapTries.get("busy60-1") === 2 && p === "10000", `${said(r)} pauses=${p}`);
   }
   {
     // a server that takes the request and never answers: the backstop ends the call, and says what happened
@@ -272,9 +274,9 @@ try {
   check("a snapshot from a server that's gone says no picture arrived",
     /^screenshot failed: no picture arrived from the world server \(.+\); try again/.test(said(await screenshotTool(agent, "first", undefined, "auto", {}, ONCE))));
   {
-    const t0 = Date.now(); const r = await screenshotTool(agent, "first", undefined, "auto", {}, { budgetMs: 20_000 });
+    paused(); const r = await screenshotTool(agent, "first", undefined, "auto", {}, { budgetMs: 20_000 }), p = paused();
     check("a world server that can't be reached is tried once more, then answered in seconds, not held for the budget",
-      r.isError === true && /^screenshot failed: no picture arrived from the world server \(.+\) after 2 tries over 2 s; try again in a moment$/.test(said(r)) && Date.now() - t0 < 4000, `${said(r)} ${Date.now() - t0}ms`);
+      r.isError === true && /^screenshot failed: no picture arrived from the world server \(.+\) after 2 tries over 2 s; try again in a moment$/.test(said(r)) && p === "2000", `${said(r)} pauses=${p}`);
   }
   check("worlds from a server that's gone says it didn't answer",
     /^worlds: the world server didn't answer \(.+\), so the list isn't known/.test(said(await call("worlds"))));

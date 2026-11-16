@@ -55,13 +55,15 @@ export const NAV_MAX_PROBES = 200_000;
 /** Columns a grid remembers before starting over (it is only a cache). */
 const NAV_MAX_COLUMNS = 300_000;
 const OVER_BUDGET = new Error("navgrid: over budget");
+/** Probes made by every grid in this process, so a test counts a plan's work rather than timing it (navgrid-test). */
+export const navStats = { probes: 0 };
 
 /** @param {NavProbe} raw */
 export function makeNavGrid(raw) {
   let budget = Infinity;
   const probe = {
-    surfaceUnder: (x, z, m) => { if (--budget < 0) throw OVER_BUDGET; return raw.surfaceUnder(x, z, m); },
-    stand: (x, y, z) => { if (--budget < 0) throw OVER_BUDGET; return raw.stand(x, y, z); },
+    surfaceUnder: (x, z, m) => { if (--budget < 0) throw OVER_BUDGET; navStats.probes++; return raw.surfaceUnder(x, z, m); },
+    stand: (x, y, z) => { if (--budget < 0) throw OVER_BUDGET; navStats.probes++; return raw.stand(x, y, z); },
   };
   const cols = new Map();
 

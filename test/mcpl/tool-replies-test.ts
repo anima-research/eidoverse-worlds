@@ -43,9 +43,10 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 
 // #53: a request with no answer says it may have landed; the create tool doesn't call it refused
 { const ag: any = new WorldAgent({ name: "me", world: "w" }); ag.joined = true; ag.ws = { readyState: 1, send() {} };
-  const t0 = Date.now(); const r = await ag.request("create", { model: "zz/x.glb" });
+  const shipped = ag.requestTimeoutMs; ag.requestTimeoutMs = 20;   // the product's 8 s, pinned below, not waited out
+  const r = await ag.request("create", { model: "zz/x.glb" });
   const { ag: c } = creator(r); const out = textOf(await handleTool(ctxOf(c), "create", { model: "zz/x.glb", at: [1, 1] }));
-  ok(Date.now() - t0 >= 7900 && r?.refused?.code === "timeout" && r?.refused?.mayHaveLanded === true && /may still/.test(out) && !/refused by the authority/.test(out),
+  ok(shipped === 8000 && r?.refused?.code === "timeout" && r?.refused?.mayHaveLanded === true && /may still/.test(out) && !/refused by the authority/.test(out),
     "53 an unanswered create reads 'may still land', never 'refused by the authority'", { r, out }); }
 
 // #63: catch_up pages from the oldest unread; a full page moves the cursor only past what it showed

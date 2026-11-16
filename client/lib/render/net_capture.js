@@ -28,6 +28,8 @@ export const settleBudget = (msg) => (typeof msg?.wait === 'number' && Number.is
 // The probe is INJECTED (main.js wires the real one: the body, the world's builds, the model realizer), so this module
 // keeps its browser boundary narrow — a client or test without it treats the world as ready, exactly as before.
 let readiness = async () => ({ ready: true });
+/** settle's clock and pause; a test swaps in a virtual one (test/client/snap-settle-test.ts). */
+export const settleClock = { now: () => performance.now(), pause: (ms) => new Promise((res) => setTimeout(res, ms)) };
 export function setSnapReadiness(fn) { readiness = fn; }
 /** Aim the camera at p; true when that moved it more than a metre (residency, which reads the camera, has new ground). */
 function aimAt(p) {
@@ -42,14 +44,14 @@ async function settle(follow, budget = SETTLE_MS) {
   const moved = aimAt(near);
   let last = await readiness(follow);
   if (last.ready && !moved) return;           // a settled renderer already looking there: no wait at all
-  const t0 = performance.now();
+  const t0 = settleClock.now();
   let steady = 0;
-  while (performance.now() - t0 < budget) {
+  while (settleClock.now() - t0 < budget) {
     last = await readiness(follow);
     if (last.ready) { if (++steady >= STEADY_CHECKS) return; } else steady = 0;
     // the body may have arrived only now: keep the camera (and so residency) on it
     if (!near) aimAt(remotes.get(follow)?.avatar?.root?.position);
-    await new Promise((res) => setTimeout(res, CHECK_MS));
+    await settleClock.pause(CHECK_MS);
   }
   const why = !last?.body ? `${follow} has not loaded yet`
     : `${last.loading} model${last.loading === 1 ? '' : 's'} still loading (${last.models} in)${last.builds ? ', the ground still building' : ''}${last.compiling ? `, ${last.compiling} shader${last.compiling === 1 ? '' : 's'} compiling` : ''}`;

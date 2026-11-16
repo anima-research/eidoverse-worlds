@@ -1,8 +1,10 @@
 // test/protocol/sclock-check.ts — the client's server clock slews (DESIGN-physics-responsiveness §3; STRIKES PH-S2 'display
 // clock jumps'): a new minimum-RTT sample moves the shown offset gradually, a large one at once. usage: bun test/protocol/sclock-check.ts
 // @ts-nocheck
+// a virtual clock: serverclock.js reads performance.now() at each call, so the slew is measured over exact, unwaited ms
+let vt = performance.now(); performance.now = () => vt;
+const advance = (ms) => { vt += ms; };
 import { noteRoundTrip, serverNow, localNow, clockDebug, noteServerFloor, onClockDoubt } from "../../client/lib/serverclock.js";
-import { pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 const { ok, done } = suite("sclock-check", { quiet: true, cap: Infinity });
 const t = localNow();
@@ -11,10 +13,12 @@ serverNow(); const a = clockDebug();
 noteRoundTrip(t - 10, t + 1100 - 5, t);       // a better sample (rtt 10) says +1100: a 100 ms correction
 serverNow(); const b = clockDebug();
 ok(Math.abs(b.best - 1100) < 1 && Math.abs(b.shown - 1000) < 5, "C1 a 100 ms correction is not taken in one read", { a, b });
-await pause("the slew is measured over 300 ms", 300); serverNow(); const c = clockDebug();
-ok(c.shown > 1005 && c.shown < 1030, "C2 …after 300 ms it has moved about 15 ms (5% of elapsed)", c);
-await pause("a few seconds of slew", 2500); serverNow(); const d = clockDebug();
-ok(Math.abs(d.shown - 1100) < 1, "C3 …and in a few seconds it is there", d);
+advance(300); serverNow(); const c = clockDebug();
+ok(Math.abs(c.shown - 1015) < 0.01, "C2 …after 300 ms it has moved 15 ms (5% of elapsed)", c);
+advance(1699); serverNow(); const c2 = clockDebug();
+ok(c2.shown < 1100 - 0.01, "C2b …a millisecond short of the 2 s a 100 ms correction takes, it is not yet there", c2);
+advance(1); serverNow(); const d = clockDebug();
+ok(Math.abs(d.shown - 1100) < 1, "C3 …and at 2 s it is there", d);
 noteRoundTrip(t - 8, t + 3000 - 4, t);        // a 1.9 s correction (and the best rtt yet): a resync, taken at once
 serverNow(); const e = clockDebug();
 ok(Math.abs(e.shown - 3000) < 1, "C4 a correction over half a second is taken at once", e);

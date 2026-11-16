@@ -14,7 +14,7 @@ process.env.WORLDS_DIR = mkdtempSync(join(tmpdir(), "terrainshape-worlds-"));
 const { shapeParams, shapeHeight, shapedHeightAt, encodeGrid, decodeGrid, registerGrid, gridFor, requestGrid, setGridFetcher, shapeReady, gridRetryIn, MAX_FEATURES, waterParams, waterStance, waterCost, waterBlocks, SWIM_AT, SWIM_SPEED } =
   await import("../../shared/terrainshape.js");
 const { terrainParams, makeHeightField } = await import("../../shared/terrainmath.js");
-const { ingestHeightmap, exportHeightmap, serveHeightmapExport, exportIsCached, resetExportBudget, heightRange, EXPORT_MAX, EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE } = await import("../../server/heightmap.ts");
+const { ingestHeightmap, exportHeightmap, serveHeightmapExport, exportIsCached, exportStats, resetExportBudget, heightRange, EXPORT_MAX, EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE } = await import("../../server/heightmap.ts");
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = "") => {
@@ -157,9 +157,9 @@ console.log("\nthe export budget is checked before the work");
   const args = { seed: 5, size: 60, amplitude: 2 }, ip = "2.2.2.2";
   const answers = Array.from({ length: EXPORT_PER_ADDRESS }, (_, i) => serveHeightmapExport(args, 100 + i, "b", ip));
   check(`${EXPORT_PER_ADDRESS} new exports a minute are granted`, answers.every((x) => x.ok && !x.cached));
-  const t0 = performance.now(), refused = serveHeightmapExport(args, 300, "b", ip);
+  const made = exportStats.made, refused = serveHeightmapExport(args, 300, "b", ip);
   check("the next is refused (429)…", !refused.ok && refused.status === 429 && refused.retryAfter > 0);
-  check("…having sampled nothing and cached nothing", !exportIsCached(args, 300, "b") && performance.now() - t0 < 5 * WAIT_SCALE);
+  check("…having sampled nothing and cached nothing", !exportIsCached(args, 300, "b") && exportStats.made === made, `${exportStats.made - made} sampled`);
   check("…so asking again is refused again, not served from a cache it filled", !serveHeightmapExport(args, 300, "b", ip).ok);
   check("an export already made is still served to the same address", (serveHeightmapExport(args, 102, "b", ip) as any).cached === true);
   check("another address has its own budget", serveHeightmapExport(args, 300, "b", "3.3.3.3").ok);

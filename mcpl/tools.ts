@@ -256,12 +256,14 @@ const SNAP_UNREACHABLE_RETRY_MS = 2_000, SNAP_MIN_TRY_MS = 5_000;
 // inside) ends a try. This backstop only catches a server that never answers at all, and says so, rather than calling
 // it unreachable: at what is left of the budget plus 1.5 s, so the default call still answers inside a host's 60 s.
 const SNAP_NO_ANSWER_GRACE_MS = 1_500;
+/** The retry loop's clock and pause; a test swaps in a virtual one (door-wording-test). */
+export const snapClock = { now: () => Date.now(), pause: (ms: number) => new Promise<void>((res) => setTimeout(res, ms)) };
 export async function screenshotTool(ag: ToolAgent, view = "first", at?: string, renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {},
   { budgetMs = snapCallBudgetMs(), noAnswerGraceMs = SNAP_NO_ANSWER_GRACE_MS }: { budgetMs?: number; noAnswerGraceMs?: number } = {}) {
-  const started = Date.now();
-  const left = () => budgetMs - (Date.now() - started);
+  const started = snapClock.now();
+  const left = () => budgetMs - (snapClock.now() - started);
   let tries = 0, flakyTries = 0;
-  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((Date.now() - started) / 1000)} s` : "";
+  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((snapClock.now() - started) / 1000)} s` : "";
   for (;;) {
     tries++;
     const r = await screenshotOnce(ag, view, at, renderer, frame, budgetMs > 0 ? Math.max(1_000, left()) : undefined, noAnswerGraceMs);
@@ -274,7 +276,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
       if (r.kind === "unreachable") return fail(`screenshot failed: no picture arrived from the world server (${r.message})${after()}; try again in a moment`);
       return fail(`screenshot: no picture was taken; the world server answered ${r.status}${r.said ? ` (${r.said})` : ""}${after()}, so ${r.remedy}`);
     }
-    await new Promise((res) => setTimeout(res, pause));
+    await snapClock.pause(pause);
   }
 }
 type SnapTry = { kind: "ok"; result: any } | { kind: "final"; result: any } | { kind: "unreachable"; message: string } | { kind: "no-answer"; waitedMs: number }

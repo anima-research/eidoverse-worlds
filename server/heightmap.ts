@@ -161,8 +161,11 @@ export function heightRange(terrainArgs: Record<string, unknown>): HeightmapMeta
 
 /** A world's current ground, sampled into a 16-bit PNG. `res` samples a side, spanning the terrain's `size`
  *  square edge to edge — so a re-import at the same size lands every sample back where it was taken. */
+/** Exports sampled in this process, so a test counts the work a refusal skipped (terrainshape-test). */
+export const exportStats = { made: 0 };
 export function exportHeightmap(terrainArgs: Record<string, unknown>, res: number, world?: string):
     { png: Uint8Array; meta: HeightmapMeta } {
+  exportStats.made++;
   const P = terrainParams(terrainArgs);
   const hf = makeHeightField(P);
   const n = Math.max(2, Math.min(MAX_GRID, Math.round(res)));

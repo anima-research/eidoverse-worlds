@@ -8,7 +8,8 @@
 // (server/screenshots.ts dispatch), and settle uses it.
 //
 // The real net_capture.js, in a fresh process per case, with its browser-only imports (core.js, remotes.js, fp_view.js,
-// capture.js, world.js) stubbed and the readiness probe scripted: the world becomes ready after `readyAt` ms.
+// capture.js, world.js) stubbed and the readiness probe scripted: the world becomes ready after `readyAt` ms of settle's
+// own clock, which runs virtual (net_capture.js settleClock): each 250 ms pause moves it at once, so the times are exact.
 
 import { join } from "node:path";
 import { suite } from "../gate/suite.ts";
@@ -33,17 +34,18 @@ function snapCase(readyAt: number | null, wait: number | undefined, far = false)
     mock.module(L + "render/capture.js", () => ({ captureFrame: () => "data:image/png;base64,FRAME", captureFrom: () => "data:image/png;base64,FROM" }));
     mock.module(L + "world.js", () => ({ entities: new Map() }));   // net_capture frames a placed thing (at=) from world.js
     const snap = await import(L + "render/net_capture.js");
-    const t0 = performance.now(), readyAt = ${JSON.stringify(readyAt)};
+    let vt = 0; snap.settleClock.now = () => vt; snap.settleClock.pause = async (ms) => { vt += ms; };
+    const t0 = vt, readyAt = ${JSON.stringify(readyAt)};
     let firstAt = null;
     snap.setSnapReadiness(async () => {
       firstAt ??= camera.position.toArray();
       // ready readyAt ms after the start, wherever the camera is (firstAt records where it was when first asked)
-      const ready = readyAt !== null && performance.now() - t0 >= readyAt;
+      const ready = readyAt !== null && vt - t0 >= readyAt;
       return { ready, body: true, builds: false, models: ready ? 1 : 0, loading: ready ? 0 : 1, compiling: 0 };
     });
     const msg = { follow: "agent", view: "third" ${wait === undefined ? "" : `, wait: ${wait}`} };
     const r = await snap.capture(msg);
-    console.log(JSON.stringify({ r, ms: Math.round(performance.now() - t0), budget: snap.settleBudget(msg), firstAt }));`;
+    console.log(JSON.stringify({ r, ms: vt - t0, budget: snap.settleBudget(msg), firstAt }));`;
   const out = Bun.spawnSync([process.execPath, "-e", code], { stdout: "pipe", stderr: "pipe" });
   try { return JSON.parse(out.stdout.toString().trim().split("\n").pop()!) as { r: any; ms: number; budget: number; firstAt?: number[] }; }
   catch { return { r: { error: `ERROR ${out.stderr.toString().slice(0, 300)}` }, ms: -1, budget: -1 }; }
@@ -54,15 +56,15 @@ console.log("the server's budget");
   // the world finishes loading at 1.5 s; four steady checks follow; the server allows 4 s
   const ok = snapCase(1500, 4000);
   check("a world that loads within the server's wait is captured, not refused", ok.r?.dataUrl === "data:image/png;base64,FROM", JSON.stringify(ok));
-  check("…after waiting for it (1.5 s to load, then four steady checks 250 ms apart)", ok.ms >= 2100 && ok.ms < 3500, `${ok.ms} ms`);
+  check("…after waiting for it (1.5 s to load, then four steady checks 250 ms apart)", ok.ms === 1500 + 3 * 250, `${ok.ms} ms`);
   // the same world, with a wait shorter than its load: refused at the server's budget, with the counts
   const short = snapCase(1500, 500);
   check("a world still loading when the server's wait runs out is refused, with the counts", /still loading this world — 1 model still loading \(0 in\)/.test(String(short.r?.error)), JSON.stringify(short));
-  check("…at the server's budget, not a fixed 20 s", short.ms >= 450 && short.ms < 1500, `${short.ms} ms`);
+  check("…at the server's budget, not a fixed 20 s", short.ms === 500, `${short.ms} ms`);
   const zero = snapCase(null, 0);
-  check("a wait of 0 refuses at once if the world is not ready", !!zero.r?.error && zero.ms < 600, `${zero.ms} ms`);
+  check("a wait of 0 refuses at once if the world is not ready", !!zero.r?.error && zero.ms === 0, `${zero.ms} ms`);
   const ready = snapCase(0, 0);
-  check("…and a world already ready, the camera already on the body, is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms < 600, JSON.stringify(ready));
+  check("…and a world already ready, the camera already on the body, is captured at once, whatever the wait", ready.r?.dataUrl === "data:image/png;base64,FROM" && ready.ms === 0, JSON.stringify(ready));
 }
 
 console.log("aim first");
@@ -71,7 +73,7 @@ console.log("aim first");
   // camera is aimed before readiness is asked, and a renderer that had to move waits the steady second
   const far = snapCase(0, 4000, true);
   check("a body far from the camera: readiness is first asked with the camera already on it", JSON.stringify(far.firstAt) === "[60,2,63]", JSON.stringify(far));
-  check("…and the capture waits the steady checks (it moved), then frames", far.r?.dataUrl === "data:image/png;base64,FROM" && far.ms >= 700, JSON.stringify(far));
+  check("…and the capture waits the steady checks (it moved), then frames", far.r?.dataUrl === "data:image/png;base64,FROM" && far.ms === 3 * 250, JSON.stringify(far));
 }
 
 console.log("settleBudget");

@@ -10,10 +10,12 @@
 process.env.AGENT_BODY_ENGINE = "verlet";
 process.env.WORLD_TOKEN = "";
 const { MOVER } = await import("../../shared/mover.js");
+const { navStats, NAV_MAX_PROBES } = await import("../../shared/navgrid.js");   // the agent's grids count here: a plan's work, not its ms
 const { FLOOR, UPPER, RISE, GOING, STAIR_FOOT, boxes, buildGlb } = await import("../fixtures/two-storey-fixture.ts");
 const { scratchSequencer, mkCheck, sleep, legacyVerb, sceneId, trackTicks } = await import("../harness/harness.ts");
 const { tryUntil } = await import("../gate/wait.ts");
 const { check, tally } = mkCheck();
+const OPEN_PROBES = 1000, LONG_PROBES = 10_000;   // ~5× the probes these plans make (195, 1906 on 11-16): a plan doing 5× the work is a finding
 
 const h = await scratchSequencer("navgrid", { serverEnv: { SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1" }, worlds: ["navgrid"], owner: "router", portFrom: 9460 });
 const { WorldAgent } = await import("../../mcpl/agent.ts");
@@ -103,24 +105,22 @@ try {
   }
   {
     await go(0, 6, 0);
-    const t0 = performance.now();
+    const t0 = performance.now(), n0 = navStats.probes;
     const p = a.walkTo(6, 10, true);
     const legs = [a.target, ...a.legs].filter(Boolean);
-    const planMs = performance.now() - t0;
+    const planMs = performance.now() - t0, probes = navStats.probes - n0;
     check("open ground keeps the single straight leg walk_to always walked", legs.length === 1, JSON.stringify(legs));
-    check("...and planning it is cheap", planMs < 150, `${planMs.toFixed(0)}ms`);
+    check("...and planning it is cheap (few probes of the colliders)", probes < OPEN_PROBES, `${probes} probes, ${planMs.toFixed(0)}ms`);
     await p;
   }
   {
     await go(0, 6, 0);
-    const t0 = performance.now();
+    const t0 = performance.now(), n0 = navStats.probes;
     const p = a.walkTo(-1.5, -2.2, true, 60_000, 0.01, UPPER);
-    const planMs = performance.now() - t0;
-    // a bound on how long one plan can hold the process's event loop (every
-    // agent in it waits), generous enough for a loaded machine: unloaded it
-    // is ~0.2s once the columns around the route are known
-    check("planning the longest route here (outside → door → stair → upper floor) holds the loop under 1.5s",
-      planMs < 1500, `${planMs.toFixed(0)}ms`);
+    const planMs = performance.now() - t0, probes = navStats.probes - n0;
+    // what one plan holds the process's event loop for (every agent in it waits), counted in probes of the colliders
+    check("planning the longest route here (outside → door → stair → upper floor) is a bounded search, far inside the refusal budget",
+      probes < LONG_PROBES && probes < NAV_MAX_PROBES, `${probes} probes, ${planMs.toFixed(0)}ms`);
     const legs = [a.target, ...a.legs].filter(Boolean);
     check("...and is a handful of legs, not a cell-by-cell staircase", legs.length >= 3 && legs.length <= 12, `${legs.length} legs`);
     await p;

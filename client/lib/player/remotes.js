@@ -37,9 +37,9 @@ const gens = new Map();
  *  retryBody pays that debt (RETRY_MAX attempts with backoff, guarded by record identity).
  *  test/client/capsule-recovery-test.mjs */
 const RETRY_MAX = 3;
-// mutable so a test can shrink it
-let RETRY_BACKOFF_MS = [400, 1600, 5000];
-export function __setRetryBackoffForTest(ms) { RETRY_BACKOFF_MS = ms; }
+// mutable so a test can shrink it, or run the timers on its own clock (capsule-recovery-test)
+let RETRY_BACKOFF_MS = [400, 1600, 5000], retryTimer = (fn, ms) => setTimeout(fn, ms);
+export function __setRetryBackoffForTest(ms, timer = retryTimer) { RETRY_BACKOFF_MS = ms; retryTimer = timer; }
 function retryBody(r) {
   if (!r?.capsuleFor || r.retrying) return;
   const id = r.id, path = r.capsuleFor;
@@ -47,7 +47,7 @@ function retryBody(r) {
   if (n >= RETRY_MAX) return;
   r.retrying = true;
   r.retries = n + 1;
-  setTimeout(async () => {
+  retryTimer(async () => {
     if (remotes.get(id) !== r) return;            // superseded while we waited: not ours to pay
     try {
       const av = await loadBody(id, path);

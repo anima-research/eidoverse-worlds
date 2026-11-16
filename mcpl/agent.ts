@@ -2521,6 +2521,8 @@ export class WorldAgent {
 
   /** One request to the world's authority, answered by it: {ok: true, …} or {ok: false, refused: {code, reason,
    *  fix}}. */
+  /** How long request() waits for the authority's answer (as net.js); a test shortens it (tool-replies-test #53). */
+  requestTimeoutMs = 8000;
   request(verb: string, args: Record<string, unknown> = {}): Promise<any> {
     if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
     // speech ends composing, by whichever route it's sent (say(), or act {verb: "say"}): the throttle clears, and whoever
@@ -2530,7 +2532,7 @@ export class WorldAgent {
     if (verb === "move" && this.water && args.height === undefined) args = { ...args, height: this.stature() };
     const id = `v${++this.histId}`;
     return new Promise((resolve) => {
-      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } }); }, 8000);   // as net.js
+      const t = setTimeout(() => { this.pendingRequests.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the authority did not answer within 8 s", fix: "it may still land: look before trying again", mayHaveLanded: true } }); }, this.requestTimeoutMs);
       this.pendingRequests.set(id, (m) => { clearTimeout(t);
         if (verb === "consent" && m.reply?.ok) this.noteConsent(args);
         resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the authority's answer had no reply" } }); });

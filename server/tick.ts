@@ -23,30 +23,32 @@ export function registerSystem(sys: TickSystem) {
 export function startTick(base: number) {
   if (timer) throw new Error("tick already started");
   baseMs = base;
-  timer = setInterval(() => {
-    const now = Date.now();
-    for (const s of systems) {
-      if (now - s.lastRun < s.everyMs) continue;
-      s.lastRun = now;
-      const t0 = performance.now();
-      try {
-        s.fn(now);
-        s.stat.lastError = null;
-      } catch (err) {
-        s.stat.errors++;
-        s.stat.lastError = String(err);
-        console.error(`[tick:${s.name}]`, err);
-      }
-      const ms = performance.now() - t0;
-      s.stat.runs++;
-      s.stat.lastMs = ms;
-      if (ms > s.stat.worstMs) s.stat.worstMs = ms;
-      // an overrun eats the next beat's budget: say so every 50th run
-      if (ms > s.everyMs && s.stat.runs % 50 === 1) {
-        console.warn(`[tick:${s.name}] ran ${ms.toFixed(1)}ms against a ${s.everyMs}ms cadence`);
-      }
+  timer = setInterval(() => beat(Date.now()), base);
+}
+
+/** One beat at `now`: each system due runs (startTick's interval; tick-test drives it on its own clock). */
+export function beat(now: number) {
+  for (const s of systems) {
+    if (now - s.lastRun < s.everyMs) continue;
+    s.lastRun = now;
+    const t0 = performance.now();
+    try {
+      s.fn(now);
+      s.stat.lastError = null;
+    } catch (err) {
+      s.stat.errors++;
+      s.stat.lastError = String(err);
+      console.error(`[tick:${s.name}]`, err);
     }
-  }, base);
+    const ms = performance.now() - t0;
+    s.stat.runs++;
+    s.stat.lastMs = ms;
+    if (ms > s.stat.worstMs) s.stat.worstMs = ms;
+    // an overrun eats the next beat's budget: say so every 50th run
+    if (ms > s.everyMs && s.stat.runs % 50 === 1) {
+      console.warn(`[tick:${s.name}] ran ${ms.toFixed(1)}ms against a ${s.everyMs}ms cadence`);
+    }
+  }
 }
 
 /** The observability surface behind GET /tick. */

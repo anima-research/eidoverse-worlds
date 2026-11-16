@@ -14,19 +14,16 @@
 //   remotes.js: drop the POST-load `remotes.get(id) !== r`   → a mid-flight body lands on a superseded record
 //
 // One mutant SURVIVES this suite and is declared, not hidden (RETRY_MAX → 9999, once listed here, is caught by the
-// short-backoff cap section below):
+// cap section below):
 //   • dropping the PRE-load guard (top of the timer) — EQUIV here: every scenario that supersedes
 //     during the backoff is caught one line later by the post-load guard, which this suite does bind.
 //     It is belt-and-braces against a supersede between timer fire and the first await.
-//   • RETRY_MAX 3 → 9999 — not distinguishable inside a sane test window: the backoff
-//     (400/1600/5000 ms) is what limits attempts over ~5 s, not the cap. Measured 09-19: a dead
-//     asset yields retries 1→2→3 and attempts 1→3 under BOTH values. Killing it would need a
-//     ~15 s test; the cap's observable (counter stops, further announces arm nothing) is bound
-//     instead, which is what the product promises.
+//
+// The retry timers run on a virtual clock (remotes.js __setRetryBackoffForTest's timer): `advance(ms)` fires each timer
+// due by then, in order, to its end. The shipped backoff (400/1600/5000 ms) is kept, and no row waits on the wall clock.
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { fileURLToPath } from 'node:url';
-import { tryUntil, pause } from '../gate/wait.ts';
 const here = (f) => fileURLToPath(new URL(f, import.meta.url));
 
 // One shared control object with the avatar stub (see recovery-avatar-stub.mjs):
@@ -51,6 +48,18 @@ plugin({
 });
 
 const R = await import('../../client/lib/player/remotes.js');
+const timers = []; let vnow = 0;
+R.__setRetryBackoffForTest([400, 1600, 5000], (fn, ms) => { timers.push({ at: vnow + ms, fn }); });
+/** The virtual clock moves `ms`: each retry timer due by then runs, in order (awaited to its end unless `wait: false`). */
+async function advance(ms, { wait = true } = {}) {
+  const end = vnow + ms, ran = [];
+  for (;;) {
+    timers.sort((a, b) => a.at - b.at);
+    if (!timers.length || timers[0].at > end) break;
+    const t = timers.shift(); vnow = t.at; const p = t.fn(); ran.push(p); if (wait) await p;
+  }
+  vnow = end; return Promise.all(ran);
+}
 
 let pass = 0, fail = 0;
 const check = (name, ok, detail = '') => {
@@ -77,7 +86,7 @@ check('a same-path reannounce returns the SAME record (no rebuild)', same === r)
 // drive a load per announce. What must be true synchronously is that the record is now armed.
 check('…and arms a retry rather than returning the capsule forever',
   r.retrying === true, `retrying=${r.retrying}`);
-await tryUntil('the armed retry puts alice in her real body', () => probe.attempts > before && r.avatar && !r.avatar.isCapsule && !r.capsuleFor, { ms: 3500 });
+await advance(400);   // the first backoff
 check('the armed retry actually asked for the real body',
   probe.attempts > before, `${probe.attempts - before} attempts`);
 check('the real body replaces the capsule once the network recovers',
@@ -93,7 +102,7 @@ const t1 = await R.ensureRemote('bob', PATH, { authority: true });
 check('an authority takeover produces a FRESH record (identity guard, #97 B2)', t1 !== t0);
 check('the takeover carries the debt forward rather than making it permanent',
   t1.capsuleFor === PATH || !t1.avatar?.isCapsule);
-await tryUntil('the successor ends up in the real body', () => t1.avatar && !t1.avatar.isCapsule, { ms: 3500 });
+await advance(400);
 check('the successor ends up in the real body', t1.avatar && !t1.avatar.isCapsule);
 
 // ---------------------------------------------------------------- bounded, not a hot loop
@@ -102,31 +111,26 @@ const c = await R.ensureRemote('carol', PATH);
 check('carol falls back', !!c.avatar?.isCapsule);
 const a0 = probe.attempts;
 for (let i = 0; i < 8; i++) { await R.ensureRemote('carol', PATH); }
-await pause('retries are counted over a fixed window', 900);
+await advance(900);   // retries counted over a fixed window: the first backoff fires, the second (1600) not yet
 const spent = probe.attempts - a0;
 check('a dead asset costs a bounded number of retries, not one per announce',
   spent > 0 && spent <= 4, `${spent} attempts for 8 announces`);
 check('carol keeps the capsule while the asset stays down', !!c.avatar?.isCapsule);
 
-// The CAP itself. This needs a SHORT backoff: with the shipped delays the third attempt's 5 s timer
-// never fires inside a test window, so `retrying` stays true, every announce early-returns, and the
-// counters freeze because of the latch rather than the cap — deleting `if (n >= RETRY_MAX) return`
-// outright left this suite green (review round 2). Shrink the backoff so the latch clears between
-// announces and the cap is the only thing that can stop the climb.
-R.__setRetryBackoffForTest([5, 10, 15]);
+// The CAP itself. Each announce is followed by more than the longest backoff, so the latch has always cleared and the
+// cap is the only thing that can stop the climb (with the latch still set, deleting `if (n >= RETRY_MAX) return`
+// outright left this suite green: review round 2).
 probe.reset();
 const cap = await R.ensureRemote('cap', PATH);
 check('the capped peer falls back', !!cap.avatar?.isCapsule);
 const capStart = probe.attempts;
-for (let i = 0; i < 10; i++) { await R.ensureRemote('cap', PATH); await pause('announces 40 ms apart, past the short backoff', 40); }
-await pause('the last short backoff has had its time to fire', 120);
+for (let i = 0; i < 10; i++) { await R.ensureRemote('cap', PATH); await advance(5000); }
 const capSpent = probe.attempts - capStart;
 check('a dead asset stops at exactly RETRY_MAX fetches, however often it is announced',
   capSpent === 3, `${capSpent} fetches across 10 announces (cap is 3)`);
 check('the counter rests at the cap', cap.retries === 3, `retries=${cap.retries}`);
 check('the capped peer keeps the capsule and still knows what it owes',
   !!cap.avatar?.isCapsule && cap.capsuleFor === PATH);
-R.__setRetryBackoffForTest([400, 1600, 5000]);   // restore the shipped values for later scenarios
 
 // ---------------------------------------------------------------- the bound must survive TAKEOVER
 // The hole between the two scenarios above: `carol` never takes over, and `bob` recovers before his
@@ -139,9 +143,9 @@ check('frank falls back', !!fl.avatar?.isCapsule);
 const flStart = probe.attempts;
 for (let i = 0; i < 6; i++) {                // six reconnects, each an authority takeover
   fl = await R.ensureRemote('frank', PATH, { authority: true });
-  await pause('past the SHORTEST backoff, so a reset cap would refetch', 500);
+  await advance(500);   // past the SHORTEST backoff, so a reset cap would refetch
 }
-await pause('the last takeover\'s backoff has had its time to fire', 600);
+await advance(600);   // the last takeover's backoff has had its time to fire
 const flSpent = probe.attempts - flStart;
 check('a dead asset on a flapping peer stays bounded across takeovers',
   flSpent <= 4, `${flSpent} fetches across 6 takeovers — the cap resets on reconnect`);
@@ -158,7 +162,7 @@ await R.ensureRemote('dave', PATH);                 // schedules a retry on d0
 const d1 = await R.ensureRemote('dave', 'other/body.vrm');   // different path → rebuild, d0 superseded
 check('a body switch supersedes the pending record', d1 !== d0);
 const d0Body = d0.avatar;                       // the capsule the superseded record holds
-await pause('the stale retry has had its time to fire (it must not land)', 700);
+await advance(700);   // the stale retry has had its time to fire (it must not land)
 check('the map still holds the successor', R.remotes.get('dave') === d1);
 // The damage a missing identity guard does lands on the SUPERSEDED RECORD, not on the map: the
 // stale retry resolves and writes its body into d0, leaving a live avatar nobody owns and nobody
@@ -177,12 +181,13 @@ const e0 = await R.ensureRemote('erin', PATH);
 check('erin falls back', !!e0.avatar?.isCapsule);
 const e0Body = e0.avatar;
 probe.failing = false;
-probe.loadMs = 900;                        // the retry's load will be slow BEFORE it starts
+let release; probe.hold = new Promise((r) => { release = r; });   // the retry's load is held open BEFORE it starts
 await R.ensureRemote('erin', PATH);        // arms the retry (fires after the 400ms backoff)
-await pause('timer fired ~400ms; the slow load is now in flight', 600);
-const e1 = await R.ensureRemote('erin', 'other/body.vrm');   // supersede DURING that load
+const stale = advance(400, { wait: false });   // the timer fires; its load is now in flight
+const e1p = R.ensureRemote('erin', 'other/body.vrm');   // supersede DURING that load (the record is swapped before any await)
+release(); probe.hold = null;
+await stale; const e1 = await e1p;         // the stale load finishes and is rejected
 check('a mid-load switch supersedes the record', e1 !== e0);
-await pause('let the stale load finish and be rejected', 1600);
 check('a mid-flight body is not adopted by the superseded record',
   e0.avatar === e0Body, 'the superseded record adopted a mid-flight body');
 // NOT adopted is only half of it: an orphaned body that is never disposed is the undisposable ghost
@@ -198,7 +203,6 @@ check('…while the successor keeps its own body undisposed',
   e1.avatar?.disposed === false);
 check('the successor is unharmed by the stale completion',
   R.remotes.get('erin') === e1);
-probe.loadMs = 0;
 
 console.log(`\n${pass}/${pass + fail} passed`);
 process.exit(fail ? 1 : 0);
