@@ -78,6 +78,9 @@ const ROWS: Row[] = [
   // 333-cm a8: server/upload.ts deprecates ?token= (a URL lands in access logs)
   { name: "the authority key rides an Authorization header, never a URL's query", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\.set\(['"]token['"]/, /\{\s*token:\s*CONFIG\.token\s*\}/] },
+  // 333-cm b3: three writers spelt it noCameraCollide, which nothing reads
+  { name: "the camera-ghost flag is spelt as its reader (colliders.js) reads it: userData.noCamCollide", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
+    forbidden: [/\bnoCameraCollide\b/], requires: [["client/lib/colliders.js", /userData\?\.noCamCollide/]] },
 ];
 for (const row of ROWS) {
   const scan = (row.scope ?? files).filter((f) => !row.owner.includes(f) && !(row.exempt ?? []).includes(f));

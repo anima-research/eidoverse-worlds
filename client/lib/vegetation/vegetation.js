@@ -942,7 +942,7 @@ export async function createFlora(opts = {}) {
             stemMesh.instanceMatrix.needsUpdate = true;
             stemMesh.frustumCulled = false;
             stemMesh.userData.noSupportCheck = stemMesh.userData.noClippingCheck = true;
-            stemMesh.userData.noCameraCollide = stemMesh.userData.noMotionCheck = true;
+            stemMesh.userData.noCamCollide = stemMesh.userData.noMotionCheck = true;
             stemMesh.userData.noWalkable = true;
             stemMesh.castShadow = true;             // solid wood casts honestly
         }
@@ -953,7 +953,7 @@ export async function createFlora(opts = {}) {
     mesh.instanceMatrix.needsUpdate = true;
     mesh.frustumCulled = false;
     mesh.userData.noSupportCheck = mesh.userData.noClippingCheck = true;
-    mesh.userData.noCameraCollide = true; mesh.userData.noMotionCheck = true;
+    mesh.userData.noCamCollide = true; mesh.userData.noMotionCheck = true;
     mesh.userData.noWalkable = true;   // never a collider, even if passed to a controller
     mesh.receiveShadow = true;
     mesh.castShadow = false;                 // alpha cards stamp rectangles in the shadow pass

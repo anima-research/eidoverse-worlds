@@ -68,7 +68,7 @@ export function buildEmitter(em, { map = null, seed = 0, name = 'particles', bud
   })();
   const mesh = new THREE.InstancedMesh(geo, mat, n);
   mesh.frustumCulled = false; mesh.count = 0; mesh.name = name;
-  mesh.userData.noSupportCheck = true; mesh.userData.noClippingCheck = true; mesh.userData.noCameraCollide = true;
+  mesh.userData.noSupportCheck = true; mesh.userData.noClippingCheck = true; mesh.userData.noCamCollide = true;
 
   let last = null;
   const update = (nowMs = performance.now()) => {
