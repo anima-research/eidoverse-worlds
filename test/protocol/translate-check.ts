@@ -333,7 +333,9 @@ row("V6", () => { const root = scratch("translate-v6"), W = path.join(root, "wor
 
 row("V7", () => { const root = scratch("translate-v7"), W = path.join(root, "worlds"), d = path.join(W, "den"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), log([OWNER, ["olga", "spawn", { id: "sub", lib: "props/ball.glb" }], ["olga", "comp", { id: "sub", type: "vehicle", data: { helm: [0, 1, 0], speed: 3, minY: 0, maxY: 9 } }]]).map((e) => JSON.stringify(e)).join("\n") + "\n");
-  const env = { ...process.env, WORLDS_DIR: W, BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", OPT_DIR: path.join(ENGINE, "test", "fixtures") };   // the repo's prop fixture, so the real ball.glb is measured run alone or in the gate
+  const opt = path.join(root, "opt"); fs.mkdirSync(path.join(opt, "props"), { recursive: true });   // the repo's ball.glb, seeded as the gate does, so the real hull is measured
+  fs.copyFileSync(path.join(ENGINE, "test/fixtures/props/ball.glb"), path.join(opt, "props/ball.glb"));
+  const env = { ...process.env, WORLDS_DIR: W, OPT_DIR: opt, BACKUPS_DIR: path.join(root, "backups"), TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" };
   const run = (a: string[]) => { const r = Bun.spawnSync(["bun", "tools/world.ts", ...a], { cwd: ENGINE, env }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
   const dry = run(["translate", "--dry-run", "--no-founder-key", "--", "den"]), hash = /^report-hash ([0-9a-f]{64})$/m.exec(dry.out)?.[1] ?? "x";
   const up = run(["translate", "--no-founder-key", "--operator-only-no-owner", "--approved", hash, "--", "den"]);

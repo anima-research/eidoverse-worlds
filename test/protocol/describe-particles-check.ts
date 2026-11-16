@@ -361,12 +361,13 @@ const cases: Case[] = [
 ];
 
 const only = opt("only")?.split(",") ?? null;
-let bad = 0;
+let bad = 0, ran = 0;
 for (const c of cases) {
   if (only && !only.includes(c.id)) continue;
+  ran++;
   let o: any, g = false; try { o = await c.run(session()); g = !!c.good(o); } catch (e) { o = { threw: String(e?.message ?? e).slice(0, 200) }; }
   if (!g) bad++;
   console.log(`${g ? "ok  " : "FAIL"} ${c.id} ${c.what}${g ? "" : `\n     ${JSON.stringify(o).slice(0, 400)}`}`);
 }
-console.log(`[describe-particles-check] ${cases.length - bad} passed, ${bad} failed`);
+console.log(`[describe-particles-check] ${ran - bad} passed, ${bad} failed`);
 process.exit(bad ? 1 : 0);

@@ -1,5 +1,5 @@
 // test/gate/suite.ts: the one scaffold a protocol suite counts its rows with: `ok   `/`FAIL ` lines, --only, the
-// `[tag] N passed, M failed` summary run.ts reads, exit 1 on any fail. Usage: const { ok, check, done } = suite("x-check").
+// `[tag] N passed, M failed` summary run.ts reads, exit 1 on any fail or when no row ran. Usage: const { ok, check, done } = suite("x-check").
 //   --only A1,B2   a row whose first word is a row id (A1, SH2, D6b) is printed and counted only if named (its case still
 //                  executes unless the suite skips it with runs(id)); a row with no id always counts
 //   --verbose      a passing row prints its detail too
@@ -41,11 +41,13 @@ export function suite(tag: string, o: Opts = {}) {
     only, runs,
     red: (id: string) => (process.env.RED ?? "") === id,
     get pass() { return pass; }, get fail() { return fail; },
-    // the summary line and the exit: 1 on any failed row, or when the suite says so (red: e.g. nothing was read)
+    // the summary line and the exit: 1 on any failed row, when no row ran (a filter or a skip left nothing), or when
+    // the suite says so (red: e.g. nothing was read)
     done(note = "", red = false): never {
-      if (only && pass + fail + nas === 0) { console.log(`FAIL --only ${only.join(",")}: no row ran`); fail++; }   // a selection of nothing is never green
+      const none = pass + fail + nas === 0;
+      if (none) console.log(`FAIL ${only ? `--only ${only.join(",")}: ` : ""}no row ran`);
       console.log(`[${tag}] ${pass} passed, ${fail} failed${nas ? `, ${nas} not applicable` : ""}${note}`);
-      process.exit(fail || red ? 1 : 0);
+      process.exit(fail || red || none ? 1 : 0);
     },
   };
 }

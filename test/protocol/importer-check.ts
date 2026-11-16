@@ -523,7 +523,7 @@ row("IM-I45", () => {
   W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
   const advice = (rep.report.people ?? []).map((p: any) => ({ name: p.name, arg: /bind new (\S+) <their account>$/.exec(p.bind ?? "")?.[1] ?? null }));
   const bound = advice.map((a: any, i: number) => bindIdentity(w.worlds, "new", a.arg ?? "", `human:test:a${i}`));
-  ok(advice.length === 2 && bound.every((b: any) => b.ok) && new Set(bound.map((b: any) => b.id)).size === 2,
+  ok(advice.length === 2 && bound.every((b: any) => b.ok) && new Set(bound.map((b: any) => b.id)).size === 2 && bound.every((b: any, i: number) => b.id === rep.report.people[i].id),
     "IM-I45 (#369) Ann and ann, two unbound role holders: the report's bind advice for each, pasted as written, binds that one person (by id; by name it would be refused as ambiguous)", { advice, bound });
 });
 

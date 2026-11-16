@@ -176,6 +176,7 @@ if (argv.includes("--control")) {
   for (const k of ["mcpl", "client"]) try { linkInto(path.join(ENGINE, k, "node_modules"), path.join(d, k, "node_modules")); } catch { /* none */ }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  if (!lines.length) { console.log(`FAIL control: no row ran at base (exit ${r.code})\n${r.out.split("\n").slice(-8).join("\n")}`); process.exit(1); }
   const guard = (l: string) => /^(ok|FAIL)\s+G\d/.test(l);
   const missing = (l: string) => /Cannot find package/.test(l);   // red for this scratch tree's missing dependency, not for the rule
   const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l))));
@@ -552,7 +553,7 @@ const cases: Case[] = [
         read: OA ? [OA.onceAnimOf({ anim: "wave" }), OA.onceAnimOf(old), OA.onceAnimOf({})] : null, drop: OA ? JSON.stringify(OA.withoutOnceAnim({ a: 1, anim: "x" })) : null,
         heard: ag2.inbox.map((m: any) => m.text).join(" | ").slice(0, 300), acts,
         srv: /settledPose[^]*?withoutOnceAnim\(pose/.test(srv), net: /pose\.anim = s\.anim/.test(net), rem: (rem.match(/onceAnimOf\(s\)/g) ?? []).length }; },
-    good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave",null,null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 },
+    good: (o) => o.first === "wave" && o.firstOld === false && o.second === false && JSON.stringify(o.read) === '["wave",null,null]' && o.drop === '{"a":1}' && o.srv && o.net && o.rem === 2 && !o.acts.length && /plays clap/.test(o.heard) && !/cheer/.test(o.heard) },
   { id: "E2", what: "…the action bar's modules and defs: actionbar.js, actionbar_lite.js, animnames.js, defs/animations/_actionbar.json (the registry's actionbar key, validateActionBar); the old files are gone; the slash command is /anim", async run() {
       const AD: any = await import(TREE + "shared/animdefs.js"); const defs = readText("server/defs.ts"), reg = readText("client/lib/ui/commands/registry.js");
       const olds = (fs.readdirSync(TREE + "client/lib", { recursive: true }) as string[]).map((f) => f.split("/").pop()!).concat(fs.readdirSync(TREE + "defs/animations")).filter((f: string) => new RegExp(`(?<![rd])${EM}`, "i").test(f));

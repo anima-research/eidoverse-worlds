@@ -115,8 +115,8 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
   ok(got(k, "puppet").length === 0 && sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), "BC1 …and a pose likewise", sly.since(ks));
   k = vic.msgs.length; ks = sly.msgs.length;
-  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await pause("a refused grab has had its chance to be forwarded (it must not)", 300);
-  ok(got(k, "bodydrag").length === 0, "BC1 …and a drag's grab likewise", got(k, "bodydrag"));
+  sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Sly is told the grab is refused", () => sly.since(ks).some((m) => m.type === "error"), { ms: 2000 });
+  ok(got(k, "bodydrag").length === 0 && sly.since(ks).some((m) => m.type === "error"), "BC1 …and a drag's grab likewise", { vic: got(k, "bodydrag"), sly: sly.since(ks) });
   // Vic turns move on: a knock-over and a grab are forwarded, within reach; a pose is touch, still off
   const r1 = await vic.req("consent", { move: true });
   ok(r1?.ok, "(BC setup) Vic turns her move gate on through the authority's consent verb", r1);
