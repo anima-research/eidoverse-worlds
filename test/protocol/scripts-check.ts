@@ -413,7 +413,7 @@ const cases: Case[] = [
       // the owner sets nothing: the default (600) stands, then the operator lowers the ceiling to 31. Odd, because each beat
       // writes two entries: at 30 written the next beat passes the check before it runs (30 + 1) and is refused by the
       // check of what it would write (30 + 2), so the refusal comes from the second check
-      const set = { ok: true };
+      const unset = comp(s, "@world", "script-settings") === undefined;
       const was = D.setScriptConfig({ budget: 31 });
       try {
         s.call("olive", "create", { id: "heart3", model: "bell", place: { at: [0, 0] } });
@@ -421,9 +421,9 @@ const cases: Case[] = [
         install(s, "olive", "heart3", "beat", BEAT("t/beat"), { scope: { ids: "self", comps: ["t/beat"] }, every: 30, always: true });
         install(s, "olive", "heart3", "beat2", BEAT("t/beat2"), { scope: { ids: "self", comps: ["t/beat2"] }, every: 30, always: true });
         let why = null; for (let i = 0; i < 120 && !why; i++) { s.advance(30000); for (const r of s.tick() ?? []) if (r.code === "budget" && /world's scripts/.test(r.why)) why = r.why; }
-        return { set: set?.ok === true, why };
+        return { unset, why };
       } finally { D.setScriptConfig(was); } },
-    good: (o) => o.set && /wrote 30 entries/.test(o.why ?? "") && /budget is 31/.test(o.why ?? "") && !/asks/.test(o.why ?? "") && /this server's limit/.test(o.why ?? "") && !/which the world's owner sets/.test(o.why ?? "") },
+    good: (o) => o.unset && /wrote 30 entries/.test(o.why ?? "") && /budget is 31/.test(o.why ?? "") && !/asks/.test(o.why ?? "") && /this server's limit/.test(o.why ?? "") && !/which the world's owner sets/.test(o.why ?? "") },
   { id: "B6b", what: "§3d M3: each sponsor gets a fair share of the world's hour: bob's chatty timer can't starve olive's script", run(s) { cast(s);
       if (!D.tick) return { absent: true };
       s.call("olive", "set", { id: "@world", component: "script-settings", value: { budget: 40 } });
