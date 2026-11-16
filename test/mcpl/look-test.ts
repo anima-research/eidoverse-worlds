@@ -62,5 +62,12 @@ ok(occupant.includes("on bench-1") && !occupant.includes("facing"), "an occupant
 ag.mounts.delete("apricot");
 ok(facingIs(lineFor("apricot", ag.look()), "E"), "off the seat, facing returns");
 
+// a blueprint copy says which blueprint it follows, and its copy-of component is not listed again as unspoken
+{ const rec: any = { id: "chair-1", pos: [1, 0, 1], q: [0, 0, 0, 1], yaw: 0, scale: 1, "copy-of": { from: "sha256:" + "ab".repeat(32), key: "root" } };
+  ag.entities.set(rec.id, rec); (ag.st.entities as any)[rec.id] = rec;
+  const line = ag.look().split("\n").find((l: string) => l.includes("[chair-1]")) ?? "";
+  ok(line.includes('a copy of "') && !/components:.*copy-of/.test(line), "a blueprint copy's look line names its blueprint once, not copy-of again");
+  ag.entities.delete(rec.id); delete (ag.st.entities as any)[rec.id]; }
+
 console.log(`\n${passed} passed, 0 failed`);
 process.exit(0);   // the agent keeps a timer alive; the checks are done

@@ -694,7 +694,7 @@ export class AgentSenses {
       // actionable where `components: structure` would not be.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
       const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
-      if (copy) spoken.push("blueprint");
+      if (copy) spoken.push("copy-of");
       if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
