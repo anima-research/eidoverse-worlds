@@ -45,13 +45,10 @@ function run(rig, { dt = 1 / 60, stride = 0, maxSteps = 1200 } = {}) {
   return { rd, steps, stretch, ovlp: worstOverlap(rd).frac, hips: rd.p.hips.clone() };
 }
 
-// deterministic frame-time jitter — no Math.random, so a sweep is repeatable
-const jitter = (lo, hi) => (i) => {
-  const t = Math.abs((Math.sin(i * 12.9898) * 43758.5453) % 1);
-  return lo + (hi - lo) * t;
-};
-
 function evaluate(cfg) {
+  // a key TUNING doesn't have would sweep nothing and print four labels over one solver
+  const unknown = Object.keys(cfg).filter((k) => !(k in BASE));
+  if (unknown.length) throw new Error(`rag-tune: TUNING has no ${unknown.join(', ')}`);
   Object.assign(TUNING, BASE, cfg);
   const deadline = TUNING.DEADLINE * 60;
   let settled = 0, sumSteps = 0, ovlp = 0, strch = 0, resid = 0, drift = 0, threw = 0;
@@ -76,10 +73,10 @@ function evaluate(cfg) {
 }
 
 const GRID = process.argv.includes('current') ? [{ label: 'checked-in', cfg: {} }] : [
-  { label: 'stick 0 (off)', cfg: { SUBSTEPS: 2, ITER: 3, STICK_V: 0 } },
-  { label: 'stick 0.05', cfg: { SUBSTEPS: 2, ITER: 3, STICK_V: 0.05 } },
-  { label: 'stick 0.18', cfg: { SUBSTEPS: 2, ITER: 3, STICK_V: 0.18 } },
-  { label: 'stick 0.40', cfg: { SUBSTEPS: 2, ITER: 3, STICK_V: 0.40 } },
+  { label: 'sub 1 iter 3', cfg: { SUBSTEPS: 1, ITER: 3 } },
+  { label: 'sub 2 iter 2', cfg: { SUBSTEPS: 2, ITER: 2 } },
+  { label: 'sub 2 iter 3', cfg: { SUBSTEPS: 2, ITER: 3 } },
+  { label: 'sub 3 iter 3', cfg: { SUBSTEPS: 3, ITER: 3 } },
 ];
 
 const pad = (s, n) => String(s).padEnd(n);
