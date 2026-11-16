@@ -13,16 +13,13 @@
 //   D. a bad source (an http link) is refused HERE, before any round-trip (no comp sent) —
 //      and the refusal OUTLIVES a scene-panel repaint: the block is rebuilt on
 //      every echo, so the message and the `take down` control must both be
-//      there after one (Mica, round 1: 8/9 with the message blank, or the
-//      message kept and the control gone, depending on when the echo landed);
+//      there after one;
 //   E. `take down` commits null: the quad is gone — and its line
 //      survives the echo's repaint too (the echo AGREES with what was said);
 //   F. the line is about ONE entity: remove the console, spawn a replacement
-//      (its own minted id), reopen — it opens with no inherited line (Mica,
-//      round 2: the note map was keyed by id alone and a successor under the
-//      SAME id opened with its predecessor's "taken down"; ids are minted by
-//      the authority now, so that regression is unreachable — F keeps the
-//      replacement's clean line on record);
+//      (its own minted id), reopen — it opens with no inherited line (ids
+//      are minted by the authority, so a successor under the SAME id is
+//      unreachable; F keeps the replacement's clean line on record);
 //   G. the line is about ONE bag: a refusal is left in the block, then
 //      someone ELSE hangs a picture through the verb — the echo disagrees
 //      with what the line was about, so the line retires rather than reading

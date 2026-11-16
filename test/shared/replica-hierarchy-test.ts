@@ -5,7 +5,7 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/replica-hierarchy-test.ts
 //
 // After every write — a create under a carrier, a move to another carrier, an unparent, a delete that takes the
-// children, a create+parent in one batch — the index answers exactly what a fresh scan of the records answers, for
+// children, a create born under a carrier — the index answers exactly what a fresh scan of the records answers, for
 // every id present (and for a carrier that is gone while something still names it: the scan's answer, the dangling
 // edge). Mutation: skip the index update on the ingest path and the first move goes red.
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)

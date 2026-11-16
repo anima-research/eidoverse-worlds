@@ -7,10 +7,8 @@
 //
 //   bun test/client/surface-hold-test.ts
 //
-// Recut (#57 B1 re-review): the hold path lives in the live-cause dispatcher
-// (client/lib/realize/livechat.js) now, not world.js — the applyEntry switch is
-// gone (TEL0S_NOTES §11). Same six pinned behaviors, same real bus, driven
-// through handleLiveCause exactly as net.js's 'live-entry' does.
+// The hold path is the live-cause dispatcher's, not world.js's (TEL0S_NOTES §11):
+// the test calls handleLiveCause, which is what net.js's 'live-entry' reaches.
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";
 import { fileURLToPath } from "node:url";
@@ -36,7 +34,7 @@ const check = (name: string, ok: boolean, extra = "") => {
   console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${ok ? "" : "  [" + extra + "]"}`);
   ok ? pass++ : fail++;
 };
-const HOLD_MS = 2500;                      // world.js's performance window
+const HOLD_MS = 2500;                      // livechat.js's PERFORMANCE_TIMEOUT_MS
 const spoken: any[] = [];
 bus.on("speech", (s: any) => spoken.push(s));
 let seq = 100;

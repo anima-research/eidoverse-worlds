@@ -137,8 +137,7 @@ const G = { tile: 1 };
 {
   let d = emptyStructure();
   d = drawRoom(d, { x: 0, z: 0 }, { x: 3, z: 2 });
-  // the divider must span the FULL depth or the space simply flows round it —
-  // which is correct, and was my fixture being wrong rather than the planner
+  // the divider must span the FULL depth, or the space (correctly) flows round it
   for (let z = 0; z <= 2; z++) d = addWall(d, { axis: 1, x: 2, z });
   d = setAperture(d, { axis: 1, x: 2, z: 1 }, "door");
   d = addWall(d, { axis: 2, x: 3, z: 0 });

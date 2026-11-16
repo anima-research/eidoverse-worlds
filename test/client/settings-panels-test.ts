@@ -1,5 +1,5 @@
 // Settings panels (desktop UI): the style dial, the video rows, the profile's presence and the bodies list, through the
-// REAL stylepanel/videopanel/profile/bodies/mybody/presence/ui/windows/panels.js with only the renderer-bound edge
+// REAL stylepanel/videopanel/profile/bodies/mybody/presence/ui/windows/fieldpanels.js with only the renderer-bound edge
 // stubbed (test/stubs/settings-panels-stub.mjs). Each block names the product line that must turn it red:
 //   · setPanelAlpha not persisted (stylepanel.js)          → "survives a re-apply from storage"
 //   · renderer select without needsReload (videopanel.js) → "grows the reload button"

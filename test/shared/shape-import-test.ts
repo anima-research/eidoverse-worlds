@@ -1,7 +1,6 @@
 // shape-import-test — the shape audit's rules live in the v1 importer, their one real user (tools/import-v1/shapes.js):
 // a v1 world comes out in today's spelling and with its socket maps lifted, and a world founded today needs nothing, so no
-// marker, maintenance command, write gate or rollback exists. (shape-repair-test's rows that pinned the rules are here,
-// pointed at the importer; the ones that pinned the command went with it.)
+// marker, maintenance command, write gate or rollback exists.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-import-test.ts
 // @ts-nocheck
 import "../harness/fixture-ids.ts";
@@ -22,7 +21,7 @@ const ENGINE = fileURLToPath(new URL("../../", import.meta.url));
 const TF = { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] };
 const genesis = { seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } };
 
-// ---- the rules, pure (RP1, RP19's reading, RP6's sky)
+// ---- the rules, pure
 { const r = repairComps({ motion: { type: "spin", part: "tripo_part_3", degPerSec: 10 } });
   const keys = Object.keys(r.c).filter((k) => k.startsWith("motion:"));
   check("SI1 a bare motion naming tripo_part_3 becomes motion:<slot> {node: \"tripo_part_3\"}, its key in the §2.3 grammar; a second run finds nothing",
@@ -34,7 +33,7 @@ const genesis = { seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, 
   const w = repairWorld({ sky: { hours: 10, azimuth: 400, weatherSeconds: 0 } }).c.sky;
   check("SI3 a v1 sky's azimuth in degrees becomes radians (400° wraps to 40°); weatherSeconds 0 is dropped", Math.abs(w.azimuth - 40 * Math.PI / 180) < 1e-12 && !("weatherSeconds" in w) && !("transition" in w), w); }
 
-// ---- the translator writes today's spelling (RP8, RP19) and lifts its socket maps (RP16)
+// ---- the translator writes today's spelling and lifts its socket maps
 { const old = [genesis,
     { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "swing", lib: "crate", pos: [0, 0, 0] } },
     { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "swing", type: "motion", data: { type: "pendulum", part: "tripo_part_3", amp: 0.2, period: 2, damp: 0 } } },

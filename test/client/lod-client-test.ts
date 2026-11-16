@@ -48,7 +48,7 @@ plugin({
   name: 'lod-client-stub',
   setup(b) {
     // the realizer's cone (imported from realize/ as ../x.js) and the
-    // governor's cone (imported from lib/ as ./x.js) — state, scheduler,
+    // governor's cone (imported from render/ as ./x.js or ../x.js) — state, scheduler,
     // policy, fold and the bus stay REAL, and so do models.js and governor.js
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$', '^(\\.\\.?/)+(render/)?lightrig\\.js$', '^(\\.\\.?/)+(render/)?lightgizmo\\.js$', '^\\.\\./world\\.js$',
       '^(\\.\\.?/)+(render/)?materials\\.js$', '^\\.\\.?/realize/emitters\\.js$', '^\\.\\.?/terrain\\.js$', '^(\\.\\.?/)+(render/)?frameloop\\.js$', '^(\\.\\.?/)+(player/)?remotes\\.js$', '^(\\.\\.?/)+(ui/)?ui\\.js$',

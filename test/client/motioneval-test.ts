@@ -83,7 +83,7 @@ console.log("\n━━ pendulum ━━");
   check("the generous reader: `amplitude` + axis \"z\"", r3.ok && near3(r3.pos, ref.pos));
 }
 
-// ---- spin: string axis, rpm fallback, default pivot ------------------------
+// ---- spin: off-axis, off-origin pivot, rpm fallback, default axis/pivot ----
 console.log("\n━━ spin ━━");
 {
   const base = { pos: [-1, 0, 4], yaw: -0.3 };

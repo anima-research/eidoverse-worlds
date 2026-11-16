@@ -1,10 +1,8 @@
 // bun test/client/xr-entry-effects-test.mjs — the ENTRY EFFECT OWNER, executed, not source-checked.
 //
-// WHY THIS EXISTS. The round-two reviewer mutated the shipping xr.js so every busy verdict entered
-// the retry branch, including give-up:
+// WHY THIS EXISTS. A mutated xr.js where every busy verdict entered the retry branch, including give-up:
 //     if (true) { // MUTANT: every busy verdict retries
-// and the policy's own test still passed 31/31 — because it drove the pure policy correctly and then
-// checked the WIRING with regexes. Reproduced here before writing a line of this file.
+// still passed the policy's own test, which checked the WIRING with regexes.
 //
 // This suite imports client/lib/xr/xr_entry_effects.js — the same module xr.js imports — and runs it
 // with fake timers. Breaking the scheduling breaks this.
@@ -163,8 +161,6 @@ console.log('\n— 4. the other three verdicts are ACTED ON, not just decided �
   const e3 = weird();
   check('an unknown error on WebGL surfaces', eff.apply(decideEntryFailure(e3, { gpu: false }), { intent: 1, error: e3 }) === 'surface');
   check('…and surfacing schedules nothing', !eff.hasPending);
-  // hasPending is what leaveVR gates on, so it must track the TIMER (mutation sweep: rewiring it to
-  // pendingFor survived, and with the bookkeeping fix above the two now genuinely differ).
   // hasPending must read the TIMER, not pendingFor. After a normal fire both are null, so that case
   // cannot tell them apart — the distinguishing state is a DROPPED retry: the timer is gone while
   // pendingFor still names the newer intent. leaveVR gates on this, so wiring it to pendingFor would

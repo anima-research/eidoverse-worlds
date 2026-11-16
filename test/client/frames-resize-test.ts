@@ -1,6 +1,6 @@
 // frames: the resize drag's finish path, headless (`bun test/client/frames-resize-test.ts`).
 // A drag released outside the browser never gets `pointerup`; teardown on that alone leaves `_resizing` true and the
-// listeners installed, silently killing every later resize. So: does it still work AFTER a drag that ended the wrong way?
+// listeners installed (no hover cursor, and the old drag keeps following the pointer). So: does it still work AFTER a drag that ended the wrong way?
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { suite } from "../gate/suite.ts";

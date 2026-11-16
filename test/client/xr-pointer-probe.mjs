@@ -95,7 +95,7 @@ try {
   });
   await pg.waitForFunction(() => globalThis.__perf.frameNo > 0, null, { timeout: 30000 });
   await ev(pg, async () => { await __h.calibrate('right'); await __h.calibrate('left'); __h.down('right'); __h.down('left'); await __h.frames(4); });
-  // buttons are trusted 700 ms after the input sources appear (xr.js): wait it out on the product's own flag
+  // buttons are trusted 700 ms after the input sources appear (xr.js inputsSettledAt): wait it out, 1.2 s on the clock
   await ev(pg, () => new Promise((r) => setTimeout(r, 1200)));
 
   // ---- the settings quad, alone, with its VR tab chosen by a real trigger ----------------------------------------------
@@ -328,7 +328,7 @@ try {
   console.log('  · smoothing', J(sm));
   // in headless software GL a frame is tens to hundreds of ms, so the lag closes in a frame or two; what must hold:
   // right after the step the aim trails the controller (it is filtered), and it closes to nothing (it is not stuck)
-  const firstLag = sm.rows.find((r) => r.lag > 5e-5);   // frame.js caps dt at 0.1 s: two frames after the step at least 0.15·e^(−2·0.1/τ) ≈ 2e-4 rad is left
+  const firstLag = sm.rows.find((r) => r.lag > 5e-5);   // frameloop.js caps dt at 0.1 s: two frames after the step at least 0.15·e^(−2·0.1/τ) ≈ 2e-4 rad is left
   check('smoothing is wired: after a 0.15 rad step the aim trails the controller, then closes on it', !!firstLag && sm.rows.at(-1).lag < 0.002 && sm.settled < 0.002, J(sm));
   check('…the beam is drawn along the smoothed aim, not the raw controller ray (on the frame it lags)', !!firstLag && firstLag.beamToAim < 1e-5 && firstLag.beamToRaw > 5e-5, J(firstLag));
 

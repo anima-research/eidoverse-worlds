@@ -3,10 +3,11 @@ import { suite } from "../gate/suite.ts";
 //
 //   bun test/client/namereveal-test.mjs
 //
-// What must hold: N (bare, not autorepeat, not while typing in a field) starts the reveal, its keyup ends it; sources
-// are independent (the key and a second source, `xr`, which no controller binds today — releasing one keeps the other's hold); the level ramps from where
+// What must hold: N (bare, not autorepeat, not a chord, not while typing in a field) starts the reveal (the keydown
+// predicate; the window listeners themselves are not driven here); sources are independent (the key and a second
+// source, `xr`, which no controller binds today — releasing one keeps the other's hold); the level ramps from where
 // it is, reaching 1 and 0 in REVEAL_EASE_MS; the action is registered where every binding list reads (actions.js) with
-// its key; and N is bound NOWHERE else in the client (the reason it was chosen), nor are the VR reveal's buttons.
+// its key; "always show names" is a persisted source of its own. That N is bound nowhere else: one-binding-test.ts.
 
 const S = suite("namereveal");
 const check = (name, ok, detail) => S.check(name, ok, detail);

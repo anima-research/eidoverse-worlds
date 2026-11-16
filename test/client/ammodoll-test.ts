@@ -292,7 +292,7 @@ console.log('\nanatomy under yaw (limits, axes, mass — swept N/E/S/W):');
     refAv.root.updateMatrixWorld(true);
     const refRd: any = new AmmoRagdoll(refAv, null, refAv.restBonePositions());
     const ms = refRd.massSplit();
-    // the torso body carries pelvis+spine+chest = 44% of the Dempster budget;
+    // the three trunk bodies (pelvis, spine, chest) carry 44% of the Dempster budget;
     // head/limb boxes vary with the rig, so bound the trunk share loosely
     if (!(ms.frac > 0.35 && ms.frac < 0.60)) {
       bad.mass.push(`${rig.name}(${(ms.frac * 100).toFixed(0)}%)`);
@@ -704,7 +704,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 // The fleet above cannot reach this code. makeAvatar builds HUMANOID bones and
 // nothing else, so a stand-in skeleton has no [LR]_Wing_* nodes for ammodoll to
 // find — which is the same gap that left headless bodies with no hair for a
-// month while the browser ran 75 locks of it (mcpl/physics.ts:216). So the wing
+// month while the browser ran 75 locks of it (mcpl/physics.ts). So the wing
 // bones are grafted on here, from the shipped rig, the way physics.ts grafts
 // hair: read out of the VRM's node tree, parented to their real humanoid
 // ancestor.
@@ -776,32 +776,23 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 
     const wingNodes = rd._wingSegs.map((s: any) => s.node);
     const before = wingNodes.map((n: any) => n.quaternion.clone());
-    // A wing must NOT be in the settle metric: 8 plates swinging on springs
+    // A wing must NOT be in the settle metric: plates swinging on springs
     // would hold a settled body awake, and the doll would never capture.
     check('wings are excluded from the settle metric (not in _cores)',
       rd._wingSegs.every((s: any) => !rd._cores.includes(s.body)));
 
     // NO WING PLATE IS BORN INSIDE THE BODY.
     //
-    // This is the hair's "poof" at wing scale: a contact born penetrating
-    // cannot be resolved — split impulse converts only 2cm of it and the rest
-    // is paid off as kinetic energy — and on a plate half a metre wide that is
-    // not a puff of hair, it is a body launched across the room. Hair solves it
-    // by excluding j===0 from the skull; wings are added with mask G_STATIC,
-    // which is a precaution and not a fix, so the geometry has to hold too.
+    // The hair's "poof" at wing scale: a contact born penetrating cannot be resolved (split impulse converts only
+    // 2cm of it, the rest is paid off as kinetic energy), and on a plate half a metre wide that launches the body.
+    // Hair excludes j===0 from the skull; wings are added with mask G_STATIC, a precaution and not a fix, so the
+    // geometry has to hold too.
     //
-    // Measured as world AABBs at build time, which is deterministic. The
-    // obvious alternative — compare against a wingless twin — does NOT work:
-    // tried at settle it read 1m of divergence that was pure chaos, tried over
-    // the first half second it passed *even with the wings set to collide with
-    // everything*, i.e. it could not fail. This one can, and the head/torso
-    // pair below proves the instrument sees an overlap when there is one.
-    // "Inside" is asked of the actual boxes, not of bounding boxes: an AABB
-    // around a plate that sweeps out and back is enormous and overlaps the
-    // torso's for every root segment, which the first version of this reported
-    // as four wings born inside the body. The question that matters is whether
-    // the plate's CENTRE — where a penetrating contact would push from — sits
-    // within a core body's boxes.
+    // Measured at build time, which is deterministic (a wingless-twin comparison could not fail: pure chaos at
+    // settle, and green over the first half second even with the wings set to collide with everything). "Inside"
+    // asks whether the plate's CENTRE, where a penetrating contact would push from, sits within a core body's own
+    // boxes; a plate's world AABB sweeps out and back and overlaps the torso's for every root segment. The torso
+    // row below calibrates the predicate on a point that is inside.
     const worldOf = (body: any) => {
       const t = body.getCenterOfMassTransform();
       const o = t.getOrigin(), r = t.getRotation();

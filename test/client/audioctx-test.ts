@@ -58,8 +58,8 @@ check('every call returns the SAME instance', a === b && b === c);
 for (let i = 0; i < 40; i++) audioCtx();
 check('40 further calls (the mic-toggle loop) still one context', made === 1, `made=${made}`);
 
-// A suspended context is the default before a gesture; the module should be able
-// to resume it without building a second one.
+// audioContextState() reads the shared instance's state and builds nothing. (audioContext() resumes a suspended
+// context on each call; `resumed` counts that and nothing here asserts it.)
 check('audioContextState() reports the shared instance', mod.audioContextState() === a.state,
       `${mod.audioContextState()} vs ${a.state}`);
 

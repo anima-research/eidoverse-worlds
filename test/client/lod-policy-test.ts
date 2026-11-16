@@ -14,8 +14,6 @@
 // bare `recipe` extra an author may have written — and the tier a load IS
 // is what crossed the wire (askFor), never what the policy wished: no KTX2
 // transcoder, no key, no recipe, no .glb → no lod ask, reported as none.
-//
-// Negative control: on main this file dies at import (no lod_policy.js).
 
 import { MODEL_QUALITY, LOD_FRACTION, LOD_HYST, PRESSURE_EDGE, PRESSURE_AT, LOD_NEAR_MIN,
   makeModelQuality, chooseTier, tierOf, askFor } from "../../client/lib/render/lod_policy.js";
@@ -38,7 +36,7 @@ check("no recipe published → 'full', however far", chooseTier({ dist: 1e6, rad
 check("…even on 'eco'", chooseTier({ dist: 1e6, radius: R, recipe: null, quality: "eco" }) === "full");
 check("…even under pressure and shed", chooseTier({ dist: 1e6, radius: R, recipe: null, pressure: 9, shed: true }) === "full");
 
-// ---- the dial's extremes ignore distance
+// ---- the dial's extremes: 'full' ignores distance, 'eco' halves the edge
 check("'full' never reduces", chooseTier({ dist: 1e6, radius: R, recipe: REC, quality: "full" }) === "full");
 check("'eco' is the pressured band, always — reduces past the HALVED edge",
   chooseTier({ dist: edge * PRESSURE_EDGE * 1.2, radius: R, recipe: REC, quality: "eco" }) === "lod"

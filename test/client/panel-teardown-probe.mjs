@@ -61,18 +61,10 @@ const r = await pg.evaluate(async () => {
   const raf0 = window.requestAnimationFrame; let beats = 0;
   window.requestAnimationFrame = (f) => { if (f?.name === 'beat') beats++; return raf0.call(window, f); };
 
-  // 🔴 CLICK EVERY CHECKBOX, NOT A REPRESENTATIVE ONE (R, 2026-08-16: "looks
-  // like panel is tearing down when you click the text-to-speech model
-  // checkbox"). The first version of this probe clicked only 'hear voices',
-  // passed, and I read that as "the panel does not tear down" — but a probe
-  // proves the path it walks and NOTHING else. The TTS tick lives in a
-  // different module with its own build(), and it was still rebuilding.
-  // Identify targets by their LABEL, not by index. Indices shift the moment a
-  // row is skipped or replaced, and an index-keyed loop silently pairs one
-  // box's click with another box's tags — which is exactly how this probe
-  // reported a teardown on 'speech-to-text' that a direct check disproved
-  // (rows 10 before, 10 after, the tagged node still present). A measurement
-  // whose bookkeeping can drift will eventually accuse the code of its own bug.
+  // Click EVERY checkbox, not a representative one: a row can live in another
+  // module with its own build() (the TTS tick does). Targets are found by
+  // LABEL, not index: an index shifts when a row is skipped or replaced, and
+  // would pair one box's click with another box's tags.
   const labels = [...body.querySelectorAll('.row')]
     .filter((r) => r.querySelector('input[type=checkbox]') && r.style.display !== 'none')
     .map((r) => r.querySelector('.nm')?.textContent?.trim())
@@ -83,13 +75,9 @@ const r = await pg.evaluate(async () => {
       .find((r) => r.querySelector('.nm')?.textContent?.trim() === label);
     const live = rowOf()?.querySelector('input[type=checkbox]');
     if (!live) continue;
-    // 🔴 LET THE PREVIOUS RESTORE SETTLE BEFORE TAGGING. Each iteration clicks
-    // twice (test, then put it back), and the RESTORE click can still be
-    // repainting when the next iteration tags. That is how this probe reported
-    // a teardown on 'speech-to-text' twice in a row while a direct check found
-    // zero rows losing their tag — the contamination came from the probe's own
-    // cleanup, one control earlier. Two dead theories (hidden rows, index
-    // drift) before I printed WHICH row lost its tag and got an empty list.
+    // Let the previous restore settle before tagging: each iteration clicks
+    // twice (test, then put it back), and a restore still repainting when the
+    // next iteration tags reads as that control's teardown.
     await new Promise((r) => setTimeout(r, 250));
     rows().forEach((el, n) => { el.__probeTag = `row${n}`; });
     const n0 = rows().length;

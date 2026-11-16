@@ -1,5 +1,5 @@
 // bun test/water/wp5-verdict-test.ts — WP5's verdict (wp5-verdict.ts) on synthetic evidence: its negative controls,
-// run without the browser session water-cross needs (moved down from crossing-pipelines-check.ts)
+// run without the browser session water-cross needs
 import { wp5Verdict } from "./wp5-verdict.ts";
 import { suite } from "../gate/suite.ts";
 const { check, done } = suite("wp5-verdict");

@@ -7,8 +7,8 @@
 // What must hold:
 //   THE SPLASH, driven by boot.js's own phases (main.js is held back, so the static splash stays up and the
 //   probe owns the progress): the first paint — before any script — has the peg OFF to the left by the full
-//   travel D = 80.5 (the peg's arc tip, x 88, clears the sphere's leftmost x 8 by half a unit) and clipped to the sphere; at p = 0.5 the peg sits at −D·(1 − ease(0.5)) (doorway.html's
-//   ease); at p = 1 it has NO transform and NO clip: the still mark. The frame never moves.
+//   travel D = 80.5 (the peg's arc tip, x 88, clears the sphere's leftmost x 8 by half a unit) and clipped to the sphere; at p = 0.5 the peg sits at −D·(1 − ease(0.5)) (boot.js's
+//   pegEase); at p = 1 it has NO transform and NO clip: the still mark. The frame never moves.
 //   THE REAL BOOT: the peg is painted by paint() as progress arrives (a value strictly between the ends is
 //   seen), and after finishBoot the mark is the still mark.
 //   THE ∃ BUTTON carries the 24 px master's geometry (viewBox 0 0 24 24, its three outlines).

@@ -1,6 +1,5 @@
-// Build mode's rights gate (rung 3). build.js had NO test surface in this repo —
-// `grep -l build.js tools/` matched comment text, not imports — so the gate the
-// dock wrench advertises was, until this suite, enforced by reading only.
+// Build mode's rights gate (rung 3), against the real client/lib/edit/build.js: who may enter (mayEdit), that every
+// entry point is gated at the setBuildMode chokepoint, and that leaving never is.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/build-gate-test.ts
 import * as R from '../../shared/protocol/roles.js';
@@ -34,7 +33,7 @@ console.log('BUILD GATE — who may enter build mode');
 // PERMISSIVE WHEN UNKNOWN. net.myRights has no declaration in net.js's object
 // literal; it lands at the snapshot or a live grant, so it is undefined for the
 // whole pre-snapshot window. Denying there would make a build click vanish on a
-// slow join. generate.js:144 (`net.myRights?.gen !== false`) is the same idiom.
+// slow join. generate.js (`net.myRights?.gen !== false`) is the same idiom.
 asRole(undefined);
 check('rights not yet known: permitted (pre-snapshot, matches generate.js)', build.mayEdit() === true);
 asRole('builder');

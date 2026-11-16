@@ -2,14 +2,13 @@
 //
 //   bun test/client/xrpanels-test.ts
 //
-// renderCanvas paints fields to a 2D canvas and returns HIT REGIONS; xr.js
+// renderCanvas paints fields to a 2D canvas and returns HIT REGIONS; xrpanels.js
 // turns a laser UV-hit into a region and dispatches the SAME edit() the
 // desktop calls. No browser here: the 2D context is a recorder (fillText /
 // fillRect / strokeRect are no-ops that count), because what this binds is
-// the REGION LAYOUT and what each region dispatches — the part that, until
-// tonight, had no test while two review rounds found bugs in it (VR
-// steppers reporting {axis, delta} objects; list rows dispatching 'row'
-// instead of the list's key).
+// the REGION LAYOUT and what each region dispatches — the part where two
+// review rounds found bugs (VR steppers reporting {axis, delta} objects;
+// list rows dispatching 'row' instead of the list's key).
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { suite } from "../gate/suite.ts";

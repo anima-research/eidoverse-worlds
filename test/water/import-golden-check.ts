@@ -1,5 +1,5 @@
 // test/water/import-golden-check.ts — upstream's public #248 world (tools/water/data/manifest.json) through tools/water/import.ts
-// --dry: the zone / water / water-exclusion things it asks for, their parents and priorities, the features it holds back (none now)
+// --dry: the zone / water / water-exclusion things it asks for, their parents and priorities, the features it holds back (none now),
 // its vehicle (drive + a helm), climb routes, collision toggle and environment as mapped, the batch taken by a real authority, and shared/zone.js mediumOf on the result agreeing
 // with main's own mediumAt (main's shared/water.js at MAIN, from git) on main's reading of the same records.
 //   bun test/water/import-golden-check.ts

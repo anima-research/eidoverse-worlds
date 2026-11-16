@@ -582,7 +582,7 @@ console.log("\nno flicker between two poses");
     let prev: THREE.Vector3 | null = null, lp: any = null, ls: any = null;
     tested++;
     for (let f = 0; f < 80; f++) {
-      av.root.position.y = Math.sin(f / 9) * 0.004;      // half a millimetre of breath
+      av.root.position.y = Math.sin(f / 9) * 0.004;      // ±4 mm of breath: under half a millimetre a frame
       av.root.updateMatrixWorld(true);
       const t = at('rightUpperLeg').clone().addScaledVector(lat, -0.09);
       const out: any = solveChain(chain, av, t.toArray(), null, { lastPick: lp, lastSwivel: ls });

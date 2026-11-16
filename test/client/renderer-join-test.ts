@@ -24,7 +24,7 @@ const check = (name: string, cond: unknown, detail?: unknown) => S.check(name, c
 const ROOT = join(import.meta.dir, "..", "..");
 
 type Join = { id: string; spectate: boolean; renderer: boolean; roam?: boolean };
-/** One page load at `search`: wire net.js as `wire` says (none = lite.js, which passes no snapshot),
+/** One page load at `search`: wire net.js as `wire` says (none = never wired; other-hooks = what lite.js passes, no snapshot),
  *  join `joins` times (a reconnect sends the join again), and return what went on the wire. */
 function pageLoad(search: string, wire: "none" | "snapshot" | "other-hooks", joins = 1) {
   const L = join(ROOT, "client/lib") + "/";

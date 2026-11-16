@@ -10,7 +10,7 @@
 //   drains   — it IS drawn once linked, within a few frames                           [--mutate-never-drain]
 //   frame    — the frame that met the new variant did not pay a link (< 100 ms request)
 //   one-shot — a cold render INTO A TARGET (a bake, an env) is NOT deferred: it draws on that one call
-//              [mutate: drop the getRenderTarget()===null condition → the target reads back empty]
+//              [mutate: drop the isWorldPass(getRenderTarget()) condition → the target reads back empty]
 // SwiftShader has no KHR_parallel_shader_compile, so the gate runs against an EMULATED extension (COMPLETION_STATUS
 // true 150 ms after the link is issued): this proves ORCHESTRATION. Whether the owner's Chrome exposes the extension,
 // and whether the 55 s freeze becomes a late pop-in, is a headset-machine fact — the '[syncgate] installed' tee says

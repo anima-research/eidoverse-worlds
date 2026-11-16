@@ -2,11 +2,11 @@
 //
 //   bun test/client/snapframe-render-test.ts
 //
-// snapframe-test.ts checks the normaliser, the first-person pitch and the wire,
+// test/server/snapframe-test.ts checks the normaliser, the first-person pitch and the wire,
 // but its fake renderer places no camera, so it passes whatever
 // client/lib/render/net_capture.js does with dist / height. This runs the shipped
-// snapshot() with only the browser boundary stubbed (core.js's camera, the
-// remotes map, capture.js, fp_view.js's composer) and checks the eye and the
+// capture() with only the browser boundary stubbed (core.js's camera, the
+// remotes map, capture.js, fp_view.js's composer, world.js) and checks the eye and the
 // aim for third and selfie, with and without framing, that pitch reaches
 // composeFirstPerson, and that only the nested `frame` is read as framing: a
 // message that carries an image size's `height` keeps the default camera.
@@ -49,7 +49,7 @@ mock.module(lib("render/capture.js"), () => ({
 mock.module(lib("avatar/fp_view.js"), () => ({
   composeFirstPerson: (opts: Record<string, unknown>) => { composed.push(opts); return "frame"; },
 }));
-// (ported 10-17: the renderer leg is net_capture.js here, and its export is capture; it also reads world.js's entities, for `at`)
+// net_capture.js also reads world.js's entities, for `at`
 mock.module(lib("world.js"), () => ({ entities: new Map() }));
 const { capture: snapshot } = await import("../../client/lib/render/net_capture.js");
 

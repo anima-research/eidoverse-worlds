@@ -72,7 +72,7 @@ console.log('1. the alias both ways, through the real door:');
   check('an empty world is an entity with no components (and round-trips to the view\'s nulls)', worldComponents(W.view()).components.length === 0 && aliasBad(W.view()) === null);
   step('weather', { weather: 'rain' });                                          // weather before any sky: the door makes a sky of it
   step('sky', { hours: 8, rate: 24, clouds: 'cumulus', exposure: 0.8 });
-  step('weather', { weather: 'storm', transition: 12 });                     // (v1's weatherK isn't a key of the door's sky)
+  step('weather', { weather: 'storm', transition: 12 });                     // a storm, easing in over 12 s
   step('sky', { hours: 9, clouds: 'stratus', forecast: { seed: 7, states: ['clear', 'fair', 'rain'], dwell: [600, 1800], transition: 45 } });
   step('weather', { weather: 'overcast' });                                      // a manual override under the forecast
   step('sky', { tz: 'Europe/Paris', hours: 10, rate: 2 });                      // the wall clock; hours/rate stay as the fallback

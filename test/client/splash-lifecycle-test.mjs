@@ -2,7 +2,8 @@
 // resize listener, the harness handle globalThis.__raysWorker — and one owner. Review 2026-09-10 #3:
 // stopRays posted 'stop' and nulled the local only; the listener and the public handle outlived the splash,
 // and a stopRays that abandoned the worker without 'stop' passed every committed test. This drives the real
-// module under happy-dom with a recording Worker: normal finish, repeated finish, nogl, failed creation, ?rays=0.
+// module under happy-dom with a recording Worker: normal finish, repeated finish, nogl, failed creation, a throw
+// mid-start, a double start, the ready / nogl / silence receipts, ?rays=0.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 // ?rays=0 is read from location.search at module scope, so that case runs in a CHILD process registered at
 // that URL (SPLASH_RAYS0=1); happy-dom's replaceState does not rewrite location.search.

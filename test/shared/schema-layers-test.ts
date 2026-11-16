@@ -53,7 +53,7 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   check(`every descriptor field is a registry field, with the registry's limits, unit and doc (${Object.keys(DESCRIPTORS).length} cards)`, !bad.length, bad.slice(0, 8).join(" | "));
 }
 
-// 3. every record param that is a registry field carries the registry's type class, default, limits, unit and doc
+// 3. every record param that is a registry field carries the registry's default, limits, unit, doc and enum
 {
   const bad: string[] = [];
   for (const [card, d] of Object.entries<any>(DESCRIPTORS)) {
@@ -106,7 +106,7 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   const rows: [any, string, string][] = [[fieldAt(mesh, "mesh.size.x"), "mesh", "size"], [fieldAt(s, "openable.slide|0"), "openable", "slide"], [fieldAt(s, "particles.at|1"), "particles", "at"]];
   const rbad = rows.filter(([f, k, p]) => !f || j({ min: f.min, max: f.max, unit: f.unit }) !== j({ ...regLimits(k, p), unit: regUnit(k, p) })).map(([, k, p]) => `${k}.${p}`);
   check("the hand cards' channel rows (mesh.size, openable.slide, particles.at) carry the registry's limits and unit", !rbad.length, rbad.join(", "));
-  // the expectations are the registry's own numbers, never restated here (sound.radius's ceiling moved 100 → 200 and this row went red on a copy)
+  // the expectations are the registry's own numbers, never restated here (a copy goes stale when the registry moves)
   const lr = COMPONENTS.light.ranges.range, sr = COMPONENTS.sound.ranges.radius;
   check("limitsOf reads gt as the floor (editschema refuses the bound itself) and skips text caps",
     lr.gt !== undefined && lr.min === undefined && j(limitsOf("light", "range")) === j({ min: lr.gt, unit: COMPONENTS.light.units.range }) && COMPONENTS.story.ranges.title.maxLen !== undefined && j(limitsOf("story", "title")) === "{}"

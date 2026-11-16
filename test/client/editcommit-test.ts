@@ -11,8 +11,7 @@
 // test/harness/inspectharness.ts stubs the page (the realized world, the wire to the
 // scratch door, the dialogs); inspect.js, edit/writes.js, the schema and the door are real.
 //
-// the protocol port (2026-10-06): the client-side undo stack of inverses and the light coalescer are gone (undo is the door's,
-// by act; a lamp is a light COMPONENT edited with set). Each old inverse check became either the expect the request
+// Undo is the door's, by act (a lamp is a light COMPONENT edited with set): a check reads either the expect the request
 // carries (what it started from) or the door's undo of the act, read back.
 import { inspectHarness } from "../harness/inspectharness.ts";
 import { qFromEuler, sameRotation } from "../../shared/euler.js";
@@ -144,8 +143,7 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   // someone else turns it: the hint is void, the fresh (canonical) reading returns
   H.other("set", { id: "t1", component: "transform", value: { ...c("t1").transform, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") } });
   check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0, String(val("x")));
-  // a compound edit (remove-both: two ops) is ONE request, so ONE act and one Ctrl+Z. (Was a pendulum under its push
-  // reaction; the push was the impulse handler, reserved since the shape audit 10-16: a collider under its model now.)
+  // a compound edit (remove-both: two ops, a model and the collider under it) is ONE request, so ONE act and one Ctrl+Z
   H.W.seed({ r1: { model: "swing.glb", pos: [0, 0, 0], yaw: 0, collider: { shape: "box" } } }); H.sync();
   H.entities.set("r1", realized());
   const before = Edits.stacks().undo.length;

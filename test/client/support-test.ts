@@ -111,7 +111,7 @@ fitSupportBox('deck', [-3, 1.85, -3], [3, 2, 3], { position: [0, 0, 0] });
 // ---- 2. a drag released in MID-AIR above the deck lands on it, not through
 // it — the Mythos signature: rootY high, pose from a dragger's hand, no seed
 {
-  const av = synth([0.5, 3.2, 0.5]);     // let go of half a metre over the deck
+  const av = synth([0.5, 3.2, 0.5]);     // let go 1.2 m over the deck, off-centre
   const rd = run(av);                     // no lean: falls free
   const low = lowest(rd);
   check('a body released in mid-air over the deck lands on the deck', low > 1.9,

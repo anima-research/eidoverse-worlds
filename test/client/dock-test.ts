@@ -3,7 +3,7 @@
 //
 //   bun test/client/dock-test.ts
 //
-// What the rail promises (ui.js's own comment): an icon rides the rail while its window is OPEN or while it
+// What the rail promises (ui-dock.js's own comment): an icon rides the rail while its window is OPEN or while it
 // is PINNED; otherwise it hides. Pinning lives in the ∃ menu, and so does the layout lock. A mod that calls
 // registerPanel() gets the same door as a built-in — a frame, a rail button, a menu row, a pin — and a
 // duplicate id is refused, not doubled. And rail chrome never rides emoji: the four upstream rail labels
@@ -196,9 +196,8 @@ console.log("DOCK — the rail clears the joystick (mobile landscape)");
   setVp(844, 390);
   check("touch, landscape: the rail cannot clear the stick -> not left", dockEdgeFitsLeft() === false);
 
-  // This assertion used to read back its own localStorage.setItem and would have
-  // passed with ui.js deleted (agent review, 2026-09-11). Drive the real path:
-  // initDock -> loadDockEdge -> applyDockEdge, and read the edge off the DOM.
+  // Drive the real path (initDock's resize listener -> loadDockEdge -> applyDockEdge)
+  // and read the edge off the DOM: reading localStorage back would pass with the module deleted.
   localStorage.setItem("ew-dock-pos", JSON.stringify({ edge: "right", along: 40 }));
   window.dispatchEvent(new Event("resize"));          // initDock's own listener re-applies the edge
   check("a DELIBERATE drag still wins: a stored ew-dock-pos beats the joystick rule",
@@ -321,18 +320,14 @@ check("the wrench has a row while gated open", !!row("edit"));
   // itself when build rights arrive, with a manual unpin still winning — so it
   // must fire on closed->open, never on every repaint.
   const wasGate = editGate;
-  // OBSERVE WHAT THE PRODUCT OBSERVES. savedPins() reads localStorage, which is
-  // null until something calls savePins() — but `pins` already contains 'edit'
-  // from DEFAULT_PINS at block start. So a storage-based probe reports
-  // "unpinned" while the product considers it pinned, the opening unpin is
-  // skipped, and the grant finds nothing to do. The rail is the honest seam:
-  // paintDock hides an action button iff `!active && !pins.has(id)`
-  // (ui.js:553), so with the gate open and the mode off, visible == pinned.
-  // (Three instrumented runs to find this; the storage probe was mine.)
+  // OBSERVE WHAT THE PRODUCT OBSERVES: the rail, not storage (storage lags `pins`,
+  // which hydrates from DEFAULT_PINS while the key is absent). paintDock hides an
+  // action button iff `!active && !pins.has(id)` (ui-dock.js), so with the gate
+  // open and the mode off, visible == pinned.
   const isPinned = () => { editGate = true; bus.emit("frames"); return btn("edit")!.hidden === false; };
   // Re-QUERY the pin button every time: emenuKey() omits a gated-closed action
-  // entry, so flipping editGate changes the key and buildEMenu rebuilds every
-  // row — a captured element goes stale across exactly the emits driven here.
+  // entry, so flipping editGate changes the key and paintEMenu rebuilds every
+  // row (buildPanels) — a captured element goes stale across exactly the emits driven here.
   const pinNow = () => sub().querySelector(`.mpin[data-pin="edit"]`) as HTMLButtonElement | null;
 
   editGate = true; bus.emit("your-rights");            // settle: granted, remembered
@@ -378,11 +373,10 @@ check("the wrench has a row while gated open", !!row("edit"));
   editGate = wasGate; bus.emit("frames");
 }
 
-// ORDER AT PAINT TIME. initDock sorts `last` to the end once; registerPanel
-// PUSHES later mods on after that sort has run, so the menu drifted while the
-// rail stayed right (addDockButton inserts before the first [data-last]).
-// Measured before the fix: dock [..., modx, mody, edit], menu [..., edit, modx,
-// mody]. R: "it should always be at the bottom of both until further notice."
+// ORDER AT PAINT TIME. initDock sorts `last` to the end once, and mods register
+// after that sort; the rail keeps the wrench last by where addDockButton inserts
+// (before the first [data-last]), and the menu must keep it last too.
+// R: "it should always be at the bottom of both until further notice."
 { const rows = [...sub().querySelectorAll(".mrow[data-row]")].map((r: any) => r.dataset.row);
   const btns = [...dock().querySelectorAll("button[data-toggles]")].map((b: any) => b.dataset.toggles);
   const named = rows.filter((r: string) => !r.startsWith("glyph:"));
@@ -585,40 +579,28 @@ console.log("DOCK — the badge the dock button carries (the title bar is hidden
   check("clearing the badge removes BOTH", !document.querySelector('#dock button[data-toggles="chat"] .dk-badge') && !f.el.querySelector(".fr-badge")); }
 
 console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeopleHere)");
-{ // togglePeopleHere reads the chat frame's side-pane markup (chat.js:696: a
+{ // togglePeopleHere reads the chat frame's side pane (chat.js initChat: a
   // .chat-cols that carries side-closed, and the .chat-side-tog that flips it).
-  // initChat builds that; here we mirror just those two nodes onto the frame
-  // this suite already made, so the REAL togglePeopleHere runs against the real
-  // class contract instead of a recorder.
+  // Here we mirror just those two nodes onto the frame this suite already made,
+  // so the REAL togglePeopleHere runs against the real class contract instead of
+  // a recorder.
   const f = getFrame("chat")!;
-  // TWO decoys, because there are two ways to get this wrong and a decoy only
-  // binds the scope it sits outside of:
-  //   outer — elsewhere in the document (catches a document-wide lookup)
-  //   inner — INSIDE this frame's body, BEFORE the real cols (catches any
-  //           unbounded-depth lookup from the body, which is what registerPanel
-  //           actually enables: mount(body, frame) puts a mod's markup in here).
-  // chat.js writes .chat-cols as a DIRECT child of the body and the toggler as
-  // its child; a mod can prepend a direct-child twin (`pre`, below), so only the
-  // nodes chat.js captured (sidePane) address the real pane.
+  // Both classes are public contract, and a local mod is an in-page module with
+  // the whole document, so its markup can carry them anywhere, this body
+  // included. Five decoys, each binding one wrong lookup:
+  //   outer   — elsewhere in the document (a document-wide lookup)
+  //   nested  — a toggler INSIDE the real cols, before the real one (an
+  //             unbounded cols.querySelector('.chat-side-tog'))
+  //   late, pre — direct-child .chat-cols twins after and before the real one
+  //             (a `:scope >` re-query from the body: `pre` wins it)
+  //   modWrap — deeper in the body (an unbounded-depth lookup from the body)
+  // Only the nodes chat.js captured (frame.sidePane) address the real pane.
   const outer = document.createElement("div");
   outer.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
   document.body.prepend(outer);
   let decoyClicks = 0;
   (outer.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
 
-  // THREE decoys. The third is the one rounds 7-9 kept missing: chat.js nests
-  // the toggler INSIDE .chat-cols, so a mod's toggler can sit inside the REAL
-  // cols — and then an unbounded `cols.querySelector('.chat-side-tog')` finds
-  // the mod's before the chat's. Only `:scope >` on BOTH hops addresses the
-  // real pane; a decoy that is merely a sibling cannot see that mistake.
-  // Decoy ORDER — corrected by the ELEVENTH review, which falsified what this
-  // comment used to claim. I had written that a mod can only mount as a LATER
-  // sibling because initChat writes the chat's cols first. FALSE: mods.js:88
-  // hands a mod `makeFrame`, and windows.js:234 returns an EXISTING frame by
-  // bare id — so `makeFrame('chat')` returns the LIVE chat frame, and a local
-  // mod is an in-page ES module with the whole document (mods.js:5-8). It can
-  // PREPEND. So a decoy before the real cols is not a bent fixture; it is the
-  // product's reachable DOM, and it is what binds the first hop.
   f.body.innerHTML = `<div class="chat-cols side-closed">`
     +   `<div class="mod-inside"><button class="chat-side-tog"></button></div>`
     +   `<button class="chat-side-tog"></button>`
@@ -628,22 +610,16 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   late.innerHTML = `<button class="chat-side-tog"></button>`;
   f.body.append(late);
   (late.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
-  // Capture the node initChat built BEFORE any decoy exists. Anchoring on a
-  // re-query would find the prepended decoy (also a direct child, and first) —
-  // the fixture would then measure the same wrong node the mutant picks, and
-  // the mutation survives. This is what let M-A through until round 11.
+  // Capture the real cols BEFORE `pre` is prepended: a later re-query would find
+  // that decoy (also a direct child, and first), the fixture would measure the
+  // same wrong node a mutant picks, and the mutation would survive.
   const real = f.body.querySelector(":scope > .chat-cols") as HTMLElement;
   // Mirror initChat's MECHANISM, not just its markup: chat.js captures the
-  // nodes as it writes them and hangs the accessor on the frame it built
-  // (chat.js, right after sideEls). togglePeopleHere reads that. Handing it `real`
-  // is legitimate here precisely because `real` was captured before any decoy
-  // exists — the same discipline this block already uses above.
-  // This suite never imports chat.js — makeFrame/getFrame come from windows.js
-  // and the markup above is hand-mirrored — so this stand-in can bind WHICH
-  // node togglePeopleHere addresses (ownership/order) but NOT the lifetime guard
-  // on chat.js's own read path: a ?.isConnected here would only test this
-  // closure against itself. Lifetime is bound in test/client/chat-log-test.ts, which drives
-  // real initChat / sideEl / paintSide.
+  // nodes as it writes them and hangs the accessor on the frame (frame.sidePane),
+  // which togglePeopleHere reads. This suite never imports chat.js, so the
+  // stand-in binds WHICH node togglePeopleHere addresses, not chat.js's own
+  // isConnected guard: that lifetime is bound in test/client/chat-log-test.ts
+  // (real initChat / sideEl / paintSide).
   (f as any).sidePane = (k: string) => (k === "cols" ? real
     : k === "tog" ? real.querySelector(":scope > .chat-side-tog") : null);
   const pre = document.createElement("div");   // a mod PREPENDING via makeFrame('chat')

@@ -5,7 +5,7 @@
 //      `// keys: <id>` tag naming an entry in client/lib/edit/keyhints.js (a read that is NOT build mode's, in a file that mixes
 //      the two, says so: `// keys: none — <why>`);
 //   2. an entry has no words to show (`before` empty);
-//   3. an entry is never shown: no engage('<id>'), withKeys(…, '<id>') or KEYHINTS.<id> outside keyhints.js and outside
+//   3. an entry is never shown: no engage('<id>'), withKeys(…, '<id>') or KEYHINTS.<id> in FILES, outside
 //      the `// keys:` tags themselves (a tag names the key; it doesn't show it to anyone).
 //   bun test/client/keyhints-check.ts
 import fs from "node:fs";

@@ -314,7 +314,7 @@ console.log('CASTER BUDGET — ranked by WORLD distance');
   const parent = new THREE.Group(); parent.position.set(wp.x, 0, wp.z + 3); parent.updateMatrixWorld(true);
   const child = new THREE.Group(); child.position.set(0, 0, 0); child.add(new THREE.Mesh(new THREE.BoxGeometry())); parent.add(child); parent.updateMatrixWorld(true);
   registerCaster('parented-near-world', child);
-  mk('unparented-far', 0, 0, 0);                        // at the origin: near in LOCAL terms to the parented one, ~80 m from the rig
+  mk('unparented-far', 0, 0, 0);                        // at the origin: near in LOCAL terms to the parented one, ~100 m from the rig
   setCasterBudget(2);
   updateRig(T0 + 3400);
   const l2 = Object.fromEntries(rigDebug().casterList.map((c) => [c.id, c]));
@@ -426,10 +426,8 @@ const biasChecks = (r, c = check) => {
     && r.shipped.side === 0,
     JSON.stringify(r.shipped));
   // The born values are Janus's, measured with the live dials. Asserted as a
-  // pair against the arithmetic rather than as remembered numbers: an earlier
-  // version of this check pinned map===280 and normalBias<0.008, which were my
-  // defaults, and it went red the moment he tuned them. A test that encodes
-  // the author's guess fails on the author being wrong, which is backwards.
+  // pair against the arithmetic, not as remembered numbers: pinned literals
+  // (map===280, normalBias<0.008) went red the moment he retuned.
   c('the lamp is born at a small map size', r.born.map >= 128 && r.born.map <= 512,
     `map=${r.born.map}`);
   // THE INVARIANT: whatever the dials say, the bias IS texels x texel size.

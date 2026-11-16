@@ -6,8 +6,7 @@
 // rendered from INSIDE their own avatar head. Two stacked causes: the snap
 // `first` camera guessed the eye at `root + 1.52 + 0.32·fwd` (a standing-
 // humanoid constant that the socket transform and any head-volume rig defeat),
-// and nothing hid the resident's own mesh — the comment said "their body is
-// never in frame" and the code did not make it true.
+// and nothing hid the resident's own mesh.
 //
 // client/lib/avatar/fp_view.js now owns the answer. These checks pin its contract:
 // live-anchor eye (head bone, bounds fallback), socket-yaw gaze, own-body

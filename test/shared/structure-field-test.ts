@@ -37,7 +37,7 @@ console.log(`\nstructure_field — the griddled-building planner\n`);
 //   z=0   ┌───┬───╥───┬───┐
 //         │ A   A ║ B   B │
 //   z=1   │       ║       │      ║ = the dividing wall (door at z=0..1)
-//         │ A   A ║ B   B │      ═ = exterior
+//         │ A   A ║ B   B │      ─ │ = exterior
 //   z=2   └───┴───╨───┴───┘
 const HOUSE = {
   labels: { "0,0": "kitchen", "2,0": "hall" },
@@ -172,9 +172,9 @@ const HOUSE = {
   check("but solid below the sill",
     windowed.filter((b) => inside(b, 2.0, 0.4, 0.5)).length === 1);
 
-  // Non-overlap: the partition is exact, so no two boxes share volume. Sampled
-  // densely rather than proven, because a sliver from bad arithmetic would show
-  // up as a double-count long before it showed up as a visible seam.
+  // Non-overlap: the partition is exact, so no two boxes share volume (every
+  // pair is tested): a sliver from bad arithmetic would show up as a
+  // double-count long before it showed up as a visible seam.
   for (const set of [doored, windowed]) {
     let overlaps = 0;
     for (let i = 0; i < set.length; i++) {
@@ -216,7 +216,7 @@ const HOUSE = {
 {
   const plan = planStructure(HOUSE);
   const n = (k: string) => plan.boxes.filter((b) => b.kind === k).length;
-  // 8 floors + 5 wall RUNS + 1 door lintel + (window sill + lintel).
+  // 8 floors + 5 wall RUNS + 4 corner fills + 1 door lintel + (window sill + lintel).
   // Collinear segments merge: the 12 solid segments are 5 stretches of wall,
   // which is what they are in the world. Fewer boxes, no interior seams, and a
   // skirting that is one board instead of several that happen to abut.
@@ -408,7 +408,7 @@ const HOUSE = {
   check("scale divides out", Math.abs(sx - 0.5) < 1e-9 && Math.abs(sz - 0.5) < 1e-9);
 }
 
-// 15. trim: a window leaves a wall under it, and that wall wants a baseboard
+// 15. trim: the skirting is part of the swept profile; floor and roof parts
 {
   const g = normalize(HOUSE);
   const lv = g.levels[0];
@@ -419,11 +419,9 @@ const HOUSE = {
     ? Math.abs((p.z0 + p.z1) / 2 - z * g.tile) < 0.2 && p.x0 >= x * g.tile - 0.01 && p.x1 <= (x + 1) * g.tile + 0.01
     : Math.abs((p.x0 + p.x1) / 2 - x * g.tile) < 0.2 && p.z0 >= z * g.tile - 0.01 && p.z1 <= (z + 1) * g.tile + 0.01));
 
-  // the window sits on edge (0,0,0); only cell (0,0) is floored, so one face
-  // The skirting is a step in the swept PROFILE now, not a box — so it mitres
-  // by construction and cannot come apart from its wall. Boxes standing proud
-  // of a swept surface could never agree with it, which is what made the
-  // panels around openings look stuck on.
+  // The skirting is a step in the swept PROFILE, not a box — so it mitres
+  // by construction and cannot come apart from its wall (boxes standing proud
+  // of a swept surface could never agree with it).
   void at; void base;
   const prof0 = wallProfile(g);
   check("the skirting lives in the profile", Math.min(...prof0.map((q) => q[0])) < -g.wallT / 2);
@@ -613,12 +611,10 @@ const HOUSE = {
 
 // 20. NORMALS FACE OUT
 //
-// Every geometric test above passed while the entire building was inside-out:
-// they all asked about POSITIONS, and winding is not a position. A swept
-// surface has no natural orientation — the lateral offset is the left normal
-// of travel, so the obvious quad order puts u=-t/2 faces back into the wall —
-// and the failure does not read as "normals are flipped", it reads as the
-// whole thing being cursed.
+// The geometric tests above ask about POSITIONS, and winding is not a
+// position: they pass on an inside-out building. A swept surface has no
+// natural orientation — the lateral offset is the left normal of travel, so
+// the obvious quad order puts u=-t/2 faces back into the wall.
 {
   const g = normalize(HOUSE);
   const faceNormals = (sw: any) => {
@@ -697,9 +693,7 @@ const HOUSE = {
 
 // 21. SHADING CONTINUITY AT OPENINGS
 //
-// The panels over doors and under windows read as stuck on even though they
-// were already merged into one mesh — it was never a mesh-count problem. The
-// bake is sampled per VERTEX and interpolated between, and the shading is
+// The bake is sampled per VERTEX and interpolated between, and the shading is
 // strongly non-linear in height, so a wall quad spanning the whole storey shows
 // lerp(shade(0), shade(H)) at 2.1 while the lintel starting there samples
 // shade(2.1) directly. Same point, two colours, a step at the opening.
@@ -717,8 +711,7 @@ const HOUSE = {
     heights.length >= 10, `${heights.length} sample heights`);
 
   // the real claim: at an aperture boundary, what a WALL shows and what the
-  // LINTEL shows must agree. Interpolate the wall's face between its samples
-  // either side of 2.1 and compare with the direct value.
+  // LINTEL shows must agree.
   const lv = g.levels[0], floorY = lv.y + g.slabT;
   const shade = makeShader(lv, g, floorY);
   const at = (v: number) => shade(0.5, floorY + v, -g.wallT / 2, 0, 0, -1)[0];
@@ -870,7 +863,7 @@ const HOUSE = {
   check("every half of every diagonal is a right-side-out prism",
     cases.every(([d, h]) => Math.abs(vol(triPrism(halfTriangle(0, 0, d, h, g), 0, g.slabT)) - want) < 1e-9),
     cases.map(([d, h]) => `${d}${h}:${vol(triPrism(halfTriangle(0, 0, d, h, g), 0, g.slabT)).toFixed(4)}`).join(" "));
-  // control: swapping two corners must invert it, or the test sees nothing
+  // control: swapping two corners must NOT invert it (triPrism derives the orientation)
   const t0 = halfTriangle(0, 0, 2, "A", g);
   check("control: the prism builder CORRECTS a reversed triangle",
     Math.abs(vol(triPrism([t0[0], t0[2], t0[1]], 0, g.slabT)) - want) < 1e-9,
@@ -909,7 +902,7 @@ const HOUSE = {
     "aperture ends are still butting");
 }
 
-// 25. MITRE SCALE AND JUNCTION CHAINING — both found by MEASURING, not looking
+// 25. MITRE SCALE AND JUNCTION CHAINING
 {
   const g = normalize(HOUSE);
 
@@ -943,9 +936,8 @@ const HOUSE = {
   const tee = normalize({ levels: [{ tiles: [[0, 0], [1, 0], [0, 1], [1, 1]],
     walls: [[0, 0, 1], [0, 1, 1], [1, 2, 0], [1, 2, 1]] }] });
   const lines = wallPolylines(tee.levels[0], tee);
-  // The STRAIGHT wall runs through; the stem meeting it must stop. Asserting
-  // that nothing passes through was wrong — continuing straight is the whole
-  // point, and it is what keeps a T from becoming three stubs at a point.
+  // The STRAIGHT wall runs through; the stem meeting it must stop. Continuing
+  // straight is what keeps a T from becoming three stubs at a point.
   const isJunction = ([x, z]: number[]) => Math.abs(x - 2) < 1e-9 && Math.abs(z - 1) < 1e-9;
   const through = lines.filter((l) => l.pts.some((p, i) => i > 0 && i < l.pts.length - 1 && isJunction(p)));
   check("exactly one run continues through the junction", through.length === 1,

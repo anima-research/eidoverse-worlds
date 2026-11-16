@@ -11,9 +11,6 @@
 //      with the real builder's shape (particlefx.js buildEmitter: a handle
 //      with update and dispose(); the stub counts the disposes).
 //   3. PERCEPTION   — what look() says, and what a live change narrates as.
-//
-// Every check here fails against the old behavior by construction: none of
-// this existed.
 
 import {
   PARTICLE_PRESETS, describeParticles, emitterTransition, transitionLine, emitterSeed, mulberry32, drawnCount,
@@ -86,9 +83,9 @@ check("instanceOf keeps every key an older value said (nothing dropped)", JSON.s
 // ---- 2. lifecycle ----------------------------------------------------------
 console.log("\nlifecycle — attach, replace, remove, late join, no hook growth\n");
 
-// Stand-in for particlefx.js buildEmitter (emitters.js imports it): a handle with update and dispose(), the stub's
-// dispose counting so the registry's retire can be seen; the push into the hook array stands in for what the registry
-// does with the handle. A browserless run can't load the real one (THREE, core.js's scene).
+// Stand-in for the host's build (emitters.js build, over particlefx.js buildEmitter): a handle with update and dispose(),
+// the stub's dispose counting so the registry's retire can be seen. Like the real build it pushes its own update into the
+// hook array (the registry never pushes, only releases). A browserless run can't load the real one (THREE, core.js's scene).
 type Sys = { update: () => void; disposed: number; count: number; inScene: boolean };
 function makeUpstreamStub(autos: (() => void)[]) {
   const built: Sys[] = [];
@@ -96,7 +93,7 @@ function makeUpstreamStub(autos: (() => void)[]) {
     built,
     build(emitter: { count: number }) {
       const sys: Sys = { update: () => {}, disposed: 0, count: emitter.count, inScene: true };
-      autos.push(sys.update);                     // exactly what makeParticles does
+      autos.push(sys.update);                     // as emitters.js's build does
       built.push(sys);
       return {
         update: sys.update,

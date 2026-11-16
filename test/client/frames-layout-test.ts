@@ -4,7 +4,7 @@
 //
 // frames-resize-test covers the resize drag's finish path. This suite covers what the rest of windows.js
 // promises: a frame can never leave the viewport (8 px margins on drag and resize; a south resize stops 4 px up), the edge/corner
-// hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui.js's arrange-exit
+// hit-tester tells edges from corners and reaches 6px outside a frame (resizeZoneAt is ui-menu.js's arrange-exit
 // guard), a frame resting on an edge rides that edge through a window resize, z-indexes stay inside the
 // [10..25] band under the dock, a LAYOUT_VERSION bump purges every stale ew-frame-* save ONCE, and Tab
 // closes/restores the open set only when nothing else owns the key (a focused field, a pop, claimEscape); Esc never does.
@@ -33,11 +33,8 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // ---- seed a STALE persisted layout from an older LAYOUT_VERSION, plus one non-frame key that must survive
-// The version seeded here is the REAL previous literal, not a synthetic one: R's phone carried
-// ew-frame-world {hidden:false} stamped '2026-09-07-rightdock' and therefore kept the world panel
-// OPEN at 390x844 even though auto-minimize was correct (live 2026-09-11 10:15, reproduced headless).
-// saved?.hidden wins over the viewport rule by design, so changing what the DEFAULT means on a small
-// viewport is exactly the "DEFAULT_LAYOUT changed materially" case this guard exists for.
+// The version seeded is a real earlier literal. saved?.hidden wins over the viewport rule by design, so a
+// stale {hidden:false} kept a panel open on a phone: the "DEFAULT_LAYOUT changed materially" case the guard is for.
 localStorage.setItem("ew-frame-layout-ver", "2026-09-07-rightdock");
 localStorage.setItem("ew-frame-world", JSON.stringify({ x: 1, y: 1, w: 50, h: 50, hidden: false }));
 localStorage.setItem("ew-frame-zzz", JSON.stringify({ x: 2, y: 2, w: 60, h: 60, hidden: true }));
@@ -68,20 +65,14 @@ check("stale ew-frame-* saves are gone after the import",
   localStorage.getItem("ew-frame-world") === null && localStorage.getItem("ew-frame-zzz") === null,
   `world=${localStorage.getItem("ew-frame-world")} zzz=${localStorage.getItem("ew-frame-zzz")}`);
 const stamped = localStorage.getItem("ew-frame-layout-ver");
-// Vacuous until 2026-09-11: it compared against "1999-01-01-stale" after the
-// fixture had switched to seeding the REAL previous literal, so no code path
-// could ever produce the value it excluded. Assert the seeded one is gone.
+// compare against the SEEDED literal: a value no code path produces would make this vacuous
 check("the current version is stamped, replacing the seeded previous one",
   !!stamped && stamped !== "2026-09-07-rightdock", String(stamped));
 check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem("ew-ui-locked") === "0");
 {
   const world = makeFrame("world", { title: "world", x: -10, y: 52, w: 232, h: 300 });
-    // THE BAR DOCKS AT THE TOP. R, 2026-09-11: "let's dock it at the top by
-    // default since all the helper notifications display at the bottom where it
-    // currently is". DEFAULT_LAYOUT's action bar went y:-10 (a BOTTOM anchor — a
-    // negative y re-resolves against innerHeight) to y:10, an absolute offset
-    // from the top. A material DEFAULT_LAYOUT change, riding the LAYOUT_VERSION
-    // bump this block already exercises.
+    // The bar docks at the TOP (helper notifications show at the bottom): DEFAULT_LAYOUT's y:10 overrides the
+    // y:-10 (a bottom anchor) passed here.
     { const tbar = makeFrame("actions", { title: "actions", x: "center", y: -10, w: 352, h: 32 });
       check("the action bar's DEFAULT is the TOP edge, not the bottom",
         tbar.state.y < 100, `y=${tbar.state.y} vh=${innerHeight}`); }
@@ -195,10 +186,8 @@ check("a mid-air frame holds no sticky edge", !["st-l", "st-r", "st-t", "st-b"].
 
 console.log("FRAMES — a narrow viewport (the header's 'can never leave the viewport', at phone width)");
 {
-  // #185 review: DEFAULT_LAYOUT bakes widths from a 1904px authoring session
-  // (chat w:545) and fit() clamped only x/y — so at phone width a frame kept its
-  // width, pinned x to 8, and ran off the right edge. html,body use
-  // overflow:hidden, so the clipped region is NOT reachable by scrolling.
+  // DEFAULT_LAYOUT's widths come from a wide authoring session (chat w:545), so fit() must clamp the width
+  // too: html,body are overflow:hidden, and a frame run off the right edge is unreachable.
   const wide = measurable(makeFrame("narrowme", { title: "narrowme", x: 10, y: 10, w: 545, h: 200 }));
   wide.show();
   const vw0 = innerWidth;
@@ -218,16 +207,12 @@ console.log("FRAMES — a narrow viewport (the header's 'can never leave the vie
   (window as any).innerWidth = vw0;
   window.dispatchEvent(new Event("resize"));
 
-  // A PERSISTED oversized layout is the other half of requirement 1: fit() was
-  // skipped entirely when a save existed (`if (!saved && ...)`), so a layout saved
-  // on a wide screen came back at full width on a narrow one and never clamped.
+  // A PERSISTED oversized layout is fitted too: one saved on a wide screen must not come back at full
+  // width on a narrow one.
   (window as any).innerWidth = 390;
   localStorage.setItem("ew-frame-savedwide", JSON.stringify({ x: 8, y: 10, w: 545, h: 200, hidden: false }));
   const restored = measurable(makeFrame("savedwide", { title: "savedwide", x: 10, y: 10, w: 300, h: 200 }));
-  // Assert BEFORE show(). show() runs the second fit() call site (a frame created
-  // hidden is fitted when first shown), which would clamp this for an unrelated
-  // reason and make the check pass whatever the creation path does — an assertion
-  // that cannot fail is not a binding.
+  // Assert BEFORE show(): show() fits too, and would make this pass whatever the creation path does.
   check("a SAVED layout wider than the viewport is clamped AT CREATION, not restored oversized",
     restored.state.x + restored.state.w <= innerWidth - 8, JSON.stringify(restored.state));
   restored.show();
@@ -239,12 +224,8 @@ console.log("FRAMES — a narrow viewport (the header's 'can never leave the vie
 
 console.log("FRAMES — a viewport too small for the default arrangement opens only chat");
 {
-  // R's phone, 2026-09-10 23:53: world + gestures + the palette stacked on top of
-  // chat, all legally inside the viewport and none overlapping by the pairwise
-  // check — the palette is makeSection mounting into world's stack, not a frame
-  // of its own, so no rect test can see it. The fix is not to pack them better
-  // but to not open them: on a FIRST load (no saved layout) at a viewport that
-  // cannot hold the default arrangement, only chat comes up.
+  // On a FIRST load (no saved layout) at a viewport that cannot hold the default arrangement, only chat
+  // comes up: panels stacked over chat on a phone are not packed better, they are left closed.
   const vw0 = innerWidth, vh0 = innerHeight;
   for (const id of ["awee", "aweb"]) localStorage.removeItem(`ew-frame-${id}`);
   (window as any).innerWidth = 390; (window as any).innerHeight = 844;
@@ -258,28 +239,22 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   check("...but a SAVED hidden:false stays visible: the user's own layout is never overridden",
     saved.state.hidden === false, JSON.stringify(saved.state));
 
-  // The suite headline is "opens only chat" and nothing asserted CHAT (agent
-  // review, 2026-09-11): both frames above are synthetic ids, so deleting the
-  // `id !== 'chat'` exemption — shipping a world with NOTHING open on a phone —
-  // left this block green. Assert the promise itself, on the real id.
+  // The real id: both frames above are synthetic, so only this row binds the `id !== 'chat'` exemption.
   localStorage.removeItem("ew-frame-chat");
   const chat = measurable(makeFrame("chat", { title: "chat" }));
   check("...and CHAT is exempt: the one pane that carries the composer still opens",
     chat.state.hidden === false, JSON.stringify(chat.state));
 
-  // The case the round-4 rewrite exists for: an ORDINARY laptop must NOT be
-  // auto-minimized. The old predicate summed every open default's height as if
-  // they stacked (world 363 + chat 307 + bar), which needed 764px and so closed
-  // the world panel on 1280x720 and on any split window. world is anchored
-  // top-right and chat bottom-left — they never share a column.
+  // An ORDINARY laptop must NOT be auto-minimized: fitsDefaults needs the tallest open default plus the
+  // bar, never the sum of panel heights (world is anchored top-right, chat bottom-left; they share no column).
   (window as any).innerWidth = 1280; (window as any).innerHeight = 720;
   for (const id of ["awld", "awlc"]) localStorage.removeItem(`ew-frame-${id}`);
   const laptopWorld = measurable(makeFrame("awld", { title: "awld", w: 407, h: 363, hidden: false }));
   check("1280x720 is a viewport the arrangement FITS: a hidden:false default opens",
     laptopWorld.state.hidden === false, JSON.stringify(laptopWorld.state));
 
-  // ...and phone LANDSCAPE must still minimize: 390px of height cannot hold a
-  // 363px panel plus the bar. Width alone would have opened this.
+  // ...and phone LANDSCAPE must still minimize: 390px of height cannot hold the tallest open
+  // default (chat, 307 + chrome) plus the bar. Width alone would have opened this.
   (window as any).innerWidth = 844; (window as any).innerHeight = 390;
   localStorage.removeItem("ew-frame-awll");
   const landscape = measurable(makeFrame("awll", { title: "awll", w: 407, h: 363, hidden: false }));
@@ -292,10 +267,8 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
 
 console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `moved`");
 {
-  // antra-tess #185 rereview addendum B1(b): resetLayout cleared `moved` and left
-  // `placed` latched, so a frame that had ever been dragged stayed exempt from
-  // viewport management FOREVER after a reset — `if (... || f._placed) continue`.
-  // The deliberate act of resetting is precisely the act of un-placing.
+  // resetLayout must clear `placed` as well as `moved`, or a frame that was ever dragged stays exempt from
+  // viewport management after a reset (`if (... || f._placed) continue`).
   localStorage.removeItem("ew-frame-world");
   const f = measurable(makeFrame("world", { title: "world" }));
   check("a fresh frame is not placed", f._placed === false, `placed=${f._placed}`);
@@ -305,23 +278,16 @@ console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `m
   f.resetLayout();
   check("reset clears the latch, not just `moved`", f._placed === false,
     `placed=${f._placed}`);
-  // NOT a persistence claim: resetLayout() calls localStorage.removeItem(LS(id))
-  // and never save() (the save() callers are :193/:398/:401/:535, none on this
-  // path), so there is no stored record to re-read — the next construction reads
-  // `saved?.placed` off a null save and gets false. This asserts the in-memory
-  // state object is cleared too, so a later save() from show()/hide() cannot
-  // resurrect the latch. (agent review round 2 caught the earlier wording, which
-  // described a mechanism the code does not have.)
+  // NOT a persistence claim: resetLayout() removes the stored record and never saves. This asserts the
+  // in-memory state object is cleared too, so a later save() from show()/hide() cannot resurrect the latch.
   check("...and clears it in the state object, so a later save() cannot resurrect it",
     f.state.placed === false, `state.placed=${f.state.placed}`);
 }
 
 console.log("FRAMES — reset obeys the viewport rule");
 {
-  // Round 2: one tap of "reset layout" on a phone reopened world+gestures stacked
-  // over chat, and restored authoring-viewport widths uncapped (chat right=555
-  // in a 390px viewport). Reset removes the save first, so there is no
-  // arrangement to protect — the viewport rule and fit() both apply.
+  // Reset removes the save first, so there is no arrangement to protect: the viewport rule and fit()
+  // both apply (else a phone reset reopens panels over chat at authoring-viewport widths).
   const vw0 = innerWidth, vh0 = innerHeight;
   (window as any).innerWidth = 390; (window as any).innerHeight = 844;
   for (const id of ["chat", "world"]) localStorage.removeItem(`ew-frame-${id}`);
@@ -340,12 +306,9 @@ console.log("FRAMES — reset obeys the viewport rule");
 
 console.log("FRAMES — a hand-placed frame is never re-anchored");
 {
-  // R, 2026-09-11: the action bar "will always pop sideways to the right
-  // regardless if there's room for it". x:'center' re-resolved on EVERY fit()
-  // because the `!saved` guard reads a closure captured at construction, and a
-  // drag writes localStorage without ever refreshing it. The action bar calls
-  // _fit() 180ms after each drag settles (snapTo), so the placement was undone
-  // every time. Only `actions` (the action bar) uses x:'center', which is why it was the one.
+  // An x:'center' anchor must stop re-resolving once the frame is hand-placed (the `moved` latch): the
+  // action bar, the one x:'center' frame, calls _fit() 180ms after each repaint settles (actionbar.js
+  // snapTo), which would undo the placement every time.
   const vw0 = innerWidth, vh0 = innerHeight;
   (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
   localStorage.removeItem("ew-frame-awcx");
@@ -355,10 +318,8 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   check("an x:'center' frame opens centred", centred > 100, JSON.stringify(bar.state));
 
   // a real pointer sequence (a nw-corner resize, as it lands: see BINDS below); the handler writes state and saves on pointerup
-  // Drag to a MIDDLE x, not the left edge: `state.x = clamp(state.x, 8, …)` pins a
-  // left-dragged frame to 8 whether or not the latch ran, so the left edge cannot
-  // distinguish latched from unlatched — deleting markMoved() from the drag left
-  // this block green. A middle x makes re-centring observable. (round 2)
+  // To a MIDDLE x, not the left edge: the clamp pins a frame at x=8 whether or not the latch ran, so
+  // only a middle x makes re-centring observable.
   const target = 120;
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: centred + 10, clientY: bar.state.y + 5, bubbles: true }));
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: target + 10, clientY: bar.state.y + 5, bubbles: true }));
@@ -368,18 +329,12 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
     placed > 20 && placed < centred - 40, `${placed} (centred ${centred})`);
 
   bar._fit();
-  // Compare against the centre fit() WOULD compute at the current width — fit()
-  // widens the bar first, so the pre-drag `centred` is not the value the
-  // unlatched path would produce, and asserting against it passed either way
-  // (round 2: deleting markMoved left this green).
+  // Compare against the centre fit() WOULD compute at the CURRENT width: the resize changed the width, so
+  // the pre-resize `centred` is not what the unlatched path would produce.
   const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
-  // BINDS the RESIZE-finish latch ONLY (windows.js:167 f.markMoved). Measured
-  // (round 5): deleting the drag-end markMoved('xy') (windows.js:512) leaves
-  // this GREEN at 61/0; deleting the resize-finish one turns it RED at 60/1.
-  // The reason: the press above, at (x+10, y+5), is inside the 15 px nw corner
-  // (_CORNER), so the capture-phase resize handler takes it and stops
-  // propagation. This "drag" is a resize; a title-bar drag outside the zones
-  // is not exercised here.
+  // BINDS the RESIZE-finish latch ONLY (windows.js:167 f.markMoved), not the drag-end one: the press
+  // above, at (x+10, y+5), is inside the 15 px nw corner (_CORNER), so the capture-phase resize handler
+  // takes it and stops propagation. The title-bar drag has its own row below.
   check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
@@ -399,27 +354,9 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
     placed2 > 20 && placed2 < c2 - 40 && bar2.state.x === placed2 && bar2.state.x !== wouldCentre2,
     `centred ${c2}, placed ${placed2} -> ${bar2.state.x}; anchor would give ${wouldCentre2}`);
 
-  // (4) reset must put the frame back UNDER the anchors — `moved = false`.
-  // THE Y ANCHOR, not just x. R, 2026-09-11: the action bar "can't be arbitrarily
-  // placed anywhere". fit()'s `opts.y < 0` re-anchor was deliberately ungated —
-  // round 2 gated the CLAMP as well and stranded every untouched bottom frame
-  // (rotate 700->500 left a bar at y=370 where 428 was wanted), so it was
-  // reverted with a note that the lifted-bar case "needs a narrower fix than a
-  // blanket gate". Gating only the ANCHOR is that fix.
-    // A FRESH bottom-anchored frame. Reusing `bar` made this VACUOUS: by this
-    // point its closure's opts.y is undefined (instrumented: "before fit:
-    // opts.y=undefined"), so fit()'s `opts.y < 0` branch never ran at all and
-    // the assertion passed whether or not the anchor was gated — ungating it
-    // left the suite 64/0. A binding that cannot fail is decoration.
+  // THE Y ANCHOR, not just x: fit() gates the `opts.y < 0` re-anchor on `!moved` and leaves the CLAMP
+  // ungated (gating the clamp too would strand an untouched bottom frame). A fresh bottom-anchored frame.
     { localStorage.removeItem("ew-frame-ybar");
-      // Assert the DIRECTION, not an exact y. fit() reads `root.offsetHeight`,
-      // which in this harness is much larger than measurable()'s faked 62 — so
-      // the clamp ceiling and the y:-10 anchor land about two pixels apart and
-      // an equality check cannot tell which one moved the frame (that is why
-      // four earlier versions of this block passed ungated). What the gate
-      // actually guarantees is one-directional: the clamp may pull a hand-placed
-      // frame UP to keep it on screen, but nothing may push it back DOWN toward
-      // the edge it was dragged away from.
       const ybar = measurable(makeFrame("ybar", { title: "ybar", x: "center", y: -10, w: 352, h: 32 }));
       ybar.show();
       const yBefore = ybar.state.y;
@@ -429,24 +366,11 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
       const placedY = ybar.state.y;
       check("a bottom-anchored frame can be dragged UP off its edge", placedY < yBefore - 100, `y ${yBefore} -> ${placedY}`);
       ybar._fit();
-      // The CLAMP may still move it (the viewport ceiling is real); what must NOT
-      // happen is the y:-10 ANCHOR re-applying, which would park it at the bottom
-      // edge again. Assert distance from THAT value, not equality with placedY.
-      // NOT ASSERTED, and the reason is measured rather than guessed. Five
-      // versions of this check were written and every one passed with the gate
-      // REMOVED (65/0). MEASURED, not theorised: after a drag to y=235 the frame
-      // sat at 207, and the y:-10 anchor for the same geometry computes to ~205
-      // — two pixels apart, so no assertion here can tell which line moved it.
-      // An equality check fails even WITH the fix (the clamp legitimately moves
-      // the frame); a direction-only check passes even WITHOUT it (the clamp
-      // only ever moves it up anyway). Why the two collapse together in this
-      // harness is NOT established — measurable()'s getter reports 62 as an own
-      // property, which does not reconcile with the ceiling observed, and I did
-      // not chase it further.
-      // To bind it later: a fixture whose root.offsetHeight really is state.h +
-      // chrome, so the anchor and the ceiling are far apart. The product change
-      // itself (windows.js: `!moved &&` on the y anchor) is one token and is
-      // disclosed in the commit.
+      // The y-anchor gate (windows.js fit(): `!moved &&`) is NOT ASSERTED here. The press above, at
+      // (x+10, y+5), is inside the nw corner, so it is a north RESIZE, not a drag: the frame grows up to
+      // the pointer and its bottom edge stays where the anchor put it. The clamp ceiling and the y:-10
+      // anchor then land 2 px apart, and no assertion can tell which one moved the frame. To bind it:
+      // press mid-bar (as bar2 does above), so the frame really leaves its edge.
       check("a hand-placed frame is still on screen after a fit", ybar.state.y >= 8, `y=${ybar.state.y}`);
       // the CLAMP is NOT gated: shrink the viewport under it and it must come inside
       const vhKeep = innerHeight;
@@ -455,6 +379,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
         ybar.state.y + ybar.el.offsetHeight <= 240, `y=${ybar.state.y} h=${ybar.el.offsetHeight} vh=240`);
       (window as any).innerHeight = vhKeep; }
 
+  // reset must put the frame back UNDER the anchors (`moved = false`)
   bar.resetLayout();
   bar._fit();
   const centreNow = Math.round((innerWidth - bar.state.w) / 2);
@@ -462,10 +387,8 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
     bar.state.x === centreNow && bar.state.x !== placed,
     `x=${bar.state.x} centre=${centreNow} (was placed at ${placed})`);
 
-  // The RELOAD half — `moved = !!saved` — which is the half the commit is named
-  // for and which the drag above never exercises (the drag arms the latch
-  // itself). A frame built from a PREVIOUS session's save must already count as
-  // hand-placed, before anything touches it. (agent review, 2026-09-11)
+  // The RELOAD half (`moved = !!saved`), which the presses above never exercise (they arm the latch
+  // themselves): a frame built from a PREVIOUS session's save counts as hand-placed before anything touches it.
   localStorage.setItem("ew-frame-awcy", JSON.stringify({ x: 18, y: 600, w: 352, h: 32, hidden: false }));
   const reloaded = measurable(makeFrame("awcy", { title: "awcy", x: "center", y: -10, w: 352, h: 32 }));
   reloaded.show();
@@ -590,13 +513,8 @@ check("…and says that too (the hint stops)", quiet.join() === "closed,restored
 
 console.log("CHROME COST — the declared anchor");
 {
-  // BOOT-CHECK CANNOT SEE THIS. Mis-declaring `.capnotice` as left-anchored returns
-  // `ok` at 1280 and 1024, because boot-check hit-tests control REACHABILITY and a
-  // floored-but-reachable settings panel passes. The defect is geometric (settings
-  // opens at 210 instead of its declared 407), so the binding belongs here.
-  //
-  // These two assertions are exactly the two arithmetic bugs written while building
-  // this, and each one fails on its own mistake.
+  // A mis-declared anchor is a geometric defect (a panel opens narrower than declared) that a
+  // reachability hit-test passes, so chromeCost's arithmetic is bound here.
   const mk = (cls: string, ds: Record<string, string>) => {
     const d = document.createElement("div");
     if (cls.startsWith(".")) d.className = cls.slice(1); else d.id = cls.slice(1);
@@ -605,14 +523,8 @@ console.log("CHROME COST — the declared anchor");
   mk(".capnotice", { anchor: "right" });
   mk("#dock", { edge: "top" });
 
-  // (1) AN OFF-SCREEN OBSTACLE IS CLAMPED, NOT CREDITED WITH NEGATIVE GAP.
-  // RETRACTED AND RE-AIMED: this assertion first claimed `extent - g.left` was a
-  // distinct bug that "carries the viewport into the result". It is not — for any
-  // rect wholly on screen, `extent - left` IS `width + (extent - right)`, the same
-  // expression rearranged, and the suite stayed green when the supposed bug was
-  // restored. They differ in exactly one place: `Math.max(0, ...)`, when the
-  // obstacle's right edge is past the viewport. That is the real contract, so that
-  // is what is asserted.
+  // (1) AN OFF-SCREEN OBSTACLE IS CLAMPED, NOT CREDITED WITH NEGATIVE GAP: the `Math.max(0, ...)` is the
+  // contract (for a rect wholly on screen, `extent - left` and `width + (extent - right)` are the same).
   const onScreen = (chromeCost as any)(".capnotice", { left: 950, right: 1270, width: 320 }, 1280).right;
   const offScreen = (chromeCost as any)(".capnotice", { left: 930, right: 1270, width: 340 }, 1024).right;
   check("a right-anchored obstacle on screen costs width + gap",
@@ -622,8 +534,7 @@ console.log("CHROME COST — the declared anchor");
 
   // (2) A TOP-DOCKED RAIL CHARGES POSITIONALLY, NOT ZERO. Welded to the top edge
   // says nothing about the horizontal axis: a rail at [10..304] in an 844 viewport
-  // is genuinely LEFT-positioned there. Returning {0,0} put an action tile under the
-  // rail at 844x390 ("sit" covered by #dock) — the corpus row-33 witness.
+  // is LEFT-positioned there ({0,0} would put an action tile under the rail).
   const rail = (chromeCost as any)("#dock", { left: 10, right: 304, width: 294 }, 844);
   check("a top-docked rail charges the side it actually occupies, not zero",
     rail.left === 304 && rail.right === 0, JSON.stringify(rail));
@@ -631,13 +542,9 @@ console.log("CHROME COST — the declared anchor");
 
 console.log("AUTO-HIDDEN — survives a reload");
 {
-  // A field that save() WRITES but the initialiser never READS is write-only across
-  // a reload, and nothing here caught it: `autoHidden` reached storage (save()
-  // serialises the whole state object) while construction rebuilt state field by
-  // field and silently omitted it. Measured consequence: auto-hide at 900 persists
-  // {hidden:true, autoHidden:true}; a reload restores `hidden` and drops
-  // `autoHidden`; widening then finds the restore guard falsy and the frame is
-  // stranded hidden FOREVER.
+  // save() serialises the whole state object, but construction rebuilds state field by field: a field
+  // it does not read back is write-only across a reload. Without `autoHidden`, a reloaded auto-hidden
+  // frame never passes the restore guard and stays hidden when the window widens.
   localStorage.setItem("ew-frame-autotest", JSON.stringify({
     x: 100, y: 100, w: 200, h: 150, hidden: true, autoHidden: true,
   }));
@@ -645,17 +552,8 @@ console.log("AUTO-HIDDEN — survives a reload");
   check("autoHidden is read back from a saved layout, not just written to it",
     f._state.autoHidden === true, JSON.stringify(f._state));
 
-  // THE SAME BUG, ONE FIELD OVER — and it survived the fix above by three lines.
-  // `markMoved()` sets `state.placed = true` ad-hoc and save() serialises the whole
-  // object, so the flag reached storage the FIRST time. But the state literal had no
-  // `placed` key, so the next construction built a state without it and the next
-  // save() erased it. Measured live at 1280x800 on the action bar:
-  //   markMoved + _save -> placed:true · reload -> placed:true
-  //   hide/show         -> the key is GONE from storage
-  //   reload again      -> _placed:false
-  // Two page loads and a frame the owner deliberately placed is auto-managed again:
-  // it loses the fit() re-derive exemption, the chrome-clearance exemption and the
-  // viewport auto-minimize exemption at once. Exactly what `placed` exists to prevent.
+  // The same for `placed`: the state literal must carry the key, or the first save() after a reload
+  // (any hide/show) erases it and a frame the owner placed is auto-managed again on the next load.
   localStorage.setItem("ew-frame-placedtest", JSON.stringify({
     x: 100, y: 100, w: 200, h: 150, hidden: false, placed: true,
   }));
@@ -679,12 +577,9 @@ console.log("AUTO-HIDDEN — survives a reload");
 
 console.log("FRAMES — a shrink is not a decision: grow the window back and every panel is where it was");
 {
-  // Reported 2026-09-24: shrink the window until a bottom panel meets the top and
-  // the panels smoosh together, then STAY smooshed when the window grows back, sizes
-  // too. The clamp that keeps a frame inside a small viewport was writing the frame's
-  // own rect, so the small viewport's answer outlived it. Wanted: every panel returns
-  // to its layout position and size on any resize unless the person deliberately
-  // moved or resized it — and one they did move returns to where THEY put it.
+  // The clamp that keeps a frame inside a small viewport must not write the frame's own (rest) rect, or
+  // the small viewport's answer outlives it. Every panel returns to its layout position and size on any
+  // resize unless the person deliberately moved or resized it; one they did move returns to where THEY put it.
   (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
   window.dispatchEvent(new Event("resize"));
   const bl = measurable(makeFrame("rt-bl", { title: "bl", x: 10, y: -10, w: 300, h: 200 })); bl.show();

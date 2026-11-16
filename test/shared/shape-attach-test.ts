@@ -1,6 +1,6 @@
 // shape-attach-test — the shape audit's wave 2, attach-interact family (the owner's audit notes and plan, not in this
 // repo; R's calls). Each row is a behaviour the audit changes, through the real door (a scratch world) or the
-// pure reader that carries it. Written red first, against the tree before the change.
+// pure reader that carries it.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-attach-test.ts
 // @ts-nocheck
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -48,7 +48,7 @@ tryRow('ST', () => {
   check('ST7 station.who names a role here', code(mk('wh1', { name: 'wh' }, { station: { who: 'wizard' } })) === 'shape' && mk('wh2', { name: 'wh2' }, { station: { who: 'builder' } }).ok);
 
 
-  // a stored socket.body (a log stored before station), lifted at load
+  // a stored socket.body (a log from before station), lifted by the v1 importer (tools/import-v1/shapes.js)
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };
   const hosts = legacyHosts(st);
   const ops = hosts.includes('h') ? liftHostOps(st, new Set(), 'h').ops : [];

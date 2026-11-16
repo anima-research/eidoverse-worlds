@@ -11,7 +11,8 @@
 //   C. It dispatches what the legacy painter dispatches (same actions and payloads; but no lock on an occupant row, and
 //      the enum options legacy clipped), and a disabled field still takes no hits.
 //   D. The quad's texture is sRGB (xrpanels makePanel) — measured on the real module, not grepped.
-//   E. No pictograph in edit chrome's own sources (tool rail, build bar, tree toggles).
+//   E. No pictograph in edit chrome's own sources (tool rail, build bar, tree toggles, scripts console rows).
+//   E2. Every glyph edit chrome names is in icons.js, and a Phosphor-only one is painted, not skipped.
 //   F. Text colours on their surfaces meet 4.5:1 (faint, the placeholder colour, isn't held: it doesn't meet it).
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";

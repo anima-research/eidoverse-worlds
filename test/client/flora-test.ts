@@ -11,7 +11,7 @@
 //   Group frees nothing, so re-growing a meadow used to leak all of it.
 //   retireField must drain every hook and call the field's own dispose().
 //
-// Both modules are deliberately DOM-free and THREE-free so this runs as a
+// The modules under test are deliberately DOM-free and THREE-free so this runs as a
 // plain bun script:  bun test/client/flora-test.ts
 
 import { readFileSync } from "node:fs";

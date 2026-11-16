@@ -1,18 +1,11 @@
 // By default only a body with a LAMP in it casts and receives (client/lib/render/materials.js,
 // client/lib/avatar/avatar.js); the own-body pref opts your own body in (applyOwnBodyShadow, below).
 //
-// Bodies briefly got real shadows for every avatar in the world. That is a
-// global rendering default flipped on shared client code, and the costs were
-// unmeasured: a body's depth pipelines never reach warmqueue's warmDepth (only
-// registered MODELS do), so they compile in-frame on the first shadow render,
-// and bodies bypass the distance-ranked caster budget that exists to prevent
-// exactly that. In a crowded room that is N bodies compiling.
-//
-// Janus scoped it down: "set the change for now to only shadowed body by
-// default if you have the lamp like mythos... we can test the performance of
-// having more on the shared server later." So the gate is the lamp, and this
-// pins all three paths -- including that an unlamped body is EXACTLY as it was
-// before any of this work.
+// Why the lamp is the gate: a body's depth pipelines never reach warmqueue's warmDepth (only registered MODELS do),
+// so they compile in-frame on the first shadow render, and bodies bypass the distance-ranked caster budget; in a
+// crowded room that is N bodies compiling. Janus: "set the change for now to only shadowed body by default if you
+// have the lamp like mythos... we can test the performance of having more on the shared server later." Every path
+// is pinned here, including that an unlamped body is EXACTLY as it was before.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
 HTMLCanvasElement.prototype.getContext = function () { const a = new Proxy(function () {}, { get: (_t, k) => (k === 'width' ? 100 : a), apply: () => a, set: () => true }); return new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 100 }) : a), set: () => true }); };

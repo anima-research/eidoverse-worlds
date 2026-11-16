@@ -38,8 +38,8 @@ const remotesMod = await import("../../client/lib/player/remotes.js");
 const netMod = await import("../../client/lib/net.js");
 const { remotes, dropRemote, ensureRemote, pushPose } = remotesMod as any;
 const { _dispatch, teardownParticipant, stalePresenceCount } = netMod as any;
-(netMod as any).wireNet({ participants: remotesMod });
-const { bus } = await import("../../client/lib/base.js");   // net.js emits on the real bus (base.js is not stubbed)   // the registry is injected (net.js wireNet), as main.js does
+(netMod as any).wireNet({ participants: remotesMod });   // the registry is injected (net.js wireNet), as main.js does
+const { bus } = await import("../../client/lib/base.js");   // net.js emits on the real bus (base.js is not stubbed)
 
 const DEFAULTISH = (p: string) => /claudesona|default|sunflower/i.test(p) || p == null;
 const defaultBuilds = () => stubs.avatarCalls.filter((c: any) => DEFAULTISH(c.path)).length;
@@ -218,7 +218,7 @@ console.log("\n━━ reconnect roster seed: the snapshot prunes through the fun
 console.log("\n━━ kick/ban: the expel's leave broadcast walks the same funnel ━━");
 {
   // the server accompanies every 4006 expel with an ordinary leave broadcast
-  // (server.ts ~1109, verified in the #95 inventory) — so moderation removal
+  // (server/server.ts expel, verified in the #95 inventory) — so moderation removal
   // IS the leave path; this pins that the funnel treats it as such
   const torn: string[] = [];
   bus.on("participant-teardown", (id: string) => torn.push(id));

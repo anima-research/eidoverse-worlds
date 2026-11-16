@@ -8,10 +8,8 @@
 // machine with good font coverage. Path data can't fail that way at the
 // platform level, but it CAN fail at the registry level: an entry deleted in
 // a refactor, an empty array, two states accidentally sharing one glyph. This
-// pins the registry. (A true raster assertion — stroke the Path2D and count
-// non-zero pixels per icon layer — needs a browser; we run that in our
-// downstream playwright rig, where it reports distinct per-icon pixel counts.
-// This repo's suite stays browser-free, so the registry contract lives here.)
+// pins the registry. (A raster assertion — stroke the Path2D and count
+// non-zero pixels per icon — needs a browser; this suite is the headless half.)
 
 import * as I from "../../client/lib/ui/icons.js";
 import { suite } from "../gate/suite.ts";

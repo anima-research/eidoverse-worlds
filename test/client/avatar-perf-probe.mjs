@@ -2,7 +2,8 @@
 // metadata-only POST /thumb carrying the body's numbers as LOADED and the version `v` of the path it was loaded from;
 // the numbers equal perfscope.statsOf on the live body. (2) A second wear of the same version sends nothing
 // (localStorage once-per-version). (3) World › avatar cards: a body with a perf record wears the rank pill in its tier
-// color with the numbers in the hover; one without has no pill, and its tooltip is just the name. POST /thumb is INTERCEPTED (this world's
+// color with the numbers in the hover; one without has no pill, and its tooltip is just the name. (4) With the avatar
+// section open, a confirmed stamp for a newly worn body re-reads the roster. POST /thumb is INTERCEPTED (this world's
 // OPT_DIR is a real asset copy — the probe writes nothing), and /avatars gets one synthetic perf record for (3).
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 const { check, done } = checker();

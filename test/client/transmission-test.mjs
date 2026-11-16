@@ -1,15 +1,9 @@
 // Transmission: does a transmissive material reach the renderer in a class
 // that can DRAW it, and does the value survive the trip?
 //
-// This test was source-regex, and mica broke it on purpose to prove the point:
-// she injected `if (k === 'transmission') continue;` into the upgrade -- so the
-// runtime dropped the exact property the feature exists to preserve -- and the
-// old test still reported 14 passed, 0 failed. A test that cannot fail is not a
-// test. It also read an absolute path under a contributor's home directory, so
-// it crashed ENOENT on her review host after 11 checks.
-//
-// So this one CALLS prepareObject() on a real mesh with a real
-// MeshPhysicalMaterial and asserts on the material that comes back. No regex
+// It CALLS prepareObject() on a real mesh with a real MeshPhysicalMaterial and
+// asserts on the material that comes back: a source-regex version still passed
+// with `if (k === 'transmission') continue;` injected into the upgrade. No regex
 // over source but the AUTHORED ZERO row's (a pin on avatar.js), no path outside this repo.
 //
 // The failure it guards is silent and looks like missing geometry: a plain
@@ -47,23 +41,18 @@ import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { suite } from "../gate/suite.ts";
 // import.meta.dir is a plain filesystem path; a `file:` URL string reaches
-// readFile as a literal name and ENOENTs on a stub that is right there. This
-// showed up only on a COLD module cache (i.e. right after editing a client
-// file), which is exactly when a mutation test runs -- so the suite appeared
-// to "fail" on mutations for the wrong reason.
+// readFile as a literal name and ENOENTs on a stub that is right there (seen
+// only on a COLD module cache, which is when a mutation run happens).
 const HERE = import.meta.dir;
 const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
 plugin({
   name: 'core-stub',
   setup(build) {
     stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
-    // lightrig pulls warmqueue -> loadwork, which calls requestAnimationFrame
-    // at module scope. Same stub avatar-test and parts-test use.
     stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
     // avatar.js pulls assets.js, which builds a KTX2Loader against a real
-    // renderer. Without this the run's outcome depended on whether assets.js
-    // had already been imported and cached -- a harness that sometimes passes
-    // is worse than one that fails.
+    // renderer; lightrig pulls warmqueue -> loadwork, which calls
+    // requestAnimationFrame at module scope (avatar-test stubs it the same way).
     stubResolve(build, /^(\.\.?\/)+assets\.js$/, () => ({ path: here('../stubs/assets-stub.mjs') }));
     stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
   },
@@ -207,15 +196,10 @@ console.log('\nIDEMPOTENCE -- prepareObject runs on every load and hot-swap');
 
 console.log('\nTHE AVATAR ITSELF -- build-new -> dispose-old, and pool -> rewear');
 {
-  // mica's re-review: the lifecycle checks below drive lightrig DIRECTLY, so
-  // she restored both old defects in avatar.js -- bare `body:${id}` ownership
-  // and no emissive restoration before pooling -- and the suite still passed
-  // 21/21. Manually creating good keys cannot see a bug in how Avatar MAKES
-  // them. These bind the real class.
-  //
-  // (And my note that Avatar could not be imported here was wrong: the ENOENT
-  // was `new URL(...).pathname` reaching Bun's onResolve as a `file:` string,
-  // not the module. A plain path works.)
+  // The LAMP LIFECYCLE checks further down drive lightrig DIRECTLY with
+  // hand-made keys, so they cannot see a bug in how Avatar MAKES them (bare
+  // `body:${id}` ownership, no emissive restoration before pooling). These
+  // bind the real class.
   /** A body with one emissive mesh -- enough for attachLamps to want a lamp. */
   function glowingVrm() {
     const scene = new THREE.Object3D();
@@ -291,16 +275,14 @@ console.log('\nLAMP LIFECYCLE -- the rig\'s own contract');
   check('(control) a SHARED owner key does take the other body down',
         rigDebug().requests.filter((r) => /janus/.test(r.key)).length === 0);
 
-  // B6: intensity must NOT dirty slot assignment -- the rig recomputes at most
-  // every 600ms and assignment reads tier and camera distance, never intensity.
-  // A breathing lamp patches this 60x a second.
+  // B6: intensity must NOT dirty slot assignment -- the rig reassigns when
+  // dirty, when the camera moves, or every 600ms, and assignment reads tier and
+  // camera distance, never intensity. A breathing lamp patches this 60x a second.
   //
   // The assertion has to start from a CLEAN flag, or it passes on the broken
   // code: a fresh requestLight leaves assignDirty true, so "still true after
   // an intensity patch" proves nothing. updateRig() clears it -- so run one,
-  // confirm it cleared, and only then patch. (My first cut skipped that and
-  // passed against the very implementation it was written to reject, which is
-  // precisely the failure mica found in the rest of this file.)
+  // confirm it cleared, and only then patch.
   requestLight('probe:0', { owner: 'probe', intensity: 5 });
   updateRig(performance.now());
   check('(setup) a rig pass clears the assignment flag',

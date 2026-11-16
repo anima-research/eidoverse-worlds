@@ -13,7 +13,7 @@
 //   BOOT_CHECK_REQUIRE_BODY=1 (a body ON SCREEN, not merely settled: for a clone serving the library)
 //   BOOT_CHECK_RESIZE_TO=390x844 (shrink mid-run). No command runs a viewport matrix now; the old one (deleted in
 //   2c69ca486) was 390x844, 800x700, 844x390, 1024x800 and 1280x720→390x844, one run each.
-//   BOOT_MAX_MS (poll budget, default 40000), JOIN_KEY (the owned child's join token)
+//   BOOT_MAX_MS (poll budget, default 40000), JOIN_KEY (the owned child's join token), BOOT_CHECK_CLOUDS_OFF=1 (no cloud bake)
 // The child runs with SKIP_OPT_SWEEP=1. Without the library (LIBRARY_DIR absent) it arrives by the failed-body path
 // and SAYS SO on its ok line; still a terminal boot.
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';

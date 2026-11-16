@@ -70,7 +70,7 @@ console.log("the server's budget");
 console.log("aim first");
 {
   // the body stands 60 m away and the world there is "ready" from the first look (its models not yet scheduled): the
-  // camera is aimed before readiness is asked, and a renderer that had to move waits the steady second
+  // camera is aimed before readiness is asked, and a renderer that had to move waits the steady checks
   const far = snapCase(0, 4000, true);
   check("a body far from the camera: readiness is first asked with the camera already on it", JSON.stringify(far.firstAt) === "[60,2,63]", JSON.stringify(far));
   check("…and the capture waits the steady checks (it moved), then frames", far.r?.dataUrl === "data:image/png;base64,FROM" && far.ms === 3 * 250, JSON.stringify(far));

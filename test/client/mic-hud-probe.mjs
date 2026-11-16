@@ -1,14 +1,9 @@
 // mic-hud-probe — the ONE owned browser receipt for the HUD mic's claims.
 //
-// #131's version proved the mesh-delegation discriminator (mesh main + no SFU
-// globals → HUD still drives the mesh). The #132 cutover deletes the mesh, so
-// the world under test is now the SFU one: the owned child boots with
-// VOICE_TRANSPORT=sfu, and what must hold is that a person's real HUD clicks
-// drive the ONE remaining transport ON→OFF→ON with the visible state (glyph
-// slash + tooltip, mictoggle's three-state contract) following each step —
-// and, the direction the UI must never fail in, the glyph never claims
-// silence while the SFU is publishing (hud-mic-truth's 2026-08-15 finding,
-// folded in here as an assertion instead of a console dump).
+// The owned child boots with VOICE_TRANSPORT=sfu (the one voice transport).
+// What must hold: a person's real HUD clicks drive it ON→OFF→ON with the
+// visible state (glyph slash + tooltip) following each step, and the glyph
+// never claims silence while the SFU is publishing (sampled once, after ON).
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 
 const { check, done } = checker();

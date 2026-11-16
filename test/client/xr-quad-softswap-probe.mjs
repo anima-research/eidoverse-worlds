@@ -14,7 +14,7 @@
 // by construction — exit nulls the staged quads — so no observable here could fail); the ?canvasquads fallback path (kept/disposePanel/stale repaint) and domquad's resize rebuild
 // (builtAt) — the default path above is what ships; the fallback is a debug flag.
 // SwiftShader + IWER prove orchestration, not what a headset feels. The entry time a headset sees is the
-// '[xr] panels enter N ms' tee line (printed by xr.js's entry wiring, added in the last commit of this series).
+// '[xr] panels enter N ms' tee line (printed by xr.js's entry wiring).
 //
 //   xrctx       — the boot's XR-ready context is the one three draws into, antialias as three wants it
 //                 (whether the RUNTIME says xrCompatible is a headset-machine fact; printed, not asserted)

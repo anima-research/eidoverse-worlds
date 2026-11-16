@@ -3,9 +3,8 @@
 //
 // Owns its sequencer: a scratch child on a random port, proved ours by the
 // nonce echo (probe-harness ownedWorld), with a scratch OPT_DIR so the
-// manifest leg always runs. A fixed default port used to be the recipe, and
-// a reviewer's first run measured whatever else was listening on it (Mica,
-// #191 round 1) — the verdict has to be about OUR door.
+// manifest leg always runs (a fixed port would measure whatever else was
+// listening on it: the verdict has to be about OUR door).
 //
 //   bun test/client/image-upload-test.ts
 //
@@ -18,7 +17,8 @@
 // content-type and the store's immutable cache policy, the picture allow-list
 // admits the path it returns, the manifest records who, an image's pixel size
 // is read from its header and capped at 8192 on a side, and the door is
-// token-gated, capped and rate-limited like the model door.
+// token-gated and byte-capped like the model door (its 4/min rate limit is
+// rested out below, not tested).
 import { allowedPictureSrc } from "../../shared/picture.js";
 
 import { ownedWorld } from "../harness/probe-harness.mjs";
@@ -43,9 +43,7 @@ function check(name: string, ok: boolean, detail = "") {
 // size (1024×512, test/fixtures), and a WebP RIFF header with a VP8
 // frame header that gives its size — the sniffer reads magic and the door reads
 // the size (the pixel cap), the store does not decode, so headers are enough.
-// (house 6340433633: the WebP read 0×0, and the door took that as a size; a zero
-// side is now an unknown size, refused 415 like any unreadable one: WEBP0. The
-// JPEG had no SOF, so the size check refused it since that check landed.)
+// A zero side is an unknown size, refused 415 like any unreadable one (WEBP0).
 const PNG = Uint8Array.from(atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="), (c) => c.charCodeAt(0));
 const JPG = new Uint8Array(readFileSync(new URL("../fixtures/dims-1024x512.jpg", import.meta.url)));
 const vp8 = (w: number, h: number) => new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x20, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, 0x14, 0x00, 0x00, 0x00,

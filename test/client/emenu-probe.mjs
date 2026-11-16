@@ -208,7 +208,7 @@ try {
   for (const id of ['world', 'glyph:ear', 'lantern']) { await pg.click(`#emenu-sub .mpin[data-pin="${id}"]`); await sleep(150); }
   check('no page errors on the desktop run', errs.length === 0, errs.slice(0, 3).join(' | '));
 
-  // LITE CLIENT: the row this PR added. Each step opens the menu through the real ∃ (openMenu clicks #hud when shut).
+  // LITE CLIENT. Each step opens the menu through the real ∃ (openMenu clicks #hud when shut).
   await pg.keyboard.press('Escape'); await sleep(200); await pg.keyboard.press('Escape'); await sleep(200);
   await openMenu(pg);
   await pg.click('#emenu .mrow[data-item="lite"]'); await sleep(300);

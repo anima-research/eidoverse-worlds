@@ -102,7 +102,7 @@ check("a long value is cut at 60 code points, never inside a character",
   Array.from(quotedSession).length === 60 && quotedSession.endsWith("…")
     && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(quotedSession), astral);
 check("a minted session has the shape the door accepts and sorts by time", (() => { const a = mintSession(new Date("2026-01-01T00:00:00Z")), b = mintSession(new Date("2026-01-01T00:00:01Z")); return normalizeCaptionArgs({ id: "c", session: a, n: 1, t0: 0, t1: 1, text: "x" }).ok && a < b; })());
-// the server stamps `gen` AFTER the shape (vCaption); a client-supplied one never survives it
+// the server stamps `gen` AFTER the shape (the caption verb, shared/protocol/authority/verbs.js); a client-supplied one never survives it
 const L = (n: number, t0: number, text: string, session = S1, extra: Record<string, unknown> = {}, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema", session, n, t0, t1: t0 + 1, text, ...extra }) as any).args, gen });
 const END = (session = S1, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema", session, end: true }) as any).args, gen });
 check("a client-supplied gen never survives the shape", (normalizeCaptionArgs({ id: "cinema", session: S1, n: 1, t0: 0, t1: 1, text: "x", gen: 99 }) as any).args.gen === undefined);

@@ -61,7 +61,7 @@ const ident = new THREE.Quaternion();
   }
 }
 
-// 2. continuity: sweep the right hand through 180° in front of and across the body over 400 frames; the
+// 2. continuity: sweep the right hand through ~200° in front of and across the body over 400 frames; the
 //    elbow position must move smoothly — never a jump larger than a frame's worth of 720°/s on a 0.28 m arm
 {
   const v = humanoid(); const sh = v.bones.rightUpperArm.getWorldPosition(new THREE.Vector3());

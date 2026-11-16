@@ -49,8 +49,8 @@ check('…and ages out on the SAME clock as every real timestamp',
 check('a real timestamp is not re-stamped (migration touches only the legacy marker)',
   migrateHeadsetSeen(NOW, String(NOW - 5)) === null);
 check('nothing stored migrates to nothing', migrateHeadsetSeen(NOW, null) === null);
-// STRICT equality on the legacy marker: loose `==` matches 1, '1.0', ' 1 ', true, [1], so a numeric 1 is re-stamped every
-// boot and never expires. Pin the near-misses.
+// STRICT equality on the legacy marker: loose `==` also matches the number 1, true and [1], so a numeric 1 is re-stamped
+// every boot and never expires. Pin the near-misses (only the NUMBER 1 row tells `==` from `===`).
 for (const [raw, label] of [['01', "'01'"], [1, 'the NUMBER 1'], ['0', "'0'"], [undefined, 'undefined'], [' 1 ', "' 1 '"]]) {
   check(`${label} is NOT the legacy marker`, migrateHeadsetSeen(NOW, raw) === null, `migrated to ${migrateHeadsetSeen(NOW, raw)}`);
 }

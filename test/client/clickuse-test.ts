@@ -48,7 +48,7 @@ const { THREE } = core;
 cu.initClickUse({ editing: () => false, busy: () => false, myPos: () => new THREE.Vector3(0, 0, 0) });
 const scene = new THREE.Scene();
 const thing = (id: string, size: number[], at: number[], bag: any) => { const m = new THREE.Mesh(new THREE.BoxGeometry(...size)); m.position.set(...at); m.userData.entityId = id; scene.add(m); m.updateMatrixWorld(true); world.entities.set(id, m); world.bags[id] = bag; return m; };
-// a desk 3 m ahead (nothing to pick up or use: a surface), a crate on the floor to its left, the held crate out of the way
+// a desk 3 m ahead (nothing to pick up or use: a surface), and the crate (held below) on the floor 3 m to the right, out of the click's line
 thing('desk', [1.6, 0.8, 0.8], [0, 0.4, -3], { label: 'desk' });
 thing('crate', [0.5, 0.5, 0.5], [3, 0.25, 0], { label: 'crate', physics: { kind: 'dynamic' } });
 const keys = (offers: any[]) => offers.map((o) => o.k);

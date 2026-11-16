@@ -6,6 +6,8 @@
 //   look      — fast differs from soft on a small share of the canopy's pixels (solid interiors are the same colour)
 //   fill      — EW.overdraw: fast shades far fewer canopy fragments than soft
 //   raycast   — a ray through the canopy hits each leaf plane once (the core twin answers no raycasts)
+//   clones    — a prototype gets no core; a clone placed before or after the switch gets one, and soft hides it
+//   warm      — a core behind the viewer is compiled with culling off
 //   auto      — resolves to soft on the desktop
 // Usage: bun test/client/foliage-probe.mjs   (run under a memory guard: headless Chromium renders on the CPU)
 import { launchBrowser, ownedWorld, checker, drawn } from '../harness/probe-harness.mjs';

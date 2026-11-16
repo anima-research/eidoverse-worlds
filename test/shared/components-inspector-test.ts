@@ -8,7 +8,7 @@
 // lower to door requests, checked through the real door.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/components-inspector-test.ts
 //
-// the corpus is the spec fixtures (and COMPONENTS_CORPUS) translated (tools/import-v1/translate-v1.js) and
+// the corpus is those logs translated (tools/import-v1/translate-v1.js) and
 // read as the view (shared/protocol/view.js); a translated light is a thing with a light component.
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';

@@ -11,9 +11,9 @@
 //    tall. The control below pushes the SAME box through both doors and shows
 //    they disagree — if fitStructureBoxes ever starts inheriting the rule, this
 //    test stops being able to tell them apart.
-//  - `interior`. flora reads it to clear grass; physobj and both ragdoll
-//    engines read it to SKIP the entry. A floor slab wearing it is a floor
-//    bodies fall through.
+//  - `interior`. flora reads it to clear grass; the Bullet ragdoll
+//    (ammodoll.js) reads it to SKIP the entry. A floor slab wearing it is a
+//    floor bodies fall through.
 //
 // Plus the claim the whole aperture design rests on: a doorway is walkable
 // because there is NO BOX there, with no change to the movement solver.
@@ -95,7 +95,7 @@ const WALK = PLAN.levels[0].y;
   const declared = [...colliders.entries()].find(([id]) => id === 'house#s0')![1] as any;
 
   // the control: the SAME extents through the support door, which does inherit
-  // the rule. If this stops being true the comparison above is vacuous.
+  // the rule. If this stops being true the comparison below is vacuous.
   fitSupportBox('control', [wall.x0, wall.y0, wall.z0], [wall.x1, wall.y1, wall.z1], AT);
   const support = colliders.get('control') as any;
 

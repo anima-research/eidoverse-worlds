@@ -9,8 +9,8 @@ HELLO = {"dialect": "eidoverse-log", "v": 4, "features": []}
 URL, TOK = os.environ.get('SURF_URL'), os.environ.get('SURF_TOK', 'workbench-2026')
 if not URL:
     raise SystemExit('surface-test.py: set SURF_URL (or run via test/labs/surface-matrix-owned.ts, which owns its server)')
-# T12/T16 need the hesp2 legs token-verified: the target server's mcpl/tokens.json
-# must map {"surf-lab-hesp2": {"id": "hesp2"}} or both attest cases fail with
+# T12/T16 need the hesp2 legs token-verified: the target server's agent tokens (mcpl/tokens.json, or
+# AGENT_TOKENS_PATH: the owned wrapper writes its own) must map {"surf-lab-hesp2": {"id": "hesp2"}} or both attest cases fail with
 # "attest is for token-verified media legs" — an environment gap, not a bug.
 passed = failed = 0
 def check(name, ok, detail=""):

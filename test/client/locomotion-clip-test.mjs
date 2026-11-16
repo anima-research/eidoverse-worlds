@@ -92,7 +92,7 @@ check('lie posture',
   selectClip({ posture: 'lie' }).clip === 'lie');
 check('nothing claims the body → idle', selectClip({}).clip === 'idle');
 
-// ---- a sized body: the controller scales the stride (scaledSpeed: walk 1.55·u, run 4.0·u), so the walk/run split is in
+// ---- a sized body: the controller scales the stride (shared/mover.js walkSpeed: walk 1.55·u, run 4.0·u), so the walk/run split is in
 //      BODY lengths: a 200% body walking isn't running, a 50% body running is
 check('a 200% body walking (3.1 m/s) → walk, not run',
   selectClip({ wantMove: true, speed: 3.1, scale: 2 }).clip === 'walk');

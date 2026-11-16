@@ -79,10 +79,9 @@ console.log('\nT2 (partial) -- the polar is honest; glide_to is not driven here'
   const cfg = makeConfig();
   const p = cfg.polar;
   // MINIMUM SINK and BEST GLIDE are different speeds. The published optimum is
-  // now SEARCHED from the implemented curve rather than asserted beside it,
-  // because the first cut declared min-sink's ratio as the best ratio and
-  // glideRange() therefore under-predicted by 8% -- in the flier's favour,
-  // which is the rubber-banding T2 exists to forbid.
+  // SEARCHED from the implemented curve: taking min-sink's ratio as the best
+  // makes glideRange() under-predict by 8% -- in the flier's favour, which is
+  // the rubber-banding T2 exists to forbid.
   const bg = bestGlide(cfg);
   check('minimum SINK is at minSinkSpeed',
         sinkRate(cfg, p.minSinkSpeed) <= sinkRate(cfg, p.minSinkSpeed - 3) &&
@@ -159,9 +158,8 @@ console.log('\nT4b -- no last-metre mercy hover');
   s = bodyDown(s, { eventId: 'ev-cut-2' });
   // Sample only while STILL FALLING. The step that makes contact hands the
   // body to the ragdoll and zeroes the velocity, which is correct and is not a
-  // hover -- an earlier version of this check read that zero and called it
-  // one. What "no mercy hover" means is that nothing slows the descent on the
-  // way DOWN, so the sample must end at contact, not after it.
+  // hover. "No mercy hover" means nothing slows the descent on the way DOWN,
+  // so the sample must end at contact, not after it.
   const lastMetre: number[] = [];
   let guard = 0;
   while (s.phase === 'LEAF' && guard++ < 200000) {
@@ -226,11 +224,8 @@ console.log('\nT3 (partial) -- stamina rates; climb_to and the winded glide are 
   const cfg = makeConfig();
   check('climb costs 1/m', cfg.stamina.climbPerMetre === 1);
   check('glide is stamina-neutral', cfg.stamina.refillAirPerSec === 0);
-  // The number matches the spec; nothing consumes it. Asserting a constant
-  // against another constant proved only that arithmetic works, while the
-  // surfaces around it told Mythos perches existed. The claim is gone from
-  // flight_status and climb_to; this check now states the gap instead of
-  // dressing it as coverage.
+  // The number matches the spec; nothing consumes it (perches are Stage 2), so
+  // this row states the gap rather than coverage.
   check('perch refill is the spec figure -- and NOT IMPLEMENTED (Stage 2)',
         cfg.stamina.refillPerchPerSec === 4 * cfg.stamina.refillGroundPerSec);
   let s = initialState({ phase: 'GROUND', stamina: 50 });
@@ -343,9 +338,8 @@ console.log('\nCONFIG, not constants');
   const c = makeConfig({ leaf: { dampingPerCycle: 0.05 } });
   check('override takes', c.leaf.dampingPerCycle === 0.05);
   check('siblings survive the merge', c.leaf.period === 3.4 && c.leaf.terminalV === 2.5);
-  // A config editor must not be able to report an edit the physics ignores.
-  // This test previously USED a stale key (`leaf.damping`, renamed and consumed
-  // by nothing) and passed, which is exactly the failure mica named.
+  // A config editor must not be able to report an edit the physics ignores:
+  // a stale key (`leaf.damping`, renamed and consumed by nothing) must throw.
   const rejects = (over: any, why: string) => {
     let threw = false;
     try { makeConfig(over); } catch { threw = true; }
@@ -779,9 +773,8 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
   // explicit act." Section 2: "FOLDED -- grounded by choice. Distinct
   // silhouette; readable at 50m."
   //
-  // FOLDED has been a declared state since the first cut and takeOff has
-  // refused on it the whole time -- but no verb could SET it, so the refusal
-  // was unreachable code and T6 was an acceptance test with nothing behind it.
+  // foldDown is the verb that SETS FOLDED: without one, takeOff's refusal on
+  // FOLDED is unreachable code and T6 has nothing behind it.
   const cfg = makeConfig();
   const ground = () => initialState({ phase: 'GROUND' }, cfg);
 
@@ -874,14 +867,10 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
     return out;
   };
   const runtime = [...walk('client'), ...walk('server'), ...walk('mcpl')];
-  // THE MODULE LIST COMES FROM DISK, not from a prefix. Matching the literal
-  // string `shared/flight` looked like it covered the family and did not:
-  // leafforce.js is flight code by every measure that matters -- it is in the
-  // typecheck, it is the R2 leaf, mcpl/physics.ts imports it -- and its name
-  // simply does not contain "flight", so the scan reported two importers when
-  // there were three. A gate that decides who may reach flight must not be
-  // able to miss a member of the thing it is gating; enumerating the directory
-  // means adding a sixth module cannot quietly widen the boundary.
+  // THE MODULE LIST COMES FROM DISK, not from a prefix: leafforce.js is flight
+  // code (the R2 leaf; mcpl/physics.ts imports it) and its name does not contain
+  // "flight", so a scan for `shared/flight` misses its importers. Enumerating
+  // the directory means a new module cannot quietly widen the boundary.
   const FLIGHT_MODULES = readdirSync('shared')
     .filter(f => /^(flight|leafforce)/.test(f) && f.endsWith('.js'))
     .map(f => f.replace(/\.js$/, ''));
@@ -891,20 +880,16 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   const importsFlight = (src: string) =>
     FLIGHT_MODULES.some(m => new RegExp(`from ['"][^'"]*shared/${m}\\.js['"]`).test(src));
   const importers = runtime.filter(f => importsFlight(readFileSync(f, 'utf8')));
-  // Flight is wired in TWO places now, and both are deliberate: the agent
-  // (Mythos flies through mcpl) and the client controller (Janus asked to fly
-  // it himself, on the same integrator, because a human and an agent in one
-  // sky must share physics or the bench proves nothing).
-  //
-  // So the property is no longer 'who imports it' but what every importer
-  // must DO: resolve a capability that defaults to deny, and refuse audibly.
-  // THREE deliberate importers. mcpl/physics.ts was always one -- it applies
-  // the leaf forces to the headless Bullet stand-in -- and was invisible to
-  // the old scan rather than absent from it. It is listed here rather than
-  // exempted: it takes no capability decision, it is handed forces by a caller
-  // that already resolved one, so the per-importer checks below skip it.
+  // Flight is wired in TWO places, both deliberate: the agent (mcpl/agent-flight.ts)
+  // and the client controller, on the same integrator (a human and an agent in
+  // one sky must share physics or the bench proves nothing). What each must DO:
+  // resolve a capability that defaults to deny, and refuse audibly.
+  // mcpl/physics.ts and mcpl/agent.ts import only leafforce.js (the leaf forces
+  // on the headless Bullet stand-in). They take no capability decision (their
+  // caller already resolved one), so they are listed here rather than exempted
+  // and the per-importer checks below skip them.
   const ALLOWED = ['mcpl/agent.ts', 'mcpl/agent-flight.ts', 'client/lib/player/controller.js', 'mcpl/physics.ts'];
-  // Only the two ENTRY POINTS must gate; physics.ts is downstream of a gate.
+  // Only the two ENTRY POINTS must gate; physics.ts and agent.ts are downstream of a gate.
   const GATEKEEPERS = ['mcpl/agent-flight.ts', 'client/lib/player/controller.js'];
   check(`only expected modules import flight (${importers.length})`,
         importers.length > 0 && importers.every(f => ALLOWED.includes(f)),
@@ -920,11 +905,10 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   const srv = importers.filter(f => /^server\//.test(f));
   check('no server/ module imports flight', srv.length === 0, srv.join(', '));
 
-  // TWO CLIENT PROPERTIES THAT ONLY A HUMAN COULD HAVE FOUND, pinned as source
+  // CLIENT PROPERTIES THAT ONLY A HUMAN COULD HAVE FOUND (1-6 below), pinned as source
   // checks because both live in browser DOM code the rest of this file cannot
   // import. Structural assertions are weaker than behavioural ones; they are
-  // what is available, and they are stronger than the nothing that was here
-  // when both bugs shipped.
+  // what is available.
   const ctl = readFileSync('client/lib/player/controller.js', 'utf8');
 
   // 1. "switching into flying mode is working for me but all that happens is
@@ -965,16 +949,10 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
 
   // 4. "my view has me frozen until i exit fly mode... when i exit flying mode
   //    i *do* suddenly teleport to a different place, so maybe i did fly."
-  //    He did fly -- /flight reported PILOT, t=31.7s, y=16.28. But the four
-  //    lines that put a body ON SCREEN (clip, root position, root rotation,
-  //    camera) live at the BOTTOM of updateMe, past the flight block's early
-  //    `return`. So myState flew and me.root sat where it took off. Measured:
-  //    on the previous build stateY climbed 0.3 -> 16.11 while rootY held at
-  //    0.30 and the camera never left 3.07.
-  //
-  //    Both other paths that skip updateMe's tail already pay this -- ragdoll
-  //    and mounted each drive the camera themselves and say why. Flight was
-  //    the third, and the only one that did not.
+  //    He did fly. The four lines that put a body ON SCREEN (clip, root
+  //    position, root rotation, camera) live at the BOTTOM of updateMe, past
+  //    the flight block's early `return`: myState flew and me.root sat where
+  //    it took off. Every path that skips updateMe's tail owes its work.
   const flightBlock = /if \(flight\) \{\s*\n\s*const input = pilotInput[\s\S]*?\n  \}/.exec(ctl)?.[0] ?? '';
   check('a flying body is actually drawn where it is flying',
         /me\.root\.position\.copy\(myState\.pos\)/.test(flightBlock) &&
@@ -1002,13 +980,10 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   //    for the first second and decayed 0.91 -> 0.58 -> 0.33 -> 0.18 over the
   //    next five, which is a burst of hard beats easing into a glide.
   const av = readFileSync('client/lib/avatar/wings.js', 'utf8');
-  // DISTINCT, not "equal to the number I first guessed". This asserted
-  // /deg: 4[0-9]/ and broke the moment Janus tuned the stroke to 8 -- a test
-  // pinning my own guess rather than the property, which is that the two dial
-  // sets differ enough to read as different behaviour. They now differ mostly
-  // in RATE (2.1Hz against 1/3.4) rather than amplitude, which is what a bird
-  // leaving the ground actually does, and a test written against amplitude
-  // could not see that at all.
+  // DISTINCT, not a pinned number: the property is that the two dial sets
+  // differ enough to read as different behaviour. They differ mostly in RATE
+  // (2.1Hz against 1/3.4) rather than amplitude, which is what a bird leaving
+  // the ground does.
   {
     const grab = (name: string) => {
       const body = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\n\\};`).exec(av)?.[1] ?? '';
@@ -1056,8 +1031,7 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   // two faces: wingEffort was cleared on the NATURAL landing path only, so
   // pressing F mid-flap left it pinned at 1 forever -- and a pinned 1 means
   // the dial mix is 100% WING_POWER, so WING_IDLE is never read and its
-  // sliders are genuinely inert. Measured on d49baf0: effort 1.00 still 1.00
-  // two and a half seconds after landing.
+  // sliders are genuinely inert.
   //
   // Fixed in two places on purpose. releaseWings() covers the exits we know
   // about; the per-frame assertion covers the ones we do not (a revoked

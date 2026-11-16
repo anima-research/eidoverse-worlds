@@ -36,7 +36,7 @@ const OPT = mkdtempSync(join(tmpdir(), 'soundprobe-opt-'));
 const world = await ownedWorld({ worlds: ['soundprobe'], owner: 'listener', env: { TRUST_NAMES: '1', EIDOVERSE_DIR: process.env.EIDOVERSE_DIR ?? join(process.env.HOME!, 'origin/eidoverse-video'), OPT_DIR: OPT } });
 const { page, close } = await launchBrowser();
 const errs: string[] = [];
-// writes go through net.sendRequest (net.sendVerb is gone; #260 house I479); the authority mints the box's id
+// writes go through net.sendRequest; the authority mints the box's id
 const req = async (pg: any, op: any) => {
   const r = await pg.evaluate((op: any) => import('/lib/net.js').then((n: any) => n.sendRequest(op.verb, op.args)), op);
   if (!r?.ok) throw new Error(`${op.verb} refused: ${JSON.stringify(r?.refused ?? r)}`);

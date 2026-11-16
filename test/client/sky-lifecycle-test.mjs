@@ -326,10 +326,10 @@ try {
     sky.SKY_WORLDS.pop();
   }
 
-  // ---- 4. sky.audio: the library's weather sounds when this server has them, silent (never an error) otherwise ------------
+  // ---- 5. sky.audio: the library's weather sounds when this server has them, silent (never an error) otherwise ------------
   {
     if (renderer.xr.isPresenting) leave();
-    sky.SKY_WORLDS.push('mars');                                // a world switch is a fresh build, which is when audio is read (case 3 left mars)
+    sky.SKY_WORLDS.push('mars');                                // a world switch is a fresh build, which is when audio is read (case 4c left mars)
     const build = async (world, audio) => { const b = BAKE.builds; await sky.applySky({ ...ARGS, world, audio, ts: ++T }); await settle(); return BAKE.builds === b + 1; };
     const none = await build('earth', true), aNone = BAKE.audio;
     LIB.sky = ['eidoverse/assets/sky/audio/rain_desert_loop.ogg'];
@@ -351,7 +351,7 @@ try {
     check('sky detail chosen where storage refuses still reads back high this session', kept === 'high' && sky.skyQuality() === 'high', kept);
     sky.setSkyQuality('balanced'); }
 
-  // ---- 5. EVERY HEAVY ENTRY POINT WHILE PRESENTING: nothing builds in the session; at exit each held change applies ONCE
+  // ---- 6. EVERY HEAVY ENTRY POINT WHILE PRESENTING: nothing builds in the session; at exit each held change applies ONCE
   {
     const ROWS = [
       ['low chosen in the headset', () => sky.setCloudQuality('low'),

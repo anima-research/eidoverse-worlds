@@ -2,7 +2,9 @@
 // grep — the stubs stop at the browser boundary (AudioContext, bus, net) and
 // the code under test is the shipped code, same doctrine as
 // micstate-test.mjs and for the same reason: every prior mic defect in
-// this repo passed source-level checks and failed only when run.
+// this repo passed source-level checks and failed only when run. (Three rows
+// at the end still read source: the badge's gold, V's typing guard, the
+// panel's dimmed sensitivity row.)
 //
 // The observable is micgate's gateOpenness() — the gate's INTENT, the same
 // value the "am I being heard" indicator trusts — and gateGainNow(), the gain
@@ -120,10 +122,10 @@ t('mode exit closes the gate', gate(0));
 // not want the room to get; if the level's 🎙 fired, the pill over their
 // head would claim the room heard something it did not.
 //
-// The machine ticks on a real 20ms interval with a ~1s learn-before-judge
-// window, so these cases wait it out rather than poking its internals.
-const speak = async () => { room = 0.5; await pause('settle + 60 ms, past the 1.5 s rate limit the last press left', 2600); };   // settle + 60ms, and PAST the 1.5s 🎙 rate-limit left by the last press — or a missing guard hides behind it
-const hush  = async () => { room = 0;   await pause('past the 700 ms hang time', 900);  };   // past the 700ms hang-time
+// The machine ticks on a real 20ms interval with a ~160 ms (8-tick)
+// learn-before-judge window, so these cases wait it out rather than poking its internals.
+const speak = async () => { room = 0.5; await pause('settle + 60 ms, past the 1.5 s rate limit the last press left', 2600); };   // past the rate limit, or a missing guard hides behind it
+const hush  = async () => { room = 0;   await pause('past the 700 ms hang time', 900);  };
 // Re-arm the lane so the machine restarts its learn window on a quiet room.
 ms.gateRelease(); room = 0; ms.gateFor(stream);
 vc.setPttMode(true);

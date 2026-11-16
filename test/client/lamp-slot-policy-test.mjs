@@ -1,22 +1,16 @@
 // WHO MAY CLAIM THE ONE CASTING SLOT (client/lib/render/lightrig.js attachLamps).
 //
-// Mica's contract, from the #193 review:
+// The contract (#193 review):
 //   - emissive AVATARS may request slot 0, and their body gets cast/receive;
-//   - emissive placed models/props remain ordinary inferred lights and do NOT
+//   - any other emissive thing given a lamp is an ordinary light and does NOT
 //     request the shadow slot.
 //
-// attachLamps is the GENERIC emissive seam -- realize/models.js calls it for
-// every placed glowing prop, and avatar.js calls it for a body. It used to set
-// `shadows: true` unconditionally, with a comment about a lamp inside a body
-// that described only one of its two callers. So a lantern on the ground
-// requested the casting slot exactly as hard as an avatar did.
-//
-// That was latent while the claim only took a FREE slot. Then 4f55321 made it a
-// swap -- wanting shadows outranks not wanting it, which is what finally let
-// Mythos's lamp cast at all -- and the same change let a nearer glowing PROP
-// take slot 0 off the body standing next to it. This test is the red one Mica
-// asked for: a closer, higher-ranked glowing prop must not be able to steal the
-// slot, and must stay lit.
+// attachLamps takes shadow intent as an option that defaults to false. Today
+// avatar.js is its only caller (a placed model infers no lamp: its lights are
+// light components) and passes true. The claim is a SWAP (wanting shadows
+// outranks not wanting it), so a default of true would let a closer,
+// higher-ranked glowing prop take slot 0 off the body standing next to it. It
+// must not, and must stay lit.
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
 HTMLCanvasElement.prototype.getContext = function () { const a = new Proxy(function () {}, { get: (_t, k) => (k === 'width' ? 100 : a), apply: () => a, set: () => true }); return new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 100 }) : a), set: () => true }); };
@@ -56,9 +50,9 @@ camera.position.set(0, 1.6, 0);
 const avatarObj = glowing('lampglass', [0, 1.47, -3.0]);   // a body, 3m away
 const propObj   = glowing('lantern',   [0, 1.00, -0.6]);   // a prop, 0.6m away
 
-// realize/models.js: the generic seam, no opts -- this is the live call shape
+// the bare seam, no opts (no shipped caller calls it this way today)
 const propLamps = rig.attachLamps(propObj, 'entity:lantern-1');
-// avatar.js: the only caller that claims the slot
+// avatar.js's call shape: the one that claims the slot
 const avatarLamps = rig.attachLamps(avatarObj, 'body:mythos:1', { shadows: true });
 
 check('both objects produced a lamp request', propLamps.length > 0 && avatarLamps.length > 0,
@@ -94,8 +88,8 @@ check('only the avatar wants shadows', wants.length === 1 && wants[0] === avatar
 check('and it is actually casting', d.shadows.anyCasting === true);
 
 console.log('THE SEAM DEFAULT — shadow intent must be asked for');
-// The regression guard: if the default ever flips back to true, the generic
-// caller starts claiming the slot again and this goes red.
+// The regression guard: if the default ever flips back to true, a bare call
+// claims the slot again and this goes red.
 rig.releaseOwner('entity:lantern-1');
 rig.releaseOwner('body:mythos:1');
 const bare = rig.attachLamps(glowing('orb', [0, 1, -0.4]), 'entity:orb-2');

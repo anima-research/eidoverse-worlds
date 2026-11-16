@@ -206,7 +206,7 @@ check('same-pose put: t=120 exactly the fold\'s pose (it never stays drawn in th
 }
 
 // ---- a launch (a throw/drop: the engine's flight owns it) is not a put: left to the flight's own smoothing
-// (pres.bodies is the flight's; with no engine here there is none, so this only pins the guard's shape)
+// (no row here: pres.bodies is the flight's and this harness runs no engine; the guard itself is S1's throw, above)
 
 // ---- R 10-17 20:14 ("holding this crate from far away"): a crate the physics stacked on another is that one's scene child,
 // and its own scale is LOCAL (1 under a 0.25 host). A held thing is drawn by its centre and its size (localCentre, sizeOf),

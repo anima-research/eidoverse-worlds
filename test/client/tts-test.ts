@@ -2,13 +2,9 @@
 //
 //   bun test/client/tts-test.ts
 //
-// Deterministic, dependency-free: fake generator/writer/engine/OPFS/worker.
-// Exists because review caught that every green suite quoted by #91 exercised
-// #90's plumbing — "the entire new feature could be disconnected and every
-// quoted suite would still pass." The negative control at the bottom makes
-// that structurally false. First catch, before a single check ran: a dangling
-// `onRebuild` in ensureGenerator's rebuild path — ReferenceError at runtime,
-// invisible to the bundler, in exactly the recovery this suite pins.
+// Deterministic, dependency-free: fake generator/writer/engine/AudioContext/peer
+// connection. It executes tts.js itself (the suites #91 first quoted exercised
+// only #90's plumbing): the checks read speech off the fake wire.
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { suite } from "../gate/suite.ts";
@@ -159,8 +155,8 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
 
   // mic beats TTS: with the mic live, typed says are DISCARDED (declared policy).
   // Post-cutover the transport is the SFU bridge; the policy code asks
-  // window.__sfuMicOn() first (tts.js:659), so the stub installs the same pair
-  // the real bridge does (voicesfubridge.js:222/235) — a boolean the hook flips
+  // window.__sfuMicOn() first (tts.js speakOwnSays), so the stub installs the same pair
+  // the real bridge does (voicesfubridge.js __sfuMicOn / __sfuMic) — a boolean the hook flips
   // and reports honestly. micstate.toggleMic routes through the hook.
   const voice = await import("../../client/lib/audio/micstate.js");
   let stubMicOn = false;
@@ -168,7 +164,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   (globalThis as unknown as { window: Record<string, unknown> }).window.__sfuMic = async () => {
     stubMicOn = !stubMicOn;
     // The real transport routes the device through micstate's gate and reports
-    // liveness (voicesfu.js:447-449) — the lane is what makes micOn() true and
+    // liveness (voicesfu.js: gateFor, then setMicLive) — the lane is what makes micOn() true and
     // what registers the mic producer that outranks the synth. Mirror both.
     if (stubMicOn) { voice.gateFor(new (globalThis as Record<string, any>).MediaStream()); voice.setMicLive(true); }
     else { voice.gateRelease(); voice.setMicLive(false); }

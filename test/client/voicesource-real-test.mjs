@@ -1,7 +1,6 @@
 // A REAL test for voiceSource(): it IMPORTS client/lib/audio/voicesource.js and
-// exercises the shipped function. Replaces the eye-verified transcription in
-// tts-publishes-mic-off-test.mjs, which imports nothing and cannot fail when
-// the module breaks (audit, 2026-08-16).
+// exercises the shipped function (the test it replaced re-typed the logic and
+// could not fail when the module broke).
 //
 // Only the BROWSER SURFACE is stubbed — navigator.mediaDevices and the minimum
 // WebAudio the synth path touches. The decision logic under test is the real
@@ -14,15 +13,9 @@ import { mock } from "bun:test";
 import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register({ url: "http://localhost/?world=test&name=probe" });
 
-// voicesource.js needs exactly ONE thing from core.js — `report` — but core.js
-// constructs a THREE.WebGPURenderer at module scope, which cannot initialise
-// headlessly. That single edge is the real reason the earlier version of this
-// test re-typed the logic instead of importing it.
-//
-// Mocking the MODULE (not the logic) keeps the thing under test real: the
-// decision code executing below is the shipped code, byte for byte. Revert the
-// micWanted fix in voicesource.js and this goes red — which is the whole
-// property the transcription version could never have.
+// Left from when voicesource.js took `report` from core.js (which constructs a
+// THREE.WebGPURenderer at module scope): it imports base.js now. Only a module
+// is mocked, never the logic: the decision code below is the shipped code.
 mock.module('../../client/lib/core.js', () => ({
   report: (...a) => console.error('[report]', ...a),
   bus: { on() {}, emit() {} },
@@ -35,11 +28,9 @@ Object.defineProperty(globalThis.navigator, 'mediaDevices', { configurable: true
   return { kind: 'microphone', getTracks: () => [{ kind: 'audio', stop() {} }] };
 }}});
 class FakeNode { connect() { return this; } disconnect() {} }
-// 🔴 THE STUB MUST BE AS STRICT AS THE BROWSER. A permissive stub hides real
-// bugs: `new MediaStream([null])` throws TypeError in Chrome, but a stub that
-// stores the array happily let mutation M4 (provider.start() returning null)
-// pass 8/8. A test double looser than the thing it doubles is a source of false
-// green — the same defect as a test that imports nothing, wearing a disguise.
+// 🔴 THE STUB MUST BE AS STRICT AS THE BROWSER: `new MediaStream([null])` throws
+// TypeError in Chrome, and a stub that stored the array let mutation M4
+// (provider.start() returning null) pass.
 globalThis.MediaStream = class {
   constructor(t) {
     const tracks = t || [];
@@ -72,10 +63,8 @@ let s = await voiceSource();
 check('mic available and wanted → microphone', s.kind === 'microphone' && gumCalls === 1);
 
 // 2. THE FIX: mic switched off + provider available → synth, WITHOUT opening a device.
-// The REAL provider contract (voicesource.js:104): start() returns a TRACK,
-// which synthStream() wraps in a MediaStream and marks .synthetic. The
-// transcription version had this as stream() → an object, and was green anyway
-// — it was asserting against its own invented interface.
+// The REAL provider contract (voicesource.js synthStream): start() returns a
+// TRACK, which synthStream() wraps in a MediaStream and marks .synthetic.
 setSynthProvider({ available: () => true, start: () => ({ kind: 'audio', stop() {} }) });
 gumCalls = 0;
 s = await voiceSource({ micWanted: false });
@@ -91,9 +80,8 @@ s = await voiceSource();
 check('default (micWanted omitted) still takes the mic', s.kind === 'microphone' && gumCalls === 1);
 
 // 3b. The provider contract itself: start() must yield a usable track.
-//     (Mutation M4: start() returning null left the old version green, because
-//     `new MediaStream([null])` is tolerated by the stub while a real browser
-//     throws. Assert the track exists rather than trusting the wrapper.)
+//     (Mutation M4: start() returning null. Assert the track exists rather
+//     than trusting the wrapper.)
 const synth = await voiceSource({ micWanted: false });   // the synthetic path's own stream, not the mic's above
 const tracks = synth?.synthetic === true && typeof synth.getTracks === 'function' ? synth.getTracks() : [];
 check('synthetic stream carries a real track', tracks.length === 1 && tracks[0] != null);
@@ -113,8 +101,8 @@ s = await voiceSource();
 check('gUM throws + provider → synthetic (original path)', !!s && s.synthetic === true);
 
 // 5. Negative control: no provider + gUM throws → must THROW, never silently mute.
-//    (setSynthProvider(null) may be rejected by a guard; clear via a provider
-//    that reports unavailable, which is the same state from the caller's view.)
+//    (A provider that reports unavailable: the same state as none from the
+//    caller's view, and its start() must not be called.)
 setSynthProvider({ available: () => false, start: () => { throw new Error('must not be called'); } });
 let threw = false;
 try { await voiceSource(); } catch { threw = true; }

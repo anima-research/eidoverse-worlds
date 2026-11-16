@@ -4,15 +4,16 @@
  *   EIDOVERSE_DIR=~/connectome-local/eidoverse-video bun test/shared/reachrig-test.ts
  *
  * EIDOVERSE_DIR is not optional in a worktree: without it the library rigs
- * resolve to <worktree>/../eidoverse-video and silently do not load (the optimized ones need assets/opt/eidoverse/assets/vrms,
- * else the rig listing throws ENOENT), and the
- * suite quietly drops to the 14 optimized ones. Check the rig count it prints.
+ * resolve to <worktree>/../eidoverse-video, silently do not load, and the
+ * suite quietly drops to the 14 optimized ones (which need
+ * assets/opt/eidoverse/assets/vrms, else the rig listing throws ENOENT).
+ * Check the rig count it prints.
  *
  * test/client/ragdoll-test.ts learned this lesson the expensive way: a synthetic
  * T-pose humanoid passed 18/18 while every real rig in the fleet was broken,
  * because the rigs are the variable the maths is most sensitive to. So the
  * geometry suite (test/shared/reach-test.ts) isolates the solver, and THIS one runs
- * it on all 14 bodies people actually wear.
+ * it on every body people actually wear.
  *
  * The check that matters is INDEPENDENT: the solver returns directions, the
  * conversion turns them into bone quaternions, and then forward kinematics
@@ -109,7 +110,7 @@ check("every rig produced reachable targets", good.every((rg: any) => (reachedBy
 
 console.log("\njoint limits actually bind on real rigs");
 {
-  // straight back and up behind the head: must be refused by cone or frontal stop
+  // straight out the back at near full extension: the cone or the frontal stop must bind
   let bound = 0, total = 0;
   for (const rig of good) {
     const P: Record<string, number[]> = {};
@@ -206,11 +207,9 @@ console.log("\nwith the torso turned (the walking case)");
         limits: { coneHalf: lim.coneHalf, behind: lim.behind, maxFlex: lim.maxFlex },
       });
       if (!r.ok) continue;
-      // makeAvatar builds its bones with identity rotations, so rest IS
-      // identity here and only the parent has moved. On a real rig the rest
-      // orientations are whatever the VRM says — orion's normalized hierarchy
-      // sits 180° from the root — which is why this argument became a record
-      // rather than a bare quaternion.
+      // rest is passed as identity here, so only the parent has moved. On a
+      // real rig the rest orientations are whatever the VRM says (orion's
+      // normalized hierarchy sits 180° from the root), hence the record.
       const q: any = chainLocalQuats(dRestU, dRestL, r.upper, r.lower,
         { qP: [0, 0, 0, 1], qU: [0, 0, 0, 1], qL: [0, 0, 0, 1], qPnow: qParent });
 

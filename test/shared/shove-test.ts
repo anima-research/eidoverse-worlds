@@ -48,7 +48,7 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
     && Math.abs(massOf(world({ a: { c: { physics: { kind: "dynamic", shape: CRATE }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [2, 1, 1] } } } }), "a") - 432) < 1e-6);
   check("shoveCap: heavy is slow, light hits the ceiling", shoveCap(70) === SHOVE.maxV && shoveCap(1000) < 0.6 && shoveCap(216) < 2); }
 
-{ // the review's rot.ts: a 3 m plank at 45°; feet 1.78 m from its face, inside its axis-aligned box's empty corner: no contact
+{ // a 3 m plank at 45°; feet ~1.4 m from its face, inside its axis-aligned box's empty corner: no contact
   const h = Math.SQRT1_2, q = [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)];
   const st = world({ plank: { c: { physics: { kind: "dynamic", shape: [[-1.5, 0, -0.15], [1.5, 0.6, 0.15]] }, transform: { pos: [0, 0, 0], q, scale: [1, 1, 1] } } } });
   const obb = obbOf(st, "plank"), box = aabbOfObb(obb);
@@ -73,8 +73,8 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
   const jitter = peak(() => [rnd() * 0.02, 0, rnd() * 0.02]), lean = peak((t) => [0, 0, t < 1 ? 0.15 * (1 - Math.cos(Math.PI * t)) : 0.3]), walkV = peak((t) => [0, 0, t * 1.0]);
   check(`VR: tracking jitter (${jitter.toFixed(2)}) and a 0.3 m lean over a second (${lean.toFixed(2)}) stay under ${SHOVE_FEEL.vrSpeed} m/s; walking 1 m/s (${walkV.toFixed(2)}) is over`, jitter < SHOVE_FEEL.vrSpeed && lean < SHOVE_FEEL.vrSpeed && walkV > SHOVE_FEEL.vrSpeed); }
 
-{ // a wall of crates the body is pressed against: two rows of five, every one in reach of the slack would be absurd, so a
-  // row side by side at the body's face plus the row behind it; pressing on for 3 s
+{ // a wall of crates the body is pressed against: a row of five side by side at the body's face plus the row behind it;
+  // pressing on for 3 s
   const things: any = {}; for (let i = 0; i < 5; i++) { things[`f${i}`] = thing([(i - 2) * 0.25, 0, 0]); things[`b${i}`] = thing([(i - 2) * 0.25, 0, 0.6]); }
   const st = world(things);
   const { out } = walk(st, { frames: 180 });

@@ -14,6 +14,8 @@
 //      it (someone else's hand moved the world past it);
 //   5. an echo that AGREES keeps it — the hang's own echo, a repeat of it, or
 //      the null echo after `take down`.
+// Also here: 6 an update keeps the fields the block doesn't show; 6b the
+// description's cap is normalizePicture's; 7 a quad disposes only a texture it owns.
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { fileURLToPath } from 'node:url';

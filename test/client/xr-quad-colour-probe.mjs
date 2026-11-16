@@ -8,6 +8,8 @@
 //   panel   — the quad's panel background IS the --panel-rgb token (no lift), in the raster and on screen
 //   dimmed  — partial opacity (a disabled range, a dead row) lands as the browser composites it: group, multiplied
 //   vr-a    — Settings › Style › VR panel opacity: default 1 (opaque pass), lower → the quad's panel alpha, reset → 1
+//   caption — World › Mods' .sec-cap captions paint as headings (capitals, bold, their tint, a rule above all but the first)
+//   grade   — the VR panel grade (Settings › VR saturation/contrast) against quadgrade.js's pure-math twin
 // On Chromium the engine runs WebGPURenderer's WebGL 2 backend in the headset too (owner, 09-30), so this headless
 // path IS the user path for the output transform. What it can't show: the headset's own compositor/display.
 // Run one headless browser at a time; clouds are forced off before boot here.

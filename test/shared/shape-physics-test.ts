@@ -1,6 +1,6 @@
 // shape-physics-test — the shape audit's wave 2, physics-motion family (notes/eidoverse/shape-audit/physics-motion.md;
 // PLAN.md "Wave 2" + LOCKED). Each row is a behaviour the audit changes, through the real door (a scratch world) or the
-// pure reader that carries it. Written red first, against the tree before the change (wt/w2-attach, 90725c3e).
+// pure reader that carries it.
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-physics-test.ts
 // @ts-nocheck
 import { fileURLToPath } from "node:url";

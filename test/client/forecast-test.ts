@@ -5,9 +5,8 @@
 //     from a cold walk or a resumed cursor (one process; no second one is run)
 //   - the three planes agree, as shared/forecast.js folds them: an incremental
 //     foldSkyEntry run, the same run again, and a late join replaying the folded
-//     sky as one synthetic entry (the client's and server's own folds and
-//     stateToEntries aren't run here) — across a manual override and the next
-//     scheduled boundary
+//     sky as one synthetic entry (no client or server is run here) — across
+//     a manual override and the next scheduled boundary
 //   - a weather verb under a rated sky REBASES hours (no day-snap)
 //   - provenance is server-stamped, never authored (spoof-proof), yet
 //     synthetic pre-history replay preserves the real stamps
@@ -52,7 +51,7 @@ const policyArgs = {
   const p = normalizePolicy(folded.forecast)!;
   check("policy normalizes", !!p && p.states.length === 4 && p.epoch === T0);
 
-  // same answer, ten times, at scattered offsets — and from a second normalize
+  // same answer at 200 scattered offsets, from a second normalize
   let deterministic = true;
   const p2 = normalizePolicy(folded.forecast)!;
   for (let i = 0; i < 200; i++) {
@@ -139,7 +138,7 @@ const policyArgs = {
   });
   check("weather verb cannot author or replace policy", wSpoof.forecast.seed === policyArgs.seed);
 
-  // synthetic pre-history (stateToEntries) passes stamps through untouched
+  // synthetic pre-history (a negative seq) passes stamps through untouched
   const synthetic = foldSkyEntry(null, { verb: "sky", args: spoofed, ts: Date.now(), seq: -1, actor: "world" });
   check("synthetic replay preserves the real stamps (no re-epoch on late join)",
     synthetic.forecast.epoch === T0 && synthetic.forecast.seq === 42 && synthetic.ts === spoofed.ts);
@@ -161,11 +160,11 @@ const policyArgs = {
   const tOverride = T0 + 20 * MIN;
   entries.push({ verb: "weather", args: { weather: "darkstorm", weatherK: 1.2, weatherSeconds: 10 }, ts: tOverride, seq: 101, actor: "digi" });
 
-  // plane A — live incremental fold (browser client applyEntry / mcpl agent)
+  // plane A — an incremental fold
   let live: any = null;
   for (const e of entries) live = foldSkyEntry(e.verb === "sky" ? null : live, e);
 
-  // plane B — the sequencer's fold (identical calls; asserting the object is shared)
+  // plane B — the same calls again (one shared function: this row can only catch nondeterminism)
   let server: any = null;
   for (const e of entries) server = foldSkyEntry(e.verb === "sky" ? null : server, e);
   check("live and server folds are identical", JSON.stringify(live) === JSON.stringify(server));
@@ -259,10 +258,10 @@ const policyArgs = {
 {
   const standing = foldSkyEntry(null, { verb: "sky", args: { hours: 8, rate: 24, clouds: "cumulus", forecast: policyArgs }, ts: T0, seq: 1, actor: "antra" });
   const e = { verb: "weather", args: { weather: "rain", keepSky: false }, ts: T0 + HOUR, seq: 2, actor: "digi" };
-  // the server folds with the standing sky, the client folds with its clock
-  // args — keepSky must yield the SAME result through both calls
+  // both calls are the same (every caller passes the standing sky), so the
+  // parity row below can only catch nondeterminism
   const asServer = foldSkyEntry(standing, e);
-  const asClient = foldSkyEntry(standing, e);   // world.js now always passes the standing sky too
+  const asClient = foldSkyEntry(standing, e);
   check("keepSky:false discards the standing sky in the helper",
     asServer.clouds === undefined && asServer.forecast === undefined && asServer.weather === "rain");
   check("keepSky parity: identical through server and client calls",
@@ -319,8 +318,8 @@ const policyArgs = {
 // ---------------------------------------------------------------- clock contract (#65)
 // One clock governs, and the folded state says which. Accelerated → real →
 // accelerated is the acceptance path from the issue; the review's B1 path —
-// normalized real → unresolvable tz — is the regression guard: the parked
-// clock must survive the re-issue and genuinely govern (a typo dims nothing).
+// normalized real → unresolvable tz — is the regression guard: the rated
+// fallback must survive the re-issue and genuinely govern (a typo dims nothing).
 //
 // The CONTROL checks below use only surfaces that exist on BOTH trees
 // (foldSkyEntry + hoursAt), so on main they fail with the actual stale
@@ -356,8 +355,8 @@ const policyArgs = {
     JSON.stringify(synth(real)) === JSON.stringify(real));
 
   // 3 — B1: re-issue the NORMALIZED standing bag with an unresolvable tz.
-  // The parked clock must survive and govern — rev-1 of this contract
-  // destroyed it here and froze the world at the `?? 12` default noon.
+  // The rated fallback (hours, rate) must survive and govern: losing it
+  // would freeze the world at the `?? 12` default noon.
   const T2 = T0 + 3 * HOUR;
   const typo = foldSkyEntry(null,
     { verb: "sky", args: { ...real, tz: "America/Nowhere" }, ts: T2, seq: 4800, actor: "antra" });
@@ -373,8 +372,8 @@ const policyArgs = {
   check("#65 B1: late join re-fold of the typo bag is identical",
     JSON.stringify(synth(typo)) === JSON.stringify(typo));
 
-  // 4 — weather lands during the bad-tz fallback: merge restamps sky.ts but
-  // the parked clock's own ts anchor keeps the fallback day continuous
+  // 4 — weather lands during the bad-tz fallback: merge restamps sky.ts and
+  // rebases hours to the fallback's hour then, so its day stays continuous
   const T3 = T0 + 4 * HOUR;
   const wetTypo = foldSkyEntry(typo, { verb: "weather", args: { weather: "rain" }, ts: T3, seq: 4900, actor: "digi" });
   check("#65 B1: weather merge does not snap the fallback day",
@@ -385,8 +384,8 @@ const policyArgs = {
   check("#65 weather verb cannot claim bag authorship", wetTypo.seq === 4800 && wetTypo.by === "antra",
     JSON.stringify({ seq: wetTypo.seq, by: wetTypo.by }));
 
-  // 5 — bad tz → back to accelerated: full bag re-issue with the clock
-  // cleared restores the rated fields as active state, dormant drops
+  // 5 — bad tz → back to accelerated: full bag re-issue with the tz
+  // cleared makes the rated clock the governing one again
   const back = foldSkyEntry(null,
     { verb: "sky", args: { ...wetTypo, clock: undefined, tz: undefined, hours: 6.8, rate: 24 }, ts: T0 + 5 * HOUR, seq: 5100, actor: "antra" });
   check("#65 back to rated: hours/rate active again, dormant dropped",
@@ -396,15 +395,15 @@ const policyArgs = {
   check("#65 back to rated: late join re-fold is identical",
     JSON.stringify(synth(back)) === JSON.stringify(back));
 
-  // 6 — dormantRated guards: weather verbs are locked out entirely; sky-verb
-  // values are authored config (same rank as authoring rate itself) but
-  // shape-sanitized — junk keys and non-finite values can never land
+  // 6 — guards: a weather verb cannot author the clock under a tz, and a
+  // dormantRated on either verb is never read as a clock (the fold doesn't
+  // strip it: the door refuses it)
   const wSpoof = foldSkyEntry(real,
     { verb: "weather", args: { weather: "rain", dormantRated: { rate: 666 } } as any, ts: T3, seq: 5200, actor: "digi" });
   check("#65 guard: weather verb cannot author the clock under a tz (dormantRated is no clock: the door refuses it, the fold reads nothing in it)",
     wSpoof.rate === 24 && hoursAt(wSpoof, T3) === hoursAt(real, T3), JSON.stringify(wSpoof));
   // the indirect route (review N1'): top-level hours/rate on a weather verb
-  // while the standing clock is real must not reach the park either
+  // while the standing clock is real must not reach the fallback either
   const wIndirect = foldSkyEntry(real,
     { verb: "weather", args: { weather: "rain", hours: 1, rate: 666 }, ts: T3, seq: 5250, actor: "digi" });
   check("#65 guard: weather-verb hours/rate cannot reach the fallback clock under a tz",

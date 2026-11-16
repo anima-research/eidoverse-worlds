@@ -8,7 +8,9 @@
 // absolute-from-origin (Godot's spinner: start + step × distance, never
 // accumulated) with a live preview per move and ONE commit on release; (5) Esc
 // mid-drag restores the start value and commits nothing; (6) a click that
-// travelled never fires a row button (nav/action separation).
+// travelled never fires a row button (nav/action separation). Also: shift/ctrl
+// on a drag, soft limits, disabled and driven rows, resolveDelta(Each), and a
+// rebuild held while a field of the panel has focus.
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();

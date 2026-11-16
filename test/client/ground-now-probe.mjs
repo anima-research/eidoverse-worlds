@@ -1,5 +1,5 @@
 // bun test/client/ground-now-probe.mjs — World › ground shows what the world HAS ("world: …") above the composer dials
-// (which default to meadow and read like a report — the owner and I misread galleta_dry as meadow, 09-24). Grows two
+// (which default to meadow and can be misread as a report of what is planted). Grows two
 // different plantings through a real `set @world grass`, then mows, and reads the line after each.
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 const { check, done } = checker();

@@ -14,14 +14,14 @@ const WORLD = process.argv[2] ?? 'structdemo';
 const ID = process.env.DEMO_ID ?? 'builder';
 
 // A 6×4 house: kitchen and bedroom down the west side, a hall running the
-// full depth on the east, a front door to the south and three windows.
+// full depth on the east, a front door to the south and four windows.
 //
 //        x=0    1    2    3    4    5    6
 //   z=0   ═════════════════╤═════════════       ═ exterior   ║ interior
 //         │ kitchen        ║                │
 //   z=2   ├────────────────╫    hall        │   ╫ = doored
 //         │ bedroom        ║                │
-//   z=4   ═══════[door]════╧═════════════════
+//   z=4   ═════════════════╧══[door]═════════
 const wallsRun = (axis: 0 | 1, along: number[], fixed: number) =>
   along.map((v) => (axis === 0 ? [0, v, fixed] : [1, fixed, v]));
 

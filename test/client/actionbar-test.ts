@@ -27,7 +27,7 @@ import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
 GlobalRegistrator.register({ width: 1024, height: 768 });
 
-// emojiRenders paints on a scratch canvas: coloured pixels = a real glyph
+// emojiRenders paints on a scratch canvas and looks for chroma; this flat-grey stub has none, so every tile takes its word fallback
 HTMLCanvasElement.prototype.getContext = function () {
   return { fillText() {}, getImageData: () => ({ data: new Uint8ClampedArray(24 * 24 * 4).fill(200) }) } as any;
 };
@@ -68,7 +68,7 @@ if (RESTORE) {
 const intervals: Function[] = [];
 const _setInterval = globalThis.setInterval;
 (globalThis as any).setInterval = (fn: Function, ms: number, ...a: any[]) => { intervals.push(fn); return _setInterval(() => {}, 1e9, ...a); };
-// a controllable clock for the 1.5 s lit window (null: the real one, which until() needs for its deadline)
+// a controllable clock for the 1.5 s lit window (null: the real one, which tryUntil needs for its deadline)
 const realNow = performance.now.bind(performance);
 let nowMs: number | null = null;
 performance.now = () => nowMs ?? realNow();
@@ -89,40 +89,24 @@ console.log('ACTIONBAR — nine tiles, one row');
 check('3 posture tiles + 6 action tiles = 9', tiles().length === 9, `${tiles().length}`);
 check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
 check('gestures follow in ANIM_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.anim === ANIM_ORDER[i] && t.title === `${ANIM_ORDER[i]} — key ${i + 1}`));
-// minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
-// (windows.js:155), so a 124px floor made ONE column unreachable by drag however
-// snapTo computed — R: "Action bar still can't go 1x wide, 9x tall." snapTo floors
-// cols at 1 (actionbar.js `Math.max(1, …)`), on every path.
+// minW is widthFor(1), not widthFor(3): a real resize clamps at f.minW (windows.js), so a wider floor makes ONE
+// column unreachable by drag whatever snapTo computes. snapTo floors cols at 1 (actionbar.js `Math.max(1, …)`).
 check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
 check('an XR panel registers with 3 postures + 6 gestures', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + ANIM_ORDER.join());
 
 console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess #185)');
 {
-  // The rereview's symptom is a HEIGHT flip: [464,10,352,46] -> [616,10,48,350].
-  // snapTo derives columns from width and rows follow, so the discriminator is the
-  // row count, not the width — a width assertion passes either way because snapTo
-  // has its own >=1-column floor downstream.
-  //
-  // roomFor() is a closure; its only consumer is f.show() ->
-  //   snapTo(_placed ? w : room), room = roomFor()   (re-derived, never min'd with the stored width)
-  // so this drives that path. The stub's getBoundingClientRect returns zeros, so the
-  // geometry is SUPPLIED. THREE rects are measured live in Chromium at 1280x720
-  // on 2026-09-12:  #dock [0..42]  #micbtn [44..70]  #earbtn [76..102]
-  //
-  // The fourth is a DELIBERATE COUNTERFACTUAL, not a measurement, and calling all
-  // four "measured" was wrong (agent review round 3). `.capnotice [930..1270] top 8`
-  // is the card's PRE-B2 position: the same commit moved it to top:389 (>=1068),
-  // top:64 (901-1067), top:102 (<=900), so at no shipped width does it satisfy this
-  // band filter. It is put back in the row on purpose, to construct the historical
-  // defect. The x-extent is real (right:10px at 1280); the y is not.
-  // Likewise `mk('#dock', 0, 1141, ...)` further down is synthetic — no 1141px dock
-  // exists; it is the cheapest way to manufacture room=123.
+  // The #185 B2 symptom is a HEIGHT flip, [464,10,352,46] -> [616,10,48,350]: snapTo derives columns from width and
+  // rows follow, so the rows are the discriminator (a width check passes either way behind snapTo's 1-column floor).
+  // roomFor() is a closure whose only consumer is f.show() -> snapTo(_placed ? w : roomFor()), so this drives that.
+  // happy-dom measures nothing, so the geometry is SUPPLIED: #dock [0..42], #micbtn [44..70], #earbtn [76..102] were
+  // measured in Chromium at 1280x720; `.capnotice [930..1270] top 8` and the 1141px #dock further down are synthetic.
   const mk = (sel: string, l: number, r: number, t: number, b: number, ds?: Record<string, string>) => {
     const el = document.createElement('div');
     if (sel.startsWith('#')) el.id = sel.slice(1); else el.className = sel.slice(1);
-    // chromeCost() reads the DECLARED anchor off the element; a fixture that omits it
-    // falls back to 'right'. A card standing in for its STRETCHED state has to say so,
-    // via the same attribute capnotice.js sets from the CSS breakpoint.
+    // chromeCost() reads the DECLARED anchor off the element's dataset (windows.js CHROME_ANCHOR: `edge` for the rail,
+    // its glyphs and #hudstatus, default 'left'; `anchor` for .capnotice, default 'right'), so a fixture that is
+    // right-anchored or stretched has to say so
     if (ds) Object.assign(el.dataset, ds);
     (el as any).getBoundingClientRect = () => ({ left: l, right: r, top: t, bottom: b, width: r - l, height: b - t, x: l, y: t });
     document.body.append(el); return el;
@@ -135,45 +119,17 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   check('left-anchored chrome alone leaves the bar 9-across in ONE row',
     f._state.w === 352 && f._state.h === ROW_H, `w=${f._state.w} h=${f._state.h}`);
 
-  // force the defect: a right-anchored element back inside the bar's y-band.
-  // Raw room here is innerWidth - 8 - (1270 + 8) = -6. Flooring that to widthFor(1)
-  // yields ONE column and h=336 — which IS the flip, not a repair of it.
+  // A card back inside the bar's y-band. It binds nothing now: `.capnotice` is not in roomFor()'s list (the row
+  // further down says why), so no row follows it; it stays in `made` as inert chrome for the rows after.
   made.push(mk('.capnotice', 930, 1270, 8, 43));
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  // NOT asserted here: that roomFor's Math.max(widthFor(1), room) floor produces
-  // 48x336 at a destructive room. It is not separately observable — snapTo clamps
-  // cols at Math.max(1, ...) regardless, so removing the floor leaves the suite
-  // green. RECEIPT RETRACTED AND RE-RUN: this note previously said "leaves this
-  // suite 35/0. Verified by mutation, not assumed." When that sentence was written
-  // the suite had 33 assertions and the run returned 33/0; 35 was the count it
-  // reached two commits later. The figure was written ahead of the run that would
-  // have justified it and is now accidentally true, which is why it survived a
-  // re-check. Measured at this head: floor removed -> 36/0, baseline -> 36/0.
-  // The floor stays as defence in depth but earns no assertion, because an
-  // assertion nothing can falsify is decoration. What IS bound is the narrow
-  // window below, which no downstream clamp rescues.
-  //
-  // SAME STATUS, stated so it does not look tested: roomFor's
-  // `if (!Number.isFinite(room)) return null` guard is also unbound. Removing it
-  // leaves this suite 36/0 — measured, not assumed. It exists because the earlier
-  // stand-down policy handled NaN by accident (`NaN >= n` is false) and flooring
-  // does not (`Math.max(48, NaN)` is NaN, and snapTo would write NaN into
-  // _state.w/h and paint it). `room` derives from innerWidth and
-  // getBoundingClientRect edges, and no path I can construct makes either NaN, so
-  // the guard is unreachable today and asserting it would be writing a test for a
-  // state the product cannot enter.
-  //
-  // ONE MORE UNBOUND LINE, named rather than left looking tested (round 4):
-  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves the
-  //     suite green, because no fixture supplies a zero-width rect.
-  // Cheap to bind and not bound; a reader should not infer coverage from this block's
-  // green. (Over-clamping IS caught since the 640px rail fixture below asserts `=== 352`.)
+  // UNBOUND in roomFor(), said so its green is not read as coverage: the `Math.max(widthFor(1), room)` floor (snapTo
+  // floors cols at 1 anyway), the `Number.isFinite(room)` guard (no fixture yields NaN) and the `g.width` guard (no
+  // fixture supplies a zero-width rect). Over-clamping IS caught: the 640px rail row below asserts `=== 352`.
 
-  // THE WINDOW THE STAND-DOWN ABANDONED. Room 123 is too small for the 352px
-  // default but large enough for a real bar; standing down left 352 and painted
-  // 229px under #micbtn/#earbtn, whose z-index (45 both; #dock is 27, .capnotice
-  // 60) beats any frame (Z_HI=25), so those tiles were unpressable. Clamping puts
-  // every tile in clear space.
+  // A NARROW ROOM CLAMPS. Room 123 (1280 - 8 - 1149) is too small for the 352px default but enough for a real bar.
+  // Leaving the bar at 352 would paint 229px of it under the chrome, which sits above every frame in z (#dock 27,
+  // frames top out at Z_HI=25), so those tiles would be unpressable.
   document.body.innerHTML = '';
   const narrow = mk('#dock', 0, 1141, 10, 304);
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
@@ -182,19 +138,10 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   narrow.remove();
   for (const el of made) document.body.append(el);
 
-  // THE BAND FILTER: only chrome that shares the bar's row may constrain it.
-  //
-  // `g.top < 60 && g.bottom > 8` asks whether an obstacle's vertical span overlaps the
-  // bar's. A rail at top:389 cannot cover a bar at y:10, so it must not shrink it.
-  //
-  // Two things this fixture gets right that the previous one did not. It uses #dock,
-  // which is LEFT-anchored and so genuinely consumes from the left — a right-anchored
-  // obstacle contributes costL = 0 whether the filter keeps it or drops it, which is
-  // why the old version passed with the filter deleted. And it runs at a viewport where
-  // a REAL rail actually constrains a 352px bar: the clamp needs
-  // vw - 16 - rail.right < 352, so a [0..304] rail binds only below vw = 672. At the
-  // 1280 the previous block used, no realistic rail can bind, and the assertion would
-  // have been asserting something false.
+  // THE BAND FILTER (`g.top < 60 && g.bottom > 8`): only chrome that shares the bar's row may constrain it; a rail at
+  // top:389 cannot cover a bar at y:10. The fixture is #dock because it is LEFT-anchored (a right-anchored obstacle
+  // costs the left nothing whether the filter keeps it or not), at a viewport where a real rail binds: the clamp
+  // needs vw - 16 - rail.right < 352, so a [0..304] rail binds only below vw = 672.
   document.body.innerHTML = '';
   (window as any).innerWidth = 640;
   const rail = mk('#dock', 0, 304, 389, 424, { edge: 'left' });
@@ -211,27 +158,11 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
     f._state.w < 352 && f._state.w >= 48, `w=${f._state.w} — expected a snapped width under 352 (room here is 320)`);
   rail.remove();
 
-  // THE CARD DOES NOT CONSTRAIN THE BAR. Inverted deliberately — this assertion used
-  // to require the opposite ("a stretched .capnotice in the bar row DOES constrain it
-  // — the list entry is live"), and it was right for the design it was written against.
-  //
-  // The owner's ordering rule (15:04) replaced that design: "Compute action bar first
-  // relative to the dock. capnotice lands under the action bar (or just over it, tbh,
-  // because you can dismiss it)." One direction. The bar sizes against the rail and its
-  // glyphs; the card then places itself from the bar's settled rect. So `.capnotice` is
-  // out of roomFor()'s obstacle list, and a stretched card in the bar's row must now
-  // leave the bar at its full width.
-  //
-  // WHY THE OLD DESIGN HAD TO GO: the two measured each other. The card's top came from
-  // every obstacle above it, the bar included; the bar's width came from every obstacle
-  // in its band, the card included. It had no fixed point — the same probe measured the
-  // card at 361 on one run and 95 on the next. And actionbar.js:99-104 had already
-  // written down what would happen if the card entered the band: "room goes negative
-  // (measured -6 ... reflowed the 9-across bar to a 48x350 column)". That shipped to a
-  // phone on 2026-09-12: nine tiles in one 48px column down the right edge.
-  //
-  // This check is the guard against re-adding it: put `.capnotice` back in roomFor()'s
-  // list and this goes red.
+  // THE CARD DOES NOT CONSTRAIN THE BAR. The owner's ordering rule: "Compute action bar first relative to the dock.
+  // capnotice lands under the action bar (or just over it, tbh, because you can dismiss it)." So the bar sizes against
+  // the rail and its glyphs only. While each measured the other there was no fixed point, and a card in the band
+  // drove room negative: nine tiles in one 48px column down a phone's right edge.
+  // The guard: put `.capnotice` back in roomFor()'s list and this goes red.
   document.body.innerHTML = '';
   (window as any).innerWidth = 390;
   const card = mk('.capnotice', 50, 382, 10, 45, { anchor: 'stretch' });
@@ -240,21 +171,11 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
     f._state.w === 352, `w=${f._state.w} — the card is back in roomFor()'s obstacle list; the cycle is back with it`);
   card.remove();
 
-  // ANCHOR-AWARENESS IN roomFor(), bound by a RIGHT-DOCKED RAIL.
-  //
-  // Removing `.capnotice` from the obstacle list (cdca5c2) took the only right-anchored
-  // obstacle out of this suite, and with it the only fixture that could tell
-  // chromeCost() from the bare `g.right` arithmetic it replaced: the review found that
-  // bypassing chromeCost here left the suite 39/0.
-  //
-  // The entry is NOT redundant — all three remaining selectors read `dataset.edge`,
-  // which ui.js:499 rewrites whenever the rail is dragged, so any of them can become
-  // right-anchored at runtime. What was missing was a fixture that does it. At 1280
-  // with the rail at [1238..1280]:
+  // ANCHOR-AWARENESS IN roomFor(), bound by a RIGHT-DOCKED RAIL. Every selector in the list reads `dataset.edge`
+  // (ui-dock.js applyDockEdge sets the rail's; the glyphs and the strip copy it), so any can be right-anchored at
+  // runtime. At 1280 with the rail at [1238..1280]:
   //     anchor-aware  {left:0, right:42}    -> room 1222   bar keeps 352
   //     bare g.right  {left:1280, right:0}  -> room  -16   bar floors to 48
-  // which is the 48x350 single column the owner photographed on 2026-09-12, reached by
-  // a second route.
   document.body.innerHTML = '';
   (window as any).innerWidth = 1280;
   const rightRail = mk('#dock', 1238, 1280, 10, 42, { edge: 'right' });
@@ -264,50 +185,25 @@ console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess 
   rightRail.remove();
   (window as any).innerWidth = 1280;
 
-  // ANCHOR-AWARENESS ITSELF, bound. The two fixtures above cannot see it: a LEFT-anchored
-  // rail and a STRETCHED card both charge `g.right` to the left under either the old
-  // arithmetic or the new one, so they agree by coincidence. Only a RIGHT-anchored
-  // obstacle IN the bar's row separates them — the antra-tess #185 B2 geometry, on
-  // #hudstatus (`.capnotice` is not in roomFor's list, actionbar.js, so a card never binds):
-  //   old (g.right as left-consumption): clearRight=1270, room=-6  -> bar floors to 48
-  //   new (anchor-aware):                costL=0, costR=330, room=934 -> bar keeps 352
+  // The same binding on #hudstatus: RIGHT-anchored chips IN the bar's row, the #185 B2 geometry (`.capnotice` is not
+  // in roomFor's list, so a card never binds):
+  //   bare g.right as left-consumption: clearRight=1270, room=-6       -> bar floors to 48
+  //   anchor-aware:                     costL=0, costR=330, room=934   -> bar keeps 352
   document.body.innerHTML = '';
   const rightChips = mk('#hudstatus', 950, 1270, 10, 45, { edge: 'right' });
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
   check('RIGHT-anchored chips in the row do not eat the bar from the left',
     f._state.w === 352, `w=${f._state.w} — charging its g.right to the left gives room -6 and floors the bar to 48`);
   rightChips.remove();
-  // Remove only what this block added. NOTE, corrected after round 4 measured it:
-  // an earlier version of this comment claimed the `el !== f.el` guard prevents
-  // orphaning the stub's frame element. It does not — `f.el` is ALREADY detached
-  // here, orphaned by the `document.body.innerHTML = ''` calls earlier in this
-  // block (instrumented: connected=true at init, false after the first one). The
-  // guard is inert and the suite only passes because the stub holds `f.body` by
-  // reference rather than reading the live document. Left in place as a cheap
-  // correctness floor if the stub ever grows real geometry, but it is not the
-  // protection the old comment advertised.
+  // Remove only what this block added. The `el !== f.el` guard is inert here: f.el was already detached by the
+  // `document.body.innerHTML = ''` calls above, and the suite passes because the stub holds f.body by reference.
   for (const el of [...document.body.children]) if (!made.includes(el as any) && el !== f.el) el.remove();
   for (const el of made) if (!el.isConnected) document.body.append(el);
 
-  // NEVER-WIDEN APPLIES TO A BAR THE OWNER PLACED — and only to that one.
-  //
-  // Round 4 bound this with `_placed = false`, and the rule it stated is right for the
-  // case it had in mind: "a bar saved at 86px must not be inflated to fill 1162px of
-  // clear space just because the chrome moved." But an UNPLACED bar never chose 86px.
-  // Its width is a function of the room available, and a saved one is a derived value
-  // that outlives the condition that produced it.
-  //
-  // Measured on a phone, 2026-09-12: while `.capnotice` was still in roomFor()'s list
-  // it drove room negative, snapTo wrote w:48 to storage, and the bar opened as nine
-  // tiles in a single 48px column down the right edge. Removing the card from that list
-  // fixed room (272, correct) and the bar STILL opened at 48 — because
-  // `Math.min(48, 272)` is 48. The stored value could never recover.
-  //
-  // The distinction already exists in the product: windows.js:193 marks a resize as
-  // deliberate ("a resize is deliberate too"), so a dragged bar has `_placed = true`
-  // and show() skips the clamp entirely (`f._placed ? null : roomFor()`). So this
-  // fixture now asserts what it meant — a PLACED bar keeps its width — and the
-  // unplaced case is asserted below it.
+  // NEVER-WIDEN APPLIES ONLY TO A BAR THE OWNER PLACED. A drag or resize marks the frame placed (windows.js: "a
+  // resize is deliberate too") and show() then skips the clamp (`f._placed ? null : roomFor()`). An UNPLACED bar's
+  // width is derived from the room, so it re-derives: under min(saved, room) a bad stored 48 could never recover
+  // (`Math.min(48, 272)` is 48; a phone opened nine tiles in one 48px column).
   document.body.innerHTML = '';
   mk('#dock', 0, 42, 10, 304);
   f._state.w = widthFor(2); f._state.h = heightFor(2); (f as any)._placed = true; f.show();
@@ -335,16 +231,9 @@ await drag(200);
 check('a 200px drag snaps to 5 columns: w=200, h=2 rows', f._state.w === widthFor(5) && f._state.h === heightFor(5) && f.paints > 0, `w=${f._state.w} h=${f._state.h}`);
 await drag(10);
 check('a 10px drag floors at ONE column, wrapping to 9 rows', f._state.w === widthFor(1) && f._state.h === heightFor(1), `w=${f._state.w} h=${f._state.h}`);
-// VERTICAL. R, 2026-09-11: "can you also make it arrange vertically? I can't
-// make it stack 1 wide 9 tall, for example." snapTo derived BOTH w and h from
-// the column count, so the bar could only ever be as tall as its width implied.
-// windows.js:427 already passes (state.w, state.h); this self-sizer was discarding the
-// second argument. snapTo floors cols at 1 on every path (`onResize(10)` above).
-// VERTICAL, BY WRAPPING. R, 2026-09-11: "1 wide 9 tall". Columns come from the
-// dragged WIDTH and the rows follow — height is a consequence, never an input.
-// An earlier version took rows from a dragged height and, because windows.js:427
-// always passes one, the bar pinned itself at nine rows and refused to wrap:
-// "forcibly go 9x down and not wrap to the buttons at all."
+// VERTICAL, BY WRAPPING (R, 2026-09-11: "1 wide 9 tall"). Columns come from the dragged WIDTH and rows follow: height
+// is a consequence, never an input. windows.js hands onResize (state.w, state.h) and snapTo ignores the height on
+// purpose; taking rows from it pinned the bar at nine rows and it refused to wrap.
 await drag(48);
 check('a 1-column drag wraps to 9 rows (R: "1 wide 9 tall")',
   f._state.w === widthFor(1) && f._state.h === heightFor(1), `w=${f._state.w} h=${f._state.h}`);

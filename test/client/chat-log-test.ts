@@ -12,6 +12,8 @@
 // protocol's bounded window.
 // Also (merged from chat-markdown-test): inline markdown builds elements but never parses HTML out of a message,
 // the VR quad's `recent` tail cap, account() unread/mention counting, and People Here side swapping against mod decoys.
+// And: the tab strip and People Here pane, /w and /r after whisper's removal, commands as lantern actions, the /audio
+// report, and the moderator notice.
 
 import { fileURLToPath } from "node:url";
 import { plugin } from "bun";
@@ -123,8 +125,8 @@ check("t0 outside the spoken protocol is ignored",
 
 // --- REGRESSION (#27 review): an inserted line derives its grouping from its
 // VISUAL neighbor, not chronological arrival — and the displaced anchor
-// reprints its name. All three fail on main (buildLine keys cont off
-// lastAuthor; nothing re-derives after a t0 insert).
+// reprints its name. (buildLine keys cont off lastAuthor, the arrival order;
+// the three rows below fail unless it is re-derived after a t0 insert.)
 reset();
 ts = Date.now();
 logChat("rab", "alpha", "", { seq: 20, ts: ts - 4000 });
@@ -227,17 +229,9 @@ const allTab = tabs().querySelector(".tabscroll button") as HTMLElement;
 allTab?.click();
 check("...and `all` shows the room again", visible().some((l: any) => l.textContent.includes("a room line")), visible().length + " visible");
 
-// THE ACTIVE TAB IS SCROLLED INTO VIEW. R's screenshot showed `system| @H` —
-// the open tab clipped to two characters while `all` and `mentions` held the
-// full left. R, 2026-09-11: "should probably always preferentially display the
-// tab that it's on".
-//
-// The PIXELS are unbindable here and I checked that BEFORE writing this:
-// happy-dom performs no layout, so a deliberately overflowing row reports
-// scrollWidth=0 clientWidth=0 and scrollIntoView leaves scrollLeft at 0. What IS
-// bindable is the mechanism — that setFilter finds the active tab and asks for
-// it. Verified separately in real Chromium (clipped by 44px before, fully
-// visible after).
+// THE ACTIVE TAB IS SCROLLED INTO VIEW (R, 2026-09-11: "should probably always preferentially display the tab that
+// it's on"). happy-dom performs no layout (scrollWidth and clientWidth read 0), so the pixels are unbindable here;
+// what is bound is the mechanism: switching tabs asks the active one to scroll into view.
 { const calls: string[] = [];
   const proto = (globalThis as any).HTMLElement?.prototype;
   const orig = proto?.scrollIntoView;
@@ -422,12 +416,9 @@ console.log('CHAT — People Here swaps sides');
   check('the pane lists who is here', /2 others here/.test(realSide.querySelector(':scope > .chat-side-head')!.textContent!) && realSide.querySelectorAll('.who-row').length === 2,
     `${realSide.querySelector(':scope > .chat-side-head')!.textContent} / ${realSide.querySelectorAll('.who-row').length} rows`);
 
-  // S1/F4: a mod's markup INSIDE the real .chat-side. My earlier claim that a
-  // mod cannot reach here was FALSE — mods.js:88 hands a mod makeFrame and
-  // windows.js returns the LIVE chat frame for a bare id, so a local mod (an
-  // in-page ES module, mods.js:5-8) can mount into this very body. Planted
-  // FIRST so an unbounded lookup finds it before the real head: the captures
-  // must address the nodes initChat wrote, not the first match by class.
+  // S1/F4: a mod's markup INSIDE the real .chat-side. Reachable: a local mod is an in-page ES module with full
+  // access to the page (mods.js header), so it can mount into this very body. Planted FIRST so an unbounded lookup
+  // finds it before the real head: the captures must address the nodes initChat wrote, not the first match by class.
   const nestedMod = document.createElement('div');
   nestedMod.className = 'mod-inside';
   nestedMod.innerHTML = `<div class="chat-side"><div class="chat-side-head">MOD-HEAD</div></div>`;
@@ -454,7 +445,7 @@ console.log('CHAT — People Here swaps sides');
   // at `if (!side || !sideSt.open) return`, so a closed pane would skip the very
   // lines S1/F4 mutate and both mutants would survive — which is exactly what
   // happened when this drove chat.open() (that opens the FRAME, not the pane).
-  mdBus.emit('roster');                                    // the real trigger, chat.js:714
+  mdBus.emit('roster');                                    // the real trigger: chat.js bus.on('roster')
   check('a mod .chat-side-head nested inside the real pane is never written to (S1)',
     innerHead.textContent === 'MOD-INNER-HEAD', innerHead.textContent!);
   check('...nor the one a mod mounts as an earlier sibling', modHead.textContent === 'MOD-HEAD', modHead.textContent!);
@@ -493,18 +484,14 @@ console.log('CHAT — People Here swaps sides');
     threw === '' && detached.querySelector(':scope > .chat-side-head')!.textContent === headBefore,
     `threw=${threw} head=${detached.querySelector(':scope > .chat-side-head')!.textContent}`);
   cols.append(detached);                                  // put it back for later blocks
-  // M-D: paintSide's `!sideSt.open` guard. bus.on('roster'|'presence:me')
-  // (chat.js:714-715) call paintSide with NO open-check of their own, so
-  // dropping it repaints a CLOSED pane on every roster event. (The 2s tick at
-  // :716 gates itself on sideSt.open — it is not the path.)
-  // paintSide returns early when closed — it does NOT clear. So the binding is
-  // "the text does not CHANGE", not "the text is empty". (An earlier draft
-  // asserted === '' and failed: my assertion presumed a clean slate that never
-  // existed. The product was right; the test was wrong.)
+  // M-D: paintSide's `!sideSt.open` guard. chat.js's bus.on('roster') and bus.on('presence:me') call paintSide with
+  // NO open-check of their own, so dropping it repaints a CLOSED pane on every roster event (the 2 s tick gates
+  // itself on sideSt.open: it is not the path). paintSide returns early when closed and does NOT clear, so the
+  // binding is "the text does not CHANGE", not "the text is empty".
   (tog as HTMLElement).onclick!(new Event('click'));          // close it
   const frozen = realSide.querySelector(':scope > .chat-side-head')!.textContent;
   roster = [{ id: 'keir', declares: 'agent' }, { id: 'rab' }, { id: 'zzz' }];   // a roster CHANGE while closed
-  mdBus.emit('roster');                                   // the REAL trigger (chat.js:714)
+  mdBus.emit('roster');                                   // the REAL trigger (chat.js bus.on('roster'))
   check('a CLOSED pane is not repainted (roster events must respect the open guard)',
     realSide.classList.contains('closed') && realSide.querySelector(':scope > .chat-side-head')!.textContent === frozen,
     `${realSide.className} / "${realSide.querySelector(':scope > .chat-side-head')!.textContent}" (was "${frozen}")`);
@@ -512,18 +499,10 @@ console.log('CHAT — People Here swaps sides');
   // applySide/paintSide/applyChatPrefs must never have touched the decoy
   check('applySide writes onto the nodes initChat built, never a mod panel carrying the same classes', dCols.className === dBefore.cls && dTog.textContent === dBefore.txt, `${dCols.className} / ${dTog.textContent}`);
 
-  // applyChatPrefs was the ONE reader addressing a node by class at call time
-  // (`frame.body.querySelector('.chat-log')`), so a mod prepending .chat-log
-  // won the query: the size landed on the decoy, persisted, and the real log
-  // never changed — silently, no error. It now writes through the captured
-  // logEl. This binds the HIJACK only: the decoy must not get the size and the
-  // real log must. It does NOT bind the ordering bug the fix first shipped with
-  // (logEl captured after initChatGear, so the boot-time applyChatPrefs was a
-  // no-op) — by the time this block clicks +A, initChat has long returned and
-  // logEl is set either way. Instrumented to confirm: under that mutation the
-  // FIRST applyChatPrefs logs logEl=NULL and every later one logs logEl=set.
-  // The boot moment needs its own assertion; claiming this one covered both
-  // was wrong.
+  // applyChatPrefs writes through the captured logEl; when it addressed the node by class at call time
+  // (`frame.body.querySelector('.chat-log')`) a mod prepending .chat-log won the query and the real log never
+  // changed, silently. This binds that HIJACK only: the decoy must not get the size and the real log must. The
+  // boot-moment ordering (logEl captured before initChat's first applyChatPrefs) is the row near the top.
   const dLog = document.createElement('div'); dLog.className = 'chat-log';
   frameStub.body.prepend(dLog);                            // a mod's log, earlier sibling
   const realLog = frameStub.body.querySelector('#chatlog') as HTMLElement;

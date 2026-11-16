@@ -6,17 +6,10 @@
 // a loader plugin swaps it for a stub exporting just what ragdoll's dependency
 // cone actually uses (THREE, and terrain's scene/ground/grid).
 //
-// This suite runs against the SHIPPED VRM RIGS, not only against an idealised
-// skeleton. That is the whole point of it. The previous version tested one
-// synthetic T-pose humanoid on the reasoning that "the invariants under test
-// live in the particle sim, not in any particular VRM" — and it passed 18/18
-// while every real rig in the fleet was broken, because the rigs are the
-// variable the sim is most sensitive to. Measured on the shipped avatars at
-// that point: 100% bone-shaft interpenetration on all 14, up to 47% bone
-// stretch, elbows and knees with no hyperextension limit at all, and a fall
-// that landed 10 metres apart depending on the framerate.
-//
-// So: keep the synthetic cases (they isolate the solver), and add the fleet.
+// This suite runs against the SHIPPED VRM RIGS, not only an idealised
+// skeleton: the rigs are the variable the sim is most sensitive to (a
+// synthetic-only version passed 18/18 while every shipped rig interpenetrated,
+// stretched and hyperextended). The synthetic cases stay: they isolate the solver.
 
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
@@ -297,8 +290,7 @@ check('every shipped rig loads with a humanoid and hips',
   // its parent's frame, which is exactly what the streamed pose stores —
   // decomposed about the bone's own rest axis. Measuring against the bone's
   // rest WORLD orientation instead charges the body's whole tumble as twist,
-  // which reads as 180° on a body that has merely lain down, and sent me
-  // chasing a number that was mostly the floor.
+  // which reads as 180° on a body that has merely lain down.
   const twistOf = (q: any, axis: any) => {
     const along = new THREE.Vector3(q.x, q.y, q.z).dot(axis);
     const t = new THREE.Quaternion(axis.x * along, axis.y * along, axis.z * along, q.w);
@@ -317,9 +309,8 @@ check('every shipped rig loads with a humanoid and hips',
     for (const d of rd.drive) {
       // the pelvis is excluded on purpose: it has no parent BONE, so its local
       // rotation is the body's own orientation and "twist" there is the tumble.
-      // Keyed on the NAME, not on a field the new drive happens to add — keyed
-      // on the field, this test skipped every bone under the old drive and
-      // passed vacuously, which is exactly the failure it exists to catch.
+      // Keyed on the NAME, not on a field one drive happens to add: keyed on
+      // a field, a drive without it skips every bone and this passes vacuously.
       if (d.bone === 'hips') continue;
       const q = pose?.[d.bone]; if (!q) continue;
       const axis = rd.nodes[d.child].position.clone();

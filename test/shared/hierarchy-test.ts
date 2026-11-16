@@ -40,7 +40,7 @@ console.log('tree building from a world\'s view');
 {
   const D = scratchWorld('hierarchy').seed({
     table: { model: LIB, pos: [0, 0, 0] },
-    lamp: { model: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },   // one place per thing: its light is the bulb under it
+    lamp: { model: 'eidoverse/assets/models/lamp_brass_desk.glb', pos: [0, 0.8, 0], parent: { to: 'table', offset: [0, 0.8, 0] } },   // its light is the bulb under it
     bulb: { pos: [0, 1.2, 0], parent: { to: 'lamp', offset: [0, 0.4, 0] }, light: { color: 0xffd9a0, intensity: 8, range: 4 } },   // an Empty with a light
     porch: { pos: [5, 2, 0], light: { color: 0xffffff, intensity: 10, range: 6 } },
     marker: { pos: [7, 0, 0] },                                                                                                           // a bare Empty

@@ -952,9 +952,7 @@ console.log('\nmeasured jump take-off (#196 review B2):');
   // different right answers; starting at the squat bottom instead of the rise; dropping the 1 cm
   // noise guard; searching the whole clip instead of its first half; and removing the `slot ===
   // 'jump'` gate so every clip gets re-timed.
-  // (An earlier header claimed the first-half restriction "would need a full landing clip to
-  // exercise". That was wrong — a synthetic 7-key track with a deeper landing crouch separates the
-  // two, and is the `withLanding` case below. Corrected rather than left standing.)
+  // (The first-half search is bound by the synthetic 7-key track with a deeper landing crouch, in CASES below.)
   // ONE declared survivor: deleting the `clip.userData.takeoff` memo write. Without it the function
   // recomputes and returns the same value, so it is a perf regression, not a behavioural one —
   // genuinely equivalent. Poisoning the memo IS behavioural and is bound (the repeated-jump case).

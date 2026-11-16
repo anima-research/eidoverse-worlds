@@ -10,7 +10,7 @@
 // write), as components-wire-test does. No server process, no browser.
 //
 // What each part pins:
-//  - a mesh thing: no collider when it loads, when it's born live, when a mesh change re-births it, and when it's
+//  - a mesh thing: no collider when it loads, when it's born live, when a mesh change reshapes it, and when it's
 //    dismounted (models.js syncParts, execDismount);
 //  - a structure thing: no wall or floor box, only the grass mask, and a live collider change takes its boxes away and
 //    back (structure.js realize, onChange);

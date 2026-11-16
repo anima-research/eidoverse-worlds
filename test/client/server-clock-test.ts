@@ -420,7 +420,7 @@ console.log("\n— the browser takes the clock as its server clock —\n");
   }
   // heldStill runs fn with performance.now() held at one instant, so every
   // clock read inside it reads that instant, however long the process stalls.
-  // From here on an estimate is read that way, as serverNow() or streamNow()
+  // From here on an estimate is read that way, as serverNow() or rawNow()
   // less that instant: exact to the 2^-12 ms a double keeps near 1.8e12 ms.
   // NaN for a reader that has no such function.
   const heldStill = <T>(fn: (p: number) => T): T => {
@@ -457,10 +457,9 @@ console.log("\n— the browser takes the clock as its server clock —\n");
 
   // Remote bodies are drawn on the one time base (spec/PHYSICS.md §5.1): the
   // estimated server clock, serverNow(), the clock flights and every other
-  // authority stamp are drawn on, less INTERP_MS (110 ms). (main's #201 drew
-  // them on a separate stream clock, the old 0.08 blend; here a sample carries
+  // authority stamp are drawn on, less INTERP_MS (110 ms). A sample carries
   // its sender's capture time on the authority's clock, and serverNow() is
-  // measured by round trips, so bodies and flights share one clock.)
+  // measured by round trips, so bodies and flights share one clock.
   {
     // A pose with no `t` (the snapshot's, once a body loads: net.js) is
     // stamped at serverNow().

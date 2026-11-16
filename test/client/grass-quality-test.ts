@@ -10,21 +10,13 @@
 // (re-grow) and arrives before the first field loads. None of it is ever a
 // world verb.
 //
-// Negative control, as written for the branch that added it: this suite FAILED on that branch's base (history now). Most failures are
-// necessarily novelty because main has no applied-truth report; the behavioral
-// anchor is the source-extracted shipped dial below, which demonstrates the
-// silent no-op live (request 0.35 while an incompatible stroke draws 800/800)
-// before main proves it has no surface capable of naming that mismatch.
-//
 // The APPLIED-TRUTH sections (#74) extend the contract: the dial can
 // silently no-op (wireDensityDial leaves a stroke without setDensity when
 // its instanced attributes are absent; the composed dial optional-chains),
 // so every inspection surface must distinguish chosen / governor shed /
 // effective REQUESTED / effective APPLIED, read from live instance counts.
-// Their negative control also runs on both trees: flora.js's shipped
-// wireDensityDial (source-extracted) demonstrates the silent no-op LIVE, and
-// main then fails the "can this tree name it?" checks with the false success
-// it actually reports (policy 0.35, stroke drawing its full built count).
+// flora.js's shipped wireDensityDial (source-extracted) demonstrates the
+// silent no-op live: request 0.35 while an incompatible stroke draws 800/800.
 
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";
@@ -54,11 +46,10 @@ const S = suite("grass-quality");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
 
-// ---- behavioral delta — runs on BOTH trees -------------------------------
-// Evaluate the dial exactly as flora.js ships it, extracted from the tree's
-// own source (not retyped), so this one assertion is a live A/B: main's
-// inline expression floors at >=1 instance per stroke and keeps 50 of 1000
-// at factor 0; the branch delegates to densityCount and keeps 0.
+// ---- the shipped dial -----------------------------------------------------
+// Evaluate the dial exactly as flora.js ships it, extracted from its source
+// (not retyped): at factor 0 it keeps 0 of 1000 (densityCount), where an
+// inline 5% floor would keep 50.
 const gqMod = await import("../../client/lib/vegetation/grass_quality.js");
 console.log("\nflora's shipped density dial (source-extracted, both trees)");
 {
@@ -175,7 +166,7 @@ console.log("\nterrain lifecycle (the real setGrass/setGrassDensity path)");
 
 // ---- applied truth (#74) --------------------------------------------------
 // flora.js's SHIPPED wireDensityDial, source-extracted so the silent-no-op
-// mechanism is demonstrated on both trees, not retyped into the test.
+// mechanism is demonstrated on the shipped code, not retyped into the test.
 const floraSrc = await Bun.file(here("../../client/lib/vegetation/flora.js")).text();
 const { mulberry32 } = await import("../../shared/rand.js");   // the one import wireDensityDial reads
 const wdMatch = floraSrc.match(/function wireDensityDial\(field\) \{[\s\S]*?\n\}/);

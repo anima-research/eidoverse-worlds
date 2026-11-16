@@ -13,7 +13,7 @@
 //   smoothing — Y chases at 1 − exp(−dt/τ) with a 2 cm dead zone, frame-rate independent, never overshoots;
 //   standing is rigid — idle/walk/run/jump (setClip's slot) hang it at the rest crown over the root whatever the hips
 //     do; only a posture change eases; a gesture, held pose or ragdoll keeps the live anchor;
-//   the real Avatar methods — the rest crown measured in model units, scaled live, written in the ROOT's frame (turned,
+//   the real Nameplate methods (on an Avatar) — the rest crown measured in model units, scaled live, written in the ROOT's frame (turned,
 //     moved, scaled), the old 1.95 with nothing to measure, and the own-body clearance measured from the new anchor;
 //   the plate's size and fade (platesize.js) — see its section at the end.
 
@@ -203,7 +203,7 @@ console.log('seen from above (owner, 10-01: "offsets away from the avatar when s
   check('plate behind the camera: no lift', lift(behind) === 0);
 }
 
-// ---- the real Avatar methods, on a real THREE rig -------------------------------------------------------------
+// ---- nameplate.js's real methods on an Avatar, a real THREE rig ------------------------------------------------
 console.log('avatar.js:');
 {
   const { THREE } = await import('../stubs/core-stub.mjs');
@@ -381,7 +381,7 @@ console.log('avatar.js:');
 }
 
 // ============================================================ the plate's size, fade and reveal against world distance (from platesize-test)
-// client/lib/avatar/platesize.js, the function avatar.js calls every frame: world-sized up close, capitals held at TEXT_DEG, growth
+// client/lib/avatar/platesize.js, the function nameplate.js calls every frame: world-sized up close, capitals held at TEXT_DEG, growth
 // capped at MAX_GROW, full to 20 m and gone by 30; held (k = 1) holds TEXT_DEG uncapped to 50/60 m; the own-body clearance.
 console.log('plate size:');
 {

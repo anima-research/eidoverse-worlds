@@ -1,6 +1,6 @@
 // generate.js originOf (#260 house I98): ?orrery= is interpolated into the conjure panel's markup and its fetches, and
 // remembered, so only an http(s) base (origin + a path of plain segments) is ever taken from it: never markup, a
-// javascript: URL, credentials, a query or a hash. The cases orrery-param-test held, against the pure function.
+// javascript: URL, credentials, a query or a hash. Run against the pure function.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/originof-test.ts
 import { plugin } from 'bun';

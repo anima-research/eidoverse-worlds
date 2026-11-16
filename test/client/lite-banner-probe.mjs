@@ -157,7 +157,7 @@ try {
     }
     // the ∃ menu offers the light version, behind a centred confirmation (owner, 10-01)
     await p.keyboard.press('Escape'); await p.waitForTimeout(200);
-    // reopen the REAL menu deterministically (round-3 review: a pointer that left the menu arms ui.js's 450 ms mouse-away
+    // reopen the REAL menu deterministically (round-3 review: a pointer that left the menu arms ui-menu.js's 450 ms mouse-away
     // close; a row that still looked visible skipped the reopen and the timer shut the menu under the click). The pointer
     // goes onto the ∃ first, which disarms that timer; the ∃ is clicked only if the menu is actually hidden (a click on an
     // open menu toggles it shut); then the row must be VISIBLE, not merely attached. No force-click.

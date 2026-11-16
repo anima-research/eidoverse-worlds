@@ -1,7 +1,6 @@
 // Orientation as quaternions (PROTOCOL §9 amendment) — `bun test/shared/rot-test.ts`.
-// Checks shared/rot.js against three.js (an independent implementation), and
-// that rot.js owns its numerics. (The v1 fold's q semantics that lived here went
-// with the v1 fold: a transform now carries q itself, folded by shared/protocol/fold.js.)
+// Checks shared/rot.js against three.js (an independent implementation). That
+// rot.js owns its numerics is test/client/one-binding-test.ts's scan.
 import * as THREE from "three";
 import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from "../../shared/rot.js";
 

@@ -90,7 +90,6 @@ console.log('the maths:');
   // 1.50 m at the eye (k = 1.5/1.6), a controller 0.55 m out and 1.1 m up in the playspace
   const { THREE } = await import('../stubs/core-stub.mjs');
   const H = 1.6, E = 1.5, k = E / H, handLocal = new THREE.Vector3(0.2, 1.1, -0.5);
-  // the authored arm that reaches that hand at size 1 (the fit's whole point): its world length at the fit is |handLocal − shoulder|
   // an AUTHORED shoulder (model units) and the authored arm length that — through the size-1 fit (× 1/k) — spans
   // exactly shoulder→controller: the fit's whole promise, which every other size must keep
   const shoulderA = new THREE.Vector3(0.18 * k, 1.3, 0), armA = handLocal.clone().sub(shoulderA.clone().multiplyScalar(1 / k)).length() * k;

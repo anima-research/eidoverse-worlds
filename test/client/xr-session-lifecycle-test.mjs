@@ -82,7 +82,7 @@ console.log('\n— ORDERING: our restore must run before a listener registered a
 {
   // three registers its own 'end' listener inside setSession, i.e. AFTER ours. Listeners fire in
   // registration order, so ours must be first: if three's restarts the desktop loop against a dead
-  // session first, no frame ever ticks again (the module header's 09-07 22:41 receipt).
+  // session first, no frame ever ticks again (the module header's first rule).
   const w = fakeWindow(); const s = fakeSession();
   s.tagNext('decoy-before');
   s.addEventListener('end', () => {}, {});           // something already listening
@@ -180,8 +180,8 @@ console.log('\n— a stale first-session completion cannot affect the second —
   // THE SUPERSEDED SESSION'S OWN SHIM (round-two sweep, the worst survivor): moving `ended = true`
   // below the generation guard passed every test, because no test ever called session A's captured
   // shim after A ended. three.js holds such a shim across a fast re-entry — and with the latch unset
-  // it keeps feeding frames to a DEAD session forever. That is the 09-07 22:41 receipt this module
-  // exists to prevent, reachable again through the overlap path.
+  // it keeps feeding frames to a DEAD session forever. That is the stall this module exists to
+  // prevent, reachable again through the overlap path.
   { let threw = null, landed = null;
     try { shimA(() => {}); } catch (e) { threw = e?.message ?? String(e); }
     landed = a.calls.length ? 'the DEAD session' : (w.calls.length ? 'the window' : 'nowhere');

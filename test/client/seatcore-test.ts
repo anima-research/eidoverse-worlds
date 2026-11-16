@@ -67,10 +67,9 @@ console.log("schema");
   const unsup = { avatar: "crow", avatarSha256: A_SHA, pose: "sitchair", unsupported: { refusal: "no humanoid mapping — no seat landmark derivable" } };
   check("unsupported record with refusal validates", validateProfile(unsup).ok === true && validateProfile(unsup).kind === "unsupported");
   check("unsupported without refusal refused", !validateProfile({ ...unsup, unsupported: {} }).ok);
-  // #105 review B2: these strings index rights-bearing maps
-  // #105 review B2: legal syntax is not enough — the language's reserved
-  // names are refused at the schema, and the store's null-prototype maps
-  // refuse them again (test/server/seats-store-test.ts)
+  // #105 review B2: these strings index rights-bearing maps, so legal syntax
+  // is not enough — the language's reserved names are refused at the schema,
+  // and the store's null-prototype maps refuse them again (test/server/seats-store-test.ts)
   check("avatar '__proto__' refused", !validateProfile({ ...good(), avatar: "__proto__" }).ok);
   check("avatar 'constructor' refused", !validateProfile({ ...good(), avatar: "constructor" }).ok);
   check("avatar 'prototype' refused", !validateProfile({ ...good(), avatar: "prototype" }).ok);

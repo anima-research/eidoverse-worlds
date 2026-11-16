@@ -116,7 +116,7 @@ check('…between, inverse squared distance (mid and right equal, left a ninth o
 check('a param signal drives a blend', w(evalPose({ by: 'param.lean', clips: [[0, 'a'], [1, 'b']] }, { 'param.lean': 0.75 }), 'b') === 0.75);
 check('time: phase and an offset are carried', evalPose({ clip: 'swing_pump', time: 'phase', offset: [0, 0.1, 0] }, {}).time === 'phase' && evalPose({ clip: 'x', time: 'phase', offset: [0, 0.1, 0] }, {}).offset?.[1] === 0.1);
 
-// the pose menu and sync groups
+// the pose menu
 const sofa = B({ poses: { lean: 'a', cross: 'b' }, sync: 'sofa' });
 check('the menu: the latest choice this socket offers wins; an unknown one is ignored', choosePose(sofa, [{ name: 'lean', at: 5 }, { name: 'cross', at: 9 }, { name: 'nap', at: 99 }]).name === 'cross'
   && choosePose(sofa, []).spec === sofa.pose);
@@ -263,7 +263,7 @@ check('…and a station is materialized: the anchor is written down, an absent l
   const d = L.call('create', { from: 'chair1', id: 'chair2' });
   check('LS4 a duplicate copies its seat child once', d.ok && kidsOf('chair2').length === 1, kidsOf('chair2')); }
 
-// K7: a socket child's Hierarchy row says what it is for (seat, snap, attach; derived, never stored), never "(empty)"
+// K7: a socket child's Hierarchy row says what it is for (station, snap, attach; derived, never stored), never "(empty)"
 { const H = scratchWorld('kinds').seed({ rack: { model: 'crate', pos: [0, 0, 0] } });
   H.sendAll([OP.addSocket('rack', { name: 'seat' }, { pos: [0, 0.5, 0], station: {} }), OP.addSocket('rack', { name: 'hook', accepts: ['coat'] }, { pos: [0.4, 1, 0] }), OP.addSocket('rack', { name: 'eye' }, { pos: [0, 1.2, 0] })]);
   const v = H.view().entities; const hint = (n: string) => kindHint(v[socketsIn(v, 'rack').find((x: any) => x.name === n)?.id ?? '']);

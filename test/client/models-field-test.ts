@@ -5,7 +5,7 @@
 //
 // The load-bearing claims: the plan is a pure diff of folded entities vs
 // the realized view; identity changes (kind flips on the flat id namespace,
-// a model's lib changing under a same-id spawn) are rebuilds, not
+// a model's lib changing on a live id) are rebuilds, not
 // refreshes; state is the pending list for mounts (mountsTouching finds
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.

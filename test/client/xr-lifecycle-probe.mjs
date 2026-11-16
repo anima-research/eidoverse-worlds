@@ -172,7 +172,7 @@ await ev(async () => { await window.__iwerDevice.activeSession?.end(); });
 const afterExit = await restoredState();
 check('session end restores the desktop clock', isRestored(afterExit), JSON.stringify(afterExit));
 
-// ── 3. re-entry, and a stale completion cannot affect it ──────────────────────
+// ── 3. re-entry: the second session owns the clock, and its exit restores it ──
 await clickVisor();
 await pg.waitForFunction(() => window.__probe.grants > 1, null, { timeout: 30000 }).catch(() => {});
 const afterReenter = await ev(() => ({

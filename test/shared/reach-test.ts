@@ -120,8 +120,7 @@ console.log("\nthe cone and the frontal plane");
   check("cone reported as binding", r.bound.includes("cone"));
   // The cone constrains the SHOULDER, so it is the upper bone that lands on
   // the boundary — not the hand, which then reaches on from there as far as
-  // the elbow allows. (This assertion used to check the hand and was simply
-  // wrong about which vector the joint limit owns.)
+  // the elbow allows.
   check("the UPPER BONE is pulled onto the cone boundary",
     near(dot(r.upper, [1, 0, 0]), Math.cos(85 * D), 1e-6), `dot=${dot(r.upper, [1, 0, 0])}`);
   check("the upper bone stays unit length", near(Math.hypot(...r.upper), 1));

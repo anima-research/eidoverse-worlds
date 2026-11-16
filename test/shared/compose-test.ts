@@ -4,7 +4,8 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/compose-test.ts
 //
-// The realizer is the real client/lib/realize/models.js over test/stubs/lod-client-stub.mjs (as components-wire-test runs it).
+// The realizer is the real client/lib/realize/models.js over test/stubs/unknown-comp-stub.mjs (lod-client-stub.mjs plus two
+// exports; as test/client/components-wire-test.ts runs it).
 import "../harness/fixture-ids.ts";
 import { plugin } from "bun";
 import { stubResolve } from "../harness/stub.ts";

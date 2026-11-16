@@ -3,7 +3,7 @@
 //   bun test/client/actions-test.mjs
 //
 // client/lib/ui/actions.js is pure (no imports, no DOM), so this runs with nothing stubbed. What it pins:
-// the tier order the lantern prompt depends on (exact > prefix > key > word-start > substring >
+// the tier order the lantern prompt depends on (exact > prefix > key > word-start > all-words > substring >
 // subsequence), that keywords count but a notch under the title, that `when` hides, that a second
 // registration of an id MERGES (the key table adds a key to the dock's entry), and that grouping keeps
 // the best row first.
@@ -28,7 +28,7 @@ A.register({ id: 'body:skydive', title: 'skydive', group: 'body', run: noop });
 
 console.log('ranking tiers');
 // every tier, generated against one synthetic title, then the same queries against it as a keyword: each band, every
-// adjacent pair strictly ordered, and a keyword a notch (-100) under the title from word-start up (below: no match)
+// adjacent pair strictly ordered, and a keyword a notch (-100) under the title from all-words (650) up (below: no match)
 const T = 'alpha bravo charlie';
 const TIERS = [
   ['exact', T, 1000, 1000], ['prefix', 'alpha br', 851, 899], ['key', 'k9', 850, 850], ['word-start', 'bra', 700, 700],

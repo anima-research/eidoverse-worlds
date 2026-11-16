@@ -5,7 +5,7 @@
 // Binds: the schema is a function of the folded record (a lamp, a model, a
 // mounted thing, a driven thing, unknown comps); channels() flattens every
 // num with a dotted address; editOps turns dotted edits into the FEWEST
-// door requests (three transform channels = one whole `set transform`; two
+// door requests (three transform channels = one whole `set transform`;
 // a socket is a child entity: the host's Sockets card lists them, del deletes one), honours relative math on the face
 // scale (degrees), the door's ranges (a value it takes is written as typed), read-only fields, and never mutates the record
 // it reads. Where the old test checked what an edit DOES (a pose, a lock), the
@@ -370,7 +370,7 @@ console.log("\nMaterial, the draft hesperus/material (docs/contributing/COMPONEN
   check("HM2 editing it writes the whole home: the new height, a level half turn, the rest kept", v?.pos?.[1] === 2 && v?.pos?.[0] === 6 && Math.abs(v?.q?.[1] - 1) < 1e-6 && v?.scale?.[0] === 0.25, JSON.stringify(r));
 }
 
-// R 10-12 (primitives): the mesh card, its ops, the Material card on a mesh thing, one place per thing
+// R 10-12 (primitives): the mesh card, its ops, the Material card on a mesh thing, Add Component on and beside a mesh
 console.log("\nmesh (a parametric body with no model):");
 {
   const cube = { pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1, mesh: { shape: "box", size: [1, 2, 3] }, label: "box" };

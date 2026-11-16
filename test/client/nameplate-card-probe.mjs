@@ -11,15 +11,15 @@
 //     mark, and a live flip of `hear` changes no neutral-grey pixel just right of the plate (measured in the render); the card says it;
 //   the plate's size — its width and fade are platesize.js's answer for the world distance (test/client/plateanchor-test.ts
 //     holds the curve itself);
-//   occlusion (MEASURED IN THE RENDER) — plate, mark and typing pill are depth-tested sprites cleared of their own body:
+//   occlusion (MEASURED IN THE RENDER) — plate and typing pill are depth-tested sprites cleared of their own body:
 //     a wall between eye and plate hides the name; a box riding ANOTHER avatar hides it; a box riding the plate's OWN
 //     body (standing through it, as claude.vrm's crown of tentacles does) does NOT — unless the clearance is zeroed,
 //     the naive depth test, which cuts it; speech bubbles stay on top;
 //   hold-to-reveal — holding N brings a walled-off plate through, at plateSize(d, 1); release hides it again; N typed
 //     into the chat line reveals nothing;
-//   the card — a plate a wall hides opens none; resting on a plate opens it only after the delay; it names the person and says mic off / can't hear
-//     you; it follows the plate while the pointer rests on it; leaving plate and card closes it; Esc closes it and
-//     leaves the panels alone; "mention" puts @name in the chat line (it opened a DM tab until whisper was removed, R 10-18);
+//   the card — a plate a wall hides opens none; resting on a plate opens it only after the delay; it names the person and says mic off / headphones
+//     off; it follows the plate while the pointer rests on it; leaving plate and card closes it; Esc closes it and
+//     leaves the panels alone; "mention" puts @name in the chat line;
 //   phone (390×844, touch) — a tap on a plate opens the same card inside the viewport; a tap elsewhere closes it.
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 import { mkdirSync } from 'node:fs';

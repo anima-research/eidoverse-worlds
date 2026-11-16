@@ -71,7 +71,7 @@ try {
   console.log(`  · fix ${fix.installed ? 'armed, not installed before entry' : 'ABSENT or pre-installed'}${fix.control ? ' — CONTROL RUN: disarmed' : ''}`);
   check('gated: before any session the fix is armed but nothing is patched', fix.installed, JSON.stringify(fix));
   await ev(() => document.querySelector('#xrbtn').click());
-  // a pre-entry voice ask (the mic-consent step in flight on this branch) may stand between the click and the session:
+  // a pre-entry voice ask (vrmic.js's "Voice in VR?" step) may stand between the click and the session:
   // answer "Not now" if one shows, so this probe measures rendering and nothing about voice
   await pg.waitForFunction(() => {
     if (window.__probe.grants > 0) return true;

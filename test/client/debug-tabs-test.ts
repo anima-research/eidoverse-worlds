@@ -2,7 +2,7 @@
 // The remembered tab is chosen at boot while Debug is still closed; before the tabs, every group was a
 // collapsible that built on first open, and the tabs must keep that (an unvisited panel costs nothing).
 //
-// windows.js is the REAL module (only its ./base.js is stubbed), so every way the frame comes back on screen is
+// windows.js is the REAL module (only its ../base.js is stubbed), so every way the frame comes back on screen is
 // the shipped one — including the viewport auto-restore, which never goes through show().
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/debug-tabs-test.ts

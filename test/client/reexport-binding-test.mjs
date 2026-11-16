@@ -2,10 +2,8 @@
 // So a module that re-exports a name AND uses that name itself compiles fine, passes
 // every boot-level check, and throws a ReferenceError the moment the using line runs.
 //
-// This branch shipped two of them (avatar.js/ANIM_CLIPS, models.js/PORTED) while splitting
-// data out from behind engine imports. Both survived a green boot-check and a green
-// 40-check product suite, because one only fires when a person plays a gesture and the
-// other only when a ported verb arrives. A phone found the first. This finds the class.
+// Two shipped once (avatar.js/ANIM_CLIPS was one) past a green boot-check and product
+// suite: the using line ran only when a gesture played. This finds the class.
 //
 //   bun test/client/reexport-binding-test.mjs
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -61,7 +59,7 @@ function unbound(raw) {
       const rest = code(src.slice(0, m.index) + src.slice(m.index + m[0].length));
       for (const name of names) {
         // NB: build these from a plain string, never a template literal carrying backslash
-        // escapes - a template literal reads  as a backspace character, which is how the
+        // escapes - a template literal reads \b as a backspace character, which is how the
         // first version of this check matched nothing and called three healthy files broken.
         const used = new RegExp('(^|[^A-Za-z0-9_$.])' + name + '([^A-Za-z0-9_$]|$)').test(rest);
         if (used && !imported.has(name)) out.push(name);

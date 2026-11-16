@@ -42,7 +42,7 @@ const rg = rigFromGltf(g);
 check("rigFromGltf maps a node named __proto__ as an own key, not the map's prototype", !!rg && Object.getPrototypeOf(rg.humanoidOf) === Object.prototype && Object.hasOwn(rg.humanoidOf, "__proto__") && rg.humanoidOf.__proto__ === "hips", rg && { keys: Object.keys(rg.humanoidOf) });
 const vh = rg && validatePose(JSON.parse('{"__proto__": {"t": [0, 0.1, 0]}}'), { rig: rg });
 check("…so validatePose reads it as hips", !!vh && Object.hasOwn(vh.pose, "hips") && !vh.custom.length, vh && { keys: Object.keys(vh.pose), custom: vh.custom, rejected: vh.rejected });
-// the agent's bone listing (pose with no bones) over that rig read from a served GLB: a custom bone named constructor is listed
+// the agent's bone listing (anim with no joints) over that rig read from a served GLB: a custom bone named constructor is listed
 { const src = JSON.stringify({ ...g, nodes: [{ name: "__proto__", children: [1, 2] }, { name: "Head_jnt" }, { name: "constructor" }], skins: [{ joints: [0, 1, 2] }] });
   const json = new TextEncoder().encode(src.padEnd(Math.ceil(src.length / 4) * 4, " "));
   const glb = new Uint8Array(20 + json.length), dv = new DataView(glb.buffer);

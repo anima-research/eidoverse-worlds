@@ -8,9 +8,9 @@
 //
 // Each block names the product line that would silence it:
 //   sitHere() without its mountedHook() guard        → "mounted: sit tile is a no-op" goes red
-//   standUp() not calling seatHook() while mounted   → "mounted: stand tile dismounts through the seat hook" goes red
+//   standUp() not calling occupyHook() while mounted → "mounted: stand tile dismounts through the seat hook" goes red
 //   standUp() clearing posture without myState.seat  → "stand from a chair clears the seat" goes red
-//   updateMe's seatedClip losing the chair branch    → "a chair sit renders the sitchair clip" goes red
+//   locomotion_clip.js's seatedClip losing its chair → "a chair sit renders the sitchair clip" goes red
 import { fileURLToPath } from "node:url";
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';

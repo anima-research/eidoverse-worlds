@@ -1,7 +1,6 @@
 // shape-render-test — the shape audit's wave 2, render-media-env family (the owner's audit notes and plan, not in this
 // repo). Each row is a behaviour the audit changes, through the real door (a scratch world), the pure
-// reader that carries it, or the v1 importer's rules (tools/import-v1/shapes.js). Written red first, against the tree before
-// the change (wt/w2-physics, ec535895).
+// reader that carries it, or the v1 importer's rules (tools/import-v1/shapes.js).
 //   usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/shape-render-test.ts
 // @ts-nocheck
 import { fileURLToPath } from "node:url";
@@ -287,7 +286,7 @@ await tryRow('CA', () => {
   check('CA1 captions stores {session, n, gen, title?, line}: no window, no mediaTime', keys(C.fields) === keys({ session: 1, n: 1, gen: 1, title: 1, line: 1 }), Object.keys(C.fields));
 });
 
-// ===================================================================== sky: 19 → 14, radians, stamped fields refused, defaults in the registry
+// ===================================================================== sky: its 20 fields, radians, stamped fields refused, defaults in the registry
 await tryRow('SK', async () => {
   const K = COMPONENTS.sky;
   const want = ['hours', 'rate', 'ts', 'tz', 'clouds', 'weather', 'weatherK', 'transition', 'azimuth', 'fog', 'exposure', 'ambient', 'sun', 'fill', 'forecast', 'override', 'gradient', 'system', 'colors', 'audio'];   // gradient: OMI_environment_sky (step 3a); system, colors, audio: main's (10-28)

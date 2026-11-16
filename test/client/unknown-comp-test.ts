@@ -9,7 +9,7 @@
 //                    accepted, with a note that the door knows no evaluator for it
 //   2. the fold      the door's state as the view a client reads (view.js viewState): kept verbatim, replaced
 //                    wholesale, removed by delete {id, component}
-//   3. the browser   client/lib/realize/models.js + state.js + the real bus, over test/stubs/lod-client-stub.mjs's cone
+//   3. the browser   client/lib/realize/models.js + state.js + the real bus, over test/stubs/unknown-comp-stub.mjs's cone
 //                    (no renderer, no network), fed the views a client folds (hydrate the cut's view, then
 //                    applyView after each write): the bag is announced, nobody claims it, nothing is
 //                    reported; motion.js's frame loop skips it

@@ -2,16 +2,13 @@
 //
 //   bun test/client/collider-test.ts
 //
-// There was no test here at all, which is how resolveColliders spent its life
-// treating every box as an infinite column reaching down to the world floor:
-// it never read box.min.y. A mezzanine slab modelled at y 2.4-2.7 shoved a
-// walking avatar 2.3m sideways at GROUND level, and a tabletop ejected
-// anything that tried to lie beneath it. The `pillar` heuristic (collapse
-// anything over 2.4m tall to a slim centre column) was the only reason
-// anything was ever passable underneath — which is why trees worked and
-// archways did not.
+// resolveColliders must read box.min.y: without it every box is an infinite
+// column down to the world floor (a mezzanine slab at y 2.4-2.7 shoves a
+// walker sideways at GROUND level, a tabletop ejects what lies beneath it),
+// and only the `pillar` rule (a box over 2.4m tall collapses to a slim centre
+// column) lets anything pass underneath.
 //
-// The routine is shared between the walking controller (a 1.9m capsule on its
+// The routine is shared between the walking controller (a capsule on its
 // feet) and the ragdoll (one 3cm bead per joint), so most of what is tested
 // here is that the vertical numbers follow the BODY and are not constants
 // tuned for a standing human.
@@ -34,7 +31,7 @@ const check = (name: string, ok: boolean, detail = '') => {
 };
 
 const flat = () => 0;
-const AVATAR = 1.9;      // a body on its feet — resolveColliders' default
+const AVATAR = 1.9;      // a body on its feet (resolveColliders' own default is MOVER.body.height, 1.7)
 const BEAD = 0.03;       // one ragdoll joint
 
 /** A box prop whose LOCAL box spans y in [y0, y0+h] — i.e. `y0` is how far
@@ -57,7 +54,7 @@ function prop(id: string, { w = 1, h = 1, d = 1, y0 = 0, at = [0, 0, 0], collide
 
 /** A forced-exact (BVH) entity: a floor slab with a 0.4m ledge on one side.
  *  Exact colliders, declared structure floors and heightfield cells take the
- *  step-up allowance (fitted boxes don't); this exercises STEP on the exact one. */
+ *  step-up allowance (fitted boxes don't); this exercises the step-up on the exact one. */
 function twoLevel(id: string) {
   const floor = new THREE.BoxGeometry(8, 0.1, 8); floor.translate(0, -0.05, 0);
   const ledge = new THREE.BoxGeometry(3, 0.4, 8); ledge.translate(2.5, 0.2, 0);
@@ -123,10 +120,10 @@ console.log('\nbeing UNDERNEATH things:');
 
 console.log('\nthe vertical numbers follow the body:');
 {
-  // STEP applies to exact colliders, structure floors and heightfield cells
+  // The step-up applies to exact colliders, structure floors and heightfield cells
   // (fitted boxes have no step-up; the mantle system handles those). An avatar walking at the foot of a 0.4m interior
   // ledge is lifted onto it; a ragdoll joint lying at the same spot must not
-  // be — a 55cm step-up applied to a wrist teleports it onto the furniture.
+  // be — an avatar's step-up applied to a wrist teleports it onto the furniture.
   C.clearColliders(); twoLevel('room');
   check('an avatar at the foot of a 0.4m interior ledge steps up',
     at(2.5, 0, 0).ground > 0.3, `ground ${at(2.5, 0, 0).ground.toFixed(2)}`);
@@ -142,9 +139,8 @@ console.log('\nthe vertical numbers follow the body:');
 
 console.log('\nthings too tall to be boxes (the pillar rule):');
 {
-  // forced to 'box' so it becomes a pillar: a bare BoxGeometry of room scale
-  // is genuinely HOLLOW, so decide() would classify it as a walkable interior.
-  // A real tree has a trunk at the centre and fails that probe on its own.
+  // forced to 'box' so it becomes a pillar: at room scale (6×5×6 m) decide()
+  // would otherwise make it exact (size decides: shared/supportclass.js).
   C.clearColliders(); prop('tree', { w: 6, h: 5, d: 6, y0: 0, collide: 'box' });
   check('you walk under a canopy', at(3, 0, 0).push === 0);
   check('you do not walk through the trunk', at(0.1, 0, 0).push > 0);
@@ -153,9 +149,9 @@ console.log('\nthings too tall to be boxes (the pillar rule):');
 
 console.log('\nregression guards — the walking avatar must not have changed:');
 {
-  // Everything a 1.9m body sees should be exactly what it saw before `tall`
-  // existed, because every derived height resolves back to its old constant
-  // at 1.9: step 0.55, probe 0.95, span ~0.5.
+  // A 1.9m body's side pushes, pinned: 0.42 = r 0.32 + half-width 0.5 − 0.4 in.
+  // Its derived heights: step 0.89 (MOVER.body.step × 1.9/1.7), probe 0.95,
+  // span ~0.5.
   C.clearColliders();
   prop('a', { w: 1, h: 1, d: 1, at: [0, 0, 0] });
   prop('b', { w: 1, h: 0.5, d: 1, at: [3, 0, 0] });
@@ -306,7 +302,7 @@ console.log('\nthe camera ray, a refit, the spatial index, a fallen post:');
   check('the camera ray meets a fallen trunk near its end (it is a log to the ray too)', C.colliders.get('trunk').pillar && typeof t === 'number' && Math.abs(t - 1.7) < 1e-6, String(t));
 }
 
-// house I148 (#260): the per-lib cache is keyed by the lib fitCollider is given (entry.lib): removing every collider
+// house I148 (#260): the per-lib cache is keyed by the lib fitCollider is given (entry.cacheKey): removing every collider
 // wearing a lib releases it, and a second clone of a floor-shaped lib reuses the first one's lie probe
 {
   const slab = () => { const g = new THREE.BoxGeometry(4, 0.2, 4); g.translate(0, 0.1, 0); const m = new THREE.Mesh(g, undefined); m.updateMatrixWorld(true); return m; };
