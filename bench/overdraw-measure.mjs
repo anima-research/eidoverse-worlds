@@ -76,7 +76,7 @@ try {
   console.log('  live view:', JSON.stringify(rest));
   if (heat) writeFileSync(`${OUT}/overdraw-staging.png`, Buffer.from(heat.split(',')[1], 'base64'));
   const parts = Object.values(rest.byTag || {}).reduce((a, t) => a + t.fragments, 0);
-  check('live: per-category fragments sum to the total within 0.5% (measured gap: see tool header)', Math.abs(parts - rest.total) <= rest.total * 0.005, `${parts} vs ${rest.total} (${(100 * (parts - rest.total) / rest.total).toFixed(3)}%)`);
+  check('live: per-category fragments sum to the total within 0.5%', Math.abs(parts - rest.total) <= rest.total * 0.005, `${parts} vs ${rest.total} (${(100 * (parts - rest.total) / rest.total).toFixed(3)}%)`);
   const partsRaw = Object.values(r.liveRaw.byTag || {}).reduce((a, t) => a + t.fragments, 0);
   console.log(`  stable actual=${rest.stable} drift=${rest.drift ?? 0}; raw: parts ${partsRaw} vs total ${r.liveRaw.total} | actual: parts ${parts} vs total ${rest.total}`);
   check('live raw: per-category fragments sum to the total within 0.5%', Math.abs(partsRaw - r.liveRaw.total) <= r.liveRaw.total * 0.005, `${partsRaw} vs ${r.liveRaw.total} (${(100 * (partsRaw - r.liveRaw.total) / r.liveRaw.total).toFixed(3)}%)`);
