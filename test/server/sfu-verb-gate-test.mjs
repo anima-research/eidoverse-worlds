@@ -26,7 +26,9 @@ for (const verb of VERBS) {
   const i = src.indexOf(`case "${verb}":`);
   if (i < 0) { console.log(`FAIL ${verb} — case not found`); fail++; continue; }
   // the verb's body: up to its `return;\n        }` terminator
-  const body = src.slice(i, src.indexOf('\n        }', i));
+  const end = src.indexOf('\n        }', i);
+  if (end < 0) { console.log(`FAIL ${verb} — its body's terminator not found (a re-indent would read to the end of the file)`); fail++; continue; }
+  const body = src.slice(i, end);
   const gated = GATE.test(body);
   gated ? pass++ : fail++;
   console.log(`${gated ? 'ok  ' : 'FAIL'} ${verb} gates on spectator/surface`);

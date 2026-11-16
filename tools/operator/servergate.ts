@@ -1,6 +1,6 @@
 // servergate — the server's wire-contract battery, one command. Baseline it green before touching server.ts.
 //   bun tools/operator/servergate.ts             # the core battery
-//   bun tools/operator/servergate.ts --only permtest,smoke
+//   bun tools/operator/servergate.ts --only auth-test,smoke
 // For each `server: true` row it boots a scratch sequencer (own WORLDS_DIR and port), runs the tool, kills the
 // sequencer's whole tree (procgroup.ts killChild) and prints a PASS/FAIL table. Self-booting suites just run.
 // The protocol suites live in the gate (bun run test:protocol), not here.
@@ -37,9 +37,8 @@ const reap = killChild;
 type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number };
 const BATTERY: Row[] = [
   { name: "smoke", tool: "tools/operator/smoke.ts" },   // its own free port (8987 is a live sequencer here)
-  { name: "authtest", tool: "test/server/authtest.ts" },   // its own free port
+  { name: "auth-test", tool: "test/server/auth-test.ts" },   // its own free port (permtest merged into it)
   { name: "support-lifecycle", tool: "test/server/support-lifecycle-test.ts", timeoutMs: 420_000 },   // its own free port (freePort): nothing to sweep
-  { name: "permtest", tool: "test/server/permtest.ts" },
 ];
 
 const LOGDIR = mkdtempSync(join(tmpdir(), "ew-servergate-"));

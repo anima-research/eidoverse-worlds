@@ -95,7 +95,6 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["structure-edit", "shared/structure-edit-test.ts", 1], // shared/structure-edit.js: the structure editor's pure half
   ["structure-collider", "client/structure-collider-test.ts", 1], // declared structure colliders (fitStructureBoxes)
   ["collider-off-bodies", "client/collider-off-bodies-test.ts", 1], // collision off for bodies gives the walker nothing to meet, on a mesh's and a building's every realizing path
-  ["lying-support", "mcpl/lying-support-test.ts", 1], // an agent's support for a thing lying down: its true top, no phantom deck at its origin
   ["support-swap", "mcpl/support-swap-test.ts", 1], // #260 I81: a model changed while its geometry is in flight registers nothing from the old fetch (syncSupport's re-check)
   ["knockdown", "server/knockdown-test.ts", 1], // #260 I8/I147/I148: a headless body takes a shove from a body beside it, refuses one with its move gate off (the relay answers), hangs from a nail
   ["sockets", "shared/sockets-test.ts", 1], // #260 I454: sockets as entities (resolveSeat, the seat views); ran only as an import before
@@ -253,7 +252,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["swim-lists", "client/swim-lists-test.ts", 1], // review of PR #260 (watervolumes.js:123): swimming reads every water body and dry pocket, not only the ones the fog keeps
   ["build", "protocol/build-check.ts", 1],       // ship-list group B (10-07): building walls at the authority, nested blueprints, the editor's new script
   ["counter", "protocol/counter-check.ts", 1],   // PR #208 review's twelve-line list, as a counter button: publish/attach (§4.1), a script on sponsor rights (§8), the algebra (§7a) — C1…C12; blueprint-test.ts (tools/, run-client) is the pure half it leans on
-  ["blueprint", "shared/blueprint-test.ts", 1], // blueprints: the record, its hash, refusals, expand/overrides/rebase, publish and create {from}
+  ["blueprint", "shared/blueprint-test.ts", 1], // blueprints through the door (publish, create {from}, its undo) and the agent's tools
   ["build-client", "protocol/build-probe.ts", 1], // …and in a real browser: a building edit and its undo, turn/size before placing, the new-script card (one browser, guarded)
   ["shiplist", "protocol/shiplist-check.ts", 1], // ship list group A (audit 10-07): openable, reactions checked at write, motion fields, help text, people's words
   ["comps-parity", "client/comps-parity-test.ts", 1], // the Hierarchy row and the Inspector read one record at the rename's own event (matrix #40/52: lost cover gated again)
@@ -420,6 +419,32 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["custody-save", "server/custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["briefing", "server/briefing-test.ts", 1], // #214: a join's briefing names the agent guide and its version; /agents.md serves it with an etag
   ["door-frame", "mcpl/door-frame-test.ts", 1],   // a malformed frame from anyone closes that one socket, never the MCPL door (Bun 1.4's ws throws an 'error' nobody listens for)
+  // gated by the #333 trim: green with no blocker left (their ungated.json reasons had gone stale)
+  ["auth", "server/auth-test.ts", 1], // the aid1 doors (garbage, expired, wrong audience, jti replay, spectate-only scope), sessions, an enrolled agent's name; permtest merged in
+  ["wp5-verdict", "water/wp5-verdict-test.ts", 1], // water-cross's WP5 verdict on synthetic evidence: its negative controls, no browser
+  ["actionbar", "client/actionbar-test.ts", 1], // the action bar (actionbar.js): nine tiles, whole-tile snapping, postures on the desktop body and at VR entry
+  ["aux-binding", "server/aux-binding-test.ts", 1], // B1 (#57): an aux leg binds to the primary's identity authority, or it does not attach
+  ["keepalive", "server/keepalive-test.ts", 1], // the MCPL door's keepalive tolerates a thinking agent: missed pongs survive, a reap only after the full grace
+  ["chatbridge", "services/chatbridge-test.ts", 1], // the Discord chat bridge (services/chatbridge) against an owned scratch world, in its DRY_RUN
+  ["spoken-say-door", "server/spoken-say-door-test.ts", 1], // #100: the advertised MCPL surface (tools/call say) against an owned door, watched on the world socket
+  ["sfu", "server/sfu-test.ts", 1], // the SFU's policy over real RTP (loopback werift peers): the acceptance rows checkable without a browser
+  ["sfu-verb-gate", "server/sfu-verb-gate-test.mjs", 1], // every sfu-* verb in server.ts dispatch gates on spectator/surface (the sfu-pos remote-mute hole)
+  ["tts", "client/tts-test.ts", 1], // the synthesizer, executed (#91 B2)
+  ["heightmap-readiness", "mcpl/heightmap-readiness-test.ts", 1], // a real WorldAgent never commits noise in a heightmap's place: a failed grid keeps the last ground, a late one builds once
+  ["emitter-percept", "mcpl/emitter-percept-test.ts", 1], // text-tier perception of the particles component (eidoverse-worlds #25), serverless
+  ["typing-relay", "mcpl/typing-relay-test.ts", 1], // the door's typing relay (mcpl/typing-relay.ts) on a short clock: start, refresh, stop, a lost stop
+  ["door-cap-gate-live", "mcpl/door-cap-gate-live-test.mjs", 1], // the MCPL door's capability gate on a live session
+  ["mention-delivery", "server/mention-delivery-test.ts", 1], // MCPL routing for display names: speech, replay cursors, history, travel, aid1 aliases, duplicate credentials
+  ["modclose-support", "mcpl/modclose-support-test.ts", 1], // #83: a moderation close (4006) releases every support holder the closed instance owns
+  ["one-libvips", "server/one-libvips-test.ts", 1], // one libvips per optimize process (#122)
+  ["captionbot", "services/captionbot-test.ts", 1], // the caption bot's pipeline with a synthetic source and a fake STT provider
+  ["captionbot-cli", "services/captionbot-cli-test.ts", 1], // the shipping caption-bot CLI's exit status is the spool's promise
+  ["held-pose-parity", "client/held-pose-parity-test.ts", 1], // a held pose puts every joint in the same place for the headless readers and the renderer (its own fixture)
+  ["ragdoll-floor", "client/ragdoll-floor-test.ts", 1], // the Bullet ragdoll (ammodoll.js) lands on a building's floor
+  ["snap-settle", "client/snap-settle-test.ts", 1], // the renderer waits for the world as long as `wait` says
+  ["object-lod", "server/object-lod-test.ts", 1], // the geometry LOD for placeable objects (optimize.ts --lod), headless; bodies fail closed
+  ["store-variants", "server/store-variants-test.ts", 1], // the store's KTX2 shadow (store-variants.ts): helpers, the optimizer's refusal seams, the real sequencer
+  ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
 ];
 

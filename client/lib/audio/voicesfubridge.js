@@ -2,7 +2,7 @@
 // about `net`, the bus and the verb names, so voicesfu.js stays transport-only.
 //
 // It exposes window.relayDiag / window.relayMic, which the browser smokes assert against
-// (historical names; test/server/sfu-browser-smoke.mjs and the mic probes use them).
+// (historical names; test/server/sfu-browser-probe.mjs and the mic probes use them).
 import { bus, CONFIG } from '../base.js';
 import { net, sendRelayCredRequest, sendVoiceConsent, sendJoined } from '../net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,

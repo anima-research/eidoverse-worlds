@@ -2,7 +2,10 @@
 // its own scratch issuer keypair, boots a scratch sequencer wired to it, and
 // walks both doors over real HTTP + websockets.
 //
-//   bun run test/server/authtest.ts
+//   bun test/server/auth-test.ts
+//
+// Also (merged from permtest): an enrolled agent's reserved name at the join, by its bearer, and the upload door's
+// door key and enrolled bearer.
 //
 // Token minting here is a deliberate re-implementation of archipelago-home's
 // mintToken (10 lines) so this repo tests its OWN verifier copy against
@@ -13,6 +16,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { foundWorlds, freePort } from "../harness/harness.ts";
+import { tryUntil } from "../gate/wait.ts";
 import { verifyToken } from "../../server/aid1.ts";
 import { accountTag } from "../../server/directory.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -87,12 +91,11 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "..
     // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
     HN_NATIVE_ORIGIN: HTTP, HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
+    HN_SESSIONS_FILE: join(worldsDir, "sessions.json"),   // never the checkout's .sessions.json (server/auth.ts default)
   },
   stdout: "ignore", stderr: "inherit",
 });
-for (let i = 0; i < 50; i++) {
-  try { await fetch(`${HTTP}/authcfg`); break; } catch { await Bun.sleep(100); }
-}
+await tryUntil("the scratch sequencer answers /authcfg", () => fetch(`${HTTP}/authcfg`).then(() => true, () => false), { ms: 5000, step: 100 });
 
 try {
   // ---- HTTP door ----
@@ -212,7 +215,18 @@ try {
   const vBad = verifyToken(agentTok, { issuerId: ISSUER_ID, iss: ISS, aud: "orrery" });
   check("agent aid1 for another audience refused", !vBad.ok);
 
-  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6, sN]) { try { s.ws.close(); } catch { /* closed */ } }
+  // ---- an enrolled agent's name (merged from permtest): its bearer, and only its bearer, joins under it ----
+  const fake = await open({ id: "claude", token: DOOR });
+  check("an enrolled agent's name without its bearer is refused", fake.closedWith === 4004 || fake.errors.some((e) => e.includes("reserved")), JSON.stringify([fake.closedWith, fake.errors]));
+  const real = await open({ id: "claude", token: DOOR, agentToken: "authtest-claude-bearer", declares: "agent" });
+  check("the enrolled agent with its own bearer joins under its name, with a directory identity", snap(real)?.you === "claude" && /^u-/.test(snap(real)?.actor ?? ""), JSON.stringify([snap(real)?.you, snap(real)?.actor, real.errors]));
+  const other = await open({ id: "claude", token: DOOR, agentToken: "not-a-bearer", declares: "agent" });
+  check("a wrong bearer for the name is refused", other.closedWith === 4004, JSON.stringify([other.closedWith, other.errors]));
+  { const upFrom = (q: string, ip: string) => fetch(`${HTTP}/upload?${q}`, { method: "POST", body: glb, headers: { "x-real-ip": ip } });   // its own address: /upload's 4 a minute
+    const st = [(await upFrom("token=wrong", "203.0.113.21")).status, (await upFrom("token=authtest-claude-bearer&by=claude", "203.0.113.22")).status, (await upFrom(`token=${DOOR}`, "203.0.113.23")).status];
+    check("/upload: a wrong token is refused (401), the enrolled bearer and the door key are accepted", st.join() === "401,200,200", st.join()); }
+
+  for (const s of [s1, s2, s3, s4, s5, t1, t2, t1b, s6, sN, fake, real, other]) { try { s.ws.close(); } catch { /* closed */ } }
 } finally {
   proc.kill();
 }

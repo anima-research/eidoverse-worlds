@@ -1,11 +1,11 @@
-// sfu-browser-smoke — TWO real Chromium bodies through the IN-PROCESS SFU.
+// sfu-browser-probe — TWO real Chromium bodies through the IN-PROCESS SFU.
 //
 // The one row loopback werift peers can never prove: real getUserMedia, real
 // Opus, real Chrome SDP against our answer. Same assertions as
 // relay-browser-smoke.mjs (deliberately — a row proved by a different yardstick
 // proves nothing comparable), plus two the SFU makes newly checkable.
 //
-//   BASE=http://127.0.0.1:8946 bun test/server/sfu-browser-smoke.mjs
+//   BASE=http://127.0.0.1:8946 bun test/server/sfu-browser-probe.mjs
 //   (server must be running with VOICE_TRANSPORT=sfu and no JOIN_TOKEN: the /relay-diag fetch sends no Bearer)
 import { chromium } from 'playwright';
 
@@ -14,7 +14,7 @@ import { chromium } from 'playwright';
 // for free (so getUserMedia never faces the real gate) and ICE will happily
 // pick a loopback candidate, skipping exactly the exchange a remote listener
 // must complete. Run it through a public tunnel to the server (e.g. cloudflared):
-//     BASE=https://<tunnel host> bun test/server/sfu-browser-smoke.mjs
+//     BASE=https://<tunnel host> bun test/server/sfu-browser-probe.mjs
 // It still ACCEPTS a localhost BASE — for a fast inner-loop check — but it says
 // loudly that such a run is not evidence for the PR. With Chromium on the server's
 // machine, a tunnel run's media can still take a local ICE candidate: run Chromium elsewhere.
@@ -28,7 +28,7 @@ const BASE = process.env.BASE ?? world.origin;
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(BASE);
 if (LOCAL) {
   console.log('  \x1b[33m⚠ LOCALHOST RUN — inner-loop only, NOT evidence the SFU works.\x1b[0m');
-  console.log('    Real check: BASE=https://<tunnel host> bun test/server/sfu-browser-smoke.mjs');
+  console.log('    Real check: BASE=https://<tunnel host> bun test/server/sfu-browser-probe.mjs');
 } else {
   console.log(`  \x1b[36mnon-localhost BASE ${BASE} (media may still go local if Chromium shares the server's machine)\x1b[0m`);
 }
@@ -152,5 +152,5 @@ try {
   if (world) await world.close();
 }
 
-console.log(failed ? '\n\x1b[31m❌ sfu-browser-smoke: FAIL\x1b[0m' : '\n\x1b[32m✅ sfu-browser-smoke: PASS\x1b[0m');
+console.log(failed ? '\n\x1b[31m❌ sfu-browser-probe: FAIL\x1b[0m' : '\n\x1b[32m✅ sfu-browser-probe: PASS\x1b[0m');
 process.exit(failed ? 1 : 0);
