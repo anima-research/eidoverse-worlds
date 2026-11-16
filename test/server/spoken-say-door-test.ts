@@ -143,9 +143,8 @@ try {
     check("malformed trio: result.isError === true (not just failure-shaped prose)",
       r?.result?.isError === true, JSON.stringify(r?.result)?.slice(0, 120));
     check("malformed trio: zero say entries created", says.length === 0, JSON.stringify(says));
-    check("partial trio (utt without spoken): refused, zero says", says.length === 0, JSON.stringify(says));
-    check("partial trio: result.isError === true",
-      rp?.result?.isError === true, JSON.stringify(rp?.result)?.slice(0, 120));
+    check("partial trio (utt without spoken): refused (result.isError), zero says",
+      rp?.result?.isError === true && says.length === 0, JSON.stringify({ result: rp?.result, says })?.slice(0, 160));
     // COERCION vectors: Number(null)===0 and Number(true)===1 would sneak a
     // fabricated utt/t0 past a coercing guard. Type-exact validation must
     // refuse these outright — a fabricated utterance is worse than a refused one.
