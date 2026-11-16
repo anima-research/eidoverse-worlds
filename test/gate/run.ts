@@ -120,6 +120,8 @@ function manifestDrift(): string | null {
 const argv = process.argv.slice(2);
 const VALUED = ["--lane", "--receipt", "--scratch-out", "--library", "--shard"];
 const valueOf = (flag: string) => argv.includes(flag) ? argv[argv.indexOf(flag) + 1] ?? null : null;
+// an old receipt at this path must not outlive a run that stops early (merge-receipts would read it as this run's)
+{ const r = valueOf("--receipt"); if (r && !r.startsWith("--")) fs.rmSync(r, { force: true }); }
 const headOf = (dir: string) => { const r = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], { encoding: "utf8" }); return r.status === 0 ? r.stdout.trim() : null; };
 // The browser pages load the asset library (Skye's toolkit modules, sky, avatars): a separate public repo, pinned here.
 // Declared like Chrome: required for the browser lane, fetched only by --library, never read from a guessed path.
