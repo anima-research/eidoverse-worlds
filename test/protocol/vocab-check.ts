@@ -132,9 +132,15 @@ for (const rel of OSC_DOCS) { const p = path.join(ROOT, rel); if (fs.existsSync(
 const PERSON = /(?<!["'`])\b(?:person|people)\s+(?:\(\s*)?(?:or|and|nor|vs\.?)\s+agents?\b|\bagents?\s+(?:or|and|nor|vs\.?)\s+(?:person|people)\b(?!["'`])/i;
 const PERSON_DOCS = ["AGENTS.md", "DESIGN.md", "README.md", ...fs.readdirSync(path.join(ROOT, "docs")).filter((f) => f.endsWith(".md") && f !== "docs/history/INCIDENTS.md").map((f) => `docs/${f}`), "spec/PROTOCOL.md"];
 const SPLIT = /(?<!["'`])\b(?:people|humans)\s+and\s+AIs\b|\bAIs\s+and\s+(?:people|humans)\b(?!["'`])/i;
-const personScan = (rel: string, text: string) => text.split("\n").forEach((line, i) => {
-  if (PERSON.test(line)) offences.push(`${rel}:${i + 1}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`);
-  if (SPLIT.test(line)) offences.push(`${rel}:${i + 1}: "humans and AIs" splits kinds: say participants, or "humans, AIs, and whatever else comes" (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`); });
+// Markdown wraps prose, so there a phrase split across two lines is read joined too (reported at its second line)
+const personHits = (text: string, md: boolean) => { const lines = text.split("\n"), hits: { i: number; re: RegExp; line: string }[] = [];
+  lines.forEach((line, i) => { for (const re of [PERSON, SPLIT]) {
+    if (re.test(line)) hits.push({ i, re, line });
+    else if (md && i + 1 < lines.length && !re.test(lines[i + 1]) && re.test(`${line.trim()} ${lines[i + 1].trim()}`)) hits.push({ i: i + 1, re, line: `${line.trim()} ${lines[i + 1].trim()}` }); } });
+  return hits; };
+const personScan = (rel: string, text: string) => { for (const { i, re, line } of personHits(text, rel.endsWith(".md")))
+  offences.push(re === PERSON ? `${rel}:${i + 1}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`
+    : `${rel}:${i + 1}: "humans and AIs" splits kinds: say participants, or "humans, AIs, and whatever else comes" (AGENTS.md rule 6) — ${line.trim().slice(0, 100)}`); };
 const personWalk = (dir: string) => {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (SKIP_DIR.has(e.name)) continue; const p = path.join(dir, e.name);
     if (e.isDirectory()) personWalk(p); else if (EXT.test(e.name)) personScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8")); } };
@@ -144,6 +150,7 @@ for (const rel of [...PERSON_DOCS, "CONTRIBUTING.md", "mcpl/README.md"]) { const
   const wrong = [...bad.filter((t) => !PERSON.test(t)), ...good.filter((t) => PERSON.test(t))]; if (wrong.length) offences.push(`PERSON self-test misreads: ${wrong.join(" | ")}`); }
 { const bad = ["for people and AIs", "humans and AIs alike", "AIs and humans"], good = ["humans, AIs, and whatever else comes", "refuses \"humans and AIs\" as a split", "people and their AIs"];
   const wrong = [...bad.filter((t) => !SPLIT.test(t)), ...good.filter((t) => SPLIT.test(t))]; if (wrong.length) offences.push(`SPLIT self-test misreads: ${wrong.join(" | ")}`); }
+if (!personHits("for people and\nAIs alike", true).length || personHits("for people and\nAIs alike", false).length) offences.push("SPLIT self-test misreads a Markdown phrase wrapped across two lines");
 
 // The log's vocabulary is minor 1's (docs/decisions/LOG-VOCABULARY.md D3, 2026-11-04): kinds request/physics/redaction/governance,
 // `op` on a change, `cascade`, `commitment`, `rewindWindow`, the view marker `redacted`, the snapshot blob key `snapshotJson`. A retired
