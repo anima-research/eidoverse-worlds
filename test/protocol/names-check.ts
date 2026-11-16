@@ -171,13 +171,14 @@ if (argv.includes("--mutants")) {
 if (argv.includes("--control")) {
   const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  fs.renameSync(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3
+  linkInto(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3; a link, so its ../../../shared imports still resolve in d
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
-  try { linkInto(path.join(ENGINE, "mcpl", "node_modules"), path.join(d, "mcpl", "node_modules")); } catch { /* none */ }
+  for (const k of ["mcpl", "client"]) try { linkInto(path.join(ENGINE, k, "node_modules"), path.join(d, k, "node_modules")); } catch { /* none */ }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   const guard = (l: string) => /^(ok|FAIL)\s+G\d/.test(l);
-  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && guard(l)));
+  const missing = (l: string) => /Cannot find package/.test(l);   // red for this scratch tree's missing dependency, not for the rule
+  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l))));
   console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 150)}`).join("\n"));
   console.log(`[names-check --control] at ${BASE}: ${lines.length} rows, ${wrong.length} wrong (every row red there but the guards, which stay green)`);
   process.exit(wrong.length ? 1 : 0);
@@ -186,7 +187,9 @@ if (argv.includes("--control")) {
 const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const ONLY = opt("only")?.split(",") ?? null;
 const want = (id: string) => !ONLY || ONLY.includes(id);
-const readText = (rel: string) => fs.readFileSync(TREE + rel, "utf8");   // a missing file throws (its row FAILs): "" would pass every "does not contain"
+// a missing file throws (its row FAILs): "" would pass every "does not contain". A pre-reorg tree keeps client/lib flat
+const readText = (rel: string) => { const flat = rel.replace(/^client\/lib\/[a-z]+\//, "client/lib/");
+  return fs.readFileSync(TREE + (!fs.existsSync(TREE + rel) && fs.existsSync(TREE + flat) ? flat : rel), "utf8"); };
 const exists = (rel: string) => fs.existsSync(TREE + rel);
 /** The agent's code: mcpl/agent.ts and the agent-*.ts pieces it owns (a "does not contain" over agent.ts alone misses them). */
 const agentText = () => fs.readdirSync(TREE + "mcpl").filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => readText("mcpl/" + f)).join("\n");
