@@ -4,7 +4,7 @@ import { join } from "node:path";
 const root = join(import.meta.dir, "..", "..");
 const BODY = "body-state-test.ts", EFF = "effective-test.ts";   // EFF: where the seated-occupant rows live
 const cases = [
-  { name: "drop incoming bone map", file: "mcpl/agent-senses.ts", from: "p.pose = pose; p.observedAt = now;", to: "p.pose = { ...pose, pose: null }; p.observedAt = now;", test: BODY, witness: "presence condition timed out" },
+  { name: "drop incoming bone map", file: "mcpl/agent-senses.ts", from: "p.pose = pose; p.observedAt = now;", to: "p.pose = { ...pose, pose: null }; p.observedAt = now;", test: BODY, witness: "never became true within 10000 ms: the peer's sample" },   // the wait throws its own words
   { name: "tool discards requested detail", file: "mcpl/tools.ts", from: 'a.detail ?? "summary", a.points', to: '"summary", a.points', test: BODY, witness: "eight exact quaternions round-trip" },
   { name: "FK ignores root yaw", file: "mcpl/body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale)", to: "item.body.poseAt(o.pose!.p, 0, null, o.pose!.scale)", test: BODY, witness: "world joints include root translation and yaw" },
   { name: "self leaks unpublished physics", file: "mcpl/agent.ts", from: 'const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;', to: 'const bones = this.heldPose;', test: BODY, witness: "internal retired physics does not leak into self readback" },
