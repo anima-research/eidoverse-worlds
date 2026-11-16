@@ -82,7 +82,7 @@ class Client {
   /** the door's entries this client was sent, numbered */
   entries() { return this.of("log").flatMap((m) => m.entries.map((e: any, i: number) => ({ seq: m.from + i, ...e }))); }
   says() { return this.entries().filter((e) => e.kind === "say"); }
-  get me() { return this.snapshot?.you as string | undefined; }
+  get me() { return this.snapshot?.actor as string | undefined; }   // the identity (worldlog.ts); .you is the display name
   close() { this.ws.close(); }
 }
 const joined = async (id: string, world = WORLD, opts: { agent?: boolean } = {}) => { const c = new Client(id, { ...opts, world }); await c.connect(); return c; };
