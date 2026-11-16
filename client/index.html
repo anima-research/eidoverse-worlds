@@ -12,8 +12,8 @@
 <link rel="icon" type="image/svg+xml" sizes="16x16" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><style>path{fill:%238fe8c8}%40media (prefers-color-scheme:light){path{fill:%231d7a5f}}</style><path d="M3.894 2 L13 2 L13 14 L3.894 14 A7 7 0 0 1 1.755 12 L11 12 L11 4 L1.755 4 A7 7 0 0 1 3.894 2 Z"/><path d="M3.275 7 L13 7 L13 9 L3.275 9 Z"/></svg>'>
 <title>eidoverse-worlds</title>
 <style>
-/* (moved 10-11: these rules had been appended INSIDE the favicon's data-URL <style> at line 9, so none of them applied:
-   the profile name control, the Add Component band, the provenance pills; R saw "draftMaterial" in one grey) */
+/* NOTE: the favicon <link>s above carry a <style> of their own inside their data URLs, so this is the page's first real
+   sheet: anchor a CSS patch on a rule in here, never on the file's first `<style>`. */
 /* the name in the profile header is the control (R 10-11): text until you point at it */
 .pf-name { all: unset; font-weight: 700; cursor: pointer; border-radius: 4px; padding: 0 3px; margin-left: -3px; }
 .pf-name:hover, .pf-name:focus-visible { background: rgba(255,255,255,.08); box-shadow: inset 0 -1px 0 var(--brand, #7cf); }
@@ -254,10 +254,9 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   position: fixed; inset: 0; z-index: 100;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 22px; padding: 28px; box-sizing: border-box;
-  /* the ground light is .sp-rays (boot.js): soft vertical rays in the SteamVR
-     key-art manner — drawn small and upscaled so nothing has an edge, the whole
-     layer ramping from 0 alpha over 1.5 s so it never pops in, rAF-driven so a
-     frozen page freezes it. The static gradient stays UNDER it as the floor. */
+  /* the ground light is .sp-rays (boot.js startRays, splashrays.worker.js): drawn small and upscaled so
+     nothing has an edge, ramping from 0 alpha over 1.5 s so it never pops in, and worker-driven so it
+     animates through main-thread stalls. */
   background: var(--bg);   /* the ground light is the worker's breathing gradient (.sp-rays); no CSS copy underneath or it doubles */
   transition: opacity .6s ease, visibility .6s;
   font: var(--fs)/1.6 var(--font); color: var(--fg);
@@ -265,16 +264,11 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
 .sp-rays { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: block; z-index: 0; }
 #splash > :not(.sp-rays) { position: relative; z-index: 1; }
-/* THE MARK HOLDS (live, 09-05 17:41: "I keep feeling unsure about it and that's
-   usually a sign I'm trying too hard"). Two motions were removed here — the old
-   ∃'s three strokes assembling with load progress, and a compositor-side opacity
-   breath — plus the finish glow. ONE motion came back with the new mark (owner,
-   09-29 23:53): the PEG enters from the sphere's left skin, through the doorway,
-   and comes to rest at 100% — it IS the progress (boot.js paint(), eased exactly
-   as the logo notes' splash/doorway.html). Nothing else moves: the frame stands
-   at full strength from the first paint, and once loaded the mark is the still
-   mark (no transform, no clip). The other moving thing is the ground light
-   (.sp-rays, worker-driven): it means "alive"; the mark means "us". */
+/* THE MARK HOLDS. ONE thing moves: the PEG enters from the sphere's left skin, through the doorway,
+   and comes to rest at 100% — it IS the progress (boot.js paintPeg). Nothing else moves: the frame
+   stands at full strength from the first paint, and once loaded the mark is the still mark (no
+   transform, no clip). The other moving thing is the ground light (.sp-rays, worker-driven): it means
+   "alive"; the mark means "us". */
 .sp-logo {
   width: 200px; height: 210px; transform: translateY(10px) scale(.4); transform-origin: center;   /* drawn 2x, shown at 0.8x (live 09-07 23:05: 'a bit too big'), nudged down onto the mark */
   margin: -52px 0 -64px; color: var(--brand); overflow: visible;
@@ -298,17 +292,15 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 #splash .sp-bar-fill { width: 0%; height: 100%; border-radius: 2px; background: color-mix(in srgb, var(--brand) 65%, transparent); transition: width .3s ease; }
 .sp-sub { color: var(--dim); font-size: var(--fs); margin: -5px 0; text-align: center; }   /* HUD body size, not a bespoke 15px (live, 09-05) */  /* equal air above + below */
 .sp-sub b { color: var(--fg); font-weight: 600; }
-/* one centered breath under the bar — phase and bytes are a single quiet
-   line, not furniture at opposite walls */
+/* the status line under the bar: phase at its left end, bytes at its right */
 .sp-status {
   width: var(--sp-w); display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
   font-size: var(--fs); margin-top: -10px;   /* the 08-29 layout: phase under the bar's left end, bytes under its right */
 }
 .sp-phase { color: var(--brand); }
-/* what's LOADING, by name — surfaces only when something has been in flight
-   for a while (live, 09-05 17:47: VRMs take a looooong time on weak hardware and
-   a bar alone says nothing). Up to two items, most-remaining first. */
-.sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* two rows reserved always, so the column never jumps when names appear */
+/* what's LOADING, by name — surfaces only when something has been in flight for a while (VRMs take a
+   long time on weak hardware and a bar alone says nothing). One item, the most-remaining (boot.js MAX_ITEMS). */
+.sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* one row reserved always, so the column never jumps when a name appears */
 /* the VR veil (xr.js xrVeilShow): the splash's furniture over the world while a session starts or ends.
    Class-based on purpose — .sp-logo/.sp-mark/.sp-phase are global, so the veil IS the splash's look. The
    ellipsis breathes here (and only here): the veil clones the mark at rest (the peg home); a veil is a wait. */
@@ -436,20 +428,15 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-side { flex: none; display: flex; flex-direction: column; position: relative; min-height: 0; border-left: 1px solid var(--edge); }
 .chat-cols.side-left .chat-side { border-left: none; border-right: 1px solid var(--edge); }   /* the line between log and column is the column's own edge now */
 .chat-side.closed { display: none; }
-/* the grip straddles the LINE you can see (the toggler's border, between the log
-   and the 14px strip) — it used to sit on the strip's far side, invisible (live, 09-04) */
+/* the grip straddles the LINE you can see: the column's own edge, between the log and the column */
 .chat-side-grip { position: absolute; left: -5px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
 /* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
 .chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
 .chat-side-grip:hover::before, .chat-side-grip:active::before { background: var(--brand); }
 .chat-side-list {
-  /* A VISIBLE TRACK WHEN IT FILLS. `overflow-y: auto` was already here, but the
-     platform draws an OVERLAY scrollbar — measured: 40 rows overflow 812px into
-     236px and the gutter is 0px wide, so the list simply clips a row mid-height
-     with nothing to say there is more (R, 2026-09-11: "make sure there's a
-     scroll bar in the People Here panel when it gets enough people in it").
-     scrollbar-gutter reserves the lane so the rows never reflow when it appears,
-     and the thin thumb is the global one from line 91. */
+  /* A VISIBLE TRACK WHEN IT FILLS. `overflow-y: auto` alone draws the platform's OVERLAY scrollbar (a 0px
+     gutter), so a full list clips a row mid-height with nothing to say there is more. scrollbar-gutter
+     reserves the lane so the rows never reflow when it appears; the thin thumb is the house scrollbar's (above). */
   flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 6px 4px 6px 6px;
 }
 .chat-side-list .who-row { display: flex; justify-content: flex-start; gap: 4px; padding: 1px 0; font-size: var(--fs-sm); }
@@ -507,13 +494,9 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-gearpop .gp-row button:hover { color: var(--fg); border-color: var(--edge); }
 .chat-gearpop .gp-row button.on { background: var(--brand); color: var(--ink-on-brand); font-weight: 600; }
 .chat-gearpop button { padding: 2px 8px; }
-/* The strip has to hold `all · mentions · system` PLUS one tab per open DM, so
-   the tabs can no longer share the width equally — flex:1 squeezed every tab
-   thinner as conversations opened. They size to their label now and the strip
-   scrolls, with arrows appearing only on overflow.
-   R, 2026-09-11: "squash the words together at the top to make room for more
-   tabs but still leave some buffer so they don't get too close, left/right
-   arrow keys at either side of the menu if you need to side-scroll". */
+/* The strip holds `all · mentions · system` PLUS one tab per open DM, so the tabs can't share the width
+   equally (flex:1 squeezed every tab thinner as conversations opened): they size to their label and the
+   strip scrolls, with arrows appearing only on overflow. */
 .chat-tabs { display: flex; gap: 2px; padding: 7px 8px 0; flex: none; align-items: stretch; }   /* NO rail here: it ran under the arrows and gear and died at the People-Here expander. R, 2026-09-11 item 5: "crop the separator line to only be under the tabs ... look more balanced" */
 .chat-tabs .tabscroll {
   display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
@@ -522,12 +505,8 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 }
 .chat-tabs .tabscroll::-webkit-scrollbar { display: none; }
 .chat-tabs .tabarrow {
-  /* BIGGER, and with room around them. At --fs-xs in a 14px box these were
-     nearly invisible next to the labels — R, 2026-09-11: "Arrow buttons should
-     maybe be bigger if anything exists like that (maybe small phosphor icons,
-     if there's no unicode to support something like that?)". icons.js carries
-     NO caret/chevron/arrow glyph (checked, not assumed), so this stays unicode
-     and gets the size instead. */
+  /* big enough to see next to the labels, with room around them. icons.js carries no caret/chevron/arrow
+     glyph, so this stays unicode and gets the size instead. */
   /* min-width:0 is LOAD-BEARING: `.chat-tabs button`'s min-width matches these
      too, and .tabarrow never sets one — so without this the arrows inherit the
      tabs' floor and blow past their 16px width. Specificity does not save you
@@ -546,13 +525,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   /* .pf-tab's recipe, kept flex so the strip still shares width evenly and still
      scrolls when it cannot. An underline says "this pane belongs to this tab"
      without needing any horizontal space of its own. */
-  /* `justify-content: center` centres the label+x pair AS A UNIT, so on a
-     closable tab the glyph rode out past the padding box and vanished — R,
-     2026-09-11 item 2: "Make sure the 'x' is also fully visible." Measured: the
-     x sat 5px beyond its own tab's right edge and did not render at all.
-     Centring is right for the fixed tabs; a closable one needs the glyph to
-     occupy real space, so .has-x switches to space-between and pays for it with
-     a wider floor and room on the right. */
+  /* `justify-content: center` centres the label+x pair AS A UNIT, so on a closable tab the glyph rides out
+     past the padding box and doesn't render. Centring is right for the fixed tabs; a closable one needs
+     the glyph to occupy real space, so .has-x switches to space-between and pays for it with a wider floor
+     and room on the right. */
   /* GROW to share the strip, but never SHRINK below the label — both halves at
      once. A flex-basis of 0 crushes the tabs until the row cannot overflow and
      the arrows have nothing to scroll; `flex: none` stops the crushing but also
@@ -560,15 +536,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      flex-basis 0 never gave us: stretch into spare room, stop at the text. */
   flex: 1 1 auto; min-width: max-content; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
-  /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
-     1px past the tab, and .tabscroll is `overflow-x: auto` — an overflow box
-     CLIPS its children at the padding box, so the brand underline was cut off
-     every time while the grey rail underneath showed through. Isolated it: same
-     markup, same -1px, `overflow: auto` -> no underline, `overflow: visible` ->
-     underline. A border with no overhang has nothing to clip.
-     R, 2026-09-11: "the tabs in the Profile panel have the highlight underneath,
-     but the tabs in the Chat pane do not ... in which direction?" — hers, the
-     Profile direction. */
+  /* THE UNDERLINE LIVES INSIDE THE BOX. A `margin-bottom: -1px` would hang the border 1px past the tab, and
+     .tabscroll is `overflow-x: auto`: an overflow box CLIPS its children at the padding box, so the brand
+     underline would be cut off while the grey rail showed through. A border with no overhang has nothing
+     to clip. (The Profile strip's direction: the highlight underneath.) */
   background: none; border: none; border-bottom: 1px solid transparent;
   border-radius: 6px 6px 0 0;
   color: var(--dim); white-space: nowrap; cursor: pointer;
@@ -581,13 +552,9 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 }
 .chat-tabs button .tabx:hover { opacity: 1; color: var(--fg); background: var(--hov); }
 .chat-tabs button.on {
-  /* HIGHLIGHTED, not merely tinted. The underline alone was computed correctly
-     and painted over: the tab's bottom border and the strip's rail landed on the
-     SAME line (measured overlap 0px), so the parent's border won and the owner saw a
-     brand-coloured word with no underline — "Leave the tab highlighted when
-     active" (2026-09-11). With the rail now on .tabscroll the tab's own border
-     has somewhere to sit, and a .tile.on-style wash makes the tab itself read
-     as selected rather than just its text. */
+  /* HIGHLIGHTED, not merely tinted. The rail is on .tabscroll so the tab's own bottom border has a line
+     of its own (on one line the parent's border wins and the underline vanishes), and a .tile.on-style
+     wash makes the tab itself read as selected rather than just its text. */
   /* CHILL. A 14% brand wash won the eye away from the conversation; R,
      2026-09-11: "I prefer a more chill highlight color so it's not stealing a
      lot of attention." The pressed-in --well is this client's own idiom for a
@@ -675,12 +642,8 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   flex: 0 1 auto; justify-content: space-between; min-width: 74px; max-width: 168px; padding-right: 5px;
 }
 .chat-tabs button.has-x > span:not(.tabx) {
-  /* THE LABEL WAS EVICTING THE GLYPH. Measured: a 62.8px name inside a 74px tab
-     whose padding leaves a ~56px content box — and `white-space: nowrap` means
-     the label never yields, so the x was pushed 17px past the tab's own right
-     edge and did not render. Three rounds I spent adjusting the x's margin, the
-     tab's padding and justify-content: none of those were the term. A long DM
-     name must TRUNCATE so the glyph keeps its place. */
+  /* A long DM name must TRUNCATE so the glyph keeps its place: `white-space: nowrap` means the label never
+     yields, and an x pushed past the tab's own right edge does not render. */
   min-width: 0; overflow: hidden; text-overflow: ellipsis;
 }
 .chat-typing {
@@ -826,24 +789,16 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
 }
 .row .v { min-width: 34px; flex: none; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
 
-/* 🔴 .row.wide — the SAME row, for panels whose labels are sentences.
-   (Reuse the existing class: the audio panel once carried 40 lines of
-   private CSS re-implementing .row under sp-* names, which is how its spacing
-   drifted to gap:10px while the house row is 7px and nobody could see it
-   without measuring.)
-   .row's 42px .nm cannot hold "connect to other people's audio", so this
-   variant swaps flex for a two-column grid with a label column wide enough for
-   a sentence — and inherits gap, font-size and colour from .row itself, so it
-   CANNOT drift again. Everything else (range accent, .v readout, .nm colour)
-   already comes from the rules above and needs no duplicate. */
-/* 🔴 THE ROW RULE (live, 09-04: "stop making people guess"). Labels are LEFT-aligned
-   everywhere in a FIXED, not-very-wide column (7rem) and WRAP if they must; the
-   control sits right beside the label (start of its cell), never pushed to the
-   far edge of a wide frame. .row = short label (42px) + slider + readout;
-   .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
+/* 🔴 .row.wide — the SAME row, for panels whose labels are sentences (reuse it: a private re-implementation
+   drifts). .row's 42px .nm cannot hold "connect to other people's audio", so this variant swaps flex for a
+   two-column grid with a label column wide enough for a sentence, and inherits gap, font-size and colour
+   from .row itself. Everything else (range accent, .v readout, .nm colour) already comes from the rules
+   above and needs no duplicate. */
+/* 🔴 THE ROW RULE. Labels sit in ONE not-very-wide column (6–10rem; --row-label-col overrides) and WRAP if they
+   must, RIGHT-justified; the control is left-justified beside it, both against one invisible line as the
+   build-mode panels do, never pushed to the far edge of a wide frame. .row = short label (42px) + slider +
+   readout; .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
    No private layout rules anywhere. */
-/* R 10-11 supersedes the left-aligned rule: labels RIGHT-justified, controls left-justified, both against ONE invisible
-   line, as the build-mode panels do ("the Settings panel aren't aligned like stuff in the Build mode menus") */
 .row.wide { display: grid; grid-template-columns: var(--row-label-col, clamp(6rem, 36%, 10rem)) minmax(0, 1fr); align-items: center; column-gap: 9px; }
 .row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: right; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
@@ -942,14 +897,10 @@ body.arranging #dock #hud.emark {
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); overflow-x: auto; scrollbar-width: none; }   /* past icons-only (windows.js fitTabStrip) the strip scrolls rather than clip */
 .pf-tab { flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
-/* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
-   measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
-   `.pf-tab.on` inherited `button.on { background: var(--hov) }` = 6% white. So
-   the selected tab was the brightest thing in the strip and hovering its
-   neighbour changed only the text — which reads exactly as R described it
-   (2026-09-11): "they actually get *darker* when highlighted, which is really
-   strange!" Both states are now stated here, matching the chat strip: hover is
-   the livelier one, selection is the calm one. */
+/* THE PROFILE TABS OPT OUT OF THE GLOBAL BUTTON CHAIN: left in it, `.pf-tab:hover` paints nothing while
+   `.pf-tab.on` inherits `button.on { background: var(--hov) }`, so the selected tab is the brightest thing
+   in the strip and hovering its neighbour changes only the text. Both states are stated here, matching the
+   chat strip: hover is the livelier one, selection is the calm one. */
 .pf-tabs .pf-tab:hover { color: var(--fg); background: rgb(143 232 200 / .13); }
 .pf-tabs .pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); background: var(--well); }
 .pf-tabs .pf-tab.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }
@@ -1102,7 +1053,7 @@ body.build-mode canvas { cursor: crosshair; }
 #hintbar.gone { opacity: 0; }
 #hintbar.attn { color: var(--attn); border-color: var(--attn); }   /* asked for, didn't happen: the reason (ui.js flashHint tone) */
 
-/* ---- the lantern (lib/commandbar.js): one line for talk, /commands and actions.
+/* ---- the lantern (lib/ui/commandbar.js): one line for talk, /commands and actions.
    Ported from the HUD redesign mockups (the lantern direction, desktop and open).
    ONE element owns bottom-centre: the resting line. The hint bar borrows that same
    spot while it has something to say ("X — sit", a flash) and the line steps aside;
@@ -2247,9 +2198,8 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // Resolve the avatar FIRST and publish it, before any guard can return. net.js only
     // adopts this socket when the join it would send is byte-identical to the one sent
     // here, and lite.js is a second entry point that has to produce that same join
-    // without loading an avatar it cannot draw. It asking for '' is what made the
-    // adoption miss and produced arrive -> leave -> arrive (#188 B1). One resolution,
-    // one reader, agreement by construction rather than by two copies staying in step.
+    // without loading an avatar it cannot draw: it reads this one resolution (a
+    // mismatch shows as arrive -> leave -> arrive, #188 B1).
     const wantName = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
     let wantAvatar = wantName;   // a bare name: the server resolves it against the roster
     try {
@@ -2321,21 +2271,13 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
      who's here, no world) must not download an engine it will never run, and a
      static tag cannot be recalled once the parser has seen it.
 
-     This is NOT free, and the earlier version of this comment claimed it was.
-     The script sits exactly where the tags did, so discovery stays at depth 1
-     rather than falling back to depth 3 — but injected links are invisible to
-     the PRELOAD SCANNER, which runs ahead of the parser and was starting these
-     seven before any script executed. Measured on the owned-server boot-check,
-     warm, 1280x720, localhost: engine phase 277/283ms static vs 334/381/400ms
-     injected, so about +90ms. Time-to-arrival is unchanged (6688/6965 vs
-     6566/6756/6874) because the body's ~4.5s dominates and swallows it. Expect
-     the gap to be WIDER over a real network, where the scanner's head start is
-     worth more than it is over loopback.
-     Judged worth it: ~90ms off a 6.7s arrival, against being the only way a
-     weak device gets in at all. If that trade ever stops being worth it, the
-     fix is server-side — serve the full client's HTML with these seven static
-     and the lite client's without, which restores the scanner for everyone and
-     costs routes.ts a template it does not currently have. -->
+     The cost: injected links are invisible to the PRELOAD SCANNER, which runs
+     ahead of the parser. Measured on localhost (warm, boot-check): about +90ms
+     on the engine phase, none on time-to-arrival (the body's ~4.5s dominates);
+     expect more over a real network. Judged worth it, against being the only
+     way a weak device gets in at all. If that stops being true, the fix is
+     server-side: serve the full client's HTML with these seven static and the
+     lite client's without (routes.ts has no such template today). -->
 <script>
   // decideLite — the lite/full decision as ONE pure function, hung on globalThis so
   // test/client/lite-choice-test.mjs can run it against fabricated signals rather than
@@ -2372,13 +2314,10 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 
     const decideLite = ({ params, stored, lastBootDied, retried, deviceMemory, gpuApi, mobile }) => {
       // 0. A RENDERER IS NEVER LITE. A ?renderer page exists to draw (the /snap renderers that
-      //    deploy/render-watchdog.ts keeps), and a lite one is a renderer that cannot render. It
-      //    used to happen: the watchdog kills its renderer for a living, a kill runs no pagehide,
-      //    so the tripwire below read every kill as "this device cannot", and two in a row left
-      //    four of five roaming renderers in lite for a week. One of them was sent into a world
-      //    and answered every snapshot there "this client has no renderer" (2026-10-24).
-      //    Nothing below is about a renderer, so it outranks all of it, even an explicit
-      //    ?lite: no one wants a renderer that can't render.
+      //    deploy/render-watchdog.ts keeps), and a lite one is a renderer that cannot render. The
+      //    watchdog kills its renderer for a living and a kill runs no pagehide, so the tripwire
+      //    below would read every kill as "this device cannot". Nothing below is about a
+      //    renderer, so it outranks all of it, even an explicit ?lite.
       if (params.has('renderer')) return { lite: false, why: 'renderer' };
       // 1. An explicit ask wins, both directions, and is shareable — the reliable
       //    way back for someone whose device just died mid-boot. (Only a renderer
@@ -2398,13 +2337,12 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       //    PHONES AND TABLETS ONLY. Lite exists for a device that cannot hold the engine
       //    in RAM; a desktop or a headset can, and the things that leave this flag behind
       //    on one (a tab killed while a shader compiled, a browser force-quit, an OS
-      //    update mid-load) say nothing about whether it fits. Demoting a desktop
-      //    stranded people in the chat-only client with no idea how to get into the
-      //    world (owner, 2026-10-01: "should only be default *on mobile*"). A desktop
-      //    whose last boot died boots full again and is told so ('retry') - ONCE. If the retry dies too it never
-      //    reaches main.js, where the pill offering lite lives, so a second death in a row lands in lite after all
-      //    (review of #212: "the visitor has no in-page way out of the failed-boot cycle"), and lite's ∃ offers 3D
-      //    again. A browser with no 3D API at all is told that, not retried.
+      //    update mid-load) say nothing about whether it fits; demoting one strands a
+      //    person in the chat-only client. A desktop whose last boot died boots full
+      //    again and is told so ('retry') - ONCE. If the retry dies too it never reaches
+      //    main.js, where the pill offering lite lives, so a second death in a row lands
+      //    in lite after all (#212), and lite's ∃ offers 3D again. A browser with no 3D
+      //    API at all is told that, not retried.
       if (lastBootDied) {
         if (mobile || retried) return { lite: true, why: 'crash' };
         return gpuApi ? { lite: false, why: 'retry' } : { lite: true, why: 'no-gpu' };
@@ -2413,13 +2351,13 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
       if (stored === '1' || stored === '0') return { lite: stored === '1', why: 'saved' };
       // 4. No rendering API at all. Not a heuristic — a fact.
       if (!gpuApi) return { lite: true, why: 'no-gpu' };
-      // 4b. A PHONE OR TABLET STARTS IN LITE (owner, 10-01: "why can't phones load the lite client by
-      //     default?"). A phone visitor would rather start in chat than watch the world crash, and the
-      //     ∃ logo there ("Tap the ∃ to load the full 3D world") is one press, saved per device (3) so it isn't asked again;
-      //     a saved "3D" that then dies is caught by (2), once. Desktops and headsets start full.
+      // 4b. A PHONE OR TABLET STARTS IN LITE: a phone visitor would rather start in chat than watch
+      //     the world crash, and the ∃ logo there ("Tap the ∃ to load the full 3D world") is one press,
+      //     saved per device (3) so it isn't asked again; a saved "3D" that then dies is caught by (2),
+      //     once. Desktops and headsets start full.
       if (mobile) return { lite: true, why: 'phone' };
-      // (A low-memory guess once lived here; a phone or tablet now starts in lite at 4b, and a desktop or headset
-      //  that reports little memory is allowed to TRY - the tripwire catches it, and the pill offers lite.)
+      // (No low-memory guess: a desktop or headset that reports little memory is allowed to TRY - the
+      //  tripwire catches it, and the pill offers lite. `deviceMemory` is passed but unread.)
       return { lite: false, why: 'default' };
     };
     globalThis.__ewDecideLite = decideLite;   // test seam
@@ -2474,11 +2412,9 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     // before the very crash it exists to catch.
     //
     // PAGEHIDE listens from the moment the flag is written, not from arrival: closing or
-    // reloading a tab mid-load is a deliberate exit, and it used to trip the flag because
-    // nothing was listening yet (the owner, 09-28: "I closed Chrome in the middle of
-    // loading and it still dropped me down to the lite client"). An OOM kill or a hung
-    // renderer runs no handler, so those still count. A bfcache restore re-arms, unless
-    // boot.js has already disarmed for good.
+    // reloading a tab mid-load is a deliberate exit and must not trip the flag. An OOM kill
+    // or a hung renderer runs no handler, so those still count. A bfcache restore re-arms,
+    // unless boot.js has already disarmed for good.
     //
     // A RENDERER ARMS NOTHING. The tripwire can't demote it (rule 0), and its watchdog's kills
     // would only leave a flag in the profile for whoever opens this world in it next.
@@ -2775,12 +2711,11 @@ html.lite .frame.panel { max-width: 100%; }
 <script>
   // Boot watchdog — pre-module, zero imports. A failed or hanging module
   // graph (missing client/node_modules on a fresh clone, a browser without
-  // WebGPU) used to leave this splash saying "waking the engine" forever,
-  // name "…", nothing anywhere — the least debuggable failure the client
-  // had. The truth now lands ON the splash: any uncaught error or
-  // rejection before the engine marks itself up is shown, and twenty
-  // silent seconds earn a diagnosis hint. core.js sets __ewEngineUp after
-  // renderer.init() — module resolution AND the GPU both proven.
+  // WebGPU) would otherwise leave this splash saying "waking the engine"
+  // forever. So any uncaught error or rejection before the engine marks
+  // itself up is shown ON the splash, and twenty silent seconds earn a
+  // diagnosis hint. core.js sets __ewEngineUp after renderer.init() (module
+  // resolution AND the GPU both proven); lite.js sets it for itself.
   (() => {
     const phase = () => document.querySelector('.sp-phase');
     const fail = (msg) => {
@@ -2795,7 +2730,7 @@ html.lite .frame.panel { max-width: 100%; }
       `the engine failed to start — ${(e.reason && e.reason.message) || e.reason || 'see the console'}`));
     // An XR boot (?xr=1) asks for an XR-compatible GL context inside renderer.init(), and that call
     // blocks on the OpenXR runtime: SteamVR started after Chrome, or a runtime mid-handshake, hangs the
-    // engine before ANY module can report (09-06 11:12–11:22, three loads, no console line). Name it early.
+    // engine before ANY module can report. Name it early.
     const xrBoot = new URLSearchParams(location.search).has('xr');
     if (xrBoot) setTimeout(() => {
       if (globalThis.__ewEngineUp) return;
@@ -2811,8 +2746,8 @@ html.lite .frame.panel { max-width: 100%; }
 </script>
 <script>
   // One entry point or the other, never both, chosen by the same flag the preloads
-  // above read. main.js statically imports { THREE, scene, camera, renderer } at its
-  // line 10, so lite CANNOT be a runtime branch inside it — the import is resolved
+  // above read. main.js statically imports core.js ({ THREE, scene, camera, renderer }),
+  // so lite CANNOT be a runtime branch inside it — the import is resolved
   // before a flag could be consulted. Two graphs, one shared lib/.
   (() => {
     const s = document.createElement('script');

@@ -487,8 +487,9 @@ const readyPoll = setInterval(() => {
 // ---------------------------------------------------------------- frame loop
 // The loop lives in lib/render/frameloop.js; this is the list, and registration order is execution order: motion before
 // remotes, sky → materials → rig, voice mouths before the avatar update, bodydrag before remotes, gaze after,
-// send-pose after every myState writer but the XR tick (updateXR's NaN restore runs after it), render last. Each system is timed (EW.frame() prints the bill) and the
-// governor may stride cosmetic ones. The governor + HUD ride the 1 Hz pulse, registered last.
+// send-pose after every myState writer but the XR tick (updateXR's NaN restore runs after it), render last but for
+// the XR desktop mirror. Each system is timed (EW.frame() prints the bill) and the governor may stride cosmetic ones.
+// The governor + HUD ride the 1 Hz pulse, registered last.
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
 registerSystem('motion', () => tickMotion());                   // the world's moving parts

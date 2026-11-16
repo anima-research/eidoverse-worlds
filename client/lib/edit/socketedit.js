@@ -23,7 +23,7 @@ import { qMul, qFromYaw, qNorm } from '../../../shared/rot.js';
 
 const raycaster = new THREE.Raycaster();
 
-const seatGizmos = new Map();   // socket child id -> { host, gizmo (child of the host's root) }
+const seatGizmos = new Map();   // socket child id -> { host, slot, g: the gizmo (a child of the host's root) }
 let seatSel = null;             // { id: host, sock: socket child id, slot: its name } — the anchor under edit
 let seatDrag = null;            // { armed, startX, startY, pending } drag state
 let seatArm = null;             // entity id waiting for a placement click
@@ -273,7 +273,7 @@ addEventListener('mouseup', () => {
 
 
 // ---- the inspector's sockets gestures: the card is shared/editschema.js's; '+ socket here' (and Components ▸ + seat)
-// arms the click-to-place, a row click selects that gizmo
+// arms the click-to-place, a row click selects that socket
 registerHandler('comp', (id, _obj, k, _v, opts) => { if (k !== 'add:seat' || opts?.live) return false; armSocketPlacement(id); return true; });
 registerHandler('sockets', (id, _obj, k, value) => {
   if (k === 'add') { armSocketPlacement(id); return true; }

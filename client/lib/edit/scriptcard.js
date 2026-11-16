@@ -1,7 +1,7 @@
 // scriptcard — the editor's "new script" card: a name, what starts it (use or a timer), what it may change, whether it
 // may speak, and the source. Create plans the requests (scriptplan.js) and sends them through writes.js: upload {text}
-// → {src}, then ONE batch (script:<name>, + its reaction when used, not on a timer) — one act, one Ctrl+Z. A refusal is shown on the card in the
-// authority's words and the card stays open.
+// → {src}, then ONE batch (script:<name>, + its reaction when used, not on a timer) — one act, one Ctrl+Z. A refusal
+// is shown on the card in the authority's words and the card stays open.
 //
 //   openNewScript(id) → Promise<{ok, id, name} | {ok: false}>
 import * as Edits from './writes.js';

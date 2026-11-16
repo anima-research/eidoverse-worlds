@@ -11,7 +11,7 @@
 //                          wrote those since.
 //   undo() / redo()        Ctrl+Z is the authority's `undo {act}` of MY last act; redo is `undo` of my undo. The authority
 //                          redoes what's untouched and says what it skipped (shared/protocol/authority/undo.js).
-//   del(ids), duplicate(ids), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
+//   del(ids), duplicate(id), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
 import { bus } from '../base.js';
 import { net, sendRequest, replica, replicaActive, sendDrag } from '../net.js';
 import { entities } from '../world.js';
@@ -209,7 +209,7 @@ export function blueprints() {
   return Object.keys(c).filter((k) => k.startsWith('blueprints:')).map((k) => ({ hash: `sha256:${k.slice('blueprints:'.length)}`, ...(c[k] && typeof c[k] === 'object' ? c[k] : {}) }));
 }
 
-// harness window: the stacks and the module, for the suites (test/protocol/client-check.ts)
+// harness window: the stacks and whether the replica is active, for the suites (test/protocol/client-check.ts)
 globalThis.__editWrites = () => ({ undo: [...undoStack], redo: [...redoStack], active: replicaActive() });
 
 /** Set home here: where each selected thing goes back to when a reset sends it home: where it stands now. */
