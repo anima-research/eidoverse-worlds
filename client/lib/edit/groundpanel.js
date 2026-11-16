@@ -27,7 +27,7 @@ export function paintGround(body) {
   const paint = (reg) => {
     body.innerHTML = '';
     const pal = reg.groundPalette;
-    if (!pal?.tints || !pal.shapes || !pal.plantings) {
+    if (!pal?.tints || !pal.shapes || !pal.plantings || !pal.grassHeight || !pal.grassDensity) {
       body.innerHTML = '<div style="color:var(--dim);font-size:11px">this world serves no ground palette (defs/ground/_palette.json)</div>';
       return;
     }
@@ -49,8 +49,10 @@ export function paintGround(body) {
     };
     // what "grow" plants: one grass bag from the def; blade plantings take the height dial and the tint's colour
     const growGrass = () => {
+      const args = grassArgs(pal, st);
+      if (!args) { flashHint('nothing to grow: this ground palette has no plantings'); return; }   // null to ground() would be a mow
       st.grass = true;
-      ground('grass', grassArgs(pal, st));
+      ground('grass', args); return true;
     };
     const isBlade = () => !!pal.plantings[st.plant]?.blade;
 
@@ -142,7 +144,7 @@ export function paintGround(body) {
     });
     body.appendChild(dens.row);
     body.appendChild(btnRow(
-      btn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
+      btn('🌱 grow', () => { if (growGrass()) flashHint(`${st.plant} growing`); }),
       btn('mow', () => { st.grass = false; ground('grass', null); flashHint('field cleared'); }),
     ));
 

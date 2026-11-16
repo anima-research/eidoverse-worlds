@@ -239,6 +239,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["media-trust-tabs", "client/media-trust-tabs-test.ts", 1], // bot #141: an untrusted-links revoke in one tab reaches the others (storage event → media:trust)
   ["confirmcenter", "client/confirmcenter-test.ts", 1], // bot #213: an interrupting ask answers the open centre card with ITS cancel (false / null / its own)
   ["rolespanels-access", "client/rolespanels-access-test.ts", 1], // 333-cm a1/a2: a two-write door is one {requests} batch; the newcomer warning reads default-role.can
+  ["groundpanel", "client/groundpanel-test.ts", 1], // 333-cm a6/a7: grow never sends a delete; a palette missing a grass dial says so instead of throwing
   ["windows-guard", "client/windows-guard-test.ts", 1], // bot #578/#579: windows.js loads where storage throws; the painted min-width yields to a narrow viewport
   ["history-rows", "protocol/history-rows-check.ts", 1],   // the editor History never shows a refused attempt as done (Commons parity audit)
   ["scale", "protocol/scale-check.ts", 1],       // the authority at scale: ten requests timed (best of up to 5 tries): growth 72 → 500/2 000 things, a 500 ms hang backstop; gates before work; capacity; indoors (review 10-06)
