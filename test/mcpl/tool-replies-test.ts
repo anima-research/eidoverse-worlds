@@ -79,11 +79,11 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   ok(offline.failed === true && r?.isError === true && /seq 5000/.test(textOf(r)) && ctx.cursor.caughtUpTo === 5000,
     "27 an unanswered history read is an error that leaves the cursor where it was", { offline, r: textOf(r), cursor: ctx.cursor }); }
 
-// #105 (bot2): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
+// #105b (bot2 #105): the cursor after an exhausted read is a seq the read covered, not a say that arrived while it ran
 { const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() }); ag.lastSeq = 10000;
   ag.history = async () => { ag.lastSeq = 11000; return { entries: [{ seq: 2000, ts: 0, actor: "Bea", verb: "say", args: { text: "hi" } }], oldestSeq: 2000, hasMore: false }; };
   const ctx = ctxOf(ag); await handleTool(ctx, "catch_up", {});
-  ok(ctx.cursor.caughtUpTo === 10000, "105 a say arriving mid-read stays unread: the cursor is the lastSeq from before the read", ctx.cursor); }
+  ok(ctx.cursor.caughtUpTo === 10000, "105b a say arriving mid-read stays unread: the cursor is the lastSeq from before the read", ctx.cursor); }
 
 // #65 (bot2): past the 100-page cap, catch_up says which older says were not read, instead of calling the newest 20,000 the oldest
 { const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() }); ag.lastSeq = 30_000_000; let pages = 0;
@@ -101,10 +101,10 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   const seated = ag.placeList().split("\n")[1] ?? "";
   ok(/near\/spot/.test(standing) && /far\/spot/.test(seated) && /\(1\.4 m/.test(seated), "28 seated far from where it boarded, the body's nearest place is the one by its seat", { standing, seated }); }
 
-// #106 (bot2): anim {bodyMode, name} with a bad name changes nothing — the name is checked before the mode is declared
+// #106b (bot2 #106): anim {bodyMode, name} with a bad name changes nothing — the name is checked before the mode is declared
 { const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() }); const before = ag.bodyMode;
   const r = await handleTool(ctxOf(ag), "anim", { bodyMode: "fly", name: "bad name" });
-  ok(r?.isError === true && ag.bodyMode === before, "106 a refused anim name leaves the body-mode as it was", { before, after: ag.bodyMode, r: textOf(r) }); }
+  ok(r?.isError === true && ag.bodyMode === before, "106b a refused anim name leaves the body-mode as it was", { before, after: ag.bodyMode, r: textOf(r) }); }
 
 // #83 (bot2): a moderation reply's persistence warning reaches the agent's result
 { const ag: any = { request: async () => ({ ok: true, logged: "the moderator log", warning: "NOT persisted: .bans.json unwritable" }) };
