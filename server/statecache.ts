@@ -13,11 +13,14 @@ export const isCacheFile = (f: string) => f === CACHE_FILE || f.startsWith(`${CA
 const FORMAT = 2;   // this file's encoding (2: the views and byte offsets, server/foldviews.ts); also in the foldKey through these bytes
 
 let key: string | Error | null = null;
-/** hash(fold.js + its one import + registry-pin.json + this file + every file shaping a view + the runtime): any change and every
+/** fold.js and every module it imports, transitively (test/protocol/statecache-check.ts SC3c holds the list to the imports). */
+export const FOLD_FILES = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../shared/sha256.js", "../shared/protocol/features.js",
+  "../shared/protocol/provenance.js"];
+/** hash(FOLD_FILES + registry-pin.json + this file + every file shaping a view + the runtime): any change and every
  *  cache is refused. Throws (memoised) when a source can't be read: the caller then neither reads nor writes a cache. */
 export function foldKey(): string {
   if (key === null) try {
-    const files = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
+    const files = [...FOLD_FILES, "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
       .map((f) => fs.readFileSync(new URL(f, import.meta.url), "utf8"));
     key = sha256(jcs([FORMAT, process.versions.bun ?? process.version, ...files]));
   } catch (x) { key = new Error(`the fold's sources can't be read for its key (${(x as Error).message})`); }
