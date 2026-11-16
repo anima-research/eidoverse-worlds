@@ -42,7 +42,6 @@ function noteRecent(c) {
 const PAL = [0xffffff, 0xffd9a0, 0xff8a5c, 0xe05a5a, 0x7cc47c, 0x5fa8ff, 0xb48cff, 0x202020];   // the keyboard-free colour picks, both canvas looks
 const ACTION_ICON = { '✕': 'x' };             // row-action labels that are glyphs → the icon set (edit)
 const TILE_COLS = 3;                           // edit: a tiles field three across (≈ 160 px each on a 522 quad)
-const AXIS_RE = /(?:^|:)(?:pos|rot|scale)\.([xyz])$/;   // a channel's axis — the label wears x/y/z (the desktop's data-axis)
 
 /** The descriptor facts every surface reads the same way (step/dp/unit/deg on a number, the slider's range, a colour's
  *  hex, a reference's face, a console's last line). The canvas painters and the DOM stepper all read through here, so a
@@ -315,7 +314,7 @@ export const WIDGETS = {
       box(g, X, mid - 4, tw, 8, T.well, T.line, 4);
       box(g, X, mid - 4, Math.max(8, tw * frac), 8, T.accent, null, 4);
       g.beginPath(); g.arc(X + tw * frac, mid, 10, 0, Math.PI * 2); g.fillStyle = T.text; g.fill();
-      font(); text(g, `${v.toFixed(dp)}${f.unit ?? ''}`, width - pad, mid, T.text, 80, 'right');
+      font(); text(g, `${trimNum(v, dp)}${f.unit ?? ''}`, width - pad, mid, T.text, 80, 'right');
       regions.push({ x: X - 6, y: y + IN, w: tw + 12, h: V.minHit, action: f.k, slider: { lo, hi, st } });
     },
   },

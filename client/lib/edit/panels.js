@@ -579,7 +579,7 @@ function pushCards(f, schema, id, opts = {}) {
     // order and the quaternion live in Attributes, except in quaternion mode, where they ARE the rotation.
     if (quat.length && sec.quatOpen && (isOpen(id, key) || ifilter.trim())) {
       const qk = `${key}:quat`;
-      f.push({ t: 'group', k: qk, label: 'Advanced', hint: 'rotation order and the quaternion (the rotation as it is stored: four numbers that never gimbal-lock) — rarely needed until rigs', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
+      f.push({ t: 'group', k: qk, label: 'Advanced', hint: 'rotation order and the quaternion (the rotation as it is stored: four numbers that never gimbal-lock) — rarely needed until rigs', open: isOpen(id, qk) });
       f.push(...quat);
     }
     if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true, vrOnly: true });   // desktop: the ✕ on the title line
