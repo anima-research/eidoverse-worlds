@@ -16,7 +16,7 @@
 import { tryUntil } from '../gate/wait.ts';
 import { noWorldUrl } from '../harness/no-world.ts';
 const { WorldAgent, GLIDE_ARRIVE_M } = await import('../../mcpl/agent.ts');
-const { handleTool } = await import('../../mcpl/tools.ts');
+const { handleTool, TOOL_FOLDS, TOOL_REMOVED } = await import('../../mcpl/tools.ts');
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = '') {
@@ -1118,13 +1118,14 @@ console.log('\nFOLDED AND REMOVED TOOLS');
 // Main's tools that this protocol folds into general tools are refused with the call that does it now, and nothing
 // runs; world_access, folded into @world's own components, says so, and whisper says it was removed with world chat's
 // private channel (#260 r3 I3: a retired name is refused with a pointer, never "no such tool").
-for (const name of ['take_off', 'climb_to', 'glide_to', 'land_at', 'fold_wings', 'unfold_wings', 'rehearse_down', 'rehearse_recover',
-  'clear_reach', 'clear_pose', 'ragdoll', 'library_preview', 'library_sheet', 'remove', 'kick', 'list_bans']) {
+for (const name of Object.keys(TOOL_FOLDS)) {   // every folded name, from the table the door answers from
   r = await door(name, {});
   check(`${name} is refused as folded, and nothing runs`, failed(r) && new RegExp(`^${name} folded into a general tool: .* — nothing ran$`).test(said(r)), said(r));
 }
-r = await door('world_access', {});
-check('world_access is refused as folded, and nothing runs', failed(r) && /^world_access folded into a general tool: .* — nothing ran$/.test(said(r)), said(r));
+for (const name of Object.keys(TOOL_REMOVED).filter((n) => n !== 'whisper')) {
+  r = await door(name, {});
+  check(`${name} is refused as removed, and nothing runs`, failed(r) && new RegExp(`^${name} was removed: .* — nothing ran$`).test(said(r)), said(r));
+}
 r = await door('whisper', {});
 check('whisper is refused as removed, saying why, and nothing runs', failed(r) && /^whisper was removed: world chat has no private channel .* — nothing ran$/.test(said(r)), said(r));
 
