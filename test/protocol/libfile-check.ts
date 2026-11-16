@@ -22,7 +22,7 @@ const { ok, done } = suite("libfile-check", { cap: Infinity });
 const at = (i, name) => path.join(ladder[i], name);
 const put = (i, name, body = "fixture") => fs.writeFileSync(at(i, name), body);
 
-ok(LADDER.length === 3 && LADDER[0] === ladder[0] && LADDER[2] === ladder[2], "L0 the route's ladder is patched › opt › library (config LADDER)", LADDER);
+ok(LADDER.length === 3 && LADDER.every((d, i) => d === ladder[i]), "L0 the route's ladder is patched › opt › library (config LADDER)", LADDER);
 
 // precedence: the first rung that holds the name wins, in the route's order
 for (const i of [0, 1, 2]) put(i, "shared.glb");
