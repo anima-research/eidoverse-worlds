@@ -1,5 +1,5 @@
-// The native login: the HTTP handler isolated (no auth.ts runtime, no files), then the same flow over a real server's HTTP + WS
-// (from native-login-wire-test): browser auth, approval, an independent session joining any world, the pre-10-17 session on both
+// The native login: the HTTP handler isolated (no auth.ts runtime, no files), then the same flow over a real server's HTTP + WS:
+// browser auth, approval, an independent session joining any world, the pre-10-17 session on both
 // doors, logout isolation, private session persistence.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/native-login-test.ts

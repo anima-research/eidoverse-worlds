@@ -21,8 +21,6 @@ foundWorlds(worldsDir, ["commons"]);   // joining never founds a world
 // agent names this test asserts on (hesp2, hesp3) and minting hesp2's bearer.
 // The server reads it via AGENT_TOKENS_PATH, so the proof does not depend on —
 // and cannot be contaminated by — whatever tokens.json sits in the checkout.
-// (Antra B1: a founding harness cannot classify its private setup as an
-// environment footnote; here it creates and owns exactly what it relies on.)
 const tokensPath = join(worldsDir, "tokens.json");
 writeFileSync(tokensPath, JSON.stringify({
   "surf-lab-hesp2": { id: "hesp2" },

@@ -52,7 +52,7 @@ for (const [name, img, mime, filler] of [["png", png, "image/png", 2_000_000], [
   const p = glbPerfOfFile(f);
   check(`a JPEG with its SOF ${(deep.length / 1e6).toFixed(1)} MB deep: read ${glbPerfIo.bytes} bytes (≤ 1.2 MB), billed unsized`,
     glbPerfIo.bytes <= 1_200_000 && p?.unsizedImages === 1, [glbPerfIo.bytes, p?.unsizedImages]); }
-// an image nothing can size (here AVIF) is unsized from its head; only a JPEG is ever re-read whole
+// an image nothing can size (here AVIF) is unsized from its head; only a JPEG is ever re-read (up to the 1 MB ceiling)
 { const f = join(dir, "avif.glb"); writeFileSync(f, glb(new Uint8Array(900_000).fill(7), "image/avif", 1000));
   const p = glbPerfOfFile(f);
   check(`an unsizeable 900 KB AVIF is billed unsized from its head (read ${glbPerfIo.bytes} bytes)`, p?.unsizedImages === 1 && glbPerfIo.bytes < 70_000, [p?.unsizedImages, glbPerfIo.bytes]); }
@@ -75,16 +75,16 @@ for (const [name, img, mime, filler] of [["png", png, "image/png", 2_000_000], [
   check(`skins no mesh node uses cost nothing (got ${glbPerf(o2)?.bones})`, glbPerf(o2)?.bones === 0); }
 const whole = readFileSync(join(dir, "png.glb")); writeFileSync(join(dir, "cut.glb"), whole.subarray(0, whole.length - 100_000));
 check("a truncated file is unreadable (null), not a partial rank", glbPerfOfFile(join(dir, "cut.glb")) === null);
-// antra's collision (#207 review, 09-29): the rank cache was keyed on size + mtime. A same-size replacement with the
-// mtime restored kept the old file's rank. Here the PNG head goes 512×256 → 256×256: same length, different cost.
+// A rank cache keyed on size + mtime alone would keep the old file's rank across a same-size replacement with the mtime
+// restored (#207 review). Here the PNG head goes 512×256 → 256×256: same length, different cost.
 // The mtime is set to a whole second first: a sub-ms mtime doesn't survive the seconds float utimes takes on NTFS (100 ns
-// ticks; CI 42190828916 read …297.1191 back as …297.1184), so restoring it would make no collision there.
+// ticks), so restoring it would make no collision there.
 { const f = join(dir, "swap.glb"); writeFileSync(f, glb(png, "image/png", 1000));
   const T = Math.floor(Date.now() / 1000) - 60; utimesSync(f, T, T);
   const before = glbPerfOfFile(f), st0 = statSync(f);
   const small = png.slice(); new DataView(small.buffer).setUint32(16, 256);
-  // the replacement comes after the file system's change clock has ticked: NTFS keeps ctime at ~1 ms, so a rewrite in
-  // the same tick can't be told apart by any stat field (on one Linux laptop: 42 of 50 such rewrites kept size, mtime, ino, ctime)
+  // the replacement comes after the file system's change clock has ticked: a rewrite in the same tick (NTFS keeps
+  // ctime at ~1 ms; Linux does it too) can't be told apart by any stat field
   const tick = join(dir, "tick"); await until("the change clock passes the original's ctime", () => { writeFileSync(tick, "x"); return statSync(tick).ctimeMs > st0.ctimeMs; }, { ms: 5000 });
   writeFileSync(f, glb(small, "image/png", 1000)); utimesSync(f, T, T);
   const st1 = statSync(f), after = glbPerfOfFile(f), fresh = glbPerf(new Uint8Array(readFileSync(f)));

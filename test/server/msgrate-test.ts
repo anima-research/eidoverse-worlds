@@ -11,7 +11,7 @@ const RATE = 60;
 const oldWindow = () => { const c = { win: 0, n: 0 }; return (now: number) => { if (now - c.win > 1000) { c.win = now; c.n = 0; } return ++c.n > RATE ? (c.n <= 2 * RATE ? "refuse" : "drop") : "run"; }; };
 const bucket = () => { const b = newBucket(2 * RATE); return (now: number) => admitMessage(b, now, RATE); };
 
-/** messages arriving every `every` ms from `from` to `to`, handled at `handle(arrival)` */
+/** arrival times: one message every `every` ms from `from` up to (not including) `to` */
 const stream = (from: number, to: number, every: number) => { const out: number[] = []; for (let t = from; t < to; t += every) out.push(t); return out; };
 const run = (limiter: (now: number) => string, handledAt: number[]) => { const tally: Record<string, number> = { run: 0, refuse: 0, drop: 0 }; for (const t of [...handledAt].sort((a, b) => a - b)) tally[limiter(t)]++; return tally; };
 

@@ -1,9 +1,8 @@
 // spoken-say-door-test.ts — the load-bearing receipt for #100 (r4, Antra's B2).
 // Drives the ACTUAL advertised MCPL surface (initialize → tools/call "say") against
 // an owned scratch sequencer + door, and watches the world socket for what truly
-// lands in the log. smoke.ts speaks raw world verbs and voice-wiring reads source —
-// neither crosses the changed dispatch; this test exists to fail on unmodified main
-// (the valid trio is stripped at exactly this door).
+// lands in the log: a tool dispatch that rebuilt {text} bare would strip the valid
+// trio at exactly this door, and only a call through the door can see that.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -94,8 +93,8 @@ try {
   }
 
   // 1. Valid trio through the advertised tool → ONE durable say, trio preserved.
-  //    THE FAIL-ON-MAIN VECTOR: unmodified main's dispatch rebuilds {text} bare,
-  //    so this arrives with the trio stripped and the assertion fails.
+  //    The vector: a dispatch that rebuilds {text} bare delivers this with
+  //    the trio stripped, and the assertion fails.
   {
     seen.length = 0;
     // A deliberately OLD t0 (2025): the authoritative server clamps it up into
@@ -147,10 +146,9 @@ try {
     check("partial trio (utt without spoken): refused, zero says", says.length === 0, JSON.stringify(says));
     check("partial trio: result.isError === true",
       rp?.result?.isError === true, JSON.stringify(rp?.result)?.slice(0, 120));
-    // COERCION vectors (adversarial review): Number(null)===0, Number(true)===1
-    // used to SNEAK a fabricated utt/t0 past the guard. Type-exact validation
-    // must refuse these outright — a fabricated utterance is worse than a
-    // refused one.
+    // COERCION vectors: Number(null)===0 and Number(true)===1 would sneak a
+    // fabricated utt/t0 past a coercing guard. Type-exact validation must
+    // refuse these outright — a fabricated utterance is worse than a refused one.
     const bads = [
       { text: "utt null", spoken: true, utt: null },
       { text: "utt bool", spoken: true, utt: true },
@@ -166,8 +164,7 @@ try {
     for (const [i, bad] of bads.entries()) {
       const rr = replied[i], n = coerced.filter((x) => x.args?.text === bad.text).length;
       // The security-relevant assertion: a coerced value must NEVER become a
-      // durable say. (Number(null)===0 / Number(true)===1 used to fabricate
-      // an utterance; type-exact validation refuses instead.)
+      // durable say.
       check(`coercion: ${bad.text} → refused loudly (isError), ZERO fabricated says`,
         rr?.result?.isError === true && n === 0,
         `says=${n} isError=${rr?.result?.isError} reply=${JSON.stringify(rr?.result)?.slice(0, 80)}`);

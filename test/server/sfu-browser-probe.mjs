@@ -1,9 +1,9 @@
 // sfu-browser-probe — TWO real Chromium bodies through the IN-PROCESS SFU.
 //
 // The one row loopback werift peers can never prove: real getUserMedia, real
-// Opus, real Chrome SDP against our answer. Same assertions as
-// relay-browser-smoke.mjs (deliberately — a row proved by a different yardstick
-// proves nothing comparable), plus two the SFU makes newly checkable.
+// Opus, real Chrome SDP against our answer. The assertions are those of the
+// retired relay-browser-smoke.mjs (deliberately — a row proved by a different
+// yardstick proves nothing comparable), plus two the SFU makes newly checkable.
 //
 //   BASE=http://127.0.0.1:8946 bun test/server/sfu-browser-probe.mjs
 //   (server must be running with VOICE_TRANSPORT=sfu and no JOIN_TOKEN: the /relay-diag fetch sends no Bearer)
@@ -19,8 +19,7 @@ import { chromium } from 'playwright';
 // loudly that such a run is not evidence for the PR. With Chromium on the server's
 // machine, a tunnel run's media can still take a local ICE candidate: run Chromium elsewhere.
 // No BASE ⇒ own a scratch child (VOICE_TRANSPORT=sfu, nonce identity) rather
-// than trusting whatever answers an ambient port — the review's standing
-// objection to probes whose subject is unverified.
+// than trusting whatever answers an ambient port.
 import { ownedWorld } from '../harness/probe-harness.mjs';
 const world = process.env.BASE ? null
   : await ownedWorld({ env: { VOICE_TRANSPORT: 'sfu' } });
@@ -41,17 +40,11 @@ const browser = await chromium.launch({
     // would fail this test for the right reason and the wrong purpose.
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required',
-    // 🔴 WSL HAS NO SOUND CARD (2026-08-15). `/dev/snd` contains only `timer`,
-    // and without an output device Chromium's WebAudio renderer eventually
-    // fails to start a graph: "The AudioContext encountered an error from the
-    // audio device or the WebAudio renderer" — and then the AnalyserNode this
-    // test measures with reads 0.000 forever. The audio was FINE (the server
-    // forwarded 13k packets and B was subscribed); the INSTRUMENT was dead.
-    //
-    // That is the worst failure shape available here: an envelope of 0.000
-    // reads exactly like silence, so a green transport looks broken and a
-    // change made minutes earlier looks guilty. It cost an A/B against a
-    // stashed tree to clear code that was never involved.
+    // 🔴 WSL HAS NO SOUND CARD: `/dev/snd` contains only `timer`, and without
+    // an output device Chromium's WebAudio renderer eventually fails to start
+    // a graph ("The AudioContext encountered an error from the audio device or
+    // the WebAudio renderer"). The AnalyserNode this test measures with then
+    // reads 0.000 forever: a dead INSTRUMENT that reads exactly like silence.
     //
     // This flag gives Chromium a null audio sink so the render graph runs with
     // no hardware. It changes nothing about what is measured — the analyser
@@ -70,18 +63,16 @@ const mk = async (name) => {
   pg.on('console', (m) => { if (/sfu|error/i.test(m.text())) console.log(`  [${name}] ${m.text().slice(0, 140)}`); });
   pg.on('pageerror', (e) => console.log(`  [${name}] PAGEERROR ${String(e).slice(0, 140)}`));
   await pg.goto(`${BASE}/?world=staging&key=${KEY}&name=${name}`);
-  // 🔴 THERE IS A FRONT DOOR (found 2026-08-15). main.js calls start() ONLY
-  // from openDoor's onEnter (ui.js:369, button #d-go) — a probe that merely
+  // 🔴 THERE IS A FRONT DOOR. main.js calls start() ONLY from openDoor's
+  // onEnter (client/lib/ui/ui-door.js, button #d-go) — a probe that merely
   // LOADS the url sits at the panel forever while the HUD paints behind the
-  // overlay. This test predates that discovery and hung 90s at this line.
-  // Click through like a visitor.
+  // overlay. Click through like a visitor.
   await pg.waitForSelector('#d-go', { timeout: 20000 }).catch(() => {});
   const nameField = await pg.$('#d-name');
   if (nameField) await nameField.fill(name).catch(() => {});
   await pg.click('#d-go').catch(() => {});
-  // Page boot is ~13s under load, so 90s is the floor, not slack. (Cited
-  // RECEIPTS.md until 2026-08-16 — a file that never existed. The number is a
-  // live observation with no preserved artifact.)
+  // Page boot is ~13s under load (a live observation, no preserved artifact),
+  // so 90s is the floor, not slack.
   await pg.waitForFunction(() => window.relayDiag?.().active === true, null, { timeout: 90000 });
   return pg;
 };

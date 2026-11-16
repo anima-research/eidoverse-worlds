@@ -1,4 +1,4 @@
-// (ported 10-17: the broker speaks `capture` here, and an agent is a body with an agent's enrolment, tokenVerified — never a declaration)
+// the broker speaks `capture` here, and an agent is a body with an agent's enrolment (tokenVerified), never a declaration
 import { test, expect } from "bun:test";
 import { createScreenshotBroker, captureCapability, pngFromDataURL } from "../../server/screenshots.ts";
 import type { World, Client } from "../../server/world.ts";
@@ -7,7 +7,7 @@ const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCA
 const cap = { version: 1, engine: "unreal", scene: "underwater-prototype" };
 function setup(options = {}) {
   // these renderers have long been serving the world: no arrival window for having just joined (that rule's own tests
-  // are below, "a renderer that joined moments ago…")
+  // are below, "a roamer that arrived moments ago…")
   const broker = createScreenshotBroker({ cooldownMs: 0, timeoutMs: 100, arrivalTimeoutMs: 0, ...options });
   // a world has a folded state; an open one (no owner) lets every renderer in (server/access.ts)
   const world = { name: "test", clients: new Set<Client>(), state: { roles: {}, bans: {} } } as unknown as World;
@@ -246,7 +246,7 @@ test("a reply for a snap dispatched to another renderer is a drop like any other
   expect(await result).toMatchObject({ ok: true });
 });
 
-// ---- a first screenshot comes back with a picture (2026-10-24) ----
+// ---- a first screenshot comes back with a picture ----
 test("a busy renderer is waited for: two asks at once both come back with a picture", async () => {
   const { broker, world, donor } = setup({ pollMs: 5, queueMs: 2000, timeoutMs: 1000 });
   const first = broker.request(world, "agent"), second = broker.request(world, "agent");

@@ -1,7 +1,7 @@
 // bun test/server/ktx2-transfer-test.ts — a KTX2 encode keeps a texture's VALUES: data maps (normal, metallic-roughness,
 // occlusion) come back as they went in, colour maps too. Real encoder (findKtx2Encoder), the production argv
 // (ktx2EncodeArgs), decoded with `ktx extract --transcode rgba8`. The regression it pins: ktx create read 8-bit PNGs
-// as sRGB and CONVERTED them for a linear format — a flat normal (127) came out 54 (09-24, the rubble pile).
+// as sRGB and CONVERTED them for a linear format — a flat normal (127) came out 54.
 import { findKtx2Encoder, ktx2EncodeArgs } from "../../server/optimize.ts";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";

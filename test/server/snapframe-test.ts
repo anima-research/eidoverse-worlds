@@ -2,16 +2,16 @@
 //
 //   bun test/server/snapframe-test.ts
 //
-// Three layers, each of which could break without the others noticing:
+// Four layers, each of which could break without the others noticing:
 //   1. shared/snapframe.js — what survives normalisation (omitted, zero,
 //      junk, range limits, HTTP strings vs model arguments).
 //   2. client/lib/avatar/fp_view.js — composeFirstPerson's pitch: + looks up,
 //      − looks down, omitted keeps the old gaze exactly.
 //   3. the wire — a scratch sequencer, a plain-door agent calling the
-//      snapshot tool, an HTTP /snap, and ten fake renderer legs recording
-//      the view and framing of each `snap` they're asked for. Absent fields
+//      screenshot tool, an HTTP /snap, and ten fake renderer legs recording
+//      the view and framing of each `capture` they're asked for. Absent fields
 //      must put no `frame` on the wire.
-//   4. the broker (merged from screenshots-wire-test) — donor, ownership, waiting, Retry-After, budget, sweep, and each
+//   4. the broker — donor, ownership, waiting, Retry-After, budget, sweep, and each
 //      outcome's status and escaped [snap] line.
 
 import { normalizeSnapFrame, SNAP_DIST, SNAP_HEIGHT, SNAP_PITCH } from "../../shared/snapframe.js";
@@ -66,9 +66,8 @@ check("pitch keeps the heading (yaw 0 → +z, no x drift)", near(up.dx, 0) && ne
 // ---- 3. the wire ------------------------------------------------------------
 console.log("wire (scratch sequencer + fake renderer + plain-door agent)");
 const PORT = freePort(8000), WORLD = "framing", TOKEN = "snapframe-test";
-// (ported 10-17: the world is founded first — joining never founds one — joins fold the log (replica: true), the broker
-// speaks capture / capture-result, the agent's tool is screenshot, and a box with a door key keeps /worlds and /snap
-// behind it)
+// the world is founded first (joining never founds one), joins fold the log (replica: true), the broker speaks
+// capture / capture-result, the agent's tool is screenshot, and a box with a door key keeps /worlds and /snap behind it
 const WORLDS = mkdtempSync(join(tmpdir(), "snapframe-"));
 foundWorlds(WORLDS, [WORLD]);
 const KEY = { headers: { authorization: `Bearer ${TOKEN}` } };
@@ -173,7 +172,7 @@ const bareSnap = await fetch(`http://127.0.0.1:${PORT}/snap?world=${WORLD}&follo
 check("an unkeyed /snap is refused, and dispatches no capture", (bareSnap.status === 401 || bareSnap.status === 403) && asked.length === nAsked, `${bareSnap.status}, ${asked.length - nAsked} dispatched`);
 for (const ws of renderers) ws.close();
 
-// ---- 4. the broker (from screenshots-wire-test) --------------------------------------------------------------------
+// ---- 4. the broker -------------------------------------------------------------------------------------------------
 // The /snap broker over real HTTP + WS: an embodied capture donor, ownership of a reply, a busy renderer waited for,
 // Retry-After only when asking again can help, ?budget=, opt-out, a legacy browser renderer, disconnect, the roamer sweep,
 // no log writes; then every snap outcome's status and its one escaped [snap] line, and SNAP_TIMEOUT_SEC honoured/validated.

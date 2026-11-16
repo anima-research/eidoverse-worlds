@@ -34,7 +34,7 @@ process.env.SKIP_OPT_SWEEP = "1";   // the parent's own boot timers must not swe
 process.env.WORLDS_DIR = join(root, "worlds"); process.env.OPT_DIR = join(root, "opt"); process.env.JOIN_TOKEN = "t"; process.env.OPT_CMD = fake;   // OPT_DIR: NEVER the checkout's store
 process.env.OPT_MEM_BUDGET_MB = "4000"; process.env.OPT_COST_FACTOR = "1000";   // a cap bun itself starts under (the fake is a bun)
  process.env.KTX2_TOKTX = "";
-// the verdict names the tools it was measured with (tools-stamp.ts) — THIS process's, which the pump also reads by
+// the verdict names the tools it was measured with (tools-stamp.ts) — THIS process's, the stamp the pump reads verdicts by
 const { toolsStamp } = await import("../../server/tools-stamp.ts");
 writeFileSync(fake, readFileSync(fake, "utf8").replace("__TOOLS__", toolsStamp()));
 const { queueOptimize, optIdle } = await import("../../server/upload.ts");
@@ -72,8 +72,8 @@ if (process.platform === "linux") {
   ok(existsSync(storeDest(s5) + ".deferred") && /died/.test(readFileSync(storeDest(s5) + ".deferred", "utf8")), "signalled child under the cap → .deferred 'child died'");
   ok(existsSync(storeDest(s6)), "queue continued after the death");
   // 6. wrapper 126 (a hard RLIMIT_DATA below the budget) → environmental: no marker, queue dropped
-  // a 1 MB HARD data limit (soft first — dash refuses to drop the hard limit below the soft one) makes the wrapper's
-  // `ulimit -d 20480` fail: the 126 path. bun itself must still start under it, or the case is skipped.
+  // a 2 GB HARD data limit (soft first — dash refuses to drop the hard limit below the soft one) makes the wrapper's
+  // `ulimit -d <budget>` fail: the 126 path. bun itself must still start under it, or the case is skipped.
   const canLimit = spawnSync("/bin/sh", ["-c", "ulimit -S -d 2000000 && ulimit -H -d 2000000 && /bin/sh -c 'ulimit -d 4000000000' 2>/dev/null; echo $?"], { encoding: "utf8" }).stdout.trim();   // a 2 GB hard limit (bun starts) that a 4 TB budget cannot raise
   if (canLimit !== "0") {
     const sh = spawnSync("/bin/sh", ["-c", `ulimit -S -d 2000000 && ulimit -H -d 2000000; exec "${process.execPath}" -e 'process.env.OPT_MEM_BUDGET_MB="4000000000"; const {queueOptimize,optIdle}=await import("./server/upload.ts"); const {STORE_MIN}=await import("./server/config.ts"); const fs=await import("node:fs"); const p=${JSON.stringify(join(root, "src", "s8.glb"))}; fs.writeFileSync(p, Buffer.alloc(1000,1)); fs.writeFileSync(p+".verdict","0"); queueOptimize(p); await optIdle(); console.log(JSON.stringify({variant:fs.existsSync(STORE_MIN+"/s8.glb"), deferred:fs.existsSync(STORE_MIN+"/s8.glb.deferred"), failed:fs.existsSync(STORE_MIN+"/s8.glb.failed")}))'`],

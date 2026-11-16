@@ -3,9 +3,8 @@
 // are syntax rather than text (`&` and `\` and the `|` delimiter on sed's
 // replacement side; `#`, `:`, quotes and newlines in YAML), so a value that
 // carries one renders WRONG rather than failing — `p&ss` becomes the literal
-// `p${PUBLISH_KEY}ss`. The script now checks every spliced value against the
-// characters inert in both and refuses by name (Mica, #187 round-two
-// follow-up). What must hold:
+// `p${PUBLISH_KEY}ss`. The script checks every spliced value against the
+// characters inert in both and refuses by name. What must hold:
 //   A. the defaults render: exit 0, a minted hex key printed and present in
 //      the YAML, no `${…}` left, mode 600;
 //   B. an explicit key of the allowed set lands verbatim (hex, base64

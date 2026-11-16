@@ -1,8 +1,7 @@
 // bun test/server/ktx2-resize-test.ts — the KTX2 shadow really keeps the 1024² texel budget on a `ktx create` host.
 //
-// Found 2026-09-24 (Commons weight audit): the recipe is named texel1024, toktx honours it with --resize, but
-// `ktx create` has no --resize — that arm logged "encoding at source size" and shipped the full 2048². optimize.ts now
-// resizes through sharp first on that encoder. This runs the REAL encoder this host has (skips, loudly, if none;
+// The recipe is texel1024: toktx honours it with --resize; `ktx create` has no --resize, so optimize.ts resizes through
+// sharp first on that encoder. This runs the REAL encoder this host has (skips, loudly, if none;
 // findKtx2Encoder prefers toktx, so the ktx-create arm is tested only on a host without toktx):
 //   capped   — a 2048² base-colour PNG comes out of optimizeGlbKtx2 as a 1024² KTX2        [mutate: revert → 2048]
 //   aspect   — a 2048x1024 texture keeps its aspect (1024x512)

@@ -1,4 +1,4 @@
-// /library/ percent-decoding (routes.ts): spaces resolve, a literal "%xx" file
+// /library/ percent-decoding (server/libfile.ts libraryRel, read by routes.ts): spaces resolve, a literal "%xx" file
 // name is served as itself, a bare "%" or a malformed escape keeps its own
 // characters while the rest of the name decodes, and a decoded ".." can't
 // reach a sibling directory that shares the library's name prefix. The
@@ -21,7 +21,7 @@ writeFileSync(join(models, "50% off.glb"), "bare percent");
 writeFileSync(join(models, "bad%E0%A4-café.glb"), "malformed run kept");
 writeFileSync(join(root, "library-backup", "secret.json"), "SECRET");
 // A literal "%42" name only the patched rung holds must win over decoding to
-// the library's boxB.glb: the route consults patched first.
+// the library's boxB.glb: the raw name is looked for on every rung before decoding.
 writeFileSync(join(root, "patched", "box%42.glb"), "patched-literal");
 writeFileSync(join(lib, "boxB.glb"), "B");
 // A literal "%43" name only the opt rung holds is served as itself; decoded,
@@ -40,7 +40,7 @@ try {
       `${r.status}${body !== undefined ? ` "${t.slice(0, 20)}"` : ""}, expected ${status}${body !== undefined ? ` "${body}"` : ""}`);
   }
   await expect("eidoverse/assets/models/a%20b.glb", 200, "space");
-  // main's native=1 branch comes after the decode, so it resolves the same name
+  // the ?native=1 branch comes after the decode, so it resolves the same name
   await expect("eidoverse/assets/models/a%20b.glb?native=1", 200, "space");
   await expect("eidoverse/assets/models/box%41.glb", 200, "literal");
   await expect("eidoverse/assets/models/boxA.glb", 200, "A");

@@ -62,7 +62,7 @@ try {
     const tread = Math.ceil((STAIR_FOOT - 0.1) / GOING);
     const r = await go(2.2, 0.1);
     check("a point over the stairwell is reached on the stair's tread there, by the stair — never off the edge",
-      // protocol merge: the feet are the mover's capsule (r 0.2, shared/mover.js) on colliders.js's floor rule, which stands a
+      // the feet are the mover's capsule (r 0.2, shared/mover.js) on colliders.js's floor rule, which stands a
       // body on the highest tread its footprint overlaps within a step — at (2.2, 0.1) that can be the next tread up
       // (z 0 is its edge). Within one riser of the tread there, and a tread: never the floor below, never the landing
       r.ok && Math.abs(a.pos.y - (gy + FLOOR + tread * RISE)) <= RISE + 0.01 && Math.hypot(a.pos.x - 2.2, a.pos.z - 0.1) < 0.6, `${at()} want y ${(gy + FLOOR + tread * RISE).toFixed(3)} (± a riser) ${r.refusal ?? r.stall ?? ""}`);

@@ -6,11 +6,10 @@
 // client textures that node's material later. So the part ships with an
 // untextured material and real TEXCOORD_0 — and gltf-transform's prune(), by
 // default, drops the texture coordinates of any primitive whose material
-// reads none. The frame prop's `picture` quad came back from the store-min
-// pass with POSITION+NORMAL only; a hung picture sampled one texel. The pass
-// now prunes with keepAttributes, and this pins it: the blank part's UVs
-// survive, the textured neighbour keeps its UVs, and the pass still prunes
-// what it should (an unreferenced material is gone).
+// reads none (a hung picture would then sample one texel). The pass prunes
+// with keepAttributes, and this pins it: the blank part's UVs survive, the
+// textured neighbour keeps its UVs, and the pass still prunes what it should
+// (an unreferenced material is gone).
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { optimizeGlb } from "../../server/optimize.ts";

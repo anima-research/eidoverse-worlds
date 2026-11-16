@@ -20,8 +20,8 @@ const seq = await scratchSequencer("worlds-route", { serverEnv: { SKIP_OPT_SWEEP
     const worldsDir = join(scratch, "worlds");
     // one dir with no log (never a world)
     mkdirSync(join(worldsDir, "logless"), { recursive: true });
-    // an OLD world: a v1 log and no new one. The server serves only the protocol, so it isn't listed (it's translated by the
-    // operator: a dry run, then `translate <name> --no-founder-key --approved <hash>` (+ --operator-only-no-owner when no owner can sign) — docs/operator/TRANSLATING-OLD-WORLDS.md)
+    // an OLD world: a v1 log and no new one. The server serves only the protocol, so it isn't listed (the operator
+    // translates it: docs/operator/TRANSLATING-OLD-WORLDS.md)
     mkdirSync(join(worldsDir, "oldv1"), { recursive: true });
     writeFileSync(join(worldsDir, "oldv1", "log.jsonl"), JSON.stringify({ seq: 0, ts: 0, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } }) + "\n");
     mkdirSync(join(worldsDir, ".clientlogs"), { recursive: true });

@@ -12,16 +12,11 @@
  * own look() says the corrected seat (or the declared approximation) out
  * loud.
  *
- * Door ownership (#105 review, the #83/#91 stale-port family): the port is
- * preflighted free, the child's stdout/stderr are preserved and printed on
- * failure, and before any check counts, the responding server must have
- * written OUR scratch WORLDS_DIR — a listener that answers without leaving
- * tracks in this run's tmpdir is somebody else's door, and the test dies
- * rather than inspect it.
- *
- * Fail-on-main control (run this file on main): /seat-profile is 404, the
- * roster has no seat field, and the seated look() shows neither the declared
- * approximation nor the corrected height — every section below fails by name.
+ * Door ownership (#105 review): the port is preflighted free, the child's
+ * stdout/stderr are preserved and printed on failure, and our child must
+ * itself log that it serves this port — a listener that answers without
+ * that line in our child's output is somebody else's door, and the test
+ * dies rather than inspect it.
  *
  * Run: bun run test/server/seat-lifecycle-test.ts
  * (scratch WORLDS_DIR, OPT_DIR and AGENT_TOKENS_PATH in one tmpdir: nothing in the repo is touched)
@@ -103,9 +98,8 @@ try {
     check("x-profiles-rev header rides the roster, rev 0", rev === "0", `rev=${rev}`);
   }
 
-  // a watcher client hears the broadcasts every consumer relies on — and its
-  // join is also the door-ownership proof: the responding server must write
-  // OUR scratch WORLDS_DIR or nothing below is inspecting our child
+  // a watcher client hears the broadcasts every consumer relies on; the
+  // door-ownership proof follows its join
   watcher = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
   await new Promise<void>((res, rej) => {
     watcher!.onopen = () => { watcher!.send(JSON.stringify({ type: "join", hello: helloOf(), world: "seatlab", id: "watcher", token: DOOR, replica: true })); res(); };
@@ -120,10 +114,9 @@ try {
   console.log("write authority (B4) + dangerous keys (#105 B2)");
   const claudeSha = await sha(join(LIB, "eidoverse/assets/vrms/claude.vrm"));
   // The clip sha must be taken from the SAME ladder the store judges against
-  // (patched fork first — seats.ts's clipBases, the order /library serves).
-  // Hashing the library's copy directly was measured wrong the day this repo
-  // grew a patched sitting clip: every verdict read "stale (clip bytes
-  // changed)" against bytes no client animates from.
+  // (patched fork first — seats.ts's clipBases, the order /library serves):
+  // hashing the library's copy directly reads "stale (clip bytes changed)"
+  // whenever a patched clip exists.
   const clipRel = "eidoverse/assets/animations/sitting_normal_chair.vrma";
   const clipFile = [PATCH, OPT, LIB]
     .map((d) => join(d, clipRel)).find((p) => existsSync(p))!;
@@ -182,7 +175,7 @@ try {
   ag = new WorldAgent({ url: `ws://127.0.0.1:${PORT}/ws`, name: "seatbot", world: "seatlab",
     avatar: "eidoverse/assets/vrms/claude.vrm", agentToken: namedToken });
   await ag.connect();
-  // R 10-17: the suite's names ride as placeholders (and the crate is labelled crate1: the tools take a label as an id)
+  // the suite's names ride as placeholders (and the crate is labelled crate1: the tools take a label as an id)
   const { idAliases } = await import("../harness/idalias.ts"); const IDS = idAliases();
   const areq = async (verb: string, args: any) => IDS.back(await ag!.request(verb, IDS.out(verb, args)));
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
@@ -193,9 +186,8 @@ try {
   const legacy = await areq("set", { id: "crate1", component: "sockets", value: { seatL } });
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
   // the seat-profile correction keys on a socket that authors its support plane: its body anchors at the surface
-  // (D14, R 10-12: body.anchor 'surface', one enum; client seatcore.js socketAnchor, world.js). Until the anchor carried it
-  // (2026-10-07: a sibling seatAnchor the door never took) this seat couldn't be authored on a world at all.
-  // (two of them: one body per socket since 10-12, R's ruling 7, and seatbot is still on seatS when probebot sits below)
+  // (D14: body.anchor 'surface', one enum; shared/seatcore.js socketAnchor).
+  // (two of them: one body per socket, and seatbot is still on seatS when probebot sits below)
   const seatS = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair", anchor: "surface" } };
   const surface = await areq("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
   check("…and a seat that authors its support plane (body.anchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));

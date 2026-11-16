@@ -20,9 +20,6 @@
 // body released over a platform rests on the platform (root ≈ deck − hips
 // offset), or it does not and lands on the terrain below (root ≈ −hips).
 // The two are ~2m apart, so nothing here is a near-miss.
-//
-// On unmodified main every placed-floor case fails: the headless settle sim
-// has no colliders at all, so every release resolves to terrain.
 
 import { spawn } from "node:child_process";
 import { mkdtempSync, existsSync } from "node:fs";
@@ -38,10 +35,8 @@ const IDS = idAliases();
 // plugin-resolved path can therefore survive into a later checkout and bypass
 // onResolve entirely. Tests need deterministic resolver behavior; production
 // runtime keeps Bun's normal cache. Re-exec once because this setting is read
-// at process startup. (Same guard as the rest of the suite — see #13. This
-// one reaches the plugin indirectly, through WorldAgent -> physics.ts, which
-// is exactly how it went missing: a run from a since-deleted worktree left
-// that worktree's stub path baked in, and every later run inherited it.)
+// at process startup. (This suite reaches the plugin indirectly, through
+// WorldAgent -> physics.ts.)
 if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
   const child = Bun.spawnSync({
     cmd: [process.execPath, import.meta.path, ...process.argv.slice(2)],
@@ -85,8 +80,7 @@ async function startServer() {
   // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
   // shim whose pid is not the real process — kill() takes the shim and
   // orphans the sequencer, which then squats the port and poisons the NEXT
-  // run (found live: this line's server outlived its kill on :8994, and a
-  // later run silently drove the stale zombie instead of its own server)
+  // run
   server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
     // TRUST_NAMES: a typed name is its own local account, so the stagehand who founds a world joins it as its owner
     env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1",
@@ -114,9 +108,9 @@ async function geom(model: string) {
 const bandCentre = (t: any) => [(t.x[0] + t.x[1]) / 2, (t.z[0] + t.z[1]) / 2];
 const fillOf = (t: any) => t.area / ((t.x[1] - t.x[0]) * (t.z[1] - t.z[0]));
 
-/** The scene's old authoring words, as authority requests (the world speaks the protocol: every write is a door request). A
- *  a "moving platform" is any motion component; there is no `path` motion, so a path becomes a bob, which moves it all
- *  the same. Requests go out in order on one socket and the door answers them in order. */
+/** The scene's old authoring words, as authority requests (the world speaks the protocol: every write is a door request).
+ *  A "moving platform" is any motion component: whatever type the caller names, this writes an oscillate along z, which
+ *  moves it all the same. Requests go out in order on one socket and the door answers them in order. */
 const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
   const tf = (x: any) => ({ ...(x.pos ? { pos: x.pos } : {}), ...(typeof x.yaw === "number" ? { q: qFromYaw(x.yaw) } : {}) });
   switch (v) {
@@ -297,7 +291,7 @@ try {
     await sleep(1200);
     await ag.walkTo(3, 0, false, 8000);
 
-    // a path motion: this crate is now a lift, and it does not stay put
+    // a motion (requestsOf writes an oscillate, whatever is named here): the crate does not stay put
     h.verb("motion", { id: "deck", type: "path", points: [[3, 0, 0], [3, 0, 6]],
                        speed: 1.5, loop: "pingpong" });
     await sleep(1200);
@@ -319,8 +313,7 @@ try {
   // ---- 7. a departing agent takes its world's floors with it -------------
   // The collider map is PROCESS state (physics.ts's declared seam), so one
   // process serving a second world must not inherit the first world's
-  // platforms. Found by this suite's own cross-talk: six worlds in one
-  // process, and world 1's crate was still holding bodies up in world 3.
+  // platforms.
   {
     const W1 = `sup-leak-a-${Date.now().toString(36)}`;
     const h1 = await hand(W1, "stagehand");
@@ -368,8 +361,7 @@ try {
     try {
       // Delays are chosen against two clocks. They must exceed the time from
       // join to the settle trigger, or no race happens and the case proves
-      // nothing (the earlier draft used 1500/2600 and the release case was
-      // decided before /geom was even late). They must ALSO leave the
+      // nothing. They must ALSO leave the
       // remaining wait inside supportReady's 3s bound, or the barrier gives
       // up by design and the body honestly falls to terrain.
       for (const [how, delay] of [["release", 4000], ["silence", 6000]] as const) {
@@ -498,10 +490,9 @@ try {
 
   // ---- 12. the palm: canopy is not an invented floor (B2) -----------------
   // Every one of the palm's bands fills between 0.094 and 0.143 — fronds
-  // bounding a wide rectangle around almost nothing. Before the fill gate a
-  // body released over it rested on a summary DECK spanning that rectangle:
-  // a floor the model does not have. Now the agent fits the palm's own
-  // triangles (registerMeshSupport), so no deck is registered at all, and a
+  // bounding a wide rectangle around almost nothing. A summary DECK spanning
+  // that rectangle would be a floor the model does not have. The agent fits
+  // the palm's own triangles (registerMeshSupport), so no deck is registered, and a
   // falling body is caught by fronds exactly where a browser's would be —
   // there ARE fronds over the band's centre (colliders.surfaceUnder finds
   // 4.43m there, 5.45m a metre and a half out). What must still hold: support

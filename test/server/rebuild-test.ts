@@ -100,7 +100,7 @@ check("store object: variants rebuilt beside the original, .deferred cleared", !
   queueOptimize(join(store, "up1.glb"));
   await optIdle();
   const mine = runs().slice(b0);
-  // m1's KTX2 is taken at once, so 1 + 2 = 3 wait; m3 would make 5 past a cap of 4 (the parent let it: Greptile #207)
+  // m1's KTX2 is taken at once, so 1 + 2 = 3 wait; m3 would make 5 past a cap of 4
   check("cap: forced passes waiting never exceed REBUILD_WAIT_CAP: m1 and m2 queue both (3 wait); m3 and m4 would pass 4 → busy, nothing queued",
     asks.slice(0, 2).every((a) => a?.queued.length === 2) && asks.slice(2).every((a) => a?.busy === true && a?.queued.length === 0)
     && !mine.some((l) => /m[34]\.glb/.test(l)), [asks, mine]);
@@ -109,7 +109,7 @@ check("store object: variants rebuilt beside the original, .deferred cleared", !
     firstUp === 1 && lastForced > firstUp, mine);
 }
 // 2f. SOURCE IDENTITY (store-variants.ts freshOver): the pump records what each outcome was built from — a variant's
-// .srcid sidecar, a verdict's `source=` line — and freshness is that identity EQUAL to the source's now, at the pump,
+// .srcid sidecar, a verdict record's `source` — and freshness is that identity EQUAL to the source's now, at the pump,
 // the route and the card alike. Never marker-vs-source mtime order.
 {
   await optIdle();
@@ -140,12 +140,12 @@ check("store object: variants rebuilt beside the original, .deferred cleared", !
   check("identity: a verdict whose mtime EQUALS its source's still stands at the route (refused=light), since it records that source",
     (await lodAt()) === "refused=light", await lodAt());
   check("…and on the card (not needed)", card().lod.state === "not-needed", card().lod);
-  // B4: the route used to judge against the FIRST of PATCH/OPT/LIBRARY — the OPT mirror here — while the sweep built
-  // from, and compared against, the LIBRARY file. A newer mirror copy said "stale" forever to a verdict the sweep kept.
+  // B4: the route judges against the LIBRARY file the sweep built from, not the first of PATCH/OPT/LIBRARY (the OPT
+  // mirror here): a newer mirror copy must not say "stale" forever to a verdict the sweep keeps.
   mkdirSync(join(opt, "eidoverse/assets/models"), { recursive: true });
   writeFileSync(join(opt, REL), "an optimized mirror copy"); { const f = new Date(Date.now() + 3_600_000); utimesSync(join(opt, REL), f, f); }
   check("which source: a newer OPT-mirror copy does not unseat a verdict about the LIBRARY file the sweep built from", (await lodAt()) === "refused=light", await lodAt());
-  // antra's collision (#207 review, 09-29): SAME size, the ORIGINAL mtime restored, different bytes. The stat pair
+  // the stat collision (#207 review): SAME size, the ORIGINAL mtime restored, different bytes. The stat pair
   // matches exactly, so only the content digest can tell. Precondition checked, so a botched restore can't pass it.
   writeFileSync(src, "prop V1 bytes"); utimesSync(src, id0.mtimeMs / 1000, id0.mtimeMs / 1000);
   { const st = statSync(src);

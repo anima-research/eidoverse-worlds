@@ -1,20 +1,20 @@
 import { helloOf } from "../../shared/protocol/hello.js";
 // Headless bodies are pushable: the WorldAgent's knockdown semantics, against
-// a real scratch sequencer. A body with no physics in-process cannot tumble,
-// but it must (1) CONSENT, (2) land displaced the way the shove was taking
-// it, (3) slump visibly (clip ragdoll + DOWNED_POSE), (4) perceive the event,
-// and (5) stand up clean when it decides to move.
+// a real scratch sequencer. The agent's own headless sim tumbles it, so it
+// must (1) CONSENT, (2) land displaced the way the shove was taking it,
+// (3) slump visibly (clip ragdoll + a simulated pose, not the canned
+// DOWNED_POSE fallback), (4) perceive the event, and (5) stand up clean when
+// it decides to move.
 //
 //   bun test/server/knockdown-test.ts        (boots its own scratch sequencer, the world founded)
 // or against a door you run, naming a world it already has (WORLD; nothing founds one for you):
 //   WORLD=<w> WORLD_URL=ws://localhost:8996/ws WORLD_TOKEN=test-door JOIN_TOKEN=test-door bun run test/server/knockdown-test.ts
 
-// Bun 1.3.x caches transpiled module graphs globally by content, so a stale
-// plugin-resolved path can bypass onResolve entirely and leave the headless
-// sim "unavailable" — this suite then measures the canned-slump fallback and
-// reports three false failures. #13 added this guard across the suite; this
-// file was missed because it reaches the plugin INDIRECTLY, through
-// WorldAgent -> physics.ts, rather than registering one itself.
+// Bun caches transpiled module graphs globally by content, so a stale
+// plugin-resolved path can bypass onResolve and leave the headless sim
+// "unavailable" — this suite would then measure the canned-slump fallback.
+// It reaches the plugin indirectly (WorldAgent -> physics.ts), so it re-runs
+// itself with the cache off.
 if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
   const child = Bun.spawnSync({
     cmd: [process.execPath, import.meta.path, ...process.argv.slice(2)],
@@ -106,17 +106,15 @@ check("...and the agent PERCEIVED it, as the shover's act", floored(), events.jo
 const downedOffset = ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z);
 await ag.walkTo(ag.pos.x + 1, ag.pos.z, false, 10_000);
 check("walking sheds the slump", ag.clip !== "ragdoll" && ag.heldPose == null, `clip=${ag.clip}`);
-// #17's pending acceptance receipt, pinned as a regression: "record her
-// offset immediately before her first self-authored walk, then confirm 0.00m
-// after". A lying rig's root sits its hips offset BELOW the contact surface
-// (−0.68 on a flat disc — Princess's reading, and not a second defect), and
-// self-authored walking is what reasserts the terrain clamp. The downward
-// half was already pinned above; this is the half the thread was waiting on.
+// #17, pinned as a regression: a lying rig's root sits its hips offset BELOW
+// the contact surface (about −0.68 on a flat disc, by design), and a
+// self-authored walk is what reasserts the terrain clamp. The downward half
+// is pinned above; this is the way back up.
 check("...and the walk reasserts the terrain clamp — offset back to 0.00m",
   Math.abs(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)) < 0.01,
   `was ${downedOffset.toFixed(2)}m, now ${(ag.pos.y - ag.heightAt(ag.pos.x, ag.pos.z)).toFixed(2)}m`);
 
-// 2b. (R 10-28) a shove the AUTHORITY delivered — a blast (force) or an admitted shove — arrives in the body inbox, not as a puppet:
+// 2b. a shove the AUTHORITY delivered — a blast (force) or an admitted shove — arrives in the body inbox, not as a puppet:
 // it floors the agent along its lean the same way
 { const b = { x: ag.pos.x, z: ag.pos.z };
   ag.bodyInbox([{ type: "body", from: "shover", kind: "shove", cls: "shove", consent: "standing", spec: { lean: [-3, 0, 0] } }]);
@@ -149,8 +147,7 @@ check("move off: unmoved and standing",
   ag.clip !== "ragdoll" && Math.hypot(ag.pos.x - b3.x, ag.pos.z - b3.z) < 0.01,
   `clip=${ag.clip}`);
 
-// 5. (v1: "replay never re-detonates" — a late joiner folding the force history stayed standing. A push is
-//     presence, never in the log, so there is nothing to replay.)
+// 5. (no row: a push is presence, never in the log, so a late joiner has nothing to replay)
 ag.close?.();
 await sleep(200);
 

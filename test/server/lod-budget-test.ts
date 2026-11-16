@@ -209,8 +209,8 @@ async function sphereGlb(unit: number, { seg = 48, ring = 32, png = null as Uint
   check("…and it is judged in WORLD space: the same 2.5 cm push on a model authored in cm under a 0.01 node is served", !!cmIn.out, { kind: cmIn.kind, verdict: cmIn.verdict });
   const cmOut = await lodAtTestFloor(cm, null, push(8));
   check("…as is its 8 cm refusal", !cmOut.out && cmOut.kind === "preservation", { kind: cmOut.kind });
-  // the budget is WORLD metres divided by the node's scale ONCE: a 10 m sphere (its facets near the ~6 cm budget, so
-  // the ERROR binds, not meshopt's 25% ratio floor) authored in cm reduces like the one authored in metres
+  // the budget is WORLD metres divided by the node's scale ONCE: a 10 m-radius sphere (budget ~10 cm: the ERROR
+  // binds, not meshopt's 25% ratio floor) authored in cm reduces like the one authored in metres
   const bigM = await lodAtTestFloor(await sphereGlb(1, { radius: 10 }), null), bigCm = await lodAtTestFloor(await sphereGlb(100, { radius: 10 }), null);
   check("a model authored in cm under a 0.01 node reduces like the same model in metres (within 5%), where the error budget binds",
     !!bigM.out && !!bigCm.out && bigM.after > 0.3 * bigM.before && Math.abs(bigM.after - bigCm.after) <= 0.05 * bigM.after, [bigM.before, bigM.after, bigCm.after]);
@@ -285,7 +285,7 @@ async function field(texSize: number, F = 6, withSphere = false) {   // texSize 
     const big = await lodAtTestFloor(await field(1024), enc);
     check("a 1024²-textured field whose vertices stay over 0.6× is served as a TEXTURE-ONLY LOD", !!big.out && big.texOnly === true && big.after > big.before * 0.6 && (big.texRatio ?? 1) <= LOD_TEX_ONLY,
       { kind: big.kind, verdict: big.verdict, before: big.before, after: big.after, texRatio: big.texRatio });
-    // the caps must reach the FILE, not only the returned ratio: the base-colour map inside the LOD is 256², read off
+    // the caps must reach the FILE, not only the returned ratio: the base-colour map inside the LOD is the capped size (512²), read off
     // the KTX2 header in the output GLB
     const dims = (out: Uint8Array) => { const { json, bin } = parseGlb(out); return (json.images ?? []).map((im: any) => {
       const bv = json.bufferViews[im.bufferView]; return new DataView(bin!.buffer, bin!.byteOffset + (bv.byteOffset ?? 0), bv.byteLength).getUint32(20, true); }); };

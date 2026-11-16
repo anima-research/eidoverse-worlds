@@ -1,11 +1,11 @@
-// test/server/oldworlds-test.ts — a world saved by the old protocol is FOUND, not skipped (owner 10-15 22:45: "when someone tries to
+// test/server/oldworlds-test.ts — a world saved by the old protocol is FOUND, not skipped (the owner: "when someone tries to
 // open a world saved by the old protocol, ping them with 'use the translator'").
 //   O1–O4  oldWorldsIn(dir) over a scratch WORLDS_DIR holding a current world, a first-protocol world (log.jsonl), a
 //          pre-names world and an empty directory: exactly the two old ones, each with its kind, a new name that collides
 //          with nothing, and a command in world.ts's own usage
 //   O5     the printed command WORKS: run as printed (the report hash filled in), it translates the
 //          world IN PLACE (it keeps its name; the original log is kept beside it, the same bytes), and the world is no longer
-//          old (run last: it consumes the old world the other rows read)
+//          old (run after O6 and O7: it consumes the old world they read)
 //   O6     the boot notice: one block per world, NOT served, the command with this WORLDS_DIR, the "kept untouched" line,
 //          and one summary line
 //   O7     what a visitor is told, for both kinds: plain words, no command line
@@ -62,7 +62,7 @@ const ot = found.find((o) => o.name === "oldtown"), pn = found.find((o) => o.nam
 ok(ot?.file === path.join(W, "oldtown", "log.jsonl") && pn?.file === path.join(W, "prenamed", "world.jsonl"), "O2 each names the file it found", [ot?.file, pn?.file]);
 ok(ot?.suggestedName === "oldtown-3" && pn?.suggestedName === "prenamed-2" && !fs.existsSync(path.join(W, ot.suggestedName)),
   "O3 the suggested new name collides with nothing on disk (oldtown-2 is taken, even though it is empty)", [ot?.suggestedName, pn?.suggestedName]);
-const unq = (x?: string) => x?.replace(/^'(.*)'$/s, "$1").replace(/'\\''/g, "'");   // sh() quotes a dir outside its safe set (any Windows path: "\\"), CI 10-21
+const unq = (x?: string) => x?.replace(/^'(.*)'$/s, "$1").replace(/'\\''/g, "'");   // sh() quotes a dir outside its safe set (any Windows path: "\\")
 const CMD = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=(\S+) bun tools\/world\.ts translate ([a-z0-9_-]{1,64}) --dry-run --no-founder-key --claim$/i;
 const m = CMD.exec(ot?.command ?? "");
 ok(m && unq(m[1]) === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), the DRY RUN first (review of PR #260 item 6), with this WORLDS_DIR filled in (no founder key: a translation names none, #260 rereview blocker 1)", ot?.command);

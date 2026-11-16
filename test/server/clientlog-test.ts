@@ -1,6 +1,6 @@
 // bun test/server/clientlog-test.ts — the /clientlog tee through the REAL route(): the door (auth), the budget (rate, size,
 // scrub, disk; server/clientlog.ts), a known world's own directory, an unknown label's shared one, no read path, and a
-// failed append answering 500 — never a false ok. The budget's numbers: RESEARCH-clientlog-budget-conventions-2026-11-03.
+// failed append answering 500 — never a false ok. The budget's numbers: LIMITS in server/clientlog.ts.
 import { mkdtempSync, existsSync, readFileSync, utimesSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +24,7 @@ let sid = 0;
 const session = (sub = `human:u_${++sid}`) => { const id = sid.toString(16).padStart(64, "b"); hnSessions.set(id, { sub, name: "tester", scopes: ["worlds:join"], exp: Date.now() + 60_000 }); return { cookie: `ew_sess=${id}`, "sec-fetch-site": "same-origin" }; };
 const logs = (world: string) => existsSync(join(ld, world)) ? readdirSync(join(ld, world)).map((f) => readFileSync(join(ld, world, f), "utf8")).join("") : "";
 
-// ---- the door, as before
+// ---- the door
 ok(await st(post("world=known", "hello", {})) === 401, "A1 no Authorization → 401");
 ok(await st(post("world=known", "hello", { authorization: "Bearer wrong" })) === 401, "A2 wrong key → 401");
 const s1 = session("human:u_test");
@@ -113,7 +113,7 @@ ok(tickStats().systems.some((s) => s.name === "clientlog-retire" && s.everyMs ==
     { env: { ...process.env, CLIENTLOG_IP_PER_10MIN: "0", CLIENTLOG_SENDER_PER_10MIN: "5", CLIENTLOG_KEEP_DAYS: "0", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
   ok(r.stdout.toString().trim() === "[0,5,0]", `R9b the three names are read from the environment (got ${r.stdout.toString().trim()} ${r.stderr.toString().slice(0, 200)})`); }
 
-// ---- worlds and labels, as before
+// ---- worlds and labels
 ip = "10.0.4.1";
 ok(await st(post("world=madeup-9x", "from nowhere")) === 200 && !existsSync(join(ld, "madeup-9x")) && logs("~unknown").includes("from nowhere"), "W1 an unknown label is taken into '~unknown', never a directory of its own");
 ok(await st(post("world=KNOWN", "case variant")) === 200 && logs("~unknown").includes("case variant") && !logs("known").includes("case variant"), "W2 a case variant of a real world routes to ~unknown (asserted on content — path case aliases on macOS)");

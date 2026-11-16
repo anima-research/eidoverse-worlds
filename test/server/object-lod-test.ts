@@ -1,21 +1,18 @@
 // The geometry LOD for placeable objects (server/optimize.ts --lod,
-// store-variants.ts), run headless — v1 of the contract agreed in the #142
-// thread, revised per the #156 review: OBJECTS ONLY, BODIES FAIL CLOSED,
-// STATIC GEOMETRY ONLY, and the recipe is a GENERATION carried in both the
-// URL and the variant's filename.
+// store-variants.ts), run headless — v1 of the contract (#142, #156):
+// OBJECTS ONLY, BODIES FAIL CLOSED, STATIC GEOMETRY ONLY, and the recipe is a
+// GENERATION carried in both the URL and the variant's filename.
 //
 //   bun test/server/object-lod-test.ts
 //
-// The contract under test, in the reviewer's terms — each repaired seam of
-// the #156 review has a named control here, and deleting the mechanism
-// turns its control red:
+// The contract under test — each seam has a named control here, and deleting
+// the mechanism turns its control red:
 //   1. the URL carries the recipe (`?lod=<recipe>`), the filename carries it
 //      too, and an unrecognized generation is answered PROVISIONALLY — a
 //      recipe change can never pin yesterday's bytes under today's address
 //      (the mutation canary rewrites the on-disk recipe under a live child);
-//   2. the library sweep queues LODs (the shared `seen` set that killed it
-//      is keyed by mode now) — proven with a pre-existing library GLB, not
-//      an upload;
+//   2. the library sweep queues LODs (its `seen` set is keyed by mode) —
+//      proven with a pre-existing library GLB, not an upload;
 //   3. a missing encoder does not delete valid untextured LOD work — the
 //      no-encoder child reduces an untextured upload while the textured one
 //      keeps its original, no marker, one log line;
@@ -28,8 +25,9 @@
 //      material assignments are signature-checked (not just sorted names),
 //      source asset.extras survive under ours, and ANY animation is a typed
 //      v1 refusal rather than an untested claim of preservation;
-//   7. the child is process-owned: piped diagnostics, a per-run
-//      content-hashed fixture as the nonce, failure prints the log tail.
+//   7. the child is process-owned: a per-run WORLD_INSTANCE_NONCE read back
+//      on /version (plus a per-run fixture that round-trips), piped
+//      diagnostics, failure prints the log tail.
 //
 // The fake toktx (the store-variants-test pattern) stands in for the
 // encoder; the one real-encoder receipt runs when the box has one.
@@ -183,9 +181,8 @@ async function animatedGlb(tag: string): Promise<Uint8Array> {
   doc.createAnimation("bob").addSampler(sampler).addChannel(channel);
   return new NodeIO().writeBinary(doc);
 }
-/** The re-review's own fixture, verbatim shape: a dense mesh on `root` at
- *  [2,3,4] with an EMPTY NAMED child `seat_socket` at [0.2,1.1,-0.3] — the
- *  node a plain prune() deleted before the old signature existed. */
+/** A dense mesh on `root` at [2,3,4] with an EMPTY NAMED child `seat_socket`
+ *  at [0.2,1.1,-0.3] — the kind of node a plain prune() deletes. */
 async function socketGlb(tag: string): Promise<Uint8Array> {
   const bytes = await gridGlb(tag, 160, false);
   const doc = await new NodeIO().readBinary(bytes);
@@ -635,7 +632,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
         const f2 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
         check("source newer than the verdict → a question again: provisional, unnamed verdict", f2.cc === "no-cache" && f2.lod === "provisional", `cc=${f2.cc} lod=${f2.lod}`);
         // the CARD says the same as the wire (G1): /library-models reads the verdict through the same kind and the same
-        // freshness rule — before the mutation the fixture read not-needed (checked above via the wire's refused=light)
+        // freshness rule — before the mutation the fixture read not-needed (cat1, above)
         const cat2: { path: string; opt?: { lod?: { state: string; reason: string | null } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
         const card = cat2.find((h) => h.path === REL2)?.opt?.lod;
         check("…and the catalog card says `stale` for it too, never `not needed` over a provisional wire", card?.state === "stale", card);
@@ -649,10 +646,8 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       // the catalog humans pick from must not show the variant as a model. The
       // store section asserts this for a store hash — where OPT_DIR is never
       // walked as a models dir. THIS is the library side, where /library-models
-      // walks OPT_DIR/eidoverse/assets/models beside the originals (routes.ts):
-      // the walk's filter was written for the ktx2 arm alone, and every baked
-      // library LOD listed as a model of its own. Fails on main; the fix is one
-      // predicate, the one /library-list already used (isServingArtifact).
+      // walks OPT_DIR/eidoverse/assets/models beside the originals (routes.ts)
+      // and must filter with the predicate /library-list uses (isServingArtifact).
       const catalog: { path: string }[] = await fetch(`${S.base}/library-models`).then((r) => r.json());
       const leaked = catalog.filter((h) => isLodVariant(h.path)).map((h) => h.path);
       check("/library-models lists the library original once and NEVER its lod variant (the OPT_DIR walk)",
@@ -669,7 +664,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       check("source newer than variant → the variant is NOT served; the fall-through is provisional",
         !isLodGlb(stale.bytes) && stale.cc === "no-cache", `cc=${stale.cc}`);
       await S.stop();
-      // the next boot's sweep rebuilds it (mtime), and the fresh variant serves
+      // the next boot's sweep rebuilds it, and the fresh variant serves
       S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
       check("child rebooted", S.up);
       if (S.up) {

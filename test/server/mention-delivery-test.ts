@@ -1,7 +1,6 @@
 // Real MCPL routing for display names: speech, both replay cursors (which deliver
 // nothing from before a non-admin arrived: speech is arrival-only, R 10-18), history,
 // travel, aid1 alias policy, duplicate credentials, and a refused registry reload.
-// (Whisper checks lived here until whisper was removed, R 10-18.)
 // Own all listeners/state via the scratch harness; never contact a live world.
 // Run: bun test/server/mention-delivery-test.ts
 import { generateKeyPairSync, sign } from "node:crypto";
@@ -30,7 +29,7 @@ const registry = {
 const authEnv = { HN_ISSUER_KEY: issuer, HN_ISS: "issuer.example", HN_AUD: "eidoverse", HN_REQUIRE_LOGIN: "0" };
 const serverEnv: Record<string, string> = { ...authEnv, SKIP_OPT_SWEEP: "1" };
 let tokenPath = "";
-// (ported 10-17: the worlds are founded first — joining never founds one)
+// the worlds are founded first: joining never founds one
 const h = await scratchSequencer("mention-delivery", {
   worlds: ["commons", "annex"],
   serverEnv,
@@ -127,7 +126,7 @@ try {
   await listener.say("@Visitor (guest) timestamp-full-marker");
   await artie.message("timestamp-full-marker");
   let visitor = await new Host(visitorToken).init();
-  // arrival-only (R 10-18): said before the visitor arrived, so its catch-up replays neither (it replayed the full-name one)
+  // arrival-only (R 10-18): said before the visitor arrived, so its catch-up replays neither
   // a catch_up round trip on the same socket: its reply comes after the door's own catch-up history read, so any replay is in by now
   const caught = JSON.stringify((await visitor.tool("catch_up", {}))?.content ?? []);
   check("timestamp replay delivers nothing said before a non-admin arrived (arrival-only)", !visitor.find("timestamp-full-marker") && !visitor.find("timestamp-short-marker"));

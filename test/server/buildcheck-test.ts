@@ -49,14 +49,14 @@ try {
     Object.keys(good.suggested.places).length === good.suggested.rooms.length + good.suggested.doors.length + good.suggested.stairs.length);
 
   console.log("\nbroken buildings:");
-  // protocol merge: the walking body is the mover's (radius 0.2: it needs more than 0.4 m), so the narrow door is 0.3 m (was 0.5)
+  // the walking body is the mover's (radius 0.2: it needs more than 0.4 m), so the narrow door is 0.3 m
   const narrow = await run("narrow", without(isFront, [-3, FLOOR, 2.8, -0.15, 6.3, 3], [0.15, FLOOR, 2.8, 3, 6.3, 3], [-0.15, 2.4, 2.8, 0.15, 6.3, 3]));
   check("a 0.3m doorway: the inside is reachable only through a passage narrower than a body, and it says where",
     kinds(narrow).includes("narrow") && narrow.warnings.some((w: any) => w.kind === "narrow" && Math.abs(w.at[0]) < 0.5 && w.at[2] > 2.2 && w.at[2] < 3.6), say(narrow));
 
-  // overhanging the top FOUR treads: certainly cut off. (protocol merge: it was two — but the mover's step is 0.8 m, and a
-  // body on the tread below a two- or three-tread overhang steps straight up onto it; four leaves the slab's top 0.94 m
-  // above the last tread a body can stand on and its edge in the hip band of one on the tread above.)
+  // overhanging the top FOUR treads: certainly cut off. (The mover's step is 0.8 m, so a body on the tread below a two- or
+  // three-tread overhang steps straight up onto it; four leaves the slab's top 0.94 m above the last tread a body can
+  // stand on and its edge in the hip band of one on the tread above.)
   const STAIR_TOP = STAIR_FOOT - 15 * GOING;
   const overhang = await run("overhang", without((b) => b[1] === 3.1 && b[0] === 1.6, [1.6, 3.1, -2.8, 2.8, UPPER, STAIR_TOP + 4 * GOING]));
   // the exact reason (a blocked climb, or a rise) is a hint; what matters is
@@ -67,7 +67,7 @@ try {
   const sealed = await run("sealed", without(isFront, [-3, FLOOR, 2.8, 3, 6.3, 3]));
   check("no door at all: sealed, no opening leads in", kinds(sealed).includes("sealed"), say(sealed));
 
-  const RAISED = 1.0;   // protocol merge: higher than the mover's 0.8 m step (it was 0.8, over main's 0.55)
+  const RAISED = 1.0;   // higher than the mover's 0.8 m step
   const rise = await run("rise", [[-3, 0, -3, 3, RAISED, 3], ...boxes.filter((b: number[]) => b[1] !== 0).map((b: number[]) => b[1] === FLOOR ? [b[0], RAISED, b[2], b[3], b[4], b[5]] : b)]);
   check(`a floor ${RAISED}m up with no step: the inside is flagged unreachable`,
     rise.warnings.some((w: any) => ["rise", "sealed", "climb"].includes(w.kind)) && rise.levels.every((l: any) => l.reachable < 1), say(rise));

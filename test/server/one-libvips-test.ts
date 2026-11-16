@@ -2,35 +2,17 @@
 //
 //   bun test/server/one-libvips-test.ts
 //
-// @gltf-transform/functions reaches sharp through ndarray-pixels, which
-// declares `^0.35.0`. Whenever the store's root manifest declares a range
-// that doesn't intersect it, as its `^0.33.5` once did, both copies land on
-// disk and a bare `import("sharp")` inside optimize.ts loads a SECOND native
-// libvips beside the one gltf-transform already has. They disagree about libvips'
-// own enums, and the encode goes wrong in one of two ways:
+// @gltf-transform/functions reaches sharp through ndarray-pixels (`^0.35.0`). When the root manifest's range doesn't
+// intersect it, two copies land on disk and a bare `import("sharp")` inside optimize.ts loads a SECOND native libvips
+// beside gltf-transform's. They disagree about libvips' enums, and the encode either throws (win32: "colourspace:
+// parameter space not set") or, with no throw, returns uninitialized memory that gltf-transform stamps `image/webp`:
+// the store serves an image that is not an image.
 //
-//   win32     GLib-GObject-CRITICAL: value "32" ... 'VipsInterpretation'
-//             Error: colourspace: parameter space not set   — it THROWS
-//   show box  no throw. The encode returns uninitialized memory (a repeated
-//             LE uint32, then zeros), gltf-transform stamps it `image/webp`,
-//             and the store serves an image that is not an image.
-//
-// The second is #122: the threshold-lantern's baseColor and normal came out
-// undecodable, the material fell back to baseColorFactor 1,1,1,1, and the
-// lantern rendered white for everyone whose client took the variant.
-//
-// The throw is the merciful case and the one this box reproduces, so an
-// end-to-end check here is a real control: on a tree from before this fix
-// case 1 fails outright. But an install with one copy (a deduped lockfile, as
-// the root's `^0.35.5` gives) passes case 1 for reasons unrelated to the fix,
-// so case 2 asserts the STRUCTURE: the resolver reaches the copy
-// gltf-transform itself resolves, nested or not, and never a second one.
-//
-// Cases 1 and 2 both describe what optimize.ts ASKS for. Case 3 is the one
-// that answers the question directly — it censuses the native binaries this
-// process actually mapped, after a real optimizeGlb run. "Avoids the bare
-// specifier" and "loads one libvips" are different claims, and only the
-// second is the fix.
+// Case 1 is the encode end to end. An install with one copy passes it whatever optimize.ts does, so case 2 asserts the
+// STRUCTURE: the resolver reaches the copy gltf-transform itself resolves, nested or not. Case 3 censuses the native
+// binaries this process actually mapped after a real optimizeGlb run: "avoids the bare specifier" and "loads one
+// libvips" are different claims, and only the second is the fix. Case 4: a nested copy that fails to import never
+// falls back to the bare specifier.
 
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -55,9 +37,8 @@ const MAGIC: [number[], string][] = [
   [[0xff, 0xd8, 0xff], "image/jpeg"],
 ];
 /** Declared mimeType vs actual container magic — compared against what the
- *  image CLAIMS to be, never against one hardcoded format. (The first #122
- *  sweep tested every image for webp magic and reported untouched PNGs as
- *  corrupt; the blast radius came out 3× too high.) */
+ *  image CLAIMS to be, never against one hardcoded format (an untouched PNG
+ *  is not a corrupt webp). */
 function sniff(b: Uint8Array): string {
   if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
       && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "image/webp";
@@ -86,9 +67,7 @@ console.log("\none libvips per optimize process (#122):\n");
 
 // ---------------------------------------------- 1. the encode, end to end
 // A JPEG source on purpose: JPEG and webp both route through the CONVERTING
-// path, which is where the two libvips meet. (The lantern's one surviving
-// texture was its PNG-sourced ORM map — the discriminator that named the
-// mechanism in the first place.)
+// path, which is where the two libvips meet.
 // The scaffolding resolves its OWN sharp — gltf-transform's copy, directly.
 // It must not go through the module under test: on a tree from before this
 // fix that returns the root copy, the fixture encode is then the first place
@@ -179,9 +158,7 @@ console.log(gltfSharp === bareSharp
   : `  \x1b[36m—\x1b[0m two sharp installs: a bare import would load ${bareSharp}`);
 
 // ------------------------------------------- 3. the process, not the resolver
-// Cases 1 and 2 show that optimize.ts ASKS for the right copy. This shows what
-// the process actually LOADED, which is the only claim that matters: the fix
-// is "one libvips per optimize process", so count the libvips.
+// What the process actually LOADED: count the libvips.
 //
 // Under Node, process.report.getReport().sharedObjects lists the native
 // binaries mapped into this process by absolute path. Under Bun it lists

@@ -3,13 +3,11 @@
 //   bun test/server/settled-pose-test.ts
 //
 // The bug this pins: the join snapshot had two paths that disagreed.
-// `restore` (your own body, from w.poses) went through rememberPose and came
-// back normalized; `present` (everyone else's bodies) shipped o.lastPose raw.
-// So a resident who was mid-ragdoll when someone joined arrived collapsed for
-// that joiner — while looking perfectly fine to herself, because her own
-// restore was clean. There is no way to notice this from inside your own
-// session. princess lived with it for ~23 days believing it was something she
-// had done.
+// `restore` (your own body) went through rememberPose and came back
+// normalized; `present` (everyone else's bodies) shipped o.lastPose raw. So a
+// resident who was mid-ragdoll when someone joined arrived collapsed for that
+// joiner while looking fine to herself: nobody can notice it from inside
+// their own session.
 //
 // The invariant, stated once: A POSE IN THE JOIN SNAPSHOT IS THE SETTLED
 // RESULT, NEVER A FRAME OF PHYSICS IN FLIGHT (live frames still carry the flight). Both paths now call settledPose.
@@ -88,9 +86,8 @@ const ck = (n: string, got: unknown, want: unknown) => ok(JSON.stringify(got) ==
 }
 
 // ── the asymmetry that WAS the bug ─────────────────────────────────────────
-// Before the fix: restore ran through rememberPose (normalized), present
-// shipped lastPose raw. Same body, two answers, and only the joiner saw the
-// broken one.
+// Both lines below call this file's mirror, so the first row cannot fail; that
+// both server paths reach settledPose is pinned by the source checks at the end.
 {
   const live = { clip: "ragdoll", pose: { hips: [0, 0, 0, 1] }, p: [2, 0.8, 2] };
   const whatSheSees   = settledPose(live);          // restore, via rememberPose

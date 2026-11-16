@@ -1,4 +1,4 @@
-// upload-cap-test — /upload's whole-body cap (UPLOAD_CAP, server/upload.ts readCappedBytes) on a scratch door at UPLOAD_CAP_MB=1:
+// upload-cap-test — /upload's whole-body cap (UPLOAD_CAP; server/request-body.ts readCappedBytes, called by server/upload.ts) on a scratch door at UPLOAD_CAP_MB=1:
 // one byte over is refused in the cap's own words, with a length or chunked (a stream far past it is cancelled near the cap), and nothing is stored; exactly the cap is read.
 // (image-upload-test's oversize row is refused by the narrower IMAGE_CAP, so it never reaches this one.)
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/upload-cap-test.ts

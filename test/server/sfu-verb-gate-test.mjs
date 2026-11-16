@@ -1,18 +1,13 @@
 // Every sfu-* verb must refuse a spectator / non-"world" surface.
 //
-// 🔴 This test exists because an independent reviewer found four verbs
-// (sfu-answer, sfu-ice, sfu-pos, sfu-want-negotiate) that checked only
-// `!c.world`, while every sibling verb — including relay-cred, which mints the
-// credential these verbs then USE — also gates on spectator/surface. A
-// spectator keeps the primary's c.id (server.ts:509 sets the flag, it does not
-// rename), so any such socket reached a real participant's leg.
+// Why: a verb that checks only `!c.world` lets a spectator through, and a
+// spectator keeps the primary's c.id (joining sets the flag, it does not
+// rename), so such a socket reaches a real participant's leg. sfu-pos is the
+// sharp one: forging a distant position for another id removes that person
+// from every listener's proximity gate — a remote mute. relay-cred, which
+// mints the credential these verbs use, is held to the same gate.
 //
-// sfu-pos was the sharp one: forging a distant position for another id removes
-// that person from every listener's proximity gate — a remote mute for any
-// connected client. 57 green tests could not see it, because the gap was in
-// the verb dispatch, not in the SFU.
-//
-// Source-level assertion (the dispatch is inside a 1000-line switch with a live
+// Source-level assertion (the dispatch is inside a large switch with a live
 // websocket and a world; booting all that to test a guard would test the boot).
 // It reads the shipped file — it cannot pass against a copy.
 import { readFileSync } from 'fs';

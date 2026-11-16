@@ -12,7 +12,7 @@
 //     landing under it can't poison the key)
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
-// A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs once if present. Sections 4-7 spawn the real
+// A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs once if present. Sections 4-8 spawn the real
 // sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership).
 
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync } from "node:fs";
@@ -427,8 +427,8 @@ console.log("\n  the optimizer, against the fake encoder:");
 }
 
 // ---------------------------------------------- the real sequencer
-// fixtures go in this checkout's assets/opt (the only tree the server reads) and come out in cleanup, manifest entries
-// too; the child gets an EMPTY library, so its sweep has nothing to encode
+// fixtures go in this checkout's assets/opt (the child's default OPT_DIR; none is passed) and come out in cleanup,
+// manifest entries too; the child gets an EMPTY library, so its sweep has nothing to encode
 const OPT = join(ROOT, "assets", "opt");
 const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
 const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
