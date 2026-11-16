@@ -1,18 +1,10 @@
 // chat-mention-test — a name in chat ends where the door's does (#232): `cairn` is not inside `cairn-bridge`, whatever the
 // roster order, and a person's highlight agrees with an agent's ping.
 //   bun test/client/chat-mention-test.mjs          the rows, against client/lib/ui/mention-rx.js
-//   bun test/client/chat-mention-test.mjs --base   the control: the same rows against a2644dc1's patterns; passes only if exactly
-//                                            the rows predicted below fail there
 import { mentionRx, mentionPattern } from '../../client/lib/ui/mention-rx.js';
 import { mentionRegexFor } from '../../mcpl/mention.ts';
 
-const BASE = process.argv.includes('--base');
-// a2644dc1's client/lib/ui/chat.js mentionRx (:58) and renderBody pattern (:86), verbatim
-const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const baseRx = (name) => new RegExp(`(@${escapeRx(name)}\\b|\\b${escapeRx(name)}\\b)`, 'i');
-const basePattern = (names) => new RegExp(`(https?://[^\\s]+)|(@?\\b(?:${names.map(escapeRx).join('|') || '\\u0000'})\\b)`, 'gi');
-const rx = BASE ? baseRx : mentionRx;
-const pattern = BASE ? basePattern : mentionPattern;
+const rx = mentionRx, pattern = mentionPattern;
 
 const failed = [];
 let pass = 0;
@@ -49,8 +41,8 @@ for (const [id, roster, text, want, pinged] of ROWS) {
   const text = 'see https://eidoverse.animalabs.ai/?who=cairn now';
   check('R9 link only', links(text, ['helen', 'cairn']) === 1 && chips(text, ['helen', 'cairn']).length === 0);
 }
-// R13/R14: links:false matches no link, not even a NUL; an empty roster chips nothing (today's pattern only)
-if (!BASE) {
+// R13/R14: links:false matches no link, not even a NUL; an empty roster chips nothing
+{
   const groups = (text, names, o) => [...text.matchAll(mentionPattern(names, o))].map((m) => [m[1] ?? null, m[2] ?? null]);
   check('R13 links:false: a URL or a NUL is no link', !groups('see https://x.example/ and a\u0000b', ['helen'], { links: false }).some(([l]) => l != null));
   check('R14 an empty roster chips nothing, a NUL included', groups('a \u0000 b', []).length === 0);
@@ -66,9 +58,4 @@ for (const name of NAMES) {
 }
 
 console.log(`\n${pass} passed, ${failed.length} failed`);
-if (!BASE) process.exit(failed.length ? 1 : 0);
-// The control: the base fails exactly these, predicted by hand before this ran
-const PREDICTED = ['R1 chips', 'R1 ping', 'R2 ping', 'R3 ping', 'R6 chips', 'R7a chips', 'R7a ping', 'R7b chips', 'R7b ping', 'R10 chips', 'R10 ping', 'R11 chips', 'R11 ping', 'R12 chips', 'P cairn'];
-const ok = same([...failed].sort(), [...PREDICTED].sort());
-console.log(ok ? 'control: the base fails exactly the predicted rows' : `control MISMATCH: predicted ${JSON.stringify(PREDICTED)}, got ${JSON.stringify(failed)}`);
-process.exit(ok ? 0 : 1);
+process.exit(failed.length ? 1 : 0);

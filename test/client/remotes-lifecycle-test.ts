@@ -41,30 +41,6 @@ const { _dispatch, teardownParticipant, stalePresenceCount } = netMod as any;
 (netMod as any).wireNet({ participants: remotesMod });
 const { bus } = await import("../../client/lib/base.js");   // net.js emits on the real bus (base.js is not stubbed)   // the registry is injected (net.js wireNet), as main.js does
 
-// ---- pre-#95 head: net exports no dispatch seam. Fail by name, with the
-// ghost visible in each detail — the control stays a control (assert the
-// FIXED contracts against the components main actually exports; main's
-// pose path is literally `ensureRemote(id, null)`, net.js:359).
-if (typeof _dispatch !== "function") {
-  console.log("\n━━ pre-#95 head detected — component receipts ━━");
-  check("net exposes the participant-teardown funnel", false, "teardownParticipant absent");
-  const r = await ensureRemote("ghost", null);            // the pose path's exact creation call
-  check("presence-shaped creation cannot build a body",
-    !remotes.has("ghost"), `built one: avatar path ${JSON.stringify(stubs.avatarCalls.at(-1)?.path)} — the sunflower`);
-  await ensureRemote("helen", "vrms/helen.vrm");
-  pushPose("helen", { p: [1, 0, 1], yaw: 0, speed: 0, clip: "idle" }, 1);
-  await ensureRemote("helen", "vrms/helen.vrm");          // takeover re-announce
-  check("a same-name successor inherits no pose buffer",
-    (remotes.get("helen")?.buf?.length ?? 0) === 0, `buf=${remotes.get("helen")?.buf?.length}`);
-  check("…and starts a fresh generation", typeof remotes.get("helen")?.gen === "number", "no generations on this head");
-  const live = remotes.get("helen");
-  dropRemote("helen", { id: "helen" });                   // a predecessor's stale cleanup
-  check("a stale expected-record drop cannot delete the successor",
-    remotes.has("helen") && remotes.get("helen") === live, "unconditional drop killed it");
-  console.log("");
-  process.exit(1);
-}
-
 const DEFAULTISH = (p: string) => /claudesona|default|sunflower/i.test(p) || p == null;
 const defaultBuilds = () => stubs.avatarCalls.filter((c: any) => DEFAULTISH(c.path)).length;
 const pose = (over = {}) => ({ p: [1, 0, 1], yaw: 0.5, speed: 0, clip: "idle", ...over });

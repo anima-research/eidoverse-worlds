@@ -174,17 +174,10 @@ console.log("frame composition");
 
 console.log("mounted geometry regression");
 {
-  // Sill's watchtower, reduced: an elevated socket at y≈9.6 with the rig's
-  // head at seat+1.1, and head-volume geometry (petals) reaching 0.55m from
-  // the head joint. Main's formula put the eye 0.32m ahead of a point 1.52m
-  // above the SOCKET — inside the 0.55m volume. The anchored eye sits
-  // FP_FORWARD+FP_EYE_LIFT from the head joint... still inside the volume —
-  // which is exactly why the anchor alone is not the fix: the exclusion is.
-  // This check pins the PAIRING: anchored eye + own mesh hidden.
+  // Sill's watchtower, reduced: an elevated socket at y≈9.6, the head at seat+1.1, head-volume geometry (petals) reaching
+  // 0.55 m from the head joint. The anchored eye still sits inside that volume, so the anchor alone is not the fix: the
+  // exclusion is. This pins the PAIRING: anchored eye + own mesh hidden.
   const socketY = 9.6, headY = socketY + 1.1, petalR = 0.55;
-  const legacyEye = [0 + Math.sin(0) * 0.32, socketY + 1.52, 0 + Math.cos(0) * 0.32]; // main's constants
-  const legacyInside = Math.hypot(legacyEye[0] - 0, legacyEye[1] - headY, legacyEye[2] - 0) < petalR;
-  check("control: main's fixed-offset eye lands inside the head volume", legacyInside);
 
   const seq: Array<boolean | string> = [];
   const cam = fakeCamera();

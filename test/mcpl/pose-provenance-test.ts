@@ -78,11 +78,23 @@ console.log("walking sheds the held pose — 'held until you clear_pose or move'
   a.stop();
 }
 
+console.log("the presence packet, as tick() sends it (a fake socket):");
+{
+  const a = agent(), sent: any[] = [];
+  a.ws = { readyState: 1, send: (m: string) => sent.push(JSON.parse(m)) }; a.joined = true;   // tickInWorld sends only once joined
+  const shipped = (authored: boolean, clip: string) => {
+    a.heldPose = { ...BAG }; a.heldPoseAuthored = authored; a.clip = clip; sent.length = 0; a.tick();
+    const p = sent.find((m) => m.type === "pose"); return p ? "pose" in p.pose : "no packet";
+  };
+  ok(shipped(false, "idle") === false, "a physics bag under an idle clip is not shipped");
+  ok(shipped(false, "ragdoll") === true, "…under the ragdoll label it is");
+  ok(shipped(true, "idle") === true, "an authored pose ships under any clip");
+  a.stop();
+}
+
 console.log("wire + call-site invariants (asserted against the source):");
 {
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../mcpl/agent.ts"), "utf8");
-  ok(/this\.heldPose && \(this\.heldPoseAuthored \|\| this\.clip === "ragdoll"\)/.test(src),
-     "the presence packet only ships a physics bag under the ragdoll label");
   ok(/heldPose = out\.pose; this\.heldPoseAuthored = false/.test(src),
      "a settled sim frame is marked physics at capture");
   // a seat is presence (the body's own frames carry it, nothing is logged): leaving it is setOccupant(null)

@@ -227,40 +227,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(g.ok && put.ok, "P43 …but a lock set on the table while the cup is in a hand doesn't bind it there: the put settles it (§5: holding suspends parent constraints)", [g.refused, put.refused]);
     hc("bob", "grab", { id: "cup" }); hc("olive", "set", { id: "cup", component: "lock", value: true });
     ok(code(hc("bob", "put", { id: "cup" })) === "locked", "P44 …and its OWN lock, set while held, still binds it (attack H1h3)"); }
-  { // lock levels (R 10-07; recut B2 10-20): a lock is true, and its strength is its setter's rank NOW — only that rank and
-    // above may change or remove it, or act through it; {rank} is refused (PL8).
-    const lc = callAt("levels");
-    const LW = () => openWorld(root, "levels").state();
-    lc("olive", "create-world", { title: "levels" });
-    for (const [who, role] of [["mo", "moderator"], ["bob", "builder"], ["ben", "builder"], ["vic", "member"]]) lc("olive", "set", { id: "@world", component: `roles:${who}`, value: { role } });
-    lc("olive", "create", { id: "stage", model: "table", place: { at: [0, 3] } });
-    lc("olive", "create", { id: "mic", model: "ball", place: { on: "stage" } });
-    lc("bob", "create", { id: "crate1", model: "crate", place: { at: [4, 3] } });
-    lc("mo", "create", { id: "booth", model: "crate", place: { at: [8, 3] } });
-    // recut B2 (R 10-20 "a soft barrier by rank"; house 21:59Z): a lock is true; its strength is its setter's rank NOW
-    { const r = lc("olive", "set", { id: "stage", component: "lock", value: true });
-      ok(r.ok && LW().entities.stage.c.lock === true, "PL1 an owner locks the stage: a lock is just true", r.refused); }
-    { const r = lc("bob", "set", { id: "stage", component: "transform", value: { pos: [1, 0, 3] }, throughLock: true });
-      ok(code(r) === "locked" && /owners only/.test(r.refused.fix) && r.refused.rank === 255, "PL2 a builder can't act through an owner's lock, and the refusal says it's owners only (its setter's rank)", r.refused); }
-    ok(code(lc("bob", "delete", { id: "stage", component: "lock" })) === "rank", "PL3 …nor lift it (rank)");
-    ok(code(lc("mo", "delete", { id: "stage", component: "lock" })) === "rank" && code(lc("mo", "delete", { id: "stage", throughLock: true })) === "locked", "PL4 …nor can a moderator, lift it or delete through it");
-    ok(code(lc("bob", "set", { id: "stage", component: "lock", value: true })) === "rank", "PL5 a builder can't re-set it to make it theirs (changing a lock is lifting it)");
-    ok(code(lc("bob", "set", { id: "mic", component: "transform", value: { pos: [0, 1, 0] }, throughLock: true })) === "locked", "PL6 what rides an owner's lock is held at its strength too (the mic on the stage)");
-    ok(lc("olive", "set", { id: "stage", component: "transform", value: { pos: [0, 0, 3.5] }, throughLock: true }).ok && LW().entities.stage.c.lock === true, "PL7 an owner acts through it, and it stays on");
-    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "owner" } })) === "shape", "PL8 a lock has no level to choose: {rank} is refused (its strength is your rank)");
-    ok(lc("bob", "set", { id: "crate1", component: "lock", value: true }).ok && lc("ben", "set", { id: "crate1", component: "transform", value: { pos: [4, 0, 4] }, throughLock: true }).ok,
-      "PL9 a builder's lock: another builder acts through it");
-    ok(lc("mo", "set", { id: "booth", component: "lock", value: true }).ok, "PL10 a moderator locks the booth");
-    ok(code(lc("bob", "delete", { id: "booth", component: "lock" })) === "rank" && code(lc("bob", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4] }, throughLock: true })) === "locked",
-      "PL11 …a builder can neither lift it nor act through it");
-    lc("olive", "set", { id: "@world", component: "roles:mo", value: { role: "builder" } });   // the locker, demoted
-    ok(lc("bob", "set", { id: "booth", component: "transform", value: { pos: [8, 0, 4.5] }, throughLock: true }).ok, "PL12 the setter demoted to builder takes the lock's strength down: now a builder acts through it");
-    ok(lc("mo", "delete", { id: "booth", component: "lock" }).ok, "PL13 …and the setter may still lift it");
-    ok(code(lc("bob", "set", { id: "crate1", component: "lock", value: { rank: "builder" } })) === "shape" && code(lc("bob", "set", { id: "crate1", component: "lock", value: false })) === "shape", "PL14 a lock is true, nothing else");
-    ok(lc("ben", "delete", { id: "crate1", component: "lock" }).ok, "PL15 a builder's lock: any builder may lift it");
-    const i = lc("vic", "inspect", { id: "stage" });
-    ok(i.lock?.rank === 255, "PL16 inspect says the lock's strength (its setter's rank)", { lock: i.lock });
-  }
+  // lock levels (recut B2: a lock is true, its strength its setter's rank NOW): test/protocol/roles-check.ts LK1–LK6
   { // the trusted rung (R 10-12 10:09; docs/contributing/COMPONENT-LADDER.md): @world.trusted-components {components: [drafts]} is the owner's word,
     // gated like the rest of @world (never a permission); the list is namespaced draft names only, ≤ 64, distinct
     const tc = callAt("trust");
@@ -274,10 +241,10 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(r.ok && JSON.stringify(TW().entities["@world"].c["trusted-components"]) === JSON.stringify(good), "TR3 the owner trusts it, and the world carries the list", r.refused ?? TW().entities["@world"]?.c["trusted-components"]);
     for (const [v, what] of [[{ components: [1] }, "a non-string"], [{ components: ["light"] }, "a bare name"], [{ components: ["hesperus/material:slot"] }, "a keyed name"], [{ components: Array.from({ length: 65 }, (_, i) => `h/d${i}`) }, "65 entries"],
       [{ components: ["hesperus/material", "hesperus/material"] }, "a name twice"], [["hesperus/material"], "a bare list"], [{ components: ["hesperus/material"], note: "x" }, "an unknown key"], [{ components: "hesperus/material" }, "a string for the list"]])
-      ok(code(tc("olive", "set", { id: "@world", component: "trusted-components", value: v })) === "shape", `TR4 refused (shape): ${what}`, tc("olive", "set", { id: "@world", component: "trusted-components", value: v }).refused);
+      { const r = tc("olive", "set", { id: "@world", component: "trusted-components", value: v }); ok(code(r) === "shape", `TR4 refused (shape): ${what}`, r.refused); }
     ok(tc("olive", "set", { id: "@world", component: "trusted-components", value: { components: Array.from({ length: 64 }, (_, i) => `h/d${i}`) } }).ok, "TR5 64 entries is the most, and fine");
     tc("olive", "create", { id: "plinth", model: "crate", place: { at: [2, 2] } });
-    ok(code(tc("olive", "set", { id: "plinth", component: "trusted-components", value: good })) === "world-only", "TR6 trusted is a world setting: refused on a thing", tc("olive", "set", { id: "plinth", component: "trusted-components", value: good }).refused);
+    { const r = tc("olive", "set", { id: "plinth", component: "trusted-components", value: good }); ok(code(r) === "world-only", "TR6 trusted is a world setting: refused on a thing", r.refused); }
     ok(tc("olive", "delete", { id: "@world", component: "trusted-components" }).ok && TW().entities["@world"].c["trusted-components"] === undefined, "TR7 the owner removes the list (stop trusting the last one)");
   }
   { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
@@ -945,7 +912,6 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
 // ---- SW: a push (old-vs-new review 10-06 #5) — the impulse kind, reserved at the shape audit (10-16) and open again since
 // Mica 10-31 (decision row 19): a builder writes it, use swings the seat, and the v1 mapping a translated world carries ----
 { const sw = callAt("swingpush");
-  const { pendulumTheta } = await import("../../shared/motioneval.js");
   sw("ann", "create-world", { title: "swingpush" });
   sw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
   sw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
@@ -957,7 +923,6 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(p1.refused?.code === "shape", "SW1b an impulse handler's strength and angular are numbers", p1.refused);
   const RH = (await import("../../shared/protocol/componentspec.js")).COMPONENTS.reactions.help;
   ok(/\bimpulse\b/.test(RH) && !/impulse is reserved/.test(RH), "SW1c the reactions help names impulse as a kind a builder may write, not a reserved one", RH);
-  void pendulumTheta;
   const tx = (await import("../../tools/import-v1/translate-v1.js")).translate(
     [{ seq: 0, ts: 1, actor: "a", verb: "spawn", args: { id: "s", lib: "swing-seat" } }, { seq: 1, ts: 2, actor: "a", verb: "comp", args: { id: "s", type: "reactions", data: { push: { impulse: 0.35 } } } }], {});
   ok(/"reactions":\{"push":\{"kind":"impulse","angular":0.35\}\}/.test(JSON.stringify(tx)), "SW4 v1's {impulse: x} translates to the angular impulse, exactly", JSON.stringify(tx).match(/"reactions":[^}]*\}/)?.[0]);
@@ -1114,7 +1079,6 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(bad({ anchr: "hips" }) === "schema" && bad({ reach: { leftHand: { at: [0, 1, 0], grip: 1 } } }) === "reserved", "SK6 closed keys: an unknown station key is refused (schema), and a reach is reserved whole");
   ok(bad({ leaveBy: "teleport" }) === "shape" && bad({ look: { pitch: [10, -10] } }) === "reserved"
     && bad({ anim: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } }) === "shape" && bad({ enter: 42 }) === "reserved", "SK7 enums and signals are checked; look and enter are reserved");
-  ok(bad({ input: { move: "drive" } }, { input: { move: "drive" } }) === "shape", "SK8 a driver's input is a helm's alone (one drive per thing, on a drive station)");
   const att = R("bob", "use", { id: "horse", action: "ride" }).attach;
   // SK9: a part's motion runs on the authority's clock too (a seat locked to its phase needs every client to agree on it)
   const pm = R("ann", "create", { id: "swingset", model: "crate", components: { "motion:plank": { type: "pendulum", amp: 0.4, period: 3 }, motion: { type: "pendulum", amp: 0.1, period: 2 } } });
@@ -1349,21 +1313,11 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(code(R("ann", "delete", { id: "bench-seat", component: "parent" })) === "shape" && E("bench-seat")?.parent?.to === "bench", "SKE4 …and a socket can't be unparented to the root");
   ok(code(R("ann", "create", { id: "nested", components: { parent: { to: "bench-seat" }, socket: { name: "inner" } } })) === "shape", "SKE4 …nor hang under another socket");
   ok(code(R("ann", "set", { id: "bench-seat", component: "transform", value: { pos: [0, 0.5, 0], q: [0, 0, 0, 1], scale: [2, 2, 2] } })) === "shape", "SKE5 a socket's scale is [1, 1, 1]: scale 2 is refused");
-  const drive = (id, name) => R("ann", "create", { id, components: { parent: { to: "stool" }, socket: { name }, station: { input: { move: "drive" } } } });
-  ok(code(drive("stool-d1", "d1")) === "shape" && !E("stool-d1"), "SKE6 a driver's input belongs to a drive station on a host with drive: on a plain seat it is refused (station.input opened for the helm: drive-check D1)");
   ok(code(R("ann", "create", { id: "badsock", components: { parent: { to: "stool" }, socket: { name: "x", pos: [0, 1, 0] } } })) === "schema", "SKE6 a socket's pose is its transform: socket.pos is an unknown key (did you mean)");
-  ok(code(R("ann", "create", { id: "badbody", components: { parent: { to: "stool" }, socket: { name: "z" }, station: { anchr: "hips" } } })) === "schema" && code(R("ann", "create", { id: "badname", components: { parent: { to: "stool" }, socket: { name: "two words" } } })) === "shape", "SKE6 the station is checked whole (an unknown station key; a socket name that isn't one)");
+  ok(code(R("ann", "create", { id: "badname", components: { parent: { to: "stool" }, socket: { name: "two words" } } })) === "shape", "SKE6 a socket name that isn't one is refused (shape); an unknown station key is SK6");
   R("ann", "create", { id: "bench-arm", components: { parent: { to: "bench" } } }); R("ann", "create", { id: "bench-arm-rest", components: { parent: { to: "bench-arm" }, socket: { name: "rest" } } });
   ok(code(R("ann", "set", { id: "bench-arm", component: "socket", value: { name: "arm" } })) === "shape" && !E("bench-arm")?.socket, "SKE4 …nor may a thing holding a socket become a socket itself");
-  ok(code(R("ann", "create", { id: "badwho", components: { parent: { to: "stool" }, socket: { name: "y" }, station: { who: "king" } } })) === "shape", "SKE6 station.who is a role here");
-  // R 10-15 22:48: ONE entity budget, sockets included ("aren't sockets child entities anyway?")
-  const have = Object.keys(openWorld(root, "socketents").state().entities).length - 1;
-  R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
-  const third = R("ann", "create", { id: "third", model: "crate" });
-  const sockAtCap = R("ann", "create", { id: "third-seat", components: { parent: { to: "third" }, socket: { name: "seat" } } });
-  const full = R("ann", "create", { id: "fourth", model: "crate" });
-  const fullSock = R("ann", "create", { id: "third-arm", components: { parent: { to: "third" }, socket: { name: "arm" } } });
-  ok(third.ok && sockAtCap.ok && code(full) === "full" && full.refused?.entities === have + 2 && code(fullSock) === "full" && fullSock.refused?.entities === have + 2 && /@world\.capacity\.entities/.test(fullSock.refused?.reason ?? ""), "SKE7 capacity.entities counts every entity, sockets too (R 10-15): a limit of have+2 takes a thing and a socket on it, then refuses a thing and a socket alike", { have, r: [third.refused, sockAtCap.refused, full.refused, fullSock.refused] });
+  // ONE entity budget, sockets included (R 10-15 22:48): scale-check C1/C2
 }
 
 // SKE8-10: the verbs read socket children (socketsOf): use, look, inspect; and a socket is never a thing a hand takes
@@ -1530,15 +1484,9 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
     ok(made.every((x) => x.ok) && swap.ok && code(grow) === "full" && /1 more won't fit/.test(grow.refused?.reason ?? "") && /delete/.test(grow.refused?.fix ?? "")
       && swap2.ok && code(over) === "full" && /lets them have 1 \(/.test(over.refused?.reason ?? "") && /1 more won't fit/.test(over.refused?.reason ?? ""),
       "SR2d a guest's write that deletes as many of the guests' things as it makes is never refused full, even past a lowered cap; one that grows the pool past its limit is, saying how many it adds, and its fix names a delete", { made: made.map((x) => x.ok), swap: swap.refused ?? swap.ok, grow: grow.refused, swap2: swap2.refused ?? swap2.ok, over: over.refused }); }
-  // the world's own budget: a socket meets it like a thing, and deleting frees room
-  const have = nEnt(); R("ann", "set", { id: "@world", component: "capacity", value: { entities: have + 2 } });
+  // the world's own budget (a socket meets it like a thing, a delete frees room, an owner can't raise it past the server's
+  // ceiling) is scale-check C1/C2
   R("ann", "create", { id: "w-host", model: "crate", components: { transform: { pos: [0, 0, -5] } } });
-  const one = R("ann", "create", { id: "w-s1", components: { parent: { to: "w-host" }, socket: { name: "a" } } });
-  const two = R("ann", "create", { id: "w-s2", components: { parent: { to: "w-host" }, socket: { name: "b" } } });
-  const thing = R("ann", "create", { id: "w-thing", model: "crate" });
-  R("ann", "delete", { id: "w-s1" }); const three = R("ann", "create", { id: "w-s3", components: { parent: { to: "w-host" }, socket: { name: "c" } } });
-  ok(one.ok && code(two) === "full" && /@world\.capacity\.entities/.test(two.refused?.reason ?? "") && code(thing) === "full" && three.ok && nEnt() === have + 2, "SR2c capacity.entities caps the world's entities, a socket the same as a thing (an owner sets it); a delete frees room", [one.refused, two.refused, thing.refused, three.refused]);
-  ok(code(R("ann", "set", { id: "@world", component: "capacity", value: { entities: 1e6 } })) !== undefined && W().state().entities["@world"]?.c.capacity?.entities === have + 2, "SR2c …under the server's ceiling: an owner can't raise it past it");
   // one host's ceiling: an owner too
   R("ann", "set", { id: "@world", component: "capacity", value: { entities: 5000 } });
   R("ann", "create", { id: "big", model: "crate", components: { transform: { pos: [0, 0, -9] } } });
@@ -1556,14 +1504,13 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const hits = files.flatMap((f) => fs.readFileSync(dir + f, "utf8").split("\n").map((l, i) => [f, i + 1, l.replace(/^\s*\/\/.*$/, "").replace(/\s\/\/ .*$/, "")]).filter(([, , l]) => OLD.test(l) && !/refuse\("legacy"/.test(l)));
   ok(!hits.length, `LG1 no reader of the old spelling outside authority/sockets.js (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }
 // LG1b (review 10-12 S3-4): …nor anywhere a client, an agent or a shared reader looks: shared/, client/lib, mcpl. The few
-// that read a map on purpose are named, each with why: a blueprint's own records keep their spelling (11/12);
-// hierarchy.js socketOf/localOf read a record in the old spelling (a v1 fold's: the M checks draw v1 by it; a blueprint's
-// parts); the door's legacy refusal names the old spelling only to turn it away
+// that read a map on purpose are named, each with why: hierarchy.js socketOf/localOf read a record in the old spelling
+// (a v1 fold's: sweep.ts draws v1 by it); the door's legacy refusal names the old spelling only to turn it away
 { const root = fileURLToPath(new URL("../../", import.meta.url));
   const walk = (d) => fs.readdirSync(root + d, { withFileTypes: true }).flatMap((x) => x.isDirectory() ? (x.name === "node_modules" || x.name === "vendor" ? [] : walk(`${d}/${x.name}`)) : /\.(js|mjs|ts)$/.test(x.name) ? [`${d}/${x.name}`] : []);
   const files = [...walk("shared"), ...walk("client/lib"), ...walk("mcpl")].filter((f) => f !== "shared/protocol/authority/sockets.js");
   const OLD = /\b(c|comp|m)\??\.sockets\b|\.sockets\?\.\[|modelOf\([^)]*\)\??\.sockets\b|\b(parent|rel)\??\.socket\b|\bhome\??\.parent\??\.socket\b/;
-  const ON_PURPOSE = [["shared/blueprint.js", /rel\.socket/], ["shared/hierarchy.js", /rel\??\.socket/]];
+  const ON_PURPOSE = [["shared/hierarchy.js", /rel\??\.socket/]];
   const hits = files.flatMap((f) => fs.readFileSync(root + f, "utf8").split(/\r?\n/).map((l, i) => [f, i + 1, l.replace(/^\s*(\/\/|\*|\/\*\*).*$/, "").replace(/\s\/\/ .*$/, "")])
     .filter(([, , l]) => OLD.test(l) && !/refuse\("legacy"/.test(l) && !ON_PURPOSE.some(([pf, re]) => pf === f && re.test(l))));
   ok(files.length > 100 && !hits.length, `LG1b no reader of the old spelling in shared/, client/lib or mcpl but the named ones (${files.length} files)`, hits.map(([f, n, l]) => `${f}:${n}: ${String(l).trim().slice(0, 100)}`)); }

@@ -1,24 +1,18 @@
-// blueprint-test — blueprints (spec/PROTOCOL.md §4.1): the record, its hash,
-// the copy link as pure functions, and blueprints through the authority.
+// blueprint-test — blueprints (spec/PROTOCOL.md §4.1) through the authority and the agent.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/blueprint-test.ts
 //
-// 1. the hash      key order and prose (note) never move it; meaning does
-// 2. the shape     blueprintRefusal's rules, each refused by name
-// 3. the link      expand / overridesOf / rebase, a conflict included
 // 6. the door's publish (@world blueprints:<hash>) and create {from: <hash>, at} on a scratch world
 //    (test/harness/scratchworld.ts): the record, the copy's tree, its local poses, one act, the door's undo
 // 7. the agent's blueprints / create {from} / look() over the library, its door the scratch door
 //
-// Sections 1–3 are pure functions of shared/blueprint.js (expand/overridesOf/rebase have no runtime caller yet);
-// the v1 sections (4, 5, 8) went with protocol v1.
+// (Sections 1–3, the v1 record API's pure functions, went with it: no runtime caller; 4, 5, 8 went with protocol v1.)
 import { noWorldUrl } from '../harness/no-world.ts';
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { recordComponents } from "../../shared/protocol/view.js";
 import { inspectSchema, fieldAt } from "../../shared/editschema.js";
 import { suite } from "../gate/suite.ts";
 // config.ts makes WORLDS_DIR at import: keep the bench out of the repo's worlds/
@@ -31,170 +25,7 @@ const J = JSON.stringify;
 // a copy's parts are minted (R 10-17: opaque ids, never <copy>-<key>): the part with record key `key` under copy `copy`
 const partOf = (E: any, copy: string, key: string) => Object.keys(E).find((x) => { if (E[x]?.['copy-of']?.key !== key) return false; for (let p: any = x, n = 0; p && n < 64; p = E[p]?.parent?.to, n++) if (p === copy) return true; return false; }) ?? `${copy}-${key}`;
 
-const { blueprintHash, blueprintRefusal, hashRefusal, expand, overridesOf, rebase, linkOf, lineageOf, BLUEPRINT_LIMITS } = await import('../../shared/blueprint.js');
-const { componentsOf, entityOf, canon, sha256hex } = await import('../../shared/components.js');
-
 const LAMP = 'eidoverse/assets/models/lamp.glb';
-// a lamp: a model with a light, and a bulb child (an Empty with its own light) 1.2 m up
-const lampV1: any = {
-  kind: 'eido.blueprint', v: 1, name: 'Lamp',
-  root: {
-    components: [
-      { type: 'Transform', params: { scale: 1 } },
-      { type: 'Model', params: { lib: LAMP } },
-      { type: 'Light', key: 'light', params: { color: 0xffd9a0, intensity: 16, range: 10 } },
-      { type: 'Label', key: 'label', params: { text: 'a lamp' } },
-    ],
-    children: [
-      { id: 'bulb', components: [
-        { type: 'Transform', params: { pos: [0, 1.2, 0], yaw: 0 } },
-        { type: 'Light', key: 'light', params: { color: 0xffffff, intensity: 4, range: 3 } },
-      ], children: [] },
-    ],
-  },
-};
-const H1 = blueprintHash(lampV1);
-
-// ---- 1. the hash --------------------------------------------------------------
-console.log('\n1. the hash (canonical JSON, RFC 8785, without the note)');
-{
-  check('a hash is 64 lowercase hex', /^[0-9a-f]{64}$/.test(H1), H1);
-  // the same record with every object's keys reversed
-  const rev = (v: any): any => Array.isArray(v) ? v.map(rev) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).reverse().map(([k, x]) => [k, rev(x)])) : v;
-  const reordered = rev(lampV1);
-  check('key order does not move it', J(Object.keys(reordered)) !== J(Object.keys(lampV1)) && blueprintHash(reordered) === H1);
-  check('prose (a note) does not move it', blueprintHash({ ...lampV1, note: 'the porch lamp, warm' }) === H1 && blueprintHash({ ...lampV1, note: 'reworded' }) === H1);
-  const brighter = structuredClone(lampV1); brighter.root.components[2].params.intensity = 24;
-  check('meaning does: one parameter', blueprintHash(brighter) !== H1);
-  check('…the name (it is what copies show)', blueprintHash({ ...lampV1, name: 'Desk lamp' }) !== H1);
-  check('…the parent (a version names its lineage)', blueprintHash({ ...lampV1, parent: H1 }) !== H1);
-  const moved = structuredClone(lampV1); moved.root.children[0].components[0].params.pos = [0, 1.3, 0];
-  check('…a child\'s local pose', blueprintHash(moved) !== H1);
-  const renamedKid = structuredClone(lampV1); renamedKid.root.children[0].id = 'globe';
-  check('…a child\'s id (the handle an update finds it by)', blueprintHash(renamedKid) !== H1);
-  check('the hash is canon() + sha256hex() — the component records\' own helpers', sha256hex(canon(lampV1)) === H1);
-}
-
-// ---- 2. the shape ---------------------------------------------------------------
-console.log('\n2. the shape (blueprintRefusal)');
-{
-  check('the lamp is a v1 record', blueprintRefusal(lampV1) === null, String(blueprintRefusal(lampV1)));
-  const bad: [string, any, RegExp][] = [
-    ['not an object', 'lamp', /is an object/],
-    ['an unknown top-level key', { ...lampV1, author: 'me' }, /no "author"/],
-    ['another kind', { ...lampV1, kind: 'eido.component' }, /kind is "eido.blueprint"/],
-    ['another version', { ...lampV1, v: 2 }, /v: 1/],
-    ['an empty name', { ...lampV1, name: '  ' }, /name/],
-    ['a parent that is not a hash', { ...lampV1, parent: 'v1' }, /parent is the hash/],
-    ['a root with an id', { ...lampV1, root: { ...lampV1.root, id: 'x' } }, /root has no id/],
-    ['a node with no children list', { ...lampV1, root: { components: [] } }, /children is a list/],
-    ['a child with no id', { ...lampV1, root: { components: [], children: [{ components: [], children: [] }] } }, /needs an id/],
-    ['two children with one id', { ...lampV1, root: { components: [], children: [{ id: 'a', components: [], children: [] }, { id: 'a', components: [], children: [] }] } }, /two children with id "a"/],
-    ['an unknown component type', { ...lampV1, root: { components: [{ type: 'Gizmo', params: {} }], children: [] } }, /not a component a thing can carry/],
-    ['a world component', { ...lampV1, root: { components: [{ type: 'Sky', params: {} }], children: [] } }, /not a component a thing can carry/],
-    ['a Parent', { ...lampV1, root: { components: [{ type: 'Parent', params: { to: 'x' } }], children: [] } }, /attached by nesting/],
-    ['Captions', { ...lampV1, root: { components: [{ type: 'Captions', key: 'captions', params: { feed: {} } }], children: [] } }, /caption verb/],
-    ['a nested copy', { ...lampV1, root: { components: [{ type: 'Annotation', key: 'blueprint', params: { type: 'blueprint', data: { hash: H1 } } }], children: [] } }, /blueprint inside a blueprint/],
-    ['placement on the root', { ...lampV1, root: { components: [{ type: 'Transform', params: { pos: [1, 0, 0] } }], children: [] } }, /holds no pos, q or yaw/],
-    ['two of one component', { ...lampV1, root: { components: [{ type: 'Model', params: { lib: LAMP } }, { type: 'Model', params: { lib: LAMP } }], children: [] } }, /two Model components/],
-    ['a component with stray keys', { ...lampV1, root: { components: [{ type: 'Model', params: { lib: LAMP }, placer: 'me' }], children: [] } }, /no "placer"/],
-    ['a non-finite number', { ...lampV1, root: { components: [{ type: 'Transform', params: { scale: Infinity } }], children: [] } }, /plain JSON/],
-    ['too many bytes', { ...lampV1, note: undefined, root: { components: [{ type: 'Annotation', key: 'pad', params: { type: 'pad', data: 'x'.repeat(BLUEPRINT_LIMITS.BYTES) } }], children: [] } }, /bytes; the most/],
-    ['one component over 8 KB', { ...lampV1, root: { components: [{ type: 'Annotation', key: 'pad', params: { type: 'pad', data: 'x'.repeat(9000) } }], children: [] } }, /larger than a component may be/],
-  ];
-  const deep: any = { components: [], children: [] }; let n = deep;
-  for (let i = 0; i < BLUEPRINT_LIMITS.DEPTH + 1; i++) { const k = { id: `d${i}`, components: [], children: [] }; n.children.push(k); n = k; }
-  bad.push(['nesting deeper than the limit', { ...lampV1, root: deep }, /nests at most/]);
-  bad.push(['more parts than the limit', { ...lampV1, root: { components: [], children: Array.from({ length: BLUEPRINT_LIMITS.NODES }, (_, i) => ({ id: `p${i}`, components: [], children: [] })) } }, /at most 256 parts/]);
-  for (const [name, rec, re] of bad) {
-    const why = blueprintRefusal(rec);
-    check(`refused: ${name}`, !!why && re.test(why), String(why));
-  }
-  check('hashRefusal: the right hash passes', hashRefusal(lampV1, H1) === null);
-  check('hashRefusal: a wrong hash is named with the real one', (hashRefusal(lampV1, '0'.repeat(64)) ?? '').includes(H1));
-  check('hashRefusal: a missing hash says what it wants', /64 lowercase hex/.test(hashRefusal(lampV1, undefined) ?? ''));
-}
-
-// ---- 3. the link -------------------------------------------------------------------
-console.log('\n3. the copy link (expand, overridesOf, rebase)');
-// a copy as the world holds it: the root entity's components (placement + link
-// included) and the bulb as a child entity (a Parent the world added)
-const copyOf = (rec: any, at: number[]) => {
-  const x = expand(rec);
-  const root = componentsOf({ ...x.entity, pos: at, yaw: 0.5, ...(recordComponents(x.entity)), blueprint: linkOf(rec) }).components;
-  const kid = (k: any) => ({ id: k.id, components: componentsOf({ ...k.entity, parent: { to: 'lamp-1', offset: [0, 1.2, 0] } }).components, children: k.children.map(kid) });
-  return { components: root, children: x.children.map(kid) };
-};
-{
-  const x = expand(lampV1);
-  check('expand: the root writes wire bytes with no placement and no stamps', x.entity.model === LAMP && x.entity?.light?.intensity === 16 && !('pos' in x.entity) && !('actor' in x.entity), J(x.entity));
-  check('expand: children by id, each with its own bytes (the bulb\'s local pos)', x.children.length === 1 && x.children[0].id === 'bulb' && J(x.children[0].entity.pos) === J([0, 1.2, 0]) && x.children[0].entity?.light?.range === 3, J(x.children));
-  x.components[1].params.lib = 'mutated';
-  check('expand: components are copies (editing them leaves the record alone)', lampV1.root.components[1].params.lib === LAMP);
-  check('linkOf: {hash, name}', J(linkOf(lampV1)) === J({ hash: H1, name: 'Lamp' }));
-
-  const copy = copyOf(lampV1, [3, 0, 4]);
-  check('a fresh copy has no overrides (placement, Attachment and the link are not overrides)', overridesOf(copy, lampV1).length === 0, J(overridesOf(copy, lampV1)));
-  // this lamp is red, its label gone, its bulb dimmer, and it has a spin
-  const red = structuredClone(copy);
-  red.components.find((c: any) => c.type === 'Light').params.color = 0xff0000;
-  red.components = red.components.filter((c: any) => c.type !== 'Label');
-  red.components.push({ type: 'Spin', key: 'motion', params: { axis: 'y', rate: 10 } });
-  red.children[0].components.find((c: any) => c.type === 'Light').params.intensity = 2;
-  const ov = overridesOf(red, lampV1);
-  const has = (f: (o: any) => boolean) => ov.some(f);
-  check('overrides: a field (the light\'s color)', has((o) => o.comp === 'Light|light' && o.field === 'params/color' && o.value === 0xff0000 && o.base === 0xffd9a0), J(ov));
-  check('overrides: a removed component (the label), whole and its fields', has((o) => o.comp === 'Label|label' && o.field === undefined && o.value === undefined && o.base === 'Label'), J(ov));
-  check('overrides: an added component (the spin)', has((o) => o.comp === 'Spin|motion' && o.field === undefined && o.value === 'Spin'), J(ov));
-  check('overrides: a child\'s field, addressed by its path', has((o) => J(o.path) === J(['bulb']) && o.comp === 'Light|light' && o.field === 'params/intensity' && o.value === 2), J(ov));
-
-  // v2: brighter lamp, a new shade child, the label reworded; the bulb's range changed
-  const lampV2 = structuredClone(lampV1); lampV2.parent = H1;
-  lampV2.root.components.find((c: any) => c.type === 'Light').params.intensity = 24;
-  lampV2.root.children[0].components.find((c: any) => c.type === 'Light').params.range = 5;
-  lampV2.root.children.push({ id: 'shade', components: [{ type: 'Model', params: { lib: 'eidoverse/assets/models/shade.glb' } }, { type: 'Transform', params: { pos: [0, 1.4, 0] } }], children: [] });
-  check('v2 is a record of its own, naming v1', blueprintRefusal(lampV2) === null && blueprintHash(lampV2) !== H1);
-  const r: any = rebase(red, lampV2, lampV1);
-  check('rebase with no overlap: ok', r.ok === true, J(r.conflicts));
-  const root = r.tree?.components ?? [];
-  const light = root.find((c: any) => c.type === 'Light');
-  check('…takes the update (intensity 24) and keeps the override (red)', light?.params.intensity === 24 && light?.params.color === 0xff0000, J(light));
-  check('…keeps the removal (no label) and the addition (the spin)', !root.some((c: any) => c.type === 'Label') && root.some((c: any) => c.type === 'Spin'), J(root.map((c: any) => c.type)));
-  check('…keeps the copy\'s placement on its Transform', J(root.find((c: any) => c.type === 'Transform')?.params.pos) === J([3, 0, 4]) && root.find((c: any) => c.type === 'Transform')?.params.yaw === 0.5);
-  const bulb = r.tree?.children.find((k: any) => k.id === 'bulb');
-  const bl = bulb?.components.find((c: any) => c.type === 'Light');
-  check('…in a child: takes the range, keeps the dimmer intensity', bl?.params.range === 5 && bl?.params.intensity === 2, J(bl));
-  check('…adds the new part (shade), in the new version\'s order', J(r.tree?.children.map((k: any) => k.id)) === J(['bulb', 'shade']));
-  check('…and the result expands (entityOf writes it)', (() => { try { entityOf({ components: root }); return true; } catch { return false; } })());
-  check('…and its overrides against v2 are exactly the copy\'s own', (() => {
-    const o2 = overridesOf(r.tree, lampV2).map((o: any) => `${o.path.join('/')}:${o.comp}:${o.field ?? '*'}`).sort();
-    return J(o2) === J(ov.map((o: any) => `${o.path.join('/')}:${o.comp}:${o.field ?? '*'}`).sort());
-  })());
-
-  // the conflict: the copy made the lamp red; v3 makes it blue
-  const lampV3 = structuredClone(lampV1); lampV3.parent = H1;
-  lampV3.root.components.find((c: any) => c.type === 'Light').params.color = 0x0000ff;
-  const c3: any = rebase(red, lampV3, lampV1);
-  check('rebase: an override on a field the update also changed is a conflict', c3.ok === false && c3.conflicts.some((c: any) => c.comp === 'Light|light' && c.field === 'params/color' && c.ours === 0xff0000 && c.theirs === 0x0000ff && c.base === 0xffd9a0), J(c3));
-  check('…and nothing is guessed (no tree)', c3.tree === undefined);
-  const same3 = structuredClone(lampV1); same3.parent = H1; same3.root.components.find((c: any) => c.type === 'Light').params.color = 0xff0000;
-  check('rebase: both sides making the same change is not a conflict', (rebase(red, same3, lampV1) as any).ok === true);
-  // removing what the other side edited
-  const noBulb = structuredClone(red); noBulb.children = [];
-  const c4: any = rebase(noBulb, lampV2, lampV1);
-  check('rebase: a part the copy removed but the update edited is a conflict', c4.ok === false && c4.conflicts.some((c: any) => J(c.path) === J(['bulb'])), J(c4));
-  const c5: any = rebase(noBulb, (() => { const v = structuredClone(lampV1); v.parent = H1; v.name = 'Lamp '; return v; })(), lampV1);
-  check('…but a removal the update did not touch stays removed', c5.ok === true && c5.tree.children.length === 0, J(c5));
-  // the update ADDS to a part the copy removed: the remover and the adder disagree too
-  const capped = structuredClone(lampV1); capped.parent = H1;
-  capped.root.children[0].components.push({ type: 'Label', key: 'label', params: { text: 'the bulb' } });
-  const c7: any = rebase(noBulb, capped, lampV1);
-  check('rebase: a part the copy removed but the update added to is a conflict (not a silent drop)', c7.ok === false && c7.conflicts.some((c: any) => J(c.path) === J(['bulb']) && c.comp === 'Label|label'), J(c7));
-  const unlabel = structuredClone(lampV1); unlabel.parent = H1; unlabel.root.components.find((c: any) => c.type === 'Label').params.text = 'a lamp, now';
-  const c6: any = rebase(red, unlabel, lampV1);
-  check('rebase: a component the copy removed but the update edited is a conflict', c6.ok === false && c6.conflicts.some((c: any) => c.comp === 'Label|label'), J(c6));
-}
-
 // ---- 6. the door's publish and create {from} ------------------------------------------
 console.log('\n6. publish → @world blueprints:<hash>; create {from: hash, at} → the copy (the real door, a scratch world)');
 const { scratchWorld } = await import('../harness/scratchworld.ts');
@@ -206,7 +37,6 @@ const lampWorld = () => {
   W.call('set', { id: '@world', component: 'roles:bld', value: { role: 'builder' } });
   W.call('set', { id: '@world', component: 'roles:vis', value: { role: 'member' } });
   // a lamp: a model with a label, and a bulb child (an Empty with its own light) 1.2 m up: the LIGHT lives on the bulb.
-  // The record FORMAT also expresses model+light on one thing (lampV1 above; the pure expand() tests assert the root's light).
   W.seed({
     lamp: { model: LAMP, pos: [7, 0, 7], yaw: 1, label: 'a lamp' },
     bulb: { pos: [0, 0, 0], parent: { to: 'lamp', offset: [0, 1.2, 0], yaw: 0 }, light: { color: 0xffffff, intensity: 4, range: 3 } },

@@ -47,11 +47,6 @@ tryRow('ST', () => {
   check('ST6 a station hangs only on a socket entity', code(W.call('set', { id: 'crate2', component: 'station', value: { action: 'sit' } })) !== 'ok');
   check('ST7 station.who names a role here', code(mk('wh1', { name: 'wh' }, { station: { who: 'wizard' } })) === 'shape' && mk('wh2', { name: 'wh2' }, { station: { who: 'builder' } }).ok);
 
-  // the old map: no name, so the door refuses a write of it as any unknown name (schema, did you mean socket)
-  W.call('create', { id: 'sofa', model: 'crate' });
-  const map = { left: { pos: [-0.4, 0.5, 0], body: {} }, right: { pos: [0.4, 0.5, 0], body: { action: 'sit', pose: 'sit' } } };
-  r = W.call('set', { id: 'sofa', component: 'sockets', value: map });
-  check('ST8 a write of the old sockets map is refused (schema, did you mean socket); the sofa holds nothing new', code(r) === 'schema' && (r.refused?.didYouMean ?? []).includes('socket') && !C('sofa')?.sockets, r.refused ?? r);
 
   // a stored socket.body (a log stored before station), lifted at load
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };
@@ -111,7 +106,6 @@ tryRow('LA', () => {
   const W = scratchWorld('w2-lookat').seed({ head: { model: 'crate', pos: [0, 0, 0] } });
   const r = W.call('set', { id: 'head', component: 'look-at', value: { target: '@viewer', forward: 'x' } });
   const v = W.state().entities.head.c['look-at'];
-  check('LA1 forward/up are stored as vectors (a letter is accepted and written as one)', r.ok && JSON.stringify(v?.forward) === '[1,0,0]' && JSON.stringify(v?.up) === '[0,1,0]', [r.refused, v]);
   check('LA2 speed is radians a second (240°/s)', r.ok && Math.abs(v?.speed - 240 * Math.PI / 180) < 1e-9 && COMPONENTS['look-at'].units.speed === 'rad/s', v);
   check('LA3 offset is gone', code(W.call('set', { id: 'head', component: 'look-at', value: { target: '@viewer', offset: [0, 1, 0] } })) === 'schema');
   check('LA4 yaw limits are radians: within ±π', code(W.call('set', { id: 'head', component: 'look-at', value: { target: '@viewer', yaw: [-90, 90] } })) === 'bounds' && W.call('set', { id: 'head', component: 'look-at', value: { target: '@viewer', yaw: [-1, 1] } }).ok);

@@ -18,7 +18,6 @@ import { net, sendDrag } from '../net.js';
 import { scaleOf } from '../../../shared/scale3.js';
 import { MESH_DEFAULT, ghostMeshSize } from '../meshdefaults.js';
 import { engage, release } from './keyhints.js';
-import { placeRefusal } from '../../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setBuildingProbe } from '../player/controller.js';
 import { flashHint, collapseAll, panelFrame, html, claimStatus, releaseStatus } from '../ui/ui.js';
 import { paint, escapeHtml } from '../ui/markup.js';
@@ -40,7 +39,7 @@ const _hit = new THREE.Vector3();
 
 // ============================================================ state
 
-let ghost = null;         // { obj, lib, yaw, scale, bp? } — a thing not yet placed (bp: a blueprint copy, {hash, record})
+let ghost = null;         // { obj, lib, yaw, scale } — a thing not yet placed
 let selected = null;      // { id, obj } — the selection's primary thing, resolved to its object (edit/selection.js is the truth)
 let dragging = null;      // { id, offset, plane } while moving a selection
 
@@ -267,56 +266,6 @@ export async function holdGhost(lib, label) {
   } catch (e) { report('ghost', e); }
 }
 
-/** Carry a COPY of a blueprint as the ghost: the whole tree, each part at its local pose under its parent, so what
- *  you aim is what lands. Committing is the authority's create {from: hash}: one act, one Ctrl+Z. */
-export async function holdBlueprint(hash, record) {
-  const why = record ? placeRefusal(record) : 'that blueprint is not in this world\'s store';
-  if (why) { flashHint(`can't place it: ${why}`, 5000); return false; }
-  setBuildMode(true, { quiet: true });
-  cancelGhost();
-  deselect();
-  const token = (holdBlueprint.n = (holdBlueprint.n ?? 0) + 1);
-  try {
-    const node = async (n) => {
-      const g = new THREE.Group();
-      const tf = n.components.find((c) => c.type === 'Transform')?.params ?? {};
-      if (Array.isArray(tf.pos)) g.position.fromArray(tf.pos);
-      if (Array.isArray(tf.q) && tf.q.length === 4) g.quaternion.fromArray(tf.q).normalize();
-      else if (Number.isFinite(tf.yaw)) g.rotation.y = tf.yaw;
-      if (Number.isFinite(tf.scale)) g.scale.setScalar(tf.scale);
-      const model = n.components.find((c) => c.type === 'Model');
-      const light = n.components.find((c) => c.type === 'Light');
-      if (model) {
-        try { const m = await loadGLB(model.params.lib); ghostify(m); g.add(m); }
-        catch (e) { report('ghost', e); }
-      } else if (light) {
-        const m = makeLightGizmo(Number.isInteger(light.params?.color) ? light.params.color : 0xffd9a0);
-        m.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.7; } });
-        g.add(m);
-      } else {
-        g.add(new THREE.AxesHelper(0.3));   // an Empty: a pivot you can see while aiming
-      }
-      for (const k of n.children) g.add(await node(k));
-      return g;
-    };
-    const obj = await node(record.root);
-    if (token !== holdBlueprint.n) return false;   // another pick came first
-    obj.userData.noCamCollide = true;
-    obj.traverse((o) => { o.userData.noCamCollide = true; });
-    // the ghost's own scale is , and . (ghostKey); the record's root scale rides inside
-    const holder = new THREE.Group();
-    holder.add(obj);
-    holder.userData.noCamCollide = true;
-    ghost = { obj: holder, lib: null, yaw: 0, scale: 1, bp: { hash, record } };
-    scene.add(holder);
-    collapseAll();
-    const n = (function count(x) { return 1 + x.children.reduce((k, c) => k + count(c), 0); })(record.root);
-    flashHint(html`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place · <kbd>Q</kbd>/<kbd>E</kbd> turn · <kbd>,</kbd>/<kbd>.</kbd> size · <kbd>Esc</kbd> cancel`, 6000);
-    engage('ghostKeys');
-    return true;
-  } catch (e) { report('ghost', e); return false; }
-}
-
 export function cancelGhost() {
   if (ghost) { scene.remove(ghost.obj); ghost = null; release(); }
 }
@@ -325,7 +274,7 @@ export function cancelGhost() {
 // as the scale tool clamps. (Not R / T or S / D: R is the scale tool and D walks.)
 const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1.1, GHOST_SIZE_FINE = 1.01;
 /** The thing in hand, for tests and the hint: {yaw, scale} or null. */
-export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib, bp: ghost.bp?.hash ?? null } : null);
+export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib } : null);
 function ghostKey(e) {
   if (!ghost || ghost.lib === '@light' || ghost.lib === '@empty' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
   const fine = !!e.shiftKey;   // keys: ghostKeys
@@ -463,24 +412,18 @@ bus.on('snapshot-adopted', () => { for (const id of [...claims.keys()]) endClaim
 function commitSpawn() {
   const p = ghost.obj.position;
   const id = '$new';   // the authority mints its id; the reply's ids map says what it became
-  // one request: create (a model, a mesh, a picture, a light, an empty), or create {from} for a blueprint copy, whose
-  // root keeps the record's own size times the size it was given in hand
-  const rootScale = () => { const s = ghost.bp.record?.root?.components?.find((c) => c.type === 'Transform')?.params?.scale; return Number.isFinite(s) ? s : 1; };
+  // one request: create (a model, a mesh, a picture, a light, an empty)
   let sent;
-  if (ghost.bp) sent = Edits.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], ...(ghost.scale !== 1 ? { scale: Array(3).fill(+(rootScale() * ghost.scale).toFixed(4)) } : {}) });
-  else if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
+  if (ghost.lib === '@empty') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z] }, components: { label: 'empty' } })], { what: 'place an empty', expect: false });
   else if (meshOf(ghost.lib)) { const shape = meshOf(ghost.lib); const size = ghostMeshSize(shape, ghost.scale);
     sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { mesh: { shape, size }, label: shape } })], { what: `place a ${shape}`, expect: false }); }
   else if (pictureOf(ghost.lib)) sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] }, components: { picture: { src: pictureOf(ghost.lib), width: +ghost.scale.toFixed(3) }, label: 'picture' } })], { what: 'hang a picture', expect: false });
   else if (ghost.lib === '@light') sent = Edits.sendOps([OP.create(id, { transform: { pos: [p.x, p.y + 0.9, p.z] }, components: { light: { ...LIGHT_DEFAULTS } } })], { what: 'place a light', expect: false });   // a touch off the floor: a hanging bulb
   else sent = Edits.sendOps([OP.create(id, { model: ghost.lib, transform: { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)], scale: ghost.scale } })], { what: `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
-  // what you just placed is the selection (a blueprint copy: its root, the first thing made that rides nothing else
-  // made); it arrives a frame or two after the reply
-  const bp = !!ghost.bp;
+  // what you just placed is the selection; it arrives a frame or two after the reply
   Promise.resolve(sent).then((r) => {
     if (!r?.ok) return;
-    const made = (r.refs ?? []).map((x) => x.id);
-    const pick = bp ? made.find((x) => !made.includes(state.st.entities?.[x]?.parent?.to)) ?? made[0] : r.ids?.[id];
+    const pick = r.ids?.[id];
     if (pick) selectWhenHere(pick);
   });
   cancelGhost();

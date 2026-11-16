@@ -46,7 +46,7 @@ function walk(st: any, { speed = 1.55, z0 = -1.2, x = 0, frames = 120, sh = crea
     massOf(world({ a: thing([0, 0, 0], { physics: { mass: 12 } }) }), "a") === 12 && Math.abs(massOf(world({ a: thing([0, 0, 0]) }), "a") - 216) < 1e-6
     && Math.abs(massOf(world({ a: thing([0, 0, 0], { physics: { material: "wood" } }) }, { "surface:wood": { density: 500 } }), "a") - 108) < 1e-6
     && Math.abs(massOf(world({ a: { c: { physics: { kind: "dynamic", shape: CRATE }, transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [2, 1, 1] } } } }), "a") - 432) < 1e-6);
-  check("shoveCap: heavy is slow, light hits the ceiling", Math.abs(shoveCap(70) - 4) > 0 && shoveCap(70) === SHOVE.maxV && shoveCap(1000) < 0.6 && shoveCap(216) < 2); }
+  check("shoveCap: heavy is slow, light hits the ceiling", shoveCap(70) === SHOVE.maxV && shoveCap(1000) < 0.6 && shoveCap(216) < 2); }
 
 { // the review's rot.ts: a 3 m plank at 45°; feet 1.78 m from its face, inside its axis-aligned box's empty corner: no contact
   const h = Math.SQRT1_2, q = [0, Math.sin(Math.PI / 8), 0, Math.cos(Math.PI / 8)];

@@ -15,7 +15,6 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isMeshBag, recordHash } from '../../shared/components.js';
 import { worldComponents, worldOf, worldState } from '../../shared/worldentity.js';
-import { blueprintRefusal, blueprintHash, expand, overridesOf, placeVerbs, placeRefusal, copyTree, modernize, localComponents, LINK_KEY } from '../../shared/blueprint.js';
 import { treeOf } from '../../shared/hierarchy.js';
 import { pathList } from "../gate/common.ts";
 import { suite } from "../gate/suite.ts";
@@ -81,15 +80,6 @@ const cases: [string, any, string[]][] = [
 check('the Transform card has no rotOrder (the order is the viewer\'s), neither a param nor a field to edit',
   !('rotOrder' in componentsOf({ pos: [0, 0, 0], rotOrder: 'YZX' }).components[0].params)
   && !('rotOrder' in componentsOf({ pos: [0, 0, 0] }).components[0].params) && !('comp' in entityOf(componentsOf({ pos: [0, 0, 0], yaw: 0 }))));
-{
-  // a blueprint record from before (its root Transform says rotOrder): placing it writes no rotOrder, and it isn't refused
-  const rec: any = { kind: 'eido.blueprint', v: 1, name: 'Old', root: { components: [{ type: 'Transform', params: { rotOrder: 'ZXY' } }, { type: 'Model', params: { lib: L } }], children: [] } };
-  const pv: any = placeVerbs(rec, { id: 'old1', pos: [1, 0, 1], yaw: 0 });
-  const all = [...(pv?.verbs ?? []), ...(pv?.rules ?? [])];
-  check('placing a blueprint sends no rotOrder (an older record\'s root Transform said one): the order stays the viewer\'s',
-    placeRefusal(rec) == null && all.length > 0 && !JSON.stringify(all).includes('rotOrder'), JSON.stringify([placeRefusal(rec), all]));
-  check('…and a malformed one there is not a reason to refuse the placement', placeRefusal({ ...rec, root: { ...rec.root, components: [{ type: 'Transform', params: { rotOrder: 'zxy' } }, rec.root.components[1]] } }) == null);
-}
 for (const [name, ent, want] of cases) {
   const view = componentsOf(ent);
   const got = view.components.map((c: any) => `${c.type}:${c.key ?? ''}`);
@@ -110,6 +100,7 @@ check('colliderOf: comp.collider wins (mesh, and the older exact, as the walker\
   colliderOf({ collide: 'box', collider: { shape: 'exact' } }) === 'exact'
   && colliderOf({ collide: 'box', collider: { shape: 'mesh' } }) === 'exact'
   && colliderOf({ collide: 'box', collider: { shape: 'triangles' } }) === 'box'
+  && colliderOf({ collider: { shape: 'box' } }) === 'box'
   && colliderOf({ model: L }) === undefined);
 check('isMeshBag: a mesh a reader may draw names a registered shape (a malformed mesh is absent, as the realizer reads it)', isMeshBag({ shape: 'box', size: [1, 1, 1] }) && !isMeshBag({}) && !isMeshBag({ shape: 'cone' }) && !isMeshBag(null) && !isMeshBag([]));
 check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add one; Collider still needs a Model',

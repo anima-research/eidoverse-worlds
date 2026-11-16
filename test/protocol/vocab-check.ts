@@ -33,7 +33,6 @@ const EXEMPT: [string, RegExp, string][] = [
   ["client/lib/edit/build.js", /ghost\.lib|params\.lib/, "the placement ghost's own field, and a catalogue entry's"],
   ["shared/components.js", /params:\s*\{\s*lib|p\.lib\b|type === 'Model'/, "the component LIST's Model params (its own schema, RFC #208): leaves with the schema-layer merge"],
   ["shared/editschema.js", /params\.lib|c\.type === 'Model'/, "the component LIST's Model params: leaves with the schema-layer merge"],
-  ["shared/blueprint.js", /params\.lib/, "the component LIST's Model params: leaves with the schema-layer merge"],
   ["mcpl/tools.ts", /a\.lib\b|lib=\$\{/, "the find tool's own `lib` argument and the /library URL's query name"],
   ["server/routes.ts", /resolveLibFile|\/library/, "the library route's own file lookup"],
   ["shared/protocol/authority", /out\.comp = op\.comp|\bh\.comp\b|toggleOf\(h\)\.comp/, "an op being shaped (out) and a reaction handler (h) name the OP's component"],

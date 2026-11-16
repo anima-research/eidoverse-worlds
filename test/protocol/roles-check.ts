@@ -338,12 +338,25 @@ const cases: Case[] = [
       const still = code(s.call("bea", "place", { id: "t", at: [1, 0], throughLock: true }));
       return { reset, still }; },
     good: (o) => o.reset === "rank" && o.still === "locked" },
-  { id: "LK4", what: "(recut B2) a lock has no level: {rank} is refused with a pointer, nothing written; inspect says its strength as a rank", run(s) { cast(s);
+  { id: "LK4", what: "(recut B2) a lock has no level: {rank} (and false) is refused with a pointer, nothing written; inspect says its strength as a rank", run(s) { cast(s);
       s.call("mo", "create", { id: "t", model: "table", place: { at: [0, 0] } });
-      const r = s.call("mo", "set", { id: "t", component: "lock", value: { rank: "owner" } }); const before = s.w().state().entities.t?.c.lock;
+      const r = s.call("mo", "set", { id: "t", component: "lock", value: { rank: "owner" } }); const no = code(s.call("mo", "set", { id: "t", component: "lock", value: false })); const before = s.w().state().entities.t?.c.lock;
       set(s, "mo", "lock", true, "t"); const ins = s.call("bob", "inspect", { id: "t" });
-      return { code: code(r), why: r?.refused?.reason ?? "", before, rank: ins?.lock?.rank }; },
-    good: (o) => o.code === "shape" && /no level/.test(o.why) && o.before === undefined && o.rank === 200 },
+      return { code: code(r), no, why: r?.refused?.reason ?? "", before, rank: ins?.lock?.rank }; },
+    good: (o) => o.code === "shape" && o.no === "shape" && /no level/.test(o.why) && o.before === undefined && o.rank === 200 },
+  { id: "LK5", what: "(recut B2) an owner's lock: a builder's refusal says owners only (rank 255); a moderator can neither lift it nor delete through it; what rides it is held at its strength", run(s) { cast(s);
+      s.call("olive", "create", { id: "stage", model: "table", place: { at: [0, 0] } }); s.call("olive", "create", { id: "mic", model: "ball", place: { on: "stage" } });
+      set(s, "olive", "lock", true, "stage");
+      const b = s.call("bob", "place", { id: "stage", at: [1, 0], throughLock: true });
+      const moLift = code(s.call("mo", "delete", { id: "stage", component: "lock" })), moDel = code(s.call("mo", "delete", { id: "stage", throughLock: true }));
+      const rider = code(s.call("bob", "set", { id: "mic", component: "transform", value: { pos: [0, 1, 0] }, throughLock: true }));
+      return { b: code(b), fix: b?.refused?.fix ?? "", rank: b?.refused?.rank, moLift, moDel, rider }; },
+    good: (o) => o.b === "locked" && /owners only/.test(o.fix) && o.rank === 255 && o.moLift === "rank" && o.moDel === "locked" && o.rider === "locked" },
+  { id: "LK6", what: "(recut B2) a setter demoted below their lock's strength may still lift it", run(s) { cast(s);
+      s.call("mo", "create", { id: "t", model: "table", place: { at: [0, 0] } }); set(s, "mo", "lock", true, "t");
+      role(s, "mo", { role: "builder" });
+      return { lift: show(s.call("mo", "delete", { id: "t", component: "lock" })) }; },
+    good: (o) => o.lift === "ok" },
 
   // ---------------- B3 (recut B; house 22:03Z "starter config, switched on"): world settings that reach the authority ----------------
   { id: "WS1", what: "(recut B3; R 10-28) an owner sets @world.body-default {move, touch} through the real set verb; it is stored, and it is what a body that never chose answers (gates-check W1–W5 for the order)", run(s) { cast(s);

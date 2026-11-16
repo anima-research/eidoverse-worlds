@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, readMesh, meshKeyOf } from "../../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, readMesh, meshKeyOf } from "../../client/lib/realize/models_field.js";
 import { P } from "../../client/lib/render/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -116,7 +116,7 @@ const light = () => ({ pos: [0, 1, 0], light: { color: 0xffd9a0, intensity: 16, 
   check("a mesh thing that gains a model → rebuild (a GLB frame)", flip.retire.includes("a") && flip.create.length === 1);
   check("readMesh: a capsule [1, 0.2, 1] is 1 m tall", JSON.stringify(readMesh({ shape: "capsule", size: [1, 0.2, 1] })?.size) === "[1,1,1]");
   const both = planReconcile({ a: mesh({ shape: "box", size: [1, 1, 1] }, { model: "x.glb" }) }, new Map([["a", { model: "x.glb" }]] as any));
-  check("a model with a mesh beside it is planned by its model alone (both are drawn)", both.retire.length === 0 && both.create.length === 0 && modelOf(both.create[0]?.ent ?? { model: "x.glb" }) === "x.glb");
+  check("a model with a mesh beside it is planned by its model alone (both are drawn)", both.retire.length === 0 && both.create.length === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

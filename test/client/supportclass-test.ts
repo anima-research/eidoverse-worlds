@@ -11,7 +11,7 @@ import * as SC from "../../shared/supportclass.js";
 import { stubResolve } from "../harness/stub.ts";
 const { gridAccumulator, decideSupportClass, validTopGrid, UNEVEN_MIN_LIE,
   LIE_GRID, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON } = SC;
-const CERT_SPREAD = (SC as any).CERT_SPREAD ?? 0.03;
+const { CERT_SPREAD } = SC;
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -93,10 +93,6 @@ console.log("\n━━ B2: browser and server verdicts agree at the 0.10 gate ━
   } });
   const { THREE } = await import("../stubs/core-stub.mjs");
   const { topLie } = await import("../../client/lib/colliders.js");
-  if (typeof topLie !== "function") {
-    check("browser adapter exports topLie for parity fixtures", false, "absent (pre-revision head)");
-  } else {
-
   const fixture = (bump: number) => {
     const pts: number[] = [];
     for (let x = 0.05; x < 3; x += 0.1) for (let z = 0.05; z < 3; z += 0.1) pts.push(x, 0, z);   // the sheet
@@ -134,7 +130,6 @@ console.log("\n━━ B2: browser and server verdicts agree at the 0.10 gate ━
   check("a 3-decimal rounding would have flipped the verdict (the bug pinned)",
     !decideSupportClass({ w: 3, d: 3, h: 0.5, lie: +above.serverLie.toFixed(3) }).uneven
     && decideSupportClass({ w: 3, d: 3, h: 0.5, lie: above.serverLie }).uneven);
-  }
 }
 
 console.log("");

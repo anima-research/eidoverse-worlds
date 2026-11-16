@@ -99,7 +99,7 @@ player viewport.
 
 ```sh
 bun test/harness/bun-test.ts test/server/screenshots-test.ts   # the broker: queue, deadlines, retryable failures, roamers, the sweep
-bun test/server/screenshots-wire-test.ts            # the real route and sockets, a throwaway sequencer; each outcome's status and log line, SNAP_TIMEOUT_SEC
+bun test/server/snapframe-test.ts                 # the real route and sockets, a throwaway sequencer; each outcome's status and log line, SNAP_TIMEOUT_SEC
 bun test/client/snap-settle-test.ts               # the renderer waits for the world as long as `wait` says
 bun test/shared/door-wording-test.ts              # the MCPL screenshot tool: its words and its retries
 bun test/client/roaming-renderer-check.ts       # end to end in a real browser, its own scratch server
@@ -109,9 +109,8 @@ Settings (world server's service): `SNAP_TIMEOUT_SEC` (frame window, 12), `SNAP_
 this long after a start, 30), `SNAP_SWEEP_EVERY_SEC` (the sweep's timer, 15). On the MCPL door's own service:
 `SNAP_CALL_BUDGET_MS` (one screenshot call, retries included, 57000; raise it with a slow renderer's frame window).
 
-The wire test uses an isolated throwaway sequencer on 127.0.0.1:18998 and refuses
-an occupied port. `--native` holds it open for the Unreal integration probe and
-provides a local-only test pose controller on :18994. Run Unreal's
+For the Unreal integration probe, `bun tools/operator/snap-native.ts` holds an isolated throwaway sequencer open on
+127.0.0.1:18998 (it refuses an occupied port) with a local-only test pose controller on :18994. Run Unreal's
 `Tools/eidoverse/test_remote_capture.py`, then the external
 `Tools/eidoverse/capture_remote_views.ts` to collect first/third/selfie, surface,
 and pitched underwater images in a new temporary directory. No production

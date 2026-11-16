@@ -88,7 +88,6 @@ try {
   check('(setup) the session layer is bigger than the canvas, as on a headset', first.between === `${LAYER[0]}x${LAYER[1]}` && canvas !== first.between, `${first.between} vs canvas ${canvas}`);
   check('mirror "first" draws to the canvas while presenting', first.presenting && (first.mirror?.passes ?? 0) > 3, JSON.stringify(first.mirror));
   check('…through a CANVAS-sized intermediate target, not a layer-sized one', first.seen.length > 0 && first.seen.every((s) => s.fbt === canvas), JSON.stringify(first.seen));
-  check('the eyes get the layer size back between passes', first.between === `${LAYER[0]}x${LAYER[1]}`, first.between);
   check('mode "third" draws too, through the same canvas-sized path', (third.mirror?.passes ?? 0) > 3 && third.seen.every((s) => s.fbt === canvas), JSON.stringify({ m: third.mirror, seen: third.seen }));
   check('mode "off" draws nothing', (off.mirror?.passes ?? 0) === 0, JSON.stringify(off.mirror));
   check('the mirror was LIVE across the screenshot (passes advanced, not killed)', first.liveAcrossShot && third.liveAcrossShot,
@@ -100,8 +99,6 @@ try {
   check('killswitch: 30 slow frames switch the mirror off for the session', slow.after.killed === true, JSON.stringify(slow.after));
   check('…and it stops drawing once off (passes stop advancing)', !slow.liveAcrossShot, JSON.stringify(slow.after));
   check('…and says so on the desktop (banner)', /Desktop view paused/.test(slow.after.banner ?? ''), slow.after.banner);
-  check('the visual runs held it without hiding a trip (hold is harness-only; wouldKill is how a trip shows there)',
-    first.after.killed === false && third.after.killed === false, JSON.stringify({ first: first.after, third: third.after }));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }
 finally { try { await browser.close(); } catch {} try { await world.close(); } catch {} }

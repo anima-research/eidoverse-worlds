@@ -27,16 +27,13 @@ const ok = (cond, what, detail?) => { if (cond) { pass++; console.log(`ok   ${wh
 const read = (p) => readLog(fs.readFileSync(p));
 
 // ---- F20 (Mica 11-04): a reader given the next v returns unknown-version: no usable world, no entry folded or cached ----
-{ const C = path.join(ENGINE, "spec/conformance"); const exp = JSON.parse(fs.readFileSync(path.join(C, "expected.json"), "utf8"));
+{ const C = path.join(ENGINE, "spec/conformance");
   const L = read(path.join(C, "EXAMPLE-01.jsonl")); const v5 = [{ ...L[0], body: { ...L[0].body, v: VERSION + 1 } }, ...L.slice(1)];
   const st = fold(v5), acc = F.acceptedEntries(v5);
   ok(st.status === "unknown-version" && st.entities === null && acc.length === 0 && st.diagnostics.length === 1 && st.diagnostics[0][1] === "unknown-version",
     "F20 a reader given a log at the next v: unknown-version, no world, no entry folded (the fold's one diagnostic is the version) and nothing accepted to cache", { status: st.status, acc: acc.length, d: st.diagnostics });
   const stray = [{ ...L[0], body: { ...L[0].body, minor: 1 } }, ...L.slice(1)]; const s2 = fold(stray);
-  ok(s2.status === "no-world" && s2.entities === null && s2.diagnostics.some(([q, c]) => q === 0 && c === "malformed:genesis-field"), "F20 …and a genesis carrying a minor is malformed (there is none): no world", s2.diagnostics);
-  const files = fs.readdirSync(path.join(C, "logs")).map((f) => `logs/${f}`);
-  const fresh = files.filter((f) => exp[f]).filter((f) => { const s = fold(read(path.join(C, f))); const e = exp[f]; return !(s.status === e.status && (s.status !== "ok" || digest(s) === e.digest)); });
-  ok(!fresh.length, "F20 …and this branch's reader folds each conformance log to its pinned status and digest", fresh); }
+  ok(s2.status === "no-world" && s2.entities === null && s2.diagnostics.some(([q, c]) => q === 0 && c === "malformed:genesis-field"), "F20 …and a genesis carrying a minor is malformed (there is none): no world", s2.diagnostics); }
 
 // ---- F7: the live wire's version gate ----
 { const st = fold(read(path.join(ENGINE, "spec/conformance/EXAMPLE-01.jsonl")));

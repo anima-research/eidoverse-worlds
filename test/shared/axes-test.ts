@@ -28,7 +28,7 @@ check("AX2 a motion takes a negative letter at the door and stores its vector", 
 S.call("create", { id: "eye", model: "crate", components: { transform: { pos: [3, 0, 0] } } });
 const lp = S.call("set", { id: "eye", component: "look-at", value: { target: "@viewer", forward: "x" } });
 const ln = S.call("set", { id: "eye", component: "look-at", value: { target: "@viewer", forward: "-x" } });
-check("AX3 look-at's door takes a positive letter as its vector and refuses a negative one (as before the table was one)", lp.ok && JSON.stringify(S.state().entities.eye.c["look-at"].forward) === "[1,0,0]" && !ln.ok, [lp.refused ?? S.state().entities.eye.c["look-at"], ln.refused]);
+check("AX3 look-at's door takes a positive letter as its vector and refuses a negative one (as before the table was one)", lp.ok && JSON.stringify(S.state().entities.eye.c["look-at"].forward) === "[1,0,0]" && JSON.stringify(S.state().entities.eye.c["look-at"].up) === "[0,1,0]" && !ln.ok, [lp.refused ?? S.state().entities.eye.c["look-at"], ln.refused]);
 const tn = S.call("turn", { id: "fan", axis: "-x", deg: 30 }), tp = S.call("turn", { id: "fan", axis: "x", deg: 30 });
 check("AX4 turn takes x, y, z and refuses a negative letter (as before)", tp.ok && !tn.ok && tn.refused?.code === "shape", [tp.refused, tn.refused]);
 check("AX5 the readers read negative letters: descriptors' axisVector, motioneval's axisOf reading, look-at's reader table",

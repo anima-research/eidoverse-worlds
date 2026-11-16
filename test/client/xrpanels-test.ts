@@ -16,10 +16,10 @@ import { suite } from "../gate/suite.ts";
 GlobalRegistrator.register();
 
 // a 2D context that records what was asked of it and never draws
-const calls: string[] = [];
+const calls: string[] = [], texts: string[] = [];
 (HTMLCanvasElement.prototype as any).getContext = function () {
   const noop = (name: string) => (..._a: unknown[]) => { calls.push(name); };
-  return { fillText: noop("fillText"), fillRect: noop("fillRect"), strokeRect: noop("strokeRect"),
+  return { fillText: (t: string) => { calls.push("fillText"); texts.push(String(t)); }, fillRect: noop("fillRect"), strokeRect: noop("strokeRect"),
     beginPath: noop("beginPath"), moveTo: noop("moveTo"), lineTo: noop("lineTo"), stroke: noop("stroke"),
     measureText: (t: string) => ({ width: t.length * 8 }), fillStyle: "", strokeStyle: "", font: "", lineWidth: 1 };
 };
@@ -47,7 +47,12 @@ console.log("\ndisabled fields paint but take NO hits; driven ones keep theirs:"
   check("disabled num: 0 regions", at(regions, "a").length === 0, JSON.stringify(at(regions, "a")));
   check("driven num: still 2 regions", at(regions, "b").length === 2);
   check("disabled check and enum: 0 regions", at(regions, "c").length === 0 && at(regions, "d").length === 0);
-  check("the disabled rows were still PAINTED (labels drawn)", calls.filter((c) => c === "fillText").length > 0);
+}
+{ // painted alone, with no title: every disabled row's label is drawn
+  texts.length = 0;
+  const c = document.createElement("canvas");
+  renderCanvas(c, [{ t: "num", k: "a", value: 1, disabled: true, label: "LA" }, { t: "check", k: "c", value: true, disabled: true, label: "LC" }], { width: W, rowH: ROW });
+  check("the disabled rows were still PAINTED (labels drawn)", ["LA", "LC"].every((l) => texts.includes(l)), JSON.stringify(texts));
 }
 
 console.log("\nlists and trees dispatch the keys the desktop dispatches:");

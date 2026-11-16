@@ -78,35 +78,19 @@ check('…with no t0 of its own: neither the machine\'s clock nor its estimate o
 Date.now = realNow;
 
 console.log('\n— the editor reads no guard —\n');
-// the #190 fixture shape: bobbie placed and guarded the radio, the owner later changed its volume
-const SUB_BOB = 'human:discord:9002', SUB_CAROL = 'human:discord:9003', SUB_RA = 'human:discord:9001';
-const PLACER = { id: 'bobbie', sub: SUB_BOB };
+// a block that still carries a stored `guard` (one lock for everything now, decided at the door; the house's §5): the
+// editor reads no placer, role or guard, so the form is offered and nothing claims anyone guards it (#260 house I399)
 const radio = { userData: {} };
 stub.entities.set('radio1', radio);
-stub.entityMeta.set('radio1', { actor: 'ra', kind: 'model', ts: 1, placer: { ...PLACER } });   // the owner's partial update moved actor; the placer stays
+stub.entityMeta.set('radio1', { actor: 'ra', kind: 'model', ts: 1, placer: { id: 'bobbie', sub: 'human:discord:9002' } });
 stub.comps.set('radio1', { guard: true, sound: { src: 'store/audio/0123456789abcdef.mp3', look: 'rain on the awning', playing: true, volume: 0.6, radius: 12, loop: true } });
-const as = (id: string, sub: string, role: string) => { const n = stub.net; n.myId = id; n.mySub = sub; n.myRights = { role }; };
 const render = () => editor({ id: 'radio1', obj: radio, meta: stub.entityMeta.get('radio1'), bag: stub.bagOf('radio1'), commit() {}, esc: (t: string) => t })?.html ?? '';
-
-// The guard is gone (one lock for everything, the authority decides at the door; the house's §5): the editor no longer
-// reads a placer or a role, so a block that still carries a stored `guard` offers the same form to everyone, and nothing
-// claims anyone guards it (#260 house I399: these rows expected 'guarded by bobbie', which no client code emits).
-const VIEWERS = [
-  { who: 'the stranger', id: 'carol', sub: SUB_CAROL, role: 'builder' },
-  { who: 'the placer', id: 'bobbie', sub: SUB_BOB, role: 'builder' },
-  { who: 'the owner', id: 'ra', sub: SUB_RA, role: 'owner' },
-  { who: 'someone under the placer\'s display id', id: 'bobbie', sub: SUB_CAROL, role: 'builder' },
-];
-for (const v of VIEWERS) {
-  as(v.id, v.sub, v.role);
-  const html = render();
-  check(`${v.who}: the form is offered (a stored guard decides nothing in the editor)`, /data-se-root/.test(html), html.slice(0, 300));
-  check(`${v.who}: …and nothing says anyone guards it`, !/guarded by/.test(html), html.slice(0, 300));
-}
+{ const html = render();
+  check('a stored guard: the form is offered', /data-se-root/.test(html), html.slice(0, 300));
+  check('…and nothing says anyone guards it', !/guarded by/.test(html), html.slice(0, 300)); }
 // and without the stored guard, the same
 stub.comps.set('radio1', { sound: stub.bagOf('radio1').sound });
-as('carol', SUB_CAROL, 'builder');
-check('no stored guard: the stranger gets the form too', /data-se-root/.test(render()));
+check('no stored guard: the form too', /data-se-root/.test(render()));
 
 // R 10-28 (item 18): 32 world sounds heard at once (was 8), and the editor's radius goes to the 200 m cap
 { const S: any = await import('../../client/lib/realize/sounds.js'); const { SOUND_MAX_RADIUS } = await import('../../shared/sound.js');

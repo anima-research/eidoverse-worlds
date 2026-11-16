@@ -162,7 +162,7 @@ try {
     const all = ctx.getImageData(0, 0, cv.width, cv.height).data; const hist = new Map();
     for (let i = 0; i < all.length; i += 4) { const k = (all[i] << 24 | all[i + 1] << 16 | all[i + 2] << 8 | all[i + 3]) >>> 0; hist.set(k, (hist.get(k) ?? 0) + 1); }
     let mk = 0, mn = -1; for (const [k, n] of hist) if (n > mn) { mk = k; mn = n; }
-    const probeMat = D.domQuadMesh?.('settings')?.material ?? null;
+    const probeMat = D.domQuadMesh('settings')?.material ?? null;
     const cssA = getComputedStyle(document.documentElement).getPropertyValue('--xr-panel-a').trim();
     return { found: true, before, value: input.value, cssA, stored: JSON.parse(localStorage.getItem('ew-style-tokens') || '{}')['--xr-panel-a'] ?? null,
       mode: [mk >>> 24, (mk >>> 16) & 255, (mk >>> 8) & 255, mk & 255], mat: probeMat ? { transparent: probeMat.transparent, depthWrite: probeMat.depthWrite, alphaTest: probeMat.alphaTest } : null };
@@ -341,18 +341,18 @@ try {
     let mesh = new HTMLMesh(div, { scale: 1 });
     if (path === 'canvasquads') {   // the ?canvasquads=1 fallback's own quad (xrpanels.makePanel), fed the same pixels
       const X = await import('./lib/xr/xrpanels.js');
-      const p = X.makePanel?.({ id: 'probe', fields: () => [], dispatch: () => {} }, 0, 1);
+      const p = X.makePanel({ id: 'probe', fields: () => [], dispatch: () => {} }, 0, 1);
       if (p) { p.canvas.width = mesh.material.map.image.width; p.canvas.height = mesh.material.map.image.height; p.canvas.getContext('2d').drawImage(mesh.material.map.image, 0, 0); p.tex.needsUpdate = true;
         p.mesh.scale.set(cols.length * 0.064, 0.064, 1); p.mesh.position.set(0, 0, 0); p.mesh.rotation.set(0, 0, 0); mesh = p.mesh; mesh.material.map.pause = () => {}; }
     }
     if (path === 'plate') {   // a head-locked canvas plate as vrmic's note and the XR curtain's splash build it: blended, depth off
       const tex = new THREE.CanvasTexture(mesh.material.map.image); tex.colorSpace = THREE.SRGBColorSpace;
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(cols.length * 0.064, 0.064), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
-      (await import('./lib/xr/quadcolour.js')).quadMaterial?.(plate, renderer);
+      (await import('./lib/xr/quadcolour.js')).quadMaterial(plate, renderer);
       mesh.dispose(); mesh = plate; tex.pause = () => {};
     }
     if (path === 'domquad') { mesh.material.transparent = false; mesh.material.alphaTest = 0.5; }
-    if (path === 'domquad') D.prepareQuadMaterial?.(mesh);   // absent on a parent without the fix: the stand-in then carries the bare HTMLMesh material
+    if (path === 'domquad') D.prepareQuadMaterial(mesh);
     div.remove(); mesh.material.map.pause();
     const sc = new THREE.Scene(); sc.add(mesh);
     const w = cols.length * 0.064, cam = new THREE.OrthographicCamera(-w / 2, w / 2, 0.032, -0.032, 0.01, 10); cam.position.z = 1;
@@ -373,8 +373,8 @@ try {
     mesh.dispose?.();   // a plate has none (quadMaterial must not assume one)
     return { names, want: cols, got, exposure, toneMapping, url, size: [size.x, size.y, dpr], depth };
   }, [tokens, exposure, path]);
-  const setGrade = (g) => ev(async (g) => (await import('./lib/xr/quadcolour.js').catch(() => null))?.setGrade(g, false) ?? null, g);
-  const hadGrade = await setGrade({ saturation: 1, contrast: 1 });   // null on a parent without quadcolour.js
+  const setGrade = (g) => ev(async (g) => { (await import('./lib/xr/quadcolour.js')).setGrade(g, false); return true; }, g);
+  await setGrade({ saturation: 1, contrast: 1 });
   const m = await measure();
   save('quad-output-swatches', m.url);
   const rows = m.names.map((k, i) => ({ k, want: m.want[i], got: `#${m.got[i].map((v) => v.toString(16).padStart(2, '0')).join('')}`, d: Math.max(...m.got[i].map((v, j) => Math.abs(v - hexRgb(m.want[i])[j]))) }));
@@ -426,7 +426,7 @@ try {
     const r = await ev(async (a) => {
       const { THREE, renderer } = await import('./lib/core.js');
       const D = await import('./lib/xr/domquad.js'); const S = await import('./lib/ui/stylepanel.js');
-      S.setXrPanelAlpha?.(a);
+      S.setXrPanelAlpha(a);
       const rig = new THREE.Scene(); D.domQuadsEnter(rig); D.domQuadShow('settings', true);
       await new Promise((r) => setTimeout(r, 900));
       const mesh = rig.children.find((o) => o.material?.map === D.domQuadTexture('settings'));
@@ -464,7 +464,7 @@ try {
       const url = tmp.toDataURL('image/png');
       rig.remove(back); back.geometry.dispose(); back.material.dispose(); tex.dispose();
       D.domQuadsExit(rig);
-      S.setXrPanelAlpha?.(1);
+      S.setXrPanelAlpha(1);
       return { a, panel: [mk >> 16, (mk >> 8) & 255, mk & 255], back: backPx, url, readout, value, thumb, other };
     }, a);
     save(`vr-opacity-${a === 1 ? '1.0' : 'min'}-bright-scene`, r.url);
@@ -482,7 +482,7 @@ try {
     bright[1].panel.every((v, i) => v > panelTok[i] + 20 && v < bright[1].back[i] - 20), `rgb(${bright[1].panel}) between rgb(${panelTok}) and rgb(${bright[1].back})`);
   // reset to defaults brings VR panels back to opaque
   const rs = await ev(async () => {
-    const S = await import('./lib/ui/stylepanel.js'); S.setXrPanelAlpha?.(0.7);
+    const S = await import('./lib/ui/stylepanel.js'); S.setXrPanelAlpha(0.7);
     document.getElementById('sec-style-tab')?.click();
     const b = [...document.querySelectorAll('#sec-style button')].find((x) => /reset to defaults/.test(x.textContent));
     b?.click();
@@ -490,8 +490,8 @@ try {
   });
   check('vr-a: "reset to defaults" returns VR panels to 1', rs.clicked && rs.css === '1' && !/xr-panel-a/.test(rs.stored ?? ''), JSON.stringify(rs));
 
-  if (hadGrade) {   // the VR grade: default and both extremes, against the pure-math twin (test/client/quadcolour-test.mjs tests the twin)
-    const { gradeSRGB, GRADE_DEFAULT, GRADE_RANGE } = await import('../../client/lib/xr/quadgrade.js').catch(() => ({}));
+  {   // the VR grade: default and both extremes, against the pure-math twin (test/client/quadcolour-test.mjs tests the twin)
+    const { gradeSRGB, GRADE_DEFAULT, GRADE_RANGE } = await import('../../client/lib/xr/quadgrade.js');
     for (const [tag, g] of [['default', GRADE_DEFAULT], ['low', { saturation: GRADE_RANGE.saturation[0], contrast: GRADE_RANGE.contrast[0] }], ['high', { saturation: GRADE_RANGE.saturation[1], contrast: GRADE_RANGE.contrast[1] }]]) {
       await setGrade(g);
       const mg = await measure(); save(`quad-output-grade-${tag}`, mg.url);
@@ -501,7 +501,7 @@ try {
     }
     await setGrade(GRADE_DEFAULT);
   }
-  if (hadGrade) {   // Settings › VR carries the two sliders, and moving one moves the quads' grade (and persists)
+  {   // Settings › VR carries the two sliders, and moving one moves the quads' grade (and persists)
     const vr = await ev(async () => {
       document.getElementById('sec-vr-tab')?.click(); await new Promise((r) => setTimeout(r, 300));
       const rows = [...document.querySelectorAll('#sec-vr .row')].filter((r) => /panel (sat|contr)/.test(r.querySelector('.nm')?.textContent ?? ''));

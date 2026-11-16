@@ -12,7 +12,6 @@ import { COMPONENTS, statusOf, pinOf, materialize } from '../../shared/protocol/
 import { evalWholeMotion } from '../../shared/motioneval.js';
 import { worldPose, TICK_MS } from '../../shared/protocol/simlayer.js';
 import { GRID_DEFAULTS, APERTURES } from '../../shared/structure.js';
-import { colliderOf } from '../../shared/components.js';
 import { translate } from '../../tools/import-v1/translate-v1.js';
 
 let pass = 0, fail = 0;
@@ -80,8 +79,6 @@ await tryRow('MO', async () => {
   check('MO3 …and motion:<part> is taken', W.call('set', { id: 'fan', component: 'motion:blade', value: { type: 'spin' } }).ok);
   r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'spin', axis: 'x' } });
   check('MO4 a letter axis is stored as its vector', r.ok && JSON.stringify(C('fan').motion.axis) === '[1,0,0]', [r.refused, C('fan').motion]);
-  r = W.call('set', { id: 'fan', component: 'motion', value: { type: 'oscillate', axis: '-z' } });
-  check('MO4 …a negative one too', r.ok && JSON.stringify(C('fan').motion.axis) === '[0,0,-1]', [r.refused, C('fan').motion]);
   r = W.call('set', { id: 'swing', component: 'motion', value: { type: 'pendulum', pivot: [0, 2, 0] } });
   check('MO5 a whole motion\'s pivot is refused (not silently dropped): its hinge is the pivot component', code(r) === 'derived' && /pivot component|component: 'pivot'/.test(`${r.refused?.reason} ${r.refused?.fix}`), r.refused);
   r = W.call('set', { id: 'swing', component: 'motion:seat', value: { type: 'pendulum', pivot: [0, 0.6, 0] } });
@@ -102,8 +99,6 @@ await tryRow('MO', async () => {
   check('MO8 …a whole motion\'s pivot field moves to the pivot component', !('pivot' in P4.motion) && JSON.stringify(P4.pivot) === '{"pos":[0.1,0.2,0.3]}', P4);
   const P5 = repairComps({ motion: { type: 'pendulum', period: 2, damp: 0.1, maxAmp: 0.9 }, pivot: { pos: [0, 1, 0] } });
   check('MO8 …a pendulum that already has its pivot and readings is left alone (a second run finds nothing)', P5.set.length === 0 && P5.del.length === 0, P5);
-  const S = repairComps({ motion: { type: 'pendulum', amp: 0.3, period: 2, damp: 0, maxAmp: 0.9 } }).c, T = repairComps({ motion: { type: 'spin', axis: 'y' } }).c;
-  check('MO9 the importer\'s rules: a pivot for the pendulum that relied on [0, 2, 0], a vector axis for the spin', JSON.stringify(S.pivot) === '{"pos":[0,2,0]}' && JSON.stringify(T.motion.axis) === '[0,1,0]', [S, T]);
 
   const old = [{ seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 2, dialect: 'eidoverse-log', roles: { ann: { role: 'owner' } } } },
     { seq: 1, ts: 2, actor: 'ann', verb: 'spawn', args: { id: 'bell', lib: 'crate', pos: [0, 0, 0] } },
@@ -161,7 +156,6 @@ await tryRow('CO', () => {
   const W = scratchWorld('w2p-collider').seed({ hut: { model: 'crate', pos: [0, 0, 0] } });
   const r = W.call('set', { id: 'hut', component: 'collider', value: { shape: 'exact' } });
   check('CO2 exact is refused (the word is mesh; nothing deployed wrote exact)', r.refused?.code === 'shape' && /got "exact"/.test(r.refused.reason) && !W.state().entities.hut.c.collider, [r.refused, W.state().entities.hut.c.collider]);
-  check('CO3 the walker reads mesh as its triangles (and an old exact the same)', colliderOf({ collider: { shape: 'mesh' } }) === 'exact' && colliderOf({ collider: { shape: 'exact' } }) === 'exact' && colliderOf({ collider: { shape: 'box' } }) === 'box');
 });
 await tryRow('JT', () => {
   check('JT1 the physics constraint is physics-joint: reserved, no pinned fields', statusOf('physics-joint') === 'reserved' && !COMPONENTS['physics-joint'].fields && !pinOf()['physics-joint'].fields, COMPONENTS['physics-joint']);

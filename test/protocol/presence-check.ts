@@ -89,17 +89,12 @@ const named = (s) => s.snap?.you;   // the display name the server settled on
   kb = bob.msgs.length; const km = mal.msgs.length;
   mal.send({ type: "puppet", target: "Bob", targetActor: "u-aaaaaaaaaaaaaaaaaaaa", ragdoll: true }); await tryUntil("Mallory is told the actor isn't here", () => mal.since(km).some((m) => m.type === "error" && /isn't here/.test(m.error)), { ms: 2000 });
   ok(!bob.since(kb).some((m) => m.type === "puppet") && mal.since(km).some((m) => m.type === "error" && /isn't here/.test(m.error)), "PR an actor who isn't here is refused (the name beside it is not a fallback)", mal.since(km));
-  // a whisper to an absent identity is held for nobody now (it was held for exactly that identity, until whisper was removed)
-  const carolId = carolActor; carol.close(); await sleep(300);
-  mal.send({ type: "whisper", to: "Carol", toActor: carolId, text: "held for carol" }); await sleep(300);
-  const carol2 = await sock("Carol"); await pause("anything held for Carol has had its chance to arrive (nothing must)", 400);
-  ok(!carol2.msgs.some((m) => m.type === "whisper" || JSON.stringify(m).includes("held for carol")), "PR a whisper to an absent identity is held for nobody: nothing is handed over when they arrive", carol2.msgs.filter((m) => m.type === "whisper"));
   // the old wire (an agent, an older client): a name alone still reaches its person
   kb = bob.msgs.length;
   mal.send({ type: "puppet", target: "Bob", pose: { head: [0, 0, 0, 1] } }); await tryUntil("Bob is sent Mallory's puppet", () => bob.since(kb).some((m) => m.type === "puppet" && m.by === "Mallory"), { ms: 2000 });
   ok(bob.since(kb).some((m) => m.type === "puppet" && m.by === "Mallory"), "PR a name alone (no actor id) still reaches its person", bob.since(kb).map((m) => m.type));
   ok(bob.since(kb).find((m) => m.type === "puppet")?.byActor === mal.actor, "PR the receiver is told the sender's identity too (byActor), not only a name", bob.since(kb).find((m) => m.type === "puppet"));
-  bob.close(); carol2.close(); mal.close(); }
+  bob.close(); carol.close(); mal.close(); }
 
 // ---- BC: body consent and range at the server, before anything is forwarded ----
 { const vic = await sock("Vic"), sly = await sock("Sly");

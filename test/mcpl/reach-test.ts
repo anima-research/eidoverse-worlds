@@ -85,7 +85,7 @@ console.log("\na landmark on another body, from streamed presence");
   check("gap is a real number", v.state === "ok" && Number.isFinite(v.gap), JSON.stringify(v));
 
   // attestation follows the world: they walk away, reached must drop
-  if (v.state === "ok" && v.reached) check("close = reached", entry.reached === true);
+  check("close = reached (the shoulder is in range)", v.state === "ok" && v.reached === true && entry.reached === true, JSON.stringify(v));
   ag.people.set("digi", { id: "digi", avatar: "", pose: { p: [6, 0, 6], yaw: 0, speed: 0, clip: "idle" } });
   ag.reaching.reachTick();
   check("they left arm's reach — attestation drops", ag.reaches.get("rightHand").reached === undefined);

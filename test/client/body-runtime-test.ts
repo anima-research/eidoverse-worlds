@@ -1,7 +1,6 @@
 // bun test/client/body-runtime-test.ts — a body that brings its own runtime (§24 avatar defs: `runtime`): the def contract
 // (shared/avatardefs.js), the frame order the avatar runs it in (client/lib/avatar/bodyruntime_core.js), that the built-in
 // claude_robot runtime exports what that order calls, and (EIDOVERSE_DIR set) the library's body hashes and CC BY metadata.
-// BODY_RUNTIME_TEETH=1 checks the order against a scrambled expectation: it must FAIL, or the order check proves nothing.
 import { readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -53,8 +52,7 @@ rt.afterMixer(vrm, mixer);
 rt.beforeVrmUpdate(vrm, 1 / 60);
 const WANT = ["initArmDOF", "setupHandDOF", "setupLegDOF", "setupCrown", "keepArmPose", "rehomeBody", "applyHardwareDOF",
   "applyLegClearance", "applyArmDOF", "applyHandDOF", "applyHeadExpression", "applyCrown"];
-const want = process.env.BODY_RUNTIME_TEETH ? [...WANT].reverse() : WANT;
-check("init, after the mixer, before vrm.update: the module's documented order", JSON.stringify(calls) === JSON.stringify(want), calls);
+check("init, after the mixer, before vrm.update: the module's documented order", JSON.stringify(calls) === JSON.stringify(WANT), calls);
 check("writeAll writes the active bindings only, from the accumulator the update filled",
   set.length === 2 && set[0].off === 2 * 4 && set[1].off === 2 * 3, set);
 calls.length = 0;

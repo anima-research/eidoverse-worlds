@@ -5,6 +5,16 @@
 import type { WorldAgent } from "../../mcpl/agent.ts";
 export type P = [number, number];
 
+/** The shared fixtures: a two-room house (a doored divider, a door out), the same sealed by a window, and huge sparse bounds. */
+export const house = { levels: [{ y: 0,
+  tiles: Array.from({ length: 8 }, (_, i) => [i % 4, Math.floor(i / 4)]),
+  walls: [...Array.from({ length: 4 }, (_, x) => [0, x, 0]), ...Array.from({ length: 4 }, (_, x) => [0, x, 2]),
+    [1, 0, 0], [1, 0, 1], [1, 4, 0], [1, 4, 1], [1, 2, 0], [1, 2, 1]],
+  apertures: [[0, 0, 0, "door"], [1, 2, 0, "door"]] as any[],
+}] };
+export const sealed = structuredClone(house); sealed.levels[0].apertures = [[0, 0, 0, "window"], [1, 2, 0, "door"]];
+export const sparse = { levels: [{ tiles: [], walls: [[1, 0, 0], [1, 100000000, 0]], apertures: [] }] };
+
 /** Whether a→b crosses a solid authored wall of `level` (doors and arches are open; a window is a wall). A leg running
  *  along a wall's line is not counted as crossing it. */
 export function crossesLevel(level: any, tile: number, a: P, b: P) {

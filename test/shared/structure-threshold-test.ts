@@ -8,22 +8,13 @@ import { routeGeometryFor } from "../../shared/structure-route.js";
 import { addWall, removeWall, setAperture, setTile, removeTile, drawRoom, eraseRoom, labelCell } from "../../shared/structure-edit.js";
 import { WorldAgent, WALK_ARGS_REASON } from "../../mcpl/agent.ts";
 import { handleTool } from "../../mcpl/tools.ts";
-import { valid, walk, type P } from "./structure-oracle.ts";
+import { valid, walk, house, sealed, sparse, type P } from "./structure-oracle.ts";
 import { agentOnDoor } from "../harness/agent-scratch.ts";
 import { qFromYaw } from "../../shared/rot.js";
 import { suite } from "../gate/suite.ts";
 process.env.AGENT_BODY_ENGINE = "verlet";
 const S = suite("structure-threshold");
 const check = (ok: unknown, name: string, detail?: unknown) => S.check(name, ok, detail);
-const house = { levels: [{ y: 0,
-  tiles: Array.from({ length: 8 }, (_, i) => [i % 4, Math.floor(i / 4)]),
-  walls: [...Array.from({ length: 4 }, (_, x) => [0,x,0]), ...Array.from({ length: 4 }, (_, x) => [0,x,2]),
-    [1,0,0],[1,0,1],[1,4,0],[1,4,1],[1,2,0],[1,2,1]],
-  apertures: [[0,0,0,"door"],[1,2,0,"door"]],
-}] };
-const sealed = structuredClone(house); sealed.levels[0].apertures = [[0,0,0,"window"],[1,2,0,"door"]];
-const sparse = { levels: [{ tiles: [], walls: [[1,0,0],[1,100000000,0]], apertures: [] }] };
-
 const agents: WorldAgent[] = [];
 function agent() {
   const a = new WorldAgent({ url: noWorldUrl(), name: "walker", avatar: "", world: "test" });

@@ -76,28 +76,20 @@ check(`OP2 both composers are rot.js's one composer`, typeof (rot as any).compos
   return true;
 })());
 
-// ---- the quaternion helpers, each against rot.js ----
-const helpers: [string, (q: number[], b: number[], ang: number, axis: number[]) => [unknown, unknown] | null][] = [
-  ["particlesim.qRotate", (q, b) => [particlesim.qRotate(q, b), rot.qRotate(q, b)]],
-  ["particlesim.qRotate into out", (q, b) => { const out = [9, 9, 9]; particlesim.qRotate(q, b, out); return [out, rot.qRotate(q, b)]; }],
-  ["motioneval.qMul", (q, b) => [motioneval.qMul(q, b), rot.qMul(q, b)]],
-  ["motioneval.qApply", (q, b) => [motioneval.qApply(q, b), rot.qRotate(q, b)]],
-  ["motioneval.qAxisAngle", (_q, _b, ang, axis) => { const n = Math.hypot(axis[0], axis[1], axis[2]) || 1;
-    return (rot as any).qAxisAngle ? [motioneval.qAxisAngle(axis, ang), (rot as any).qAxisAngle([axis[0] / n, axis[1] / n, axis[2] / n], ang)] : null; }],
-  ["reach.qMulq", (q, b) => [reach.qMulq(q, b), rot.qMul(q, b)]],
-  ["reach.qRot", (q, b) => [reach.qRot(q, b), rot.qRotate(q, b)]],
-  ["reach.qConj", (q) => ((rot as any).qConj ? [reach.qConj(q), (rot as any).qConj(q)] : null)],
-  ["reach.qAxisAngle", (_q, _b, ang, axis) => ((rot as any).qAxisAngle ? [reach.qAxisAngle(axis, ang), (rot as any).qAxisAngle(axis, ang)] : null)],
+// ---- the quaternion helpers are rot.js's: a re-export is the same function (a pasted copy is not) ----
+const SAME: [string, unknown, unknown][] = [
+  ["particlesim.qRotate", particlesim.qRotate, rot.qRotate], ["motioneval.qMul", motioneval.qMul, rot.qMul],
+  ["motioneval.qApply", motioneval.qApply, rot.qRotate], ["reach.qMulq", reach.qMulq, rot.qMul], ["reach.qRot", reach.qRot, rot.qRotate],
+  ["reach.qConj", reach.qConj, (rot as any).qConj], ["reach.qAxisAngle", reach.qAxisAngle, (rot as any).qAxisAngle],
 ];
-for (const [name, f] of helpers) {
-  let differ = 0, worst = 0, example: unknown, missing = false;
+for (const [name, f, g] of SAME) check(`OQ ${name} is rot.js's own function`, typeof g === "function" && f === g, typeof f);
+// motioneval.qAxisAngle wraps rot.js's (it normalizes the axis first): the same bits on unit axes
+{ let differ = 0, worst = 0, example: unknown;
   for (let t = 0; t < N; t++) {
-    const q = quat(), v = name.includes("Mul") ? quat() : vec(), ang = range(-7, 7), ax = rot.qRotate(quat(), [0, 0, 1]);
-    const r = f(q, v, ang, ax);
-    if (!r) { missing = true; break; }
-    if (!same(r[0], r[1])) { differ++; const d = gap(r[0] as number[], r[1] as number[]); if (d >= worst) { worst = d; example = { q, v, ang, axis: ax, copy: r[0], rot: r[1] }; } }
+    const ang = range(-7, 7), ax = rot.qRotate(quat(), [0, 0, 1]); const n = Math.hypot(ax[0], ax[1], ax[2]) || 1;
+    const a = motioneval.qAxisAngle(ax, ang), b = (rot as any).qAxisAngle([ax[0] / n, ax[1] / n, ax[2] / n], ang);
+    if (!same(a, b)) { differ++; const d = gap(a, b); if (d >= worst) { worst = d; example = { ang, axis: ax, copy: a, rot: b }; } }
   }
-  check(`OQ ${name} is rot.js's, bit for bit on ${N} inputs`, !missing && !differ, missing ? "rot.js has no such function" : { differ, worstAbs: worst, within1e12: worst <= 1e-12, example });
-}
+  check(`OQ motioneval.qAxisAngle is rot.js's, bit for bit on ${N} inputs`, !differ, { differ, worstAbs: worst, example }); }
 
 done();

@@ -24,13 +24,10 @@ check('a timestamp reads back as itself', headsetSeenAt(String(NOW)) === NOW);
 check('the legacy "1" marker still reads as seen (time unknown)', headsetSeenAt('1') === 0);
 
 console.log('\nwhen it still chooses the backend:');
-check('a session an hour ago counts', headsetSeenRecently(NOW, String(NOW - 3600e3)) === true);
-check('a session a week ago counts', headsetSeenRecently(NOW, String(NOW - 7 * 864e5)) === true);
-check('a session 29 days ago counts', headsetSeenRecently(NOW, String(NOW - 29 * 864e5)) === true);
+check('a session an hour, a week and 29 days ago counts',
+  [3600e3, 7 * 864e5, 29 * 864e5].every((ago) => headsetSeenRecently(NOW, String(NOW - ago)) === true));
 check('a session 31 days ago has EXPIRED — the machine stops claiming a headset',
   headsetSeenRecently(NOW, String(NOW - 31 * 864e5)) === false);
-check('the TTL is a month, not a lifetime and not a session',
-  HEADSET_SEEN_TTL_MS > 7 * 864e5 && HEADSET_SEEN_TTL_MS <= 90 * 864e5, `${HEADSET_SEEN_TTL_MS / 864e5} days`);
 check('the TTL is exactly 30 days', HEADSET_SEEN_TTL_MS === 30 * 864e5, String(HEADSET_SEEN_TTL_MS));
 check('never seen → not recently', headsetSeenRecently(NOW, null) === false);
 // THE BOUNDARY, not a day either side: `<` → `<=` must fail (both rows read the constant; a shifted TTL fails the exactly-30-days row)

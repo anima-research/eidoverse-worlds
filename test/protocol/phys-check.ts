@@ -33,7 +33,7 @@ const rests = (L) => restsOf(L);
 const ENG = { engine: process.env.PHYS_ENGINE ?? "eidosim" };   // no version named: stamped by the authority (so a deploy may restamp it, R)
 // a rigid-body engine rests things inside its contact slop (eidosim: 5 mm) and a box doesn't slide far (the first eidosim
 // slid things like pucks and stood them exactly on their support; these bars were exact for it)
-const RIGID = true, ON = 0.005;
+const ON = 0.005;
 
 function playground(name) {
   fresh(name);
@@ -64,7 +64,7 @@ function playground(name) {
   ok(v.checks.agree >= 1 && !v.checks.disagree.length, "A a carrier re-folding the log agrees (digest + resting place)", v.checks);
   const blind = fold(L); // a reader with no engine at all
   const bz = blind.entities.ball.c.transform.pos[2];   // table at z 4, 0.8 deep: its near edge is z 3.6; the thrower stands at z -0.5
-  ok(!blind.entities.ball.c.parent && Math.abs(blind.entities.ball.c.transform.pos[1]) < ON && (RIGID ? bz > 0.5 && bz < 3.6 : bz > 3),
+  ok(!blind.entities.ball.c.parent && Math.abs(blind.entities.ball.c.transform.pos[1]) < ON && bz > 0.5 && bz < 3.6,
     "A non-carrier: short of the table, on the ground, from the log alone", blind.entities.ball.c.transform);
   call(W, "rowan", "move", { to: [0, 0, 2.6] }); call(W, "rowan", "grab", { id: "ball" });
   call(W, "rowan", "move", { to: [0, 0, 3.9] }); const d = call(W, "rowan", "drop", { id: "ball" });
@@ -119,7 +119,7 @@ function playground(name) {
   const v = view(W); ok(!v.sim, "D no epoch after the cut");
   const after = call(W, "rowan", "look", {}, 3000).things.find((x) => x.id === "ball");
   ok(!after.moving && after.at[1] > 0.5, "D frozen where it was: logged as a plain result", after);
-  if (RIGID) { // review of 49d4fb0d #3: a rigid engine's origin is only where it was WITH its own turn; frozen pre-launch q floats it
+  { // review of 49d4fb0d #3: a rigid engine's origin is only where it was WITH its own turn; frozen pre-launch q floats it
     const W3 = playground("pc-d3");
     call(W3, "rowan", "move", { to: [2, 0, -0.5] });
     const g3 = call(W3, "rowan", "grab", { id: "crate-1" }), t3 = call(W3, "rowan", "throw", { id: "crate-1", v: [0, 5, 0], w: [0, 0, 6] });
@@ -130,7 +130,7 @@ function playground(name) {
     const q = op?.value?.q ?? [0, 0, 0, 1];
     ok(f3.ok && Math.abs(q[3]) < 0.9999, "D3 a forced cut logs a tumbling crate as the engine had it turned, not as it was thrown", { q, ok: f3.ok });
   }
-  if (RIGID) { // review of 49d4fb0d #6: a thing with a shape and no model has no collider in a rotating engine: refused, not silent
+  { // review of 49d4fb0d #6: a thing with a shape and no model has no collider in a rotating engine: refused, not silent
     const W6 = playground("pc-d6");
     const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "member", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
     const p6 = c6.ok ? call(W6, "rowan", "punt", { id: "ghost", power: 2 }) : null;   // punt first: a held thing is refused as "held"
@@ -161,7 +161,7 @@ function playground(name) {
     ok(c9.ok && b9.ok && g9.ok && t9.ok && f9.ok && Math.abs(x0 - 10) < 0.01, "D9 setup: a ball on a table at x 10, thrown up, physics forced off", { c: c9.refused, b: b9.refused, g: g9.refused, t: t9.refused, f: f9.refused, x0 });
     ok(Math.abs(x9 - 10) < 0.05 && !st9.entities.kid.c.parent, "D9 a forced cut freezes a parented thrown ball where it was (x 10, not 20) and clears its parent", { x: x9, parent: st9.entities.kid.c.parent ?? null });
   }
-  if (RIGID) {
+  {
     const W7 = playground("pc-d7r");
     const c7 = call(W7, "rowan", "create", { id: "rb", model: "ball", components: { collider: { shape: "sphere" }, physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
     const g7 = call(W7, "rowan", "grab", { id: "rb" }), t7 = call(W7, "rowan", "throw", { id: "rb", v: [0, 1, 3] });
@@ -174,7 +174,7 @@ function playground(name) {
     ok(!!r7 && Math.abs(cy - 0.11) < ON && Math.abs(st7.q[3]) < 0.99 && st7.pos[2] > 2,
       "D7 …it rolled: its centre rests at its radius on the ground, well past where it landed, turned", { rest: !!r7, pos: st7.pos, q: st7.q, centreY: cy });
   }
-  if (RIGID) { // stage 2: a thrown crate knocks a resting dynamic crate; both rests are logged under the throw, a carrier agrees,
+  { // stage 2: a thrown crate knocks a resting dynamic crate; both rests are logged under the throw, a carrier agrees,
     // and a locked crate and the (static) table don't move
     const W8 = playground("pc-d8");
     call(W8, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 2.2] } });
@@ -892,7 +892,7 @@ function playground(name) {
 
 // review of #260: in one rest of several bodies, each body's follow-up is its own: a thrown crate that leaves the world
 // is lost while the crate it knocked, at rest inside, isn't; and a lost thing sent to its home is told it's home
-if (RIGID) { const W = playground("rr-group");
+{ const W = playground("rr-group");
   call(W, "rowan", "set", { id: "@world", component: "bounds", value: { min: [-20, 0, -20], max: [20, 30, 3] } });
   call(W, "rowan", "set", { id: "crate-1", component: "home", value: { pos: [3, 0, -1], q: [0, 0, 0, 1] } });
   call(W, "rowan", "create", { id: "tgt", model: "crate", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 2.2] } });

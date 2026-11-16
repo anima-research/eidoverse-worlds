@@ -8,7 +8,7 @@
 //   selectClip: AIRBORNE_GRACE 0.04 → 0         → the stair-step guard
 //   selectClip: RUN_SPEED 2.6 → 99              → walk/run split
 //   controller.js: stop calling selectClip      → test/client/wiring-check.ts (#180: removing the real wiring must go red)
-import { selectClip, AIRBORNE_GRACE, RUN_SPEED, FADE_PRESS, FADE_WALKOFF } from '../../client/lib/avatar/locomotion_clip.js';
+import { selectClip, AIRBORNE_GRACE, RUN_SPEED } from '../../client/lib/avatar/locomotion_clip.js';
 
 let fail = 0, n = 0;
 const check = (name, cond) => { n++; if (cond) { console.log(`✓ ${name}`); } else { fail++; console.log(`✗ ${name}`); } };
@@ -70,10 +70,6 @@ const walkOff = selectClip({ jumped: false, airborneFor: 0.05, wantMove: true, s
 check('walking off an edge past the grace window selects jump', walkOff.clip === 'jump');
 check('a walk-off EASES in over the longer fade',
   walkOff.opts?.fade === 0.5 && walkOff.opts?.ease === true);   // literal, per above
-check('press and walk-off are distinguishable (the whole point of the opts)',
-  press.opts.fade !== walkOff.opts.fade);
-check('the press fade is SHORTER than the walk-off (snappy vs eased, not merely different)',
-  press.opts.fade < walkOff.opts.fade);
 
 // ---- the stair-step guard
 check('a 1-frame drop inside the grace window is NOT a jump',

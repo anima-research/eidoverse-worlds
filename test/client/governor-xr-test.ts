@@ -64,10 +64,11 @@ check('control — desktop, slow: the governor DOES move the pixel ratio', ratio
 { stub.renderer.xr.isPresenting = false;
   const pr0 = G.governorDebug().pixelRatio; let decided = false;
   for (let i = 0; i < 80 && !decided; i++) { G.governPerformance(i < 40 ? 72 : 12); decided = G.governorDebug().pixelRatio !== pr0; }
+  check('(setup) the desktop decided a pixel-ratio change before VR entry', decided, { pr0, now: G.governorDebug().pixelRatio });
   const w0 = ratios.length; stub.renderer.xr.isPresenting = true; G.applyPendingPixelRatio();
-  check('a change still pending at VR entry is NOT applied mid-session', !decided || ratios.length === w0, { decided, writes: ratios.slice(w0) });
+  check('a change still pending at VR entry is NOT applied mid-session', ratios.length === w0, { decided, writes: ratios.slice(w0) });
   stub.renderer.xr.isPresenting = false; G.applyPendingPixelRatio();
-  check('…it lands after exit', !decided || ratios.length === w0 + 1, { decided, writes: ratios.slice(w0) }); }
+  check('…it lands after exit', ratios.length === w0 + 1, { decided, writes: ratios.slice(w0) }); }
 // VR exit resizes outside the governor (xr.js emits 'xr:exit-resized'): the governor's own ratio comes back next frame
 { stub.renderer.xr.isPresenting = false;
   const { bus } = await import('../../client/lib/base.js');

@@ -93,7 +93,7 @@ for (const verb of ["throw", "drop"]) { const W = `ride-${verb}`; call(W, "rowan
   ok(q2.ok && c2.parent?.to === "drum" && Math.abs(c2.transform.pos[1] - 0.8) < 0.05, "SE11 a crate dropped onto a static mesh CYLINDER rests on its top (y = 0.8) and is its child: the engine has a body for it", { punt: q2.ok ? true : q2.refused, pos: c2.transform.pos, parent: c2.parent ?? null });
   // review S2.4: a resized plinth re-drops what the physics stacked on it (a shrunk mesh left the crate floating 0.5 m up)
   const sh = call(W, "rowan", "set", { id: "plinth", component: "mesh", value: { shape: "box", size: [1.5, 0.3, 1.5] } }); clock.t += 8000; call(W, "vic", "look", {});
-  const c3 = st(W).entities.crate.c; const wy = (c3.parent?.to === "plinth" ? c3.transform.pos[1] : c3.transform.pos[1]);
+  const c3 = st(W).entities.crate.c; const wy = c3.transform.pos[1];
   ok(sh.ok && (sh.notes ?? []).some((n) => n.fell?.includes("crate")) && Math.abs(wy - 0.3) < 0.05, "SE12 shrinking the mesh plinth under a resting crate re-drops it: it lands on the new top (y = 0.3), the reply says it fell", { set: sh.ok ? sh.notes : sh.refused, pos: c3.transform.pos, parent: c3.parent ?? null });
   // the same family for a model plinth: its scale shrinks, the child crate is re-dropped instead of riding the scale (sheared)
   call(W, "rowan", "create", { id: "mp", model: "crate", components: { physics: { kind: "static" }, transform: { pos: [-6, 0, 6], q: [0, 0, 0, 1], scale: [2.5, 1.3333, 2.5] } } });

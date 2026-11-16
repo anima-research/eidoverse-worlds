@@ -208,9 +208,9 @@ await C("K9", "the words: §4 of the spec and the ladder doc say what trial-kern
   const spec = read("spec/PROTOCOL.md"), ladder = read("docs/contributing/COMPONENT-LADDER.md");
   const need = ["trial-kernel", "kernel-pin.json", "translator", "REGISTRY-CHANGELOG", "vectors"];
   return [need.every((n) => spec.includes(n)) && need.every((n) => ladder.includes(n)) && CORE.includes("kernel"), { spec: need.filter((n) => !spec.includes(n)), ladder: need.filter((n) => !ladder.includes(n)) }]; });
-await C("K10", "the registry pin agrees: roles and access are trial-kernel there, and transform, parent and model are trial again (each status change acknowledged in the changelog), and pretrans's status rule knows the kernel's names", () => {
-  const rp = JSON.parse(read("spec/registry-pin.json")); const pre = read("test/protocol/pretrans-check.ts"); const log = read(CHANGELOG);
-  return [KS.KERNEL_COMPONENTS.every((n: string) => rp[n]?.status === "trial-kernel") && ["transform", "parent", "model"].every((n) => rp[n]?.status === "trial") && /KERNEL_COMPONENTS/.test(pre) && /roles: status trial → trial-kernel/.test(log) && /access: status trial → trial-kernel/.test(log)
+await C("K10", "the registry pin agrees: roles and access are trial-kernel there, and transform, parent and model are trial again (each status change acknowledged in the changelog)", () => {
+  const rp = JSON.parse(read("spec/registry-pin.json")); const log = read(CHANGELOG);
+  return [KS.KERNEL_COMPONENTS.every((n: string) => rp[n]?.status === "trial-kernel") && ["transform", "parent", "model"].every((n) => rp[n]?.status === "trial") && /roles: status trial → trial-kernel/.test(log) && /access: status trial → trial-kernel/.test(log)
     && ["transform", "parent", "model"].every((n) => new RegExp(`${n}: status trial-kernel → trial`).test(log)), Object.fromEntries(["transform", "parent", "model", ...KS.KERNEL_COMPONENTS].map((n: string) => [n, rp[n]?.status]))]; });
 
 // ---- the three that joined (reviewer item 5: model, roles, access): a mutated shape of each is a kernel change, red without the companions ----

@@ -23,7 +23,7 @@ import { modelWord } from './eido.js';
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
 /** The socket a mount names, resolved on its carrier, or null. Only old-spelling records have one (imported folds via
- *  tools/import-v1/fold.js, and a blueprint's parts in blueprint.js); a live record's socket is a child entity. */
+ *  tools/import-v1/fold.js, which test/protocol/sweep.ts reads through localOf); a live record's socket is a child entity. */
 export function socketOf(world, rel) {
   if (!rel?.socket) return null;
   const s = world?.[rel.to]?.sockets?.[rel.socket];

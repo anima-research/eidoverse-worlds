@@ -59,7 +59,7 @@ const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
 // own source (not retyped), so this one assertion is a live A/B: main's
 // inline expression floors at >=1 instance per stroke and keeps 50 of 1000
 // at factor 0; the branch delegates to densityCount and keeps 0.
-const gqMod = await import("../../client/lib/vegetation/grass_quality.js").then((m) => m, () => null);
+const gqMod = await import("../../client/lib/vegetation/grass_quality.js");
 console.log("\nflora's shipped density dial (source-extracted, both trees)");
 {
   const src = await Bun.file(here("../../client/lib/vegetation/flora.js")).text();
@@ -68,17 +68,12 @@ console.log("\nflora's shipped density dial (source-extracted, both trees)");
   if (dial) {
     try {
       keep = new Function("n", "f", "densityCount", `return (${dial[1]});`)(
-        1000, 0, gqMod?.densityCount);
+        1000, 0, gqMod.densityCount);
     } catch (e) { keep = `threw: ${e}`; }
   }
   check("factor 0 keeps ZERO of 1000 instances (main keeps 50)", keep === 0, `keep=${keep}`);
 }
 
-if (!gqMod) {
-  console.log(`\n${S.pass} passed, ${S.fail} failed — client/lib/vegetation/grass_quality.js absent` +
-    ` (expected on main; that absence is novelty, the dial assertion above is the behavior)`);
-  process.exit(1);
-}
 const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY } = gqMod;
 const terrain = await import("../../client/lib/terrain.js");
 

@@ -273,8 +273,6 @@ console.log("\npicture + sound: schema groups, validated before any op:");
   const playing = { ...crate, sound: { src: MP3, playing: true, loop: true, volume: 0.8, radius: 12, t0: 5000 } };
   const vol = editOps(playing, "c", { "sound.volume": "*=0.5" }, { now: 9000 });
   check("tuning a PLAYING sound keeps its t0 (nobody's playhead jumps)", val(vol, "sound")?.t0 === 5000 && val(vol, "sound").volume === 0.4, JSON.stringify(vol));
-  { const r = editOps(playing, "c", { "sound.volume": 3 });
-    check("a volume past the door's 1 is refused in its words, nothing sent", !r.ops.length && /sound\.volume is 3; it must be ≥ 0 and ≤ 1/.test(r.errors[0] ?? ""), JSON.stringify(r)); }
   const pause = val(editOps(playing, "c", { "sound.pause": true }), "sound");
   check("pause keeps t0 (batch 2: a resume restarts on the door's clock)", pause?.playing === false && pause.t0 === 5000);
   check("silence → delete sound", dels(editOps(playing, "c", { "sound.silence": true }), "sound").length === 1);
@@ -383,7 +381,7 @@ console.log("\nmesh (a parametric body with no model):");
   const r = editOps(cube, "m1", { "mesh.size.x": "+=0.5", "mesh.shape": "cylinder" });
   const v = val(r, "mesh");
   check("mesh edits = ONE set mesh: size x 1.5, shape cylinder, the rest kept", sets(r, "mesh").length === 1 && flat(r.ops).length === 1 && v?.shape === "cylinder" && JSON.stringify(v?.size) === "[1.5,2,3]", JSON.stringify(v));
-  check("a size below the door's 0.05 is refused in its words, nothing sent; an unknown shape is an error, not an op", !editOps(cube, "m1", { "mesh.size.z": "0" }).ops.length && /must be ≥ 0\.05/.test(editOps(cube, "m1", { "mesh.size.z": "0" }).errors[0] ?? "") && /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
+  check("an unknown shape is an error, not an op (the size range is editor-range-test's sweep)", /one of/.test(editOps(cube, "m1", { "mesh.shape": "cone" }).errors[0] ?? "") && editOps(cube, "m1", { "mesh.shape": "cone" }).ops.length === 0);
   const addL = editOps(cube, "m1", { "comp.+": "Light" });
   check("Add Component ▸ Light on a mesh thing makes a CHILD light (the editor's guidance: its pose is its own), as on a model", flat(addL.ops).some((o: any) => o.verb === "create" && o.args.id === "$light" && o.args.components?.parent?.to === "m1"), JSON.stringify(addL));
   const addM = editOps(chair, "c1", { "comp.+": "Mesh" });

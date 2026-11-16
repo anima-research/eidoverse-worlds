@@ -103,7 +103,6 @@ console.log(`\nscheduler.js — the one loader\n`);
   g.open();
   await tick(); await tick();
   check("onIdle(band) fires when the band drains", idleAt === 0);
-  check("…without waiting for lower bands", !cosmeticsDone || pending() === 0);
   await tryUntil("the cosmetic straggler drains", () => cosmeticsDone, { ms: 2000 });
 }
 

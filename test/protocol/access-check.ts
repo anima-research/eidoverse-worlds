@@ -44,7 +44,7 @@ import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("access");
-const { ok, done } = suite("access-check", { quiet: true });
+const { ok, na, done } = suite("access-check", { quiet: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
@@ -243,11 +243,9 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const gone = !!(await tryUntil("Pip is removed when the grant ends", () => p.closed != null, { ms: 6000, step: 50 }));
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8");
   const ended = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === "request" && e.verb === "expire-roles");
-  const role = (await own.req("look", {})) && null;
   ok(set.ok && !!jp.snapshot && told && gone && p.closed === 4010 && ended?.actor === "system" && ended?.body?.ids?.includes(ids.Pip),
     "A5 a timed grant: its holder is told before it ends; the authority writes its end (expire-roles, the system's act) and the door removes them (4010)",
-    [set.ok, !!jp.snapshot, told, p.closed, ended?.body, p.msgs.filter((m) => m.type === "notice" || m.type === "error").map((m) => m.text ?? m.error)]);
-  void role; }
+    [set.ok, !!jp.snapshot, told, p.closed, ended?.body, p.msgs.filter((m) => m.type === "notice" || m.type === "error").map((m) => m.text ?? m.error)]); }
 
 // ---- A7: a reset keeps an invite-only world's door and the people it lists ----
 { const first = () => fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n")[0];   // the genesis: a reset writes a new one
@@ -736,7 +734,7 @@ const gonePid = await exitedPid();
   ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,
     "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
   if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
-  else console.log(`  skip B17: ${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
+  else na("B17 on a case-insensitive filesystem a world is served in its own case only", `${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
 // ---- A13n (R 11-03 "b"): a ban or sanction file the server can't read LOCKS the door: the owner, an operator
 // and a role holder still join; a stranger and an unlisted account are refused with the plain reason; the operator's list says LOCKED
 { const BJ = path.join(W, ".bans.json"), SJ = path.join(W, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';

@@ -45,7 +45,6 @@ const G = { tile: 1 };
   const b = drawRoom(a, { x: 0, z: 0 }, { x: 2, z: 1 });
   check("the input is untouched", JSON.stringify(a) === before);
   check("the output is different", JSON.stringify(b) !== before);
-  check("undo is just the previous value", JSON.stringify(a) === before);
 }
 
 // 3. room drag — the primary tool

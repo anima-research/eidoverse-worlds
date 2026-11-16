@@ -12,7 +12,7 @@ import { NON_FINITE_ENDPOINT, ROUTE_MAX_CELLS } from "../../shared/structure-rou
 let checks = 0;
 function check(ok: unknown, name: string) { assert.ok(ok, name); checks++; console.log("✓ " + name); }
 
-import { valid, type P } from "./structure-oracle.ts";
+import { valid, house, sealed, sparse, type P } from "./structure-oracle.ts";
 import { WAIT_SCALE } from "../gate/wait.ts";   // a wall-clock bound stretches with PROTOCOL_TIMEOUT_SCALE (bot #333 187, 218)
 
 const terrain = (heightAt: (x: number, z: number) => number = () => 0, step = .5) => ({ kind: "terrain", heightAt, step });
@@ -20,14 +20,6 @@ const flat = (h = 0) => terrain(() => h);
 const floor = (level: number | undefined, height: number) => ({ kind: "floor", level, height, step: .5 });
 
 // ---- fixtures
-const house = { levels: [{ y: 0,
-  tiles: Array.from({ length: 8 }, (_, i) => [i % 4, Math.floor(i / 4)]),
-  walls: [...Array.from({ length: 4 }, (_, x) => [0, x, 0]), ...Array.from({ length: 4 }, (_, x) => [0, x, 2]),
-    [1, 0, 0], [1, 0, 1], [1, 4, 0], [1, 4, 1], [1, 2, 0], [1, 2, 1]],
-  apertures: [[0, 0, 0, "door"], [1, 2, 0, "door"]],
-}] };
-const sealed = structuredClone(house); sealed.levels[0].apertures = [[0, 0, 0, "window"], [1, 2, 0, "door"]];
-const sparse = { levels: [{ tiles: [], walls: [[1, 0, 0], [1, 100000000, 0]], apertures: [] }] };
 const wall = { levels: [{ y: 0, tiles: [], walls: [[1, 1, 0]], apertures: [] }] };
 const closed = { levels: [{ y: 0, tiles: [[0, 0]], walls: [[0, 0, 0], [0, 0, 1], [1, 0, 0], [1, 1, 0]] }] };
 const upperFloor = { y: 3, tiles: [[0, 0], [2, 0]], walls: [], apertures: [] };
@@ -59,6 +51,7 @@ const ROWS: Row[] = [
   { name: "exit to far side", data: house, from: [3.5, .5], to: [3.5, 3], expect: "route" },
   { name: "both outside across building", data: house, from: [-1, 1.5], to: [5, 1.5], expect: "route" },
   { name: "off-center interior endpoints", data: house, from: [.15, 1.88], to: [3.85, 1.12], expect: "route" },
+  { name: "through the divider's doorway: few waypoints (its turns, plus its ends)", data: house, from: [.5, 1.5], to: [3.5, 1.5], expect: "routed", also: (r) => r.points.length <= 5 },
   { name: "distant start uses bounded local region", data: house, from: [-100000, 1.5], to: [3.5, .5], expect: "route" },
   { name: "distant destination uses bounded local region", data: house, from: [3.5, .5], to: [100000, 1.5], expect: "route" },
   { name: "unobstructed outdoors is a direct leg", data: house, from: [-2, -2], to: [-1, -1], expect: "clear" },

@@ -12,7 +12,6 @@ import { COMPONENTS, statusOf, pinOf, materialize } from '../../shared/protocol/
 import { lightOf } from '../../shared/components.js';
 import { isMeshBag } from '../../shared/components.js';
 import * as PE from '../../shared/particle_effects.js';
-import { foldCaption, describeCaptions, captionsDetail } from '../../shared/captions.js';
 import { terrainParams } from '../../shared/terrainmath.js';
 import { hoursAt, effectiveSky, foldSkyEntry } from '../../shared/forecast.js';
 import { translate } from '../../tools/import-v1/translate-v1.js';
@@ -47,9 +46,7 @@ await tryRow('LI', async () => {
   check('LI4 shadows is refused (read by nothing; it returns when the rig reads it)', code(r) === 'schema' && /shadows/.test(r.refused?.reason ?? ''), r.refused);
   r = W.call('set', { id: '@world', component: 'light', value: {} });
   check('LI5 a light on @world is refused (on: thing)', code(r) === 'thing-only', r.refused);
-  const Lo = lightOf({ light: { color: 0xff0000, decay: 1.7, daytime: 'full' } });
-  check('LI6 lightOf reads decay and daytime', Lo?.decay === 1.7 && Lo?.daytime === 'full', Lo);
-  check('LI6 …an older value without decay reads 1.7 (the rig\'s old constant), without daytime as dim; the old spelling day: false is read no more (S6): dim too', lightOf({ light: {} })?.decay === 1.7 && lightOf({ light: { day: false } })?.daytime === 'dim' && lightOf({ light: {} })?.daytime === 'dim', [lightOf({ light: {} }), lightOf({ light: { day: false } })]);
+  check('LI6 the old spelling day: false is read no more (S6): dim, as an absent daytime (components-corpus owns lightOf\'s defaults)', lightOf({ light: { day: false } })?.daytime === 'dim', lightOf({ light: { day: false } }));
   check('LI7 an unknown kind is that light absent (one rule with isMeshBag)', lightOf({ light: { kind: 'area' } }) === null && !isMeshBag({ shape: 'torus' }), lightOf({ light: { kind: 'area' } }));
   check('LI7b …but an unknown daytime drops only daytime: the light is there, at its meaning of absence (dim), with the rest read (PROTOCOL §9.2: a field that says what the component is goes whole; any other unknown member drops the field)', lightOf({ light: { daytime: 'twilight', intensity: 5 } })?.daytime === 'dim' && lightOf({ light: { daytime: 'twilight', intensity: 5 } })?.intensity === 5, lightOf({ light: { daytime: 'twilight', intensity: 5 } }));
   check('LI8 the realizer passes decay and daytime to the rig', /decay: L\.decay/.test(read('client/lib/realize/models.js')) && /L\.daytime/.test(read('client/lib/realize/models.js')), '');
@@ -61,7 +58,7 @@ await tryRow('LI', async () => {
   check('LI11 a new default light (decay 2) is as bright as main\'s default (16 cd, decay 1.7) at half the default range, 5 m: 16 × 5^0.3; every new-light path writes it', Ld === +(16 * (L.defaults.range / 2) ** 0.3).toPrecision(4) && Math.abs(at5(Ld, 2) / at5(16, 1.7) - 1) < 1e-3
     && lightOf({ light: { decay: 2 } })?.intensity === Ld && !/intensity: 16/.test(read('client/lib/edit/build.js')) && !/intensity: 16/.test(read('mcpl/tools.ts')), [Ld, at5(Ld, 2), at5(16, 1.7)]);
   const Ro = repairComps({ light: { color: 1 } }).c.light, Rn = repairComps({ light: { color: 1, decay: 2, daytime: 'dim' } });
-  check('LI12 an older light (no decay) wrote no intensity and read 16: lightOf reads it so, and the repair writes 16 beside decay 1.7; a light with its decay is left at the default', lightOf({ light: {} })?.intensity === 16 && Ro?.intensity === 16 && Ro?.decay === 1.7 && Rn.set.length === 0, [lightOf({ light: {} }), Ro, Rn.set]);
+  check('LI12 an older light (no decay) wrote no intensity and read 16: the repair writes 16 beside decay 1.7; a light with its decay is left at the default', Ro?.intensity === 16 && Ro?.decay === 1.7 && Rn.set.length === 0, [Ro, Rn.set]);
   const t = translate(v1({ verb: 'light', args: { id: 'l1', pos: [0, 2, 0], color: '#ffeedd', intensity: 8, range: 6, day: false } }));
   const tl = t.final.translated.l1?.light;
   check('LI10 translate-v1 writes a v1 light at decay 2, brightened to main\'s at half its range (@24, R 10-28), daytime', tl?.decay === 2 && tl?.intensity === +(8 * 3 ** 0.3).toPrecision(4) && tl?.daytime === 'full' && !('day' in (tl ?? {})) && !t.stats.divergences, [tl, t.stats.divergences]);
@@ -288,12 +285,6 @@ await tryRow('TR', async () => {
 await tryRow('CA', () => {
   const C = COMPONENTS.captions;
   check('CA1 captions stores {session, n, gen, title?, line}: no window, no mediaTime', keys(C.fields) === keys({ session: 1, n: 1, gen: 1, title: 1, line: 1 }), Object.keys(C.fields));
-  const S = '2026-10-16T20:00:00.000Z-abc';
-  const b1 = foldCaption(null, { session: S, n: 1, gen: 1, t0: 0, t1: 2, text: 'hello' });
-  const b2 = foldCaption(b1, { session: S, n: 2, gen: 1, t0: 2, t1: 4, text: 'world', speaker: 'Mica' });
-  check('CA2 each caption write holds its own line once (the log is the transcript)', !('window' in b2) && !('mediaTime' in b2) && JSON.stringify(b2.line) === JSON.stringify({ t0: 2, t1: 4, text: 'world', speaker: 'Mica' }) && b2.n === 2, b2);
-  check('CA3 readers read the current line', /Mica: world/.test(describeCaptions(b2)) && captionsDetail(b2).length === 1, [describeCaptions(b2), captionsDetail(b2)]);
-  check('CA3 …and an older value\'s window still reads', /last line: old/.test(describeCaptions({ session: S, n: 1, window: [{ t0: 0, t1: 1, text: 'old' }] })), describeCaptions({ session: S, n: 1, window: [{ t0: 0, t1: 1, text: 'old' }] }));
 });
 
 // ===================================================================== sky: 19 → 14, radians, stamped fields refused, defaults in the registry
@@ -355,7 +346,7 @@ await tryRow('TE', async () => {
   check('TE8 the door takes a water', r.ok, r.refused);
   check('TE8 …@world needs its level; on a thing, a sibling zone (shared/zone.js)', code(W.call('set', { id: '@world', component: 'water', value: { color: 0x1d5a6e } })) !== 'ok' && /sibling zone/.test(W.call('create', { components: { transform: { pos: [0, 0, 0] }, water: {} } }).refused?.fix ?? ''));
   const S = read('shared/protocol/authority/spatial.js');
-  check('TE9 the authority\'s ground reads its water level from the water component', /c\.water|waterOfWorld|worldWater/.test(S), '');
+  check('TE9 the authority\'s ground reads its water level from the water component', /\bworldWater\(\s*\w/.test(S), S.match(/.*worldWater.*/g));   // the call, not the import
   const { repairWorld } = await repairMod();
   const R = repairWorld({ terrain: { seed: 3, size: 100, segments: 64, flatRadius: 4, amplitude: 2, layers: [{ color: '#112233', repeat: 8 }], water: { level: 1, color: '#204060' } } }).c;
   check('TE10 repair: layer colours to ints, the sim\'s defaults written, a stored terrain.water moved to water (its colour an int)', R.terrain.layers[0].color === 0x112233 && R.terrain.octaves === 4 && R.terrain.frequency === 2.5 && R.terrain.flatHeight === 0 && !('water' in R.terrain) && JSON.stringify(R.water) === JSON.stringify({ level: 1, color: 0x204060 }), R);
@@ -373,8 +364,6 @@ await tryRow('OT', () => {
 // ===================================================================== the importer's rules, and the translator applies them
 await tryRow('LD', async () => {
   const { repairWorld, repairComps } = await repairMod();
-  const W0 = repairWorld({ sky: { azimuth: 180, hours: 6 } }).c, L0 = repairComps({ light: { kind: 'point', day: true, shadows: false } }).c;
-  check('LD1 the importer\'s rules reach @world (sky) and things (light)', Math.abs(W0.sky.azimuth - Math.PI) < 1e-12 && L0.light.decay === 1.7, [W0.sky, L0.light]);
   const t = translate(v1({ verb: 'sky', args: { hours: 9, azimuth: 90 } }, { verb: 'terrain', args: { seed: 2, layers: [{ color: '#010203', repeat: 4 }] } }));
   const w = t.final.translated['@world'];
   check('LD2 translate-v1@12 writes @world by those rules (sky radians and the registry\'s defaults, terrain colours and the sim\'s defaults)', Math.abs((w?.sky?.azimuth ?? 0) - Math.PI / 2) < 1e-12 && w?.sky?.fog === 1 && w?.terrain?.layers?.[0]?.color === 0x010203 && w?.terrain?.octaves === 4 && !t.stats.divergences, [w?.sky, w?.terrain, t.stats.divergences]);

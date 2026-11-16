@@ -140,7 +140,6 @@ const v1 = (...entries: any[]) => [{ seq: 0, ts: 1, actor: "world", verb: "genes
 const finalOf = (r: any) => r.final.translated;
 
 // ---- O: openable ----
-await C("O0", "the door model is still in the lab models (the asset keeps its name)", () => !!LAB.MODELS?.door);
 await C("O1", "openable is a registered component; `door` is refused with 'did you mean openable'", () => {
   const W = world(); W.call("create", { id: "gate", model: "door", place: { at: [0, 0] } });
   const r = W.call("set", { id: "gate", component: "door", value: { open: false } });

@@ -24,12 +24,6 @@ const onFloor = (plan: any, level: number) => prepareRouteLocal(plan, { kind: "f
 const routeLocal = (plan: any, fx: number, fz: number, tx: number, tz: number, y = 0) => {
   const r = onTerrain(plan, y).route(fx, fz, tx, tz); return r.kind === "blocked" ? null : r.points;
 };
-// The oracle the route is held to: may a body step between two neighbouring cells (a door or an arch is a hole, a window isn't)?
-function passable(level: any, ax: number, az: number, bx: number, bz: number) {
-  const e = edgeBetween(ax, az, bx, bz); if (!e) return false;
-  const k = edgeKey(e[0], e[1], e[2]);
-  return !level.walls.has(k) || ["door", "arch"].includes(level.apertures.get(k));
-}
 
 const S = suite("structure-field");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
@@ -526,60 +520,7 @@ const HOUSE = {
   check("a crossing grows no fill", cornerFills(cross.levels[0], cross, 0, cross.wallH).length === 0);
 }
 
-// 17. ROUTING — the grid is the navigation graph
-//
-// This is what makes the monolith-vs-griddled comparison mean anything. Without
-// it an agent told "go to the kitchen" arrives in BOTH houses by walking through
-// the dividing wall: both arms pass, and the experiment measures nothing.
-{
-  const g = normalize(HOUSE);
-  const lv = g.levels[0];
-  const plan = planStructure(HOUSE);
-
-  // the divider runs x=2: doored at z=0, solid at z=1
-  const walk = onFloor(plan, 0);
-  check("a solid wall blocks passage", !walk.clear(1.5, 1.5, 2.5, 1.5) && !passable(lv, 1, 1, 2, 1));
-  check("a doorway is passable", walk.clear(1.5, 0.5, 2.5, 0.5) && passable(lv, 1, 0, 2, 0));
-  check("passability is symmetric", walk.clear(2.5, 0.5, 1.5, 0.5) === walk.clear(1.5, 0.5, 2.5, 0.5));
-  check("open floor is passable", walk.clear(0.5, 0.5, 1.5, 0.5));
-
-  const across = walk.route(0.5, 1.5, 3.5, 1.5);
-  check("a route exists between the rooms", across.kind === "routed", JSON.stringify(across));
-  check("the route goes THROUGH the doorway, not through the wall",
-    (across.points ?? []).some(([x, z], i, p) => i > 0 && (p[i - 1][0] - 2) * (x - 2) <= 0 && Math.max(z, p[i - 1][1]) <= 1),
-    JSON.stringify(across.points));
-
-  // seal the door and the rooms become unreachable — the honest failure
-  const sealed = structuredClone(HOUSE);
-  sealed.levels[0].apertures = [[0, 0, 0, "window"]];
-  const sg = normalize(sealed);
-  check("no door means no route", onFloor(planStructure(sealed), 0).route(0.5, 1.5, 3.5, 1.5).kind === "blocked");
-  check("a window is not a doorway", !passable(sg.levels[0], 0, 0, 0, -1));
-
-  // waypoints: only turns, plus the true endpoints
-  const pts = routeLocal(plan, 0.5, 1.5, 3.5, 1.5)!;
-  check("routeLocal starts and ends where asked",
-    pts[0][0] === 0.5 && pts[0][1] === 1.5
-    && pts[pts.length - 1][0] === 3.5 && pts[pts.length - 1][1] === 1.5);
-  check("a route through a doorway needs few waypoints", pts.length <= 5, `${pts.length}`);
-  check("no leg crosses a wall", pts.slice(1).every(([x, z], i) => {
-    const [px, pz] = pts[i];
-    // sample the leg and confirm every cell transition is legal
-    const N = 24;
-    let ok = true, cur = cellKey(Math.floor(px / g.tile), Math.floor(pz / g.tile));
-    for (let t = 1; t <= N; t++) {
-      const sx = px + (x - px) * (t / N), sz = pz + (z - pz) * (t / N);
-      const nk = cellKey(Math.floor(sx / g.tile), Math.floor(sz / g.tile));
-      if (nk === cur) continue;
-      const [ax, az] = cur.split(",").map(Number);
-      const [bx, bz] = nk.split(",").map(Number);
-      if (!passable(g.levels[0], ax, az, bx, bz)) ok = false;
-      cur = nk;
-    }
-    return ok;
-  }), "a leg passes through a wall");
-  check("unreachable target routes to null", routeLocal(plan, 0.5, 0.5, 99, 99) === null);
-}
+// 17. ROUTING: test/shared/structure-route-test.ts (the house, sealed and window cases, every axis × opening, the oracle)
 
 // 18. exterior AO — the outside gets modelled too
 {

@@ -43,7 +43,6 @@ const RULES = [
 // "v1" where it names something that isn't the old protocol: file → a pattern the whole line must match, and why
 const UNRELATED = [
   ["server/directory.ts", /directory|v1 → v2|v1 keyed an agent/, "the authority directory's own file format version (v1 → v2), not the protocol"],
-  ["shared/blueprint.js", /blueprint|v1 = an original|nested cop/, "the blueprint RECORD format's version (kind eido.blueprint, v: 1)"],
   ["shared/seatcore.js", /SEAT_METHOD/, "a seat-measuring method's name"],
   ["server/store-variants.ts", /LOD v1|v1 contract/, "the geometry-LOD contract's version"],
   ["server/optimize.ts", /./, "glTF / encoder format versions"],

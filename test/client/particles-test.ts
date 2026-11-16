@@ -79,7 +79,6 @@ check("the seeded stream is in range", Array.from({ length: 200 }, mulberry32(7)
 check("a low tier draws fewer", drawnCount(200, 1, "low") === 50);
 check("an unknown tier draws everything", drawnCount(200, 1, "ludicrous") === 200);
 check("an authored low (ratio 0.25) + client high stays low (an author's cap is not local)", drawnCount(200, 0.25, "high") === 50);
-check("authored high + client low obeys the LOCAL budget (the governor is not overruled)", drawnCount(200, 1, "low") === 50);
 check("authored med + client med does not compound", drawnCount(200, 0.5, "med") === 100);
 check("every Essential reads as the preset it was", Object.keys(ESSENTIALS).every((k) => PARTICLE_PRESETS[k].reads === ESSENTIALS[k].reads) && Object.keys(ESSENTIALS).length === 9);
 check("instanceOf keeps every key an older value said (nothing dropped)", JSON.stringify(instanceOf({ preset: "stars", seed: 5, origin: [1, 2, 3], count: 80, lifetime: 2.5 })) === JSON.stringify({ effect: "stars", seed: 5, at: [1, 2, 3], params: { count: 80, lifetime: 2.5 } }));
@@ -271,7 +270,6 @@ console.log("\nhook ownership — a subsystem that claims by diff must not adopt
   for (const h of claimed) releaseHook(h, autos);            // teardownSky()
   check("teardown removes only the sky's hook",
     autos.length === 2 && autos.includes(skyHookOld) && autos.includes(emitterHook));
-  check("the emitter is still registered and still ticking", autos.includes(emitterHook));
   check("...and still marked as its own", isHostOwned(emitterHook));
 
   releaseHook(emitterHook, autos);

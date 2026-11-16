@@ -76,7 +76,6 @@ console.log("schema");
   check("avatar 'prototype' refused", !validateProfile({ ...good(), avatar: "prototype" }).ok);
   check("avatar with path characters refused", !validateProfile({ ...good(), avatar: "../../etc" }).ok && !validateProfile({ ...good(), avatar: "a b" }).ok);
   check("avatar with dots refused", !validateProfile({ ...good(), avatar: "a.b" }).ok);
-  check("avatar with path characters refused", !validateProfile({ ...good(), avatar: "../../etc" }).ok && !validateProfile({ ...good(), avatar: "a b" }).ok);
   check("avatar over 48 chars refused", !validateProfile({ ...good(), avatar: "x".repeat(49) }).ok);
   check("pose other than sitchair refused (the slice's whole scope)", !validateProfile({ ...good(), pose: "sitground" }).ok);
 }

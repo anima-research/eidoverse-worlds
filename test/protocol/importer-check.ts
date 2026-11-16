@@ -116,15 +116,7 @@ row("IM-I34", () => {
     "IM-I34 the dry-run report counts the renames the real run makes (every person becomes an identity), and its hash is stable", { report: rep.report.actorsRenamed, real: r.stats.renamed });
 });
 
-// ---- IM-I6, IM-I9, IM-I5: one person, one identity ----
-row("IM-I6", () => {
-  const w = oldWorld([BASIC[0], { actor: "world", verb: "grant", args: { id: "Zed", role: "builder", sub: "human:discord:9" } },
-    { actor: "Zed", verb: "spawn", args: { id: "box", lib: "b.glb", pos: [0, 0, 0] } }, { actor: "world", verb: "ban", args: { id: "Zed", reason: "spam" } }]);
-  const r = W1.translateV1World(w.src, w.dest);
-  const c = fold(linesOf(w.dest)).entities["@world"].c;
-  const role = Object.keys(c).find((k) => k.startsWith("roles:"))?.slice(6), ban = Object.keys(c).find((k) => k.startsWith("imported-bans:"))?.slice(14);
-  ok(r.identities === 1 && role && role === ban, "IM-I6 the v1 fold's lowercased ban ('zed') lands on Zed's identity, the one his grant made: one person, one identity", { identities: r.identities, role, ban, planned: r.planned });
-});
+// ---- IM-I6b, IM-I9, IM-I5: one person, one identity (IM-I6's ban case is pretrans-check K22) ----
 row("IM-I6b", () => {
   const G = (id: string, role: string, sub?: string) => ({ actor: "world", verb: "grant", args: { id, role, ...(sub ? { sub } : {}) } });
   const S = (actor: string, id: string) => ({ actor, verb: "spawn", args: { id, lib: "x.glb", pos: [0, 0, 0] } });

@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-const { check, done } = suite("procgroup-check", { cap: Infinity });
+const { check, na, done } = suite("procgroup-check", { cap: Infinity });
 import { suite } from "../gate/suite.ts";
 const win = process.platform === "win32";
 
@@ -34,7 +34,7 @@ if (!win && spawnSync("ps", ["-A", "-o", "pid="]).status === 0) {
   const viaPs = suiteMembers(child.pid!, parsePsTable(spawnSync("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], { encoding: "utf8" }).stdout), "darwin").sort();
   killSuite(child.pid!, "SIGKILL");
   check("PG2 the macOS reading (ps -A -o pid,pgid,ppid,stat) finds the same group members as this OS's own table", viaPs.length >= 1 && JSON.stringify(viaPs) === JSON.stringify(viaOs), { viaOs, viaPs });
-} else check("PG2 (Windows host) the POSIX ps path is not this OS's; PG3/PG4 cover Windows", true);
+} else na("PG2 the macOS reading (ps -A -o pid,pgid,ppid,stat)", "the POSIX ps path is not this OS's; PG3/PG4 cover Windows");
 
 // PG3: the Windows table parses CRLF output from Win32_Process
 const W = parseWinTable("100 4\r\n200 100\r\n300 200\r\n400 999\r\n\r\n");
