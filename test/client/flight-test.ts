@@ -131,10 +131,11 @@ console.log('\nT4 -- R2 falling leaf, no autoland (the spec\'s soul)');
         s.events[0]?.kind === 'down.airborne' && s.events[0]?.eventId === 'ev-cut-1');
 
   const kinds: string[] = [];
+  const ragIds: unknown[] = [];
   let guard = 0, maxV = 0;
   while (s.phase === 'LEAF' && guard++ < 200000) {
     s = step(cfg, s, DT, { groundY: flat });
-    for (const e of s.events) kinds.push(e.kind);
+    for (const e of s.events) { kinds.push(e.kind); if (e.kind === 'ground.ragdoll') ragIds.push(e.eventId); }
     maxV = Math.max(maxV, Math.abs(s.vel.y));
   }
   check('the leaf reaches the ground', s.phase === 'RAGDOLL');
@@ -142,11 +143,10 @@ console.log('\nT4 -- R2 falling leaf, no autoland (the spec\'s soul)');
   check('NO landing animation ever played',
         !kinds.some(k => k.includes('land') && k !== 'ground.landed') &&
         !kinds.includes('ground.landed'));
-  check(`terminal speed ${maxV.toFixed(2)} m/s is in the spec's 2-3 band`,
+  check(`terminal speed ${maxV.toFixed(2)} m/s is in the spec's 2-3 band (3.2 ceiling)`,
         maxV >= 2 && maxV <= 3.2, `got ${maxV.toFixed(2)}`);
   check('the ragdoll event carries the originating eventId',
-        s.events.find(e => e.kind === 'ground.ragdoll')?.eventId === 'ev-cut-1' ||
-        kinds.includes('ground.ragdoll'));
+        ragIds.length === 1 && ragIds[0] === 'ev-cut-1', JSON.stringify(ragIds));
 }
 
 // ---------------------------------------------------------------- no mercy hover
@@ -243,7 +243,7 @@ console.log('\nT5 (partial) -- the consent gate; no land_at(person) descent yet'
   c.grant();
   check('grant allows', c.canLandAt() === true);
   c.revoke();
-  check('revoke mid-descent denies again', c.canLandAt() === false);
+  check('revoke denies again', c.canLandAt() === false);
 }
 
 // ---------------------------------------------------------------- DOWN is involuntary
@@ -1014,7 +1014,7 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   }
   check('and _flap crossfades the two rather than branching',
         /mixWings\(WING_IDLE, WING_POWER, e\)/.test(av));
-  check('effort eases, so 46 degrees never appears in one frame',
+  check('effort eases, so the full power stroke never appears in one frame',
         /want > have \? 0\.\d+ : 0\.\d+/.test(av));
   check('the wings are driven by the launch impulse and the flap key',
         /me\.wingEffort = input\.flap \? 1 : fromLaunch/.test(ctl) &&
