@@ -291,9 +291,8 @@ try {
     await sleep(1200);
     await ag.walkTo(3, 0, false, 8000);
 
-    // a motion (requestsOf writes an oscillate, whatever is named here): the crate does not stay put
-    h.verb("motion", { id: "deck", type: "path", points: [[3, 0, 0], [3, 0, 6]],
-                       speed: 1.5, loop: "pingpong" });
+    // a motion (requestsOf writes an oscillate along z): the crate does not stay put
+    h.verb("motion", { id: "deck", type: "oscillate" });
     await sleep(1200);
     const moving = await dropOver(h, ag, "mot-bot", [3, 0], DECK_Y, "release");
     check("a MOVING platform is not a ghost floor", onTerrain(moving), `root=${moving.toFixed(2)}`);
