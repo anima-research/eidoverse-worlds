@@ -277,7 +277,7 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   }
   // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
   // packed) are left out
-  if (/\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && req?.headers.get("accept-encoding")?.includes("gzip") && f.size > 10_000) {
+  if (/\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && acceptsGzip(req) && f.size > 10_000) {
     let entry = gzCache.get(path);
     if (!entry || entry.mtime !== f.lastModified) {
       entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
@@ -288,6 +288,14 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     return new Response(entry.gz, { headers });
   }
   return new Response(f, { headers });
+}
+
+/** Whether the request lists gzip with a q above 0 (RFC 9110 12.5.3: `gzip;q=0` refuses it). */
+function acceptsGzip(req?: Request): boolean {
+  const q = (name: string) => { for (const part of (req?.headers.get("accept-encoding") ?? "").toLowerCase().split(",")) {
+    const [coding, ...params] = part.split(";").map((x) => x.trim()); if (coding !== name) continue;
+    const qv = params.find((p) => p.startsWith("q=")); return qv ? Number(qv.slice(2)) || 0 : 1; } return null; };
+  return (q("gzip") ?? 0) > 0;
 }
 
 let clientVersionCache: { at: number; v: string } | null = null;

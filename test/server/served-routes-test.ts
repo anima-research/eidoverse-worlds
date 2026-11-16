@@ -86,6 +86,14 @@ for (const path of ["/", "/lib/core.js", "/shared/components.js"]) {
   } catch (e) { check(path, false, String(e).slice(0, 60)); }
 }
 
+// a q of 0 refuses gzip (RFC 9110 12.5.3): the file comes plain
+for (const ae of ["gzip;q=0", "br, GZIP; q=0.0, identity"]) {
+  try {
+    const res = await fetch(`${BASE}/lib/core.js`, { headers: { "accept-encoding": ae } }); await res.arrayBuffer();
+    check(`accept-encoding "${ae}": /lib/core.js comes back not gzipped`, res.status === 200 && !res.headers.get("content-encoding"), `status=${res.status} encoding=${res.headers.get("content-encoding")}`);
+  } catch (e) { check(ae, false, String(e).slice(0, 60)); }
+}
+
 // the websocket upgrade must be untouched: a 101 never reaches fetch(), so the observable is that the socket still opens
 const wsOk = await new Promise<boolean>((resolve) => {
   const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
