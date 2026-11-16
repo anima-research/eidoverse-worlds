@@ -114,9 +114,13 @@ if (group !== null && !GROUPS[group]) partition.push(`no group "${group}" (${Obj
 if (partition.length) { for (const p of partition) console.log(`FAIL partition: ${p}`); process.exit(1); }
 const inGroup = group ? new Set([...GROUPS[group], "CONTROL"]) : null;
 const todo = M.filter((m) => (!only || only.has(m.id)) && (!inGroup || inGroup.has(m.id)));
-if (argv.includes("--list")) { console.log(todo.map((m) => m.id).join("\n")); process.exit(0); }
 const unknown = only ? [...only].filter((id) => !M.some((m) => m.id === id)) : [];
 if (unknown.length) { console.error(`[blockers-mutants] no mutant ${unknown.join(", ")} (the ids: ${M.map((m) => m.id).join(", ")})`); process.exit(2); }
+// a selection that runs nothing is a mistake, never a green run
+const outside = only && inGroup ? [...only].filter((id) => !inGroup.has(id)) : [];
+if (outside.length) { console.error(`[blockers-mutants] ${outside.join(", ")} not in group ${group}`); process.exit(2); }
+if (!todo.length) { console.error("[blockers-mutants] nothing selected"); process.exit(2); }
+if (argv.includes("--list")) { console.log(todo.map((m) => m.id).join("\n")); process.exit(0); }
 
 /** A scratch copy of the tree: what the suites read (code and text), node_modules linked. client/ is linked except lib/ (copied: B7 edits it). */
 function copyTree(tag: string) {
