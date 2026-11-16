@@ -748,7 +748,7 @@ async function buildSky(a, world, wantAudio) {
     // light cache: CACHE=0 kills the density cache too and the sky renders black.
     envKnobs.CACHE = undefined;
     envKnobs.DCACHE = undefined;
-    envKnobs.LCACHE = skyQuality() === 'high' ? undefined : '0';
+    envKnobs.LCACHE = skyQuality() === 'high' && degrade === 0 ? undefined : '0';   // degrade 1: the retry after a storage-texture failure
 
     // no boot yield here: arrival gates on this build's warm (world.js applySkyFolded)
     phase('teardown');

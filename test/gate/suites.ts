@@ -277,6 +277,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sky-bakelock", "client/sky-bakelock-test.mjs", 1], // the sky's one-bake-at-a-time lock (sky_bakelock.js): a queued prebuild waits, BAKE_AFTER runs inside the lock, no deadlock
   ["sky-swapchain", "client/sky-swapchain-test.mjs", 1], // the sky's tier swaps (sky_swapchain.js): a superseded swap records nothing shown, a return after one acts, a stand-down keeps the dome
   ["sky-lifecycle", "client/sky-lifecycle-test.mjs", 1], // the sky's quality lifecycle on a scaled clock: held in the headset and applied once at exit, the cap takes the pending choice, a failed bake puts the live clouds back
+  ["sky-degrade", "client/sky-degrade-test.mjs", 1], // 333-cm b2: a storage-texture build failure retries with the light cache off (degrade 1), even at quality high
   ["forecast", "client/forecast-test.ts", 1], // the deterministic weather forecast: late joiner, override, provenance
   ["physics-off", "client/physics-off-test.ts", 1], // the per-client object-physics switch: off, no flights folded or drawn, committed poses
   ["predict-pending", "client/predict-pending-test.ts", 1], // bot #574/#575: a predicted release is presentation only: whereIs never reads the guess; a guess no entry confirms in PENDING_MS is dropped without a sim update
