@@ -978,7 +978,7 @@ if (import.meta.main) {
   const ktx2Mode = mode !== null;
   const [inPath, outPath] = argv.filter((a) => !a.startsWith("--"));
   if (!inPath || !outPath) {
-    console.error("usage: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img] <in> <out>");
+    console.error("usage: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img|--lod] <in> <out>");
     process.exit(1);
   }
   let encoder: string | null = null;
@@ -1056,8 +1056,8 @@ if (import.meta.main) {
       console.log(`[optimize] lod: GPU textures ${a.texMB} -> ${b.texMB} MB, tris ${a.tris} -> ${b.tris}; download ${(out.length / src.length).toFixed(2)}x the original`);
     } else if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
       // the verdict carries recipe and tools so a later recipe/encoder re-measures it (store-variants.ts verdictStands)
-      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp(mode === "--lod" ? LOD_RECIPE : undefined)} ${toolsStamp()}` : ""} — keeping original`);
-      console.error(verdictLine("size", `not smaller (${src.length} -> ${out.length})`, ktx2Mode ? (mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE) : null));
+      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp()} ${toolsStamp()}` : ""} — keeping original`);
+      console.error(verdictLine("size", `not smaller (${src.length} -> ${out.length})`, ktx2Mode ? KTX2_RECIPE : null));
       process.exit(2);
     }
     // content check: a GLB whose images are not images serves confidently. --ktx2-img emits a bare KTX2, nothing to walk

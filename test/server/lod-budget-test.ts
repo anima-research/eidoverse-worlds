@@ -339,4 +339,7 @@ async function field(texSize: number, F = 6, withSphere = false) {   // texSize 
       { kind: under.kind, verdict: under.verdict, before: under.before, after: under.after });
   }
 }
+// the CLI's usage line names every mode its parser takes, --lod included
+{ const p = Bun.spawnSync([process.execPath, new URL("../../server/optimize.ts", import.meta.url).pathname, "--lod"], { env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const err = p.stderr.toString(); check("a bad CLI call's usage names --lod beside the --ktx2 modes", p.exitCode === 1 && /usage:.*--lod/.test(err), { exit: p.exitCode, err: err.slice(0, 200) }); }
 console.log(`${fail ? "\x1b[31m" : "\x1b[32m"}${pass} passed, ${fail} failed\x1b[0m`); process.exit(fail ? 1 : 0);
