@@ -86,7 +86,7 @@ async function forwardedWhile(room: Sfu, legId: string, speaker: FakePeer, n: nu
   const tap = ingress.onReceiveRtp.subscribe(() => { got++; });
   const f0 = room.diag().forwarded;
   await speaker.speak(n);
-  await until(`the SFU took in ${legId}'s ${n} packets`, () => got >= n);
+  await tryUntil(`the SFU took in ${legId}'s ${n} packets`, () => got >= n);   // a lost loopback packet is a short count, not a throw (main slept and counted)
   tap.unSubscribe();
   return room.diag().forwarded - f0;
 }
