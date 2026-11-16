@@ -199,7 +199,7 @@ console.log("mounted geometry regression");
 }
 
 // the snapshot path's wiring (client/lib/render/net_capture.js): the live head and the own-body toggle reach composeFirstPerson.
-// A source anchor; the deleted tools/fp-snap-probe.ts checked it in a browser (4e3b6e3e6)
+// A source anchor; the deleted 4e3b6e3e6^:tools/fp-snap-probe.ts checked it in a browser
 { const src = (await import("node:fs")).readFileSync(new URL("../../client/lib/render/net_capture.js", import.meta.url), "utf8");
   const call = src.slice(src.indexOf("composeFirstPerson({"), src.indexOf("});", src.indexOf("composeFirstPerson({")));
   check("net_capture: the first-person snapshot passes the live head bone and hides its own root around the render",

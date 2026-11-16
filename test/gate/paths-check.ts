@@ -31,7 +31,8 @@ const ALLOW: [where: string, paths: string[] | null, why: string][] = [
   ["shared/oldformat.js", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],
   ["test/protocol/upgrade-check.ts", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],
   ["test/client/named-pose-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
-  ["test/mcpl/body-state-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
+  ["test/mcpl/body-state-test.ts", ["defs/animations/idle.json", "defs/animations/sitting_normal_chair.json"], "files in the scratch asset library it builds"],
+  ["test/protocol/describe-particles-check.ts", ["tools/protocol/import-v1/translate-v1.js", "client/lib/particlefx.js", "client/lib/emitters.js"], "their pre-reorg homes, for an older --tree"],
   ["test/shared/voice-wire-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],
   ["bench/seatlab/", ["/lib/seatlab.js"], "the bench is copied under client/lib/ to run (its README)"],
 ];

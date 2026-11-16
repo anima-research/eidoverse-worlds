@@ -4,6 +4,7 @@
 import { fileURLToPath } from 'node:url';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { mock } from 'bun:test';
+import { pause } from '../gate/wait.ts';
 GlobalRegistrator.register({ url: 'http://localhost/?world=t&name=p' });
 const M = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 
@@ -184,7 +185,7 @@ for (const [name, st, wantNote, wantDim] of [
   document.body.append(solo, listed);
   renderVoiceList(solo, { items: [], selected: null, on: {}, loading: { id: 'new', name: 'new', since } });
   renderVoiceList(listed, { items: [{ id: 'v', name: 'v' }], selected: null, on: {}, loading: { id: 'v', name: 'v', since } });
-  const first = clocks(); await new Promise((r) => setTimeout(r, 2_200)); const later = clocks();
+  const first = clocks(); await pause('two of the clocks\' 1 s ticks: elapsed time is what this row reads', 2_200); const later = clocks();
   t('clock: a new voice\'s loading row and a listed voice\'s both count up by themselves', first.length === 2 && later.every((x, i) => x !== first[i]), JSON.stringify({ first, later }));
   solo.remove(); listed.remove();
 }

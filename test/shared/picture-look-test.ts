@@ -1,12 +1,13 @@
 // What look() carries for a resident who reads a `picture` (the agent's own path, agent-senses saysOf), without a browser.
-// The declaration rules are batch2-check P1-P3's; this is main's tools/picture-test.ts perception leg (deleted in 4e3b6e3e6).
+// The declaration rules are batch2-check P1-P3's; this is the perception leg of 4e3b6e3e6^:tools/picture-test.ts (deleted there).
 //
 //   bun test/shared/picture-look-test.ts
 import { noWorldUrl } from "../harness/no-world.ts";
+import { suite } from "../gate/suite.ts";
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => { ok ? pass++ : fail++; console.log(`${ok ? "  ok" : "FAIL"}  ${name}${ok || !detail ? "" : ` — ${detail}`}`); };
+const { check: row, done } = suite("picture-look");
+const check = (name: string, ok: boolean, detail = "") => row(name, ok, detail);
 
 const GOOD = "eidoverse/assets/pictures/hearth_at_dusk.png";
 // the agent's path: a scratch door, its cut adopted, and the next view taken after every write (test/harness/agent-scratch.ts)
@@ -33,5 +34,4 @@ const other = await act("set", { id: "console", component: "example.org/recipe",
 out = ag.look();
 check("other component types still read as they did", /components: example\.org\/recipe/.test(out), JSON.stringify([other.refused, line()]));
 
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+done();
