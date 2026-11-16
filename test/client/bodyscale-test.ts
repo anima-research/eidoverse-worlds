@@ -119,7 +119,7 @@ console.log('the maths:');
   check('mantle: the controller asks canMantle with the body\'s size, and steps on by a scaled 0.6 m',
     /canMantle\(reach, me\.userScale\)/.test(await Bun.file(here('../../client/lib/player/controller.js')).text())
     && /addScaledVector\(_facing, mantleStep\(me\.userScale\)\)/.test(await Bun.file(here('../../client/lib/player/controller.js')).text()));
-  check('mantle: the step onto the ledge grows with the body (it must clear a capsule of radius 0.32·u)', near(fn(BS, 'mantleStep')(2), 1.2) && near(fn(BS, 'mantleStep')(undefined), 0.6));
+  check('mantle: the step onto the ledge grows with the body (it must clear the scaled walking capsule)', near(fn(BS, 'mantleStep')(2), 1.2) && near(fn(BS, 'mantleStep')(undefined), 0.6));
   check('plate lift: authored metres × the live model→world scale, clamped', near(fn(BS, 'plateLift')(0.3, 1.5), 0.45, 1e-12) && near(fn(BS, 'plateLift')(3, 1), 0.8));
   // per body, per browser
   const m = new Map<string, string>(), ls = { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => m.set(k, v) };

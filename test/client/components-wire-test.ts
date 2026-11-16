@@ -94,7 +94,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   check('…and its gizmo is a child of the Empty (a bare bulb is seen, and selectable)', piv?.children.some((c: any) => c.userData.gizmo), JSON.stringify(piv?.children.map((c: any) => c.type)));
   // a lamp here is a model with a light on its own child (a light may also sit on the model itself: components compose)
   const lamp = stub.entities.get('lamp'); const lampLight = stub.entities.get('lamp-light');
-  check('a lamp (Model + child light): the child Empty rides the REALIZED model and its request follows the child, day:false → not day-aware',
+  check('a lamp (Model + child light): the child Empty rides the REALIZED model and its request follows the child, daytime: "full" → not day-aware',
     !!lamp && !!lamp.userData.lib && lampLight?.parent === lamp && rq('lamp-light')?.obj === lampLight && rq('lamp-light').color === 0xff8800 && rq('lamp-light').range === 7 && rq('lamp-light').dayAware === false, JSON.stringify({ ...rq('lamp-light'), obj: rq('lamp-light')?.obj?.userData, parent: lampLight?.parent?.userData }));
   let lampGizmo = false; lamp?.traverse((o: any) => { if (o.userData?.gizmo && o.parent !== lampLight) lampGizmo = true; });
   check('…with NO gizmo mesh inside the model itself (it would join the collider, the lamp scan, the caster scan); the bulb\'s gizmo hangs on the child', !lampGizmo && !!lampLight?.children.some((c: any) => c.userData.gizmo));

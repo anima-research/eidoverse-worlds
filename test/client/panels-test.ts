@@ -139,7 +139,7 @@ console.log("\nEsc mid-drag restores the start and commits nothing:");
   check("a relative edit after Esc computes from the restored value (2+1)", !typed[3]?.live && near(typed[1], 3), String(typed?.[1]));
 }
 
-console.log("\nshift = fine, ctrl = snap (the header claimed these; now they are bound):");
+console.log("\nshift = fine, ctrl = snap:");
 {
   const host = document.createElement("div");
   const calls: any[] = [];
@@ -154,7 +154,7 @@ console.log("\nshift = fine, ctrl = snap (the header claimed these; now they are
   inp.dispatchEvent(pe("pointerup", 213, { ctrlKey: true }));
 }
 
-console.log("\nshift = fine, ctrl = snap, soft limit bounds the drag, typing passes both bounds (the door refuses):");
+console.log("\nsoft limit bounds the drag, typing passes both bounds (the door refuses):");
 {
   const host = document.createElement("div");
   const calls: any[] = [];

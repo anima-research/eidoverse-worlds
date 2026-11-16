@@ -31,7 +31,7 @@ const yawOf = (o) => 2 * Math.atan2(o.quaternion.y, o.quaternion.w);
   const r = [72, 90, 120].map(at);
   check('a step closes 1 − e^(−t/τ) of the gap, whatever the frame rate', r.every((x) => Math.abs(x.got - x.want) < 0.01), JSON.stringify(r));
   const half = (hz) => { const out = pose(0), st = { init: true }, to = pose(0.1); for (let i = 0; i < hz * 0.06; i++) P.smoothPose(out, to, 1 / hz, st); return yawOf(out); };
-  check('…the same place after 60 ms at 60 Hz and at 120 Hz (< 0.1 mrad apart)', Math.abs(half(60) - half(120)) < 1e-4, `${half(60)} vs ${half(120)}`);
+  check('…the same place after 66.7 ms (4 steps at 60 Hz, 8 at 120 Hz; < 0.1 mrad apart)', Math.abs(half(60) - half(120)) < 1e-4, `${half(60)} vs ${half(120)}`);
   check('…and settled (< 1% left) within 150 ms (5 τ): short enough not to feel laggy', (() => { const out = pose(0), st = { init: true }, to = pose(0.1); for (let i = 0; i < 90 * 0.15; i++) P.smoothPose(out, to, 1 / 90, st); return Math.abs(yawOf(out) - 0.1) < 0.001; })());
   check('τ is tens of ms', P.POINTER_TAU >= 0.01 && P.POINTER_TAU <= 0.06, P.POINTER_TAU);
 }

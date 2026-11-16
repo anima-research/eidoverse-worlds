@@ -51,7 +51,7 @@ const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
 // (not retyped): at factor 0 it keeps 0 of 1000 (densityCount), where an
 // inline 5% floor would keep 50.
 const gqMod = await import("../../client/lib/vegetation/grass_quality.js");
-console.log("\nflora's shipped density dial (source-extracted, both trees)");
+console.log("\nflora's shipped density dial (source-extracted)");
 {
   const src = await Bun.file(here("../../client/lib/vegetation/flora.js")).text();
   const dial = src.match(/const keep = ([^;\n]+);/);
@@ -62,7 +62,7 @@ console.log("\nflora's shipped density dial (source-extracted, both trees)");
         1000, 0, gqMod.densityCount);
     } catch (e) { keep = `threw: ${e}`; }
   }
-  check("factor 0 keeps ZERO of 1000 instances (main keeps 50)", keep === 0, `keep=${keep}`);
+  check("factor 0 keeps ZERO of 1000 instances (an inline 5% floor would keep 50)", keep === 0, `keep=${keep}`);
 }
 
 const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY } = gqMod;
@@ -118,7 +118,7 @@ console.log("\nthe instance-count dial (densityCount)");
   check("0.6 keeps 600", densityCount(1000, 0.6) === 600);
   check("tiny factors floor at 5%", densityCount(1000, 0.001) === 50);
   check("a thinned field never reads as mowed", densityCount(3, 0.01) === 1);
-  check("off draws ZERO (main keeps ≥1 per stroke)", densityCount(1000, 0) === 0);
+  check("off draws ZERO (not one per stroke)", densityCount(1000, 0) === 0);
   check("negative is zero too", densityCount(1000, -0.5) === 0);
 }
 
@@ -193,7 +193,7 @@ const mkStroke = (n: number, { attrs = true, label = "", stem = false } = {}) =>
 
 const ff = await import("../../client/lib/vegetation/flora_field.js");
 
-console.log("\nthe silent no-op seam (flora's shipped wireDensityDial, both trees)");
+console.log("\nthe silent no-op seam (flora's shipped wireDensityDial)");
 {
   check("wireDensityDial extracted from flora.js", typeof wireDial === "function");
   const good = mkStroke(1000, { label: "0:grass" });

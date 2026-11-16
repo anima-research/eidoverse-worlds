@@ -52,7 +52,7 @@ ok('…and only ONE: a second cold caller is denied though nothing has been spen
   }
   await W;
   // denial 1 is turn's first ask (before the loop); denials 2..8 are loop frames 0..6; frame 7's ask carries waited=8
-  ok('a waiter behind a lane that overruns every frame is granted on its 8th denied frame, by aging', got === 7, `granted at frame ${got}`);
+  ok('a waiter behind a lane that overruns every frame is granted on the ask after its 8th denial, by aging', got === 7, `granted at frame ${got}`);
   delete globalThis.requestAnimationFrame; }
 
 // the hold: a grant reserves its lane's typical cost until the work reports

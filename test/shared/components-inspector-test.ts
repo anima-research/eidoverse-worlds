@@ -119,7 +119,7 @@ for (const [id, e] of ents) {
   }
   const floor = s.groups.find((g: any) => g.group === 'comp')!.fields.filter((f: any) => f.t === 'json').map((f: any) => f.k);
   check(`one thing with every engine card: every value row is claimed by a card (${owned.size} claimed)`, unowned.length === 0, unowned.join(', '));
-  check('…and the raw-JSON floor holds only what no typed card draws (reactions, the script, the recipe): no doubled key', JSON.stringify(floor) === JSON.stringify(['reactions', 'local/recipe']), JSON.stringify(floor));
+  check('…and the raw-JSON floor holds only what no typed card draws (reactions, the recipe): no doubled key', JSON.stringify(floor) === JSON.stringify(['reactions', 'local/recipe']), JSON.stringify(floor));
 }
 // the header's lib line reads the Model component, on every corpus entity (it said "lib ?" beside a Model card)
 {

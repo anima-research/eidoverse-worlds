@@ -48,7 +48,7 @@ let HV = '';   // the record's hash, "sha256:<hex>"
 {
   const W = lampWorld();
   const vis = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'vis');
-  check('a visitor may not publish (rank)', vis.ok === false && vis.refused?.code === 'rights', J(vis));
+  check('a member may not publish (rank)', vis.ok === false && vis.refused?.code === 'rights', J(vis));
   const r = W.call('publish', { from: 'lamp', name: 'Lamp' }, 'bld');
   HV = r.notes?.find((n: any) => n.record)?.record ?? '';
   const hex = HV.replace(/^sha256:/, '');

@@ -156,7 +156,7 @@ console.log('\nregression guards — the walking avatar must not have changed:')
   prop('a', { w: 1, h: 1, d: 1, at: [0, 0, 0] });
   prop('b', { w: 1, h: 0.5, d: 1, at: [3, 0, 0] });
   const rows = [at(0.4, 0, 0), at(0, 1, 0), at(3.4, 0, 0), at(3, 0.5, 0), at(8, 0, 0)];
-  check('default `tall` reproduces the avatar case exactly', rows.every((r, i) =>
+  check('a 1.9 m avatar (tall passed explicitly) still gets its pinned pushes', rows.every((r, i) =>
     Math.abs(r.push - [0.42, 0, 0.42, 0, 0][i]) < 0.005), rows.map((r) => r.push.toFixed(2)).join(' '));
   check('a box on the floor still has no gap to slip under',
     at(0.4, 0, 0, 0.32, 0.05).push > 0.1);

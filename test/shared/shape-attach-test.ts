@@ -52,7 +52,7 @@ tryRow('ST', () => {
   const st = { diagnostics: [], entities: { h: { c: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }, s: { c: { parent: { to: 'h' }, transform: { pos: [0, 1, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, socket: { name: 'seat', body: { action: 'lie' } } } } } };
   const hosts = legacyHosts(st);
   const ops = hosts.includes('h') ? liftHostOps(st, new Set(), 'h').ops : [];
-  check('ST9 the load-time lift finds a stored socket.body and moves it to a station', hosts.includes('h') && ops.some((o: any) => o.id === 's' && o.comp === 'station' && o.value?.action === 'lie' && o.value?.anim === 'lie')
+  check('ST9 the v1 importer\'s lift finds a stored socket.body and moves it to a station', hosts.includes('h') && ops.some((o: any) => o.id === 's' && o.comp === 'station' && o.value?.action === 'lie' && o.value?.anim === 'lie')
     && ops.some((o: any) => o.id === 's' && o.comp === 'socket' && !('body' in o.value)), [hosts, ops]);
 });
 

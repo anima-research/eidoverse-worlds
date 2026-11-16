@@ -121,7 +121,7 @@ try {
   const d = diff(r.soft1, r.fast), share = d / Math.max(1, (r.odSoft?.covered ?? 1));
   check('look: fast changes < 1% of the canopy\'s pixels (these planes sort back-to-front, so correct two-pass = blend; 0 measured)', share < 0.01 && (r.odSoft?.covered ?? 0) > 1000, `${d} px differ (${(100 * share).toFixed(1)}% of ${r.odSoft?.covered} covered)`);
   check('fill: fast ≈ one solid layer per covered pixel plus rims (≤ 1.5; soft pays every layer)', r.odFast && r.odSoft && r.odFast.perCovered <= 1.5 && r.odSoft.perCovered > 3, `${r.odSoft?.perCovered} → ${r.odFast?.perCovered} layers/px`);
-  check('raycast: the core twin is invisible to rays (one hit per leaf crossed)', r.hits.length > 0 && r.hits.every((h) => h !== 'foliage-core'), r.hits.join(','));
+  check('raycast: the core twin is invisible to rays (no hit is a core)', r.hits.length > 0 && r.hits.every((h) => h !== 'foliage-core'), r.hits.join(','));
   check('clones: the prototype itself gets no core', r.protoCores === 0, String(r.protoCores));
   check('clones: placed before AND after the switch, both have a core, sharing one cutout material, shown in fast', r.cloneFast.k1 && r.cloneFast.k2 && r.cloneFast.shared && r.cloneFast.vis && r.cloneFast.depth, JSON.stringify(r.cloneFast));
   check('clones: a clone\'s core answers no raycast', r.cloneHits.length > 0 && r.cloneHits.every((h) => h !== 'foliage-core'), r.cloneHits.join(','));

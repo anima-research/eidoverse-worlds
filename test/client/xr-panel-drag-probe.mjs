@@ -139,7 +139,7 @@ try {
   });
   console.log('  ·', JSON.stringify(r));
   check('a VR panel has a scrollable box to test', !r.none && !r.nospot, JSON.stringify(r));
-  check('trigger-drag on empty space scrolls the box with the laser (≈50 px for a 60 px drag, after the 8 px threshold)', r.s1 - r.s0 >= 40 && r.s1 - r.s0 <= 70, `${r.s0} → ${r.s1}`);
+  check('trigger-drag on empty space scrolls the box with the laser (≈50 px for a 60 px drag, after the DRAG_PX threshold)', r.s1 - r.s0 >= 40 && r.s1 - r.s0 <= 70, `${r.s0} → ${r.s1}`);
   check('…and that drag is not a click', r.clicksAfterDrag === 0, r.clicksAfterDrag);
   check('a tap (jitter under the threshold) is a click, and does not scroll', r.clicksAfterTap === 1 && r.s2 === 0, JSON.stringify({ clicks: r.clicksAfterTap, moved: r.s2 }));
   check('a grab that takes over a press cancels its click', r.clicksAfterCancel === 1, r.clicksAfterCancel);

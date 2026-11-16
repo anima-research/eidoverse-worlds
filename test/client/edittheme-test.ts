@@ -186,9 +186,9 @@ console.log("\nE. no pictograph in edit chrome's own sources:");
   const sb = strip(src("edit/structure_ui.js"));
   const tools = /const TOOLS = \[([\s\S]*?)\];/.exec(sb)?.[1] ?? "";
   check("the build bar's tool labels: no pictograph", tools.length > 0 && !PICTO.test(tools), (tools.match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
-  // C13: the tree widget lives in widgets.js (WIDGETS.tree.dom), one table for every surface; the check keeps its name
+  // C13: the tree widget lives in widgets.js (WIDGETS.tree.dom), one table for every surface
   const tree = /\n  tree: \{\n([\s\S]*?)\n    row: ROW,/.exec(src("edit/widgets.js"))?.[1] ?? "";
-  check("edit/fieldpanels.js tree rows (lock toggle): no pictograph", tree.length > 0 && !PICTO.test(strip(tree)), (strip(tree).match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
+  check("edit/widgets.js tree rows (lock toggle): no pictograph", tree.length > 0 && !PICTO.test(strip(tree)), (strip(tree).match(/\p{Extended_Pictographic}/gu) ?? []).join(" "));
   // bot #553: the scripts console's rows (edit/panels.js consoleFields) reach the painter too; a glyph PICTO_ICON lacks is fillText'd
   const cons = /function consoleFields\(\) \{([\s\S]*?)\n\}/.exec(src("edit/panels.js"))?.[1] ?? "";
   const { PICTO_ICON } = await import("../../client/lib/edit/theme.js");

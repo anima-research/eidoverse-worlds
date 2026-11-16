@@ -153,7 +153,7 @@ console.log('LANTERN — the resting line pins from the ∃ menu, and goes quiet
   check('pinned again: the pill rests again', resting() && localStorage.getItem('ew-lantern-pinned') === '1', pill.className);
 
   L.setPillQuiet(true);
-  check('Esc put the panels away: the pill goes with them', L.pillQuiet() && pill.classList.contains('quiet'), pill.className);
+  check('Tab put the panels away: the pill goes with them', L.pillQuiet() && pill.classList.contains('quiet'), pill.className);
   window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', code: 'KeyK', ctrlKey: true, bubbles: true, cancelable: true }));
   check('quiet, Ctrl+K still opens the lantern', L.isLanternOpen());
   key('Escape');
