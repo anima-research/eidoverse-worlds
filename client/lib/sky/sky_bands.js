@@ -1,8 +1,8 @@
 // sky_bands — where the baked sky's strips are cut (sky_baked.js), kept free of imports so test/client/sky-lifecycle-test.mjs
 // can load it under node.
 
-/** Band edges in v (0..1) for re-marching a width x height equirect in strips of equal COST (see attachBakedDome's
- *  comment: rows are weighted by an inverse-elevation march-chord estimate). Shared by the cadence and the boot bake. */
+/** Band edges in v (0..1) for re-marching a width x height equirect in strips of equal COST (rows are weighted by an
+ *  inverse-elevation march-chord estimate). Shared by the cadence and the boot bake. */
 export function bandCuts(width, height, cloudPasses, passTexelBudget) {
   const ROWS = Math.max(1, height | 0);   // weight the texel rows: a band can't be thinner than one
   const bands = Math.min(ROWS, Math.max(1, Math.ceil((width * height * cloudPasses) / passTexelBudget)));

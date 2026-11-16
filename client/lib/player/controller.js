@@ -60,8 +60,8 @@ function releaseWings() {
   if (me) me.wingEffort = 0;
 }
 
-// The world's grant and my body, read through hooks main.js wires (net.js and mybody.js import this module, so the
-// arrow cannot point back). The default null grounds the body: a forgotten wiring is never a permission.
+// The world's grant and my body, read through hooks main.js wires (mybody.js imports this module, so the arrow
+// cannot point back; net.js is not imported here). The default null grounds the body: a forgotten wiring is never a permission.
 let myRights = () => null;
 export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
 let meRef = () => null;
@@ -198,7 +198,7 @@ export const xrIntent = { fwd: 0, strafe: 0, yawDelta: 0, jump: false, active: f
 // while an XR session presents the headset owns the camera (xr.js rig); the follow-cam stands down
 let xrPresenting = () => false;
 export function setXrProbe(fn) { xrPresenting = fn; }
-let posture = null;              // 'sit' | 'lie' | null
+let posture = null;              // 'sit' | 'lie' | null ('stand', from a dismount, reads as null)
 let vy = 0, grounded = true, mantle = null, airborneFor = 0, jumped = false, wantMove = false;
 
 // camera
@@ -296,7 +296,7 @@ const BODY_KEYS = [
 ];
 for (const { code, ...a } of BODY_KEYS) registerAction({ ...a, id: `body:${a.id}`, group: 'body' });
 
-// declared seats (sockets with a body block) live in main.js; its hook gets first claim on X, and a mounted body's X
+// declared seats (sockets with a body block) live in localbody.js; its hook gets first claim on X, and a mounted body's X
 // means "get up". True when the hook consumed the press.
 let occupyHook = () => false;
 export function setOccupyHook(fn) { occupyHook = fn; }
@@ -754,8 +754,8 @@ export function updateMe(dt, me) {
       } else { vy = 5.6; grounded = false; jumped = true; }   // a DELIBERATE jump: the clip may start this frame, no airborne grace
     }
     if (!mantle) {
-      // reaching the water starts the float (a body walking off a high bank falls first, then dunks). A float older
-      // than a frame is stale: something else (a ragdoll, a mantle, a flight) moved the body.
+      // reaching the water starts the float (a body walking off a high bank falls first, then dunks). A float not
+      // stepped for 250 ms is stale: something else (a ragdoll, a mantle, a flight) moved the body.
       const nowMs = performance.now();
       const afloat = _float.on && nowMs - _float.at <= 250;
       if (swimming && (afloat || myState.pos.y <= support + 0.3)) {

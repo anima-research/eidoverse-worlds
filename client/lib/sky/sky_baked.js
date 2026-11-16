@@ -8,7 +8,7 @@
 // (docs/research/sky-quality-and-vr.md).
 //
 // Coupling: this reaches through skyApi._internals for `sys.domes`, `sys._envTarget` and `sys._envBake`
-// {scene, camera}. If the engine moves any of them, attach() returns false and sky.js stays on the live march.
+// {scene, camera}. If the engine moves any of them, attachBakedDome() returns false and sky.js stays on the live march.
 
 import { THREE, TSL, scene, camera, renderer } from '../core.js';
 import { tee, bus, CONFIG } from '../base.js';
@@ -119,7 +119,7 @@ export function adoptEnvironment() {
 }
 
 // cycle state machine: idle → baking (a band per frame) → fading → idle
-// ('refreshing' while a preset flip rebuilds the engine's bake graph)
+// ('warming' until the band pipeline has compiled; 'refreshing' while a preset flip rebuilds the engine's bake graph)
 let state = 'idle';
 let bandIdx = 0;
 let cycleStart = 0;
@@ -505,7 +505,7 @@ export function updateBakedDome(now = performance.now()) {
     }
     return;
   }
-  if (state !== 'idle') return;        // 'refreshing': a graph rebuild is in flight
+  if (state !== 'idle') return;        // 'warming', or 'refreshing': a graph rebuild is in flight
   if (presenting) return;              // idle→baking is the pump's too
   if (pendingForce || now >= nextAt) {
     if (maybeRefreshGraph()) return;   // clear↔cloudy flip: rebuild first

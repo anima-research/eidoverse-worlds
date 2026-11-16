@@ -481,7 +481,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // it; anything else falls through to the controller's own layers (geometry seats, then the ground sit)
   setMountedHook(() => avatarMounts.has(CONFIG.name));
   // someone else's edit moved the seat I sat on and the authority let me go (its `vacated` inbox message,
-  // shared/protocol/authority.js): get off as when the world lets go
+  // shared/protocol/authority/writes.js): get off as when the world lets go
   bus.on('body-inbox', (msg) => {
     // only from the seat I'm on now: a late message never stands me up from a seat taken since
     const u = Array.isArray(msg?.messages) ? msg.messages.find((m) => m?.type === 'vacated') : null;
