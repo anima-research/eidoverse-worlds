@@ -46,8 +46,9 @@ try {
     const second = await outcome(Q.checkFile(f));
     check("the replaced file is checked again — and fails, rather than getting the old file's clean report", !second.ok, JSON.stringify(second).slice(0, 160));
     writeFileSync(f, good);
-    const third = await outcome(Q.checkFile(f));
-    check("putting the original back answers from the cache at once", third.ok && JSON.stringify((third as any).r) === JSON.stringify((first as any).r));
+    Q.checkConfig.runner = worker("rerun", `console.log(JSON.stringify({ levels: ["re-run"] }));`);   // a fresh check would answer this
+    const third = await outcome(Q.checkFile(f)); Q.checkConfig.runner = real;
+    check("putting the original back answers from the cache at once", third.ok && JSON.stringify((third as any).r) === JSON.stringify((first as any).r), JSON.stringify(third).slice(0, 160));
   }
 
   console.log("\nthe bytes that were asked about, not the bytes there later:");
