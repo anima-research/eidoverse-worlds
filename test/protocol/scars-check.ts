@@ -253,7 +253,7 @@ const cases: Case[] = [
       return { sit: show(sit), r: show(r), at: s.w().state().entities.chair.c.transform?.pos, seated: !!s.w().presence.occupants?.bob }; },
     good: (o) => o.sit === "ok" && o.r === "ok" && o.at?.[0] === 4 && !o.seated },
   // ---------------- Q: purge vs readback ----------------
-  { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commit} stub): the server never restamps it", run(s) { cast(s);
+  { id: "Q1", what: "an owner named the engine's version; its cause act's body is purged (in memory, and as the stored {commitment} stub): the server never restamps it", run(s) { cast(s);
       const OLD = "eidosim@0.9.0";   // a version this server doesn't carry, of an engine it does: restampable unless the owner chose it
       const set = s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
       const actSeq = s.entries().findLastIndex((e: any) => e.kind === "request" && e.verb === "set");

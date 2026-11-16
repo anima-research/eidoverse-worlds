@@ -182,7 +182,7 @@ const described = (W_, label) => Object.values(W_.w.log.live.state().entities).s
 
 // ---------------- T3 ----------------
 { const X = world("t3"); const t = tab(X, X.owner, { account: "local:olive" }); const n0 = X.w.log.live.entries.length;
-  send(t, "inspect", { id: "nothing-here" }); await tryUntil('the reply to "after"', () => t.replies.length, { ms: 3000, step: 10 });
+  send(t, "inspect", { id: "nothing-here" }); await tryUntil('the reply to the inspect of nothing-here', () => t.replies.length, { ms: 3000, step: 10 });
   const r = t.replies[0];
   ok(r?.ok === false && r?.txn === "rolled-back" && r?.reply?.refused && X.w.log.live.entries.length === n0 && !t.logs.length,
     "T3 a refusal: rolled back, nothing appended, nothing published", r);
@@ -389,7 +389,7 @@ for (const row of WAITED) {
 { const X = world("t10"); const guest = directoryFor(W).resolve({ sub: null, name: "guest" }); const t = tab(X, guest, { account: undefined }); t.c.anonymous = true;
   // reads and writes alike (a guest may say 20 in 10 s: 14 says, 86 reads), each through both recheck seams
   for (let i = 0; i < 100; i++) if (i % 7 === 6 && i < 105) send(t, "say", { text: `n${i}` }); else send(t, "inspect", { id: "@world" });
-  await tryUntil('the reply to "operator-repair visitor"', () => t.replies.length === 100, { ms: 3000, step: 10 });
+  await tryUntil("all 100 replies", () => t.replies.length === 100, { ms: 3000, step: 10 });
   const bad = t.replies.filter((m) => !(m.ok === true && m.txn === "committed"));
   ok(t.replies.length === 100 && !bad.length && said(X, "n97") && t.replies.filter((m) => m.verb === "say").length === 14, "T10 100 serial requests from an unchanged guest connection: all committed, no false refusal", { n: t.replies.length, bad: bad.slice(0, 2) }); }
 

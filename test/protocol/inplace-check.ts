@@ -406,7 +406,7 @@ const NO_KEY = (out: string) => /nothing can yet bind a key to the old world's o
   const text = rep?.refused ?? "";
   ok(/can't translate "sunk": it uses 1 thing\(s\) this protocol does not carry yet — air box on @world —/.test(text) && !/water volume|air box \(dry|climb route|vehicle|collision/.test(text) && /would drop them silently/.test(text) && /Nothing was written/.test(text)
     && want.every(([f, id, seq, who]) => text.includes(`seq ${seq}: ${f} (`) && text.includes(`on "${id}", set by ${who}`)) && /deferred in this protocol/.test(text) && /remove them from the old world first/.test(text),
-    "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they came from main's merges and are deferred, and what to do", text);
+    "IP26 the refusal names each feature, the component, the entity, the actor and the seq, says they are deferred, and what to do", text);
   const forced = await tool(["translate", "sunk", "--no-founder-key", "--operator-only-no-owner", "--approved", h!]);
   ok(forced.code !== 0 && /can't translate "sunk"/.test(forced.out) && /can't override this/.test(forced.out) && same(fingerprint(d), fp) && !temps().length && !isWorldDir(d) && fs.readFileSync(dirf, "utf8") === dirBefore,
     "IP26 approving the refused report doesn't override it: refused again, nothing written, no identities added", forced.out.slice(-400));

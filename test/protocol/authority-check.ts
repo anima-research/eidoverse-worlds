@@ -164,9 +164,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     ok(call("bob", "use", { id: "gate", action: "bolt" }).ok && (({ open, locked }) => JSON.stringify({ open, locked }))(W().state().entities.gate.c.openable) === '{"open":true,"locked":true}', "P34 bolting sets openable.locked, inside its own component");
     const r = call("vic", "use", { id: "gate", action: "open" });
     ok(code(r) === "barred" && !("locked" in W().state().entities.gate.c) && !("open" in W().state().entities.gate.c), "P35 …then opening is barred by door.locked; no top-level `locked` or `open` exists", r.refused);
-    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the authority's state", i.notForYou);
+    const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.openable?.locked === true, "P36 inspect shows why, and the door's state", i.notForYou);
     call("olive", "set", { id: "gate", component: "lock", value: true });
-    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the authority (v1: use stays open)");
+    ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the door (v1: use stays open)");
     // an openable thing with nothing that opens it offers 'open' on its own (R 10-11 23:17: the gym door had only openable)
     call("bob", "create", { id: "hatch", model: "door", components: { openable: { open: false } } });
     const u1 = call("vic", "use", { id: "hatch", action: "open" }), o1 = W().state().entities.hatch.c.openable.open;
@@ -1108,7 +1108,7 @@ const w0 = () => openWorld(root, "tier0");
   ok(S("@world", "terrain", { kind: "noise", water: { level: 1 } }) === "schema", "T0b terrain.water is refused: water is its own component");
   ok(S("@world", "water", { level: 1e9 }) === "bounds", "T0b water a billion metres deep is refused");
   ok(S("@world", "water", { level: "deep" }) === "shape", "T0b water.level must be a number");
-  ok(S("@world", "water", { level: 2, kind: "lava" }) === "shape", "T0b water.kind must be still | river | ocean");
+  ok(S("@world", "water", { level: 2, kind: "lava" }) === "shape", "T0b water.kind must be one of its enum (still | river | ocean | lake | pool)");
   ok(S("@world", "terrain", { kind: "noise", features: Array.from({ length: 65 }, () => ({ type: "hill", x: 0, z: 0, radius: 5, height: 2 })) }) === "bounds", "T0b 65 features is refused (64 is the readers' cap)");
   ok(S("@world", "terrain", { kind: "noise", features: [{ type: "hill", x: 0, z: 0, radius: 5, height: 1e6 }] }) === "bounds", "T0b a feature a million metres high is refused");
   ok(S("@world", "terrain", { kind: "noise", features: [{ type: "volcano", x: 0, z: 0, radius: 5, height: 2 }] }) === "shape", "T0b an unknown feature type is refused (the readers would drop it silently)");
