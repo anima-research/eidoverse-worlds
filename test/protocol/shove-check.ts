@@ -80,6 +80,7 @@ if (argv.includes("--mutants")) {
     console.log(`${good ? "ok  " : "FAIL"} mutant '${name}' → ${cases.length ? `red: ${redIds.join(",") || "(none)"} (want ${cases.join(",")})` : `exit ${r.code} (want 0)`}`);
     if (!good) console.log(r.out.split("\n").slice(-12).join("\n"));
   }
+  if (only && !ran) { console.log(`FAIL --only ${only.join(",")} selected no mutant`); process.exit(2); }
   console.log(`[shove-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its cases red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
