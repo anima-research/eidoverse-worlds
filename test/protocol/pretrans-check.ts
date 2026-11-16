@@ -687,7 +687,7 @@ await C("D6b", "an owner sets a policy number at or below the server's ceiling, 
 await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
   // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)
-  const DYN = new Set(["motion.center", "grabbable.anim", "sockets.radius", "sockets.anchor", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
+  const DYN = new Set(["motion.center", "grabbable.anim", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
   const bad = [];
   for (const [name, def] of Object.entries<any>(CAT.COMPONENTS)) { const h = def.help ?? ""; const all = CAT.defaultsOf?.(name) ?? {};
     for (const m of h.matchAll(/(\b[a-zA-Z]+)\??:? ?\(([^()]*\bdefault\b[^()]*)\)/g)) { const f = m[1]; if (DYN.has(`${name}.${f}`) || DYN.has(`${def.on === "world" ? name : name}.${f}`)) continue;
@@ -748,9 +748,9 @@ await C("D9", "§4 explains schemas: reserved (no definition format yet), and th
   const g = SPEC.slice(SPEC.indexOf("## 4."), SPEC.indexOf("### 4.1")); return [/schemas:<name>/.test(g) && /reserved/i.test(g) && !/\*\*optional\*\*/.test(g) && /registry-pin/.test(g) && CAT.COMPONENTS.schemas.status === "reserved", g.slice(g.indexOf("Meaning travels"), g.indexOf("Meaning travels") + 300)]; });
 
 // ---- ST: status (shape audit 10-16; R: every component trial for the alpha) ----
-// + the shape audit's wave 2 (attach-interact): the names R held (15:16 LOCKED); sockets (the old map) is no name now (D8s)
+// + the shape audit's wave 2 (attach-interact): the names R held (15:16 LOCKED)
 // + wave 2 (physics-motion): physics-joint (the constraint, renamed from joint) and surface (closed with physics' reserved fields)
-const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "sockets", "anim-pose", "anim-clip", "anim-states", "camera", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
+const RESERVED_NAMES = ["joint", "physics-joint", "surface", "schemas", "terrain-grid", "terrain-tile", "terrain-paint", "anim-pose", "anim-clip", "anim-states", "camera", "video", "spring-joint", "link", "tags", "body-owner", "edit-grant", "avatar-deny"];   // the last three: the avatar guard rails' names (PROTOCOL §7a, R 10-17 02:45)
 const KSPEC = await import("../../shared/protocol/kernelspec.js");
 await C("ST1", "every registered name has a status: the held names are reserved, the kernel's (roles, access) trial-kernel, every other one trial, none stable (v1 promises none)", () => {
   // the kernel's components are trial-kernel (kernel-check.ts guards their change): roles and access since C11b; transform, parent and model

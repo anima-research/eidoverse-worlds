@@ -40,7 +40,6 @@ const { digestOf } = await import("../../shared/protocol/simlayer.js");
 const { openLive } = await import("../harness/labhost.ts");
 const { custodyAt } = await import("../../server/custody.ts");
 const SC = await import("../../server/statecache.ts");
-const FV = await import("../../server/foldviews.ts").catch(() => null);   // absent before 10-28: its rows go red, the rest still run
 const { WorldLog } = await import("../../server/worldlog.ts");
 
 let pass = 0, fail = 0;

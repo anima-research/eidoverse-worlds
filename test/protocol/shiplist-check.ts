@@ -30,7 +30,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 const BASE = "7f1f1934";
 // cases that hold at the base too (today's behaviour, kept): the control requires them GREEN there
-const KEEP = new Set(["R7", "O0"]);
+const KEEP = new Set(["R7"]);
 
 // ---------------- the mutation and control drivers (they re-run this file as child processes) ----------------
 // find is one text, or [find, replace, file?][] for a gate held in two places (file: another file under the tree)
@@ -122,7 +122,7 @@ if (argv.includes("--control")) {
 const T = opt("tree") ?? ENGINE;
 const only = opt("only")?.split(",") ?? null;
 const imp = async (p: string) => { try { return await import(path.join(T, p)); } catch (e) { return { __err: String(e?.message ?? e) }; } };
-const D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js"), LAB = await import(ENGINE + "test/harness/labmodels.js"), TS = await imp("shared/protocol/verbspec.js");
+const D = await imp("shared/protocol/authority.js"), CAT = await imp("shared/protocol/componentspec.js"), TS = await imp("shared/protocol/verbspec.js");
 const SD = await imp("test/harness/scratchworld.ts"), TV1 = await imp("tools/import-v1/translate-v1.js"), FOLD = await imp("shared/protocol/fold.js");
 const ME = await imp("shared/motioneval.js"), ES = await imp("shared/editschema.js"), RF = await imp("shared/protocol/refusal.js");
 const S = suite("shiplist", { cap: 500 });
@@ -301,7 +301,7 @@ await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/pe
     { verb: "spawn", args: { id: "fan", lib: "crate", pos: [0, 0, 0] } }, { verb: "motion", args: { id: "fan", type: "spin", rpm: 3, axis: "y" } },
     { verb: "spawn", args: { id: "boat", lib: "crate", pos: [5, 0, 0] } }, { verb: "motion", args: { id: "boat", type: "orbit", center: [5, 0, 5], radius: 3, period: 20, face: false } },
     { verb: "spawn", args: { id: "cart", lib: "crate", pos: [9, 0, 0] } }, { verb: "motion", args: { id: "cart", type: "path", points: [[9, 0, 0], [9, 0, 6]], speed: 0.5, loop: "pingpong", face: true } }));
-  const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`)).filter((k) => k !== "@world.imported:ownerless"); // a leftover filter: the translation no longer writes imported:ownerless (translate-v1.js header)
+  const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`));
   const W = world(); const made = ["fan", "boat", "cart"].map((id) => why(W.call("create", { id, model: "crate", components: { motion: (({ t0, ...m }) => m)(v[id].motion) }, place: { at: [id.length, 0] } })));
   return [r.stats.divergences === 0 && v.fan.motion.degPerSec === 18 && !("rpm" in v.fan.motion) && v.boat.motion.period === 20 && v.boat.motion.face === false && v.boat.motion.center?.[2] === 5
     && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];
