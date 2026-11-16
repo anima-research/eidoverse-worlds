@@ -93,7 +93,7 @@ const read = (p) => readLog(fs.readFileSync(p));
     const sf = x.w.sim(); const cut = simSnapshotOf(sf, x.w.entries); cut.clock = null; cut.sim.tick = null; const state = x.w.putBlob({ snapshotJson: JSON.stringify(cut) });
     const s2 = x.w.append({ kind: "physics", actor: "sim", verb: "checkpoint", body: { at: x.w.entries.length - 1, engine: { engine: sf.spec.engine }, tick: sf.sim.tick, clock: sf.clock, sim: digestOf(sf.sim), state } });
     const b2 = reopen(x.dir);
-    ok(b2.bootedFrom !== s2 && b2.bootedFrom === x.w.entries.indexOf(ck), "F4 mutation: a checkpoint carrying `at` is 'checkpoint at N malformed; skipped' (livehost.ts:136): the boot resumes from the last well-formed one instead", { from: b2.bootedFrom, s2 }); }
+    ok(b2.bootedFrom !== s2 && b2.bootedFrom === x.w.entries.indexOf(ck), "F4 mutation: a checkpoint carrying `at` is 'checkpoint at N malformed; skipped' (server/livehost.ts): the boot resumes from the last well-formed one instead", { from: b2.bootedFrom, s2 }); }
   { const x = world("dual"); x.call("set", { id: "cr-1", component: "label", value: "b" }); T += TICK; settle(x.w);
     const sf = x.w.sim(); const cut = simSnapshotOf(sf, x.w.entries); cut.clock = null; cut.sim.tick = null;
     const old = x.w.putBlob({ cutJson: JSON.stringify(cut) });   // the old key: no reader reads it since S6 (11-05)

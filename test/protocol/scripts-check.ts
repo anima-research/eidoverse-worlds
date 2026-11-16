@@ -869,7 +869,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const next = s.call("vic", "use", { id: "box", action: "go" }, 2000);
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails, next: st(s, next) }; },
     good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" },
-  { id: "I8n", what: "review #260 rereview (macOS red): the same starved process on a host with no /proc (macOS, Windows: no CPU reading) still reads 'too busy', from the job never being taken (`go`), while a script that took its job and stuck in a slow builtin is still its own failure (`time`); a process the host never got round to running (stopped here: SIGSTOP, as an overloaded machine would starve it) is still stopped at the deadline, but it reads 'the host was too busy' (unavailable) and isn't the script's failure", run(s) { cast(s); process.env.EIDO_SANDBOX_CPU = "none"; try {
+  { id: "I8n", what: "review #260 rereview (macOS red): the same starved process on a host with no /proc (macOS, Windows: no CPU reading) still reads 'too busy', from the job never being taken (`go`), while a script that took its job and stuck in a slow builtin is still its own failure (`time`)", run(s) { cast(s); process.env.EIDO_SANDBOX_CPU = "none"; try {
       if (!SB?.isolationStats) return { absent: true };
       warmUp();
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
@@ -936,7 +936,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       bell(s, "bob"); const v = s.call("olive", "scripts", {}); const one = v.scripts?.find((x: any) => x.id === "bell1");
       return { status: one?.status, why: one?.why, sandbox: v.sandbox }; },
     good: (o) => o.status === "unavailable" && /operator can repair/.test(o.why ?? "") && /asking again won't/.test(o.why ?? "") && !/stand-in/.test(o.why ?? "") && o.sandbox === "unavailable" },
-  { id: "U2w", what: "bot on Windows (platform forced here) no script runs and the sandbox says unavailable, unless the operator sets EIDO_SANDBOX=inprocess; then it runs in-process", run() {
+  { id: "U2w", what: "on Windows (platform forced here) no script runs and the sandbox says unavailable, unless the operator sets EIDO_SANDBOX=inprocess; then it runs in-process", run() {
       if (!SB) return { absent: true };
       const f = path.join(root, "win-probe.ts");
       fs.writeFileSync(f, `Object.defineProperty(process, "platform", { value: "win32" });
@@ -1451,7 +1451,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       s.advance(61000); rs.push(code(s.call("bob", "upload", { text: "// later" })) ?? "ok");
       return { rs }; },
     good: (o) => o.rs.slice(0, 20).every((x: string) => x === "ok") && o.rs[20] === "rate" && o.rs[21] === "rate" && o.rs[22] === "ok" },
-  { id: "H6", what: "bot with no QuickJS (a host whose runtime didn't load), checkSyntax answers undefined (unchecked), not null (clean), and a dry upload says the syntax went unchecked instead of claiming it parses", run(s) {
+  { id: "H6", what: "with no QuickJS (a host whose runtime didn't load), checkSyntax answers undefined (unchecked), not null (clean), and a dry upload says the syntax went unchecked instead of claiming it parses", run(s) {
       if (!SB) return { absent: true };
       const plug = path.join(root, "no-quickjs.ts"), f = path.join(root, "noq-probe.ts");
       fs.writeFileSync(plug, `Bun.plugin({ name: "no-quickjs", setup(b) { b.module("quickjs-emscripten", () => ({ exports: { getQuickJS: async () => { throw new Error("stand-in: no QuickJS here"); } }, loader: "object" })); } });\n`);
@@ -1462,7 +1462,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { child, dry: show(dry), note: dry.note ?? null }; },
     opts: { scripts: SB?.SANDBOX ? { ...SB.SANDBOX, checkSyntax: () => undefined } : null },   // the authority side: what that host's checkSyntax hands scriptrun
     good: (o) => o.child.bad === "undefined" && o.child.fine === "undefined" && o.dry === "ok" && /unchecked/.test(o.note ?? "") && !/parses/.test(o.note ?? "") },
-  { id: "H7", what: "bot a deleted script's console ring leaves presence.scripts (saved whole with presence) once the request drains; a live script's stays", run(s) { cast(s);
+  { id: "H7", what: "a deleted script's console ring leaves presence.scripts (saved whole with presence) once the request drains; a live script's stays", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       for (const n of ["a", "b"]) install(s, "bob", "box", n, onUse(`world.set("self", "t/${n}", 1);`), { scope: { ids: "self", comps: [`t/${n}`] }, on: ["use"] });
       s.call("bob", "set", { id: "box", component: "reactions", value: { a: { kind: "script", script: "a" }, b: { kind: "script", script: "b" } } });

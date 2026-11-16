@@ -79,10 +79,10 @@ const attacks = [
       const set = s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [0, 0, 0] } });
       return { set, attack: s.call("bob", "undo", {}), pos: look(s, "crate-1").components?.transform?.pos }; },
     baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && ["rights", "locked"].includes(o.attack.refused?.code) && JSON.stringify(o.pos) === "[3,0,3]" },
-  { id: "H1h", what: "put checks rank and locks only at grab (time-of-check/time-of-use)", run(s) { cast(s);
+  { id: "H1h", what: "put checks the lock again, not only at grab: a lock set while it is held refuses the put (time-of-check/time-of-use; H1h2/H1h3 split rank out)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
-      s.call("olive", "set", { id: "ball", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
+      s.call("olive", "set", { id: "ball", component: "lock", value: true });
       return { grab, attack: s.call("vic", "put", { id: "ball" }), pos: look(s, "ball").components?.transform?.pos }; },
     baseBad: (o) => ok(o.grab) && ok(o.attack), nowGood: (o) => ok(o.grab) && refused(o.attack) && JSON.stringify(o.pos) === "[0,0,0]" },
   { id: "H1h2", what: "…the same, split: only the role changes between grab and put (a builder holding a builder-only ball is demoted to member)", run(s) { cast(s);
@@ -108,7 +108,7 @@ const attacks = [
       return { grab, attack: s.call("vic", "put", { id: "ball" }) }; },
     baseBad: (o) => crashed(o.attack), nowGood: (o) => ok(o.grab) && o.attack.refused?.code === "gone" }, // the hold is asserted: gripOf says gone with or without one
   // ---- H4 (§2.3) ----
-  { id: "H4a", what: "brick by undo: the owner undoes back past her cast (three grants and the newcomer gate); the next one would delete @world", run(s) { cast(s);
+  { id: "H4a", what: "brick by undo: the owner undoes back past her cast (two grants and the newcomer gate); the next one would delete @world", run(s) { cast(s);
       const u = [1, 2, 3, 4].map(() => s.call("olive", "undo", {}));
       const newAct = s.world().entries.findIndex((e) => e.verb === "create-world" || e.args?.verb === "create-world"); // name the founding act explicitly, too
       return { u, explicit: s.call("olive", "undo", { act: newAct }), after: s.call("olive", "set", { id: "@world", component: "about", value: { name: "still mine" } }), renew: s.call("olive", "create-world", { title: "again" }) }; },
