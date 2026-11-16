@@ -85,9 +85,10 @@ console.log('\nthe stored choice wins:');
   check('setBodyEngine(verlet) answers verlet even with ammo loaded', rd instanceof Ragdoll);
   check('...and persists the choice', _ls.get('ew-bodysim') === 'verlet');
   check('...which extends the shared spine too', rd instanceof BodyEngineBase);
+  bs.setBodyEngine('ammo');
   bs.setBodyEngine('nonsense');
-  check('an unknown engine name falls to the verlet floor',
-    bs.currentBodyEngine() === 'verlet');
+  check('an unknown engine name falls to the verlet floor (from ammo)',
+    bs.currentBodyEngine() === 'verlet', bs.currentBodyEngine());
 }
 
 console.log('\nseedVel THROUGH THE DOOR (the dropped-argument regression):');
