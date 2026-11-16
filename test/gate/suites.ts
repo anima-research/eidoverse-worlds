@@ -48,6 +48,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sclock", "protocol/sclock-check.ts", 1],     // the client's server clock slews toward a new estimate instead of stepping
   ["server-clock", "client/server-clock-test.ts", 1], // the server sends its time and the client's clock follows it through the real net.js and remotes.js
   ["tick", "server/tick-test.ts", 1], // the server heartbeat (tick.ts): systems run on their period, one that throws never stops the others
+  ["agent-tokens-reload", "server/agent-tokens-reload-test.ts", 1], // a tokens.json gone malformed authorizes nobody; reserved names stay reserved
   ["server-clock-readers", "client/server-clock-readers-test.ts", 1], // a server stamp (a sky's ts, a role's until) is read on the authority's clock
   ["physseeds", "protocol/physseeds-check.ts", 1], // shape grammar, physical properties, spin on release, the state sample, one clock (a real server whose log is ahead of wall time)
   ["eidosim", "protocol/eidosim-check.ts", 1], // eidosim's adapter: any schedule reaching tick T gives the same bits; spin capped like v; a mirror is the same box

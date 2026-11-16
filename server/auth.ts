@@ -109,10 +109,11 @@ export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(R
 const AGENT_TOKENS_EXAMPLE = resolve(process.env.MCPL_TOKENS_EXAMPLE ?? join(ROOT, "mcpl", "tokens.example.json"));
 let agentTokCache: { mtime: string; byToken: Map<string, string>; names: Set<string>; bySub: Map<string, string> } | null = null;
 export function agentTokens() {
+  let mtime = "";
   try {
     // keyed on both files: a key the public example gains is refused without a touch of tokens.json
     const stamp = (p: string) => existsSync(p) ? Math.round(Bun.file(p).lastModified) : 0;
-    const live = stamp(AGENT_TOKENS_PATH), mtime = `${live}:${stamp(AGENT_TOKENS_EXAMPLE)}`;
+    const live = stamp(AGENT_TOKENS_PATH); mtime = `${live}:${stamp(AGENT_TOKENS_EXAMPLE)}`;
     if (!agentTokCache || agentTokCache.mtime !== mtime) {
       const byToken = new Map<string, string>();
       const names = new Set<string>();
@@ -139,7 +140,8 @@ export function agentTokens() {
     }
   } catch (e) {
     console.error("[perm] mcpl/tokens.json unreadable:", (e as Error).message);
-    agentTokCache ??= { mtime: "", byToken: new Map(), names: new Set(), bySub: new Map() };
+    // fail closed: nobody is authorized, but the names already reserved stay reserved (bot #333 5)
+    agentTokCache = { mtime, byToken: new Map(), names: agentTokCache?.names ?? new Set(), bySub: new Map() };
   }
   return agentTokCache;
 }
