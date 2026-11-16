@@ -44,6 +44,7 @@ export function setPttHeld(on) {
   // once-per-1.5s rate limit.
   if (next && pttMode() && micOn()) _onset.press(now);
   gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
+  bus.emit('audio:ptt-held', next);   // stt.js: captions follow the key
 }
 bus.on('audio:ptt', (on) => {
   const now = Date.now();

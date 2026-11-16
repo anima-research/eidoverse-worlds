@@ -6,14 +6,14 @@
 
 import { say } from '../net.js';
 import { report, bus } from '../base.js';
-import { sttConsented } from './voiceconsent.js';
+import { sttConsented, pttMode } from './voiceconsent.js';
 import { flashHint } from '../ui/ui.js';
 // flashHint is a transient overlay, so failures go to chat too. Lazy import: a static chat.js
 // import drags core.js into every headless test that mocks core.
 const logChat = (who, text) => import('../ui/chat.js').then((m) => m.logChat(who, text)).catch(() => {});
 // the mic's real state: this module's capture must never outlive it. SFU first (its bridge
 // installs __sfuMicOn only once that transport initialised), then micstate.
-import { micOn as meshMicOn } from './micstate.js';
+import { micOn as meshMicOn, pttHeld } from './micstate.js';
 function micIsLive() {
   try {
     if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
@@ -24,6 +24,9 @@ function micIsLive() {
 let rec = null;
 let wanted = false;
 let uttSeq = 0;                 // one id per transcribed utterance (log plane)
+// under PTT the key is the gate for captions too (bot #333 131); `draining` = stop() flushing what was heard while held
+let draining = false, listening = false;
+const keyAllows = () => !pttMode() || pttHeld() || draining;
 // diagnostics readable from /audio on a device with no console; the tally persists across toggles
 try { window.__sttOn = () => wanted; } catch { /* no window */ }
 
@@ -46,7 +49,7 @@ export const sttAvailable = () => !!(window.SpeechRecognition ?? window.webkitSp
 export function setSTT(on) {
   if (on && wanted && rec) return;      // already running — never rebuild the recognizer
   wanted = on;
-  if (!on) { try { rec?.stop(); } catch { /* already stopped */ } rec = null; return; }
+  if (!on) { try { rec?.stop(); } catch { /* already stopped */ } rec = null; listening = draining = false; return; }
   const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
   if (!SR) { const m = 'no speech recognition in this browser — voice works, captions don’t'; flashHint(m); logChat('*', m); wanted = false; return; }
   rec = new SR();
@@ -71,18 +74,20 @@ export function setSTT(on) {
       const text = e.results[i][0].transcript.trim();
       // spoken: true — the sound already reached the room live; never re-perform it.
       // Gate the emit too: a result arriving after the mic went off would leak a private line.
-      if (!wanted || !micIsLive()) continue;
+      if (!wanted || !micIsLive() || !keyAllows()) continue;
       if (text) { ++uttSeq; say(`🎙 ${text}`, { spoken: true, utt: uttSeq, live: true }); }
     }
   };
   // Chrome ends recognition on silence: restart while wanted AND the mic is live
   // (SpeechRecognition holds its own capture, so the mic toggle must govern it; fails closed).
   rec.onend = () => {
-    restarts++;
+    listening = false;
     const secs = ((performance.now() - firstStart) / 1000).toFixed(0);
-    if (wanted && micIsLive()) {
+    draining = false;
+    if (wanted && micIsLive() && !keyAllows()) mark('idle: push-to-talk key up');
+    else if (wanted && micIsLive()) {
       try {
-        rec.start();
+        rec.start(); listening = true; restarts++;
         mark(`ended+restarted ${restarts}× in ${secs}s${restarts >= 3 ? '  ← the session keeps dying; captions cannot finalize' : ''}`, 'end');
       } catch (err) { mark(`restart failed: ${err?.message ?? err}`); report('stt restart', err); }
     }
@@ -132,8 +137,20 @@ export function setSTT(on) {
     const m = said ?? `captions stopped: ${e.error}`;
     flashHint(m); logChat('*', m);
   };
-  try { rec.start(); } catch (e) { report('stt', e); wanted = false; }
+  if (!keyAllows()) return;   // PTT key up: the press starts it (pttSync)
+  try { rec.start(); listening = true; } catch (e) { report('stt', e); wanted = false; }
 }
+
+// PTT key or mode changed: listen only while the key allows; a release stop()s so held speech still finalizes
+function pttSync() {
+  if (!rec || !wanted) return;
+  if (keyAllows()) { try { rec.start(); listening = true; } catch { /* already running */ } return; }
+  if (!listening) return;   // an idle recognizer fires no onend, so `draining` would never clear
+  draining = true;
+  try { rec.stop(); } catch { draining = false; }
+}
+bus.on('audio:ptt', pttSync);
+bus.on('audio:ptt-held', pttSync);
 
 // running STT is derived state: consent AND a live mic AND a recognizer, re-evaluated on both events
 function syncSTT() {
