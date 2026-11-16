@@ -1001,11 +1001,12 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
         /me\.setClip\(myState\.clip/.test(flightBlock));
   // The general form of all three, and the one that would have caught this
   // before a person had to: every path that returns early from updateMe owes
-  // the tail's work, because the tail is what makes state visible. Only the
-  // flight block is read here: ragdoll, mounted and swimming aren't inspected.
+  // the tail's work, because the tail is what makes state visible. The flight
+  // and climb blocks are read here; the swim helper and the rest aren't inspected.
   const tail = ['me.setClip(', 'me.root.position.copy(', 'updateFollowCamera('];
-  check('every early-return path in updateMe pays the render tail',
-        tail.every(t => flightBlock.includes(t)), flightBlock ? '' : 'flight block not found');
+  const climbBlock = /\n  if \(climb\) \{[\s\S]*?\n  \}/.exec(ctl)?.[0] ?? '';
+  check('the flight and climb early returns in updateMe pay the render tail',
+        tail.every(t => flightBlock.includes(t) && climbBlock.includes(t)), flightBlock && climbBlock ? '' : `${flightBlock ? '' : 'flight '}${climbBlock ? '' : 'climb '}block not found`);
 
   // 5. "can we add a more dramatic wing flap animation for when taking off
   //    (that should be several, while rising) and flapping wings to move up?"

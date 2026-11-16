@@ -20,8 +20,8 @@
 // doesn't have dies at LINK time, so not one assertion runs there and the
 // suite can't serve as a negative control. This way the shared checks and the
 // both-tree behavioral controls run on any tree; only the canonical-clock
-// checks gate on the export existing (labeled as novelty when absent). Not yet
-// true: the #65 CONTROL rows call effectiveClock unguarded, so a tree without it throws there.
+// checks gate on the export existing (labeled as novelty when absent); the #65
+// CONTROL row guards its call, so a tree without it FAILs that row and runs on.
 import * as F from "../../shared/forecast.js";
 import { suite } from "../gate/suite.ts";
 const { WEATHERS, normalizePolicy, segmentAt, effectiveSky, foldSkyEntry, hoursAt, describeSky } = F as any;
@@ -345,8 +345,8 @@ const policyArgs = {
   // shape audit 10-16 (render-media-env §13): one clock governs and the stored sky says which by its tz alone; hours/rate/ts
   // stay put as the rated fallback (no dormantRated park: fold bookkeeping in the authored value)
   check("#65 CONTROL: the effective clock is the wall clock after the flip, never ×24",
-    effectiveClock(real, T1).mode === "real" && !("rate" in effectiveClock(real, T1)),
-    JSON.stringify(effectiveClock(real, T1)));
+    typeof effectiveClock === "function" && effectiveClock(real, T1).mode === "real" && !("rate" in effectiveClock(real, T1)),
+    effectiveClock ? JSON.stringify(effectiveClock(real, T1)) : "absent");
   check("#65 real: the rated clock stays put as the fallback (hours, rate, ts), no dormantRated",
     real.hours === 6.8 && real.rate === 24 && real.ts === T1 && real.dormantRated === undefined,
     JSON.stringify(real));

@@ -361,7 +361,7 @@ try {
         () => sky.cloudCap()?.from === 'high' && sky.getCloudChoice() === 'high' && localStorage.getItem('ew-cloud-quality') === 'high',
         () => sky.getCloudQuality() === 'high' && !sky.cloudCap()],
       ['a sky-world switch in the headset', () => sky.applySky({ ...ARGS, world: 'mars', ts: ++T }),
-        () => sky.skyHeld()?.rebuild === true, () => true],
+        () => sky.skyHeld()?.rebuild === true, (b0) => BAKE.builds - b0 === 1],
     ];
     sky.SKY_WORLDS.push('mars');
     for (const [name, act, heldOk, exitOk] of ROWS) {
@@ -373,7 +373,7 @@ try {
       const ok = inSession.q === 'medium' && inSession.builds === 0 && heldOk();
       leave(); await settle(); await settle();
       check(`${name}: in the session nothing builds, the quality stays, the change is held (and saved)`, ok, inSession);
-      check(`${name}: at exit it applies once, and nothing is left held`, exitOk() && !sky.skyHeld() && BAKE.builds - b0 <= 1,
+      check(`${name}: at exit it applies once, and nothing is left held`, exitOk(b0) && !sky.skyHeld() && BAKE.builds - b0 <= 1,
         { q: sky.getCloudQuality(), builds: BAKE.builds - b0, held: sky.skyHeld() });
     }
     sky.SKY_WORLDS.pop();

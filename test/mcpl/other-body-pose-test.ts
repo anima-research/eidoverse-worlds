@@ -249,6 +249,9 @@ try {
   kneeler.setPose(null);
   // standing on something above the terrain: a plinth half a metre up, a collider the feet stand on, so no tick lowers
   // the body toward the terrain while the blow is on its way (a bare y of 0.5 over nothing falls)
+  // control: with nothing under it, a raised body falls (the ticks run), so "stands on the plinth" below can tell
+  kneeler.pos.y = 0.5;
+  check("control: on nothing, a body raised to y 0.5 falls", !!await tryUntil("with nothing under it, a raised body falls (the ticks run)", () => kneeler.pos.y < 0.45, { ms: 2000 }), String(kneeler.pos.y));
   const { boxMesh } = await import("../fixtures/two-storey-fixture.ts");
   const { registerMeshSupport, removeSupport } = await import("../../mcpl/physics.ts");
   const { x: kx, z: kz } = kneeler.pos;

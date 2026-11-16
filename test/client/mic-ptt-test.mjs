@@ -153,7 +153,12 @@ import { readFileSync } from 'fs';
 const mt = readFileSync(new URL('../../client/lib/audio/mictoggle.js', import.meta.url), 'utf8');
 // ui.js (reached through mictoggle's graph) takes its HUD elements at load: the page's shell, empty
 for (const id of ['hud', 'loading', 'toasts', 'hintbar', 'door', 'help', 'dock', 'touch']) { const d = document.createElement('div'); d.id = id; document.body.append(d); }
-await import('../../client/lib/audio/mictoggle.js');
+const MT = await import('../../client/lib/audio/mictoggle.js');
+// a glyph's pin is stored where the next load reads it (dock-test reads its stub's memory, not this)
+MT.setGlyphPinned('mic', false);
+t('mictoggle: unpinning the mic glyph is stored (ew-mic-pinned = 0) and reported unpinned (the load-time read of that key is not re-run here)', localStorage.getItem('ew-mic-pinned') === '0' && MT.glyphPinned('mic') === false);
+MT.setGlyphPinned('mic', true);
+t('mictoggle: …and pinning it again stores 1', localStorage.getItem('ew-mic-pinned') === '1' && MT.glyphPinned('mic') === true);
 vc.setPttMode(true);
 const key = (type) => window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyV', key: 'v', bubbles: true }));
 key('keydown');

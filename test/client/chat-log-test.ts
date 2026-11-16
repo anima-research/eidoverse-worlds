@@ -419,6 +419,8 @@ console.log('CHAT — People Here swaps sides');
   pop.onclick!({ target: pop.querySelector('[data-side="left"]') } as any);
   check('back to the left while open: side-left, chevron ‹', cols.classList.contains('side-left') && tog.textContent === '‹' && JSON.parse(localStorage.getItem('ew-chat-side')!).pos === 'left', tog.textContent!);
   const realSide = cols.querySelector(':scope > .chat-side')! as HTMLElement;
+  check('the pane lists who is here', /2 others here/.test(realSide.querySelector(':scope > .chat-side-head')!.textContent!) && realSide.querySelectorAll('.who-row').length === 2,
+    `${realSide.querySelector(':scope > .chat-side-head')!.textContent} / ${realSide.querySelectorAll('.who-row').length} rows`);
 
   // S1/F4: a mod's markup INSIDE the real .chat-side. My earlier claim that a
   // mod cannot reach here was FALSE — mods.js:88 hands a mod makeFrame and

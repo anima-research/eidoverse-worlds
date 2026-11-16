@@ -364,7 +364,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: target + 10, clientY: bar.state.y + 5, bubbles: true }));
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
   const placed = bar.state.x;
-  check("...and a drag lands it at the pointer, away from centre",
+  check("...and a nw-corner press-and-move (a resize, see BINDS below) lands it at the pointer, away from centre",
     placed > 20 && placed < centred - 40, `${placed} (centred ${centred})`);
 
   bar._fit();
@@ -383,6 +383,21 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
+  // a TITLE-BAR drag, pressed mid-bar (outside the nw corner and the 4 px resize band): the drag path, its own latch
+  // (windows.js:512 markMoved('xy'))
+  localStorage.removeItem("ew-frame-awcd");
+  const bar2 = measurable(makeFrame("awcd", { title: "awcd", x: "center", y: -10, w: 352, h: 32 }));
+  bar2.show();
+  const c2 = bar2.state.x, mid = bar2.state.w / 2;
+  (bar2.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: c2 + mid, clientY: bar2.state.y + 16, bubbles: true }));
+  (bar2.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: target + mid, clientY: bar2.state.y + 16, bubbles: true }));
+  (bar2.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  const placed2 = bar2.state.x;
+  bar2._fit();
+  const wouldCentre2 = Math.round((innerWidth - bar2.state.w) / 2);
+  check("a title-bar drag (mid-bar, no resize zone) lands at the pointer and fit() does NOT re-centre it (binds the DRAG latch, windows.js:512)",
+    placed2 > 20 && placed2 < c2 - 40 && bar2.state.x === placed2 && bar2.state.x !== wouldCentre2,
+    `centred ${c2}, placed ${placed2} -> ${bar2.state.x}; anchor would give ${wouldCentre2}`);
 
   // (4) reset must put the frame back UNDER the anchors — `moved = false`.
   // THE Y ANCHOR, not just x. R, 2026-09-11: the action bar "can't be arbitrarily

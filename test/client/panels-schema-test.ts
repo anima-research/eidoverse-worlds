@@ -156,6 +156,13 @@ console.log('PANELS — every WIDGETS entry draws on every surface: the desktop,
     const lost = types.flatMap((t) => (SAMPLE[t]?.[1] ?? []).filter((a) => !R.some((r: any) => r.action === a)).map((a) => `${t}:${a}`));
     check(`${theme ?? 'legacy'} quad: every interactive type paints its target`, lost.length === 0, lost.join(','));
   }
+  // …and a row's value is painted, not only its hit target (info/log/text/json take no hit: this is their only check)
+  for (const theme of [null, 'edit']) {
+    const unpainted = types.filter((t) => t !== 'color' && SAMPLE[t] && ['string', 'number'].includes(typeof SAMPLE[t]![0].value)).filter((t) => {   // color paints a swatch, not its number
+      paintLog.length = 0; renderCanvas(document.createElement('canvas'), [SAMPLE[t]![0]], { width: W, rowH: ROW, pad: PAD, ...(theme ? { theme } : {}) });
+      return !paintLog.some((l) => l.startsWith('fillText(') && l.includes(String(SAMPLE[t]![0].value))); });
+    check(`${theme ?? 'legacy'} quad: every type with a text or number value paints it (color: a swatch)`, unpainted.length === 0, unpainted.join(','));
+  }
 }
 
 console.log('PANELS — hitRegion: UV → region; a slider hit is its snapped value');

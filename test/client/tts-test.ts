@@ -302,7 +302,7 @@ console.log("\n— queue bounds: backpressure does not grow without limit —");
   synthDelay = 5;
 }
 
-console.log("\n— voicestore: identity is digests; remember/forget round-trip —");
+console.log("\n— voicestore: identity is digests (remember/forget, IndexedDB, is not run here) —");
 {
   const store = await import("../../client/lib/audio/voicestore.js");
   const onnx = new File([new Uint8Array(1024).fill(1)], "voice.onnx");
@@ -323,8 +323,8 @@ console.log("\n— voicestore: identity is digests; remember/forget round-trip �
   const idC = await store.voiceIdentity(onnx, cfgB);
   check("same model, different config → DIFFERENT voice identity", idC.id !== idA.id, `${idA.id} vs ${idC.id}`);
   check("joint id carries both digests", idA.id.includes("+") && idA.id.split("+").length === 2, idA.id);
-  // both variants can be remembered side by side — distinct ids can't clobber
-  check("model+cfgA and model+cfgB coexist as distinct rows",
+  // distinct ids, so remembering both side by side can't clobber (rememberVoice itself is not run here)
+  check("model+cfgA and model+cfgB get distinct ids (same model digest, different config digest)",
     idA.id !== idC.id && idA.modelSha256 === idC.modelSha256 && idA.configSha256 !== idC.configSha256);
 }
 

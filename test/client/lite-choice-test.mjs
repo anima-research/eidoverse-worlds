@@ -142,8 +142,8 @@ const phoneUA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chr
 
 console.log('  -- the tripwire is per world: capability is a property of the (device, world) pair --');
 { // a page whose pagehide can be fired, so a clean exit is the page's own handler, not a hand-cleared key
-  const visit = (world, st, nav = { userAgent: winUA, deviceMemory: 8 }) => {
-    const ls = {}; const h = { ...g, location: { search: `?world=${world}` }, navigator: { gpu: {}, ...nav },
+  const visit = (world, st, nav = { userAgent: winUA, deviceMemory: 8 }, remembered) => {
+    const ls = {}; const h = { ...g, location: { search: world ? `?world=${world}` : '' }, navigator: { gpu: {}, ...nav }, __ewWorld: remembered ? { world: remembered } : undefined,
       localStorage: { getItem: (k) => (st.has(k) ? st.get(k) : null), setItem: (k, v) => st.set(k, String(v)), removeItem: (k) => st.delete(k) },
       addEventListener: (t, f) => (ls[t] ??= []).push(f) };
     h.globalThis = h;
@@ -160,6 +160,9 @@ console.log('  -- the tripwire is per world: capability is a property of the (de
   const st2 = new Map([['ew-boot-attempt:alpha', '1'], ['ew-boot-attempt:beta', '1']]);
   const alpha2 = visit('alpha', st2), beta2 = visit('beta', st2);
   check('page: alpha\'s spent retry is alpha\'s: beta\'s died boot still gets its own retry', alpha2.why === 'retry' && beta2.why === 'retry', JSON.stringify([alpha2.why, beta2.why]));
+  // no ?world=: the early-socket script's remembered world (globalThis.__ewWorld) is the world the page opens
+  const remembered = visit('', new Map([['ew-boot-attempt:alpha', '1']]), undefined, 'alpha');
+  check('page: a bare link opening the remembered alpha finds alpha\'s died boot (retry)', remembered.why === 'retry', JSON.stringify(remembered));
   beta.leave();
   check('page: surviving beta (its clean exit) clears beta\'s flag and not alpha\'s', !st.has('ew-boot-attempt:beta') && st.has('ew-boot-attempt:alpha'), JSON.stringify([...st.keys()]));
 }
