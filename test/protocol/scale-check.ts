@@ -299,10 +299,10 @@ const cases: Case[] = [
       if (!RM) return { missing: true };
       const m = RM.readMeter(); const a = {}, b = {}; let t = 1000; const out: any = {};
       for (let i = 0; i < RM.READ.n; i++) { if (m.check(a, t)) return { refusedEarly: i }; m.record(a, t); }
-      out.sixtyFirst = m.check(a, t)?.code ?? "ok"; out.later = m.check(a, t + 10_001)?.code ?? "ok";
+      out.overCap = m.check(a, t)?.code ?? "ok"; out.later = m.check(a, t + 10_001)?.code ?? "ok";
       const k = m.record(b, t); k.ms = RM.READ.ms + 100; out.slow = m.check(b, t + 1)?.code ?? "ok"; out.other = m.check({}, t)?.code ?? "ok";
       return out; },
-    good: (o) => o.sixtyFirst === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
+    good: (o) => o.overCap === "rate" && o.later === "ok" && o.slow === "rate" && o.other === "ok" },
   { id: "Q4b", what: "a read's time is charged when the authority answers: a read that ran past the window is still on the meter then, not expired before its cost landed", run() {
       if (!RM) return { missing: true };
       let clock = 1000; const m = RM.readMeter(RM.READ, () => clock); const a = {};
@@ -584,13 +584,8 @@ async function sameAsBase() {
     const t = r.stdout.toString(); try { return JSON.parse(t); } catch { return { bad: (t + r.stderr.toString()).slice(-400) }; } };
   const a = run(TREE), b0 = run(d); if (!Array.isArray(a) || !Array.isArray(b0)) return { a: a?.bad ?? "ok", b: b0?.bad ?? "ok" };
   // the base speaks the names before the 10-07 conventional-names pass: its replies' keys are read in today's names
-  // R 10-17 14:41 (consent words): a body's shield in look is read in today's words (tier strangers → everyone; class move →
-  // displace; everyone|nobody → allow|deny): the same table, renamed
-  const CONSENT_WORD: Record<string, string> = { everyone: "allow", nobody: "deny" };
-  const shieldToday = (sh: any) => Object.fromEntries(Object.entries(sh).map(([k, row]: any) => [k === "strangers" ? "everyone" : k,
-    row && typeof row === "object" && !Array.isArray(row) ? Object.fromEntries(Object.entries(row).map(([c, m]: any) => [c === "move" ? "displace" : c, CONSENT_WORD[m] ?? m])) : row]));
   // R 10-21: the base commit's word for the base rung (visitor) is the rung this tree calls member
-  const b = JSON.parse(JSON.stringify(b0), function (k, v) { if (k === "shield" && v && typeof v === "object" && !Array.isArray(v)) v = shieldToday(v);
+  const b = JSON.parse(JSON.stringify(b0), function (k, v) {   // (a shield never reaches here: strip drops it on both sides)
     if ((k === "who" || k === "role") && v === "visitor") return "member";
     if (!v || typeof v !== "object" || Array.isArray(v)) return v;
     return Object.fromEntries(Object.entries(v).map(([key, x]) => [Object.hasOwn(RENAMED_KEYS, key) ? RENAMED_KEYS[key] : key, x])); });

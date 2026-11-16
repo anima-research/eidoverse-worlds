@@ -22,7 +22,6 @@ import path from "node:path";
 import { ENGINE, scratch, linkInto, readLF } from "../gate/common.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
-import { translatorVersion } from "../../tools/import-v1/translate-v1.js";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
