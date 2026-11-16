@@ -200,7 +200,7 @@ try {
   const upN = await upAs({ cookie: native, "x-real-ip": "203.0.113.7" });
   check("native session: POST /upload takes the same cookie → 200", upN.status === 200, `status=${upN.status} ${upN.status !== 200 ? await upN.text() : ""}`);
   check("...a browser's cookie with no fetch-site at all is the same request, and is taken too", (await upAs({ cookie: a1.cookie, "x-real-ip": "203.0.113.8" })).status === 200);
-  check("...but the cookie from another site's page (sec-fetch-site: same-site) still isn't, at /worlds or /upload",
+  check("...but the cookie from another site's page still isn't: same-site at /worlds, cross-site at /upload",
     (await fetch(`${HTTP}/worlds`, { headers: { cookie: native, "sec-fetch-site": "same-site" } })).status === 401
     && (await upAs({ cookie: native, "sec-fetch-site": "cross-site", "x-real-ip": "203.0.113.9" })).status === 401);
   check("no cookie, no key: GET /worlds → 401", (await fetch(`${HTTP}/worlds`)).status === 401);

@@ -1,14 +1,14 @@
 // Real WS relay/late-join/authority regression on an isolated throwaway sequencer.
 // The world is founded first (joining never founds one), a join folds the log (replica: true), a say is a request, and
 // the log is world.jsonl's say/act/change entries.
-import { foundWorlds } from '../harness/harness.ts';
+import { foundWorlds, freePort } from '../harness/harness.ts';
 import { strict as assert } from 'node:assert';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { helloOf } from '../../shared/protocol/hello.js';
 const scratch=mkdtempSync(join(tmpdir(),'eido-underwater-'));
-const port=Number(process.env.UNDERWATER_TEST_PORT??18993);
+const port=process.env.UNDERWATER_TEST_PORT?Number(process.env.UNDERWATER_TEST_PORT):freePort(18993);
 foundWorlds(join(scratch,'worlds'),['underwater-test']);
 const server=Bun.spawn([process.execPath,'server/server.ts'],{env:{...process.env,
   HOST:'127.0.0.1',PORT:String(port),JOIN_TOKEN:'underwater-test-door',WORLDS_DIR:join(scratch,'worlds'),
