@@ -259,11 +259,11 @@ try {
     const re = await fetch(`${BASE}/upload?as=avatar&name=seatprobe&token=${DOOR}`, { method: "POST", body: mutated });
     check("seatprobe bytes re-uploaded (avatar-updated fires)", re.status === 200, `${re.status}`);
     const line = await tryUntil("probebot's correction stops", () => { const l = probeAg!.look(); return /seat approximate: profile (update pending|stale \(avatar bytes changed\))/.test(l) ? l : null; }, { ms: 12000 });
-    check("the correction STOPS when the event lands — pending, then stale, never the old value",
+    check("the correction STOPS when the event lands: the look says pending or stale",
       !!line, probeAg.look().split("\n")[0]);
     const roster = await (await fetch(`${BASE}/avatars`)).json() as any[];
-    check("served verdict for seatprobe: stale, naming which bytes",
-      roster.find((e) => e.name === "seatprobe")?.seat?.status === "stale");
+    const probeSeat = roster.find((e) => e.name === "seatprobe")?.seat;
+    check("served verdict for seatprobe: stale, naming which bytes", probeSeat?.status === "stale" && probeSeat?.which === "avatar", JSON.stringify(probeSeat));
   }
 
   console.log("stale and unsupported are verdicts, not silence");
