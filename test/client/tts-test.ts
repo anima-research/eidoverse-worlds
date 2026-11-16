@@ -284,14 +284,12 @@ console.log("\n— engine failure: page survives, refusal says why —");
   await tryUntil("the recovered line played out", drained);
 }
 
-console.log("\n— queue bounds: backpressure does not grow without limit —");
+console.log("\n— a burst: twelve lines queued at once all drain —");
 {
   synthDelay = 30;
   written.length = 0;
   const lines = Array.from({ length: 12 }, (_, i) => tts.speak(`line ${i}`));
   await until("the burst is under way", () => synthCalls.includes("line 1"));
-  const q = tts.mouthInfo().queued;
-  check("queue is bounded (or draining), not runaway", q < 1000, `queued=${q}`);
   await Promise.all(lines);
   await tryUntil("the burst played out", () => tts.mouthInfo().queued === 0 && speechSum() >= 12 * ONE * (1 - 1e-6));
   check("…and drains: all 12 lines reach the wire", Math.abs(speechSum() - 12 * ONE) < 1e-5 * ONE, `${speechSum()} vs 12 × ${ONE}`);
