@@ -47,7 +47,7 @@ const TOOLS = [   // every letter off the walking set: WASD walks here (Maya's W
 ];
 
 const RTABS = [['inspector', 'Inspector'], ['attributes', 'Attributes'], ['history', 'History']];
-let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip }
+let els = null;          // { top, tools, left, right, split, lsplit, rsplit, tabs, rtabs, strip, vbar }
 let prevChat = null;     // chat's visibility before docking, restored on exit
 let prevWorld = null;    // the World panel's, likewise
 let on = false;
@@ -62,7 +62,7 @@ function build() {
   const right = el('div', 'edit-col edit-right');
   const lsplit = el('div', 'edit-split edit-split-v');    // left column's right edge
   const rsplit = el('div', 'edit-split edit-split-v');    // right column's left edge
-  const split = el('div', 'edit-split edit-split-h');     // between hierarchy and chat
+  const split = el('div', 'edit-split edit-split-h');     // between the top pane and chat
   left.append(split);
   // Build | Hierarchy: two docked frames sharing the column's top pane, picked by tab (the
   // tab strip stands in for their title bars, so the pane reads as ONE panel with two pages)
@@ -95,7 +95,7 @@ function build() {
     b.dataset.tool = t.id; b.disabled = !!t.disabled;
     // the tool's hidden keys, in its tooltip (keyhints.js): the gizmo's Ctrl-snap, select's Ctrl/Shift-click, all the letters
     b.title = withKeys(withKeys(t.title, { select: 'selectExtend', move: 'gizmo', rotate: 'gizmo', scale: 'gizmo', pivot: 'gizmo' }[t.id]), 'toolKeys');
-    // the select tool also says how the camera moves; the three transform tools say how to reset what they change
+    // the select tool also says how the camera moves; the other tools say how to reset a transform
     b.title = withKeys(b.title, { select: 'editCamera', move: 'resetTransform', rotate: 'resetTransform', scale: 'resetTransform', pivot: 'resetTransform' }[t.id]);
     b.onclick = () => setTool(t.id);
     // right-click: the tool's spaces (Maya's marking menu, as a plain menu): one click picks, the tool comes with it
@@ -269,7 +269,7 @@ function toggleIsolate() {
   flashHint(`isolated: ${n} thing${n === 1 ? '' : 's'} shown, in your view only — Viewport ▸ isolate selected again shows the rest`, 4000);
 }
 
-/** full screen, on or off: the viewport bar's ⛶, F11, and the ∃ menu's "full screen" (a clean frame for recording).
+/** full screen, on or off: the top bar's ⛶, F11, and the ∃ menu's "full screen" (a clean frame for recording).
  *  Esc leaves it (the browser's own rule). */
 function toggleFullscreen() { if (document.fullscreenElement) document.exitFullscreen?.(); else document.documentElement.requestFullscreen?.(); }
 register({ id: 'view:fullscreen', title: 'full screen', key: 'F11', group: 'view',

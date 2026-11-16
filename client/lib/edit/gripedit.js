@@ -32,7 +32,7 @@ R_PTS.ring = R_PTS.middle.map((m, i) => m.map((x, k) => (x + R_PTS.little[i][k])
 const tip = (ch) => { const [, b, c] = ch; return c.map((x, k) => x + (x - b[k]) * 0.75); };
 const COLORS = { right: 0xff9a3c, left: 0x4fb3ff, either: 0xd8d8dc };
 
-let st = null;   // { id, name, proxy, ghost, controls, helper, panel, start }
+let st = null;   // { id, name, proxy, ghost, controls, helper, panel }
 const _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
 
 export const gripEditing = () => st?.id ?? null;

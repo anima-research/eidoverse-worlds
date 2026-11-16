@@ -94,9 +94,9 @@ export function liveFor(id) {
 }
 const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);
 export const mayTrust = () => (net.myRights?.role === undefined ? undefined : isOwner(net.myRights));
-// The world entity `@world` (shared/worldentity.js): state.sky/terrain/grass as one entity, edited through the sky /
-// weather / terrain / grass verbs. mayShape: the editWorld permission (the owner's, on an older server); false = known
-// not allowed, undefined = rights not known yet.
+// The world entity `@world` (shared/worldentity.js): state.sky/terrain/grass as one entity, edited through the `sky` and
+// `weather` verbs and set/delete of @world's `terrain` and `grass`. mayShape: the editWorld permission (the owner's, on
+// an older server); false = known not allowed, undefined = rights not known yet.
 export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : isOwner(r); };
 export const worldLive = () => ({ now: serverNow(), mayShape: mayShape(), trusted: trustedHere(), mayTrust: mayTrust() });
 export function schemaFor(id) {

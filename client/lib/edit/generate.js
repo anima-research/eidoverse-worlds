@@ -7,8 +7,8 @@
 // client: Orrery pushes finished GLBs to the sequencer's /upload, and we place the returned store path.
 //
 // Generating needs your Orrery identity (its own allowance metering); bringing the RESULT into the world is a set of
-// @world `assets:<path>`, which the authority gates on the gen permission. Image approval is Orrery's chain pause:
-// clicking a thumbnail stars it and the chain resumes into mesh generation.
+// @world `assets:<path>`, which the authority gates on the generate permission (net.myRights.gen). Image approval is
+// Orrery's chain pause: clicking a thumbnail stars it and the chain resumes into mesh generation.
 //
 // ?orrery=<http(s) base: origin + path> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.

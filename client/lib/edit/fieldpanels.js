@@ -43,22 +43,21 @@
 //                 menu?:[{k, label, danger?}] }   right-click a row → its menu (row.menu wins)
 //                 rename?: current label — double-click / menu 'rename' edits it inline → edit('rename', id, f, {value})
 //                 kids>0 draws a disclosure → edit('open', id)   → edit(k, id) / edit('lock', id) / edit(item.k, id)
-// Every field also takes { disabled?, driven?, hint?, vrOnly?, def? } (def: the value ↺ reverts to) (vrOnly: painted on the VR quad, skipped
-// on desktop — a button standing in for a key a headset lacks). Of the rest: disabled draws it
-// read-only (a locked thing's pose); driven names what owns the value (a
-// motion comp composes onto this rest pose) and marks the FIELD — edit chrome
-// draws an amber edge and a `~` on the value, so an axis label keeps its x/y/z
-// colour (provenance and axis both readable at once).
+// Every field also takes { disabled?, driven?, hint?, vrOnly?, def? }. def: the value ↺ reverts to. vrOnly: painted on
+// the VR quad, skipped on desktop (a button standing in for a key a headset lacks). disabled draws it read-only (a
+// locked thing's pose). driven names what owns the value (a motion comp composes onto this rest pose) and marks the
+// FIELD: edit chrome draws an amber edge and a `~` on the value, so an axis label keeps its x/y/z colour.
 //
 // The dispatcher is edit(k, value, field?, opts?). `field` is an axis index for vec3, so a multi-select can set one
 // component. `opts.live` is true while a drag is in progress: PREVIEW locally, no log traffic; a call without it is
 // the gesture ending: commit ONE request.
 //
 // num entry (desktop): drag the number to scrub (Godot's EditorSpinSlider shape): the value is start + perPx × travel
-// (perPx: the field's `drag`, else step × 0.2); travel sums each move, Shift weighting it 0.1×, so a drag that wanders comes
-// back to where it began only with the same modifiers. Shift = 0.1×,
+// (perPx: the field's `drag`, else step × 0.2). Travel sums each move, Shift weighting it 0.1×, then goes through the
+// viewer's scrub feel (scrubTravel), so a drag that wanders comes back to where it began only with the same modifiers.
 // Ctrl = whole units, Esc mid-drag restores the start. A click without travel focuses the box to type; typed entry
-// takes relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the drag; hard limits bound the drag and the stepper (typed values go as typed: editOps refuses).
+// takes relative math: `+=2`, `-=.5`, `*=-1`, `/=2`, `+=10%`. Soft limits bound the drag; hard limits bound the drag and
+// the stepper (typed values go as typed: editOps refuses).
 
 import { makeFrame } from '../ui/windows.js';
 import { parseEntry } from '../../../shared/editschema.js';
@@ -121,9 +120,9 @@ export function makeSchemaFrame(key, opts) {
   return { frame, set };
 }
 
-/** What makes two paints the same SHAPE: types, keys, fold state, options,
- *  and list membership. Values and labels are not shape — they update in
- *  place. */
+/** What makes two paints the same SHAPE: types, keys, disabled/driven, fold state, enum and tile options, a tree's or
+ *  list's whole rows, a vec3's link, a ref's filled/arming state. A field's own value and label are not shape — they
+ *  update in place. */
 export function shapeKey(fields) {
   return fields.map((f) => [f.t, f.k ?? '', f.disabled ? 1 : 0, f.driven ?? '',
     f.t === 'group' ? (f.open !== false ? 'o' : 'c') : '',
@@ -203,7 +202,7 @@ let scrubFeel = { speed: 'medium', accel: true };
 try { scrubFeel = { ...scrubFeel, ...JSON.parse(localStorage.getItem('ew-scrub-feel') ?? '{}') }; } catch { /* defaults */ }
 export const getScrubFeel = () => ({ ...scrubFeel });
 export function setScrubFeel(next) { scrubFeel = { ...scrubFeel, ...next }; try { localStorage.setItem('ew-scrub-feel', JSON.stringify(scrubFeel)); } catch { /* fine */ } return getScrubFeel(); }
-/** pixels dragged → how far the value moves, in units of one 'step' of travel */
+/** pixels dragged → effective pixels of travel (speed, and acceleration when on); the caller multiplies by perPx */
 export const scrubTravel = (px) => { const k = SCRUB_SPEEDS[scrubFeel.speed] ?? 1; return scrubFeel.accel ? px * k * (1 + Math.abs(px) / 120) : px * k; };
 const SCRUB_TIP = KEYHINTS.scrub.before;
 // while scrubbing, the keys go on the status line (keyhints.js); the speed rides along
@@ -281,7 +280,7 @@ function stepper(value, f, commit) {
   });
   src.addEventListener('pointermove', (e) => {
     if (!drag || drag.src !== src) return;
-    if (src._ranging) { drag = null; return; }   // a channel name dragged UP or DOWN selects channels (below), never scrubs
+    if (src._ranging) { drag = null; return; }   // a channel name dragged UP/DOWN selects channels (widgets.js), never scrubs
     const dx = e.clientX - drag.lastX; drag.lastX = e.clientX;
     // accumulate BEFORE the arm check: the pixels inside the click slop still count, or a drag that wanders back
     // lands short of where it began
@@ -467,7 +466,7 @@ function fieldDOM(f, edit, ro = {}) {
         else if (k === 'reset') edit(live.k, live.def);
         else if (k === 'resetsel') void (async () => {
           // one after another: each write names the value it replaces, so the next must see the last one land (two at once
-          // and the authority refuses the second as 'changed'; seen in the probe: x reset, z did not)
+          // and the authority refuses the second as 'changed')
           for (const r of [...(row.parentElement?.querySelectorAll('.sp-row.chan-sel') ?? [])]) {
             if (!r._reset?.()) continue;
             for (let t = 0; t < 30 && r._reset?.(true); t++) await new Promise((z) => setTimeout(z, 50));

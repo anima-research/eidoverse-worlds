@@ -23,7 +23,7 @@ const R2D = 180 / Math.PI;
 let controls = null;
 let helper = null;
 let attachedId = null;
-let start = null;        // { rec, scale, comps? } at drag start (the components the release's expect names)
+let start = null;        // { rec, comps? } at drag start (the components the release's expect names)
 let cancelled = false;   // Esc during the drag: the thing goes back, the release writes nothing
 let lastSent = 0;
 // the pivot (Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as the thing,
@@ -60,11 +60,10 @@ function ensure() {
 }
 
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
-/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged (a lock doesn't stop the drag:
- *  the release asks); a light has no orientation or scale to drag. */
+/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged; a light has no orientation or
+ *  scale to drag. A lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it. */
 function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
-  // a lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it.
   // A parented thing: three parents it (realize/models.js), so its position IS the local transform pos.* edits; a
   // thing riding a part socket (a moving node) stays out.
   const rides = !!rec?.parent;
@@ -120,7 +119,8 @@ function onChange() {
   }
 }
 // the pivot tool's release: where the proxy ended, in the thing's own frame (before scale), snapped to the nearest
-// hotspot of the model's box within 15 cm (centre, base, top, the 6 face centres, the 8 corners); one pivot write
+// hotspot of the model's box within 15 cm (centre, the 6 face centres with base and top among them, the 8 corners);
+// one pivot write
 function hotspots(box) {
   const [lo, hi] = box; const mid = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2); const out = [['centre', mid]];
   for (let i = 0; i < 3; i++) for (const [w, v] of [['min', lo[i]], ['max', hi[i]]]) { const p = [...mid]; p[i] = v; out.push([i === 1 ? (w === 'min' ? 'base' : 'top') : `${'xyz'[i]} ${w === 'min' ? '−' : '+'} face`, p]); }

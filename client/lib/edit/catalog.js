@@ -107,7 +107,7 @@ async function paintBuild(body) {
     const hit = document.createElement('i');   // not a <span>: a card's name is its first span
     hit.style.cssText = 'position:absolute;inset:-6px -8px -6px -3px';
     chip.appendChild(hit);
-    chip.onmousedown = (e) => e.preventDefault();   // Tab focuses it; a mouse press leaves focus where it was, as before
+    chip.onmousedown = (e) => e.preventDefault();   // Tab focuses it; a mouse press leaves focus where it was
     chip.onpointerenter = () => { chip.style.opacity = '1'; };
     chip.onpointerleave = () => { chip.style.opacity = bad ? '1' : '0.55'; };
     chip.onclick = async (e) => {

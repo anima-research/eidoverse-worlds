@@ -41,7 +41,7 @@ const _hit = new THREE.Vector3();
 
 let ghost = null;         // { obj, lib, yaw, scale } — a thing not yet placed
 let selected = null;      // { id, obj } — the selection's primary thing, resolved to its object (edit/selection.js is the truth)
-let dragging = null;      // { id, offset, plane } while moving a selection
+let dragging = null;      // { id, armed, before, grab, … } from a press on a thing: a move once armed (DRAG_SLOP)
 
 // Editing is a MODE: in a world you look around by dragging, an always-live editor would move whatever a camera drag
 // started on. Looking is the default; editing is something you say you are doing.
@@ -273,7 +273,7 @@ export function cancelGhost() {
 // Turn and size the thing in hand before the click: Q / E turn (15°, Shift 1°), , / . size (×1.1, Shift ×1.01), clamped
 // as the scale tool clamps. (Not R / T or S / D: R is the scale tool and D walks.)
 const GHOST_TURN = Math.PI / 12, GHOST_TURN_FINE = Math.PI / 180, GHOST_SIZE = 1.1, GHOST_SIZE_FINE = 1.01;
-/** The thing in hand, for tests and the hint: {yaw, scale} or null. */
+/** The thing in hand, for tests and the hint: {yaw, scale, lib} or null. */
 export const ghostPose = () => (ghost ? { yaw: ghost.yaw, scale: ghost.scale, lib: ghost.lib } : null);
 function ghostKey(e) {
   if (!ghost || ghost.lib === '@light' || ghost.lib === '@empty' || e.ctrlKey || e.metaKey || e.altKey) return false;   // keys: ghostKeys (a light is a point: nothing to turn; Ctrl+Z etc. pass)
@@ -325,7 +325,7 @@ export function updateBuild() {
   }
   if (dragging?.armed && selected) {
     if (tool === 'rotate') {
-      // ~1° per px, drag right = clockwise from above: a turn about world UP composed on the full orientation
+      // ~0.7° per px, drag right = clockwise from above: a turn about world UP composed on the full orientation
       _turn.setFromAxisAngle(_up, -(dragging.clientX - dragging.startX) * 0.012);
       selected.obj.quaternion.copy(_turn).multiply(dragging.startQuat);
       reindexCollider(selected.id); refreshOutline(); relayDrag();
@@ -628,7 +628,7 @@ bus.on('key', (e) => {
   if (!buildMode) return;
 
   // reset the selection's transform (panels.js resetTransform): the tools' own letters with Alt, and Ctrl+G for all
-  // three. Before the tool keys, which ignore modifiers.
+  // three. Checked first: socketKeyDown below takes every key while a seat is selected.
   if (e.altKey && !e.ctrlKey && !e.metaKey && ['KeyG', 'KeyE', 'KeyR'].includes(e.code)) { e.preventDefault(); bus.emit('edit-reset', { KeyG: 'pos', KeyE: 'rot', KeyR: 'scale' }[e.code]); return; }   // keys: resetTransform
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyG') { e.preventDefault(); bus.emit('edit-reset', 'all'); return; }   // keys: resetTransform
   // the thing in hand holds Q / E and , / . before the tools do (they'd switch tool mid-aim)

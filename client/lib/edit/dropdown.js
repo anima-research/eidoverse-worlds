@@ -32,7 +32,7 @@ export function skinSelect(sel) {
   sel.classList.add('dd-native');
   sel.insertAdjacentElement('afterend', btn);
   sel.addEventListener('change', paint);
-  // panels that set sel.value programmatically get repainted on the next tick
+  // options or attributes changed later repaint through the observer; a programmatic sel.value = … through the setter
   const mo = new MutationObserver(paint); mo.observe(sel, { childList: true, attributes: true, subtree: true });
   const origDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
   Object.defineProperty(sel, 'value', { get() { return origDesc.get.call(this); }, set(v) { origDesc.set.call(this, v); paint(); }, configurable: true });
