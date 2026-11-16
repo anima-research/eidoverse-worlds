@@ -35,7 +35,7 @@ const src = (p) => fs.readFileSync(path.join(ENGINE, p), "utf8");
 
 // ---- D: the drift guard ----
 {
-  const agent = src("mcpl/agent.ts"), auth = src("shared/protocol/authority.js"), ctrl = src("client/lib/player/controller.js"),
+  const agent = src("mcpl/agent.ts"), auth = ["shared/protocol/authority.js", ...fs.readdirSync(path.join(ENGINE, "shared/protocol/authority")).filter((f) => f.endsWith(".js")).sort().map((f) => "shared/protocol/authority/" + f)].map(src).join("\n"), ctrl = src("client/lib/player/controller.js"),
     coll = src("client/lib/colliders.js"), scale = src("shared/bodyscale.js"), thing = src("client/lib/thingphysics.js");
   const own = {
     agent: fs.readdirSync(path.join(ENGINE, "mcpl")).filter((f) => /^agent(-[a-z]+)?\.ts$/.test(f)).map((f) => src("mcpl/" + f)).join("\n").match(/^const (WALK|RUN|ARRIVE)\b\s*=.*$/m)?.[0] ?? null,   // the agent and its pieces
