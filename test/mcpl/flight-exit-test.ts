@@ -168,6 +168,7 @@ console.log('\n#300 close, or a dropped link, answers a wait under way at once')
   await tick(ag, 10);
   ag.ws.onclose({ code: 1006, reason: '' });
   await tryUntil('the climb answers', () => climb.r, { ms: 2000, step: 20 });
+  ag.close();   // its redial would otherwise reach a real server once RealWS is back (bot #333 119)
   (globalThis as any).WebSocket = RealWS;
   check('a dropped link answers a climb under way at once, as interrupted', climb.r != null && !climb.r.ok && /interrupted/.test(climb.r.text), climb.r?.text ?? 'no answer 2 s after the drop');
   check('...and ends the flight', ag.flight == null, `flight ${ag.flight?.phase ?? 'none'}`);
