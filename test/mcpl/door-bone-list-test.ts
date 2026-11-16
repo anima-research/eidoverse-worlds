@@ -13,6 +13,7 @@ import { WorldAgent } from '../../mcpl/agent.ts';
 import { devFlightProvider } from '../../shared/flightcap.js';
 import { rigBonesFor, bodyHeightFor } from '../../mcpl/rigbones.ts';
 import { suite } from "../gate/suite.ts";
+import { tryUntil } from "../gate/wait.ts";
 
 const S = suite("door-bone-list");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
@@ -101,14 +102,16 @@ r = await worn.takeOff();
 check("after a swap the old body's bones aren't used: the new body's are unknown until read",
   worn.bodyBoneNames === null && /bones aren't known/.test(text(r)), text(r));
 
-// A no-op until the fetch is made, so a read served from a cache fails the check rather than the run.
+// the read must really be in flight at the swap: a read served without a fetch would pass the last clause vacuously
 let release: () => void = () => {};
 serve = () => new Promise<Response>((done) => { release = () => done(new Response(glb(WINGED))); });
+const fetchedBefore = fetches;
 const late = worn.loadBodyBones();
+await tryUntil("the late read's fetch is made", () => fetches > fetchedBefore, { ms: 2000 });
 worn.setAvatar('another.vrm');
 release();
 await late;
-check("a read that finishes after a swap isn't kept as the new body's bones", worn.bodyBoneNames === null);
+check("a read that finishes after a swap isn't kept as the new body's bones", fetches > fetchedBefore && worn.bodyBoneNames === null, `${fetches - fetchedBefore} fetch(es)`);
 
 console.log('\nTWO READS AT ONCE');
 const two: any = new WorldAgent({ url: noWorldUrl(), name: 'mythos', world: 'bone-bench' });
