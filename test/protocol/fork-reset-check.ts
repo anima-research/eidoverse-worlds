@@ -151,7 +151,7 @@ ok((await ann.req("set", { id: "@world", component: `roles:${bobId}`, value: { r
   const r = await bob.raw({ type: "world-found", name: "bobs-place", title: "Bob's place" }, "world-founded", 8000);
   ok(r?.type === "world-founded" && r.name === "bobs-place" && fs.existsSync(path.join(W, "bobs-place", "world.jsonl")), "FD2 a signed-in person founds a world", r);
   const f = founding("bobs-place");
-  ok(f?.actor === bobId && fold(logOf("bobs-place")).entities["@world"].c[`roles:${bobId}`]?.role === "owner", "FD2 its founding act is the authority's `new` by them, and they own it", [f?.actor, bobId]);
+  ok(f?.actor === bobId && fold(logOf("bobs-place")).entities["@world"].c[`roles:${bobId}`]?.role === "owner", "FD2 its founding act is the authority's `create-world` by them, and they own it", [f?.actor, bobId]);
   const there = await sock(S.port); const jt = await there.join("bobs-place", "Bob");
   ok(jt.snapshot?.yourRights?.role === "owner", "FD2 they can go there, as its owner", [jt.errors, jt.snapshot?.yourRights]);
   const made = await there.req("create", { id: "first-thing", model: MODEL });
@@ -181,7 +181,7 @@ ok(["fl-src", "fl-rate"].every((n) => tool(["found", n, "--owner", "Fay"]).code 
   const fr = await sock(P.port); await fr.join("fl-rate", "Fay");
   const made = []; for (let i = 0; i < 8; i++) { const r = await fr.req("create", { id: `fl${i}`, model: MODEL }); made.push(r.ok ? "ok" : r.refused?.code); }
   const firstRate = made.indexOf("rate");
-  ok(made[0] === "ok" && firstRate > 0 && firstRate <= 5 && made.slice(firstRate).every((x) => x === "rate"), "FL2 ACT_RATE=5 reaches the world's authority: a sixth act in the window is refused rate", made);
+  ok(made[0] === "ok" && firstRate > 0 && firstRate <= 5 && made.slice(firstRate).every((x) => x === "rate"), "FL2 ACT_RATE=5 reaches the world's authority: by the sixth act in the window creates are refused rate, and stay refused", made);
   fay.close(); fr.close(); P.proc.kill(); }
 
 ann.close(); bob.close(); S.proc.kill();

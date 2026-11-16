@@ -314,7 +314,7 @@ function playground(name) {
   const said = call(ghost, "sage", "say", { text: "hello?" });
   ok(!said.ok && said.refused.code === "no-world" && /create-world \{title/.test(said.refused.fix), "L a world that doesn't exist refuses everything but create-world/help, and teaches create-world", said.refused);
   ok(!fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L …and nothing was written");
-  const dry = call(ghost, "sage", "create-world", { title: "x", dry: true }); ok(dry.ok && dry.dry && !fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L new honours dry", dry);
+  const dry = call(ghost, "sage", "create-world", { title: "x", dry: true }); ok(dry.ok && dry.dry && !fs.existsSync(`${root}worlds/${ghost}.jsonl`), "L create-world honours dry", dry);
   const W = playground("pc-l");
   call(W, "rowan", "create", { id: "crate-2", model: "crate", components: { physics: { kind: "dynamic" } }, place: { at: [2, 0] } });
   const b2 = call(W, "rowan", "inspect", { id: "crate-2" });
@@ -414,11 +414,11 @@ function playground(name) {
   const E2rest = (e, L) => { const c = L[e.cause]; return !!c && c.kind === "physics" && c.verb === "launch"; };
   // R1 — stamped by the old server, nothing in flight: restamped at the first act after load, and physics runs
   const W = deployed(() => playground("pc-r1"));
-  ok(specOf(W).engine === OLD, "R1 setup: the old server stamped its own build", specOf(W));
+  ok(specOf(W).engine === OLD, "R1 setup: the old server stamped its own engine version", specOf(W));
   call(W, "rowan", "look", {});
   const rs = restamps(W), L = log(W), ai = L.findIndex((e) => e.kind === "request" && e.verb === "restamp-engine"), ch = L.findIndex((e) => e.kind === "change" && e.cause === ai);
   ok(rs.length === 1 && specOf(W).engine === NEW && specOf(W).tickMs === 33,
-    "R1 the authority restamped @world.physics-engine with the build it carries, same engine and tickMs", { rs, spec: specOf(W) });
+    "R1 the authority restamped @world.physics-engine with the engine version it carries, same tickMs", { rs, spec: specOf(W) });
   ok(ch > 0 && L[ch].actor === "system" && L[ch].body.id === "@world" && L[ch].body.comp === "physics-engine", "R1 …as a system change on @world.physics-engine", L[ch]);
   ok(rs[0]?.body?.why === `engine ${OLD} → ${NEW}: restamped by the server; bodies at rest`, "R1 …and the log keeps why", rs[0]?.body);
   call(W, "rowan", "look", {}); ok(restamps(W).length === 1, "R1 once: the next act writes nothing more", restamps(W).length);
@@ -429,7 +429,7 @@ function playground(name) {
   // R1c — the next checkpoint carries the new version
   at(25000); settle(openWorld(root, W));
   const ck = log(W).filter((e) => e.kind === "physics" && e.verb === "checkpoint").at(-1);
-  ok(ck?.body?.engine?.engine === NEW, "R1c the next checkpoint names the restamped build", ck?.body?.engine);
+  ok(ck?.body?.engine?.engine === NEW, "R1c the next checkpoint names the restamped engine version", ck?.body?.engine);
   // R2 — a body in flight when the deploy came (house answer, #260 10-21): this server can't compute that flight, so a cut
   // that waited for its rest would never come. The cut ends it, leaving it where the fold has it: the cut's change, not a rest
   const W2 = deployed(() => { const n = playground("pc-r2"); call(n, "rowan", "grab", { id: "ball" }); call(n, "rowan", "throw", { id: "ball", v: [0, 6, 0] }); return n; });
@@ -481,28 +481,28 @@ function playground(name) {
   // That's inherited, not chosen, so after a deploy the fork is restamped like its source (forkWorld writes exactly this act)
   const W6 = fresh("pc-r6"); call(W6, "rowan", "create-world", { title: W6 }); at(100);
   const fc = forkCopy(openWorld(root, W6), "rowan", { requests: [{ verb: "set", args: { id: "@world", component: "physics-engine", value: { engine: OLD, tickMs: 33 } } }], throughLock: true });
-  ok(fc.ok && specOf(W6).engine === OLD && log(W6).some((e) => e.kind === "request" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped build", [fc.refused, specOf(W6)]);
+  ok(fc.ok && specOf(W6).engine === OLD && log(W6).some((e) => e.kind === "request" && e.verb === "fork-copy"), "R6 setup: a fork-copy carried the old server's stamped engine version", [fc.refused, specOf(W6)]);
   call(W6, "rowan", "look", {});
-  ok(restamps(W6).length === 1 && specOf(W6).engine === NEW, "R6 a forked physics world is restamped at its first act (an inherited build isn't the owner's choice)", specOf(W6));
+  ok(restamps(W6).length === 1 && specOf(W6).engine === NEW, "R6 a forked physics world is restamped at its first act (an inherited engine version isn't the owner's choice)", specOf(W6));
   // R7 — the owner names a version, then changes only tickMs by merge (review r2 F7): the version is still the one they named
   const W7 = fresh("pc-r7"); call(W7, "rowan", "create-world", { title: W7 });
   call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
   const m7 = call(W7, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true });
   call(W7, "rowan", "look", {});
-  ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).engine === OLD, "R7 an owner-named build survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
+  ok(m7.ok && specOf(W7).tickMs === 20 && !restamps(W7).length && specOf(W7).engine === OLD, "R7 an owner-named engine version survives a later merge of tickMs: no restamp", [m7.refused, specOf(W7)]);
   // R7b — …but a stamped version stays stamped through a merge: the old server stamped it, the owner merged tickMs, a deploy restamps
   const W7b = deployed(() => { const n = fresh("pc-r7b"); call(n, "rowan", "create-world", { title: n });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { tickMs: 20 }, merge: true }); return n; });
   call(W7b, "rowan", "look", {});
-  ok(restamps(W7b).length === 1 && specOf(W7b).engine === NEW && specOf(W7b).tickMs === 20, "R7b a stamped build merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
+  ok(restamps(W7b).length === 1 && specOf(W7b).engine === NEW && specOf(W7b).tickMs === 20, "R7b a stamped engine version merged over (tickMs) is still stamped: restamped, tickMs kept", specOf(W7b));
   // R7c — an older named version doesn't outlive a later stamp: the owner named one, then re-set the engine without a version
   // (the old server stamped its own), a deploy restamps (the walk stops at the change that brought the stamped version in)
   const W7c = deployed(() => { const n = fresh("pc-r7c"); call(n, "rowan", "create-world", { title: n });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: OLD } });
     call(n, "rowan", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim" } }); return n; });
   call(W7c, "rowan", "look", {});
-  ok(restamps(W7c).length === 1 && specOf(W7c).engine === NEW, "R7c a build named before a later stamped set doesn't count: restamped", specOf(W7c));
+  ok(restamps(W7c).length === 1 && specOf(W7c).engine === NEW, "R7c an engine version named before a later stamped set doesn't count: restamped", specOf(W7c));
 }
 
 // review of #260: an engine name that is an inherited property of the engine table
@@ -820,7 +820,7 @@ function playground(name) {
   const P = purgeAll(L), Q = purgeAll(L.map((e: any, i: number) => (i === dg ? { ...e, body: { ...e.body, digest: "0".repeat(16) } } : e)));
   const base = simFold(L, last.ts + 1000), v = simFold(P, last.ts + 1000), vq = simFold(Q, last.ts + 1000);
   ok(seqs.every((s) => s > 0) && dg > Math.max(...seqs) && base.checks.disagree.length === 0 && v.checks.disagree.length === 0 && v.checks.agree === base.checks.agree && vq.checks.disagree.some((d: any) => d.seq === dg),
-    "U7o a purge of a physics-none thing, a switched-off one and one with no collider leaves the epoch known: judged as before, and a wrong digest reported", { seqs, dg, base: base.checks.agree, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), q: vq.checks.disagree.slice(0, 2) }); }
+    "U7o a purge of a thing with collision off, a switched-off one and one with no collider leaves the epoch known: judged as before, and a wrong digest reported", { seqs, dg, base: base.checks.agree, agree: v.checks.agree, disagree: v.checks.disagree.slice(0, 2), q: vq.checks.disagree.slice(0, 2) }); }
 // review of #260: a turned table supports things over its own top, not over the box of its corners
 { const W = playground("turned-table"); const t = openWorld(root, W).state().entities["table-1"].c.transform;   // 1.2 × 0.8 m, at (0, 4)
   const turn = call(W, "rowan", "set", { id: "table-1", component: "transform", value: { ...t, q: yawQ(Math.PI / 4) } });
