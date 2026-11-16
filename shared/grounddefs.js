@@ -65,7 +65,7 @@ export function terrainArgs(pal, choice = {}, base = null) {
   if (choice.seed != null) out.seed = choice.seed;
   if (choice.shape != null && pal?.shapes?.[choice.shape] != null) out.amplitude = pal.shapes[choice.shape];
   const color = choice.tint != null ? colorInt(pal?.tints?.[choice.tint]?.layer) : null;   // the palette says #rrggbb; a layer stores an int
-  if (color) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
+  if (color != null) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
   return out;
 }
 

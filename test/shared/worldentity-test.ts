@@ -169,6 +169,8 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
   check('the panel\'s args and the World tiles\' are one recipe: terrainArgs = what groundpanel wrote',
     canon(terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' })) === canon({ seed: 7, size: 160, segments: 200, amplitude: PAL.shapes.hills, flatRadius: 16, layers: [{ color: hexInt(PAL.tints.meadow.layer), repeat: 16 }] })
     && canon(grassArgs(PAL, { ...paletteDefaults(PAL), plant: 'meadow' })) === canon({ ...PAL.plantings.meadow.args, height: PAL.grassHeight.meadow, density: PAL.grassDensity.normal }));
+  { const night = { tints: { night: { layer: '#000000' } } }, t = terrainArgs(night, { tint: 'night' });
+    check('a black tint is a tint: #000000 writes colour 0 on the layer', t.layers?.[0]?.color === 0, canon(t)); }
   check('weather picks are the authority\'s weather verb, and only real weathers', canon(worldPick(g(), 'weather', 'rain').ops) === canon([{ verb: 'weather', args: { weather: 'rain' } }]) && worldPick(g(), 'weather', 'hail').errors.length === 1);
 }
 
