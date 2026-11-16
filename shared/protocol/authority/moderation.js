@@ -10,7 +10,6 @@ import { isE, opsQuiet } from "./storage.js";
 import { banOf, effective, entryBy, inForceOf, may, modHolder, rankOf, roleOf, sanctionsNow, wcOf } from "./rights.js";
 
 // ---------- acting on a person ----------
-const WARN_OR_MOD = (st, who) => modHolder(st, who) || roleOf(st, who) === "owner";
 const reasonOf = (a) => (typeof a.reason === "string" && a.reason.trim() ? { reason: a.reason.slice(0, R.REASON_MAX) } : {});
 /** A duration in minutes → until (the authority's ms). Capped below owner at `cap`. */
 function minutesUntil(w, actor, minutes, { cap, what, required = false }) {

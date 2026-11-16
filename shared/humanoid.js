@@ -20,7 +20,6 @@ export const OPTIONAL_BONES = [
 ];
 
 const FINGERS = ['Thumb', 'Index', 'Middle', 'Ring', 'Little'];
-const SEGMENTS = ['Metacarpal', 'Proximal', 'Intermediate', 'Distal'];
 
 /** The 30 finger bones. Thumb takes Metacarpal/Proximal/Distal; the other four
  *  take Proximal/Intermediate/Distal. (VRM 1.0's naming — VRM0's thumb used

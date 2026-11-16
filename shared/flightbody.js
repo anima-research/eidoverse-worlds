@@ -12,16 +12,6 @@
 /** The wing chains, as the rig authors them: <side>_Wing_<row> then _1, _2 outward. Two rows per side, three deep. */
 export const WING_RE = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/;
 
-/** Bones flight will DRIVE if they exist. Everything else the body has is its
- *  own business. */
-export const WANTED = {
-  wings: WING_RE,
-  // The humanoid bones the flight pose actually leans on. VRM guarantees
-  // these by its own spec, so their absence means something is deeply wrong
-  // rather than merely different.
-  core: /^(Hip|Spine01|Spine02|Head|NeckTwist01)$/,
-};
-
 /**
  * @param {string[]} boneNames  every bone in the body, in any order
  * @returns {{

@@ -501,47 +501,17 @@ function edgeSpan(axis, cross, a0, a1, c0, c1, y0, y1, mat, kind) {
     : { x0: cross + c0, y0, z0: a0, x1: cross + c1, y1, z1: a1, mat, kind };
 }
 
-/** Which faces of an edge look into a room: signed offsets (-1 toward the negative side, +1 toward the positive). */
-function facesOf(level, axis, x, z) {
-  const [[ax, az], [bx, bz]] = edgeCells(axis, x, z);
-  const out = [];
-  if (level.tiles.has(cellKey(ax, az))) out.push(-1);
-  if (level.tiles.has(cellKey(bx, bz))) out.push(+1);
-  return out;
-}
-
 /** Every visual part for one level. */
 export function levelParts(level, g, floorY) {
   const parts = [];
-  const t = g.wallT, half = t / 2, h = g.wallH;
+  const h = g.wallH;
 
   for (const [k, mat] of level.tiles) {
     const [x, z] = k.split(',').map(Number);
     if (level.halves?.has(k)) continue;      // half-cells are prisms, see levelSweeps
     parts.push(tileBox(x, z, mat, g, floorY - g.slabT));
   }
-
-  // solid stretches and their skirting are SWEPT (levelSweeps); only box-shaped pieces stay here
-
-  for (const [k, edge] of level.walls) {
-    const ap = level.apertures.get(k) ?? null;
-    if (!ap) continue;                       // solid stretches are swept (levelSweeps)
-
-    const { axis, x, z } = edge;
-    const a0 = (axis === 0 ? x : z) * g.tile, a1 = a0 + g.tile;
-    const cross = (axis === 0 ? z : x) * g.tile;
-    const faces = facesOf(level, axis, x, z);
-    const prof = APERTURES[ap];
-
-    const oB = floorY + prof.bottom, oT = floorY + Math.min(prof.top, h);
-    const prevK = axis === 0 ? edgeKey(0, x - 1, z) : edgeKey(1, x, z - 1);
-    const nextK = axis === 0 ? edgeKey(0, x + 1, z) : edgeKey(1, x, z + 1);
-    const cw0 = level.walls.has(prevK) ? TRIM.case.w : 0;
-    const cw1 = level.walls.has(nextK) ? TRIM.case.w : 0;
-    const cw = TRIM.case.w;
-    // no casing boxes: the swept profile's reveal frames the opening (levelSweeps), and glass is swept there too
-    void faces; void oB; void oT; void cw; void cw0; void cw1;
-  }
+  // walls, apertured or not, and their trim are swept (levelSweeps): only box-shaped pieces are parts
 
   // flat roof with an overhang (§10)
   let lo = null, hi = null;
