@@ -769,6 +769,13 @@ const HOUSE = {
   check("...but it still divides the rooms",
     planStructure({ levels: [{ tiles: [[0, 0], [1, 0]],
       walls: [[2, 0, 0]], apertures: [[2, 0, 0, "door"]] }] }).levels[0].rooms.length === 2);
+  // an opening at or above wallH leaves no lintel, as an axis wall's (wallBoxes): never an inverted box
+  for (const [wallH, kind] of [[2.0, "door"], [2.4, "arch"], [2.2, "door"]] as const) {
+    const bx = planStructure({ wallH, levels: [{ tiles: [[0, 0]], walls: [[2, 0, 0]], apertures: [[2, 0, 0, kind]] }] }).boxes.filter((b: any) => b.kind === "wall");
+    const bad = bx.filter((b: any) => !(b.y1 > b.y0));
+    check(`a diagonal ${kind} under a ${wallH} m wall: no degenerate or inverted box, and a lintel only below wallH`,
+      bad.length === 0 && (APERTURES[kind].top < wallH) === (bx.length > 0), JSON.stringify(bad[0] ?? { n: bx.length }));
+  }
 
   // geometry: the sweep handles it, at 45°
   const sweeps = planStructure(D).levels[0].sweeps;

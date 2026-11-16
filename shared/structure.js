@@ -432,6 +432,8 @@ function levelBoxes(level, g) {
     if (e.axis < 2) continue;
     const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
     const open = ['door', 'arch'].includes(level.apertures.get(k));
+    const lo = open ? APERTURES[level.apertures.get(k)].top : 0;
+    if (lo >= g.wallH) continue;   // the opening reaches the top: no lintel (wallBoxes)
     const len = Math.hypot(ex - sx, ez - sz);
     const N = Math.min(64, Math.max(8, Math.ceil(len / (g.wallT * 1.2))));
     const r = Math.max(g.wallT * 0.8, (len / N) * 0.7);
@@ -440,7 +442,7 @@ function levelBoxes(level, g) {
       const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
       boxes.push({
         x0: cx - r, x1: cx + r,
-        y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
+        y0: floorY + lo,
         y1: floorY + g.wallH,
         z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
       });
