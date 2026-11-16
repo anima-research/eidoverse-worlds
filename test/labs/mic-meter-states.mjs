@@ -57,7 +57,7 @@ const r = await pg.evaluate(async () => {
   out.muted = await (async () => { window.relayDiag = () => ({ micPublished: false }); fake = 0;
     document.querySelector('#sec-audio [data-lvl]'); await settle();
     // force a repaint through the bus the same way the app would
-    const m = await import('./lib/core.js'); m.bus.emit('audio:mic', false); await settle();
+    const m = await import('./lib/base.js'); m.bus.emit('audio:mic', false); await settle();
     const c = colour(); window.relayDiag = () => ({ micPublished: true, active: true });
     m.bus.emit('audio:mic', true); await settle(); return c; })();
   out.under = await at(floor * 0.3);          // on, well under → warm/dim

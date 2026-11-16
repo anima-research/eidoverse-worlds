@@ -119,29 +119,32 @@ check('the whole sortie logged its events', seen.includes('down.airborne') &&
 
 // ---- the leaf forces, on the bodies the agent would actually have
 console.log('\nLEAF FORCES -- measured on the grafted rig, not on a browser doll');
-const rigJson = JSON.parse(readFileSync(
-  '/Users/lariareynolds/Documents/mythos-models/ragdoll-web/rig.json', 'utf8'));
-const L = DEFAULT_LEAF_FORCE;
-const wingBodies = rigJson.bodies.filter((b: any) => b.worldOnly);
-check(`the ragdoll has ${wingBodies.length} wing bodies to push on`, wingBodies.length === 12);
-let area = 0, wingArea = 0, mass = 0, wingMass = 0;
-for (const b of rigJson.bodies) {
-  const d = b.halfExtents.slice().sort((x: number, y: number) => x - y);
-  const a = 4 * d[1] * d[2];
-  area += a; mass += b.mass;
-  if (b.worldOnly) { wingArea += a; wingMass += b.mass; }
+const RIG = process.env.MYTHOS_RIG_JSON;   // the ragdoll's rig.json: a host file, not in the repo
+if (!RIG) console.log('  skip  leaf forces: set MYTHOS_RIG_JSON to the ragdoll\'s rig.json');
+else {
+  const rigJson = JSON.parse(readFileSync(RIG, 'utf8'));
+  const L = DEFAULT_LEAF_FORCE;
+  const wingBodies = rigJson.bodies.filter((b: any) => b.worldOnly);
+  check(`the ragdoll has ${wingBodies.length} wing bodies to push on`, wingBodies.length === 12);
+  let area = 0, wingArea = 0, mass = 0, wingMass = 0;
+  for (const b of rigJson.bodies) {
+    const d = b.halfExtents.slice().sort((x: number, y: number) => x - y);
+    const a = 4 * d[1] * d[2];
+    area += a; mass += b.mass;
+    if (b.worldOnly) { wingArea += a; wingMass += b.mass; }
+  }
+  const share = wingArea / area;
+  check(`wings are ${(100 * share).toFixed(0)}% of the drag area on ${(100 * wingMass / mass).toFixed(0)}% of the mass`,
+        share > 0.5, 'this is why a wingless stand-in falls wrong');
+  const tWing = terminalOf(L, wingBodies[0]);
+  const tChest = terminalOf(L, rigJson.bodies.find((b: any) => b.name === 'chest'));
+  check(`a wing plate terminals at ${tWing.toFixed(1)} m/s, the chest at ${tChest.toFixed(1)}`,
+        tWing < tChest / 3);
+  const f = leafForceFor(L, { mass: 0.11, halfExtents: [0.017, 0.136, 0.096],
+    vel: { x: 0, y: -6, z: 0 }, normal: { x: 0, y: 1, z: 0 }, right: { x: 1, y: 0, z: 0 } }, 0.4);
+  check('a broadside wing feels lift-ward drag', f.force.y > 0);
+  check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6);
 }
-const share = wingArea / area;
-check(`wings are ${(100 * share).toFixed(0)}% of the drag area on ${(100 * wingMass / mass).toFixed(0)}% of the mass`,
-      share > 0.5, 'this is why a wingless stand-in falls wrong');
-const tWing = terminalOf(L, wingBodies[0]);
-const tChest = terminalOf(L, rigJson.bodies.find((b: any) => b.name === 'chest'));
-check(`a wing plate terminals at ${tWing.toFixed(1)} m/s, the chest at ${tChest.toFixed(1)}`,
-      tWing < tChest / 3);
-const f = leafForceFor(L, { mass: 0.11, halfExtents: [0.017, 0.136, 0.096],
-  vel: { x: 0, y: -6, z: 0 }, normal: { x: 0, y: 1, z: 0 }, right: { x: 1, y: 0, z: 0 } }, 0.4);
-check('a broadside wing feels lift-ward drag', f.force.y > 0);
-check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6);
 
 // ---------------------------------------------- live revocation, the real path
 //

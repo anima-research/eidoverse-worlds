@@ -132,10 +132,10 @@ try {
   check("the say reaches the world", await waitUntil(() => saidSeen("hello from the typing test"), 5000));
   // the measured cadence: from the start to the say, every step between frames is under the 4 s window the frame opens
   const saidAt = Date.now();
-  const marks = [t0, ...frames.filter((t) => t >= t0 && t <= saidAt)];
+  const marks = [t0, ...frames.filter((t) => t >= t0 && t <= saidAt), saidAt];   // the last frame → say gap is judged too
   const steps = marks.slice(1).map((t, i) => late(t, marks[i]!));
   check("from the start to the say, a typing frame came at least every 4 s, less the stall each waited in",
-    marks.length >= 3 && steps.every((d) => d < 4000), `${marks.length - 1} frames; steps ${steps.join(", ")} ms`);
+    marks.length >= 4 && steps.every((d) => d < 4000), `${marks.length - 2} frames; steps ${steps.join(", ")} ms`);
   await sleep(500);
   seen.length = 0;
   await sleep(3500);
