@@ -56,7 +56,7 @@ try {
   // The body accepts being moved by default (recut A2). The exploit under test is the HTML-rendered NAME, which
   // needs the knock to land — so the victim opts in explicitly below anyway; the default itself is asserted first.
   check("boot: default settings — the body accepts (recut A2, 10-20: permissive default; worlds and people narrow it)", (await evalJson(`import('/lib/player/consent.js').then((m) => m.pushable())`)));
-  await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);   // a renamed setter throws here, not a silent skip
+  await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);
   check("boot: the victim opted in to being knocked over", await evalJson(`import('/lib/player/consent.js').then((m) => m.pushable())`));
   const me = await evalJson(`import('/lib/base.js').then((m) => m.CONFIG.name)`);
   check("boot: my body is in (a knock-over needs one)", await waitFor(`import('/lib/player/mybody.js').then((m) => !!m.getMe())`, 30000));
@@ -93,7 +93,7 @@ try {
       ["S3 pose", "puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } }, "posed you"],
       ["S4 release", "puppet", { by: SVG, pose: {} }, "released your pose"],
     ];
-    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPosable?.(true), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPosable(true), true))`);   // a renamed setter throws, not a silent skip
     for (const [name, ev, msg, words] of cases) {
       await emit(ev, msg);
       const fired = await waitFor(`${hint}.includes(${JSON.stringify(words)})`, 3000);
@@ -102,12 +102,12 @@ try {
     }
     // The authority is the one decider (#260 recut A1): with my switch off, an arriving grab raises no client refusal
     // (no "<by> tried to drag you" toast; S1/S2 already pin the names the remaining hints show as text).
-    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable?.(false), true)).catch(() => true)`);
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(false), true))`);
     await emit("bodydrag", { by: SVG, grab: { joint: "hips" } });
     await emit("puppet", { by: SVG, pose: { head: [0, 0, 0, 1] } });   // a later event on the same bus, seen: the drag before it has been handled
     const after = await waitFor(`${hint}.includes("posed you")`, 3000);
     check("S5 no client-side refusal toast: the authority decided before it arrived (a later bus event was handled first)", after && !(await evalJson(`[...document.querySelectorAll('.toast')].some((t) => t.textContent.includes('tried to drag you'))`)) && await evalJson(clean), { after });
-    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);   // a renamed setter throws here, not a silent skip
+    await evalJson(`import('/lib/player/consent.js').then((m) => (m.setPushable(true), true))`);
     // the chat log
     await evalJson(`import('/lib/ui/chat.js').then((m) => (m.logChat(${JSON.stringify(SVG)}, 'hello ' + ${JSON.stringify(SVG)}), true))`);
     check("S6 a chat line shows the name and words as text", await waitFor(`(document.getElementById('chatlog')?.textContent ?? '').includes('hello ' + ${JSON.stringify(SVG)})`, 3000)
