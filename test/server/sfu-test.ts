@@ -661,7 +661,7 @@ check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)
 }
 
 const d = sfu.diag();
-check("diag reports live legs", Array.isArray(d.legs) && typeof d.forwarded === "number");
+check("diag reports a legs list and a forwarded count", Array.isArray(d.legs) && typeof d.forwarded === "number");
 
 sfu.closeAll();
 S.done();

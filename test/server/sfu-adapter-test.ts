@@ -42,7 +42,7 @@ check("7 expiry: no bearer token exists to replay (nonce is single-use)", s.used
 
 // amendment 3: three independent states
 setSfuConsent(W, "bob", 1, true);
-check("consent is listener-authored and gen-bound", s.consent.get("bob")?.consent === true);
+check("consent set by the listener is stored as theirs", s.consent.get("bob")?.consent === true);
 setSfuModeratorMute(W, "alice", true);
 check("moderator mute is a DIFFERENT state than consent",
   // ONE store: the SFU is the enforcement point and owns the fact; a shadow Set in the adapter is the duplication that diverges
@@ -57,7 +57,7 @@ check("incarnation is opaque, not a claimed-monotonic counter",
   /^i\d+-[0-9a-f]{6,}$/.test(d.incarnation));
 
 revokeSfuLeg(W, "alice");
-check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length === 0);
+check("retirement clears the leg's moderator mute", (sfuDiag(W) as any).moderatorMuted.length === 0);
 
 // ── THE REVOCATION FAMILY ─────────────────────────────────────────────────
 // a privacy guarantee must hold under EVERY ordering: stale gen, newer gen, double revoke, reconnect, a late speaker.

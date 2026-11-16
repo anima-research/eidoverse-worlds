@@ -69,7 +69,7 @@ try {
     const store = new SeatStore(OPT, LIB);
     const p = store.propose(profile("seatdummy"), "aid1:someone") as any;
     check("rostered proposal lands at rev 1", p.ok && p.rev === 1);
-    check("the log line precedes and matches the snapshot rev",
+    check("the log line and the snapshot are both at rev 1",
       JSON.parse(logOf()!.trim().split("\n").at(-1)!).rev === 1 && JSON.parse(snapshotOf()!).rev === 1);
     const noRev = store.accept("seatdummy", "sitchair", "receipt", "op", undefined as any) as any;
     check("accept without expectedRev refused", !noRev.ok && /expectedRev required/.test(noRev.why));

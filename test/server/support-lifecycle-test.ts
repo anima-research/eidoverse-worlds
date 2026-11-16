@@ -211,7 +211,7 @@ try {
     h2.send({ type: "puppet", target: "rep-bot", ragdoll: { lean: [1, 0, 0] } });
     await sleep(3000);
     hipsOffset = -ag.pos.y;
-    check("a body knocked down on flat terrain reports a stable hips offset",
+    check("a body knocked down on flat terrain reports a hips offset in its expected range",
       hipsOffset > 0.3 && hipsOffset < 1.2, `offset=${hipsOffset.toFixed(2)}m`);
     await ag.walkTo(3, 0, false, 8000);
 

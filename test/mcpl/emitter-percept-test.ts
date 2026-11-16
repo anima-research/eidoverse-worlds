@@ -86,7 +86,7 @@ const SMOKE = { effect: "smoke", at: [0, 0.25, 0] };
 
   await comp("hearth", FIRE);
   check("lighting a fire nearby is heard once", events.length === 1, `got ${events.length}`);
-  check("...carrying actor, entity and preset",
+  check("...carrying actor, entity and effect",
     events[0].who === "antra" && events[0].text.includes("[hearth]") && events[0].text.includes("fire"));
   check("...as a world-change, not a mention", events[0].kind === "world-change" && !events[0].mention);
 
