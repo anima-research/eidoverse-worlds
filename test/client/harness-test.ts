@@ -75,5 +75,20 @@ try {
   } finally { await b.close(); }
   check('cdp-pw: a console message has type(), text() and location()', msgs.some((m) => m.type === 'error' && m.text === 'cdp-pw-console-sentinel' && typeof m.url === 'string'), JSON.stringify(msgs));
 }
+{ // cdp-pw hands requestfinished/requestfailed the request object 'request' saw (playwright's identity), so a probe's
+  // pending set empties and a failure names its URL (xr-lifecycle-probe's tracking)
+  const { launchCdp } = await import('../harness/cdp-pw.mjs');
+  const dead = Bun.serve({ port: 0, fetch: () => new Response('') }); const deadPort = dead.port; dead.stop(true);
+  const srv = Bun.serve({ port: 0, fetch: (r) => new URL(r.url).pathname === '/' ? new Response(`<img src="/a.png"><script src="http://127.0.0.1:${deadPort}/gone.js"></script>`, { headers: { 'content-type': 'text/html' } }) : new Response('x') });
+  const b = await launchCdp(); const pending = new Set<any>(), failed: string[] = [];
+  try {
+    const pg = await b.page();
+    pg.on('request', (r: any) => pending.add(r)); pg.on('requestfinished', (r: any) => pending.delete(r));
+    pg.on('requestfailed', (r: any) => { pending.delete(r); failed.push(r.url()); });
+    await pg.goto(`http://127.0.0.1:${srv.port}/`);
+    await until('the page\'s requests settle', () => pending.size === 0 && failed.length > 0, { ms: 10_000 }).catch(() => {});
+  } finally { await b.close(); srv.stop(true); }
+  check('cdp-pw: a finished request is the one requested, and a failed one names its URL', pending.size === 0 && failed.some((u) => u.endsWith('/gone.js')), JSON.stringify({ pending: [...pending].map((r) => r.url()), failed }));
+}
 console.log(`${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);

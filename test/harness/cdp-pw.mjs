@@ -92,7 +92,7 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
 function makePage(C, S, { targetId, browserContextId, metrics }) {
   const send = (m, p) => C.send(m, p, S);
   const handlers = { console: new Set(), pageerror: new Set(), dialog: new Set(), request: new Set(), requestfinished: new Set(), requestfailed: new Set(), framenavigated: new Set() };
-  const routes = [];
+  const routes = [], reqs = new Map();
   let size = { width: 1280, height: 720 };
   C.listen((m) => {
     if (m.sessionId !== S) return;
@@ -108,9 +108,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       const dialog = { message: () => p.message, type: () => p.type, accept: (t) => send('Page.handleJavaScriptDialog', { accept: true, ...(t !== undefined ? { promptText: t } : {}) }), dismiss: () => send('Page.handleJavaScriptDialog', { accept: false }) };
       if (handlers.dialog.size) for (const f of handlers.dialog) f(dialog); else void dialog.dismiss();
     }
-    else if (m.method === 'Network.requestWillBeSent') { const r = { url: () => p.request.url, method: () => p.request.method, postData: () => p.request.postData ?? null, headers: () => Object.fromEntries(Object.entries(p.request.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])), resourceType: () => String(p.type ?? 'other').toLowerCase(), failure: () => null }; for (const f of handlers.request) f(r); }
-    else if (m.method === 'Network.loadingFinished') { for (const f of handlers.requestfinished) f({ url: () => '' }); }
-    else if (m.method === 'Network.loadingFailed') { for (const f of handlers.requestfailed) f({ url: () => '', failure: () => ({ errorText: p.errorText }) }); }
+    else if (m.method === 'Network.requestWillBeSent') { const r = { url: () => p.request.url, method: () => p.request.method, postData: () => p.request.postData ?? null, headers: () => Object.fromEntries(Object.entries(p.request.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])), resourceType: () => String(p.type ?? 'other').toLowerCase(), failure: () => null }; reqs.set(p.requestId, r); for (const f of handlers.request) f(r); }
+    // the same request object the 'request' handlers saw (playwright's identity: a probe's Map/Set of requests matches it)
+    else if (m.method === 'Network.loadingFinished') { const r = reqs.get(p.requestId) ?? { url: () => '' }; reqs.delete(p.requestId); for (const f of handlers.requestfinished) f(r); }
+    else if (m.method === 'Network.loadingFailed') { const r = reqs.get(p.requestId) ?? { url: () => '' }; reqs.delete(p.requestId); r.failure = () => ({ errorText: p.errorText }); for (const f of handlers.requestfailed) f(r); }
     else if (m.method === 'Page.frameNavigated' && !p.frame.parentId) { for (const f of handlers.framenavigated) f({ url: () => p.frame.url }); }
     else if (m.method === 'Fetch.requestPaused') {
       const url = p.request.url, done = { v: false };
