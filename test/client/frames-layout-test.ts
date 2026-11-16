@@ -335,11 +335,11 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   // BINDS the RESIZE-finish latch ONLY (windows.js:167 f.markMoved), not the drag-end one: the press
   // above, at (x+10, y+5), is inside the 15 px nw corner (_CORNER), so the capture-phase resize handler
   // takes it and stops propagation. The title-bar drag has its own row below.
-  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, windows.js:181)",
+  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
   // a TITLE-BAR drag, pressed mid-bar (outside the nw corner and the 4 px resize band): the drag path, its own latch
-  // (windows.js:512 markMoved('xy'))
+  // (windows.js drag-end markMoved('xy'))
   localStorage.removeItem("ew-frame-awcd");
   const bar2 = measurable(makeFrame("awcd", { title: "awcd", x: "center", y: -10, w: 352, h: 32 }));
   bar2.show();
@@ -350,7 +350,7 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   const placed2 = bar2.state.x;
   bar2._fit();
   const wouldCentre2 = Math.round((innerWidth - bar2.state.w) / 2);
-  check("a title-bar drag (mid-bar, no resize zone) lands at the pointer and fit() does NOT re-centre it (binds the DRAG latch, windows.js:512)",
+  check("a title-bar drag (mid-bar, no resize zone) lands at the pointer and fit() does NOT re-centre it (binds the DRAG latch)",
     placed2 > 20 && placed2 < c2 - 40 && bar2.state.x === placed2 && bar2.state.x !== wouldCentre2,
     `centred ${c2}, placed ${placed2} -> ${bar2.state.x}; anchor would give ${wouldCentre2}`);
 
@@ -360,18 +360,15 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
       const ybar = measurable(makeFrame("ybar", { title: "ybar", x: "center", y: -10, w: 352, h: 32 }));
       ybar.show();
       const yBefore = ybar.state.y;
-      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: ybar.state.x + 10, clientY: yBefore + 5, bubbles: true }));
-      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: ybar.state.x + 10, clientY: 240, bubbles: true }));
+      // pressed mid-bar: a drag, not a nw-corner resize, so the frame really leaves its edge
+      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: ybar.state.x + 176, clientY: yBefore + 16, bubbles: true }));
+      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: ybar.state.x + 176, clientY: 240, bubbles: true }));
       (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
       const placedY = ybar.state.y;
       check("a bottom-anchored frame can be dragged UP off its edge", placedY < yBefore - 100, `y ${yBefore} -> ${placedY}`);
       ybar._fit();
-      // The y-anchor gate (windows.js fit(): `!moved &&`) is NOT ASSERTED here. The press above, at
-      // (x+10, y+5), is inside the nw corner, so it is a north RESIZE, not a drag: the frame grows up to
-      // the pointer and its bottom edge stays where the anchor put it. The clamp ceiling and the y:-10
-      // anchor then land 2 px apart, and no assertion can tell which one moved the frame. To bind it:
-      // press mid-bar (as bar2 does above), so the frame really leaves its edge.
-      check("a hand-placed frame is still on screen after a fit", ybar.state.y >= 8, `y=${ybar.state.y}`);
+      // binds the y-anchor gate (windows.js fit(): `!moved &&`)
+      check("a hand-placed frame keeps its y through a fit", ybar.state.y === placedY, `y ${placedY} -> ${ybar.state.y}`);
       // the CLAMP is NOT gated: shrink the viewport under it and it must come inside
       const vhKeep = innerHeight;
       (window as any).innerHeight = 240; ybar._fit();
