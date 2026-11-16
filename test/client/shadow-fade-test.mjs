@@ -25,6 +25,8 @@ if (CASE) {
   // the preference, set BEFORE the import that reads it
   if (CASE === 'boot-off') localStorage.setItem('ew-shadows', 'off');
   else localStorage.removeItem('ew-shadows');   // absent = on (the default)
+  if (CASE === 'res') localStorage.setItem('ew-shadow-res', '4096');   // the module-init path reads it (a TDZ there takes the client down)
+  else localStorage.removeItem('ew-shadow-res');
 
   const { renderer, sun } = await import('../stubs/core-stub.mjs');
   const rig = await import('../../client/lib/render/lightrig.js');
@@ -74,6 +76,11 @@ if (CASE) {
   const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: d.shadows.sunCasting, lamp: d.shadows.slotIsCaster, shapeOn: renderer.shadowMap.enabled && sun.castShadow }; };   // sun/lamp = EFFECTIVE casting: the switch is uniform-level since 09-27
 
   if (CASE === 'boot-on' || CASE === 'boot-off') { out({ boot: snap() }); }
+  if (CASE === 'res') {   // Video › shadow resolution governs every caster: the sun takes n, the lamp slot scales from its tuned 256
+    const at = () => ({ sun: sun.shadow.mapSize.x, lamp: rig.lampShadowState()?.map });
+    const boot = at(); rig.setShadowRes(1024); const low = at(); rig.setShadowRes(2048);
+    out({ boot, low, def: at() });
+  }
   if (CASE === 'bias') {
     // A SMALLER MAP SHOWING MORE LIGHT is a bias symptom, not a resolution
     // one: normalBias offsets the lookup along the surface normal, so a bias
@@ -483,6 +490,11 @@ if (ARGV.includes('--mutants')) {
   contendChecks(await runCase('contend'));
   console.log('LAMP SHADOW BIAS — derived from the map, not guessed');
   biasChecks(await runCase('bias'));
+  console.log('SHADOW RESOLUTION — one dial for every caster (moved down from shadow-res-probe)');
+  { const r = await runCase('res');
+    check('boot with a stored 4096: sun 4096, lamp 512', r.boot.sun === 4096 && r.boot.lamp === 512, JSON.stringify(r.boot));
+    check('1024: sun 1024, lamp 128', r.low.sun === 1024 && r.low.lamp === 128, JSON.stringify(r.low));
+    check('2048 (default): sun 2048, lamp exactly its tuned 256', r.def.sun === 2048 && r.def.lamp === 256, JSON.stringify(r.def)); }
 }
 
 S.done();

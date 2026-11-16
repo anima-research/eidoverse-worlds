@@ -30,14 +30,7 @@ await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `(() => {
 })();` });
 const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const LAKE = { x: 0, z: 30 };
-// WP5's policy: a readable reference keeps the red-fog assertion; a FALLBACK adapter whose reference is uniformly
-// near-black can't show fog colour at all, so the row records "not observable" (with the evidence), never "water correct"
-const nearBlack = (p: number[]) => Math.max(...p) < 30;
-export function wp5Verdict(e: { fb: unknown; settled: boolean; centre: number[]; ref: { pts: number[][]; mean: number[] } }): "pass" | "n/a" | "fail" {
-  const refBlack = e.ref.pts.every(nearBlack) && nearBlack(e.ref.mean);
-  if (!refBlack) return e.settled && e.centre[0] > 180 && e.centre[1] < 60 && e.centre[2] < 60 ? "pass" : "fail";
-  return e.fb === true ? "n/a" : "fail";
-}
+import { wp5Verdict } from "./wp5-verdict.ts";   // WP5's policy (its controls: wp5-verdict-test.ts)
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 480, height: 270, deviceScaleFactor: 1, mobile: false });   // SwiftShader draws every pixel on the CPU
   // WebGL 2 except on Windows, where the runner's software flags give a null forced WebGL 2 context (as swim-lists-test.ts).
@@ -141,11 +134,6 @@ try {
     : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
   // a not-observable WP5 passes, so the gate would drop its row: an OPTIONAL line is what the gate's tally and receipt keep
   if (wp5 === "n/a") console.log(`OPTIONAL wp5-fog: colour observation N/A on ${JSON.stringify(wp5ev.adapter)} (water-cross ran and its other rows are required passes; only WP5 can't see colour here: fallback adapter, reference near-black): red ${JSON.stringify(redMean)}, ref ${JSON.stringify(refMean)}, settled ${!!shotSettled}`);
-  // its negative controls (synthetic evidence, the same function)
-  const R = [251, 16, 20], K = [12, 12, 13], SKY = [56, 128, 158];
-  check("WP5a control: a NON-fallback adapter with a black reference still fails", wp5Verdict({ fb: false, settled: true, centre: K, ref: { pts: [K, K, K], mean: K } }) === "fail");
-  check("WP5b control: a fallback adapter with a readable reference still runs the red assertion (black fails, red passes)",
-    wp5Verdict({ fb: true, settled: true, centre: K, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "fail" && wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "pass");
   const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
   check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
