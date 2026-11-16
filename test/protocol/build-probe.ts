@@ -154,7 +154,7 @@ try {
     await key("KeyE"); await key("KeyE"); await key("Period");
     const pose = await evalJson(`import('/lib/edit/build.js').then((m) => m.ghostPose?.() ?? null)`);
     check("GH1 E E . turn it 30° (clockwise from above) and size it ×1.1 while it's in hand", pose && Math.abs(pose.yaw + Math.PI / 6) < 1e-6 && Math.abs(pose.scale - 1.1) < 1e-6, pose);
-    check("GH2 …E didn't permission the tool under it", (await evalJson(`import('/lib/edit/build.js').then((m) => m.getTool())`)) === tool0);
+    check("GH2 …and E didn't switch the tool under it (the edit tool is unchanged)", (await evalJson(`import('/lib/edit/build.js').then((m) => m.getTool())`)) === tool0);
     check("GH3 the status line names the keys while it's in hand", await evalJson(`__hints.some((h) => h != null && /turn/.test(String(h)) && /size/.test(String(h)))`), await evalJson(`__hints`));
     const n0 = myActs().length;
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: SX - 120, y: SY + 40 }); await sleep(200);
@@ -181,7 +181,7 @@ try {
       { acts: myActs().slice(n0).map((x) => x.e.verb), refused: await evalJson(`__refused.map((r) => r.text)`), card: await evalJson(`document.querySelector('#script-new .sn-err')?.textContent ?? null`) });
     check("SC4 …and the card closes", await waitFor(`!document.querySelector('#script-new')`));
     const used = await bobReq("use", { id: thing });
-    check("SC5 a visitor's use runs it: the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c["local/counter"]?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c["local/counter"]]);
+    check("SC5 another builder's use runs it (Bob's): the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c["local/counter"]?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c["local/counter"]]);
     check("SC6 the Inspector lists it under Scripts", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"]')].some((f) => /greeter/.test(f.textContent))`, 6000));
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

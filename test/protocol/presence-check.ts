@@ -115,7 +115,7 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   ok(r1?.ok, "(BC setup) Vic turns her move gate on through the authority's consent verb", r1);
   k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
-  ok(got(k, "puppet").length === 1, "BC2 with Vic's table saying everyone, the knock-over is forwarded", vic.since(k).map((m) => m.type));
+  ok(got(k, "puppet").length === 1, "BC2 with Vic's move gate open (consent {move: true}), the knock-over is forwarded", vic.since(k).map((m) => m.type));
   k = vic.msgs.length;
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Vic is sent the grab", () => got(k, "bodydrag").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "bodydrag").length === 1, "BC2 …and the grab", vic.since(k).map((m) => m.type));
