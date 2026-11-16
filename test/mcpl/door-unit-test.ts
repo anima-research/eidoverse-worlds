@@ -244,7 +244,7 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   const [out, sheet, models]: any[] = await Promise.all([call("set_avatar", { avatar: "x" }), call("library", { kind: "avatars" }), call("library", { kind: "models" })]);
   ok(Number.isFinite(HTTP_READ_MS) && out !== "hung" && out.isError && hits >= 1 && Date.now() - t0 >= HTTP_READ_MS - 500 && Date.now() - t0 < HTTP_READ_MS + 5_000, "a world server that never answers: set_avatar asks, waits out the read bound and fails, it doesn't hang", { out, hits, ms: Date.now() - t0 });
   // the timeout is said in words, not as AbortSignal's bare "The operation timed out."
-  const said = (o: any) => o !== "hung" && o?.isError && /didn't send .* within \d+ s/.test(o.content?.[0]?.text ?? "") && !/operation timed out/i.test(o.content?.[0]?.text ?? "");
+  const said = (o: any) => o !== "hung" && o?.isError && /didn't send .* within \d+ s; calling again may work/.test(o.content?.[0]?.text ?? "") && !/operation timed out/i.test(o.content?.[0]?.text ?? "");
   ok(said(out) && said(sheet) && said(models), "…and set_avatar and the library's sheets say the server didn't answer in time, and that a retry may work", [out, sheet, models].map((o) => o?.content?.[0]?.text ?? o));
   const m: any = await measured;
   ok(said(m) && /^measure: nothing was measured/.test(m.content[0].text), "…and measure, whose answer's body stalls after the headers, says the server didn't send it in time (not 'isn't geometry')", m?.content?.[0]?.text ?? m);
