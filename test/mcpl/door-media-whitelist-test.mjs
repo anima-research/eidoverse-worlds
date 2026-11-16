@@ -51,8 +51,8 @@ check('control: both extraction anchors were actually found',
   && src.indexOf('case "snapshot":') > src.indexOf('case "relay-cred":')
   && guard.length > 40 && inbound.length > 40);
 check('control: the forbidden-matcher detects "say" injected into the real guard',
-  guard.replace('"sfu-answer"', '"sfu-answer" || t === "say"').includes('"say"'));
+  !guard.includes('"say"') && guard.replace('"sfu-answer"', '"sfu-answer" || t === "say"').includes('"say"'));
 check('control: the inbound-matcher detects a case removed from the real block',
-  !inbound.replace(/case "voice-service":/g, '').includes('case "voice-service":'));
+  inbound.includes('case "voice-service":') && !inbound.replace(/case "voice-service":/g, '').includes('case "voice-service":'));
 
 S.done();

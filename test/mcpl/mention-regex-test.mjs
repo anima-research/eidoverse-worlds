@@ -15,7 +15,8 @@ check('plain name does not match a substring',
   !mentionRegexFor(['hes']).test('hesperus is here'));
 
 // 2. Metacharacter ids must not throw — this is the regression.
-for (const id of ['a(', 'x[', 'b+', 'c.d', 'e|f', 'g*', 'h$', 'i^', 'j\\', 'k?']) {
+const META = ['a(', 'x[', 'b+', 'c.d', 'e|f', 'g*', 'h$', 'i^', 'j\\', 'k?'];
+for (const id of META) {
   let threw = false, matched = false;
   try { matched = mentionRegexFor([id]).test(`hi @${id} there`); } catch { threw = true; }
   check(`id ${JSON.stringify(id)} does not throw`, !threw);
@@ -26,10 +27,9 @@ for (const id of ['a(', 'x[', 'b+', 'c.d', 'e|f', 'g*', 'h$', 'i^', 'j\\', 'k?']
 check('metacharacters are literal, not operators', !mentionRegexFor(['b+']).test('bbb here'));
 check('a dot does not match any character', !mentionRegexFor(['c.d']).test('cxd here'));
 
-// 4. Negative control — the OLD unescaped construction must be shown to break.
-let oldThrew = false;
-try { new RegExp(`(@a(\\b|\\ba(\\b)`, 'i'); } catch { oldThrew = true; }
-check('control: the unescaped form does throw', oldThrew);
+// 4. Negative control: section 2's ids are hostile, i.e. built into a pattern unescaped, some of them throw.
+const unescapedThrows = META.filter((id) => { try { new RegExp(`(@${id}\\b|\\b${id}\\b)`, 'i'); return false; } catch { return true; } });
+check('control: section 2\'s ids throw when built unescaped (a( and x[ at least)', ['a(', 'x['].every((id) => unescapedThrows.includes(id)));
 
 // ── a body answers to its id AND its token display name ────────────
 // A display name's trailing ` (qualifier)` is the part people drop when they
