@@ -149,6 +149,7 @@ if (argv.includes("--control")) {
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  if (!lines.length) { console.log(`FAIL [roles-check --control] no case ran at ${BASE} (exit ${r.code}): ${r.out.trim().split("\n").slice(-3).join(" | ").slice(0, 300)}`); process.exit(1); }   // an empty control is not a green one
   const kept = (l: string) => l.slice(5).trim().startsWith("K");
   const wrong = lines.filter((l) => (kept(l) ? l.startsWith("FAIL") : l.startsWith("ok ")));
   console.log(lines.map((l) => `${(kept(l) ? l.startsWith("ok ") : l.startsWith("FAIL")) ? (kept(l) ? "kept at base:  " : "red at base:   ") : "WRONG AT BASE: "}${l.slice(0, 130)}`).join("\n"));
