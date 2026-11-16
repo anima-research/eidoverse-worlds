@@ -69,9 +69,9 @@ const rt2 = makeBodyRuntime("claude-robot-dof", bad, { report: (m: string) => re
 for (let i = 0; i < 3; i++) rt2.beforeVrmUpdate({}, 1 / 60);
 check("a throwing step is reported once and skipped from then on", reports.length === 1 && rt2.dead.has("applyArmDOF"), reports);
 check("...and the steps after it still run every frame", crowns === 3, crowns);
-let wrote = 0;
-writeAll({ _bindings: null } as any); writeAll(undefined as any);
-check("writeAll with no bindings is a no-op", wrote === 0);
+let threw: unknown = null;
+try { writeAll({ _bindings: null, _nActiveBindings: 2 } as any); writeAll(undefined as any); } catch (e) { threw = e; }
+check("writeAll with no bindings (or no mixer) is a no-op, not a throw", threw === null, String(threw));
 
 // 3b. a def's skip list: those steps never run
 const calls2: string[] = [];
