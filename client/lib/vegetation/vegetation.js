@@ -11,7 +11,7 @@
 //         shrub clusters of outward-fanned cards with bent (sphere-blended)
 //         normals so the bush shades as a volume; rosettes as crossed fans.
 //
-// const { createFlora, FLORA_SPECIES } = await import(...grass2.js);
+// const { createFlora, FLORA_SPECIES } = await import('./vegetation.js');
 // const field = await createFlora({ species: 'creosote', width: 30, depth: 30,
 //     heightFn: terrain.heightAt, sunDir: [-0.5, 0.8, 0.3] });
 // scene.add(field.mesh);

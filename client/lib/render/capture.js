@@ -22,7 +22,7 @@ const _at = new THREE.Vector3();
 
 /** Pose the live camera (eye position + look-at) and capture. The camera is
  *  deliberately NOT restored — the callers are spectator sessions whose
- *  camera exists to be driven by requests (net.js snap semantics, kept). */
+ *  camera exists to be driven by requests (the snap: net_capture.js). */
 export function captureFrom(eye, lookAt) {
   camera.position.copy(eye);
   camera.lookAt(_at.copy(lookAt));

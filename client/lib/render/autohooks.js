@@ -16,8 +16,8 @@ export const autoHooks = () => (globalThis._autoParticleSystems ||= []);
 const hostOwned = new Set();
 
 /** Mark an already-registered hook as host-owned. Used when the hook was
- *  pushed by upstream code we called (makeParticles registers its own
- *  billboard update) rather than by us. */
+ *  pushed by engine code we called (createFlora registers its own wind
+ *  update: flora_field.js) rather than by us. */
 export function ownHook(fn) {
   if (typeof fn === 'function') hostOwned.add(fn);
   return fn;
