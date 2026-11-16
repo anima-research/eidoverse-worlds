@@ -690,8 +690,8 @@ try {
   await page(`const c = await import('/lib/player/controller.js'), b = await import('/lib/base.js'); c.myState.pos.x -= 9; c.myState.pos.z += 9; b.bus.emit('cut-adopted'); return true;`);
   await waitFor(`import('/lib/thingphysics.js').then((m) => m.physicsApi.body().arrived)`, 8000); await sleep(800);
   });
-  // ---- RB: a reset button made from the Edit menu's helpers, used by its left-click offer (R, 10-10) ----
-  await stage("RB", async () => {
+  // ---- RZ: a reset button made from the Edit menu's helpers, used by its left-click offer (R, 10-10) ----
+  await stage("RZ", async () => {
   const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
   const mk = await page(`const m = await import('/lib/net.js'); const a = await m.sendRequest('create', { id: 'rbtgt', model: '${CRATE}', components: { label: 'Reset target', transform: { pos: [${me[0]} + 2, 0, ${me[1]} - 2], scale: 0.3 } } });
     const b = await m.sendRequest('create', { id: 'rbbtn', model: '${CRATE}', components: { label: 'Reset button', transform: { pos: [${me[0]} + 0.8, 0, ${me[1]}], scale: 0.3 } } }); return [a.ok, b.ok];`);
