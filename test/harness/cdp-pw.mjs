@@ -8,7 +8,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { findChrome, chromeArgs } from '../gate/chrome.ts';
 import { killChild } from '../gate/procgroup.ts';
-import { until, tryUntil } from '../gate/wait.ts';
+import { until, tryUntil, pause } from '../gate/wait.ts';
 
 const KEYS = {
   Enter: [13, 'Enter', '\r'], Escape: [27, 'Escape'], Tab: [9, 'Tab'], Backspace: [8, 'Backspace'], Delete: [46, 'Delete'],
@@ -176,6 +176,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       for (const [fn, arg] of initScripts) await pg.addInitScript(fn, arg);
     },
     evaluate,
+    waitForTimeout: (ms) => pause("Playwright's waitForTimeout (the bare wait is counted at its caller)", ms),
     evaluateHandle: async (fn, arg) => { const v = await evaluate(fn, arg); return { jsonValue: async () => v, dispose: async () => {} }; },
     waitForFunction: async (fn, arg, { timeout = 30_000, polling = 100 } = {}) => {
       const v = await until(`page condition ${String(fn).slice(0, 80)}`, () => evaluate(fn, arg), { ms: timeout, step: typeof polling === 'number' ? polling : 100 });

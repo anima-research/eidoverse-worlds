@@ -193,7 +193,7 @@ export function release() {
 export const rawStream = () => _rawStream;
 
 /** Retune the monitor delay live, in seconds (0…2); unused in-repo, kept for console tuning. */
-function setMonitorDelay(sec) {
+export function setMonitorDelay(sec) {
   MONITOR_DELAY = Math.max(0, Math.min(2, Number(sec) || 0));
   if (_delay && _ctx) {
     try { _delay.delayTime.setTargetAtTime(MONITOR_DELAY, _ctx.currentTime, 0.05); }
