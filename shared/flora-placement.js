@@ -43,7 +43,7 @@ export function placeInstances(o, spec) {
     // as a stamped outline.)
     const organic = o.footprint === 'organic';
     const sstep = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
-    // the rim has no line: density feathers from 60% of the radius out, and a
+    // the rim has no line: density feathers from 82% of the radius out, and a
     // sparse STRAGGLER tail runs past the nominal edge to 1.25R — isolated
     // outliers are what stop a foreshortened arc from reading as a stamped
     // boundary from a low camera
@@ -124,20 +124,12 @@ function finishPlacement(x, z, o, spec, rng, step, selfCheck) {
     };
 }
 
-// ── row planting — the cultivated footprint ─────────────────────────────────
-// A planted field IS rectangular: rows at `spacing`, plants every `plant`
-// metres along them, small sowing jitter, a few misses (`skip` + the density
-// deficit), ragged headlands where each row starts and stops a little short.
-// No ellipse cut, no stragglers — those are wild-stand manners. `angle` turns
-// the whole planting; stride/phase interleave two strokes through one field
-// (e.g. every 4th row from a peeled-ear variant call).
 /** Authored placements ([x, z, scale?] each): the exact spots, with seeded yaw/colour/phase so they reproduce
  *  per seed, and their footprints registered for occupancy — the same answer in the browser and the native
  *  projection. y: o._surfaceAt (a building's floor) when given, else o.heightFn, else o.y. */
 export function placeExplicit(o, spec) {
     return o.placements.map((pl, pi) => {
-        // seeded, not Math.random(): authored placements must reproduce exactly per seed — run-to-run
-        // scale/yaw drift broke every like-for-like lookdev comparison
+        // seeded, not Math.random(): authored placements must reproduce exactly per seed
         const pr = (() => { let sN = ((o.seed ?? 7) * 131 + pi * 37 + 5) % 2147483647;
             return () => { sN = (sN * 16807) % 2147483647; return sN / 2147483647; }; })();
         const scale = pl[2] ?? 1;
@@ -152,6 +144,13 @@ export function placeExplicit(o, spec) {
     });
 }
 
+// ── row planting — the cultivated footprint ─────────────────────────────────
+// A planted field IS rectangular: rows at `spacing`, plants every `plant`
+// metres along them, small sowing jitter, a few misses (`skip` + the density
+// deficit), ragged headlands where each row starts and stops a little short.
+// No ellipse cut, no stragglers — those are wild-stand manners. `angle` turns
+// the whole planting; stride/phase interleave strokes through one field
+// (flora_args: every 5th corn row from a peeled-ear variant).
 export function placeRows(o, spec) {
     const rng = (() => { let s = ((o.seed ?? 7) + 5) * 2654435761 % 2147483647;
         return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
@@ -159,8 +158,7 @@ export function placeRows(o, spec) {
     // `density` works BOTH ways on a planted field, because a grid cannot
     // simply be told to hold more plants: below 1 it drops plants (skip),
     // above 1 it tightens the IN-ROW spacing — which is how a real field's
-    // population is set, the row gap being fixed by the machinery. Without
-    // the second half, every density >= 1 rendered the identical field.
+    // population is set, the row gap being fixed by the machinery.
     const k = o.density ?? 1;
     const gap = r.spacing ?? 0.76, inRow = (r.plant ?? 0.24) / Math.max(1, k);
     const ang = r.angle ?? 0, jit = r.jitter ?? 0.05;

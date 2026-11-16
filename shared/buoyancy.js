@@ -14,7 +14,7 @@ const G = 9.8;
 export const FLOAT_ZETA = 0.6;      // damping ratio: settles in about one bob, without a long ring
 export const FOOTPRINT = 0.35;      // metres: the surface is averaged over the body's own width
 
-/** Mean surface height over a body's footprint at (x, z): `surfaceAt(x, z)` is the surface there. */
+/** Surface height averaged over a body's footprint at (x, z), the centre counted twice: `surfaceAt(x, z)` is the surface there. */
 export function footprintSurface(surfaceAt, x, z, r = FOOTPRINT) {
   return (surfaceAt(x, z) * 2 + surfaceAt(x + r, z) + surfaceAt(x - r, z) + surfaceAt(x, z + r) + surfaceAt(x, z - r)) / 6;
 }

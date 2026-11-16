@@ -54,8 +54,8 @@ export function describeParticles(data, { lookup = () => null } = {}) {
   return `${inst.playing === false ? 'can emit' : 'emitting'} ${readsAs(inst.effect, lookup)} (${bits.join('; ')})`;
 }
 
-/** begin / change / end, from the two component states around a live change. `null` on either side means the emitter
- *  was not there. Returns null when nothing perceptible happened (an identical re-author). */
+/** {kind: begin | end | stop | start | change}, from the two component states around a live change. `null` on either side
+ *  means the emitter was not there. Returns null when nothing perceptible happened (an identical re-author). */
 export function emitterTransition(prev, next) {
   const p = instanceOf(prev), n = instanceOf(next);
   if (!p && !n) return null;
@@ -67,8 +67,8 @@ export function emitterTransition(prev, next) {
   return { kind: 'change', preset: n.effect ?? null, from: p.effect ?? null };
 }
 
-/** The one ambient line a live attach/replace/remove produces: actor, entity, effect, and which of begin/change/end
- *  happened; nothing per-particle or per-frame. */
+/** The one ambient line a live attach/replace/remove produces: actor, entity, effect, and which transition
+ *  (emitterTransition's kind) happened; nothing per-particle or per-frame. */
 export function transitionLine(actor, entityId, transition) {
   if (!transition) return null;
   const r = (e) => readsAs(e, () => null);

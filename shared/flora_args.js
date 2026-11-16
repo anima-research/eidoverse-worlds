@@ -62,9 +62,7 @@ export function presetStrokes(args, presets = null) {
   const [cx, cz] = args.center ?? [0, 0];
   const seed = args.seed ?? 7;
   const sc = (f) => Math.round(f * Math.min(W, D));
-  // the caller's density is a FACTOR over each stroke's authored fullness —
-  // a preset that ignored it left the sparse/lush dial doing nothing at all
-  // on the composed biomes, since every stroke carried a hardcoded density
+  // the caller's density is a FACTOR over each preset stroke's authored fullness
   const k = args.density ?? 1;
   if (args.preset != null) {
     // named presets are DATA (defs/flora/_presets.json), composed

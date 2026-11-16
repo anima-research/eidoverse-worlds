@@ -15,7 +15,7 @@
 //   - a particle's own randoms are mulberry32, seeded per particle and cycle (Godot: PCG32); rand_from_seed and idhash are Godot's;
 //   - hue variation applies without a curve, and the anim-offset curve isn't the angle curve (two slips in Godot's CPU path);
 //   - every angle is radians (PROTOCOL §9.2); the arithmetic is Godot's with deg_to_rad dropped;
-//   - four positional modules applied at output, never fed back into the integration: drift (a slow sway), swirl (a small
+//   - four modules of our own applied at output, never fed back into the integration: drift (a slow sway), swirl (a small
 //     circle with age), converge (the offset from the axis narrows over life: a flame's taper), flicker (alpha twinkles).
 //
 // Copyright (c) 2014-present Godot Engine contributors (see AUTHORS.md).
@@ -126,7 +126,7 @@ function rampAt(R, x, out) {
  * One emitter's simulation. `em` is a RESOLVED emitter (shared/particle_effects.js resolveEmitter). Returns the sim:
  * step(dt) advances it, and these arrays hold what to draw (index i < amount): alive[i], pos[3i..], size[i], angle[i]
  * (rad), color[4i..] (rgba; rgb may exceed 1 for additive), frame[i] (flipbook frame, a float). setEmitting(on) stops or
- * restarts spawning. Structure of arrays, nothing allocated per particle per frame (except hueRotate's two small arrays).
+ * restarts spawning. Structure of arrays, nothing allocated per particle per frame (except hueRotate's few small arrays).
  */
 export function makeSim(em, { seed = 0 } = {}) {
   const n = em.spawn.amount | 0;

@@ -1,8 +1,8 @@
 // editschema — what can be edited on a thing, and how, as a PURE FUNCTION of
-// its folded record (plus, for a host's sockets, the world it lives in: live.world). Dependency-free, shared verbatim by three surfaces:
+// its folded record (plus, for a host's sockets, the world it lives in: live.world). No DOM, no three; shared verbatim by three surfaces:
 //
 //   desktop inspector   client/lib/edit/panels.js renders the fields (edit/fieldpanels.js)
-//   VR quad             the same fields painted to a canvas (xrpanels.js)
+//   VR quad             the same fields painted to a canvas (client/lib/xr/xrpanels.js)
 //   models              mcpl `inspect` prints them, `edit` commits them
 //
 // This is the parity law made structural: anything a human can click, a
@@ -15,12 +15,12 @@
 //   fields are edit/fieldpanels.js specs: { t, k, label, value, def?, … } with k a plain name (def: the
 //   registry default a reset ↺ writes; an unwritten legacy value draws as the field's `absent` reading, which can differ)
 //   inside the group. Address a field from outside as "<group>.<k>"
-//   (pos.x · light.intensity · motion.amp · sockets.seat|rot|1 · comp.recipe).
+//   (pos.x · light.intensity · motion.amp · look-at.<part>|speed · comp.recipe).
 // editOps(ent, id, edits)       → { ops: [{verb, args}], errors: [] }
 //   edits: { "<group>.<k>": value } — a number, a boolean, a string, or a
 //   relative expression ("+=2", "*=-1", "-=10%") against the current value.
 //   Edits that share a verb coalesce: three transform channels are ONE place
-//   carrying the full pose; two socket fields are ONE merged comp.
+//   carrying the full pose; two light fields are ONE set of the component.
 
 import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './requests.js';
@@ -262,9 +262,9 @@ const HAND = {
 
 /** @param ent   the fold record (shared/protocol/fold.js `c`) — or, through recordOf, the view record (view.js viewOf) — or null
  *  @param id    its id
- *  @param live  optional viewer extras: { casting?: boolean,
- *               parts?: string[] (the model's named mesh parts — a picture's `part`
- *               becomes a dropdown and '+ picture' is offered), now?: number }
+ *  @param live  optional viewer extras: { world? (the records: parents, children, sockets), casting?: boolean,
+ *               parts?: string[] (the model's named mesh parts: part cards are titled by them, and '+ socket…' is
+ *               offered), box?, materials?, effects?, euler?, rotOrder?, trusted?, mayTrust?, untrusted?, mutedForMe? }
  *               Who may change it is the authority's to decide (it refuses, saying why). */
 export function inspectSchema(ent, id, live = {}) {
   if (!ent) return { id, groups: [] };
@@ -308,7 +308,7 @@ export function inspectSchema(ent, id, live = {}) {
       alias: 'scale', hint: tf.hint ?? 'sets all three axes to one number (the channels are scale x / y / z)' });
     ['x', 'y', 'z'].forEach((a, i) => transform.push({ t: 'num', k: `s${a}`, label: `scale ${a}`, value: round(S[i]), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf }));
     // the channel box's Rotate: Euler degrees READ from q in the
-    // entity's rotation order (shared/euler.js); a yaw-only thing reads exactly
+    // viewer's rotate order (shared/euler.js); a yaw-only thing reads exactly
     // (0, yaw, 0) in every order. live.euler is the triple this viewer last
     // saw — it picks the Euler branch, so channels don't jump while you work.
     const order = rotOrderOf(live);   // this viewer's (live.rotOrder): Euler channels are a view (PROTOCOL §9.1)
@@ -703,7 +703,7 @@ export function inspectSchema(ent, id, live = {}) {
   const rest = Object.keys(c).filter((t) => !claimed.has(t) && t !== 'model' && t !== 'parent');   // flat on the record (view.js): the header's and the Parent card's, never raw JSON
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
-  // a picture needs an image and a part, a sound a file. Both are uploads.
+  // a picture needs an image, a sound a file (both uploads); a socket a clicked spot.
   if (!c.picture) fields.push({ t: 'btn', k: 'add:picture', label: '+ picture…', client: true, hint: 'upload an image and hang it on this thing (make sure you own the rights to it)' });
   if (!c.sound) fields.push({ t: 'btn', k: 'add:sound', label: '+ sound…', client: true, hint: 'upload audio and put it on this thing (make sure you own the rights to it)' });
   if (!socks.length && live.parts) fields.push({ t: 'btn', k: 'add:seat', label: '+ socket…', client: true, hint: 'click the spot on the thing where a body (or a thing) attaches' });
@@ -748,10 +748,6 @@ export const libLabel = (lib) => modelWord(lib).split('_').slice(0, 3).join(' ')
 // says nothing to a person; anything else is the modeller's own word.
 const MACHINE_PART = [/^(tripo_)?(part|mesh|node|object|geometry|group|primitive|submesh)([_.\- ]?(fused|merged))?[_.\- ]?\d+$/i,
   /^(cube|sphere|cylinder|plane|mesh|object|node|empty)[._]?\d+$/i, /^\d+$/, /^[0-9a-f]{8}-?[0-9a-f]{4}/i];
-/** A part's name for a card title: the modeller's word when it is one
- *  ("seat plank"), else its place in the model ("part 2": its index in the
- *  model's named parts when the viewer knows them, else the name's own
- *  trailing number + 1, else its order among this entity's part motions). */
 /** A model material's name for a person: generator names ("Material.020", "material_3", "lambert2") become "material N"
  *  by its place on the model; real words ("Wood", "Brass_trim") stay. */
 export function matLabel(name, i = 0) {
@@ -759,6 +755,10 @@ export function matLabel(name, i = 0) {
   if (!n || /^(material|mat|lambert|phong|blinn|standard(surface)?|default(material)?|initialshadinggroup|tripo[_a-z]*|mesh|node)([_.\- ]?\d+)*$/i.test(n) || MACHINE_PART.some((re) => re.test(n))) return `material ${i + 1}`;
   return n.replace(/[_]+/g, ' ').replace(/\.\d+$/, '').trim().slice(0, 24);
 }
+/** A part's name for a card title: the modeller's word when it is one
+ *  ("seat plank"), else its place in the model ("part 2": its index in the
+ *  model's named parts when the viewer knows them, else the name's own
+ *  trailing number + 1, else its order among this entity's part motions). */
 export function partLabel(name, parts = null, ordinal = 1) {
   const n = String(name);
   if (!MACHINE_PART.some((re) => re.test(n))) return n.replace(/[_]+/g, ' ').trim();
@@ -895,7 +895,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
   // parenting lives on the Parent card, not the header
-  // clicks-go-through left the Inspector's header for Attributes (a less-used option, beside the selection layer)
+  // clicks-go-through is not in the header: it is in Attributes (a less-used option, beside the selection layer)
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden' || f.k === 'disabled' || f.k === 'description' || f.k === 'reads'), list: out, add,
     model: lib, libLabel: lib != null ? libLabel(lib) : isBag(ent?.mesh) && MESH_SHAPES.includes(ent.mesh.shape) ? ent.mesh.shape : ent?.light ? 'light' : 'empty' };
 }
@@ -923,7 +923,7 @@ const NEEDS = {
     plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
       prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
   },
-  // a push (use {action: 'push'}, authority/use.js) swings the WHOLE entity's pendulum: a part's
+  // a push (use {action: 'push'}, shared/protocol/authority/use.js) swings the WHOLE entity's pendulum: a part's
   // pendulum does not count, and a whole-entity spin is in the way
   Pendulum: {
     met: (ent) => ent?.motion?.type === 'pendulum',
@@ -999,9 +999,9 @@ function addOwnOps(ent, id, name, value) {
   // so a later change of the engine's defaults cannot change this lamp
   if (name === 'Light') {
     if (c.light != null) return { ops: [], errors: [`${id} already has a light`] };
-    // one editor's guidance (the door takes a light on a thing): on any model or a mesh, the light goes on a CHILD thing metre
-    // up, so its pose is its own and the gizmo moves one thing
-    // on a mesh thing the bulb hangs half a metre over its top (a plane's at 0.55, a 5 m box's at 5.5), not at a fixed metre
+    // one editor's guidance (the door takes a light on a thing): on a model or a mesh, the light goes on a CHILD thing,
+    // so its pose is its own and the gizmo moves one thing: a metre up on a model, half a metre over a mesh's top
+    // (a plane's at 0.55, a 5 m box's at 5.5)
     const top = compMesh(ent) ? (c.mesh.shape === 'plane' ? 0.05 : c.mesh.shape === 'sphere' ? +c.mesh.size?.[0] || 1 : c.mesh.shape === 'capsule' ? Math.max(+c.mesh.size?.[0] || 1, +c.mesh.size?.[1] || 1) : +c.mesh.size?.[1] || 1) : null;
     if (c.model != null || ent?.model != null || c.mesh != null) return { ops: [OP.create('$light', { transform: { pos: [0, top == null ? 1 : round(top + 0.5, 3), 0] }, components: { label: 'light', parent: { to: id }, light: { ...LIGHT_DEFAULTS } } })], errors: [] };
     return { ops: [OP.set(id, 'light', { ...LIGHT_DEFAULTS })], errors: [] };
@@ -1146,8 +1146,8 @@ export function editOps(ent, id, edits, live = {}) {
   const comps = new Map();          // type → next data (null = remove)
   const motions = new Map();        // key → next params (null = rest)
   const flagsComp = (type, data) => comps.set(type, data);
-  // picture/sound: raw bags accumulate across this call's edits and are
-  // validated ONCE at the end, so {src, part} can create a picture together
+  // picture/sound (and light, mesh): raw bags accumulate across this call's edits and are
+  // validated ONCE at the end, so {src, width} can create a picture together
   const bags = new Map();            // type → raw next bag (null = remove)
   const bag = (type, fresh) => { if (!bags.has(type)) bags.set(type, c[type] && typeof c[type] === 'object' ? { ...c[type] } : fresh()); return bags.get(type); };
 
@@ -1214,8 +1214,8 @@ export function editOps(ent, id, edits, live = {}) {
       if (r.confirm) asks.push({ kind: 'confirm', ...r.confirm, comp: r.confirm.key, key });   // key = the address to answer on
       return;
     }
-    // actions and creations that have no field row: comp.<any>, sockets.del,
-    // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
+    // actions and creations that have no field row: comp.<any>, sockets.del (any other sockets.<k>|… reaches the
+    // Sockets card, which refuses it: a socket is a thing of its own), a picture or sound being made
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
     if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); return; }   // an old habit, taught
@@ -1296,7 +1296,7 @@ export function editOps(ent, id, edits, live = {}) {
           // so the change is not also a phase jump
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
-          // the door requires a path's points (Add Path's seed); a node's motion is in the node's frame, so it gets none (as main)
+          // the door requires a path's points (Add Path's seed); a node's motion is in the node's frame, so it gets none
           if (raw === 'path' && !Array.isArray(next.points) && next.node == null) next.points = pathPoints(ent);
         }
         else if (!writeField(MOTION_CARD[prev?.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
@@ -1459,8 +1459,8 @@ export function editOps(ent, id, edits, live = {}) {
       default: errors.push(`${key}: no such group`);
     }
   }
-  // Rotate / Quaternion edits compose into ONE q on the coalesced place
-  // read q in the entity's order, set the typed channels, recompose.
+  // Rotate / Quaternion edits compose into ONE q on the coalesced place:
+  // read q in the viewer's order, set the typed channels, recompose.
   if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
     basePlace();
     const q0 = headingSet ? qWithHeading(pv.q ?? qFromYaw(pv.yaw ?? 0), place.yaw) : (pv.q ?? qFromYaw(pv.yaw ?? 0));   // a heading typed with them turns first

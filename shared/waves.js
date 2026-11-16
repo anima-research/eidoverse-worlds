@@ -36,7 +36,7 @@ export const waveClock = (serverMs) => ((serverMs % (WAVE_PERIOD * 1000)) + WAVE
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** How far above (or below) the still level the surface stands at (x, z) at wave time `t`.
- *  `w` is shared/waterkind.js's sample there ({kind, depth, flow, speed, toShore}), or null on dry ground. */
+ *  `w` is shared/waterkind.js's sample there (it reads {kind, depth, flow, waveSpeed, toShore}), or null on dry ground. */
 export function surfaceOffset(w, x, z, t) {
   if (!w) return 0;
   if (w.kind === 'ocean' && w.toShore) {

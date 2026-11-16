@@ -19,9 +19,10 @@
 //     size?:    {base (m, a quad's side), random? [min, max] (×), curve? [[t, ×], …] over life},
 //     color?:   {base? 0xRRGGBB, alpha? 0..1, ramp? [[t, 0xRRGGBB, alpha], …] over life, initial? (a ramp, sampled once at
 //                birth), hue? [min, max] (turns)},
-//     drift?: {amount (m), rate? (rad/s)}, swirl?: {radius (m), rate (rad/s)}, converge?: {amount 0..1}, flicker?: {amount 0..1, rate? (rad/s)},
+//     drift?: {amount (m), rate? (rad/s)}, swirl?: {radius (m), rate? (rad/s)}, converge?: {amount 0..1}, flicker?: {amount 0..1, rate? (rad/s)},
 //     render?:  {texture? (eidoverse/assets/particle_textures/<name>.png; none: a soft dot), blend?: add | alpha,
-//                flipbook?: {h, v (frames across and down), speed? [min, max] (runs per life), offset? [min, max] 0..1, loop?}}
+//                flipbook?: {h, v (frames across and down), speed? [min, max] (runs per life), offset? [min, max] 0..1, loop?}},
+//     name?:    a string (≤ 80)
 //   }
 //   Param = {type: number | area | vec3 | color | texture | enum | bool, default?, min?, max?, values? (enum), help?,
 //            to: [{path ("emitters.*.spawn.amount"; * = every emitter), op?: set | mul, times? (× the value: a number or
@@ -263,7 +264,7 @@ export function readableEffect(doc, skipped = []) {
 
 // ---- params: an instance's knobs written into a copy of the document ------------------------------------------------
 const clone = (x) => JSON.parse(JSON.stringify(x));
-/** The document with these params applied (values already checked against their declarations), or {why}. */
+/** A copy of the document with these params applied (values already checked against their declarations) and its `params` removed. */
 export function applyParams(doc, params = {}) {
   const out = clone(doc); const decl = doc.params ?? {};
   for (const [name, p] of Object.entries(decl)) {
@@ -414,7 +415,7 @@ export const ESSENTIAL_FORMER_ADDRESSES = Object.freeze({
   fire: 'eido:sha256/1ca045801dca39db0ff6da4b5d7270836fecbd8578a25692a3d180829013132c',
 });
 const ESSENTIAL_BY_HEX = new Map([...Object.entries(ESSENTIAL_FORMER_ADDRESSES), ...Object.entries(ESSENTIAL_ADDRESSES)].map(([k, a]) => [a.slice('eido:sha256/'.length), k]));
-/** The address an Essential is stored as, or null for a name that isn't one. */
+/** An Essential's pinned content address (the door stores its name, not this), or null for a name that isn't one. */
 export const essentialAddress = (name) => (typeof name === 'string' && Object.hasOwn(ESSENTIAL_ADDRESSES, name) ? ESSENTIAL_ADDRESSES[name] : null);
 /** The Essential a stored effect names (its name, or its address in either spelling), or null. */
 export const essentialNameOf = (s) => { if (typeof s !== 'string') return null; if (Object.hasOwn(ESSENTIALS, s)) return s; const m = EFFECT_ADDRESS.exec(s); return m ? ESSENTIAL_BY_HEX.get(m[1]) ?? null : null; };
@@ -487,9 +488,9 @@ export function instanceProblem(v, doc) {
 export const QUALITY_TIERS = Object.freeze({ auto: 1, high: 1, med: 0.5, low: 0.25 });
 
 /**
- * Everything a renderer needs from a stored value: {ok, effect (the resolved document's emitters), seed, at, part,
- * playing, scale, reads, notes} or {ok: false, why, pending?}. A param that doesn't fit is left out (and named in notes):
- * a viewer draws what it can, the authority is where a value is refused.
+ * Everything a renderer needs from a stored value: {ok, effect (its name or address), emitters (the document's, resolved),
+ * seed, at, part, playing, scale, reads, notes} or {ok: false, why, pending?}. An out-of-range number is clamped and a param
+ * that doesn't fit is left out (both named in notes): a viewer draws what it can, the authority is where a value is refused.
  */
 export function resolveParticles(v, { entityId = '', lookup = () => null } = {}) {
   const inst = instanceOf(v);

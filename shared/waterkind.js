@@ -207,8 +207,8 @@ export function analyzeWater(heightAt, size, water, seg) {
 
   /** The water at a point: null on dry ground. Bilinear between the four grid points around it — the
    *  same continuous surface the drawn sheet interpolates — so a body floating across a cell boundary
-   *  sees no jump in depth, current or wave direction. Its body (kind, width) is the wettest corner's,
-   *  and only that body's corners are blended. */
+   *  sees no jump in depth, current or wave direction. Its body (kind, width) is the nearest wet corner's
+   *  (the heaviest bilinear weight), and only that body's corners are blended. */
   const sample = (x, z) => {
     const u = (x + half) / cell, v = (z + half) / cell;
     if (u < 0 || v < 0 || u > n - 1 || v > n - 1) return null;

@@ -28,7 +28,7 @@ export const GRID_DEFAULTS = Object.freeze({
   tile: 1.0,      // metres per cell
   wallH: 2.8,     // wall height / floor-to-floor
   wallT: 0.15,    // wall thickness
-  slabT: 0.10,    // floor slab thickness (top sits at the level's y)
+  slabT: 0.10,    // floor slab thickness (it sits ON the level's y: its top, the walk surface, is y + slabT)
 });
 
 /** Aperture profiles: how much wall is left below (`bottom`) and above (`top`) the hole. An aperture spans its whole
@@ -254,7 +254,7 @@ export function wallRuns(level, g) {
   const lines = new Map();   // "axis:cross" -> [{ along, mat }]
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
-    // runs are axis-aligned only: a diagonal read as one produced a phantom wall
+    // runs are axis-aligned only (a diagonal collides as levelBoxes' steps)
     if (e.axis >= 2) continue;
     const cross = e.axis === 0 ? e.z : e.x;
     const along = e.axis === 0 ? e.x : e.z;
@@ -279,7 +279,7 @@ export function wallRuns(level, g) {
   return runs;
 }
 
-/** A run's along-axis span in metres, extended into whatever joints it meets. */
+/** A run's along-axis span in metres: its own cells, not extended into the joints it meets. */
 export function runSpan(run, level, g) {
   const startEdge = run.axis === 0 ? [0, run.lo, run.cross] : [1, run.cross, run.lo];
   const endEdge = run.axis === 0 ? [0, run.hi, run.cross] : [1, run.cross, run.hi];
@@ -403,7 +403,7 @@ export function derivePortals(level, rooms) {
 
 /** One level's COLLISION boxes, grid-local: the floor tiles, the solid wall
  *  runs, what's left of an apertured segment, the corner fills and a diagonal's
- *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority.js
+ *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority/catalogue.js
  *  reads collisionBoxes) — one derivation, so the browser's colliders and the
  *  door's walls can't disagree about where a wall is. */
 function levelBoxes(level, g) {
@@ -523,7 +523,7 @@ export function levelParts(level, g, floorY) {
 
   for (const [k, edge] of level.walls) {
     const ap = level.apertures.get(k) ?? null;
-    if (!ap) continue;                       // solid stretches ran above
+    if (!ap) continue;                       // solid stretches are swept (levelSweeps)
 
     const { axis, x, z } = edge;
     const a0 = (axis === 0 ? x : z) * g.tile, a1 = a0 + g.tile;
@@ -609,7 +609,7 @@ function distToEdge(px, pz, axis, x, z, tile) {
 }
 
 /** Build the vertex shader for one level: a pure function of position and
- *  normal returning a linear multiplier. Sampling at `p + n·ε` is what lets the
+ *  normal returning a linear [r, g, b] multiplier. Sampling at `p + n·ε` is what lets the
  *  two faces of one wall shade differently — the outside of an exterior wall
  *  sees daylight, the inside sees the room. */
 export function makeShader(level, g, floorY) {
@@ -752,7 +752,8 @@ export function levelAt(plan, lx, lz, ly = 0) {
 }
 
 // ---- routing ----------------------------------------------------------------
-// The grid IS the navigation graph: an edge between neighbours is passable unless a wall stands on it (§1).
+// The grid IS the navigation graph: an edge between neighbours is passable unless a wall stands on it with no door or
+// arch in it (§1; the search is structure-route.js's).
 
 /** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
  * resolver, not floor ordering or x/z overlap, owns that basis:
@@ -1027,7 +1028,8 @@ function neighbourDirs(level, g, key, e) {
   return { inDir: at(a, own, false) ?? undefined, outDir: at(b, own, true) ?? undefined };
 }
 
-/** Swept geometry for one level: every solid wall run, mitred. */
+/** Swept geometry for one level: every solid wall run, mitred; each apertured segment's sill and lintel; window glass;
+ *  and the prism under a half-floored cell. */
 export function levelSweeps(level, g, floorY) {
   const prof = wallProfile(g);
   const out = [];

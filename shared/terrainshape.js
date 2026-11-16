@@ -99,7 +99,7 @@ export function gridFor(ref) {
   return g ?? null;
 }
 /** Fetch a grid through the fetcher, once at a time per ref: resolves to the grid, or null if it could not
- *  be had (and then not asked for again until MISS_RETRY_MS has passed). */
+ *  be had (and then not fetched again until its backoff has passed: gridRetryIn). */
 export function requestGrid(ref) {
   const have = gridFor(ref);
   if (have) return Promise.resolve(have);

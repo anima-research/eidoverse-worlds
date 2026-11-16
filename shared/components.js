@@ -174,7 +174,7 @@ const DEFS = [
   { name: 'Particles', category: 'Effects', summary: 'an effect: fire, smoke, sparks… or a stored effect document',
     params: paramsOf('Particles', { effect: { options: [...ESSENTIAL_NAMES], default: null }, part: { default: null }, at: { default: [0, 0, 0] }, seed: { default: null }, params: { default: null } }),
     fallback: { visual: 'an effect this client doesn\'t know draws nothing', text: 'described by its effect' } },
-  // a picture is a quad of its own; its describing text is description; a sound is silent at radius (cap 100)
+  // a picture is a quad of its own; its describing text is description; a sound is silent at radius (cap 200: sound.js SOUND_MAX_RADIUS)
   { name: 'Picture', category: 'Rendering', summary: 'an image: a framed picture of its own, its height from the image',
     params: paramsOf('Picture', { src: { t: 'asset', default: null } }),
     fallback: { visual: 'nothing hung', text: 'not shown: <why>' } },
@@ -278,9 +278,8 @@ const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // A comp-bag Light/Collider: the bag's keys map to the record's params by their
 // wire names (Light's `daytime: 'full'` is the record's burnsAtNoon); any other
-// daytime is kept verbatim in
-// `wire`, and keys the record has no param for ride `extra.unknown`, so the bytes
-// always come back.
+// daytime is kept verbatim in `wire`, and keys the record has no param for ride
+// `extra.unknown`, so the bytes always come back.
 const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', decay: 'decay', important: 'important' }, Collider: { shape: 'shape' } };
 function compInstance(type, key, data) {
   const params = {}; const extra = {}; let wire;
@@ -371,7 +370,7 @@ export function componentsOf(ent) {
 
 /** Write a component list back in today's spelling. The inverse of
  *  componentsOf: entityOf(componentsOf(e)) deep-equals e for every entity the
- *  corpus holds. Key order follows the fold's own order so canon() agrees. */
+ *  corpus holds. Key order may differ: compare with sameRecord (canon() sorts keys). */
 export function entityOf({ components, stamps = {} }) {
   const ent = {};
   const comp = {};
@@ -387,7 +386,7 @@ export function entityOf({ components, stamps = {} }) {
         break;
       }
       case 'Model': ent.model = p.lib; break;
-      // keyed = comp.collider (step 2); keyless = the spawn verb's legacy `collide`
+      // keyed = comp.collider; keyless = the spawn verb's legacy `collide`
       case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
       case 'Parent': ent.parent = { ...p }; break;
       case 'Pivot': comp[inst.key ?? 'pivot'] = { pos: p.pos }; break;

@@ -93,7 +93,6 @@ export function placesOf(meta, comp) {
   return [...all.values()];
 }
 
-/** Model frame → world (the inverse of shared/structure.js localizePoint). */
 const scale3 = (s) => Array.isArray(s) && s.length === 3 && s.every((x) => Number.isFinite(x) && x !== 0) ? [s[0], s[1], s[2]]
   : typeof s === "number" && s > 0 ? [s, s, s] : [1, 1, 1];
 /** The frame's stretch as sizes: a mirrored axis (negative) is drawn mirrored, but its lengths are positive. */
@@ -106,6 +105,7 @@ const rotOf = (e) => { const q = e.q; if (Array.isArray(q) && q.length === 4 && 
   const y = e.yaw ?? 0; return [0, Math.sin(y / 2), 0, Math.cos(y / 2)]; };
 const qApply = (q, v) => { const [x, y, z, w] = q; const tx = 2 * (y * v[2] - z * v[1]), ty = 2 * (z * v[0] - x * v[2]), tz = 2 * (x * v[1] - y * v[0]);
   return [v[0] + w * tx + (y * tz - z * ty), v[1] + w * ty + (z * tx - x * tz), v[2] + w * tz + (x * ty - y * tx)]; };
+/** Model frame → world (toLocal is its inverse; shared/structure.js localizePoint is the yaw-only, uniform-scale case of that). */
 export function toWorld(e, p) {
   const s = scale3(e.scale), d = qApply(rotOf(e), [p[0] * s[0], p[1] * s[1], p[2] * s[2]]);
   return [e.pos[0] + d[0], e.pos[1] + d[1], e.pos[2] + d[2]];

@@ -13,7 +13,7 @@
 
 import { MOVER } from "./mover.js";
 
-/** Lattice spacing. Under the capsule radius (0.32), so a wall cannot fall
+/** Lattice spacing. Under the planner's body radius (physics.ts PLAN_R, about 0.33), so a wall cannot fall
  *  between two neighbouring standing columns: both would be within reach of it. */
 export const NAV_CELL = 0.2;
 /** The lattice sits this far off the round-metre grid: a point exactly ON an authored wall face (round
