@@ -128,7 +128,7 @@ try {
     await evalJson(`(() => { const n = ${field}; n.focus(); n.select(); return document.activeElement === n; })()`);
     await type("45"); await press("Enter");
     await waitDisk(() => entries().length > n0, 4000); await sleep(1500);
-    const added = entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? ""}${e.refused ? ":REFUSED" : ""}`);
+    const added = entries().slice(n0).map((e: any) => `${e.kind}:${e.verb ?? ""}${e.body?.refused ? ":REFUSED" : ""}`);
     check("B2a Enter writes once: one act and its change, no refused second write", added.length === 2 && !added.some((a) => /REFUSED/.test(a)), added);
     check("B2b …and no refusal toast", (await evalJson(`__refused.length`)) === r0, await evalJson(`__refused.slice(${r0}).map((r) => r.text)`));
     const q = disk().entities[NODE.get("box2")]?.c.transform?.q; check("B2c …and it turned to 45°", q && Math.abs(2 * Math.asin(q[1]) * 180 / Math.PI - 45) < 0.5, q);
@@ -327,9 +327,11 @@ try {
     const card = await evalJson(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); if (!h) return null; const out = [];
       for (let n = h.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) out.push({ text: n.textContent.slice(0, 80), tiles: n.querySelectorAll('button').length }); return out; })()`);
     check("X2 the World inspector's Terrain card offers the ground shapes when there's no terrain yet", card && card.some((r: any) => r.tiles >= 2), card);
-    const t0 = !!disk().entities["@world"]?.c.terrain;
+    const t0 = !!disk().entities["@world"]?.c.terrain; const nX = entries().length;
     const picked = await clickEl(`(() => { const h = [...${insp}.querySelectorAll('.sp-group')].find((g) => /Terrain/.test(g.textContent)); for (let n = h?.parentElement.nextElementSibling; n && !n.classList.contains('sp-f-group'); n = n.nextElementSibling) { const b = n.querySelector('button'); if (b) return b; } return null; })()`);
-    check("X3 …and a pick there writes the terrain (one act)", picked && !t0 && await waitDisk(() => !!disk().entities["@world"]?.c.terrain, 5000), { picked, t0 });
+    const wrote = picked && !t0 && await waitDisk(() => !!disk().entities["@world"]?.c.terrain, 5000); await sleep(800);
+    const acts = entries().slice(nX).filter((e: any) => e.kind === "request").map((e: any) => e.verb);
+    check("X3 …and a pick there writes the terrain (one act)", wrote && acts.length === 1, { picked, t0, acts });
     await shot("X-terrain-card");
     check("X4 in builder mode the toasts sit above the selection bar", await evalJson(`(() => { const t = document.getElementById('trayzone'); return parseFloat(getComputedStyle(t).bottom) >= 110; })()`));
     await evalJson(`document.querySelector('.edit-left .edit-tab[data-tab="build"]')?.click(), true`);
