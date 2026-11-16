@@ -89,7 +89,7 @@ const probes = [
   { id: "H5a", src: "25d H5", what: "genesis says another fold version, log uses its verb `move`",
     base: () => run(() => { const s = base.fold([{ ...bGen, args: { v: 4, fold: 2 } }, bst(1, "create", { id: "a", components: {} }), bst(2, "move", { id: "a", to: [1, 0, 0] })]); return { fold: s.fold, a: s.entities.a.c }; }),
     baseBad: (r) => r.ok && r.v.fold === 2, // folded under v1 anyway, no flag; the move silently vanished
-    now: () => now([L({ ...GEN, body: { version: 5, owners: [] } }), act, st("create", { id: "a" }), st("move", { id: "a", to: [1, 0, 0] })].join("\n")),
+    now: () => now([L({ ...GEN, body: { ...GEN.body, v: 5 } }), act, st("create", { id: "a" }), st("move", { id: "a", to: [1, 0, 0] })].join("\n")),
     nowGood: (s) => s.status === "unknown-version" && s.entities === null },
   { id: "H5b", src: "25d H5", what: "a later entry with verb genesis rewrites the version mid-log",
     base: () => run(() => base.fold([bGen, { kind: "timeline", verb: "genesis", seq: 1, args: { fold: 99 } }]).fold), baseBad: (r) => r.ok && r.v === 99,
