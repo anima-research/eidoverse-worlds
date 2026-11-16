@@ -294,6 +294,20 @@ try {
   const desc = TOOLS.find((t: any) => t.name === "act")!.description;
   check("...and act's description says the world's authority, not the door, answers", desc.includes("answered by the world's authority itself"));
 
+  console.log("\nLIMITS AND POINTS (catch_up's and move's rules, on every tool)");
+  // a non-number limit is the default, as catch_up's (never NaN, which the wire would carry as null)
+  agent.worldDebug = async (o: unknown) => { agent.requests.push(["worldDebug", o]); return { events: [] }; };
+  await call("world_history", { limit: "ten" }); const hl = (agent.requests.at(-1) as any)?.[1]?.limit;
+  await call("world_debug", { limit: "ten" }); const dl = (agent.requests.at(-1) as any)?.[1]?.limit;
+  check("world_history and world_debug read a non-number limit as their default (50, 30), never NaN", hl === 50 && dl === 30, JSON.stringify({ hl, dl }));
+  delete agent.worldDebug;
+  // a null coordinate in create's at is no value, as move's (Number(null) would be 0, the world's origin line)
+  for (const at of [[null, 3], [1, null, 3]]) { const n = agent.requests.length; const r = await call("create", { model: "cup.glb", at });
+    check(`create {at: ${JSON.stringify(at)}} is refused as not a point, and nothing is sent`, r.isError === true && /at is a point/.test(said(r)) && agent.requests.length === n, JSON.stringify({ said: said(r), sent: agent.requests.slice(n) })); }
+  { agent.worldBlueprints = () => ({ ["ab".repeat(32)]: { name: "stool" } }); const n = agent.requests.length;
+    const r = await call("create", { from: "sha256:ab", at: [null, 3] }); delete agent.worldBlueprints;
+    check("create {from: <blueprint>, at: [null, 3]} is refused as not a point, and nothing is sent", r.isError === true && /at is a point/.test(said(r)) && agent.requests.length === n, JSON.stringify({ said: said(r), sent: agent.requests.slice(n) })); }
+
   console.log("\nSHOWN");
   check("a value left out reads nothing", shown(undefined) === "nothing");
   check("a string keeps its quotes, so it reads as a string", shown("5") === '"5"');

@@ -355,6 +355,8 @@ const cutSpeech = (t: string) => {
   const end = /[\uD800-\uDBFF]/.test(t[SPEECH_MAX - 1]!) ? SPEECH_MAX - 1 : SPEECH_MAX;
   return t.slice(0, end);
 };
+/** A coordinate as a number; null is no value (NaN, refused), never Number(null)'s 0. */
+const coord = (v: unknown) => (v == null ? NaN : Number(v));
 /** An altitude the call can't fly to: not a number. A number flies, and so does a string that reads as one, as
  *  `Number()` always took "5"; a boolean, a blank, a list or an object doesn't. */
 const notANumber = (v: unknown) => typeof v === "number" ? !Number.isFinite(v)
@@ -685,7 +687,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         }
       } else if (a.to != null || mode === "walk") {
         // a null coordinate is no value, not 0: Number(null) would pick the floor at height 0
-        const to = Array.isArray(a.to) ? a.to.map((v: unknown) => v == null ? NaN : Number(v)) : [];
+        const to = Array.isArray(a.to) ? a.to.map(coord) : [];
         x = to[0]; z = to.length === 3 ? to[2] : to[1];
         if (to.length === 3) y = a.to[1] == null ? undefined : to[1];
         if (to.length !== 2 && to.length !== 3)
@@ -1019,7 +1021,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const bodiless = a.model == null && comps?.model == null && comps?.mesh == null;   // a light, an empty: nothing for place to size
       if (a.from == null && bodiless && comps?.light && !a.place && !comps?.transform) {
         // with nowhere said: just in front of you, at about eye height (or exactly at)
-        const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
+        const pt = Array.isArray(a.at) ? a.at.map(coord) : null;
         if (pt && ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite))) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z], or {pos: [x, y, z], yaw}" }], isError: true };
         const x = pt ? pt[0] : ahead[0], z = pt ? (pt.length === 3 ? pt[2] : pt[1]) : ahead[1];
         const y = pt && pt.length === 3 ? pt[1] : ag.heightAt(x, z) + 1.6;
@@ -1029,7 +1031,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       } else if (a.from == null && Array.isArray(a.at)) {
         // at without from: a point. On the ground ([x, z]) it is place {at} — the authority seats a model's bottom; a
         // bodiless thing, or an exact [x, y, z], goes straight into its transform
-        const pt = a.at.map(Number);
+        const pt = a.at.map(coord);
         if ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite)) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z] (or, with from, the authority's {pos, yaw})" }], isError: true };
         delete args.at;
         // at sets the position only: a rotation or scale given in components.transform stays
@@ -1050,7 +1052,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // duplicate goes beside its source, a blueprint copy 2 m in front of you.
         const blueprint = String(a.from).startsWith("sha256:");
         const src: any = blueprint ? null : ag.foldRecord(String(a.from));
-        const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
+        const pt = Array.isArray(a.at) ? a.at.map(coord) : null;
         if (pt) {
           if ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite)) return { content: [{ type: "text", text: "create: with from, at is a point [x, z] or [x, y, z] (or the authority's {pos: [x, y, z], yaw})" }], isError: true };
           const y = pt.length === 3 ? pt[1] : Number.isFinite(src?.pos?.[1]) ? Number(src.pos[1]) : ag.heightAt(pt[0], pt[1]);   // a fold record's pos is its LOCAL transform (shared/protocol/view.js)
@@ -1297,7 +1299,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // kinds (default request + say), a window with before AND after (read forward from after, cut at before), 50 a page
       const kinds = Array.isArray(a.kinds) && a.kinds.length ? new Set(a.kinds.map(String)) : new Set(["request", "say"]);
       const both = typeof a.before === "number" && typeof a.after === "number";
-      const h = await ag.request("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 50))),
+      const n = Number(a.limit ?? 50);   // 1–200; a non-number is the default
+      const h = await ag.request("history", { limit: Number.isFinite(n) ? Math.min(200, Math.max(1, n)) : 50,
         ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
         ...(typeof a.before === "number" && !both ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
       if (!h?.ok) return refusedBy(h, "world_history");
@@ -1316,8 +1319,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const WAS: Record<string, string> = { behavior: "script", behaviors: "scripts" }, TAKES = ["limit", "kinds", "script", "scripts"];
       for (const k of Object.keys(a ?? {})) if (!TAKES.includes(k))
         return fail(`world_debug has no argument '${k}'${WAS[k] ? `: ${k} is now ${WAS[k]}` : ""} (it takes ${TAKES.join(", ")}) — nothing ran`);
+      const n = Number(a.limit ?? 30);   // 1–300; a non-number is the default
       const r = await ag.worldDebug({
-        limit: Math.min(300, Math.max(1, Number(a.limit ?? 30))),
+        limit: Number.isFinite(n) ? Math.min(300, Math.max(1, n)) : 30,
         kinds: Array.isArray(a.kinds) && a.kinds.length ? a.kinds.map(String) : undefined,
         ...(a.script != null ? { script: String(a.script) } : {}),
         ...(a.scripts ? { scripts: true } : {}),
