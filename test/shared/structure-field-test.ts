@@ -238,11 +238,6 @@ const HOUSE = {
     runs.some((r) => r.axis === 0 && r.cross === 0 && r.lo === 1 && r.hi === 3));
   check("an apertured segment is never inside a run",
     !runs.some((r) => r.axis === 0 && r.cross === 0 && r.lo === 0));
-  // one skirting board per run per room-facing side, not one per tile
-  const parts = levelParts(g2.levels[0], g2, g2.levels[0].y + g2.slabT);
-  check("skirting is per run, not per tile",
-    parts.filter((p) => p.kind === "base").length <= runs.length * 2,
-    `${parts.filter((p) => p.kind === "base").length} boards for ${runs.length} runs`);
 }
 
 // 9. roomAt — "which room am I in" is a lookup, not a geometric query
@@ -251,7 +246,8 @@ const HOUSE = {
   check("a point in room A finds the kitchen", roomAt(plan, 0.5, 0.5)?.label === "kitchen");
   check("a point in room B finds the hall", roomAt(plan, 2.5, 0.5)?.label === "hall");
   check("a point outside finds nothing", roomAt(plan, -3, -3) === null);
-  check("negative coords floor correctly", roomAt(plan, 3.9, 1.9)?.label === "hall");
+  check("a point near the far corner floors into the hall", roomAt(plan, 3.9, 1.9)?.label === "hall");
+  check("negative coords floor correctly (-0.5 is cell -1, not 0)", roomAt(plan, -0.5, 0.5) === null);
 }
 
 // 10. determinism — same log, same house, for every agent standing in it
@@ -415,14 +411,10 @@ const HOUSE = {
   const floorY = lv.y + g.slabT;
   const parts = levelParts(lv, g, floorY);
   const base = parts.filter((p) => p.kind === "base");
-  const at = (axis: number, x: number, z: number) => base.filter((p) => (axis === 0
-    ? Math.abs((p.z0 + p.z1) / 2 - z * g.tile) < 0.2 && p.x0 >= x * g.tile - 0.01 && p.x1 <= (x + 1) * g.tile + 0.01
-    : Math.abs((p.x0 + p.x1) / 2 - x * g.tile) < 0.2 && p.z0 >= z * g.tile - 0.01 && p.z1 <= (z + 1) * g.tile + 0.01));
 
   // The skirting is a step in the swept PROFILE, not a box — so it mitres
   // by construction and cannot come apart from its wall (boxes standing proud
   // of a swept surface could never agree with it).
-  void at; void base;
   const prof0 = wallProfile(g);
   check("the skirting lives in the profile", Math.min(...prof0.map((q) => q[0])) < -g.wallT / 2);
   check("no skirting boxes remain", base.length === 0, `${base.length}`);
@@ -552,11 +544,14 @@ const HOUSE = {
   const lens = lines.map((l) => l.pts.length).sort((a, b) => b - a);
   check("the shell chains into one long run, the divider is its own stub",
     lines.length === 2 && lens[0] >= 8 && lens[1] === 2, JSON.stringify(lens));
-  const stub = lines.find((l) => l.pts.length === 2)!;
+  const stub = lines.find((l) => l.pts.length === 2);
   check("the divider stub ends ON the shell",
-    stub.pts.some(([, z]) => Math.abs(z - 2) < 1e-9), JSON.stringify(stub.pts));
+    !!stub && stub.pts.some(([, z]) => Math.abs(z - 2) < 1e-9), JSON.stringify(stub?.pts));
+  // the window (0,0,0) spans (0,0)-(1,0); the door (1,2,0) spans (2,0)-(2,1)
+  const spans = (l: any, a: number[], b: number[]) => l.pts.some((p: number[], i: number) => i > 0
+    && [[l.pts[i - 1], p], [p, l.pts[i - 1]]].some(([u, v]) => u[0] === a[0] && u[1] === a[1] && v[0] === b[0] && v[1] === b[1]));
   check("apertured segments are excluded from runs",
-    lines.every((l) => l.pts.length >= 2));
+    !lines.some((l) => spans(l, [0, 0], [1, 0]) || spans(l, [2, 0], [2, 1])), JSON.stringify(lines.map((l) => l.pts)));
 
   // a closed ring must wrap, or its last corner is left unmitred
   const ring = normalize({ levels: [{ tiles: [[0, 0]],
