@@ -230,29 +230,29 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   ok(att.some((a) => /never allows/.test(a.why ?? "")) && att.some((a) => /touch gate is off/.test(a.why ?? "")),
     "RL2 Mo's own attempt ring still records the real cause of each", att.map((a) => a.why)); }
 
-// RG23 (review of #260): pulling a nail (unpin) and a drag's stream are held to the target's displace consent (her move
+// RG26 (review of #260): pulling a nail (unpin) and a drag's stream are held to the target's displace consent (her move
 // gate) like the grab is; the agent runtime applies an unpin on the word that the server checked it
 { req(vic, "consent", { move: false });
   const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });
   const kv = vic.got.length, ks = sly.got.length;
   drag({ unpin: { joint: "hand_l" } }); drag({ pose: { p: [0, 1, 0] } });
   const reached = vic.got.slice(kv).filter((m) => m.type === "bodydrag");
-  ok(reached.length === 0, "RG23 with Vic's move gate off, Sly's unpin and drag samples never reach her", reached);
-  ok(sly.got.slice(ks).some((m) => m.type === "error"), "RG23 …and Sly is told the unpin was refused", sly.got.slice(ks));
+  ok(reached.length === 0, "RG26 with Vic's move gate off, Sly's unpin and drag samples never reach her", reached);
+  ok(sly.got.slice(ks).some((m) => m.type === "error"), "RG26 …and Sly is told the unpin was refused", sly.got.slice(ks));
   drag({ end: true });
-  ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG23 …an end still goes through", vic.got.slice(kv));
-  // RG23b (house 6340433633 Q3): an unpin riding an end is checked too; the end goes through without it
+  ok(vic.got.slice(kv).some((m) => m.type === "bodydrag" && m.end != null), "RG26 …an end still goes through", vic.got.slice(kv));
+  // RG26b (house 6340433633 Q3): an unpin riding an end is checked too; the end goes through without it
   const kv2 = vic.got.length, ks2 = sly.got.length;
   drag({ end: true, unpin: { joint: "hand_l" } });
   const got2 = vic.got.slice(kv2).filter((m) => m.type === "bodydrag");
   ok(got2.length === 1 && got2[0].end != null && got2[0].unpin === undefined && sly.got.slice(ks2).some((m) => m.type === "error"),
-    "RG23b an unpin sent with an end is refused like any unpin (Sly is told); the end still reaches Vic, without it", { got2, sly: sly.got.slice(ks2) });
-  // RG23c (review of the house fixes): a nail (pinAt) riding an end is the same act: refused, dropped, the end goes bare
+    "RG26b an unpin sent with an end is refused like any unpin (Sly is told); the end still reaches Vic, without it", { got2, sly: sly.got.slice(ks2) });
+  // RG26c (review of the house fixes): a nail (pinAt) riding an end is the same act: refused, dropped, the end goes bare
   const kv3 = vic.got.length, ks3 = sly.got.length;
   drag({ end: true, pinAt: { joint: "head", at: [0, 1.9, 0] } });
   const got3 = vic.got.slice(kv3).filter((m) => m.type === "bodydrag");
   ok(got3.length === 1 && got3[0].end != null && got3[0].pinAt === undefined && sly.got.slice(ks3).some((m) => m.type === "error"),
-    "RG23c a nail (pinAt) sent with an end is refused (Sly is told); the end still reaches Vic, without it", { got3, sly: sly.got.slice(ks3) }); }
+    "RG26c a nail (pinAt) sent with an end is refused (Sly is told); the end still reaches Vic, without it", { got3, sly: sly.got.slice(ks3) }); }
 
 { const drag = (m) => MESSAGES["bodydrag"]({ c: sly, ws: sly.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Vic", ...m });
   const final = { end: true, pose: { hips: [0, 0, 0, 1] }, p: [8, 0, 0], yaw: 0.7, sim: { j: ["hips"], p: [8, 1, 0], v: [0, 1, 0] } };
