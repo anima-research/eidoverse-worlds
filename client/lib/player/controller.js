@@ -2,7 +2,7 @@
 // drives both. The camera gets collision (never inside a hillside), a shoulder offset (your body doesn't occlude your
 // aim), and a continuous zoom that passes through into first person.
 
-import { THREE, camera, canvas } from '../core.js';
+import { THREE, camera, canvas, DESKTOP_FOV } from '../core.js';
 import { CONFIG, angleDelta, bus } from '../base.js';
 import { heightAt } from '../terrain.js';
 import { resolveColliders, lastBlockedTop, lastContacts, findSeat, raySegment } from '../colliders.js';
@@ -898,7 +898,7 @@ export function togglePhotoMode() {
     photo.fov = camera.fov;
     flashHint(html`photo mode — <kbd>WASD</kbd>+<kbd>QE</kbd> fly · <kbd>[</kbd><kbd>]</kbd> lens · <kbd>F1</kbd> hide UI · <kbd>F2</kbd> save · <kbd>P</kbd> exit`, 6000);
   } else {
-    camera.fov = 55; camera.updateProjectionMatrix();
+    camera.fov = DESKTOP_FOV; camera.updateProjectionMatrix();
     document.body.classList.remove('photo');
   }
   return photoMode;

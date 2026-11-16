@@ -72,7 +72,9 @@ const ROWS: Row[] = [
     exempt: ["client/lib/debug/breadcrumbs.js"], forbidden: [/\bnet\.ws\??\.send\(/] },
   // the world-name grammar: one regex for every server door, the agent door's included (it once lacked the sequencer's /i)
   { name: "the world-name grammar is limits.ts's WORLD_NAME_RE", owner: ["server/limits.ts"], scope: files.filter((f) => /^(server|mcpl)\//.test(f)), forbidden: [(l) => l.includes("[a-z0-9_-]{1,64}")],
-    requires: [["mcpl/net-server.ts", /WORLD_NAME_RE\.test\(/], ["server/world.ts", /WORLD_NAME_RE\.test\(/], ["server/routes.ts", /WORLD_NAME_RE\.test\(/]] },
+    requires: [["mcpl/net-server.ts", /WORLD_NAME_RE\.test\(/], ["server/world.ts", /WORLD_NAME_RE\.test\(/], ["server/routes.ts", /WORLD_NAME_RE\.test\(/]] },  // 333-cm a4: leaving VR restored 60 while the camera is built at 55
+  { name: "the desktop camera's field of view is core.js's DESKTOP_FOV", owner: ["client/lib/core.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
+    forbidden: [/\bcamera\.fov\s*=\s*\d/], requires: [["client/lib/core.js", /PerspectiveCamera\(DESKTOP_FOV,/], ["client/lib/xr/xr.js", /camera\.fov = DESKTOP_FOV/]] },
 ];
 for (const row of ROWS) {
   const scan = (row.scope ?? files).filter((f) => !row.owner.includes(f) && !(row.exempt ?? []).includes(f));

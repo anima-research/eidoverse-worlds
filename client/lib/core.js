@@ -162,9 +162,10 @@ export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0f12);   // the page's own --bg: neutral, so the teal chrome is the only colour
 scene.fog = new THREE.FogExp2(0x0b0f12, 0.018);
 
+export const DESKTOP_FOV = 55;   // the desktop camera's; leaving VR and photo mode restore it
 // The far plane has to hold the SKY, not just the scene: a world-space sky's cloud dome sits ~3200 units out and the
 // ringworld band 4940 up. WebGPU's reversed-Z keeps depth precision honest across this range.
-export const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.15, 20000);
+export const camera = new THREE.PerspectiveCamera(DESKTOP_FOV, innerWidth / innerHeight, 0.15, 20000);
 camera.position.set(3.5, 2.6, 5.5);
 camera.lookAt(0, 1, 0);
 

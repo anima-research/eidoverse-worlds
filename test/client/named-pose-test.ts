@@ -294,7 +294,7 @@ async function browserOwnerPart() {
     THREE, TSL, camera: new THREE.PerspectiveCamera(), canvas, CONFIG: BENCH_CONFIG,
     angleDelta: (a: number, b: number) => b - a, bus, scene: new THREE.Scene(), renderer: {}, report() {},
     sun: new THREE.DirectionalLight(), ground: new THREE.Mesh(), hemi: new THREE.HemisphereLight(), grid: new THREE.Group(),
-    BASE_PIXEL_RATIO: 1,
+    BASE_PIXEL_RATIO: 1, DESKTOP_FOV: 55,
   }));
   mock.module(base + "base.js", () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {}, tee() {} }));
   mock.module(base + "terrain.js", () => ({ heightAt: () => 0, setWaterField() {}, rainSurfaceAt: () => 0 }));

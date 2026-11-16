@@ -6,7 +6,7 @@
 
 import { confirmCenter } from '../edit/confirmcenter.js';
 import { outOfMyView } from '../edit/myview.js';
-import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio } from '../core.js';
+import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN, xrPixelRatio, DESKTOP_FOV } from '../core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';
 import { withXREyes } from './xrpass.js';
 import { installDualWarm } from './xrwarm.js';
@@ -645,7 +645,7 @@ async function enterVR({ retryOf = null } = {}) {
       session = null;
       camera.position.set(3.5, 2.6, 5.5);
       // WebXR overwrote the projection with the HMD's matrices
-      camera.fov = 60; camera.aspect = innerWidth / innerHeight; camera.zoom = 1;
+      camera.fov = DESKTOP_FOV; camera.aspect = innerWidth / innerHeight; camera.zoom = 1;
       camera.updateProjectionMatrix();
       // the canvas back to the window's size; a pixel ratio the guard deferred (xrpixelratio.js) lands now
       try { renderer.setPixelRatio(xrPixelRatio?.takeDeferred() ?? Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight); bus.emit('xr:exit-resized'); } catch (e) { report('xr exit resize', e); }
