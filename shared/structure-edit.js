@@ -131,12 +131,14 @@ export function eraseRoom(data, a, b, level = 0) {
   }
   const lv = lvOf(d, level);
   const floored = new Set(lv.tiles.map((t) => cellKey(t[0], t[1])));
-  // a wall survives if either side still has a floor: it is someone else's wall
+  const inR = (cx, cz) => cx >= x0 && cx <= x1 && cz >= z0 && cz <= z1;
+  // a wall the rectangle doesn't touch is untouched; one it touches survives if either side still has a floor
   lv.walls = lv.walls.filter((w) => {
     const [axis, x, z] = w;
-    if (axis >= 2) return floored.has(cellKey(x, z));
+    if (axis >= 2) return !inR(x, z) || floored.has(cellKey(x, z));
     const [[ax, az], [bx, bz]] = axis === 0
       ? [[x, z - 1], [x, z]] : [[x - 1, z], [x, z]];
+    if (!inR(ax, az) && !inR(bx, bz)) return true;
     return floored.has(cellKey(ax, az)) || floored.has(cellKey(bx, bz));
   });
   const kept = new Set(lv.walls.map((w) => edgeKey(w[0], w[1], w[2])));

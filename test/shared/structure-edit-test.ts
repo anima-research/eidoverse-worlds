@@ -115,6 +115,9 @@ const G = { tile: 1 };
     planStructure(gone).levels[0].rooms.length === 1);
   check("erasing everything leaves nothing",
     walls(eraseRoom(two, { x: 0, z: 0 }, { x: 3, z: 1 })).size === 0);
+  const lone = addWall(two, { axis: 0, x: 20, z: 20 }, 0);   // a freestanding wall, no floor either side, far away
+  check("a wall outside the erased rectangle is left alone, floor or none (#455)",
+    walls(lone).has(edgeKey(0, 20, 20)) && walls(eraseRoom(lone, { x: 2, z: 0 }, { x: 3, z: 1 })).has(edgeKey(0, 20, 20)));
 }
 
 // 6. tiles and labels
