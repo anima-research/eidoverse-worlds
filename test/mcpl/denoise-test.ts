@@ -332,6 +332,14 @@ console.log("\n━━ agent: reconnect replay seeds, never narrates ━━");
     check("leave-and-return and STAY is a REAL approach and pings once", pings().length === 1);
     ag.close(); }
 
+  { const { ag, T0, pings } = rig();   // a body the join's snapshot lists beside you (rememberBody installs its pose directly)
+    ag.rememberBody("snap", "", pose(1.0, 0), null);
+    ag.notePose("snap", pose(3.0, 0), T0);   // steps out of arm's reach, never past the re-arm radius…
+    ag.notePose("snap", pose(1.5, 0), T0 + 100);
+    ag.notePose("snap", pose(1.5, 0), T0 + 100 + APPROACH_DWELL_MS + 50);
+    check("a body the snapshot put beside you, back within reach without leaving, pings no approach", pings().length === 0, JSON.stringify(pings()));
+    ag.close(); }
+
   { const { ag, acts, T0, pings } = rig();
     ag.notePose("member", pose(15, 0), T0);   // first seen far: baseline, armed
     check("first observation far away pings nothing", pings().length === 0);

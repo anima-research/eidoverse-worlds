@@ -178,8 +178,9 @@ export class AgentSenses {
     const dist = Math.hypot(x - this.a.pos.x, z - this.a.pos.z);
     // The first SPATIAL observation is a BASELINE, not a transition: reconnect
     // replay lands here for every body already in the room. Seed silently; a
-    // body already beside you must leave and come back before it can "walk up".
-    if (!prevXYZ) {
+    // body already beside you must leave and come back before it can "walk up". A body the join's snapshot listed
+    // has a pose already (rememberBody) but no arm state: its first sample here is the baseline too
+    if (!prevXYZ || !this.nearArmed.has(id)) {
       this.nearArmed.set(id, dist > REARM_RADIUS);
       return;
     }
