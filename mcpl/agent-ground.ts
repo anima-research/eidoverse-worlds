@@ -387,8 +387,9 @@ export class AgentGround {
     const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
     // Re-read and re-CHECK: the id may have been removed and respawned as
     // something else while its geometry was in flight (hence the model comparison).
+    // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
-    if ((!g && !mesh) || !e || e.model !== before.model) return;
+    if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || solidOffRecord(e)) { this.dropSupport(id); return; }
