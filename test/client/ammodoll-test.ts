@@ -437,6 +437,9 @@ console.log('\ngoing limp does not teleport the skeleton (rendered pose):');
     }
     const rd: any = new AmmoRagdoll(av, null, av.restBonePositions());
     const pose = rd.step(1 / 60);          // one frame: the sim has barely moved
+    // the step must drive the bones it owns: an empty or null pose applies nothing and every difference would read 0
+    const missing = DRIVEN.filter((n) => before[n] && !(pose && n in pose));
+    if (missing.length) bad.push(`${rig.name}: its first step drove none of ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? ", …" : ""}`);
     if (pose) {
       for (const [n, q] of Object.entries(pose)) {
         const node = av.vrm.humanoid.getNormalizedBoneNode(n);

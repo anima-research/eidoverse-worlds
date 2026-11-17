@@ -154,6 +154,7 @@ console.log('  -- the tripwire is per world: capability is a property of the (de
   const st = new Map([['ew-boot-attempt:alpha', '1']]);
   const beta = visit('beta', st);
   check('page: a different world on the same desktop is not touched by alpha\'s died boot (default, not retry)', beta.lite === false && beta.why === 'default', JSON.stringify(beta));
+  check('page: …and beta\'s full boot arms its own tripwire (the flag its clean exit clears below)', st.has('ew-boot-attempt:beta'), JSON.stringify([...st]));
   const phone = visit('beta', new Map([['ew-boot-attempt:alpha', '1'], ['ew-boot-retried:alpha', '1']]), { userAgent: phoneUA, deviceMemory: 4 });
   check('page: …nor on a phone (phone, not crash)', phone.why === 'phone', JSON.stringify(phone));
   // alpha's died boot takes its retry (the page writes it); beta's died boot must still get one of its own

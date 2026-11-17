@@ -106,7 +106,7 @@ for (const [name, st, wantNote, wantDim] of [
   gate = deferred();
   const pending = tick(true);
   await flush();
-  t('tick: the box is ticked and faded while the load runs', box().checked && box().style.opacity === '.45' && !tts.isTtsEnabled());
+  t('tick: the box is ticked and faded while the load runs (the held loader was entered)', loaded.length === 1 && box().checked && box().style.opacity === '.45' && !tts.isTtsEnabled(), `loads entered: ${loaded.length}`);
   await repaint();
   t('tick: a repaint mid-load keeps the box ticked (in-place writer agrees)', box().checked === true, `checked=${box().checked}`);
   gate.resolve(); await pending; await flush(10);
