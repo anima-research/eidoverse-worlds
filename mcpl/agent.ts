@@ -514,6 +514,7 @@ export class WorldAgent {
    *  the body as a zombie that fights its successor over the identity. */
   close() {
     this.closed = true;
+    ++this.bodyEpoch;    // a knockdown or settle still loading abandons itself
     if (this.flight) this.endFlight("closed");
     this.briefing = null;
     this.stop();

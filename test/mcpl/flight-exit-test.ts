@@ -294,6 +294,18 @@ for (const how of ['walk', 'close'] as const) {
   if (walk) { const ys = await fallOut(ag); for (let i = 0; i < 100 && walk.r == null; i++) await tick(ag); check('...and the walk falls, then walks', walk.r === true && ys.length > 5, `walk ${walk.r}; ${ys.length - 1} ticks falling`); }
 }
 {
+  // a plain knockdown's ragdoll still loading never begins once the body is closed (close takes the body's turn)
+  const ag = bench();
+  let load: (b: any) => void = () => {}, began = false;
+  ag.ensureBody = () => new Promise((go) => { load = go; });
+  const fall = (ag as any).tumble(null);
+  ag.close();
+  load({ begin() { began = true; }, stop() {}, step() { return null; } });
+  await fall; for (let i = 0; i < 10; i++) await turn();
+  const sim = !!ag.simTicker; ag.stopSim();
+  check('a close during a knockdown\'s ragdoll loading leaves it unbegun', !began && !sim, `began ${began}, sim ${sim}`);
+}
+{
   // bot r1 #17: a rejoin's settling holds the feet; once it lets go they fall.
   const ag = bench();
   await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
