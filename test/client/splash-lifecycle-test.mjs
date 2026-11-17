@@ -12,6 +12,7 @@ GlobalRegistrator.register({ url: RAYS0 ? 'http://localhost/?rays=0' : 'http://l
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';
 import { suite } from "../gate/suite.ts";
+import { pause } from '../gate/wait.ts';
 const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
 plugin({ name: 'core-stub', setup(build) {
   stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
@@ -129,7 +130,7 @@ console.log('SPLASH — SILENCE: what a broken module or a suppressed ack looks 
 
 console.log('SPLASH — a refusal inside the 620 ms fade stays up');
 { refuseBoot('the world said no');   // the normal-boot finishBoot's hide timer is still pending (no await since)
-  await Bun.sleep(700);
+  await pause('past finishBoot\'s 620 ms fade timer', 700);
   check('the earlier fade timer does not hide the refusal', splash.style.display !== 'none' && splash.classList.contains('refused'), `display=${splash.style.display}`); }
 
 console.log('SPLASH — ?rays=0');
