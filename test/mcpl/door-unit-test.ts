@@ -56,7 +56,9 @@ for (const why of ["superseded by a newer walk or a stop", "no route: the way th
   await handleTool({ agent: ag } as any, "act", { verb: "body", args: { to: "Mira", kind: "pose" } });
   await handleTool({ agent: ag } as any, "act", { verb: "delete", args: { id: "Mira" } });
   ok(sent[0][1].to === "Mira" && sent[1][1].to === "Mira", "act say {to} and body {to} keep the person's name", sent);
-  ok(sent[2][1].id === "lamp-7f3a", "act delete {id} still resolves a thing's label (the control)", sent); }
+  ok(sent[2][1].id === "lamp-7f3a", "act delete {id} still resolves a thing's label (the control)", sent);
+  await handleTool({ agent: ag } as any, "act", { verb: "batch", args: { requests: [{ verb: "set", args: { id: "Mira", component: "label", value: "x" } }, { verb: "say", args: { text: "hi", to: "Mira" } }] } });
+  ok(sent[3]?.[1]?.requests?.[0]?.args?.id === "lamp-7f3a" && sent[3][1].requests[1].args.to === "Mira", "act batch resolves each request's thing names as act does, a person's name kept", sent[3]); }
 
 // anim {bodyMode} beside stop or ragdoll runs them too, after declaring the mode
 { const calls: string[] = [];

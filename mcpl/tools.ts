@@ -1087,7 +1087,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // a thing by id, label or prefix. No authority verb takes a thing in to or target: move's to is a point, say's and
       // body's name a person, update's is a blueprint's hash (verbspec.js), so a person who shares a thing's label is
       // still the one addressed
-      const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" && k !== "target")); if ("err" in named) return named.err;
+      const keys = THING_KEYS.filter((k) => k !== "to" && k !== "target");
+      const named = namedThings(ag, args, keys); if ("err" in named) return named.err;
+      // a batch's requests name things the same way (a handle create just returned, a label)
+      if (verb === "batch" && Array.isArray(named.args.requests)) {
+        const reqs = [];
+        for (const q of named.args.requests) {
+          if (!q || typeof q !== "object" || !q.args || typeof q.args !== "object") { reqs.push(q); continue; }
+          const n = namedThings(ag, q.args, keys); if ("err" in n) return n.err;
+          reqs.push({ ...q, args: n.args });
+        }
+        named.args = { ...named.args, requests: reqs };
+      }
       const r = await ag.request(verb, named.args);
       const reply = r ?? { ok: false };
       // a use's own act can stand (ok) while the script it set off didn't run: refused, failed, unavailable, paused… The
