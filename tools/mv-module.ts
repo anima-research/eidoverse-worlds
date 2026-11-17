@@ -4,8 +4,8 @@
 // For each tracked text file (docs/history, spec/history and CHANGELOGs keep the paths of their day):
 //   1. a relative import specifier (from/import/export, import(), new URL(…, import.meta.url), require) is resolved from
 //      the importer's OLD place and rewritten from its NEW place to the target's NEW place: a moved importer and a moved
-//      target are the same case, and an untracked target (../node_modules/…) keeps pointing at the same file; an
-//      extensionless specifier (./foo for foo.ts) is not rewritten, and only the closing --check reports it;
+//      target are the same case, an extensionless one (./foo for foo.ts) included, and an untracked target
+//      (../node_modules/…, a generated file under a moved directory) keeps pointing at the same file;
 //   2. a repo citation (client/lib/… at any prefix: ../../client/lib/…, engine/client/lib/…) becomes the new path;
 //   3. a served URL (/lib/x.js, /shared/x.js, a page-relative ./lib/x.js) becomes the new URL.
 // Then it prints what it could not rewrite: template specifiers in moved files, and quoted bare basenames and lib/-relative
@@ -37,8 +37,21 @@ for (let i = 0; i < args.length; i += 2) {
   if (!under.length) throw new Error(`${from}: not a tracked file or directory`);
   dirMoves.push([from, to]); for (const f of under) move.set(f, to + f.slice(from.length));
 }
-for (const [, to] of move) if (have.has(to)) throw new Error(`${to} exists`);
-const moved = (p: string) => { if (move.has(p)) return move.get(p)!; for (const [a, b] of dirMoves) if (p === a || p.startsWith(a + "/")) return b + p.slice(a.length); return p; };
+// refused before anything moves: git mv would stop part way, leaving the tree half moved
+const dest = new Map<string, string>();
+for (const [from, to] of move) {
+  if (have.has(to) || fs.existsSync(path.join(ROOT, to))) throw new Error(`${to} exists`);
+  if (dest.has(to)) throw new Error(`${dest.get(to)} and ${from} both move to ${to}`);
+  dest.set(to, from);
+}
+const isFile = (p: string) => { try { return fs.statSync(path.join(ROOT, p)).isFile(); } catch { return false; } };
+const moved = (p: string) => {
+  if (move.has(p)) return move.get(p)!;
+  for (const e of [".ts", ".js", ".mjs"]) { const to = move.get(p + e); if (to?.endsWith(e)) return to.slice(0, -e.length); }   // ./foo for foo.ts
+  if (isFile(p)) return p;   // an untracked file under a moved directory stays where it is
+  for (const [a, b] of dirMoves) if (p === a || p.startsWith(a + "/")) return b + p.slice(a.length);
+  return p;
+};
 const newOf = (f: string) => move.get(f) ?? f;
 
 const counts = { spec: 0, cite: 0, url: 0 }, touched = new Set<string>(), notes: string[] = [];
@@ -72,7 +85,10 @@ for (const f of before) {
     }
     for (const [a, b] of dirMoves) s = s.replace(new RegExp(`(?<![\\w-])${esc(a)}/`, "g"), (m, i) => {
       // a directory citation (client/lib/avatar/bodyruntimes/); a file under it was already rewritten above
-      if (s.startsWith(b + "/", i)) return m; counts.cite++; touched.add(nf); return b + "/";
+      if (s.startsWith(b + "/", i)) return m;
+      const cited = s.slice(i).match(/^[\w./-]+/)![0];
+      if (!move.has(cited) && isFile(cited)) return m;   // an untracked file there didn't move
+      counts.cite++; touched.add(nf); return b + "/";
     });
   }
   if (s !== src || nf !== f) out.set(nf, s);
