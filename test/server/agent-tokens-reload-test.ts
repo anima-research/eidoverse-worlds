@@ -1,8 +1,8 @@
-// agentTokens() hot-reload fails closed: a tokens.json gone malformed authorizes nobody (bot #333 5),
+// agentTokens() hot-reload fails closed: a tokens.json gone malformed or unreadable authorizes nobody (bot #333 5),
 // while the agent names it reserved stay reserved.
 //
 //   bun test/server/agent-tokens-reload-test.ts
-import { mkdtempSync, writeFileSync, utimesSync } from "node:fs";
+import { mkdtempSync, writeFileSync, utimesSync, statSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { suite } from "../gate/suite.ts";
@@ -37,4 +37,14 @@ check("an array reload: authorizes nobody and alice's name stays reserved", !c.b
 writeFileSync(live, JSON.stringify({ "secret-key": { id: "alice" } }));
 const fixed = new Date(Date.now() + 10_000); utimesSync(live, fixed, fixed);
 check("repaired: the key authorizes again", agentTokens().byToken.get("secret-key") === "alice");
+
+// a change that keeps the mtime still reloads: a rewrite with its time put back, and a chmod the server can't read past
+const kept = statSync(live).mtime;
+writeFileSync(live, JSON.stringify({ "other-key": { id: "alice" } })); utimesSync(live, kept, kept);
+check("a rewrite that keeps the mtime: the removed key authorizes nobody", !agentTokens().byToken.has("secret-key"), JSON.stringify([...agentTokens().byToken]));
+if (process.platform !== "win32" && process.getuid?.() !== 0) {
+  chmodSync(live, 0);
+  check("tokens.json made unreadable: no key authorizes", agentTokens().byToken.size === 0, JSON.stringify([...agentTokens().byToken]));
+  chmodSync(live, 0o600);
+}
 done();

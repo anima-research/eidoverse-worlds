@@ -1,7 +1,7 @@
 // Identity doors: archipelago-home sessions (cookie ⇄ aid1 token), their persistence across restarts, and the per-agent
 // bearer roster from mcpl/tokens.json. Imported by server.ts right after config: the restore-at-boot block runs there.
 
-import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, renameSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
@@ -111,8 +111,9 @@ let agentTokCache: { mtime: string; byToken: Map<string, string>; names: Set<str
 export function agentTokens() {
   let mtime = "";
   try {
-    // keyed on both files: a key the public example gains is refused without a touch of tokens.json
-    const stamp = (p: string) => existsSync(p) ? Math.round(Bun.file(p).lastModified) : 0;
+    // keyed on both files (a key the public example gains is refused without a touch of tokens.json), by ctime too:
+    // a rewrite that puts its mtime back, or a chmod, still reloads
+    const stamp = (p: string) => { if (!existsSync(p)) return 0; const st = statSync(p); return `${st.mtimeMs}/${st.ctimeMs}/${st.size}/${st.mode}`; };
     const live = stamp(AGENT_TOKENS_PATH); mtime = `${live}:${stamp(AGENT_TOKENS_EXAMPLE)}`;
     if (!agentTokCache || agentTokCache.mtime !== mtime) {
       const byToken = new Map<string, string>();
