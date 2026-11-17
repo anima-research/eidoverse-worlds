@@ -303,6 +303,9 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
   // a frame shown with no tab chosen opens the one last chosen (never an empty pane)
   ui.collapseAll(); await tick();
   check('collapseAll folds the pane away (placing a ghost wants the view)', !secs().some((x) => x.box.classList.contains('open')), state());
+  { const ws = ui.makeSection('WS probe', () => {}, { id: 'ws-probe', host: 'world-settings' }); ws.toggle(true); await tick();
+    const opened = ws.box.classList.contains('open'); ui.collapseAll(); await tick();
+    check('...and a World Settings tab too (every tabbed frame, #577)', opened && !ws.box.classList.contains('open'), { opened, after: ws.box.className }); }
   frame.hide(); frame.show(); await tick();
   check('shown again with nothing chosen, the frame opens its last tab (the last of them)', state() === alone(secs().at(-1)!.key), state());
 

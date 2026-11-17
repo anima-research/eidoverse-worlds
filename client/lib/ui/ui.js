@@ -431,7 +431,7 @@ export function makeSection(title, onOpen, { id = '', host: hostName = 'world' }
 
 /** Fold every open pane away (placing a ghost wants the view): the strips stay, no tab chosen. */
 export function collapseAll() {
-  for (const f of [worldFrame, settingsFrameApi]) for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
+  for (const f of [worldFrame, settingsFrameApi, moderationFrameApi, worldSettingsFrameApi]) for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
 }
 
 export { escapeHtml };   // markup.js's: the one escaper (kudzu C1)
