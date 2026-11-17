@@ -13,7 +13,8 @@
 //   E   a station's leaveBy "script" keeps the occupant's escape (sockbody, the agent's detach {escape})
 //   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
 //   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
-//   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried)
+//   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried), for a
+//       seat boarded within reach (one with no `near` doesn't re-anchor: r10-check S2)
 //   L   lows: a prototype key as a verb, an unlogged grab records no
 //       identity
 // @ts-nocheck
@@ -220,7 +221,7 @@ const cases: Case[] = [
       return { a: a?.content?.[0]?.text, aErr: !!a?.isError, still, b: b?.content?.[0]?.text, off: seat === null }; },
     good: (o) => o.aErr && /escape: true/.test(o.a) && o.still && o.off },
   // ---------------- A: the auditor's two stand-ins ----------------
-  { id: "A1", what: "(q8; r8-check P3) an enter counter whose result doesn't depend on who came: honest log verified; its change entry rewritten (n 999): flagged `rerun-anon` (r10 A), not skipped", run(s) {
+  { id: "A1", what: "(q8; r8-check P1) an enter counter whose result doesn't depend on who came: honest log verified; its change entry rewritten (n 999): flagged `rerun-anon` (r10 A), not skipped", run(s) {
       s.call("olive", "create-world", { title: s.name });
       s.call("olive", "create", { id: "door", model: "crate", place: { at: [0, 0] } });
       const u = s.call("olive", "upload", { text: 'world.on("enter", (e) => { const n = (world.get("self", "t/n")?.n ?? 0) + 1; world.set("self", "t/n", { n }); });' });

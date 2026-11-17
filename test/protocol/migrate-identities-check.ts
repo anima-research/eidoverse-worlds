@@ -13,6 +13,7 @@
 //        ids, so nothing names an id the directory lacks (I91)
 //   MI7  a run killed after the backup is finished by the next --apply, from the backup
 //   MI8  the backups and the replacement logs are fsynced before the renames that publish them, the directory after
+//        (POSIX; Windows skips a directory fsync: server/durable.ts syncDir)
 //   MI9  a dry run mints nothing: a worlds dir without a custody file is skipped, and none is written
 // MIGRATE_TOOL=<path> runs another copy of the tool (a base, for the rows' red).
 // @ts-nocheck
@@ -129,7 +130,7 @@ fs.renameSync = (a, b) => { log("rename " + a + " " + b); return rn(a, b); };\n`
   const before = (x: string) => at(x) >= 0 && at(x) < firstRename;
   const dirAfter = process.platform === "win32" || L.slice(at(`rename ${f + ".id-tmp"} ${f}`) + 1).includes(`fsync ${d}`);
   ok(r.exitCode === 0 && firstRename > 0 && before(`fsync ${f}.before-identities`) && before(`fsync ${mf}.before-identities`) && before(`fsync ${f}.id-tmp`) && before(`fsync ${mf}.id-tmp`) && dirAfter,
-    "MI8 both backups and both replacement logs are fsynced before the first rename publishes them; the world's directory is synced after the last", { code: r.exitCode, firstRename, trace: L.map((l) => l.replace(d, "")).slice(0, 16), dirAfter }); }
+    "MI8 both backups and both replacement logs are fsynced before the first rename publishes them; the world's directory is synced after the last (not on Windows)", { code: r.exitCode, firstRename, trace: L.map((l) => l.replace(d, "")).slice(0, 16), dirAfter }); }
 
 // ================= MI9: the dry run mints no key =================
 { const root = scratch("migdry"); const d = oldWorld(root, "loft"); const cf = path.join(root, "worlds", ".custody.json"); fs.rmSync(cf);

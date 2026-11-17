@@ -20,7 +20,8 @@
 //      entities, a mounted thing's parent names the child, its pose is re-expressed in the child's frame), against side
 //      A's old projection put through the SAME lift (./shapes.js liftProjection), plus an independent check that
 //      every old seat is a child entity with that name at that pose.
-//   Ids: the translator keeps every entity id (enc() only escapes what the §2.3 grammar refuses), so ids are matched
+//   Ids: the translator keeps every entity id (enc() escapes only what the §2.3 grammar refuses, and an id that starts
+//   with its own escape prefixes x-- or h--), so ids are matched
 //   through enc(); people's names (roles, bans, authors) are matched through the translated world's directory.
 //   Numbers compare with a 1e-9 tolerance; everything else exactly. What the comparison leaves out is only the
 //   translator's own DROPPED table (printed by name with its reason), and nothing else.

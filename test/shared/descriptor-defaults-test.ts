@@ -1,7 +1,7 @@
 // test/shared/descriptor-defaults-test.ts — the registry is the schema: every default the records (shared/components.js
 // RECORDS), the inspector (shared/editschema.js) and the hand (shared/grab.js) state equals what the authority writes,
 // materialize(key, {type}), read through the descriptor's editor translation (shared/descriptors.js).
-// Refactor plan C5 (notes/eidoverse/PLAN-refactor-2026-10-12.md); STRIKES C-S2.
+// Refactor plan C5 (PLAN-refactor-2026-10-12, kept outside this repo); STRIKES C-S2.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/descriptor-defaults-test.ts
 // Mutation: a registry pendulum period of 2.9 → 2 red.
 import { DESCRIPTORS, editorDefault, materializedOf, toWire, axisLetter, axisVector } from "../../shared/descriptors.js";

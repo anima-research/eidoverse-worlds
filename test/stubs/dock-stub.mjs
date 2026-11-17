@@ -1,5 +1,5 @@
 // dock-test substitutes this for everything ui.js imports that is NOT under test: base.js (bus/CONFIG/
-// sinks), mictoggle.js (the mic/ear/VR glyph surface the ∃ menu paints), xrpanels.js, assets.js, defs.js,
+// sinks), mictoggle.js (the mic/ear/VR glyph surface the ∃ menu paints), defs.js (xrpanels.js and assets.js are real now),
 // and the four panel modules initPanels() pulls in dynamically. One file, many specifiers — extra exports are
 // harmless, a MISSING one is a SyntaxError that takes the suite down before a single check runs.
 // windows.js, icons.js and dropdown.js stay REAL: the dock's contract is with them.

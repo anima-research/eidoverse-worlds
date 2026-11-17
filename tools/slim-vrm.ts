@@ -28,7 +28,8 @@ while (off < src.length) {
 }
 if (!bin) throw new Error("no BIN chunk");
 
-// resize each image via sharp; always JPEG out, which drops alpha (a texture's alpha cutouts are lost)
+// resize each image via sharp and re-encode it as JPEG, which drops alpha (a texture's alpha cutouts are lost); an image
+// whose JPEG isn't smaller keeps its original bytes and format
 const sharp = (await import("sharp")).default;
 const replaced = new Map<number, Uint8Array>();
 for (const [i, img] of (json.images ?? []).entries()) {

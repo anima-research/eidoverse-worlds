@@ -1,7 +1,7 @@
 // The gate finds and kills a suite's processes on Linux, macOS and Windows (review #260, rereview blocker 2;
 // server/procgroup.ts, under the gate's name test/gate/procgroup.ts).
-// PG1 runs for real on whatever OS this is. PG2 proves the macOS path (ps) on any POSIX host by checking it agrees with
-// what the OS reports. PG3/PG4 prove the Windows path's parsing and tree walk on fixed tables, including an orphan whose
+// PG1 runs for real on whatever OS this is. PG2 checks the macOS path (ps) agrees with what the OS reports, on any POSIX
+// host (on macOS the OS's table IS ps, so there it's no independent proof). PG3/PG4 prove the Windows path's parsing and tree walk on fixed tables, including an orphan whose
 // parent already exited (Windows keeps the dead parent's id on the child). PG5–PG12, PG14, PG16 and PG17: zombies, the async
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.

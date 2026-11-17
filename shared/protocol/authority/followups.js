@@ -102,7 +102,7 @@ function applyResettle(w, plan, cause, notes) {
 //   - a physics value written (create or set): its shape is the authority's, whatever was sent;
 //   - a model changed on a thing with physics: re-measured;
 //   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
-//     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
+//     engine changed): physics {kind: 'static', shape} unless it has physics already or its model isn't measured here (translate-d3 writes the same).
 const r4 = (n) => Math.round(n * 1e4) / 1e4;
 // the authority's measurement of a model as a collider. A sphere is asked for with collider.shape "sphere" (PHYSICS §3.1:
 // the request vocabulary; the stamp is the tagged shape): fitted to the measured box, centred on it, radius its largest

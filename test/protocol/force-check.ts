@@ -129,7 +129,7 @@ const cases: Case[] = [
       const r = s.call("bob", "force", { at: [-1, 0, 0] });
       return { g: show(g), r: show(r), punted: (r.punted ?? []).map((x: any) => x.id), skipped: r.skipped ?? [] }; },
     good: (o) => o.g === "ok" && o.r === "ok" && o.punted.join() === "crate" && o.skipped.some((x: any) => x.id === "lk" && x.code === "locked") && o.skipped.some((x: any) => x.id === "ball" && x.code === "held") },
-  { id: "F7", what: "bodies: vic (move gate on, the default) is shoved away from the blast; ida (move off) is not, and is only counted; a body past the rim hears nothing", run(s) { cast(s, { physics: false });
+  { id: "F7", what: "bodies: vic (move gate on, the default) is shoved away from the blast; ida (move off) is not shoved (she is told who tried, and it is counted); a body past the rim hears nothing", run(s) { cast(s, { physics: false });
       s.call("vic", "move", { to: [1, 0, 0] }); s.call("ida", "move", { to: [-1, 0, 0.5] }); const c = s.call("ida", "consent", { move: false });
       s.call("bob", "move", { to: [0, 0, 6] });
       const r = s.call("bob", "force", { at: [0, 0, 0], radius: 4, power: 3 });

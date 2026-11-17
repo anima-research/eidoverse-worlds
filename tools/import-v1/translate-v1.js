@@ -935,8 +935,8 @@ export function project(st, seen = null, who = null, ns = NAMESPACE, content = n
     const can = { ...(rest.can ?? {}), ...(fly === true ? { fly: true } : {}), ...(gen === true ? { generate: true } : {}) };
     return Object.keys(can).length ? { ...rest, can } : rest; };
   // upstream #258's world access rode the same map: `*` none = invite-only, `*` spectator = watch only. Here entry is
-  // @world.access (shared/protocol/access.js); a person's own none / spectator is a record that lists no one (role none:
-  // in, they watch only where the world lets everyone watch). A timed grant keeps its `until` (the load's sweep ends one
+  // @world.access (shared/protocol/access.js); a person's own none / spectator is a record that lists no one (they watch
+  // only where the world lets everyone watch), and in an owned world a none is also an imported ban that keeps them out. A timed grant keeps its `until` (the load's sweep ends one
   // already past).
   Object.assign(w, mainRights(st).world);   // @24 (R 10-28): main's effective rights, written out
   const open = !ownedIn(st);   // @30: main read no grant in an ownerless world, so a grant below builder is builder (mainRights)

@@ -88,7 +88,7 @@ console.log("\nmodel downloads, governed:");
   check("...and nothing is left queued", meshGovernor.active === 0 && meshGovernor.queued === 0, JSON.stringify({ active: meshGovernor.active, queued: meshGovernor.queued }));
   const big = await g.ground.meshFor("huge.glb");
   const why = [...meshGovernor.fallbacks].find(([k]) => k.endsWith("huge.glb"))?.[1];
-  check("a model over the size limit is not decoded: its /geom summary stands in, and says why", big === null && /over the 50MB exact-collision limit/.test(why ?? ""), String(why));
+  check("a model over the size limit is not decoded (no mesh), and the fallback says why (the /geom stand-in isn't driven here)", big === null && /over the 50MB exact-collision limit/.test(why ?? ""), String(why));
   srv.stop(true);
 }
 

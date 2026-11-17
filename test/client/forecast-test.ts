@@ -321,9 +321,10 @@ const policyArgs = {
 // normalized real → unresolvable tz — is the regression guard: the rated
 // fallback must survive the re-issue and genuinely govern (a typo dims nothing).
 //
-// The CONTROL checks below use only surfaces that exist on BOTH trees
+// The CONTROL checks below use surfaces that exist on BOTH trees
 // (foldSkyEntry + hoursAt), so on main they fail with the actual stale
-// numbers — behavioral evidence, never a link-time missing-export.
+// numbers — behavioral evidence, never a link-time missing-export. #65's
+// also reads effectiveClock, and on a tree without it says "absent".
 
 {
   const synth = (bag: any) => foldSkyEntry(null, { verb: "sky", args: bag, ts: T0 + 9 * HOUR, seq: -1, actor: "world" });

@@ -286,7 +286,8 @@ export async function warmHulls(srcDir: string) {
   await warm(old.filter((e: Any) => e?.verb === "spawn" && veh.has(String(e.args?.id))).map((e: Any) => e.args.lib));
   await warmLamps(old.filter((e: Any) => e?.verb === "spawn").map((e: Any) => e.args?.lib));   // main's inferred lamps (lamps.ts), measured once too
 }
-/** The dry run's translation (ids derived; nothing written but the custody key, minted on first use; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
+/** The dry run's translation (ids derived; nothing written but the custody key, minted on first use, and an old-named
+ *  key file renamed to its current name, server/keyfiles.ts; this host's bytes and hull boxes): the ONE call the report and the apply's digest check share (review delta-260 #1). */
 function dryTranslation(old: Any[], srcDir: string, world: string, owner: OwnerClaim | null, sourceSha256: string, content: (p: string) => string | null = hostContent) {
   const worlds = path.dirname(path.resolve(srcDir));
   const m = identityMapper(old, directoryFor(worlds), { ...identitySalt(worlds, sourceSha256), known: mainKnowledge(worlds, { self: path.basename(path.resolve(srcDir)) }), owner });
@@ -383,7 +384,8 @@ export function translateV1World(srcDir: string, destDir: string, { founderKey, 
     if (now !== approval.report) throw new Error(`the approval is refused: it approves report ${approval.report}, but the report of the log being translated hashes to ${now}: the old log, the tool or the model bytes changed since the dry run, so what would be written isn't what was approved. Run the dry run again, read it, and approve its new hash. Nothing written`); }
   // salted and signed like every line the authority writes (§2.4; round-2 review R3): a translated world is a chained log
   const text = seal(r.out, { sign: (m: string) => cust.sign(m) }).map((e: Any) => JSON.stringify(e)).join("\n") + "\n";
-  // the strict reader must accept every line, and fold to the translator's own final state, before the file exists
+  // the strict reader must accept every line before the file exists (that it folds to the translator's own final state is
+  // test/protocol/sweep.ts's check, not this one's)
   const back = fold(readLog(text));
   const malformed = back.diagnostics.filter(([, c]: Any) => String(c).startsWith("malformed"));
   if (back.status !== "ok" || malformed.length) throw new Error(`the translated log doesn't read back clean (${back.status}, ${malformed.length} malformed: ${JSON.stringify(malformed.slice(0, 3))}): nothing written`);

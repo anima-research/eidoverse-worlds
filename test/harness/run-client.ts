@@ -44,7 +44,7 @@ const SLOW: Record<string, string> = {
   "object-lod-test.ts": "decimates real models",
   "seat-lifecycle-test.ts": "a real server, seat by seat",
   "support-lifecycle-test.ts": "a real server, support by support",
-  "contact-mutation-test.ts": "nine mutations, each a full run of a reach/walk suite (~minutes)",
+  "contact-mutation-test.ts": "six mutations, each a full run of a reach suite (~minutes)",
 };
 
 const isTest = (n: string) => /-(test|check)\.(ts|mjs|js)$/.test(n);

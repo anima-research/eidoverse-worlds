@@ -1,6 +1,6 @@
 // bun bench/drawbench.ts [--out /tmp/drawbench]
 // Owned, isolated WebGPU pixel + actual draw-call comparison; no sequencer or
-// live world needed. SFU_TEST_CHROME selects a browser; otherwise Playwright's.
+// live world needed. SFU_TEST_CHROME selects a browser; else macOS's installed Chrome; else Playwright's.
 import { resolve, join } from 'node:path';
 import { mkdirSync, existsSync } from 'node:fs';
 import { PNG } from 'pngjs';

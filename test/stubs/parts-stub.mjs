@@ -9,11 +9,11 @@ export function* bags() { yield* comps; }
 export const metaOf = (id) => entityMeta.get(id) ?? null;
 export const reindexCollider = () => {};
 
-// motion.js itself needs only the four names above, but its import cone now
-// reaches ragdoll.js (via remotes.js), which imports resolveColliders from the
-// same stubbed './colliders.js' — so a stub missing it fails the whole module
-// graph with "Export named 'resolveColliders' not found". Nothing under test
-// here collides; return the bare terrain height, which is what an empty world
+// motion.js itself needs only the four names above. resolveColliders is for a
+// cone that reaches ragdoll.js, which imports it from the same stubbed
+// './colliders.js' (parts-test stubs remotes.js, so its own cone doesn't today;
+// a stub missing it would fail that graph with "Export named 'resolveColliders'
+// not found"). Nothing under test here collides; return the bare terrain height, which is what an empty world
 // of colliders would report.
 export const resolveColliders = (pos, terrainAt) => terrainAt(pos.x, pos.z);
 

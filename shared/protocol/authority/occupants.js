@@ -64,8 +64,9 @@ function occupant(w, st, id, actor) {
 //   - an edit by anyone but the occupant that would move a seat someone sits on (transform, parent or motion of the seat or of
 //     anything it hangs from) VACATES each occupant on it, every one, not the first found: the edit lands, the occupant is let go
 //     where they were, standing (presence, nothing logged), and told why (their inbox, and a note in the reply);
-//   - what the seat's own assembly does to it is the occupant exemption (the seat's own motion): a reaction or a script on a thing with the same root as the seat
-//     (a swing's push, a carousel's turn, an elevator's script) carries its occupants, whoever pressed the button;
+//   - what the seat's own assembly does to it is the occupant exemption (the seat's own motion, as it was when you sat): a
+//     reaction or a script on a thing with the same root as the seat when you sat (a swing's push, a carousel's turn, an
+//     elevator's script) carries its occupants, whoever pressed the button; one added since vacates (r9-check M1);
 //   - moving the seat you sit on yourself is yours: you stay seated (others on it are let go);
 //   - a standing body never blocks an edit and is never a reason to refuse one: what you stand on carries you, as ever (the
 //     client's own walker keeps you on it). A griefer can't freeze an owner's stage by standing on it.

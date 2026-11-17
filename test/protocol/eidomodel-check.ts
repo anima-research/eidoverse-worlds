@@ -77,7 +77,8 @@ await C("U6", "EIDO-URIS.md: model's media is fixed by its role (glTF binary), s
   const t = fs.readFileSync(path.join(ENGINE, "spec/EIDO-URIS.md"), "utf8"); return [/`model`[^\n]*role[^\n]*glb|media is fixed by its role/i.test(t), null]; });
 
 // R 10-17 (review r7 F3, F4): the catalogue measures a path's hash off the request path, credits are looked up by path, and a
-// world written through the door names its models by path, so it loads with no index at all
+// world written through the door names its models by path, so it loads with no index (one holding an eido:sha256
+// model, written or copied in, still needs the host's address index)
 await C("U7", "credits survive: a library path's entry has them, an old address's entry has its file's (looked up by path), and neither entry is the other", async () => {
   const M = await imp("server/modelcatalogue.ts"); const X = await imp("server/eidoindex.ts");
   X.recordEido(HL, LIBREL); await M.warm([LIBREL, `eido:sha256/${HL}`]);

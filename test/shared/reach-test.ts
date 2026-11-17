@@ -3,8 +3,9 @@
  *
  * Run: bun run test/shared/reach-test.ts
  *
- * Every expectation is HAND-COMPUTED from the law of cosines and written out
- * here, so a wrong solver cannot agree with a wrong test.
+ * The exact expectations are HAND-COMPUTED from the law of cosines and written
+ * out here, so a wrong solver cannot agree with a wrong test; the fuzz sections
+ * check invariants (named limits, finiteness, bone lengths), not an answer.
  *
  *   Isoceles case, L1 = L2 = 1, target 1.41421356 out:
  *     cos(interior) = (1 + 1 - 2) / (2·1·1) = 0            -> interior = 90°

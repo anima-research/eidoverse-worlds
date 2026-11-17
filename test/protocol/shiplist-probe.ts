@@ -1,14 +1,14 @@
 // test/protocol/shiplist-probe.ts — the ship list's group A in a real browser (one headless Chromium against a scratch
 // sequencer, test/harness/harness.ts scratchBench; test:protocol runs it under the house guards, like client-check):
 //   D   a desktop visitor's door: the hint bar offers "E open “Gate”" within reach; E opens it through the authority (one
-//       use act); every client draws it swinging (it turns about its hinge over its time, then rests open); E again
+//       use act); the page draws it swinging (it turns about its hinge over its time, then rests open); E again
 //       offers "close" and closes it
 //   F   a refusal reads in a person's words (no code, no tool syntax, the thing by its label), the authority's whole answer
 //       still on the event for the console
 //   W   a write the authority warns about (it floats) shows the warning to the person, by label
 //   V   in a headset (renderer.xr presenting, emulated), a moderator's warning rides the XR quad, not the DOM card
 //   E   the editor: the Inspector's Openable card (its rows; a hinge button writes the pivot), and Add Component finds
-//       Openable by 'door' and adding it makes the thing usable
+//       Openable by 'door' and adding it writes its state and open action (a visitor opening one is D's)
 //   …and some thirty more stages, most from R's gym reports (WB, VP, VA, CU, FL, HP, HT, …, NP): each stage's own comment
 //   says what it holds. STAGES=HT,HP runs a subset.
 // @ts-nocheck
@@ -163,7 +163,7 @@ try {
   const reply = await page(`const e = await import('/lib/edit/writes.js'); const r = await e.send({ verb: 'create', args: { id: 'cloud', model: '${CRATE}', components: { label: 'Floating crate', transform: { pos: [${at[0] + 5}, 1.5, ${at[1]}], q: [0, 0, 0, 1], scale: [1, 1, 1] } } } }, { what: 'place a crate' });
     return { ok: r?.ok, warnings: r?.warnings ?? null, refused: r?.refused ?? null };`);
   check("W1 a write the authority warns about shows the warning, by label", await waitFor(`__warned.length > ${w0} && /“Floating crate” floats/.test(__warned.at(-1).text)`, 5000), { reply, warned: await evalJson(`__warned.at(-1) ?? null`) });
-  check("W2 …on screen, on the one status bar (a warning about my own edit; DESIGN-status-bar.md)", await waitFor(`/Done, but “Floating crate”/.test(document.getElementById('hintbar').textContent) && !document.getElementById('hintbar').classList.contains('gone')`, 3000));
+  check("W2 …on screen, on the one status bar (a warning about my own edit)", await waitFor(`/Done, but “Floating crate”/.test(document.getElementById('hintbar').textContent) && !document.getElementById('hintbar').classList.contains('gone')`, 3000));
 
   });
   // ---- V: a moderator's warning in a headset ----
@@ -720,7 +720,7 @@ try {
   const mirrored = await page(`const p = globalThis.__gripeditTest().panel; [...p.querySelectorAll('button')].find((b) => b.textContent === 'mirror').click(); await new Promise((z) => setTimeout(z, 1500));
     const gs = (await import('/lib/world.js')).bagOf('getool').grabbable.grips; return gs;`);
   const L = mirrored["grip1-left"], Rg = mirrored.grip1;
-  check("GE3 mirror writes the left hand's grip: x negated, the same palm-out (Z) after the reflection", !!L && L.hand === "left" && Math.abs(L.pos[0] + Rg.pos[0]) < 1e-3 && Math.abs(L.pos[1] - Rg.pos[1]) < 1e-3, { L, R: Rg });
+  check("GE3 mirror writes the left hand's grip: x negated, y kept (the palm's turn isn't checked here)", !!L && L.hand === "left" && Math.abs(L.pos[0] + Rg.pos[0]) < 1e-3 && Math.abs(L.pos[1] - Rg.pos[1]) < 1e-3, { L, R: Rg });
   const tried = await page(`const c = await import('/lib/player/controller.js'), w = await import('/lib/world.js'), { THREE: T } = await import('/lib/core.js'), tp = await import('/lib/thingphysics.js'), n = await import('/lib/net.js');
     const ge = await import('/lib/edit/gripedit.js'); const tc = globalThis.__gripeditTest(); [...tc.panel.querySelectorAll('.gripedit-row')].find((r) => r.textContent.startsWith('grip1') && !r.textContent.includes('left')).click();
     await new Promise((z) => setTimeout(z, 300)); const r = await [...tc.panel.querySelectorAll('button')].find((b) => b.textContent === 'try it').onclick();

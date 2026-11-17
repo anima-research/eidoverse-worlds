@@ -155,7 +155,7 @@ const detour=(r:any)=>r.refusal===null&&r.legs>0&&!!r.target;
   check(first.levels.length===0&&cached(primitive)!==first,"malformed primitive "+JSON.stringify(primitive)+" plans empty, afresh each time (uncached)");
  }
  await receive("spawn",{id:"house",lib:"fixture.glb",pos:[0,0,0]});
- check(data()===undefined,"same-id spawn replacement does not inherit cached structure data");
+ check(data()===undefined,"a same-id spawn is refused (an id is never reused), so no cached structure data survives under the old id");
  }
   }
 

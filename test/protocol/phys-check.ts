@@ -104,7 +104,7 @@ function playground(name) {
   ok(after.ok && JSON.stringify(fold(log(W)).entities.ball.c.transform.pos) === "[3,0,3]", "C at rest it's an ordinary thing again", after);
   const L = log(W); const i = rs[0].seq; const throwAct = L[rs[0].cause].cause; // a reader catches a write that slipped past the authority mid-flight
   const forged = insertAt(L, rs[0].cause + 1, { world: L[1].world, kind: "change", ts: L[rs[0].cause].ts + 200, actor: "rowan", cause: throwAct, op: "set", body: { id: "ball", comp: "label", value: "mid-air" } });
-  ok(simFold(forged, openWorld(root, W).now()).checks.disagree.some((d) => /in flight/.test(d.why ?? "")), "C a carrier flags any write that touched it in flight", simFold(forged, openWorld(root, W).now()).checks);
+  ok(simFold(forged, openWorld(root, W).now()).checks.disagree.some((d) => /in flight/.test(d.why ?? "")), "C a carrier flags a write that touched it in flight (one whose launch was purged isn't judged: U7j)", simFold(forged, openWorld(root, W).now()).checks);
 }
 
 // D — P6 barrier: turning physics off mid-flight waits (with an ETA), or freezes on force.

@@ -1,6 +1,6 @@
 // debug-tabs-test substitutes this for every neighbour debug.js imports except rows.js (pure DOM) and windows.js
-// (the real one). One export table serves core/base/xrpanels/gputime/perf/render/perfscope/three-mesh-bvh/colliders/
-// ragdoll/ammodoll/avatar/ui — the names are disjoint. Inert unless a test reads it.
+// (the real one). One export table serves core/base/xrpanels/gputime/perf/render/perfscope/colliders/
+// ragdoll/ammodoll/avatar/ui — the names are disjoint (debug.js gets the real three-mesh-bvh; MeshBVHHelper here is unused). Inert unless a test reads it.
 const Inert = class { constructor() {} set() { return this; } add() {} remove() {} copy() { return this; } };
 export const THREE = new Proxy({}, { get: () => Inert });
 export const scene = { add() {}, remove() {} };

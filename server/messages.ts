@@ -286,7 +286,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     // the live drag needs the same build right the release does
     if (!c.world.log!.rightsOf(actorIdOf(c)).can.build) return;   // the person's directory identity, never their name
-    // q: the rotate gizmo turns about any axis (design §5); relayed only when
+    // q: the rotate gizmo turns about any axis; relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
     // `end: true` is the last sample of a drag: receivers drop the claim it carried (docs/reference/WIRE.md: a live drag is a claim)

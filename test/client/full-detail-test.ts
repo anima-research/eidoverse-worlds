@@ -1,6 +1,6 @@
 // bun test/client/full-detail-test.ts — the resident's "keep full detail" switch (governor.js setFullDetail). While it is on
 // the governor never sheds a lever and the dead-band cruise never steps pixels; turning it on hands back whatever was
-// already shed, at once — including a pixel ratio shed before VR entry and a grass budget shed before the meadow was
+// already shed, at once (a pixel ratio shed before VR entry waits for the exit) — including a grass budget shed before the meadow was
 // cleared — and the choice persists. The REAL governor.js runs over test/stubs/full-detail-stub.mjs (lod-client-stub with
 // stateful levers), so each restore is asserted on the value it sets, not on the governor's own flags. Controls: the
 // same drives with the switch off DO shed, so every "nothing moved" has a subject.

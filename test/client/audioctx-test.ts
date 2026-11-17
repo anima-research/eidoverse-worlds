@@ -7,9 +7,9 @@ import { suite } from "../gate/suite.ts";
  *  foundational module — with a fake AudioContext constructor, prove that
  *  repeated calls yield exactly one instance. That is the whole contract, and
  *  it is the kind of claim that is easy to state and easy to quietly break: a
- *  later refactor that reintroduces `new AudioContext()` anywhere would not fail
- *  any existing test, it would just start silencing pages again after six
- *  toggles.
+ *  later refactor that reintroduces `new AudioContext()` anywhere failed no
+ *  test before this file, it just started silencing pages again after six
+ *  toggles (the source guard below now catches it).
  *
  *  Run: bun test/client/audioctx-test.ts
  */

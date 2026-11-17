@@ -8,7 +8,8 @@
 //   bun test/protocol/roles-check.ts --mutants       remove each gate in turn (a copy of the tree): its named cases must go
 //                                               red; a no-op control mutation must stay green
 // Cases:
-//   B1  no `role` variable is compared to a built-in role name outside roles.js
+//   B1  no `role` variable is compared to a built-in role name outside roles.js, in shared/ server/ client/ mcpl/ (tools/
+//       isn't walked: the frozen v1 fold compares role === "owner")
 //   K   kept: what the authority did before, unchanged (green at base AND now)
 //   R   S1 ranks, definitions, the effective set
 //   S   S2 thing and world writes go through permissions
@@ -204,7 +205,7 @@ type Case = { id: string; what: string; run: (s: any) => any; good: (o: any) => 
 const cases: Case[] = [
   // B1 (recut B, house: "new code would check permissions rather than role names, with owner-only powers going through one
   // function"): no source outside roles.js compares a `role` variable to a built-in name. roleOf(...) === "owner" isn't matched.
-  { id: "B1", what: "(recut B1) no `role` variable compared to a built-in role name outside shared/protocol/roles.js (a roleOf(...) === \"owner\" call isn't checked)", run() {
+  { id: "B1", what: "(recut B1) no `role` variable compared to a built-in role name outside shared/protocol/roles.js, in shared/ server/ client/ mcpl/ (a roleOf(...) === \"owner\" call isn't checked)", run() {
       const hits: string[] = []; const RX = /\brole\s*[!=]==?\s*["'](owner|builder|moderator|member|visitor|none)["']|["'](owner|builder|moderator|member|visitor)["']\s*[!=]==?\s*[\w.?]*role\b|\[[^\]]*["'](builder|owner)["'][^\]]*\]\.includes\([\w.?]*role\)/;
       const walk = (d: string) => { for (const e of fs.readdirSync(TREE + d, { withFileTypes: true })) { const rel = d + "/" + e.name;
         if (e.isDirectory()) { if (!["node_modules", "vendor", "dist"].includes(e.name)) walk(rel); continue; }

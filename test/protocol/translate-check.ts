@@ -1,6 +1,6 @@
 // test/protocol/translate-check.ts — the owner's translation rulings of 10-28 (MORNING-ASKS; SWEEP-3), one row each. Synthetic only.
 //   R22a-h  main's effective rights written out: owned (no '*' → builder, guests too; '*' gen; '*' visitor; '*' none), ownerless
-//           (once its upgrader claims it, everyone builder, rank and all; with no owner, roles.js caps everyone at member)
+//           (once its upgrader claims it, everyone below builder is builder, a moderator stays one (R22g); with no owner, roles.js caps everyone at member)
 //   W1a-c   #260 item 1: a person's own watch grant (closed or open old world) is refused by name, never dropped or widened
 //   W1d     @36: a person's own role none in an owned world is a ban (its end kept) in the moderator log: still kept out
 //   P17a-h  main's particle knobs → a derived effect document stored in the world; what has no reading carried and listed

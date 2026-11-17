@@ -684,9 +684,9 @@ await C("D6b", "an owner sets a policy number at or below the server's ceiling, 
   const gone = ["install", "rate", "depth", "fails", "runs"].map((k) => W.call("set", { id: "@world", component: "script-settings", value: { [k]: k === "install" ? "owner" : 3 } }));
   return [!over.ok && over.refused.code === "bounds" && new RegExp(`at most ${top}`).test(over.refused.reason) && at.ok && !cpuUp.ok && cpuUp.refused.code === "bounds" && cpuDown.ok && gone.every((g) => !g.ok && g.refused.code === "schema"),
     [over.refused, why(at), cpuUp.refused, why(cpuDown), gone.map(why)]]; });
-await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data", () => {
+await C("D7", "no default lives only in help text: every 'default …' a help string names for a field is in the definition's data (the dynamic ones in DYN excepted)", () => {
   // defaults that aren't a fixed number: where it stands, a size-chosen pose; and nested ones (a socket's, a handler's args)
-  // default-role.guests: absent is visitor whatever the role, which no stored value can say under a role of none (known gap)
+  // default-role.guests: absent is member whatever the role (roles.js guestRoleOf), which no stored value can say under a role of none (known gap)
   const DYN = new Set(["motion.center", "grabbable.anim", "reactions.component", "reactions.field", "reactions.strength", "default-role.guests"]);
   const bad = [];
   for (const [name, def] of Object.entries<any>(CAT.COMPONENTS)) { const h = def.help ?? ""; const all = CAT.defaultsOf?.(name) ?? {};
@@ -819,7 +819,7 @@ await C("I1", "the authority mints ids with 128+ random bits (26 base32, nothing
   const W = world(); const ids = []; for (let i = 0; i < 40; i++) { const r = W.call("create", { model: "crate" }); ids.push(r.refs?.[0]?.id); }
   const dup = W.call("create", { from: ids[0] }); const dupId = dup.refs?.[0]?.id;
   return [ids.every((x) => typeof x === "string" && RAND.test(x) && FOLD.isEntityId(x)) && new Set(ids).size === ids.length && RAND.test(dupId ?? ""), [ids.slice(0, 3), dupId]]; });
-await C("I2", "no client mints an id (R 10-17: writers never choose ids): each create sends a $placeholder and reads the reply's ids map; the agent door mints nothing; no 8-hex or coordinate ids remain", () => {
+await C("I2", "no client mints an id (R 10-17: writers never choose ids): each create in the files below sends a $placeholder and reads the reply's ids map (one with no id at all, as duplicate's, lets the authority mint); the agent door mints nothing; no 8-hex or coordinate ids remain", () => {
   const files = ["client/lib/edit/build.js", "client/lib/xr/worldquad.js", "client/lib/edit/structure_ui.js", "client/lib/facemedia.js"];
   // the agent door mints NOTHING since the 10-14 tools rewrite: create {id omitted} lets the authority mint (mcpl/tools.ts #216
   // note). A client-side mint reappearing there — by any spelling — is the regression this guards.

@@ -3,7 +3,7 @@
 // Main's test (#270), carried into the revised protocol (#260): a folded tool (tools.ts TOOL_ALIASES,
 // TOOL_FOLDS) is checked through the tool that
 // does it now; a refusal that moved to the world's authority is gone
-// here, with a note saying where it's pinned. body_state/reach use this protocol's facts: o.pose.clip is a clip,
+// here, with a note saying where its code is pinned (its words are the authority's, not pinned here). body_state/reach use this protocol's facts: o.pose.clip is a clip,
 // a seat is left with detach, a reach is released with reach {release: true}.
 import { noWorldUrl } from "../harness/no-world.ts";
 import { mkCheck } from "../harness/harness.ts";

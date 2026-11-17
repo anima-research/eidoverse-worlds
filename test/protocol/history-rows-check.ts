@@ -43,7 +43,7 @@ ok(done && !done.refused && !/refused|tried/.test(done.text) && /Ann/.test(done.
   W.call("set", { id, component: "label", value: "pt 25" }); const r3 = H();
   const late = mergeHistory(st, r3.entries, r3.next ?? null, false);   // a refresh answered after the Older… read
   ok(late.entries.some((e: any) => /motion/.test(JSON.stringify(e.changed))) && late.entries[0].seq === r3.entries[0].seq && new Set(late.entries.map((e: any) => e.seq)).size === late.entries.length && chain(late.entries) && late.next === st.next,
-    "H8 Older… reaches the motion acts, and a refresh landing after it keeps them (and the deeper cursor), no row lost or fused", [late.entries.length, late.next, st.next, late.entries.some((e: any) => /motion/.test(JSON.stringify(e.changed))), late.entries[0].seq === r3.entries[0].seq, chain(late.entries), late.entries.slice(0, 3).map((e: any) => e.diff)]);
+    "H8 Older… reaches the motion acts, and a refresh landing after it keeps them (and the deeper cursor), no row duplicated or fused (losses are checked for the motion rows only)", [late.entries.length, late.next, st.next, late.entries.some((e: any) => /motion/.test(JSON.stringify(e.changed))), late.entries[0].seq === r3.entries[0].seq, chain(late.entries), late.entries.slice(0, 3).map((e: any) => e.diff)]);
   const fresh = mergeHistory({ entries: [], next: null, paged: false }, r3.entries, r3.next ?? null, false);
   ok(fresh.entries.length === 20 && fresh.next === r3.next, "H9 without an Older… read, a refresh is the newest page alone", fresh.entries.length); }
 SU.done();

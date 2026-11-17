@@ -1,5 +1,5 @@
 // chat mention insertion — the shipping doors (mentionPerson, a click on a name) put a space before `@name ` when the
-// caret follows a word, and nothing extra otherwise (#313 review: the regex suite never ran these call sites).
+// caret follows a word character, '-' or '@', and nothing extra otherwise (#313 review: the regex suite never ran these call sites).
 //
 //   bun test/client/chat-mention-insert-test.ts
 

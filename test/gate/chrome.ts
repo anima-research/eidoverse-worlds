@@ -1,5 +1,6 @@
 // test/gate/chrome.ts — the one place a Chromium is found and its launch flags are chosen: the gate's preflight
-// (run.ts), the bench harness (test/harness/harness.ts), browser-check's CDP launch (cdpPage), and the standalone benches.
+// (run.ts), the bench harness (test/harness/harness.ts), browser-check's CDP launch (cdpPage), and most standalone
+// benches (bench/drawbench.ts and test/client/roaming-renderer-check.ts pick their own).
 //   findChrome()            CHROME, else playwright's own build, else this OS's installed Chrome/Edge, else (Linux) the
 //                           newest full Chromium in playwright's cache, else its newest headless shell
 //   chromeArgs({…})         a CDP-driven launch: headless, debugging port, fresh profile, quiet profile flags, this OS's flags

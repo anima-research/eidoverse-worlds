@@ -14,7 +14,7 @@
 // 4. a child's channel box: local values, and an edit writes ONE local transform
 // 5. undo: the door's `undo` takes a parent edit back to exactly what it was
 //
-// the protocol port (2026-10-06): mount/dismount/place are gone: parenting is `set parent` + a LOCAL `set transform` (scale
+// the protocol port (2026-10-06): mount/dismount are gone and place no longer parents (it positions): parenting is `set parent` + a LOCAL `set transform` (scale
 // local too), so "a scaled carrier needs an extra place", "an upright turn travels as a bare yaw" and the v1
 // inverses have no meaning here; undo is the door's. Guards are gone (merged into lock); a lock is the door's to
 // refuse. Light-verb lights are gone (a lamp is a thing with a light component). The v1 server's vMount is

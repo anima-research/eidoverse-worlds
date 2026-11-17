@@ -4,8 +4,8 @@
 // gate's own code: every suite run.ts runs, with the local files it imports (not a runner's file argument, as bun-test.ts
 // x-test.ts: that file gets only the all-files rules), plus server/, shared/ and mcpl/. Counts are
 // per file and per rule, against test/gate/hygiene-baseline.json, which may only go DOWN: a file over its count fails,
-// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything while a baseline file exists). A file not in the
-// baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
+// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything while the
+// baseline holds a count; an emptied `{}` one doesn't stop it). A file not in the baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
 //
 //   bare-wait     a fixed sleep (setTimeout-in-a-Promise, Bun.sleep, sleep()/delay(), waitForTimeout) in a suite. Wait on
 //                 the condition with wait.ts `until`; a wait where elapsed time IS the test uses `pause(why, ms)`.

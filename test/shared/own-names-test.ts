@@ -1,5 +1,6 @@
 // test/shared/own-names-test.ts — a bone or contact-point name is read as an OWN key only: the names every object inherits
-// (constructor, __proto__, toString, valueOf) are never a bone, a point, or a name "already set" (#297).
+// (constructor, __proto__, toString, valueOf) are never read off the prototype as a bone, a point, or a name "already
+// set" (#297); written as an own key (a custom bone, a rig node so named) they are kept like any other name.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/own-names-test.ts
 // @ts-nocheck
 import { canonicalBone, validatePose, validateTracks, mergePose, puppetPose } from "../../shared/humanoid.js";

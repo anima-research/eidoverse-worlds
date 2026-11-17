@@ -63,7 +63,7 @@ function cosK(r) {
     + z * (C12 + z * (C14 + z * C16)))))));
 }
 
-/** Reduce x to (k mod 4, r) with x ≈ k·π/2 + r, |r| ≲ π/4. */
+/** Reduce x to (k mod 4, r) with x ≈ k·π/2 + r, |r| ≲ π/4: accurate to |x| ≈ 1e6 (two words of π/2); past that r drifts. */
 function reduce(x) {
   const n = Math.floor(x * TWO_OVER_PI + 0.5);
   const r = (x - n * PIO2_HI) - n * PIO2_LO;

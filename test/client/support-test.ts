@@ -12,7 +12,7 @@
 // the /geom-fed door agents use, no loaded mesh required).
 //
 // Everything here is in-process against the same modules the agent's
-// physics.ts drives; the live-server agent plumbing rides knockdown-test.
+// physics.ts drives; the live-server agent plumbing rides test/server/support-lifecycle-test.ts.
 
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';

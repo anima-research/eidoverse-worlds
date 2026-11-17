@@ -141,7 +141,7 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
     ok(/\bto: \{ type: "string"/.test(sayTool) && /say\(text: string, extra\?: \{[^}]*\bto\?: string/.test(agentSrc), "AT7c say takes `to` on both the tool's schema and ag.say (the client sends it; the authority logs it)");
   }
   { // AT8a–c (parity sweep 10-14): one way to say who. One resolver (a name or a u-… identity), used by `act` for every
-    // verb whose arguments name a `who`.
+    // world verb whose arguments name a `who` (a global ban/unban sends it to server moderation as given).
     const toolsSrc = fs.readFileSync(path.join(ENGINE, "mcpl/tools.ts"), "utf8");
     ok(/async function resolveWho\(/.test(toolsSrc), "AT8a tools.ts has ONE resolveWho (name or u-… → identity, via whois)");
     ok((toolsSrc.match(/await ag\.request\("whois", \{ name/g) ?? []).length === 2, "AT8b whois-by-name is called from exactly two places — the resolver and the whois tool itself — not once per verb");

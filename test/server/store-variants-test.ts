@@ -2,7 +2,7 @@
 // and the real sequencer.
 //
 //   bun test/server/store-variants-test.ts
-//   KTX2_TOKTX=/path/to/toktx bun test/server/store-variants-test.ts   # + one real encode
+//   KTX2_TOKTX=/path/to/toktx bun test/server/store-variants-test.ts   # + the real encoder (two encodes)
 //
 // The contract:
 //   · a store upload gets a KTX2 variant BESIDE the original (store/<hash>.glb.ktx2.glb), built from the original
@@ -12,7 +12,7 @@
 //     landing under it can't poison the key)
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
-// A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs once if present. Sections 4-8 spawn the real
+// A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs if present (a small source, then the 2048² budget). Sections 4-8 spawn the real
 // sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership).
 
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync } from "node:fs";

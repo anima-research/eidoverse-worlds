@@ -1,5 +1,5 @@
 // Governance is RESERVED (PROTOCOL §13; review #260, Mica item 8): handoff, quorum, reclaim and rewind are specified but the
-// reference server neither writes nor validates `sequencer` entries. A log that holds one may have moved the writer role
+// reference server neither writes nor validates governance entries (`kind: "governance"`, the sequencer's). A log that holds one may have moved the writer role
 // somewhere this server can't check, so the server refuses to serve it, truthfully, instead of folding past it and writing on.
 //   bun test/protocol/gov-reserved-check.ts
 import fs from "node:fs"; import path from "node:path"; import os from "node:os"; import { spawnSync } from "node:child_process";
@@ -21,7 +21,7 @@ try {
   e.head = step(last.head, e); fs.appendFileSync(log, JSON.stringify(e) + "\n");
   const before = { log: fs.readFileSync(log), files: fs.readdirSync(gov).sort().join(",") };   // the bytes and the listing openLive must leave alone
   let err = ""; try { openLive(gov, "gov"); } catch (x) { err = String((x as Error)?.message ?? x); }
-  check("G2 a world whose log holds a `sequencer` (governance) entry is refused, not served", !!err, { err });
+  check("G2 a world whose log holds a governance entry (the sequencer's) is refused, not served", !!err, { err });
   check("G3 …and the refusal is truthful: it names the entry's seq, says governance is reserved here, and that nothing was changed",
     /seq \d+/.test(err) && /governance/i.test(err) && /reserved/i.test(err) && /nothing (was|is) (changed|written)/i.test(err), { err });
   check("G4 …and the world's files are untouched (the log's bytes and the directory listing as they were)", fs.readFileSync(log).equals(before.log) && fs.readdirSync(gov).sort().join(",") === before.files, { files: fs.readdirSync(gov).sort() });

@@ -1,8 +1,9 @@
 // The wire contract for "who said this" when a token's display name differs
 // from its id: `author.name` carries the display name, the rendered text keeps
 // the id as its prefix, and world lines render bare. Today every registry id
-// equals its name, so a revert of either half is invisible to the rest of the
-// suite; these cases go red on their own.
+// equals its name, so a revert of either half is invisible to the other unit
+// suites; these cases go red on their own (test/server/mention-delivery-test.ts
+// checks both end to end, with a credential named apart from its id).
 import { displayNameIndex, wireAuthors } from '../../mcpl/token-registry.ts';
 import { suite } from "../gate/suite.ts";
 const S = suite("author-wire");

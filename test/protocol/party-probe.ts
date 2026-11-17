@@ -232,7 +232,7 @@ try {
     await sleep(800);
     const pic = Object.entries(disk().entities).find(([, e]: any) => e.c.picture);
     const pos = pic?.[1].c.transform?.pos;
-    check("S4c a picture added to the crate stands on its front face (its own child, past the crate's front)", pic && pic[1].c.parent?.to === NODE.get("signbox") && pos && pos[2] > 0.2, { pr, pic });
+    check("S4c a picture added to the crate is saved on its front face (its own child, past the crate's front; drawing it isn't checked)", pic && pic[1].c.parent?.to === NODE.get("signbox") && pos && pos[2] > 0.2, { pr, pic });
   });
 
   // ---- S5: Save as blueprint asks for a name ----

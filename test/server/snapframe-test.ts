@@ -85,8 +85,8 @@ if (!up2) { console.error("FATAL: scratch sequencer never came up (bun install i
 // level, where it could be read as framing or collide with a field such as an
 // image size. Other fields aren't compared, so a sender can add its own.
 // There are ten, more than the snapshots this test takes, because the broker
-// rests each renderer for 2 s from the request it sends it, and answers 429 at
-// once when no renderer it could use is free. Each joins before the next, and
+// rests each renderer for 2 s from the request it sends it; with none free a
+// new ask waits in the queue (B2–B4), and only a full queue answers 429. Each joins before the next, and
 // the test goes on once the sequencer has answered all ten joins.
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 const asked: Record<string, unknown>[] = [];
@@ -242,7 +242,8 @@ console.log("broker (a scratch server with a capture donor, then scratch sequenc
     await connect("target", {}, "snapt", on(A));
     const renderer = await fakeRenderer(A, "renderer-fake");
     const bystander = (await connect("retina-bystander", { spectate: true }, "snapt", on(A))).ws;
-    // the broker's per-renderer cooldown (2 s), stamped at dispatch: space each snap past it, or it answers 429
+    // the broker's per-renderer cooldown (2 s), stamped at dispatch: space each snap past it, or it waits (429 once the
+    // queue is full)
     let lastSnap = 0;
     const cooldown = () => pause(COOLDOWN, Math.max(0, lastSnap + 2100 - Date.now()));
     const snap = async () => { await cooldown(); const r = await fetch(`${A.BASE}/snap?world=snapt&follow=target`); lastSnap = Date.now(); return r; };

@@ -132,7 +132,8 @@ const regUnit = (key: string, path: string, type?: string) => { const u = COMPON
   check("@world's terrain and grass rows carry the registry's limits and units", !bad.length, bad.join(" | "));
 }
 
-// 6. no file but the registry declares a field's limits or unit: test/client/one-binding-test.ts's scan
+// 6. no file but the registry declares a field's limits or unit, save the editor literals one-binding-test.ts exempts
+//    (editschema's Transform channels, look limits, material and light sliders): test/client/one-binding-test.ts's scan
 
 // 7. the agent's schema is the registry: every registered component with a card has docs for every field its card shows
 {

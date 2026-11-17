@@ -30,7 +30,7 @@ Each `traversal` route is a child with `climb {points, reach, speed}` and its na
 `label`; `collision {enabled: false}` is `collider {enabled: false}`; `environment` goes
 to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, `@world.terrain {kind: 'flat', height}` (the floor), a
 directional sun thing and a dust `particles` child, and what has no home (the sky's
-`ambient`, the particles' clamped count and range) rides `imported:environment`, listed
+`ambient`, and a particles count or range only where the effect had to clamp it) rides `imported:environment`, listed
 under `unmapped`. The `vehicle` is `drive` on the submarine and a helm child
 (`station {action: 'drive', input: {move: 'drive'}, exit}`); its `minY` (-230) and `maxY` (-4)
 are two hidden walls in the submarine's own collision layer, which only its collider's

@@ -29,7 +29,7 @@ const s0 = localNow();
 for (let i = 0; i < 8; i++) noteRoundTrip(s0 - 2, s0 + 3000 - 1, s0);   // a full window at +3000, rtt 2
 noteRoundTrip(s0 - 2.4, s0 + 4620 - 1.2, s0);                          // the clock steps +1620; this sample's rtt is a hair worse
 serverNow(); const f = clockDebug();
-ok(Math.abs(f.best - 4620) < 1 && Math.abs(f.shown - 4620) < 1, "C5 a sample that contradicts the older ones by more than their round trips retires them (a clock step is taken at the next ask)", f);
+ok(Math.abs(f.best - 4620) < 1 && Math.abs(f.shown - 4620) < 1, "C5 a sample that contradicts the older ones by more than half their round trips summed plus STEP_SLACK_MS retires them (a clock step is taken at the next ask)", f);
 noteRoundTrip(s0 - 40, s0 + 4620 + 15 - 20, s0);                       // a slow but honest sample, consistent within its rtt: kept, not a step
 serverNow(); const g = clockDebug();
 ok(Math.abs(g.best - 4620) < 1, "C6 …while a slow sample that agrees within its own round trip changes nothing", g);

@@ -7,7 +7,8 @@
 //   - the written log, re-read from text by the strict reader alone: status ok, 0 malformed, and its fold equals
 //     the translator's final projection;
 //   - the projection loses nothing: an independent inverse (components → old field names), compared with the
-//     REAL engine fold, entry by entry (every 250th past 2,000 entries), aligned by act. Only representation is
+//     REAL engine fold, entry by entry (every 250th past 2,000 entries, so a loss mended between two samples goes
+//     unseen there), aligned by act. Only representation is
 //     normalised (yaw ↔ q, scalar scale ↔ vector, light spelling) and only translate-v1's DROPPED list may differ.
 //     (Without it a translator that silently dropped grass passes.)
 // Plus: her dialect-3 fixtures through translate-d3 (her goldens reproduce; 0 world divergences; as many rests as

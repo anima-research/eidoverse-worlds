@@ -638,7 +638,8 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   s.close(); S6.proc.kill(); }
 
 // ---- CS: a cookie upgrade from another site's page is refused (cross-site WebSocket hijacking; review full-260 L7). The
-// HTTP doors' rule at /ws: Sec-Fetch-Site other than same-origin, or an Origin not this host, proves nobody and is refused;
+// HTTP doors' rule at /ws: Sec-Fetch-Site other than same-origin is refused; with no Sec-Fetch-Site, an Origin that isn't
+// this request's own scheme+host is (same-origin decides alone: a proxy's Host may differ);
 // no Origin (a native client) and no cookie (a guest, an agent's token) are as before ----
 { const SF = path.join(root, "cs-sessions.json"), sid = "d".repeat(64), exp = Date.now() + 3600_000;
   fs.writeFileSync(SF, JSON.stringify({ [sid]: { sub: "human:test:cs", name: "Cass", scopes: ["worlds:join"], exp } }));

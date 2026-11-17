@@ -32,7 +32,7 @@ function freePort(from: number): number {
 
 const reap = killChild;
 
-// the battery: `server: true` → a scratch sequencer, handed to the tool as WORLD_URL/JOIN_TOKEN/HTTP; `env` is the tool's header
+// the battery: `server: true` → a scratch sequencer, handed to the tool as WORLD_URL/JOIN_TOKEN/WORLD_TOKEN/WORLDS_DIR; `env` is the tool's header
 
 type Row = { name: string; tool: string; server?: boolean; serverEnv?: Record<string, string>; env?: Record<string, string>; timeoutMs?: number };
 const BATTERY: Row[] = [

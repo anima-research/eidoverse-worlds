@@ -336,7 +336,7 @@ const cases: Case[] = [
       return { tp: /client: '(human|agent)'/.test(tp), ag: /client: "(human|agent)"/.test(ag), tpMoves: (tp.match(/sendRequest\('move'/g) ?? []).length }; },
     good: (o) => !o.tp && !o.ag && o.tpMoves >= 2 },
   // ---------------- V: the spoken trio is anyone's ----------------
-  { id: "V1", what: "(R 10-17: TTS is anyone's) a say marked spoken by a participant who declared nothing keeps its trio (no kind gate, guard); the say doc names any participant, a person using TTS included", run(s) {
+  { id: "V1", what: "(R 10-17: TTS is anyone's) a say marked spoken by a participant who declared nothing keeps its spoken and utt (no kind gate, guard; t0 isn't sent here); the say doc names any participant, a person using TTS included", run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "member" } });
       const r = s.call("vic", "say", { text: "read aloud", spoken: true, utt: 3 }); const e = s.entries().findLast((x: any) => x.kind === "say");
       const doc = String(VS.VERBSPEC?.say?.args?.spoken?.doc ?? "");

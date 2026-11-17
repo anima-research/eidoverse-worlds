@@ -2,7 +2,7 @@
 //
 // The recipe is texel1024: toktx honours it with --resize; `ktx create` has no --resize, so optimize.ts resizes through
 // sharp first on that encoder. This runs the REAL encoder this host has (skips, loudly, if none;
-// findKtx2Encoder prefers toktx, so the ktx-create arm is tested only on a host without toktx):
+// findKtx2Encoder prefers toktx, so the ktx-create arm runs on a host without toktx, or with KTX2_TOKTX naming ktx):
 //   capped   — a 2048² base-colour PNG comes out of optimizeGlbKtx2 as a 1024² KTX2        [mutate: revert → 2048]
 //   aspect   — a 2048x1024 texture keeps its aspect (1024x512)
 //   small    — a 512² texture is untouched (512²)

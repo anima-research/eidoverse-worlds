@@ -3,7 +3,7 @@
 // scripts on sponsor rights (§8), the capability algebra (§7a) — twelve named checks, C1…C12.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/counter-check.ts
-//   RED=C5 bun test/protocol/counter-check.ts      watch one check fail: a documented mutation of its setup or expectation
+//   RED=C5 bun test/protocol/counter-check.ts      watch C5 fail (C6 and C7, which expect a count of 2, fail with it)
 //
 // The specimen: a thing with `label`, a `text` component showing the count, and `script:counter` whose `use` action
 // `increment` raises the count and `reset` zeroes it (reactions {increment: {kind: 'script', who: 'builder'}, reset:

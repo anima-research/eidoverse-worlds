@@ -16,7 +16,8 @@ export const GATES = ["move", "touch"];
 export const GATE_OF = Object.freeze({ shove: "move", displace: "move", touch: "touch", intimate: "touch", pose: "touch" });
 export const DEFAULT_GATES = Object.freeze({ move: true, touch: false });
 export const KIND_CLASS = { pose: "pose", anim: "pose", shove: "shove", drag: "displace", occupy: "displace", carry: "displace", touch: "touch" };
-// ---- an older stored table's words (cells per tier, presets), read by migratePresence only; never written ----
+// ---- an older stored table's words (cells per tier, presets), read by migratePresence; never written. The old class
+// word `move` is also mapped live (classOf, in decide) ----
 const LEGACY_TIER = Object.freeze({ strangers: "everyone" });
 const LEGACY_MODE = Object.freeze({ everyone: "allow", nobody: "deny" });
 const LEGACY_CLASS = Object.freeze({ move: "displace" });

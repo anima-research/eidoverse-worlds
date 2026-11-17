@@ -32,7 +32,9 @@ export const GRID_DEFAULTS = Object.freeze({
 });
 
 /** Aperture profiles: the hole's lower edge (`bottom`) and upper edge (`top`), in metres above the level; the wall
- *  below `bottom` and above `top` (the lintel) stays. An aperture spans its whole segment with no side jambs, and is an absence of boxes, so collision needs no concept of a hole (§4). */
+ *  below `bottom` and above `top` (the lintel) stays. An aperture spans its whole segment with no side jambs, and is
+ *  an absence of boxes, so collision needs no concept of a hole (§4); on a diagonal wall (axis 2–3) only a door or an
+ *  arch opens the collision, a window's stays (the stair-stepped boxes below). */
 export const APERTURES = Object.freeze({
   door:   { bottom: 0.00, top: 2.10 },
   window: { bottom: 0.90, top: 2.10 },

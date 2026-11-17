@@ -9,7 +9,8 @@
 //   skipped  — the object is not drawn on the frame that requested its program (three's isReady gate)
 //   drains   — it IS drawn once linked, within a few frames                           [--mutate-never-drain]
 //   frame    — the frame that met the new variant did not pay a link (< 100 ms request)
-//   one-shot — a cold render INTO A TARGET (a bake, an env) is NOT deferred: it draws on that one call
+//   one-shot — a cold render INTO A TARGET (a bake, an env) is NOT deferred: it draws on that one call (a giant program,
+//              > GIANT_FS, is the exception: its owner redraws once it links)
 //              [mutate: drop the isWorldPass(getRenderTarget()) condition → the target reads back empty]
 // SwiftShader has no KHR_parallel_shader_compile, so the gate runs against an EMULATED extension (COMPLETION_STATUS
 // true 150 ms after the link is issued): this proves ORCHESTRATION. Whether the owner's Chrome exposes the extension,

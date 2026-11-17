@@ -1,6 +1,6 @@
 // bun test/server/optimize-pump-test.ts — the optimizer pump with a FAKE child (OPT_CMD): estimate defer with queue
-// continuation, success (+ stale .deferred retired), 'not smaller' marker, capped child death → .deferred and
-// retried, wrapper 126 → environmental (no marker, queue dropped), stale-marker retirement when the variant
+// continuation, success (+ stale .deferred retired), 'not smaller' marker, capped child death → .deferred (its retry
+// by a later boot sweep isn't driven here), wrapper 126 → environmental (no marker, queue dropped), stale-marker retirement when the variant
 // exists already, and both boot sweeps skipped under SKIP_OPT_SWEEP (subprocess). Each case owns its store.
 import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";

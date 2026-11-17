@@ -289,7 +289,8 @@ console.log('avatar.js:');
     const moved = plateW().sub(before), camUp = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
     check('from 80° above: moved along the camera\'s up, in WORLD (root turned and ×1.2)', moved.length() > 0.1 && moved.clone().normalize().dot(camUp) > 1 - 1e-9,
       `${J(moved)} · up ${J(camUp)}`);
-    // the screen check the probe makes: the pill's bottom edge projects above the head bone
+    // the screen check a browser probe once made (that probe is gone; this rig is synthetic): the pill's bottom edge
+    // projects above the head bone
     const s = rt.getWorldScale(new THREE.Vector3()).y, hh = 0.9 * s * (64 / 512) / 2;
     const bottom = plateW().addScaledVector(camUp, -hh).project(cam);
     const headP = A.head.getWorldPosition(new THREE.Vector3()).project(cam);

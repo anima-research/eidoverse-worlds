@@ -1,6 +1,6 @@
 import { suite } from "../gate/suite.ts";
-// drag-q-test — the rotate gizmo's live drag carries the full orientation
-// (design §5, step 3): the REAL "drag" message handler (server/messages.ts)
+// drag-q-test — the rotate gizmo's live drag carries the full orientation:
+// the REAL "drag" message handler (server/messages.ts)
 // relays a usable q (normalized) alongside the yaw older peers read, and
 // relays no q at all for a malformed one. The relay is gated on the door's
 // `build` permission (roles S2), read by the person's directory id.

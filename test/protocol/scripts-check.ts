@@ -887,7 +887,7 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const busy = st(s, s.call("vic", "use", { id: "spin", action: "go" }));
       return { r: st(s, r), why: r.script?.why, ms: Math.round(ms), fails, next: st(s, next), busy };  } finally { delete process.env.EIDO_SANDBOX_CPU; } },
     good: (o) => o.r === "unavailable unavailable" && /too busy/.test(o.why) && o.ms < 700 && o.fails === 0 && o.next === "ran" && o.busy === "failed time" },
-  { id: "I9", what: "re-review: reads that keep the AUTHORITY busy (a slow answer, 64 times) can't outlast the deadline (it's checked between answers too) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
+  { id: "I9", what: "re-review: reads that keep the AUTHORITY busy (a slow answer, 64 times) can't outlast the deadline by more than one answer (it's checked between answers) and count as the script's own time, never as a starved host", opts: { nameOf: (id: string) => { const t = performance.now(); while (performance.now() - t < 30) { /* a slow directory */ } return id; } },
     run(s) { cast(s);
       if (!SB?.isolationStats) return { absent: true };
       warmUp();
@@ -1048,7 +1048,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       const r = useSteady(s, "vic", { id: "lever", action: "pull" });
       return { r: st(s, r), why: r.script?.why, open: comp(s, "gate", "openable")?.open, scripted: s.entries().slice(n0).filter((e: any) => isScriptActor(e.actor)).length }; },
     good: (o) => o.r === "refused scope" && /gate/.test(o.why ?? "") && o.open === false && o.scripted === 0 },
-  { id: "W3", what: "world.use meets the target's gate with the SPONSOR's rights: a builder-only gate a visitor can't open opens through bob's lever; an owner-only one refuses it (on the script's console), and stays shut", run(s) { cast(s);
+  { id: "W3", what: "world.use meets the target's gate with the SPONSOR's rights: a builder-only gate a visitor can't open opens through bob's lever; an owner-only one refuses it (on the script's console), leaving the gate as the first pull left it, open", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "default-role", value: { role: "member" } });   // so a script actor's own default role can't pass for its sponsor's
       gateAndLever(s, { ids: ["self", "gate"], comps: [] }, "builder");
       const direct = s.call("vic", "use", { id: "gate", action: "open" });
@@ -1174,7 +1174,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       return { setup: [show(mv), show(gr), show(th)], beats, wrote, rest: !!rest, landed: comp(s, "mat", "t/landed") }; },
     good: (o) => o.setup.every((x: string) => x === "ok") && o.wrote > 0 && o.rest && o.landed?.id === "ball" && o.landed?.by === "vic" },
   // ---------------- P: params (the one signal store) ----------------
-  { id: "P1", what: "world.param(id, name, n) writes params.<name> (merged into what's there; a seat pose reads it as param.<name>); a param.<name> key in any other component is refused like any unknown key", run(s) { cast(s);
+  { id: "P1", what: "world.param(id, name, n) writes params.<name> (merged into what's there; a seat pose reads it as param.<name>); a param.<name> key in another registered component (light, here) is refused like any unknown key", run(s) { cast(s);
       s.call("bob", "create", { id: "swing", components: { label: "swing", transform: { pos: [0, 0, 0] } } });   // no model here
       s.call("bob", "set", { id: "swing", component: "light", value: { kind: "point", intensity: 1 } });
       s.call("bob", "set", { id: "swing", component: "params", value: { tilt: 2 } });

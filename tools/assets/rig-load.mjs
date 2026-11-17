@@ -13,9 +13,9 @@ export { worldPositions };
 
 export const VRM_DIR = fileURLToPath(new URL('../../assets/opt/eidoverse/assets/vrms/', import.meta.url));
 
-/** The rigs the world offers that assets/opt does not hold: served straight from the library, and claude is the DEFAULT
- *  body. Opt-in, so the ragdoll's measured baseline is not silently re-based; the reach suites take it. [] when the
- *  library is not on disk. */
+/** The rigs the world's library serves straight (claude, the DEFAULT body, among them). A rig assets/opt also holds
+ *  is listed here too, so [...rigs(), ...libraryRigs()] names it twice. Opt-in, so the ragdoll's measured baseline
+ *  is not silently re-based; the reach suites take it. [] when the library is not on disk. */
 export function libraryRigs(dir = process.env.EIDOVERSE_DIR
   ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/vrms/`
   : fileURLToPath(new URL('../../../eidoverse-video/eidoverse/assets/vrms/', import.meta.url))) {

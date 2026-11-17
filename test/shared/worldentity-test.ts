@@ -175,7 +175,7 @@ console.log('\n2. picking a sky replaces the Sky; the Weather stays:');
 }
 
 // ------------------------------------------------------------ 3. edits, undo, the owner gate
-console.log('\n3. the cards: every field commits as door requests and reads back:');
+console.log('\n3. the cards: their fields commit as door requests and read back (a sample of each card):');
 {
   const W = scratchWorld('worldentity');
   W.call('sky', { hours: 9, rate: 24, clouds: 'cumulus' });
@@ -210,7 +210,7 @@ console.log('\n3. the cards: every field commits as door requests and reads back
   check('grass.mow mows (delete @world grass); undo grows the same field back', e3.ops[0]?.verb === 'delete' && st().grass === null && (undo(e3), canon(st().grass) === canon(e3.was.grass)), JSON.stringify(e3.ops));
   check('grass.mow on a world with nothing growing sends nothing', (() => { const M = scratchWorld('worldentity'); return worldEditOps(M.view(), { 'grass.mow': true }, { now: now() }).ops.length === 0; })());
   const e4 = edit({ 'sky.tz': 'America/Los_Angeles' });
-  check('a timezone (sky.tz; R 10-17: was sky.clock real) → the hour and rate become read-only and say whose clock it is', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);
+  check('a timezone (sky.tz; R 10-17: was sky.clock real) → the hour becomes read-only and says whose clock it is (the rate row isn\'t checked here)', fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.disabled === true && /Los_Angeles/.test(fieldAt(worldSchema(st(), { now: now() }), 'sky.hours')?.hint ?? '') && e4.ops[0].args.tz === 'America/Los_Angeles' && e4.one.ok);
   const e5 = edit({ 'sky.tz': '' });
   check('…and an empty timezone (was sky.clock authored) hands the parked rated clock back (rate 24)', st().sky.clock === undefined && st().sky.rate === 24 && e5.errors.length === 0 && e5.one.ok, canon(st().sky));
   check('a refused edit says why and sends nothing for it (unknown field, bad enum, bad colour); the good edit beside them still goes', (() => {
@@ -263,7 +263,7 @@ console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy spe
   A.request = async (verb: string, args: any) => W.call(verb, args);
   const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
   const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
-  check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
+  check('inspect @world: its components and its fields by address (four sampled)', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Terrain, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /terrain\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
   const one = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6 }, dry: true }));
   check('edit @world (dry), one group: the sky tool carrying everything standing, and the door answers the dry run', /would send sky \{"hours":6,"clouds":"cumulus"[,}]/.test(one) && !/refused/.test(one), one);
   const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'terrain.amplitude': '+=1' }, dry: true }));

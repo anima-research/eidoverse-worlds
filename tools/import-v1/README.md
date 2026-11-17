@@ -39,7 +39,7 @@ record says no owner was attested.
    Nothing in it varies between runs, so the same log, tool, host library bytes, host custody secret (the ids derive from it),
    identity directory and `poses.json` always hash the same; a watch grant that lapses between runs changes the report, and so its hash.
    A `translate <world>` on a directory whose earlier approved run was interrupted mid-swap finishes that swap first, whatever
-   flags it was given (`--dry-run` included): the recovery moves files, the dry run itself writes none.
+   flags it was given (`--dry-run` included; `--founder-key` and `--approve-sig` are refused before anything runs): the recovery moves files, the dry run itself writes none.
 2. **The translation, bound to that hash.** `translate <world> --no-founder-key --approved <hash> --operator-only-no-owner`.
    The report is recomputed from `log.jsonl` as it stands: a different hash (the log grew, the tool changed) is refused with
    both hashes named. Without `--operator-only-no-owner` it is REFUSED: no owner can sign, and the operator says so,
