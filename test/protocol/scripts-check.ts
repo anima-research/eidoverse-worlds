@@ -177,6 +177,8 @@ if (argv.includes("--control")) {
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${at}: ${r0.stderr}`); process.exit(1); }
   const r = await runSelf(d, null, ["--expect-absent"]);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
+  // no case ran (the base couldn't load this suite's imports) is no evidence: say so and fail
+  if (!lines.length) { console.log(`FAIL [scripts-check --control] at ${at}: no case ran there\n${r.out.slice(-600)}`); process.exit(1); }
   const red = lines.filter((l) => l.startsWith("FAIL")).map((l) => l.split(/\s+/)[1]);
   if (want) { const bad = want.filter((x) => !red.includes(x)); console.log(`red at ${at}: ${red.join(",")}`);
     console.log(`[scripts-check --control ${at}] ${bad.length ? `NOT red there: ${bad.join(",")}` : `every one of ${want.join(",")} is red there`}`); process.exit(bad.length ? 1 : 0); }
