@@ -191,7 +191,7 @@ async function track(force = false, { noTeleport = false } = {}) {
       // When the server still has me elsewhere (too-fast) or calls my spot solid, re-arrive as a teleport (allowed with
       // empty hands, at most once in 3 s)
       arriveFails++; stuck = { at: to, until: performance.now() + 2000 * 2 ** Math.min(arriveFails - 1, 3), arrival: true };
-      if (['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
+      if (!noTeleport && ['too-fast', 'solid'].includes(r?.refused?.code) && !myHolds().length && performance.now() - lastTeleport > 3000) {
         lastTeleport = performance.now();
         const t = await sendRequest('move', { to: to.map(r3), teleport: true }); lastMove = { arrive: true, teleport: true, ok: !!t?.ok, refused: t?.refused?.code };
         if (t?.ok) { arrived = true; arriveFails = 0; stuck = null; trackedAt = t.at ?? to; return true; }
@@ -897,7 +897,7 @@ export const physicsApi = { grab, put, drop, throw: throwHeld, punt, canPunt, gr
     const at = placeHeld(id, h, obj); return { want: at ? { p: at.p.toArray(), q: at.q?.toArray() ?? null } : null, drawn: { p: obj.getWorldPosition(new THREE.Vector3()).toArray(), q: obj.getWorldQuaternion(new THREE.Quaternion()).toArray() }, rec: h }; },
   /** probe surface: the palm frame a holder's hand gives ({p, q} world arrays), and the hold pose a body wears */
   palm: (actorId, side = 'right') => { const o = palmOf(actorId ?? net.you, side, { p: new THREE.Vector3(), q: new THREE.Quaternion() }); return o ? { p: o.p.toArray(), q: o.q.toArray() } : null; },
-  track: () => track(true), request: (verb, args) => sendRequest(verb, args), frame: (wall) => frame(wall),
+  track: (o) => track(true, o), request: (verb, args) => sendRequest(verb, args), frame: (wall) => frame(wall),
   /** the canonical fold's flights: id -> the launch seq it flies from */
   launched: () => Object.fromEntries(Object.entries(replica.sim?.launched ?? {}).map(([id, l]) => [id, l.seq])),
   /** what this client believes about its authority-tracked body (diagnostics) */

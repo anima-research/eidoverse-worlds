@@ -46,4 +46,10 @@ me.root.position.set(3, 0, 0);
 T = 13_200; await tp.physicsApi.track();
 check('past 3 s since the last, a forced track teleports again', teleports() === 2, `${teleports()} teleports`);
 
+// a shove's track (noTeleport) never teleports, arriving included: a fresh cut un-arrives the body, its arrival is
+// refused too-fast, and past 3 s it would otherwise re-arrive by teleport (#611)
+const { bus } = await import('../../client/lib/base.js');
+bus.emit('cut-adopted'); T = 20_000; await tp.physicsApi.track({ noTeleport: true });
+check('a noTeleport track that has to arrive sends its move, refused, and does NOT teleport', tp.physicsApi.body().lastMove?.arrive === true && teleports() === 2, `${teleports()} teleports; ${JSON.stringify(tp.physicsApi.body().lastMove)}`);
+
 SU.done();
