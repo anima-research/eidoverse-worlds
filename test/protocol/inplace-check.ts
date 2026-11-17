@@ -431,6 +431,7 @@ ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) 
   const man = JSON.parse(fs.readFileSync(path.join(porch, MANIFEST), "utf8"));
   ok(ap && /^[0-9a-f]{64}$/.test(ap.report) && ap.approval?.owner === null && ap.approval?.operator?.key === operatorPub() && verifies(ap.approval?.operator?.key ?? "", approvalText("porch", ap.report), ap.approval?.operator?.sig ?? "")
     && ap.approval?.noOwner === NO_OWNER && /no owner was attested/.test(NO_OWNER) && /v1 logs record accounts, not keys/.test(NO_OWNER) && man.approval?.owner === null && man.approval?.noOwner === NO_OWNER
+    && man.approval?.operator?.key === ap.approval?.operator?.key && man.approval?.operator?.sig === ap.approval?.operator?.sig   // translation.json carries the same countersignature
     && /approved by the operator alone/.test(r1.out) && /no owner was attested/.test(r1.out),
     "IP23 the operator-only path: the act (and translation.json) records owner: null, the operator's countersignature (the custody operator key, verifying over the approval text) and, in words, that no owner was attested because nothing can bind a key to the v1 owner; the CLI says the same", { ap, out: r1.out.slice(-400) });
   ok(Array.isArray(g0?.body?.owners?.[0]) && g0.body.owners[0].length === 0 && JSON.stringify(g0.body.owners[1]) === JSON.stringify([operatorPub()]),
@@ -596,8 +597,8 @@ for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); 
 
 // ================= IP17–IP18: identities are written only once the world is in place (review of PR #260, import-v1/world.ts:86) =================
 // IP17 with no TRUST_NAMES, Ann and Bob are imported people with no account: each attempt mints them anew. A failure before,
-//      during or after the renames (injected at step 0, 2 and 6 — 6 is after the last rename) and a concurrent writer each
-//      leave the shared directory exactly as it was; the clean run then adds them once
+//      during or after the renames (injected at step 0, 2 and 6 — 6 is after the last rename) each leaves the shared
+//      directory exactly as it was (a concurrent old-server writer is IP14's: the swap refuses there); the clean run then adds them once
 const actorsOf = (d: string) => [...new Set(fs.readFileSync(path.join(d, "world.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l).actor).filter((a: string) => /^u-/.test(a)))];
 { const name = "nameless"; const d = oldWorld(name); const before = fs.readFileSync(dirf, "utf8");
   const runs: any[] = []; for (const k of [0, 2, 6]) { const r = await xlate([name], { TRUST_NAMES: "", WORLD_TS_FAULT_AT_STEP: String(k) });
