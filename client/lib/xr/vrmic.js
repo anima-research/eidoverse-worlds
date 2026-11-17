@@ -159,7 +159,7 @@ function openCard({ mode, proceed = null }) {
       <p class="vrmic-say">${mode === 'enter'
         ? 'Inside the headset, the browser may not be able to ask for your microphone. Allow it here and voice will just work in VR.'
         : 'Your microphone couldn\'t be asked for inside VR. Allow it here and it will work next time you\'re in.'}</p>
-      <p class="sub">Your mic stays off until you turn it on.</p>
+      <p class="sub">Allowing does not turn your mic on.</p>
       <div class="vrmic-btns">
         <button class="go" data-act="allow">Allow microphone</button>
         <button data-act="later">Not now</button>
@@ -187,7 +187,7 @@ function openCard({ mode, proceed = null }) {
     if (!scrim.isConnected) return;
     const result = (r) => (r.ok ? 'allowed' : r.name === 'unanswered' ? 'unanswered' : 'blocked');
     const sayFor = (r) => (r.ok
-      ? 'Microphone allowed. It stays off until you turn it on — press the mic when you want to talk.'
+      ? 'Microphone allowed. Allowing does not turn it on — the mic button does.'
       : r.name === 'NotFoundError'
         ? 'No microphone was found. VR works fine without one — you just won\'t be heard.'
         : r.name === 'unanswered'

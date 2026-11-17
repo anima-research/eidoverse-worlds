@@ -65,9 +65,9 @@ export function compOf(c) {
  *  component `pos` (the door refuses the bare name: DERIVED) would be misread. */
 export const isFoldRecord = (x) => !!x && typeof x === "object" && !Array.isArray(x) && x.pos === undefined;
 /** A record either way: a fold record (component keys flat on it) is projected through viewOf; anything else — the OLD test
- *  shape, {pos, yaw, lib, comp: {...}} — is returned as it is. A TEST-CORPUS adapter, not a protocol one: fixtures under
- *  tools/ still build the old shape. Retire it by flattening those, then deleting the fallback; nothing at runtime takes
- *  the old shape (vocab-check pins that for shared/ client/ server/ mcpl/). */
+ *  shape, {pos, yaw, lib, comp: {...}} — is returned as it is. Test fixtures still build the old shape; nothing at runtime
+ *  does (vocab-check pins that for shared/ client/ server/ mcpl/). An agent's foldRecord is a view (it has `pos`) and passes
+ *  through too, so the fallback can't simply be deleted once the fixtures are flat. */
 export const recordOf = (x, id = "") => (isFoldRecord(x) ? viewOf(id, x) : x);
 
 /** One entity's components as the record readers use. */

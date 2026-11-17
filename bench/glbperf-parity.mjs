@@ -3,6 +3,7 @@
 // loupe's (client perfscope.statsOf on the model the CLIENT's own loader builds from the same bytes). Ten library
 // originals chosen for spread: the Commons palm (alpha), the excavator (tris), a crate (textures), and sizes across the
 // range. Per model: tris, draws, mats, alpha, bones exact; texMB within 1% or 0.05 MB, whichever is more; rank and worst category equal.
+// The worst-case row needs at least one optimized ETC1S variant (OPTM, `<name>.ktx2.glb`) loaded on a device without BPTC: originals alone fail it.
 import { launchBrowser, ownedWorld, checker } from '../test/harness/probe-harness.mjs';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { glbPerf } from '../server/glbperf.ts';

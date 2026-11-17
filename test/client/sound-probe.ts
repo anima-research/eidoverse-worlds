@@ -7,8 +7,9 @@
 //   A. a sound comp on a placed entity builds ONE graph on the page's shared
 //      AudioContext: <audio> → gain → panner → the world bus (listener volume) → limiter → destination, panner following
 //      the entity's world position;
-//   B. it PLAYS after the first gesture (the shared unlock queue), and with a
-//      t0 in the past it seeks to the shared playhead, not the top;
+//   B. it plays (and still after a gesture: this browser allows playback
+//      before one, so the gesture unlock queue itself is NOT proven here), and
+//      with a t0 in the past it seeks to the shared playhead, not the top;
 //   C. a replace with the same src adjusts in place (volume), no second graph;
 //   D. playing:false pauses; delete {id, component: "sound"} (data:null to the host) tears the graph down;
 //   E. an un-opted-in link (tier `link`, shared/mediasrc.js) realizes nothing;
@@ -102,11 +103,11 @@ try {
   check('F. the slider moving to 1 is heard live: 0.5', Math.abs((s.eff ?? 0) - 0.5) < 1e-3 && s.world === 1, JSON.stringify({ world: s.world, eff: s.eff }));
   s = await until(pg, (x) => x.panner && Math.abs(x.panner[0] - x.entityPos[0]) < 0.05 && Math.abs(x.panner[2] - x.entityPos[2]) < 0.05, 8000);
   check('A. the panner sits where the entity is', !!s.panner && Math.abs(s.panner[0] - 2) < 0.1 && Math.abs(s.panner[2] + 3) < 0.1, JSON.stringify({ panner: s.panner, entity: s.entityPos }));
-  // B. a gesture unlocks playback
+  // B. still playing after a gesture (it already played before one, so this is no receipt for the unlock queue)
   await pg.mouse.click(640, 200);
   await pg.keyboard.press('Shift');
   s = await until(pg, (x) => x.paused === false && x.t > 0, 15000);
-  check('B. it plays after a gesture', s.paused === false && s.t > 0, JSON.stringify({ paused: s.paused, t: s.t, ctx: s.ctx }));
+  check('B. it is still playing after a gesture', s.paused === false && s.t > 0, JSON.stringify({ paused: s.paused, t: s.t, ctx: s.ctx }));
   // C. same src, new volume: in place
   await sound(pg, { src, t0, description: 'a probe tone', volume: 0.9, near: 8, radius: 20 });
   s = await until(pg, (x) => Math.abs((x.gain ?? 0) - 0.9) < 1e-3, 5000);   // AudioParam holds float32

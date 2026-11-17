@@ -19,7 +19,7 @@ export function initVRPanel() {
     note.className = 'row';
     const span = document.createElement('span'); span.className = 'note'; note.appendChild(span);
     span.textContent = sensed
-      ? 'A headset can present from this browser. The visor glyph in the HUD enters and leaves VR.'
+      ? 'This browser reports a VR runtime (a headset that is off or unplugged can still refuse entry). The visor glyph in the HUD enters and leaves VR.'
       : 'No headset sensed. Chrome finds the OpenXR runtime only at browser start — if SteamVR came up after Chrome, use chrome://restart. These settings apply once one is found.';
     body.appendChild(note);
 
@@ -50,7 +50,7 @@ export function initVRPanel() {
 
     const vig = checkRow('comfort vignette', () => !!xrPrefs.vignette,
       (on) => { setXrPref('vignette', !!on); flashHint(`VR vignette ${on ? 'on' : 'off'}`); });
-    vig.title = 'darkens the edges of your view while you move or turn on the stick; opens again when you stop.';
+    vig.title = 'darkens the edges of your view while you move or smooth-turn on the stick (a snap turn does not close it); opens again when you stop.';
     body.appendChild(vig);
 
     const { row: mir } = selectRow('desktop view', [['off', 'off (black)'], ['first', 'mirror my eyes'], ['third', 'third person']], xrPrefs.mirror,

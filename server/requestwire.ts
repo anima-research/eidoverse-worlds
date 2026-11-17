@@ -54,8 +54,8 @@ export function goneListing(w: World, args: Any) {
       : "whois {name} gives the identity of someone who has been in this world" };
 }
 const reads = readMeter(); // per connection: reads and dry runs, by count and authority time (H-A)
-// …and every request by authority time, the only per-connection bound on the shared thread (a guest is a fresh identity
-// per connection); 3 s of 10 is far past real use.
+// …and every authority request (`request` but whois, and requestAs; not world-fork/world-reset) by authority time,
+// the only per-connection bound on the shared thread (a guest is a fresh identity per connection); 3 s of 10 is far past real use.
 const busy = readMeter({ n: Infinity, ms: 3000 * METER_SCALE, window: 10_000 });
 const refusalTimes = new WeakMap<Client, number[]>();
 /** At most 20 refusal lines per connection per 10 s reach the flight recorder (the rest are the same story). */

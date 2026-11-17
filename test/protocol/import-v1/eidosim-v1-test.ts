@@ -132,7 +132,7 @@ console.log("\nthe sim fold (tools/import-v1/eidosim-v1.js) — " + SIM_ID);
   // a terrain entry mid-epoch re-grounds the world: every body released
   const c2 = fold([...HILLS, mk(5, 900, "terrain", { ...TARGS, seed: 8 })]);
   advanceSim(c2.sim, 600);
-  check("a terrain entry under a live 0.2 epoch releases every body (the authored word re-seats)",
+  check(`a terrain entry under a live ${SIM_ID} epoch releases every body (the authored word re-seats; the terrain law since 0.2)`,
     Object.keys(c2.sim.bodies).length === 0 && (c2.sim.terrain as any).seed === 8);
   // snapshots carry the terrain law
   check("the sim snapshot carries the terrain params", !!(simSnapshot(sim) as any).terrain);

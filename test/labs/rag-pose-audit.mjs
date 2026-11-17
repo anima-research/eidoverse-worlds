@@ -1,4 +1,4 @@
-// What SHAPE does a settled body actually take? — the anatomy audit.
+// What SHAPE does a settled body actually take? — the anatomy audit, of the verlet ragdoll (ragdoll.js), not the default Bullet one.
 //
 //   bun test/labs/rag-pose-audit.mjs            # the fleet, at settle
 //   bun test/labs/rag-pose-audit.mjs --peak     # worst reached after the first half-second (step 31 on)

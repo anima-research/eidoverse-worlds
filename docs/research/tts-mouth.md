@@ -9,14 +9,16 @@ not even happen in the browser (speech-dispatcher over a socket), so there is no
 allow SpeechSynthesis → MediaStreamTrack (WICG/speech-api#69) is open and unimplemented. Routing `speak()` through a
 MediaStreamDestination + MediaRecorder records silence: nothing is ever connected to the destination.
 
-So a voice needs a source that RETURNS SAMPLES, any `(text) => {pcm, sampleRate}`:
+So a voice needs a source that RETURNS SAMPLES, any `(text) => {pcm, sampleRate}` with `pcm` in 16-bit range (an
+`Int16Array`, or numbers to ±32767: `tts.js` divides by 32768):
 
 - a local synthesizer over the same ws protocol `piperbridge.js` uses;
 - an in-browser WASM/WebGPU TTS (Piper via onnxruntime-web, ~75 MB, VITS; kokoro-js, ~82 MB, 21 voices);
-- a cloud TTS returning wav/mp3, decoded with `decodeAudioData`.
+- a cloud TTS returning wav/mp3, decoded with `decodeAudioData` (its float channel scaled ×32768 first).
 
 All three go through `setTtsSource` unchanged. The narrow statement is: the BUILT-IN speechSynthesis cannot feed the
-mic lane; every other synthesizer can, including ones running in the same page.
+mic lane; every other synthesizer can, including ones running in the same page, wherever `MediaStreamTrackGenerator`
+exists (Chromium; elsewhere `enqueue` plays the sidetone and sends nothing).
 
 ## Why the generator is paced by the wall clock, and never starves
 

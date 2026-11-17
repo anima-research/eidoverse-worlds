@@ -63,7 +63,7 @@ const browser = await chromium.launch({ args: [
   '--autoplay-policy=no-user-gesture-required', '--use-angle=swiftshader',
 ] });
 receipt.browser = browser.version();
-const ctx = await browser.newContext();   // ONE context: OPFS persists for the warm pass
+const ctx = await browser.newContext();   // ONE context: the warm pass reuses its caches
 const mk = async (name) => {
   const page = await ctx.newPage();
   page.on('pageerror', () => {});
@@ -137,10 +137,10 @@ check('independent listener RECEIVED it', lRx.inbound > 50, `${lRx.inbound} pkts
 check('and it is AUDIBLE (nonzero level at the listener)', lRx.level > 0.005, `peak ${lRx.level.toFixed(3)}`);
 check('speaker pacer active while TTS is the producer', sTx.mouth.pacing === true);
 
-// free the two live-media pages first: OPFS is origin-scoped and survives;
+// free the two live-media pages first (the context's caches survive);
 // two ORT sessions + a mesh under swiftshader is real memory pressure.
 await speaker.close(); await listener.close();
-console.error('\n— warm load (OPFS cache hit, same context) —');
+console.error('\n— warm load (second load, same context; loadVoice re-supplies and re-copies the files: not an OPFS read) —');
 const wdt = setTimeout(() => { console.error('WATCHDOG: warm phase exceeded 180s'); process.exit(3); }, 180000);
 const speaker2 = await ctx.newPage();
 speaker2.on('pageerror', () => {});
@@ -149,7 +149,7 @@ await speaker2.evaluate(async () => { const net = await import('/lib/net.js');
   for (let i = 0; i < 60 && !net.net?.joined; i++) await new Promise(r => setTimeout(r, 250)); });
 const warm = await loadVoice(speaker2, NONCE);
 receipt.warmLoadMs = warm.ms;
-check('warm load completes (OPFS-cached bytes)', warm.ms > 0, `${warm.ms}ms (cold was ${cold.ms}ms)`);
+check('warm load completes (second load, same context)', warm.ms > 0, `${warm.ms}ms (cold was ${cold.ms}ms)`);
 check('warm identity is byte-stable', warm.identity.id === cold.identity.id);
 
 clearTimeout(wdt);

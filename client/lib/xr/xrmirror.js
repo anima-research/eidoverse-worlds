@@ -104,7 +104,7 @@ export function tickXRMirror() {
   if (!isPresenting() || xrPrefs.mirror === 'off' || mirrorKilled || failed) return;
   if (xrCurtainOn()) return;   // entry: the curtain is up and pipelines are building; no desktop pass on top of that
   // the mirror must never cost the headset: 30 consecutive frames over 30 ms → off for the session (the pref is untouched)
-  { const now = performance.now(); if (lastTick && now - lastTick > 30) { if (++slowFrames >= 30 && !(stats.wouldKill = stats.holdKill)) { mirrorKilled = true; stats.killed = true; tee(`[xr] mirror: OFF for this session — 30 frames over 30 ms (mode ${xrPrefs.mirror})`); showMirrorBanner('Mirroring your eyes to this screen was costing the headset frames, so it switched itself off to keep VR smooth.'); return; } } else slowFrames = 0; lastTick = now; }
+  { const now = performance.now(); if (lastTick && now - lastTick > 30) { if (++slowFrames >= 30 && !(stats.wouldKill = stats.holdKill)) { mirrorKilled = true; stats.killed = true; tee(`[xr] mirror: OFF for this session — 30 frames over 30 ms (mode ${xrPrefs.mirror})`); showMirrorBanner('VR was dropping frames while mirroring to this screen (30 in a row over 30 ms), so the mirror switched itself off to keep VR smooth.'); return; } } else slowFrames = 0; lastTick = now; }
   // every frame: a skipped one presents a cleared buffer (a flicker)
   const cw = renderer.domElement.width || 1, ch = renderer.domElement.height || 1;
   if (cw / ch !== lastAspect) { lastAspect = cw / ch; deskCam.aspect = lastAspect; deskCam.updateProjectionMatrix(); }

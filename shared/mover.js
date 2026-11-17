@@ -42,7 +42,8 @@ export const MOVER = Object.freeze({
     max: 0.4,          // m: the widest tolerance a caller may ask for
   }),
   // WATER: wading drags (knee-deep ~0.86 of the pace, chest-deep ~0.5); deeper than `at` of the body's height, the body
-  // floats at the chest and swims. Swimming is never refused a step (a ledge under water isn't a ledge).
+  // floats at the chest and swims. A swimmer is never refused a step under water (a ledge there isn't a ledge); hauling
+  // out is, above `climb` (floorStep).
   swim: Object.freeze({
     speed: 0.9,    // m/s, a steady stroke
     run: 1.5,      // m/s, swimming hard

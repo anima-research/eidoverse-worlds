@@ -1,5 +1,5 @@
 // assets — every byte the client pulls, and the host shims that let toolkit modules run unmodified in a browser.
-// Four caches, keyed by library path, each download+parse once:
+// Four caches, keyed by library path (a VRM is parsed once per body worn at once; its bytes are fetched once):
 //   byteCache  raw bytes (progress into the loading tray)
 //   glbCache   parsed GLB prototypes; every use gets a skeleton clone
 //   vrmaCache  animation bytes, retargeted per VRM at use
@@ -103,7 +103,8 @@ export async function fetchBytes(path) {
       loadTrack(path, path.split('/').pop().split('?')[0]);
       demandStart();
       try {
-        // 3 tries on 5xx/network; evict on final failure, or a cached rejection poisons every later ask for the path
+        // 3 tries on 5xx/network (a failure before the response; one mid-body is not retried); evict on final failure, or a
+        // cached rejection poisons every later ask for the path
         let r;
         for (let attempt = 0; ; attempt++) {
           try { r = await fetch(path); } catch (err) { if (attempt >= 2) throw err; r = null; }
@@ -228,7 +229,8 @@ async function primeTextures(obj, work) {
   }
 }
 
-// prime-on-decode: node-graph textures miss collectTextures but all pass loadImageTexture; spreads, never gates
+// prime-on-decode: node-graph textures miss collectTextures, and those loaded by loadImageTexture are primed here
+// (materials.js primes its shared cloud noise itself); spreads, never gates
 const texPrimeQueue = [];
 let texPrimePumping = false;
 function queueTexturePrime(tex) {

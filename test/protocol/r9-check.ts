@@ -11,7 +11,7 @@
 //       restored as one by undo (holes L2); the fold takes `cascade` only well formed
 //   M   the occupant exemption is the seat's assembly as it was when the occupant sat (a handler added since unseats them)
 //   E   a station's leaveBy "script" keeps the occupant's escape (sockbody, the agent's detach {escape})
-//   A   the auditor re-runs an arrival with two stand-ins: agreeing re-runs are compared with the log (a forgery is flagged)
+//   A   the auditor re-runs an arrival with a stand-in; on a mismatch with the log, with a second: a part both agree on is flagged
 //   U   an agent hears `vacated` (its seat cleared, standing where the authority let it go); only for the seat it is on
 //   T   leaving a seat restarts the authority's track of the body at the seat (no too-fast after being carried), for a
 //       seat boarded within reach (one with no `near` doesn't re-anchor: r10-check S2)

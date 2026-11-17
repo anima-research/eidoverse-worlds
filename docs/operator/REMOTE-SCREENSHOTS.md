@@ -157,7 +157,8 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
 (503). A **roaming** renderer serves whatever world needs it:
 
 - Start one with the watchdog's `ROAM=1` (URL flag `&roam`; name `mac-gpu-roam-<WORLD>`). It joins `WORLD` first and
-  is free to move.
+  is free to move. To be sent into invite-only worlds its `KEY` must be the sequencer's `RENDERER_TOKEN`
+  (`server/config.ts`); with the ordinary door key it serves the other worlds only.
 - **On demand:** a screenshot asked of a world no renderer serves sends an idle roamer there (`renderer-travel`, an
   in-page re-join), waits for it to arrive (up to 25 s), and dispatches the screenshot to it. It stays until another
   world needs it, so follow-up screenshots are fast. One summons per world at a time; a roamer mid-shot is not taken.
@@ -182,6 +183,8 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   a fixed 20 s while the server would wait 40, which failed first screenshots of worlds that took a little longer.)
 - Refusals stay explicit: no roamer free → 503 naming the world; a renderer still loading → its own words.
 
-`bun test/client/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… JOIN_KEY=… AGENT_TOKEN=… bun test/client/roaming-renderer-check.ts http://host:port`: two worlds the operator founded, the door key, and an enrolled agent's token — only an enrolled agent's arrival pre-warms) exercises it end to end (pre-warm, a screenshot asked the instant
-the agent arrives, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
-its lobby being swept back before the next screenshot). `GRACE_MS=0` asks at once.
+`bun test/client/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… JOIN_KEY=… AGENT_TOKEN=… bun test/client/roaming-renderer-check.ts http://host:port`: two worlds the operator founded, the door key, and a token enrolled as `builder-agent`, the name it joins and follows — only an enrolled agent's arrival pre-warms;
+it creates four crates in `WORLD` and leaves them, so use a scratch world) exercises it end to end (pre-warm, a screenshot asked 4 s after the
+pre-warm lands, while the world may still be loading, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
+its lobby being swept back before the next screenshot). `GRACE_MS=0` asks as soon as the pre-warm lands (the crates
+are already made by then, so neither setting asks during the world's first load).

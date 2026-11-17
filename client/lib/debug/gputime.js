@@ -8,7 +8,7 @@
 // the shadow pass inside the main render would fold into the main number and read as nothing on its own.
 //
 // measureShadowPass(): alternates frames with the shadow maps RE-RENDERED and HELD (shadow.autoUpdate — uniform-
-// level, no recompile; a held map is the same map, so the image does not change) and reports the difference: what
+// level, no recompile; a held map is last frame's, so only something moving between the two shows a lagging shadow) and reports the difference: what
 // drawing the shadow maps costs per frame. Sampling them on every lit pixel is not in that number (turning that off
 // recompiles) — for it, and for MSAA (reload-time), flip the Video setting and read the live number before/after.
 //

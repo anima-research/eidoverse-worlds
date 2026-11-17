@@ -2,13 +2,15 @@
 // screen names in its `captioners {ids}` (whoever may edit the screen sets
 // that), and sends one door `caption` request per final line. It reads the
 // stage cue (a `stage` component on the screen) off its own fold of the
-// world (shared/protocol/replica.js), so `speaker` is the operator's word, never
-// the bot's guess.
+// world (shared/protocol/replica.js): `speaker` is the operator's word where a
+// cue names one, else the transcriber's own label, if it gives one (captioner.ts).
 //
 // RECEIPTS. A line is done when the door answers ok, not when it is sent.
 // Until then it is PENDING: in memory, on disk in the spool, and resent after
-// a disconnect or a silent timeout. The door refuses a duplicate n
-// (shared/captions.js captionRefusal), and that refusal is read as the receipt.
+// a disconnect or a silent timeout. The door refuses any n at or below its
+// high-water (shared/captions.js captionRefusal), and that refusal is read as the
+// receipt: right for a duplicate, wrong for a lower n that never landed (a line
+// replayed after a later one), which is counted acked though it isn't history.
 //
 // ORDER. One line in flight at a time, FIFO, paced under the door's rate
 // (60 entries per 10 s; a caption is two). The server stamps the captioner's

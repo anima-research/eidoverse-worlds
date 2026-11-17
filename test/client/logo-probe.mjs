@@ -6,7 +6,7 @@
 //
 // What must hold:
 //   THE SPLASH, driven by boot.js's own phases (main.js is held back, so the static splash stays up and the
-//   probe owns the progress): the first paint — before any script — has the peg OFF to the left by the full
+//   probe owns the progress): the static splash (read after domcontentloaded, before boot.js runs) has the peg OFF to the left by the full
 //   travel D = 80.5 (the peg's arc tip, x 88, clears the sphere's leftmost x 8 by half a unit) and clipped to the sphere; at p = 0.5 the peg sits at −D·(1 − ease(0.5)) (boot.js's
 //   pegEase); at p = 1 it has NO transform and NO clip: the still mark. The frame never moves.
 //   THE REAL BOOT: the peg is painted by paint() as progress arrives (a value strictly between the ends is
@@ -60,7 +60,7 @@ try {
     await pg.evaluate(() => { globalThis.__ewEngineUp = true; });   // the watchdog is not the subject
     await sleep(300);
     const s0 = await pegState(pg);
-    check('splash p=0, first paint (no script): the peg is off to the left by the full travel D, clipped to the sphere',
+    check('splash p=0, before boot.js (the static markup, read after domcontentloaded): the peg is off to the left by the full travel D, clipped to the sphere',
       s0 && near(s0.tx, -D) && s0.clip === 'url(#sp-sphere)', JSON.stringify(s0));
     check('splash: the frame never moves', s0 && s0.frames.length === 2 && s0.frames.every((t) => t === 'none'), JSON.stringify(s0));
     await pg.evaluate(async () => { const b = await import('/lib/boot.js'); globalThis.__boot = b; b.initBoot({ world: 'a world', name: 'you' }); });

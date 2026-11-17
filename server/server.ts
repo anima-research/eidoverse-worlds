@@ -497,7 +497,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         return null;
       }
       // an aux leg binds to the primary's identity, or it does not attach (a same display name is presence, not authority).
-      // It binds by account: the same proven account as its primary; a primary with no bindable credential gets none.
+      // It binds by account: the same account as its primary (proven, except a TRUST_NAMES `local:` one, which is only
+      // typed); a primary with no bindable credential gets none.
       const auxBound = !!c.account && c.account === primary.account;
       // remembered, so the attest gate admits the same identity this does
       if (auxBound) c.auxBound = true;

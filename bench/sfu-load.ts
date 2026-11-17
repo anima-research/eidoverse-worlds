@@ -1,6 +1,7 @@
 /**
  * SFU load: pure-JS SRTP cost at room scale (werift encrypts in JavaScript; #104).
  * Everyone talks at once by default, so this is a ceiling, not an average.
+ * The N peers run in this process too, so CPU counts their SRTP as well as the SFU's: an upper bound on the SFU alone.
  *
  * Run: bun bench/sfu-load.ts [N] [seconds] [speakers]
  */

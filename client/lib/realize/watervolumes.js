@@ -296,8 +296,8 @@ const volumeIds = new Set();   // holders at the last rebuild: a same-id respawn
 onWorldChange(ev=>{ if(zoneChangeTouches(ev,state.st.entities,volumeIds))dirty=true; if(lookChangeTouches(ev,lookIds))lookDirty=true; });
 let lookDirty=true;const lookIds=new Set();   // the sun thing at the last look (a removed or moved one still counts)
 
-/** 1 where a point is inside one of the MAX_AIR dry boxes the shader holds (fogSlots' order; the extras read 0), else
- *  0 (portable TSL). water.js masks the level's sheet with it: a dry
+/** 1 where a point is inside one of the MAX_AIR dry boxes the shader holds that clears @world's level (mask bit 0;
+ *  fogSlots' order; the extras read 0), else 0 (portable TSL). water.js masks the level's sheet with it: a dry
  *  shaft or room reaching up through the surface has no water across its mouth. */
 export const dryAt = Fn(([p]) => {
   const dry = float(0).toVar();

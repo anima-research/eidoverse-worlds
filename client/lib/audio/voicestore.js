@@ -116,7 +116,7 @@ export async function openVoice(entry, { allowPrompt = false } = {}) {
   return out;
 }
 
-/** Whether remembering is possible here (Firefox/Safari fall back to <input type=file>, not persistable). */
+/** Whether remembering is possible here (no showOpenFilePicker, as in Firefox/Safari: ttsrow.js offers no local file there). */
 export const canRemember = () =>
   typeof indexedDB !== 'undefined' && typeof window !== 'undefined'
   && typeof window.showOpenFilePicker === 'function';

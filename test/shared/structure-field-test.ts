@@ -7,7 +7,8 @@
 //  - rooms are DERIVED by flood fill, and a wall stops the fill;
 //  - a DOOR DOES NOT MERGE two rooms (Sims semantics) — only an absent wall does;
 //  - an aperture is a hole made of ABSENT boxes (a door's or arch's walkable, a window's above its sill; a
-//    diagonal wall opens for a door or arch only) with no change to the movement solver, and the surrounding boxes never overlap;
+//    diagonal wall opens for a door or arch only) with no change to the movement solver, and one aperture's own boxes never overlap
+//    each other (wallBoxes; across the whole plan, corners and diagonal steps do overlap);
 //  - portals resolve to the two rooms they join, null meaning outdoors;
 //  - the planner is pure, deterministic and TOTAL — malformed data yields the plan
 //    of what is valid in it (junk dimensions fall back), never a throw (house rule 3, one layer down).

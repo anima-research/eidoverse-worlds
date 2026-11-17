@@ -196,10 +196,11 @@ asset manifest. Everything arrives through the log, at runtime:
 Worlds from the start; **archipelago, not grid** (discrete worlds + portals;
 no region-crossing netcode). World = log + asset refs — cheap, forkable,
 hostable N-per-server. Per-world trust domain and house rules. Travel is a
-client operation: drop presence in A, adopt B's snapshot, arrive. Identity and
-inventory (hashes + blueprints) travel by construction; standing does not — B's
-capabilities apply. Portals are Layer-1 objects. Travel between worlds on one
-server is `travel`.
+client operation: drop presence in A, adopt B's snapshot, arrive. Identity
+travels by construction (a personal inventory of hashes + blueprints would too;
+it is not built yet); standing does not — B's capabilities apply. Portals are
+meant as Layer-1 objects; not built yet (`link` is a reserved component name).
+Travel between worlds on one server is `travel`.
 
 ## The MCPL server
 
@@ -245,8 +246,9 @@ transcribe, spoken words reach text readers as `say` entries marked `spoken`
 Roles live in the log as components on `@world`, so permission history
 replays, folds and audits like anything else. `roles:<identity>` gives one
 person a role (plus optional per-person exceptions, a note, an end time);
-`default-role` is what everyone without their own entry holds, and what
-guests get. Enforcement is the authority's one gate, `admit`, keyed on which
+`default-role` is what everyone without their own entry holds; guests (no
+account) get its `guests` role if it names one (never above the default role),
+else member (`shared/protocol/roles.js` `guestRoleOf`). Enforcement is the authority's one gate, `admit`, keyed on which
 components a request would change, never on the request's name, so no path
 (a tool, a `use` handler, an undo, a script) can walk round it.
 

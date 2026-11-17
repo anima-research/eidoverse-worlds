@@ -276,7 +276,7 @@ function buildSet(ctx, a) {
   if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§3.1: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
   const lt = lastTouch(ctx.w, a.id, a.component); const base = a.base === undefined ? undefined : versionSeq(ctx.w, a.base, "base");
   // No `current` value echoed here: buildSet runs BEFORE admit and a dry request is never logged, so it would be an
-  // untraced read of anything by anyone. The fix line sends them to `inspect` (rights-checked); version/by are public.
+  // untraced read of anything by anyone. The fix line sends them to `inspect` (the ordinary read: no per-thing rights); version/by are public.
   if (base !== undefined && lt && lt.seq > base) refuse("stale", `${a.id}.${a.component} changed since version ${base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or re-send without base and with merge: true to change only your fields`, { version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
   let v = a.merge ? merge7396(e.c[a.component], a.value) : a.value;

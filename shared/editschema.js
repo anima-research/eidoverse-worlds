@@ -140,9 +140,9 @@ const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k 
 // socket children): their rows are not built from the table — a Transform's channels are an editor's reading of one pose, a Material's are
 // the model's own slots, and a Grabbable's registry fields ride beside the hand's own (pose, carries, fits, use, prompt,
 // grips). Each keeps a `read` (its rows) and a `write` (its edits); Transform's hooks are inline in inspectSchema/editOps
-// (its edits coalesce into one place). A host's sockets are its socket children, which the Sockets card reads and
-// writes as one map, `sockets.<name>` (shared/sockbody.js socketsIn; the door lifts a whole-map write into socket
-// children). Needs the world (live.world).
+// (its edits coalesce into one place). A host's sockets are its socket children, which the Sockets card lists
+// (shared/sockbody.js socketsIn) and can only delete, one child at a time (`sockets.del`); a `sockets` map is refused at
+// the door (sockets-test LS1). Needs the world (live.world).
 const socketsOf = (id, live) => (live?.world ? socketsIn(live.world, id, { all: true }) : []);
 const HAND = {
   Transform: { read: 'inspectSchema: the pos and rot groups', write: 'editOps: case pos, case rot, and the compose after the loop' },

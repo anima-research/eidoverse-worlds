@@ -6,7 +6,7 @@
 //  3. Facing: VRM avatars face +Z; forward is measured from foot→toe and a yaw baked on the Armature if needed.
 // Usage:
 //   bun tools/glb2vrm.ts input.glb --name cosplay [--height 1.65] [--head-pitch -20] [--out path]
-//   bun tools/glb2vrm.ts input.{glb,vrm} --measure      # just report pose/facing (a Tripo rig, or a VRM 1.0 with toe bones)
+//   bun tools/glb2vrm.ts <input.glb or input.vrm> --measure   # just report pose/facing (a Tripo rig, or a VRM 1.0 with toe bones)
 // Bone names are Tripo's (Hip/Pelvis/Spine01/L_Upperarm/...). Another generator needs more than TRIPO_MAP: the forward
 // measure, T-pose chains and head pitch below name Tripo bones directly.
 

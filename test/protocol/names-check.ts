@@ -11,7 +11,8 @@
 //   N   refusal codes: hold-limit, beneath, not-pushable (were hands-full, underfoot, no-body); the old words are never given nor mapped (N3)
 //   P   punt keeps its name; its flag is contact: true (shove: true refused, naming contact); docs say no kick/feet
 //   T   @world trusted-components (was trusted): the registry, the door, drafts.js reading the old key too (no load renames it)
-//   C   consent: the old words a stored table is READ in (C1) and the authority's load of one as two narrowed gates (C5);
+//   C   consent: the kind classes (C1: drag/occupy/carry are displace; no move class) and the authority's load of an
+//       old-shape stored table as two narrowed gates (C5);
 //       C2/C4/C6/C7 retired with recut A2 (tiers, cells, the client table and delegates are gone)
 //   W   people: /worlds is one people list with a declared word as a tag (main's agents list beside it); no "(agent)"; the browser shows the declared word only;
 //       no text sets humans against agents

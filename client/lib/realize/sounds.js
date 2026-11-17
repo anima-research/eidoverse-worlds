@@ -13,6 +13,7 @@
 //      (../audio/audiounlock.js), which retries all held elements on the first gesture and says so in chat.
 //   3. The clock is the server's: with `t0` every client seeks to the same playhead ((serverNow - t0) × pitch, mod duration
 //      when looping), so a late joiner hears the same bar as everyone else. Without it, the top of the track.
+//      A pitch change that keeps t0 doesn't re-seek here, so a joiner (who seeks at the new pitch) can then drift from us.
 //      serverNow() is this client's estimate of the authority's clock (../serverclock.js).
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop, playing, re-seek on a new t0); new src →
 //      tear down and rebuild. A sound whose entity left the scene keeps its graph but is silenced (gain 0) until the
@@ -26,9 +27,9 @@
 //      paused (their playhead is found again on the shared clock when they come back).
 //   8. A limiter (DynamicsCompressor, −6 dB, 20:1, 3 ms) sits between the world bus and the speakers: a clipped upload
 //      can't go past full scale.
-//   9. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always; any other
-//      link ONLY if this viewer turned on "allow untrusted links" (mediaprefs.js); otherwise nothing is fetched. Links
-//      go with no Referer (the page's <meta name="referrer">). Every link is tried as a CORS request first (Web Audio
+//   9. Where the bytes come from (shared/mediasrc.js): a store file always; a trusted host's link always, unless it is a page
+//      (mediasrc.js tier.page: never fetched, it can't play yet); any other link ONLY if this viewer turned on
+//      "allow untrusted links" (mediaprefs.js); otherwise nothing is fetched. Links go with no Referer (the page's <meta name="referrer">). Every link is tried as a CORS request first (Web Audio
 //      needs it; its host sees the page's Origin); a host without CORS headers plays from a plain element instead,
 //      volume by the same distance curve (no HRTF, no limiter: said once in the console).
 //  10. Mute for me (mediaprefs.js): a muted thing's sound is gain 0, never logged.

@@ -4,15 +4,17 @@
 //   speed  m/s   how fast the thing (its whole-motion transform) is moving
 //   turn   rad/s how fast it is turning about its up axis (+ = counter-clockwise seen from above)
 //   phase  0..1  where the motion that carries the socket is in its cycle (a swing's period, a wheel's turn, a path's run)
-//   swing  -1..1 cos(2π·phase): a pendulum's normalised angle (θ/amp, damping included), an oscillate's normalised offset
+//   swing  -1..1 a pendulum's angle over |amp| (damping included; cos(2π·phase), negated for a negative amp), an
+//                oscillate's offset over amp (cos(2π·phase))
 //                (a still swing — amp 0, or damped out — reads 0, and its phase stops: nothing pumps on a swing at rest)
 //   throttle, steer          -1..1  the occupant's movement input (input.move drive|walk), riding their presence
 //   aimYaw, aimPitch         rad    where the occupant looks, relative to the socket's forward (riding presence)
 //   param.<name>             the thing's `params` component (scripts write it)
 //
 // Every value is a closed form of data every client already has (the motion component, the server clock, the
-// occupant's presence), so two clients put the occupant's clip at the same frame. A thing moved by physics rather than
-// a motion component reads speed/turn 0.
+// occupant's presence), so two clients put the occupant's clip at the same frame, up to presence's own lag; an old
+// motion with no t0 anchors to each client's first sight of it (motioneval.js since), so there they can differ.
+// A thing moved by physics rather than a motion component reads speed/turn 0.
 //
 // Pure: imports only motioneval.js and names.js motionNode.
 
@@ -43,8 +45,9 @@ function carrierMotion(comp, sock) {
 export const STILL = 0.01;
 
 /** phase (0..1) and swing (-1..1) of one motion at nowMs. One meaning for every cyclic motion: phase 0 is the cycle's
- *  positive extreme and swing = cos(2π·phase) — scaled, for a damped pendulum, by how much of its swing is left. A
- *  pendulum (θ = amp·cos) and an oscillate (offset = amp·sin) are therefore both at phase 0 at their positive end. A still
+ *  positive extreme and swing = cos(2π·phase) — for a pendulum scaled by how much of its swing is left and signed by
+ *  its amp (θ/|amp|). A pendulum (θ = amp·cos) and an oscillate (offset = amp·sin) are therefore both at phase 0 at
+ *  their amp's end. A still
  *  oscillator (amplitude below STILL) reads the phase it came to rest at, and swing 0. */
 export function cycleOf(m, nowMs) {
   if (!m?.type) return { phase: 0, swing: 0 };

@@ -1,7 +1,8 @@
 // skystamp-test — the sky's provenance survives the real authority (#260 review I286).
 // The authority stores @world.sky without seq/by (a value doesn't carry its own log position; the log does), so the
-// replica names the entry that wrote it and the agent stamps the view with it: a forecast boundary still reads
-// "policy sky seq N by <who>", as skywatch-test requires of the serverless path.
+// replica names the last live entry that wrote it and the agent stamps the view with it: a forecast boundary still reads
+// "policy sky seq N by <who>", as skywatch-test requires of the serverless path. That is the sky's last writer, not
+// necessarily the forecast's author; an agent that joined from a snapshot has no stamp yet ("?").
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/skystamp-test.ts
 import "../harness/fixture-ids.ts";

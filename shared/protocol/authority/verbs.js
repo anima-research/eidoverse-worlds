@@ -124,8 +124,9 @@ function buildBatch(ctx, a, w) { {
       // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
       const all = []; let st = ctx.st; let work = null;
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
-      // every child request is checked against its verb's arguments BEFORE any is built, exactly as it would be outside a
-      // batch (a misspelt arg must never turn a component delete into a whole-entity one)
+      // every child request is checked against its verb's arguments BEFORE any is built, as it would be outside a batch
+      // (a misspelt arg must never turn a component delete into a whole-entity one); the request flags throughLock and
+      // expect go on the batch itself, so a child carrying one is refused as an unknown arg
       if ("ops" in a) refuse("shape", "batch {ops} is now batch {requests}: nothing ran", "send {verb: 'batch', args: {requests: [{verb, args}, …]}}");
       (a.requests ?? []).forEach((o, i) => {
         if (!o || typeof o !== "object" || Array.isArray(o)) refuse("shape", `batch request ${i} is {verb, args}, got ${JSON.stringify(o)}`, "batch takes requests [{verb, args}, …]", { index: i });

@@ -526,7 +526,7 @@ register('goto', (arg) => {
 
 register('rename', () => {
   // until mid-session renames exist, say so instead of saying nothing
-  logChat('*', "renaming mid-session isn't supported yet — set your name at the front door (add ?door=1 to the URL to re-open it)");
+  logChat('*', "renaming mid-session isn't supported yet — set your name at the front door (add ?door=1 to the URL to re-open it; a Discord-verified name is Discord's)");
 });
 
 function bearingTo(p) {

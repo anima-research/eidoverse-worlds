@@ -231,7 +231,7 @@ try {
   check('…and drawn out to the hit on a panel', Math.abs(modes.always.panelLen - modes.always.panelWant) < 0.02, J(modes.always));
   check('never: no beam anywhere, buttons or not', vis(modes.never) === '0000', vis(modes.never));
 
-  // never: pointing still works — a trigger on a control clicks it, the laser holds it, and the stick scrolls
+  // never: pointing still works — a trigger on a control clicks it and the laser holds it (stick scrolling isn't run here)
   const never = await ev(pg, async () => {
     const H = __h; H.prefs.setXrPref('pointerVisibility', 'never');
     const tab = H.yieldEls?.[0] ?? document.getElementById('sec-vr-tab'); const r = H.rectIn('settings', tab);

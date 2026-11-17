@@ -74,7 +74,8 @@ function extBox(nd, ext, floor = 0.01) {
 export function buildHair(doll, avatar, { H, keep, localOf, mkBody, boxFor }) {
   // ---- Bullet hair, when the rig carries Hair_<chain>_<idx> bones: each becomes a thin box chained by 6DOF
   // springs to a kinematic anchor, limits ramping down the lock, equilibrium the combed pose, fractional gravity,
-  // CCD against tunnelling. Collides with the world and the skull box only. Local dressing: excluded from settle,
+  // CCD against tunnelling. Collides with the world only (its mask names the head's group, but the head's mask
+  // lacks G_FINGER and Bullet needs both, so the skull box isn't met). Local dressing: excluded from settle,
   // snapshot and the pose wire.
   doll._hairSegs = [];
   {

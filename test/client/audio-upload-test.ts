@@ -10,6 +10,8 @@
 //
 // To point it at a door you run yourself instead (identity unchecked; it must have JOIN_TOKEN set, or the 401 row fails):
 //   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun test/client/audio-upload-test.ts
+// (with OPT_DIR, its store must not already hold the fixture WAV under another name: first arrival wins, and the
+// manifest row expects "quiet tone")
 //
 // Kind by BYTES (a PNG named .mp3 is refused; a WAV named .glb is a .wav),
 // content-addressed and idempotent, served back byte-identical with the right

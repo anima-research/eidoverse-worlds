@@ -423,8 +423,8 @@ function updateShadow() {
 }
 
 // ---- the caster budget ------------------------------------------------------
-// object.castShadow is in no pipeline cache key, so the caster set is a live distance budget: the nearest K cast, the
-// rest keep receiving. Depth pipelines are pre-warmed (warmqueue.warmDepth) before castShadow flips, ≤2 flips per
+// object.castShadow is in no pipeline cache key, so the caster set is a live distance budget: the nearest K cast (plus up
+// to 4 already casting inside the hysteresis edge, casterPass), the rest keep receiving. Depth pipelines are pre-warmed (warmqueue.warmDepth) before castShadow flips, ≤2 flips per
 // pass; a disable fades out and castShadow clears when the fade ends (endFade). docs/research/shadow-depth-prewarm.md.
 
 const casters = new Map();   // id -> { obj, meshes, casting, warm, released }

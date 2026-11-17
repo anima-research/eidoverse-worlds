@@ -183,7 +183,7 @@ async function track(force = false, { noTeleport = false } = {}) {
   const to = feet(); if (!to) return false;
   if (moving) { await moving; if (!force) return arrived; }
   const go = async () => {
-    if (!arrived) {   // arriving: one act on the record, as an agent's first move is
+    if (!arrived) {   // arriving: one move, as an agent's first is (presence, not logged; a fallback teleport is an act)
       const r = await sendRequest('move', { to: to.map(r3) }); lastMove = { arrive: true, ok: !!r?.ok, refused: r?.refused?.code };
       if (r?.ok) { arrived = true; trackedAt = r.at ?? to; }
       if (arrived) { arriveFails = 0; stuck = null; return true; }   // arrived: no leftover back-off

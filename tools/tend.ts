@@ -1,4 +1,5 @@
-// One-shot world tending: connect as an agent, send door requests, print each answer, leave.
+// One-shot world tending: join as "claude", send door requests, print each answer, leave. It sends no agent
+// credential: a TRUST_NAMES door makes it local:claude, any other joins it anonymous (server.ts, who this join is).
 // Usage: bun run tools/tend.ts <world> <requests.json>
 // requests.json: [{ "verb": "create", "args": {...} }, ...] — the authority's verbs (help lists them)
 

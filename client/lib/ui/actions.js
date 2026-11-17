@@ -1,5 +1,5 @@
 // actions — the one list of things a person can DO here: every panel, section,
-// gesture, key and slash command registers once, where it is defined, and every
+// gesture, key and listed slash command registers once, where it is defined, and every
 // surface that offers actions (the lantern prompt today; the help sheet, the ∃
 // menu and VR's wrist later) reads this list instead of keeping its own copy.
 //

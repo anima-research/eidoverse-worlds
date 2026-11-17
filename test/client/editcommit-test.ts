@@ -191,14 +191,15 @@ console.log("\nan edit landing while an undo is in flight (house I162, #260):");
   check("…and the racing edit's act is still there to undo", st.length > 0 && st.at(-1) !== target && st.at(-1) > target, JSON.stringify({ target, st }));
 }
 
-// SWEEP-3 N4: a lamp's brightness and range are sliders, and a drag shows on the realized light (inspect.js's own light
-// handler, through realize/models.js previewLight) before anything is sent
+// SWEEP-3 N4: a lamp's brightness and range are sliders, and a drag reaches inspect.js's light handler, which calls
+// realize/models.js previewLight (stubbed here: test/harness/inspectharness.ts) before anything is sent. The real
+// previewLight touching the light is not covered.
 { const got: any[] = []; (globalThis as any).__previewLight = (id: string, patch: any) => { got.push({ id, ...patch }); return true; };
   const lg = schemaFor("lamp").groups.find((g: any) => g.group === "light"); const f = (k: string) => lg?.fields.find((x: any) => x.k === k);
   check("the light card's brightness and range are sliders (t: range, bounded; range's floor is the registry's > 0, its slider starts at softMin 1)", f("intensity")?.t === "range" && f("intensity").max >= 64 && f("range")?.t === "range" && f("range").min === 0 && f("range").softMin === 1 && f("range").max >= 40, JSON.stringify([f("intensity"), f("range")]));
   const n0 = H.sent.length; previews.length = 0;
   commitEdit("lamp", "light.intensity", 30, { live: true }); commitEdit("lamp", "light.range", 12, { live: true });
-  check("a drag previews on the realized light, nothing sent", got.some((g) => g.id === "lamp" && g.intensity === 30) && got.some((g) => g.range === 12) && H.sent.length === n0, JSON.stringify({ got, sent: H.sent.length - n0 }));
+  check("a drag reaches previewLight with the dragged values, nothing sent", got.some((g) => g.id === "lamp" && g.intensity === 30) && got.some((g) => g.range === 12) && H.sent.length === n0, JSON.stringify({ got, sent: H.sent.length - n0 }));
   (globalThis as any).__previewLight = undefined; endGesture?.("lamp"); }
 
 console.log(`\n${pass} passed, ${fail} failed`);

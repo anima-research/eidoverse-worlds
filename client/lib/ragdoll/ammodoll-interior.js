@@ -14,7 +14,7 @@ export function reportInteriorFallback(id, msg) {
   why('ragdoll', `interior fallback — ${msg}; its walls are left out of this fall`);
   if (fallbackWarned.has(id) || fallbackWarned.size >= 64) return;
   fallbackWarned.add(id);
-  console.warn(`[ammodoll] interior fallback — ${msg}; its walls are left out of the fall (further ones: lastWhy('ragdoll'))`);
+  console.warn(`[ammodoll] interior fallback — ${msg}; its walls are left out of the fall (further ones: __why('ragdoll') in the console)`);
 }
 
 /** Does a triangle's footprint (xz) overlap the square `reach` either side of `at`? Separating axes (the square's
@@ -42,8 +42,8 @@ function overlapsSquare(v, at, reach) {
 
 /** An interior collider's triangles within `reach` of `at` (horizontally), in world space, flat [x,y,z, …]. The
  *  geometry is root-local (colliders.js buildExact); scale, rotation and position place it as colliders.js does.
- *  Asked of the collider's BVH, stopping at `max` kept triangles: the output is bounded, but every triangle in the
- *  query box (the reach·√2 circle's square) is still visited and tested. */
+ *  Asked of the collider's BVH, whose walk stops at the first triangle past `max` kept: a dense interior costs its
+ *  budget, never its size. */
 export function interiorTriangles(c, at, reach, max = INTERIOR_MAX_TRIS) {
   const o = c.obj, s = o.scale?.x || 1, q = o.quaternion, p = o.position;
   // the reach square in the thing's own frame (a circle of reach·√2 holds it however the thing is turned about Y)

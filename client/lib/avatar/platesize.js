@@ -54,7 +54,8 @@ export function reachAbove(xyz, ay) {
   return best;
 }
 /** The depth pull (m) a plate's sprite writes: its body's clearance, plus — while revealing — enough to pass the eye
- *  (the shader clamps to the near plane), so held plates draw through everything. At k ≥ 0.5 it is past the eye. */
+ *  (the shader clamps to the near plane), so held plates draw through everything. At k ≥ 0.5 it is past the eye.
+ *  `d` is the body ROOT's distance (nameplate.js), so a plate well above a near root (an eye at its feet) can fall short. */
 export const plateClear = (own, d, k = 0) => own + 2 * Math.max(0, d) * k;
 
 // ---- the reveal level ------------------------------------------------------------------------------------------

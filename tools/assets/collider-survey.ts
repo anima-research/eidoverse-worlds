@@ -1,7 +1,7 @@
 // collider-survey — how badly does one bounding box lie, across a real library?
-//   bun tools/assets/collider-survey.ts <dir-or-glb> [<dir-or-glb> ...]
+//   bun tools/assets/collider-survey.ts <dir-or-glb> [<dir-or-glb> ...]   (a dir's own *.glb only: not recursive)
 // colliders.js decide() gives most things one box whose top face is the only ground it can report. Before changing that
-// rule, this measures "is the top of the bounding box where a body would stand?" across every mesh available, so a
+// rule, this measures "is the top of the bounding box where a body would stand?" across the meshes given, so a
 // threshold is picked from where real objects fall. Two metrics per mesh:
 //   lie_ray   the honest one: a grid of downward rays, median surface height vs bbox.max.y (needs a BVH: fine offline,
 //             not at fitCollider time, where the BVH is the thing being decided)

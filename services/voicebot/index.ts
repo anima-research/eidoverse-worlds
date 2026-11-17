@@ -17,7 +17,7 @@
 //   WORLD_TOKEN    door key                  (if the sequencer has one)
 //   WORLD_NAME     world to watch            (default commons)
 //   SPEAKERS       comma list of display names (the stream's `names`, not identity ids) to voice, or "*" for everyone who says
-//   VOICES_FILE    display name→voiceId map  (default ./voices.json)
+//   VOICES_FILE    display name→voiceId map  (default voices.json beside this file)
 //   ELEVEN_KEY     ElevenLabs API key
 //   ELEVEN_MODEL   default eleven_turbo_v2_5
 //   DISCORD_TOKEN  bot token                 (omit with DRY_RUN=1)

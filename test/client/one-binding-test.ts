@@ -76,7 +76,7 @@ const ROWS: Row[] = [
   { name: "the desktop camera's field of view is core.js's DESKTOP_FOV", owner: ["client/lib/core.js"], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\bcamera\.fov\s*=\s*\d/], requires: [["client/lib/core.js", /PerspectiveCamera\(DESKTOP_FOV,/], ["client/lib/xr/xr.js", /camera\.fov = DESKTOP_FOV/]] },
   // 333-cm a8: server/upload.ts deprecates ?token= (a URL lands in access logs)
-  { name: "the authority key rides an Authorization header, never a URL's query", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
+  { name: "the client's own requests carry the key in an Authorization header, never a query (a ?key= page link is the one way in: base.js)", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\.set\(['"]token['"]/, /\{\s*token:\s*CONFIG\.token\s*\}/] },
   // 333-cm b3: three writers spelt it noCameraCollide, which nothing reads
   { name: "the camera-ghost flag is spelt as its reader (colliders.js) reads it: userData.noCamCollide", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),

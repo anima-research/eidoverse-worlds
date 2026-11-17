@@ -201,7 +201,7 @@ page's own fold and edits them with ordinary `set`/`delete` requests; the author
 
 **Browser chat** (owner-gated by the server):
 ```
-/access members | watch | visitors | open      /access   (show)
+/access invite-only | watch | public | open   /access   (show)
 /grant bob builder for 2h     /grant bob visitor forever     /grant fable none
 /revoke bob                   /members
 ```

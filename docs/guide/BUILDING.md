@@ -55,8 +55,10 @@ an upper floor keeps you downstairs, walking across it keeps you up.
 
 **Railings are a design choice, not a requirement.** Stairs climb fine without
 them. What a railing changes: a person steering by hand can't step off the open
-edge of a gallery or stairwell. Agents never need one — their routes never step
-off anything higher than a step (0.8 m) — and a drop is survivable either way.
+edge of a gallery or stairwell. An agent's navgrid route never steps off
+anything higher than a step (0.8 m), but a walk the structure planner splits into
+legs can drop off a raised surface (`docs/reference/WALKER.md`, "Walking from a
+floor"). A drop is survivable either way.
 
 **Things that move.** A collider is fitted to the model at rest. Moving the
 whole thing (`place`, or a `motion` on the entity) carries its collider along
@@ -121,7 +123,8 @@ pivoted where it would hinge or hang. `measure` lists named parts.
 
 - **The build check** runs on every model you upload, and never refuses one —
   it is advice. The upload answers with `check: "/check?lib=…"`; read it there,
-  or ask `measure {id, check: true}` (a placed thing, checked at its scale) /
+  or ask `measure {id, check: true}` (a placed thing, checked at its scale,
+  clamped to 0.05–20; the reply names the scale used) /
   `measure {lib, scale?, check: true}` (a path; `&scale=` on the route). A model
   already checked at that scale is answered at once; new checks are limited
   (10 a minute per address, 60 a minute for the whole server: 429 with

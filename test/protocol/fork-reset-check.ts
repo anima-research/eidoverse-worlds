@@ -1,7 +1,7 @@
 // test/protocol/fork-reset-check.ts — world fork and reset, against a real sequencer (scratch port and WORLDS_DIR).
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/fork-reset-check.ts
 //   FK  fork: owner-only; a NEW world (its own id) whose founding act names the source {world, name, head}; the copy's
-//       things and @world equal the source's (about aside: the fork keeps only its title); roles travel; chat does not; bad/taken names refused
+//       things and @world equal the source's (aside: about keeps only its title, and the forker's own role is the founding act's {role: owner}); roles travel; chat does not; bad/taken names refused
 //   RS  reset: owner-only and name-confirmed; the old log is archived beside it; a fresh genesis whose founding act
 //       names the world it replaced; every owner is still an owner; the people present are told
 //   FD  found (ship list 10-07): a signed-in person founds a new, empty world they own, through the authority's founding act;

@@ -4,8 +4,9 @@
 //
 // chat-scrollback-test drives resyncChatAfter by hand; this pins the call
 // site (net.js onSnapshot): the FIRST snapshot resyncs nothing, a second one
-// resyncs from the last seq the old socket delivered — read before the new
-// snapshot's throughSeq or tail moves lastSeq on, or the hole is skipped.
+// resyncs from lastSeq — read before the new snapshot's throughSeq or tail
+// moves it on, or the hole is skipped. Only snapshots set lastSeq here: live
+// entries between joins aren't fed (below), so that case isn't covered.
 // Same stub set as remotes-lifecycle-test; snapshots go in through _dispatch.
 
 import { GlobalRegistrator } from "@happy-dom/global-registrator";

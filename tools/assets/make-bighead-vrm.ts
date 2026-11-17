@@ -1,6 +1,7 @@
 // make-bighead-vrm — a test rig whose head mesh surrounds a camera at the head joint (#75 eye anchor).
 //   bun tools/assets/make-bighead-vrm.ts <src.vrm> <out.vrm> [scale]
-// Scales the humanoid head bone (default ×5) without moving it; GLB container surgery only. VRM 0.x and 1.0.
+// Sets the humanoid head bone's scale to [s, s, s] (default 5; it replaces any scale the node had) without moving it;
+// GLB container surgery only. VRM 0.x and 1.0.
 
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";

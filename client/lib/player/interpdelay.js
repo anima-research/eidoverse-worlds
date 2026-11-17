@@ -1,7 +1,7 @@
 // interpdelay — how far behind serverNow() a remote body is drawn (remotes.js updateRemotes). A leaf: no THREE, no DOM,
 // so test/client/server-clock-test.ts drives it directly.
 //
-// A sample's stamp is its sender's capture time, so a fixed delay starves on a slow link (every sample already older than the
+// A sample's stamp is its sender's capture time (else its frame's: presencewire.js sampleTime), so a fixed delay starves on a slow link (every sample already older than the
 // render point: the body freezes at the newest, then jumps). The delay follows each body's observed lateness like a jitter buffer:
 // rises quickly when samples come later, drains slowly when they come sooner, never under 110 ms (one 15 Hz interval
 // and some slack) nor over the cap.

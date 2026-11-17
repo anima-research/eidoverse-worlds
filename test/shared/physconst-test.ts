@@ -2,7 +2,8 @@
 // and the authority's launch entry are the same bytes, and every reach/rounding number both sides use is ONE binding.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/physconst-test.ts
 // A  byte-equal launch: for a few releases (a −0 in pos/q/v, the engine's speed cap, a throw with spin and occupants) the
-//    entry client/lib/thingphysics.js planRelease predicts equals the body the authority logs: the engine folds the same
+//    entry planLaunch builds from the inputs planRelease (client/lib/thingphysics.js) passes it, rebuilt here as
+//    `predicted` (planRelease itself isn't run), equals the body the authority logs: the engine folds the same
 //    bits (DESIGN-physics-responsiveness §3). −0 is compared too (bytes() shows it), though jcs hashes −0 and 0 alike (shared/protocol/fold.js jcs).
 // B  one binding: the shared values are the ones the design states (the imports and the no-copy scan over every file
 //    are test/client/one-binding-test.ts's).

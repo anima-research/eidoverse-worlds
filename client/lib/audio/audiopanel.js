@@ -210,7 +210,7 @@ function paint(body) {
   // hear your own gated lane (micgate.js setMonitor): tapped after the gain node, so a closed gate is silent here too
   {
     const row = checkRow('hear my own mic (monitor)',
-      'plays your gated lane back to you — exactly what the room hears, so silence here means the room hears silence. USE HEADPHONES: on speakers this feeds back.',
+      'plays your gated mic back to you — what the room hears of your mic, so silence here means your mic sends silence (a synthetic voice, sent with the mic off, bypasses this). USE HEADPHONES: on speakers this feeds back.',
       selfMonitoring(), (on, input) => {
         // setMonitor() returns false before the gate graph exists: untick and say why
         const took = selfMonitor(on);

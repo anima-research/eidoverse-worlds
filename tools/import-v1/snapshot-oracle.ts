@@ -338,10 +338,11 @@ if (import.meta.main) {
   console.log(`   (comp.guard, comp.door, motion.rpm and a mounted thing's own pose are not left out: they ARE compared, through the mapping above)`);
   const seen = new Map(); const results = [];
   for (const d of dirs) {
-    // the same log under several names (a copy, a worktree's) is one world: compared once
+    // the same world under several names (a copy, a worktree's) is compared once: keyed on the log's last seq and size and
+    // the snapshot's hash, not the log's bytes, so two logs that match on those are taken as one
     const c = completeSnapshot(d);
     if (c.ok && !args.length) { const k = `${c.snap.seq}:${c.snap.bytes}:${crypto.createHash("sha256").update(fs.readFileSync(path.join(d, "snapshot.json"))).digest("hex")}`;
-      if (seen.has(k)) { results.push({ name: path.basename(d), dir: d, skipped: `the same log and snapshot as ${seen.get(k)}` }); continue; } seen.set(k, d); }
+      if (seen.has(k)) { results.push({ name: path.basename(d), dir: d, skipped: `the same snapshot, log length and last seq as ${seen.get(k)}` }); continue; } seen.set(k, d); }
     let w; try { w = { ...(await oracleWorld(d)), dir: d }; } catch (x) { w = { name: path.basename(d), dir: d, error: `threw: ${x?.stack ?? x}` }; }
     results.push(w); printWorld(w);
   }

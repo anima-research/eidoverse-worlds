@@ -13,7 +13,7 @@
  * T-pose humanoid passed 18/18 while every real rig in the fleet was broken,
  * because the rigs are the variable the maths is most sensitive to. So the
  * geometry suite (test/shared/reach-test.ts) isolates the solver, and THIS one runs
- * it on every body people actually wear.
+ * it on every shipped body that loads (one that doesn't is counted as skipped, not failed).
  *
  * The check that matters is INDEPENDENT: the solver returns directions, the
  * conversion turns them into bone quaternions, and then forward kinematics

@@ -13,7 +13,7 @@
 //   replay a world containing a platform
 //     -> GET /geom
 //       -> support registration
-//         -> place / rescale / remove / motion
+//         -> place / remove / motion (no rescale row)
 //           -> explicit drag release AND the 1.2s dragger-silence timeout
 //
 // Every assertion is a HEIGHT, because height is the thing #17 is about: a

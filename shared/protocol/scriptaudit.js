@@ -8,7 +8,7 @@
 //             drop no-ops (scriptrules.elide, the authority's own rule), and compare with the change entry the act caused and
 //             with its says. An authority that altered one op, or a script whose result depended on anything else, is caught.
 //   reads   — an act records what its presence reads ASKED and how much came back ({near: [{r, n}], count, names: k}), never
-//             who: the ids near a script and display names stay out of the log. So a re-run answers each
+//             who: the read record carries no ids or names (a script that says or writes one logs it as its output). So a re-run answers each
 //             near() with n opaque stand-ins and each name() with null. The reads are inputs the auditor can't replay, and
 //             it treats them so: (1) the re-run must ask the SAME reads (radii, counts, how many names) — a different shape
 //             is flagged `reads`; (2) when the re-run's writes and says equal the logged ones, the act is verified: a re-run

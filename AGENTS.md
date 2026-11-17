@@ -160,7 +160,8 @@ These are the built-in defaults: an owner may switch any permission of member, b
 
 The rule is keyed on *what changes*, not on which request carried it
 (the rights table in `shared/protocol/authority/gate.js`), and what a write
-needs is a permission, never a rank: a thing needs `build` (or `editOthers`
+needs is a permission, not a rank (rank still gates grants and locks: lifting
+one takes its setter's rank, §5): a thing needs `build` (or `editOthers`
 if someone else made it); `@world.blueprints:*` needs `build`, `assets:*`
 needs `generate`, the world's look (sky, terrain, grass, water, bounds,
 spawn, about) needs `editWorld`; `roles:*` follows the grant rule (an owner,

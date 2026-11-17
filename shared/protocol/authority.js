@@ -210,7 +210,7 @@ function placeholders(w, verb, args) {
 // and the code — never a value, or a visitor could write any text into a signed, forkable record (an unknown name is
 // counted as `unknownArgs`). Values go to the in-memory refusalRing only. Never logged: reads, dry runs, and refusals
 // that ARE the budget or the authority's own state (UNLOGGED); past the budget the next written refusal says how many
-// it skipped (`unrecorded`). "muted": its refusal would put the muted words in the public log.
+// it skipped (`unrecorded`). "muted" is never written either (a logged refusal carries argNames, never the words).
 const UNLOGGED = new Set(["rate", "identity", "no-world", "custody", "unreadable", "banned", "muted"]);
 const UNIVERSAL_ARGS = new Set(["dry", "throughLock", "expect"]);   // flags any request may carry (§3a, §5)
 const PRESENCE_VERBS = new Set(["move", "drive", "body", "reach", "consent", "inbox", "wait", "leave"]);   // a refusal of these is never logged

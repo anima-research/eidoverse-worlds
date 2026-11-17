@@ -1,4 +1,5 @@
-// Sweep the ragdoll solver's TUNING against the whole shipped fleet.
+// Sweep the verlet ragdoll's TUNING (ragdoll.js) against the whole shipped fleet. Verlet is the fallback
+// while Ammo warms or if it fails (bodysim.js); the default Bullet engine (ammodoll.js) is not measured here.
 //
 //   bun test/labs/rag-tune.mjs           # the candidate grid
 //   bun test/labs/rag-tune.mjs current   # just the checked-in defaults
@@ -100,7 +101,7 @@ if (process.argv.includes('rigs')) {
   process.exit(0);
 }
 
-console.log(`fleet: ${FLEET.length} rigs, production path (no impulse)\n`);
+console.log(`fleet: ${FLEET.length} rigs, verlet, goLimp's path (no impulse)\n`);
 console.log(pad('config', 30), 'settled  steps   ovlp%  strch%   resid   drift');
 for (const { label, cfg } of GRID) {
   const r = evaluate(cfg);

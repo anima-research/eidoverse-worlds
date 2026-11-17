@@ -1,6 +1,7 @@
 // The LOD distance geometry, in one place. The client decides tiers with it (client/lib/render/lod_policy.js,
 // client/lib/realize/models.js); the server budgets each LOD against it (server/optimize.ts) — a LOD is built for the
-// closest distance it can be seen from, so the two must never disagree about where that is.
+// closest distance the auto dial shows it from, so the two must never disagree about where that is ('eco', memory
+// pressure and the shed dial halve the edge: there the LOD is seen closer than it was budgeted for).
 
 /** Residency radius R = R_BASE + bbox diagonal × DIAG_K (metres): big things stay resident longer. */
 export const R_BASE = 80;

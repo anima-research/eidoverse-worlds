@@ -57,11 +57,10 @@ try {
       r.ok && near(a.pos.y, gy + UPPER), `${at()} ${r.refusal ?? r.stall ?? ""}`);
   }
   {
-    // (2.2, 0.1) is over the stair, mid-tread: that tread is where a body
-    // can stand there — reached by the stair, not by the drop from above
+    // (2.2, 0.1) is over the stair, mid-tread: that tread is where a body can stand there
     const tread = Math.ceil((STAIR_FOOT - 0.1) / GOING);
     const r = await go(2.2, 0.1);
-    check("a point over the stairwell is reached on the stair's tread there, by the stair — never off the edge",
+    check("a point over the stairwell ends on the stair's tread there (the end pose only; the route isn't checked)",
       // the feet are the mover's capsule (r 0.2, shared/mover.js) on colliders.js's floor rule, which stands a
       // body on the highest tread its footprint overlaps within a step — at (2.2, 0.1) that can be the next tread up
       // (z 0 is its edge). Within one riser of the tread there, and a tread: never the floor below, never the landing

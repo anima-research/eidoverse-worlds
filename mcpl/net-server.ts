@@ -561,7 +561,7 @@ class Session {
     if (this.granted(CAP.channelsRegister)) this.registerChannels();
 
     // Missed-mention replay, as tagged channel traffic. Speech is arrival-only: the world reads back earlier says only
-    // to an admin, so for everyone else nothing is replayed. Each replay carries `eidoverse:catchup` beside its
+    // to a readChat holder (owners, or any role granted it: World.isAdmin), so for everyone else nothing is replayed. Each replay carries `eidoverse:catchup` beside its
     // ORIGINAL addressing (event-wire.ts catchupReplayTags). Cursor by seq, asked of the world (the join carries the
     // folded world, not old history).
     const sinceSeq = lastSeenSeq[seqKey(this.auth.id, this.agent.world)] ?? lastSeenSeq[this.auth.id];

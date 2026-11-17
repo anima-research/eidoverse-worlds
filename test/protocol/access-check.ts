@@ -497,7 +497,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const a = one.keyOf("u-aaaaaaaaaaaaaaaaaaaa", true), b = two.keyOf("u-bbbbbbbbbbbbbbbbbbbb", true), s1 = one.sequencer(), s2 = two.sequencer();
   const disk = JSON.parse(fs.readFileSync(f, "utf8"));
   ok(disk.holders?.["u-aaaaaaaaaaaaaaaaaaaa"]?.pub === a && disk.holders?.["u-bbbbbbbbbbbbbbbbbbbb"]?.pub === b && s1 === s2 && disk.sequencer?.pub === s1,
-    "A13d two handles on one keys file: both holders' keys are on disk and both sign with the one sequencer key", { a, b, s1, s2, holders: Object.keys(disk.holders ?? {}), seq: disk.sequencer?.pub });
+    "A13d two handles on one keys file: both holders' keys are on disk and both hand out the one sequencer public key (signing isn't exercised)", { a, b, s1, s2, holders: Object.keys(disk.holders ?? {}), seq: disk.sequencer?.pub });
   // …and a key another process wrote behind an open handle is taken, never minted over (the CLI founds while the server runs)
   const g = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "custody-")), "keys", "custody.json");
   const h = custodyAt(g); fs.mkdirSync(path.dirname(g), { recursive: true });
@@ -559,7 +559,7 @@ const tKid = minter(T.dir, T.f, T.go, 0, 1), timedOut = resultOf(tKid);
   const seqs = new Set(minted.map((m) => m.sequencer)), left = besideKeys(f);
   ok(ready && met && during === 0 && waiting && minted.every((m) => m.code === 0 && !m.error && Object.keys(m).filter((k) => k.startsWith("u-")).length === EACH && typeof m.sequencer === "string")
     && lost.length === 0 && seqs.size === 1 && disk.sequencer?.pub === [...seqs][0] && !left.length,
-    "A13h six minters each meet the custody lock a live process holds, and none mints while it's held; released, they mint into one keys file at once, every holder key each minted is on disk, they sign with one sequencer key, and nothing is left beside the file",
+    "A13h six minters each meet the custody lock a live process holds, and none mints while it's held; released, they mint into one keys file at once, every holder key each minted is on disk, they report one sequencer public key, and nothing is left beside the file",
     { ready, met, during, waiting, results: minted.map((m) => m.error ?? (m.crashed ? `crashed ${m.code}` : "ok")), lost: lost.length, of: N * EACH, seqs: seqs.size, left }); }
 // ---- A13f: a lock whose holder exited is removed only by whoever holds the right to remove it (`<lock>.<its nonce>`), and
 // only while the lock is still that one ----

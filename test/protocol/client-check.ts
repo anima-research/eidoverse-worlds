@@ -855,9 +855,9 @@ try {
     const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
     // a refused `use` only reaches chat (localbody.js trySitOn), so an unseated row carries the chat's tail
     const said = sat ? null : await evalJson(`document.querySelector('#chatlog')?.innerText.slice(-300) ?? null`);
-    // seated, my presence carries the socket's whole rotation (q), the frame the reach gate turns its capsule by
+    // seated, my presence carries a q (the frame reachgate.ts turns its capsule by); shape only: this socket isn't rotated
     const seatedQ = await waitFor(`import('/lib/player/controller.js').then((m) => Array.isArray(m.myState.q) && m.myState.q.length === 4)`, 3000);
-    check("ST0 seated, my state carries the socket's rotation as q (reachgate.ts turns the capsule by it)", seatedQ, await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.q ?? null)`));
+    check("ST0 seated, my state carries a 4-element q (shape only; the value isn't checked against the socket)", seatedQ, await evalJson(`import('/lib/player/controller.js').then((m) => m.myState.q ?? null)`));
     const off = await page(`return JSON.stringify((await (await import('/lib/net.js')).sendRequest('set', { id: 'ststool-seat', component: 'disabled', value: true })).ok);`);
     const up = await waitFor(`${mine}.then((t) => t === null)`);
     const closed = await evalJson(`import('/lib/world.js').then((w) => w.seatSocket('ststool-seat') === null)`);

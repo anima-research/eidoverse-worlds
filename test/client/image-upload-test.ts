@@ -10,6 +10,7 @@
 //
 // To point it at a door you run yourself instead (identity unchecked; it must have JOIN_TOKEN set, or the 401 row fails):
 //   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun test/client/image-upload-test.ts
+// (the byte-cap row assumes the default IMAGE_CAP_MB=8)
 //
 // What must hold: the kind is judged by BYTES (a GLB named .png is refused,
 // a PNG named .glb is a .png in the store), the path is content-addressed and

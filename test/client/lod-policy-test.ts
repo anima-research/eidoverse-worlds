@@ -92,7 +92,7 @@ check("a scale arriving as a string is read as its number, as three.js's setScal
 check("a bad scale — missing, zero, negative, NaN, Infinity — is 1",
   [undefined, 0, -2, NaN, Infinity].every((sc) => chooseTier({ dist: edge * 1.1, radius: R, recipe: REC, scale: sc as any }) === "lod"
     && chooseTier({ dist: edge * 0.9, radius: R, recipe: REC, scale: sc as any }) === "full"));
-check("the client's closest LOD distance IS the server's budget distance (shared/lod-distance.js lodNearest)",
+check("the client's closest LOD distance (auto, unpressured, scale 1) IS the server's budget distance (shared/lod-distance.js lodNearest)",
   [0.5, 2, 20, 66].every((diag) => Math.abs(residencyRadiusFor(diag) * LOD_FRACTION * (1 - LOD_HYST) - lodNearest(diag)) < 1e-9
     && chooseTier({ dist: lodNearest(diag) * 0.999, radius: residencyRadiusFor(diag), recipe: REC, current: "lod" }) === "full"
     && chooseTier({ dist: lodNearest(diag) * 1.001, radius: residencyRadiusFor(diag), recipe: REC, current: "lod" }) === "lod"));

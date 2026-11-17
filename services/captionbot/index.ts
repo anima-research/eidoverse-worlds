@@ -3,7 +3,7 @@
 //   mediamtx (RTSP audio) ──▶ ffmpeg ──▶ AudioTap ──▶ Captioner (VAD + STT)
 //        ──▶ the world's door: caption {id: <screen>, session, n, t0, t1, text, speaker?}
 //
-// One door `caption` request per final line, once; the door folds the current
+// One door `caption` per final line (resent until a receipt comes; the door dedupes); the door folds the current
 // line on the screen (shared/captions.js; history is the log). Captions are durable world
 // testimony like `say`; `end` clears current perception, not history.
 // The bot needs to be one of its screen's captioners — whoever may edit the

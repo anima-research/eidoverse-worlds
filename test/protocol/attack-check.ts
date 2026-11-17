@@ -45,7 +45,8 @@ const attacks = [
       s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       return { attack: s.call("bob", "delete", { id: "statue", component: "model" }) }; },
     baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "locked" },
-  // H1c: a lock covers every component on the thing (review C-S1-1), so a motion on a locked thing is refused
+  // H1c: a lock covers every component on the thing against a direct edit (review C-S1-1), so a motion set on a locked
+// thing is refused (a reaction's non-relocating writes and throughLock stay open: authority/gate.js)
   { id: "H1c", what: "motion {type:'spin'} on a locked thing (a lock covers every component, 10-11)", run(s) { cast(s);
       s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       return { open: s.call("bob", "set", { id: "statue", component: "motion", value: { type: "spin" } }), move: s.call("bob", "set", { id: "statue", component: "transform", value: { pos: [0, 0, 0] } }) }; },

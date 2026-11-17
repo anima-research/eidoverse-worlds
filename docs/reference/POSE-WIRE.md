@@ -70,7 +70,8 @@ sockets (`mcpl/agent.ts` keeps the raw pose in `people`, and `look`, in `mcpl/ag
 - **The UI says so.** The HUD mic and headphone tooltips end with "mic and hearing on/off are visible to everyone
   in this world" (`client/lib/audio/mictoggle.js`).
 - **No per-person opt-out yet.** A sharing switch (or server-scoped nearby state) would be a later change; it would
-  only need to stop sending, since absence already reads as unknown.
+  need to stop sending and have peers already holding a value forget it: absence reads as unknown only to someone who
+  never got one (`applyVoiceWire` leaves the last value in place when a frame omits the field).
 
 Bound by `test/shared/voice-wire-test.ts` (owner → fence → frame → peer, spectator, agent; latest wins; fence; unknown;
 not remembered) and `test/server/voice-wire-mutation-test.ts` (sender, fence, settledPose and the look note each turn it red).

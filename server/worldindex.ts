@@ -1,6 +1,7 @@
 // server/worldindex.ts — what each name under WORLDS_DIR is, held outside the worlds' bytes so visibility is decided before
 // any are touched (no existence oracle). lookup() makes the same stats for every name, missing or not, and opens no world;
-// an entry is re-read only when those stats change (boot, an operator's act, a translation), never because of who asks.
+// an entry is re-read only when those stats change (boot, an operator's act, a translation), never because of who asks
+// (by the 2 s sweep, or by whichever lookup meets the change first, before its visibility is decided).
 // An old-format world's entry carries its owners (tools/world.ts owners-of), so ownerIn answers from memory.
 import fs from "node:fs";
 import path from "node:path";

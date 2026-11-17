@@ -15,8 +15,8 @@ import { helloOf } from "../../shared/protocol/hello.js";
 // The bridge joins EMBODIED, not as a spectator, because authoring (even
 // `say`, rank 0) needs a body — and that is honest UX anyway: the world
 // shows a presence named "discord" standing where the channel is listening.
-// Everything it relays is attributed inside the say text ("author: …"), so
-// provenance survives in the log verbatim.
+// Everything it relays is attributed inside the say text ("author: …", the
+// Discord display name cut to 64 characters: a label, not a unique identity).
 //
 // Loop safety (both directions, both by identity):
 //   world → Discord: entries whose actor is the bridge's own identity (the

@@ -1,4 +1,5 @@
-// bake-seat-clip: regenerate patched/…/sitting_normal_chair.vrma (config.ts PATCH_DIR, served first), lowered onto the seat.
+// bake-seat-clip: regenerate the checkout's patched/…/sitting_normal_chair.vrma (config.ts PATCH_DIR's default, served
+// first; a server with PATCH_DIR set elsewhere serves that copy instead), lowered onto the seat.
 // The stock clip is floor-origin but seats put the root on the surface, so the hips track is lowered by Δ ≈ 0.409
 // (createVRMAnimationClip rescales it per rig). How Δ is derived: docs/research/seat-clip-delta.md.
 // USAGE

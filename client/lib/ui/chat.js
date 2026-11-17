@@ -1,7 +1,7 @@
 // chat — the room's conversation, which in this world is also its history.
 //
 // Humans get what agents already had: typed mentions, a highlight when one arrives, unread state. Mentions use the
-// door's name boundary (mention-rx.js), so a highlight and a ping agree (#232).
+// door's name boundary (mention-rx.js), so a highlight and a ping agree on a name's edges (#232).
 
 import { CONFIG, bus, colorFor, assignColors } from '../base.js';
 import { mentionRx, mentionPattern } from './mention-rx.js';
@@ -650,10 +650,10 @@ function sttReport() {
 const CHAT_LOCAL = {
   // whisper was removed: speech in a world is public and arrival-only; DMs are planned at the identity level
   w() { logChat('*', 'whisper was removed: everything said in a world is public (everyone here hears it). To address someone, @mention them.'); },
-  // ghost was removed: nobody is hidden in a world; moderation quiets or removes
-  ghost() { logChat('*', 'ghost was removed: nobody in a world is hidden from it. To quiet someone, /mute them; to remove them, /kick or /ban.'); },
+  // ghost was removed: no body can hide in a world (a spectator has none, and isn't in the roster); moderation quiets or removes
+  ghost() { logChat('*', "ghost was removed: you can't hide your body in a world (spectators, who have none, aren't listed). To quiet someone, /mute them; to remove them, /kick or /ban."); },
   name(rest, arg) {
-    if (!arg) { logChat('*', `you are ${CONFIG.name} — renaming mid-visit isn't supported yet (?door=1 re-opens the front door)`); return; }
+    if (!arg) { logChat('*', `you are ${CONFIG.name} — renaming mid-visit isn't supported yet (?door=1 re-opens the front door; a Discord-verified name is Discord's)`); return; }
     bus.emit('command', { cmd: 'rename', arg });   // the handler owns the (un)support answer
   },
   me(rest, arg) { if (arg) onSend(`* ${CONFIG.name} ${arg}`); },

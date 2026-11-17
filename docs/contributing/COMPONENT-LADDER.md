@@ -157,7 +157,8 @@ signal on the way there, not the promotion.
 
 One commit, reviewed by a second agent before it ships:
 1. **The definition** in `shared/protocol/componentspec.js`: its fields and types, enums, ranges, `defaults` (the
-   authority writes them into every stored value), `absentMeans` for every field whose absence carries meaning, a
+   authority writes them into every stored bare-name value; a keyed `<name>:<key>` gets them only where `resolve()` in
+   `shared/protocol/authority/writes.js` says so: today `motion:` and `look-at:`), `absentMeans` for every field whose absence carries meaning, a
    `help` line, and `aliases: ["<handle>/<name>"]` so every draft value already in a world keeps working.
 2. **Decide every field now.** A field added after registration must say what its absence means, and that meaning is
    frozen. If today's behaviour wouldn't be acceptable forever as "absent", the field is added at promotion or not at all.

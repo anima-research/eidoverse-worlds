@@ -681,7 +681,7 @@ fs.rmSync = (p, x) => { log("rm " + p); return rm(p, x); };\n`);
   const marked = L.indexOf(`fsync ${mk}`), cleared = L.indexOf(`rm ${mk}`), dirSync = (from: number, to: number) => process.platform === "win32" || L.slice(from + 1, to).includes(`fsync ${d}`);   // Windows can't sync a directory (server/durable.ts syncDir)
   const synced = into.every(([l]) => L.slice(0, first).includes(`fsync ${l.split(" ")[1]}`));
   ok(r.code === 0 && first > 0 && into.length >= 2 && synced && marked >= 0 && marked < first && dirSync(marked, first) && cleared > last && dirSync(last, cleared) && dirSync(cleared, L.length),
-    "IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed",
+    `IP32 the in-place swap's durable order: every translated file fsynced before the first rename; the world's directory synced after the marker lands, after the last rename, and after the marker is removed${process.platform === "win32" ? " (directory syncs not checked: Windows can't sync a directory)" : ""}`,
     { code: r.code, out: r.out.slice(-300), first, last, marked, cleared, synced, renamedIn: into.length, dSyncs: L.map((l, i) => (l === `fsync ${d}` ? i : -1)).filter((i) => i >= 0) }); }
 // IP32b the two-name form: world.jsonl and .identities.json (which the next run reads if this one stops) are on disk before the move into the new name
 { const src = "durable2", dest = "durable2-new"; oldWorld(src); const trace = path.join(root, "fsync-trace2.log"), spy = path.join(root, "fsync-spy.ts");

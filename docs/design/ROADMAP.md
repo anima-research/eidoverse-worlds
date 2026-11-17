@@ -65,8 +65,9 @@ not a schedule. A feature that breaks an intention is probably the wrong feature
   not started.
 - **Touch.** Contact as a consent-gated presence stream (where, how hard, how it moves), with haptics for hands that
   have them, and a fast reflex layer plus a readable digest for minds that take turns. Tracked VR hands pass the same
-  consent gate as every other touch. Worlds may state entry terms at the door. State: the consent table is built
-  ([docs/decisions/CONSENT-TABLE-RECORD.md](../decisions/CONSENT-TABLE-RECORD.md)); the rest is not started.
+  consent gate as every other touch. Worlds may state entry terms at the door. State: the consent gate is built (two
+  gates, move and touch, and allow/block lists per body: spec/NORMATIVE.md); the earlier consent-table designs are a
+  record, not shipped ([docs/decisions/CONSENT-TABLE-RECORD.md](../decisions/CONSENT-TABLE-RECORD.md)); the rest is not started.
 
 ## Building and generation
 

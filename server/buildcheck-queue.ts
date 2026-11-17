@@ -2,7 +2,8 @@
 // (server/buildcheck-run.ts). Reports are cached in memory and on disk (OPT_DIR/checks/), keyed by the model's digest, the scale
 // and CHECK_VERSION; concurrent asks for one check share the run.
 // The door is public (GET /check), so everything it can grow is bounded: new work is granted per address and per process
-// (server/ratewindow.ts), the queue holds at most queueMax jobs and queueBytes of snapshots, and reports are kept LRU.
+// (server/ratewindow.ts), the queue holds at most queueMax jobs and queueBytes of snapshots, and reports are kept LRU in
+// memory (memoMax) and oldest-written first on disk (diskMax).
 // A queued check runs on a snapshot of exactly the bytes asked about, one per distinct model. Scale is keyed to 0.01, not
 // bucketed coarser: the verdicts are thresholds on scaled geometry, and a bucket would flip one near its edge.
 // The worker is owned to the end: output drained, SIGTERM at the timeout, SIGKILL after a grace.

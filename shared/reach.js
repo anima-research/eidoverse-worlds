@@ -402,7 +402,7 @@ export function solveTwoBoneClear(o, guards) {
   // m of penetration that still counts as clear: a pose on the boundary would flicker as the body breathes (§11)
   const CLEAR = 0.001;
 
-  // clip each guard where the hand is going, never drop it (§10)
+  // clip each guard where the hand is going (§10); a guard wholly within the clip radius clips to nothing
   guards = (guards ?? []).flatMap((g) => clipGuardNear(g, o.target, g.r + rL * CONTACT));
   o = { ...o, guards };
 

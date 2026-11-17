@@ -309,7 +309,7 @@ const cases: Case[] = [
       const k = m.record(a, clock); clock += RM.READ.window + 1000; k.ms = RM.READ.ms + 100;   // answered 11 s after it arrived
       return { then: m.check(a, clock + 1)?.code ?? "ok", gone: m.check(a, clock + RM.READ.window + 1)?.code ?? "ok" }; },
     good: (o) => o.then === "rate" && o.gone === "ok" },
-  { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ones settled as leave settles them, the rest said to wait", run(s) { cast(s);
+  { id: "Q5", what: "settling orphaned holds at load is bounded: 400 holders left by a crash end quickly, the first ≤16 settled, the rest said to wait (counts and time only; how each is put down is grab-check's)", run(s) { cast(s);
       const holds: any = {}, bodies: any = {};
       for (let made = 0; made < 400;) { const ops = []; for (let k = 0; k < 50; k++, made++) ops.push({ verb: "create", args: { id: `g-${made}`, model: "book", components: { transform: T0([made % 20, 0, Math.floor(made / 20)]), grabbable: { who: "member" } } } });
         s.call("olive", "batch", { requests: ops }, 20000); }

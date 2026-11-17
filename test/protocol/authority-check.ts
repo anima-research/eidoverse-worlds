@@ -1499,7 +1499,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   ok(fill.ok && code(over) === "full" && over.refused?.limit === 64 && code(map) === "full", "SR2e one host holds at most 64 sockets (SOCKETS_PER_HOST), whoever asks, alone or in a batch", [fill.refused, over.refused, map.refused]);
 }
 // LG1 (a grep-pin, as nonumber-check is): past the door nothing reads the old spelling. The authority's state readers name
-// socket children; only authority/sockets.js reads socket children, and the door's legacy refusal (refuse("legacy", …)) names
+// socket children (isSocketC); only authority/sockets.js may read the old spelling, and the door's legacy refusal (refuse("legacy", …)) names
 // the old spelling only to turn it away
 { const dir = fileURLToPath(new URL("../../shared/protocol/", import.meta.url));
   const files = ["authority.js", ...fs.readdirSync(dir + "authority").filter((f) => f.endsWith(".js") && f !== "sockets.js").map((f) => `authority/${f}`)];
@@ -1520,7 +1520,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
 
 // ---- TC: training-consent is gone (R 10-16 14:16: what a server may do with a world's log is that server's terms, not a
 // component). The name is refused like any unregistered bare name, keyed or bare, for everyone; an owner's rollback of a
-// person takes back all of their work (no own-word skip remains).
+// person takes back all of their work (no own-word skip remains); what others changed since still stands (undo.js).
 { const name = "trainconsent";
   const call = callAt(name);
   const c = () => openWorld(root, name).state().entities["@world"]?.c ?? {};
@@ -1536,7 +1536,7 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   for (let i = 0; i < 3; i++) call("gil", "create", { id: `junk-${i}`, model: "crate" });
   const rb = call("olive", "undo", { actor: "gil", since: { seq: mark.seq, head: mark.head } });
   const left = Object.keys(openWorld(root, name).state().entities).filter((k) => k.startsWith("junk-"));
-  ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
+  ok(rb.ok && !left.length && !JSON.stringify(rb).includes("skipped"), "TC2 the owner's rollback of someone no one else built on takes back all their work, nothing skipped", [rb.refused ?? rb.notes, left]); }
 
 // ---- BT: a batch checks every child request against its verb's arguments before building anything (review of PR #260;
 // Antra's repro): a delete with a misspelt `componnent` was ok:true and deleted the whole entity, children too

@@ -25,11 +25,11 @@ the server never served, and runs nothing (Mica 11-05: no dated education table)
 `test/mcpl/alias-test.ts`, which holds every old name to exactly those words. No argument translators: an old name never
 runs. (Until 2026-10-28 renames were aliases with argument translations; the worked example below is that history.)
 
-## The checklist (each line but one is a suite that fails without it)
+## The checklist (a suite fails without the row, the handler, one body or a replaced name; the reviewer checks the rest)
 
-- [ ] **The row**: `{ name, title, description, inputSchema, annotations }` in `TOOL_ROWS`. `annotations` is honest MCP
-      metadata — `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` — and `agenttools-check` AT4 reads
-      every row for it. A description carries one example call where the shape isn't obvious.
+- [ ] **The row**: `{ name, description, inputSchema }` in `TOOL_ROWS`, plus its `ANNOTATIONS` entry (`[title, readOnlyHint,
+      destructiveHint, idempotentHint, openWorldHint]`, honest MCP metadata; import throws without one, and
+      `agenttools-check` AT4 reads every row for it). A description carries one example call where the shape isn't obvious.
 - [ ] **The handler**: `HANDLERS[name]`, returning `{content: [{type: "text", text}], isError?}`. A refusal from the
       authority is passed through in its own words (`refusalText`): the tool never invents a reason. The import-time
       check throws if a row has no handler or a handler no row.
@@ -37,6 +37,7 @@ runs. (Until 2026-10-28 renames were aliases with argument translations; the wor
       browser uses (`shared/mover.js`, `shared/grab.js`) — `agenttools-check` AT1 is the "two bodies" guard.
 - [ ] **Its live row**: an `AT` row in `test/protocol/agenttools-check.ts` that calls it on a real `WorldAgent` against a
       real sequencer and checks the world, not the text. Watch it fail first (stash the handler).
+      *agenttools-check runs a fixed list, so no suite finds a tool without its row: the reviewer does.*
 - [ ] **Its words in AGENTS.md**: the tools table (`### The tools — general shapes, with modes`), in the protocol's words.
       *No suite checks this line yet: the reviewer does.*
 - [ ] **If it replaces a name**: `OLD` in `test/mcpl/alias-test.ts` (a rename: refused as unknown) or `TOOL_FOLDS` (became a

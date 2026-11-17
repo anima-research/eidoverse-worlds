@@ -7,7 +7,7 @@
 //   UB5  a BACKUPS_DIR inside WORLDS_DIR is refused (the server lists every directory there as a world)
 //   UB10 a backup is fsynced before it's returned: every copied file, SHA256SUMS, each directory and BACKUPS_DIR's entry (review L5)
 //   UB11 a link inside an old world refuses its upgrade: the boot notice says so (which, and the way past it), the CLI's refusal says the same, nothing moved (review L6)
-//   US14 …and the browser's upgrade is refused in those words (the splash shows the reason)
+//   US14 …and the browser's world-upgrade request is refused in those words (the reason the splash shows; no browser is opened)
 //   UB9  a translation that fails after its backup (an injected swap failure) names the kept backup, still verified (review L5)
 //   US1  an old-format world's join is refused (close 4005 kept) with refused {code: "old-format", doc, upgrade: "operator-or-owner", operator, may} to an operator's
 //        session; a visitor and a guest get a missing world's world-unavailable (F23, Mica 11-05: only the operator and its owner are told)
@@ -243,7 +243,7 @@ const byOwner = async (sid: string, world: string, id: string) => { const j = aw
     "US13 RATE_N+1 malformed world-upgrades (approved not a hash) are each refused 'shape' and spend no rate slot (the next review runs); a visitor asking about a world that doesn't exist is told world-unavailable (F23: as an old world they may not upgrade)", { seen, after: after.ok ?? after.refused, none: none.refused }); }
 { const r = await ask(OP4, "world-upgrade-review", { world: "rafters" }), u = r.ok ? await ask(OP4, "world-upgrade", { world: "rafters", approved: r.hash }, 120_000) : r;
   ok(u.ok === false && u.refused?.code === "refused" && /extra\/shared is a link .*replaced by the file it points to/.test(u.refused.reason) && !isWorldDir(rafters),
-    "US14 the browser's upgrade of a world holding a link is refused in the boot notice's words (the splash shows the reason)", u.refused ?? u); }
+    "US14 the browser's world-upgrade request for a world holding a link is refused in the boot notice's words (the reason the splash shows)", u.refused ?? u); }
 { oldWorld("granary"); const RATE_N = 6, seen: any[] = [];   // review full-260 L2: the rate is checked before the owner check (a CLI run) it pays for
   for (let k = 0; k <= RATE_N; k++) { const r = await ask(NOB, "world-upgrade-review", { world: "granary" }); seen.push(r.ok ? "ok" : r.refused?.code); }
   const nob = (await ask(NOB, "world-upgrade-review", { world: "no-such-granary" })).refused?.code;

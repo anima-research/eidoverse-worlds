@@ -27,7 +27,7 @@ const take = (W, id, x) => { call(W, "vic", "move", { to: [x, 0, -0.8] }); retur
 { const W = "sliver"; mk(W); take(W, "b", 3); call(W, "vic", "move", { to: [1.2, 0, -0.8] }); call(W, "vic", "move", { to: [0.6, 0, -0.7] });
   const r = call(W, "vic", "put", { id: "b", at: [0.48, 0] }); clock.advance(6000);
   const w = openWorld(root, W); const p = simFold(w.entries, w.now())?.sim?.bodies?.b?.p ?? pos(W, "b");
-  ok(r.ok && p[1] < 0.45 && held(W).length === 0, "H3 put down with a sliver of it over a neighbour: it does not perch on the neighbour's top (0.6 up) over thin air; physics lets it fall beside", { r: code(r), flying: r.flying, p }); }
+  ok(r.ok && p[1] < 0.45 && held(W).length === 0, "H3 put down with a sliver of it over a neighbour: it does not perch on the neighbour's top (0.6 up) over thin air: it ends below 0.45 (the sim body's p, else its stored pos; a fall isn't itself checked)", { r: code(r), flying: r.flying, p }); }
 { const W = "sliver-still"; mk(W, false); take(W, "b", 3); call(W, "vic", "move", { to: [1.2, 0, -0.8] }); call(W, "vic", "move", { to: [0.6, 0, -0.7] });
   const r = call(W, "vic", "put", { id: "b", at: [0.48, 0] });
   ok(!r.ok && r.refused.code === "implausible" && held(W).includes("b"), "H4 …with no physics in the world it is refused (it would overlap), and stays in my hand", { r: code(r), held: held(W) }); }

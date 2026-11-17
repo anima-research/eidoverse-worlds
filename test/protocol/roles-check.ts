@@ -553,7 +553,7 @@ const cases: Case[] = [
       s.call("ann", "move", { to: [0, 0, 2] }); s.call("mo", "ban", { who: "ann" });
       const l2 = s.call("ann", "leave"); return { l: show(l), body: !!s.w().presence.bodies.vic, l2: show(l2), body2: !!s.w().presence.bodies.ann }; },
     good: (o) => o.l === "ok" && !o.body && o.l2 === "ok" && !o.body2 },
-  { id: "V7", what: "a muted person's refused say isn't written to the public log (it would carry the text)", run(s) { cast(s);
+  { id: "V7", what: "a muted person's refused say isn't written to the public log: neither the words nor the attempt", run(s) { cast(s);
       s.call("mo", "mute", { who: "vic", minutes: 5, channels: ["chat"] }); const n0 = s.entries().length; s.call("vic", "say", { text: "secret words" });
       return { leaked: JSON.stringify(s.entries().slice(n0)).includes("secret words"), logged: s.entries().length - n0 }; },
     good: (o) => o.leaked === false && o.logged === 0 },

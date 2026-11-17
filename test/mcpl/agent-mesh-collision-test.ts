@@ -6,8 +6,8 @@
 // serves) and steps its feet the way client/lib/player/controller.js steps a
 // person's. This checks:
 //   1. collisionTriangles: node transforms applied, orphans excluded, and a
-//      draco-compressed copy (what /library usually serves) decodes to the
-//      same triangles;
+//      draco-compressed copy (what /library usually serves) decodes to as
+//      many triangles over the same height (count and y extent, not each vertex);
 //   2. against an isolated sequencer, a real WorldAgent in a two-storey
 //      building — standing on a raised floor, climbing a stair to the upper
 //      floor and back down, staying downstairs under the upper floor,
@@ -45,7 +45,7 @@ console.log("collisionTriangles:");
   check("leaves out mesh nodes no scene reaches", mx[0] < 10, `max x ${mx[0]}`);
   const dr = await collisionTriangles(await buildGlb(boxes, { draco: true }));
   const [dmn, dmx] = dr ? bounds(dr.positions) : [[NaN], [NaN]];
-  check("decodes a draco-compressed copy to the same triangles",
+  check("decodes a draco-compressed copy to as many triangles over the same height",
     !!dr && dr.indices.length === raw!.indices.length && Math.abs(dmn[1]) < 0.01 && Math.abs(dmx[1] - 6.3) < 0.01,
     dr ? `${dr.indices.length / 3} tris, y ${dmn[1]}..${dmx[1]}` : "null");
   check("answers null for bytes that are not a GLB", (await collisionTriangles(new Uint8Array([1, 2, 3]))) === null);

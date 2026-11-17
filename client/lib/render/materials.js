@@ -1,5 +1,5 @@
-// materials — the factory. Every material that enters the world scene passes through here at creation, before its
-// first compile, and comes out carrying its final shader-graph shape: the wetness wrap, the cloud-shade term, and
+// materials — the factory. Every lit material that enters the world scene passes through here at creation, before its
+// first compile (unlit Basic ones need no wrap: a model's stand-in box and a light gizmo skip it), and comes out carrying its final shader-graph shape: the wetness wrap, the cloud-shade term, and
 // its shadow-receiving policy. After birth, everything the weather or the sky does to a surface is a uniform write.
 //
 // Why (docs/history/TEL0S_NOTES.md §12): on three's WebGPU renderer a material's pipeline dies whenever its node
@@ -201,7 +201,7 @@ function wrapMaterial(mat, receiver, pbr) {
 const preparedMats = new WeakSet();
 const stats = { meshes: 0, wrapped: 0, unlit: 0 };
 
-// source → replacement, memoised (weak both sides), so meshes sharing a source share one replacement
+// source → replacement, memoised (weak on the source: the replacement lives as long as its source), so meshes sharing a source share one replacement
 const TRANSMISSIVE_REPLACEMENT = new WeakMap();
 const TRANSMISSIVE_UPGRADED = new WeakSet();
 /** Upgrade a transmissive material to the node class, or it draws nothing: only MeshPhysicalNodeMaterial builds the

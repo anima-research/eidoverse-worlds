@@ -6,7 +6,8 @@
 //
 // Registration ORDER is execution order, and it carries real constraints (§14.1): motion before remotes (mounted bodies
 // derive from parents' motion), sky → materials → rig (sun position), voice-mouths before the avatar update, bodydrag
-// before remotes, gaze after remotes, send-pose after every myState writer, render last. main.js registers the list;
+// before remotes, gaze after remotes, send-pose after every myState writer, render after every scene writer (only the
+// XR desktop mirror, which draws after it, and the 1 Hz pulse follow). main.js registers the list;
 // this module knows nothing about any system. startFrame() is explicit: the loop starts only after identity resolves.
 
 import { report, bus } from '../base.js';

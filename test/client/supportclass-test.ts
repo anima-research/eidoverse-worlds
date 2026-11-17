@@ -127,7 +127,7 @@ console.log("\n━━ B2: browser and server verdicts agree at the 0.10 gate ━
     && !decideSupportClass({ w: 3, d: 3, h: 0.5, lie: below.browserLie }).uneven);
   check("and the two adapters agree bit-for-bit", above.serverLie === above.browserLie && below.serverLie === below.browserLie,
     JSON.stringify({ above, below }));
-  check("a 3-decimal rounding would have flipped the verdict (the bug pinned)",
+  check("a 3-decimal rounding would have flipped the verdict (the arithmetic only: server/geometry.ts's own copy, lie = fin.lie, isn't run here)",
     !decideSupportClass({ w: 3, d: 3, h: 0.5, lie: +above.serverLie.toFixed(3) }).uneven
     && decideSupportClass({ w: 3, d: 3, h: 0.5, lie: above.serverLie }).uneven);
 }

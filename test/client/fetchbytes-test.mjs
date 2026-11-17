@@ -1,4 +1,4 @@
-// fetchBytes (client/lib/assets.js): retry 5xx and network failures (3 tries), never retry a 4xx, EVICT a
+// fetchBytes (client/lib/assets.js): retry 5xx and network failures before a response (3 tries), never retry a 4xx, EVICT a
 // rejected entry so the next ask starts clean, and share one in-flight fetch between concurrent callers.
 // Review 2026-09-10 #1 removed the eviction and the suite stayed green — this drives the REAL function
 // against a scripted global fetch and counts every call.

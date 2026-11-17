@@ -205,7 +205,7 @@ export class DrawBatches {
       }
       // Keep a nonuniformly scaled hierarchy together on the original path.
       // Even its individually orthogonal leaves can change shadow rounding
-      // relative to their sheared neighbours (test/client/draw-batches-test.ts).
+      // relative to their sheared neighbours (draw-batches-test.ts checks only that they stay unbatched).
       const childrenBlocked = blocked || (o.children.length > 0 && !uniformScale(o.matrixWorld));
       for (const child of o.children) visit(child, childrenBlocked);
     };

@@ -1,7 +1,8 @@
 // test/protocol/authority-layers-check.ts — the authority's split is a DAG (refactor C11, 2026-10-12). authority.js is the
-// gate and the public entry: it may import every leaf under shared/protocol/authority/. A leaf imports only ctx.js and
-// leaves BELOW it in the order written here, never the gate and never a leaf above it, so a request's state has exactly
-// one way in (CTX) and the import graph can't cycle. Seen red before it was trusted: a `import {} from "../authority.js"`
+// gate and the public entry: it may import every leaf under shared/protocol/authority/. Among the leaves, a leaf imports only
+// ctx.js and leaves BELOW it in the order written here, never the gate and never a leaf above it (other ../ protocol
+// modules sit outside this DAG and aren't ranked), so a request's state has exactly one way in (CTX) and the import
+// graph can't cycle. Seen red before it was trusted: a `import {} from "../authority.js"`
 // inserted in rights.js, and a `import {} from "./spatial.js"` inserted in math.js, each failed one line below.
 //   bun test/protocol/authority-layers-check.ts
 import { readFileSync, readdirSync } from "node:fs";

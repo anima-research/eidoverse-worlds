@@ -387,7 +387,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["captions", "shared/captions-test.ts", 1], // shared/captions.js: the caption bag a reader sees and the request's rules
   ["voicebot", "services/voicebot-test.ts", 1], // the show voice bot hears a world in DRY_RUN: joins as a replica spectator, voices only configured speakers by display name
   ["tts-fault", "client/tts-fault-test.ts", 1], // TTS failure paths executed: a hung or dead phonemizer worker and an orphaned synthesis fail loudly, never hang (#91 r3 B3)
-  ["spoken-form", "client/spoken-form-test.mjs", 1], // what the TTS speaks (tts-chunk.js spokenForm, ttsChunks), as a table: fenced code never spoken, how text is chunked
+  ["spoken-form", "client/spoken-form-test.mjs", 1], // what the TTS speaks (tts-chunk.js spokenForm), as a table: fenced code never spoken; ttsChunks only for a fence-only message
   ["ttsrow", "client/ttsrow-test.mjs", 1], // the audio panel's TTS section executed (ttsrow.js, ttslist.js): file and folder picks, the voice list in place
   ["particles", "client/particles-test.ts", 1], // a play/stop change updates the registry key, no rebuild
   ["particles-host", "client/particles-host-test.ts", 1], // the browser particle host (emitters.js) over a stand-in GPU half
@@ -445,7 +445,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["ragdoll-floor", "client/ragdoll-floor-test.ts", 1], // the Bullet ragdoll (ammodoll.js) lands on a building's floor
   ["snap-settle", "client/snap-settle-test.ts", 1], // the renderer waits for the world as long as `wait` says
   ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed
-  ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
+  ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} the gate doesn't run as its own row loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
   ["help-words", "shared/help-words-test.ts", 1], // help lists and refusals say what the code holds: role-defs' permissions, undo's roles, the Light note; no review tags
 ];
 

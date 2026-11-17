@@ -1,5 +1,5 @@
 // remotes — everyone else's bodies. Presence is lossy and arrives at ~15 Hz; each body is drawn where it was
-// INTERP_MS or more ago (interpdelay.js), between the two samples that bracket that moment; only a lone sample snaps (applyImmediate).
+// INTERP_MS or more ago (interpdelay.js), between the two samples that bracket that moment; a lone sample (applyImmediate) and a ragdoll edge between two snap.
 
 import { THREE, camera, scene } from '../core.js';
 import { report, angleDelta, CONFIG } from '../base.js';

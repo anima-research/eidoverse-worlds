@@ -57,8 +57,9 @@ shape for months:
 - **lightrig slots** — callers make requests; nobody touches a light.
 - **flora/emitters engine splits** — DOM/THREE hosting halves beside
   headless-tested pure halves.
-- **warmqueue** — every pipeline compile funnels through one serialized
-  conductor.
+- **warmqueue** — one serialized conductor for the compiles routed through
+  `warm()`; some (the live sky domes, XR, avatars) still call `compileAsync`
+  directly.
 - **terrain.js `heightAt()`**, **frameloop.js `registerSystem`** (render is
   just a system named 'render'), and **bodysim ENGINES** — which is the
   MODEL: a Map of named engines behind a tiny selection API, lazily

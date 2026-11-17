@@ -1,7 +1,8 @@
 // Roaming renderers, end to end, in a real browser.
 //   SHOT=path.png bun test/client/roaming-renderer-check.ts          (owns a scratch server with both worlds founded)
 //   LOBBY=<w> WORLD=<w> JOIN_KEY=<k> AGENT_TOKEN=<t> bun test/client/roaming-renderer-check.ts http://host:port   (a running server:
-//   both worlds founded by its operator, WORLD owned by the agent the token enrols; joining never founds one)
+//   both worlds founded by its operator, WORLD owned by the agent the token enrols, which must be `builder-agent` (the
+//   name /snap follows); joining never founds one. It leaves its four crates in WORLD: use a scratch world)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
 // crates). Its arrival alone must send the renderer over (pre-warm); a screenshot must come only once the world is
 // REALIZED (every crate loaded — never a partial frame); a second screenshot is fast (the renderer stays). Then the
@@ -96,8 +97,8 @@ try {
   const tw = Date.now(); while (Date.now() - tw < 20000 && (await rendererWorld()) !== world) await Bun.sleep(250);
   const prewarmMs = Date.now() - tw;
   assert.equal(await rendererWorld(), world, 'the agent arriving brought the roaming renderer (prewarm)');
-  // the agent keeps building while the renderer loads — or (GRACE_MS=0) asks at once: the renderer must WAIT for the
-  // world rather than send what it has so far
+  // a grace while the renderer may still be loading (the crates are all made already), or (GRACE_MS=0) none: the
+  // renderer must WAIT for the world rather than send what it has so far
   await Bun.sleep(Number(process.env.GRACE_MS ?? 4000));
   const snap = async () => { const t0 = Date.now(); const r = await fetch(`${base}/snap?world=${world}&follow=builder-agent&view=third`, AUTH);
     return { status: r.status, ms: Date.now() - t0, png: r.ok ? new Uint8Array(await r.arrayBuffer()) : null, err: r.ok ? '' : await r.text() }; };

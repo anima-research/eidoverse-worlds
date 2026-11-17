@@ -22,7 +22,8 @@
 //
 // Interpretation on a 60Hz vsync-bound machine: deltas clamp at the vsync
 // floor (16.7ms), so read RECOVERY — the first phase that reaches the
-// no-grass fps names the dominant cost.
+// no-grass fps names a cost that is enough to drop under the floor, not
+// necessarily the biggest (a smaller one can also clear it); compare frame-ms.
 
 import { perf } from '../render/perf.js';
 import { renderer, THREE } from '../core.js';

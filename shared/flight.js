@@ -439,7 +439,8 @@ export function step(cfg, state, dt, env = {}) {
 }
 
 /** Hand-flown flight: GLIDE's physics with a stick on it. The attitude comes from `env.input` (shared/flightpilot.js);
- *  polar, stamina, bounds, ground contact and the leaf are identical, so a pilot and an agent fly one integrator. */
+ *  polar, stamina, bounds, ground contact and the leaf are GLIDE's, so a pilot and an agent fly one integrator (one
+ *  difference: bounds runs after the pilot's move, before glide's, so a pilot's climb reaches the margin a step sooner). */
 function stepPilot(cfg, s, dt, env) {
   const groundY = env.groundY ?? (() => 0), box = boxOf(env.box);
   const inp = env.input || { bank: 0, pitch: 0, yawRate: 0, flap: false, spoil: false };

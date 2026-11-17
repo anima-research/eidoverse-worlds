@@ -234,7 +234,7 @@ export function switchAvatar(path, name) { return onSwitchAvatar?.(path, name); 
 let myAvatarPath = '';
 export function setMyAvatarPath(p) { myAvatarPath = p; }
 
-// a confirmed perf stamp (avatar.js) repaints an open avatar section, so the pill appears without a reload
+// a confirmed perf stamp (avatar/avatar-thumbnail.js) repaints an open avatar section, so the pill appears without a reload
 let avatarBody = null;
 bus.on('avatar-perf', () => { if (avatarBody?.isConnected) paintAvatars(avatarBody); });
 async function paintAvatars(body) {

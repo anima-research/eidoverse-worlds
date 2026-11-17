@@ -75,7 +75,7 @@ identities into the shared directory (`.directory.json`). `translation.json` is 
 every made file with the sha256 it was made with, the identities, the report hash and the approval.
 `WORLDS_DIR=<dir> bun tools/world.ts rollback <world>` (stop the server first) removes the made files, renames
 the originals back (the same files: bytes, inode and mtime unchanged), forgets the minted identities that nobody has bound
-or renamed since (`directory.forgetPlanned`), and removes the manifest: the world directory is byte-identical to before
+or renamed since and no other world's files name (`directory.forgetPlanned`; the rest are kept, and it says which), and removes the manifest: the world directory is byte-identical to before
 the translation (inplace-check IP24 proves it file by file), and the world translates again. The shared directory is not
 restored from a copy: it is rewritten without the forgotten identities, so it holds the entries it held before (the same
 bytes when nothing else changed it meanwhile, as IP24 checks), and a directory file the translation itself created stays,

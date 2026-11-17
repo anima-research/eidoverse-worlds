@@ -1,6 +1,7 @@
 // ttsrow — the audio panel's text-to-speech section: a tick ("speak?") and the list of voices you
 // have (ttslist.js renders it). Bring your own voice: a Piper model from disk, or a speech server
-// you run. Both transmit; nothing here is local-only.
+// you run. Both are made to transmit; where the browser has no track generator (canSynthesize, tts.js), nothing
+// is sent (sidetone, if on, still plays it to you).
 import { renderVoiceList } from './ttslist.js';
 import { why } from '../debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';

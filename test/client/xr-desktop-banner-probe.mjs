@@ -10,7 +10,7 @@ const { browser, page } = await launchBrowser(); const pg = await page();
 await iwerInit(pg, { cloud: 'off' });
 const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
 const ev = (fn, a) => Promise.race([pg.evaluate(fn, a), new Promise((_, rej) => setTimeout(() => rej(new Error('page main thread pinned for 30 s')), 30000))]);
-const IN_VR = /^In VR/, KILLED = /costing the headset frames/;
+const IN_VR = /^In VR/, KILLED = /dropping frames while mirroring/;
 const text = () => ev(async () => (await import('./lib/xr/xrmirror.js')).mirrorBannerText());
 // set the pref, then read: the banner follows xr:prefs synchronously
 const pref = (m) => ev(async (v) => { (await import('./lib/xr/xr-prefs.js')).setXrPref('mirror', v); return (await import('./lib/xr/xrmirror.js')).mirrorBannerText(); }, m);

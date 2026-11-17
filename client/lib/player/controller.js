@@ -1,6 +1,7 @@
 // controller — input to embodiment. Owns my body's state, my camera, and the keyboard/mouse/touch surface that
-// drives both. The camera gets collision (never inside a hillside), a shoulder offset (your body doesn't occlude your
-// aim), and a continuous zoom that passes through into first person.
+// drives both. The camera gets collision (its target stays out of walls and hillsides; the eye eases there, so after a
+// jump it can sit inside one for a few frames), a shoulder offset (your body doesn't occlude your aim), and a
+// continuous zoom that passes through into first person.
 
 import { THREE, camera, canvas, DESKTOP_FOV } from '../core.js';
 import { CONFIG, angleDelta, bus } from '../base.js';
@@ -846,7 +847,7 @@ export function updateFollowCamera(dt, me) {
     .multiplyScalar(THREE.MathUtils.clamp(camDist * 0.16, 0, 0.62));
   const want = _camWant.set(dirX, dirY, dirZ).multiplyScalar(camDist).add(focus).add(shoulder);
 
-  // collision: pull the eye in so orbiting into a wall or hillside never puts the camera inside the world
+  // collision: pull the eye's target in so orbiting into a wall or hillside never aims the camera inside the world
   const farD = focus.distanceTo(want);
   _cdir.copy(want).sub(focus).normalize();
   // the free camera passes through walls; so does the body camera once its centre has left the body (F, a pan),

@@ -176,7 +176,7 @@ export function serialize(fn, { urgent = false, lane = 'cpu', priority } = {}) {
 
 
 // ---- long-task attribution --------------------------------------------------
-// The browser measures every main-thread stall over 50ms; this says WHOSE it was (or "(unattributed)").
+// The browser measures every main-thread stall over 50ms; this says WHOSE each one of 90ms or more was (or "(unattributed)").
 
 const activeLabels = () => [...active]
   .map((w) => w.phaseName ? `${w.label}[${w.phaseName}]` : w.label)

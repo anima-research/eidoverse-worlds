@@ -1,5 +1,6 @@
 // groundpanel — the ground section of the world panel. Unlike the sky panel's live sliders, every control here is a
-// deliberate commit on a click (terrain and grass are authored: they persist and fold).
+// deliberate pick (terrain and grass are authored: they persist and fold). The grass pickers recommit at once only
+// after 🌱 grow on this page (st.grass, not read from the world); before that they wait for grow.
 //
 // The vocabulary (tints, shapes, grass dials, plantings) is a def (defs/ground/_palette.json): a pick writes concrete
 // verb args, so the log never stores a palette name. No fallback vocabulary: a world serving no palette says so.

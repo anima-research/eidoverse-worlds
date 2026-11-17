@@ -10,7 +10,8 @@ what lasts; most of the files were cut on 2026-10-15 (`git show --stat e414ab3d`
 
 ## The method
 1. **Copy the world, never lab the live one.** `mkdir -p /tmp/lab && cp -r worlds/<name> /tmp/lab/` and
-   serve the copy on its own port (`WORLDS_DIR=/tmp/lab PORT=<port> bun server/server.ts`). A lab that writes is writing to a copy.
+   serve the copy on its own port with its own `OPT_DIR` too, since uploads and the relay-incarnation file live there
+   (`cp -r assets/opt /tmp/lab-opt`, then `WORLDS_DIR=/tmp/lab OPT_DIR=/tmp/lab-opt PORT=<port> bun server/server.ts`). A lab that writes is writing to a copy.
 2. **Reproduce the report in the owner's words.** Put their sentence in the file's header, dated. The lab
    does exactly what they did — the same menu, the same row, the same thing — before it measures anything.
 3. **Measure, then look.** Print the numbers the question is about (where was it drawn vs where it is; how

@@ -239,7 +239,7 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 | failures before pause | 5 in a row (server); set the script again to retry |
 | scripts per world | 12 (`max`, owner: up to the server's ceiling, 64) |
 | timer floor | 5 s; with nobody present a timer sleeps unless `always` |
-| source | 64 KiB of UTF-8; no bidi controls, invisible characters or BOM; no line over 1000 columns |
+| source | UTF-8 text, at most 65,536 characters (UTF-16 code units, not bytes); no bidi controls, invisible characters or BOM; no line over 1000 columns |
 
 **Isolation.** A script's code runs in a separate sandbox process; the authority keeps everything the script can read or
 write on its own side and answers each `world.*` call down a pipe. Fuel and the 300 ms backstop stop runaway bytecode;

@@ -14,6 +14,7 @@ OBS ──WHIP/RTMP──▶ mediamtx ──HLS/WHEP──▶ the screen comp (c
 
 ```
 brew install mediamtx ffmpeg
+mkdir -p /tmp/projector
 deploy/projector/mkconfig.sh /tmp/projector/mediamtx.yml   # renders the config; prints this run's publish key
 (cd /tmp/projector && mediamtx mediamtx.yml)
 deploy/projector/smoke.sh                                    # no OBS needed: a test pattern exercises every face

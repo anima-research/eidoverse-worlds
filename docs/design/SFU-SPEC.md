@@ -49,8 +49,9 @@ The bandwidth landing on their estimate is an independent check that we are
 measuring the right thing.
 
 **Mitigation, and it is cheap:** the adapter interface is env-swappable, so
-LiveKit remains a drop-in escape hatch. If werift dies or we outgrow it, we
-change a config value, not an architecture.
+LiveKit remains an escape hatch. If werift dies or we outgrow it, we write a
+LiveKit adapter behind that interface, not a new architecture (none is written
+yet: `server/transport.ts` selects `sfu` or `off`).
 
 ## Why this instead of LiveKit
 
@@ -462,9 +463,11 @@ Noting it plainly rather than quietly reordering the story.
 transport-agnostic — they decide admission from claims vs live state and never
 mention LiveKit. All seven refusals are pinned:
 wrong world · wrong identity · retired primary gen · retired media gen · prior
-relay incarnation · credential replay (nonce) · expired (upstream at
-TokenVerifier, tolerance 0, pinned by the killq-a receipt).
-**That is the amendment-1 row, already green, against OUR SFU too.**
+relay incarnation · credential replay (nonce) · expired (on LiveKit: upstream at
+TokenVerifier, tolerance 0, pinned by the killq-a receipt; on OUR SFU there is no
+bearer token to expire: the nonce is single-use and the leg dies with its websocket,
+sfu-adapter-test row 7, so no expired credential is ever sent through it).
+**That is the amendment-1 row, already green, against OUR SFU too** (expiry by construction, not by a rejection).
 
 **What our SFU changes about the remaining rows — mostly by DELETING them:**
 - **Amendment 4 (the two Bun kill-questions) partly EVAPORATES.** 4(a) was "does

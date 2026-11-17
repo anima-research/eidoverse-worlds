@@ -4,8 +4,8 @@
 //   ST  a building edit lands on the SELECTED building (not the world's first), as ONE act with expect; Ctrl+Z (the
 //       editor's one undo) puts it back; after someone else changes it, Ctrl+Z writes nothing over their work; the
 //       Create panel has no second "undo building edit"
-//   GH  placing a model: Q / E turn it and , / . size it BEFORE the click (the status line says so), and the click
-//       places it turned and sized, as ONE create
+//   GH  placing a model: E turns it and . sizes it BEFORE the click (the status line says so), and the click
+//       places it turned and sized, as ONE create (Q and , aren't driven)
 //   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); another
 //       person's use runs it (bob, a builder here); the Inspector lists it
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are

@@ -2561,8 +2561,8 @@ input[type=checkbox]:focus-visible { outline: 1px solid var(--edge-hi); outline-
 /* ---------------------------------------------------------------- lite client
    The renderer-free surface (client/lite.js). It shares the token sheet above and
    hexes nothing, per docs/guide/MODDING-UI.md: a restyle reaches this the same as it
-   reaches the desktop chrome. Phone-first, because that is the only place it runs -
-   tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
+   reaches the desktop chrome. Phone-first (desktop reaches it too: ?lite, no GPU API, a
+   second failed boot) - tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
 html.lite, html.lite body { height: 100%; overflow: hidden; }
 
 #lite-action-host {

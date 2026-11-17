@@ -21,8 +21,8 @@
 // WHO IS THE CAPTIONER: the LIVE LEG. The sequencer stamps every caption entry with the writer's join generation
 // (server/world.ts legGen: monotonic across restarts; a same-identity join is a takeover); a client cannot supply it.
 // The bag remembers the generation that wrote it: a lower one is refused as a superseded leg, a higher one takes over.
-// Supersession is thus the authority's fact, never a clock the bot claims. The owner's recovery is `end`, or setting
-// `captions` by hand.
+// Supersession is thus the authority's fact, never a clock the bot claims. The owner's recovery is setting `captions` by
+// hand (an `end` meets the same generation check, so it works only from a leg as new as the bag's), or rejoining.
 //
 // SESSION is the bot's media-clock label, minted at attach (ISO time plus a nonce): it says which attach a `00:30`
 // belongs to. Within a session `n` is the bot's monotonic counter; the bag folds the high-water mark and refuses a

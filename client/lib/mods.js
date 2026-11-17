@@ -140,7 +140,8 @@ export default ({ EW, ui, onTick }) => {
 /** The scriptable face of the mod system — same acts as the panel buttons (the e2e drives this).
  *
  *  put and run need YOUR hand: transient user activation, so code that merely holds EW (a mod
- *  autorunning at load, or anything injected into the page) can't plant another that outlives it.
+ *  autorunning at load, or anything injected into the page) can't plant another at load. It can still
+ *  act during any click of yours, and a browser without navigator.userActivation isn't checked.
  *  Defence in depth, not a wall: the walls are that nothing a world sends runs as code here
  *  (test/protocol/modhole-check.ts) and the page's CSP. */
 const byHand = (what) => {

@@ -8,7 +8,7 @@ import { bus } from '../base.js';
 export const KEYHINTS = {
   scrub:         { before: 'drag to change · Shift finer · Ctrl whole numbers · ↑/↓ step (Shift ×10) · click to type', during: '<kbd>Shift</kbd> finer · <kbd>Ctrl</kbd> whole numbers · <kbd>Esc</kbd> puts it back' },
   gizmo:         { before: 'drag a handle · hold Ctrl to snap (10 cm · 5° · 0.1×) · Esc cancels', during: 'hold <kbd>Ctrl</kbd> to snap (10 cm · 5° · 0.1×) · <kbd>Esc</kbd> cancels' },
-  meshMove:      { before: 'drag the thing itself · Shift+drag raises and lowers · Esc cancels', during: '<kbd>Shift</kbd> raises and lowers · <kbd>Esc</kbd> cancels' },
+  meshMove:      { before: 'drag the thing itself · Shift+drag raises and lowers · Esc cancels', during: '<kbd>Shift</kbd> at the grab raises and lowers · <kbd>Esc</kbd> cancels' },
   treeFold:      { before: 'Shift- or Alt-click an arrow opens or closes the whole branch', during: null },
   selectExtend:  { before: 'Ctrl- or Shift-click adds to the selection · Shift-drag on empty space draws a box', during: null },
   treeSelect:    { before: 'Ctrl-click adds or drops one · Shift-click selects every row from the last one clicked to this one (Ctrl+Shift adds them)', during: null },

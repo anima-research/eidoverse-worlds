@@ -1,4 +1,5 @@
-// xrpanels — the registration contract docs/guide/MODDING-UI.md advertises.
+// xrpanels — registerXRPanel's registration contract (client/lib/xr/xrpanels.js; MODDING-UI.md documents only the
+// desktop eido.ui.registerPanel, not this one).
 // The VR runtime (xrPanelsEnter, xrPanelsPick) is covered only by the laser rows
 // below; the rest is the seam a mod calls: registerXRPanel(def) validates its def
 // and an id registers once. Most other suites STUB xrpanels (edittheme-test's D section is one that doesn't), so this one

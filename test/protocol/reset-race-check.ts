@@ -75,8 +75,8 @@ if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR,
     "RR6b the fresh log opened but the scripts didn't start (the injected failure ran once): the reset stands, everyone present is told, and the fresh world takes requests", { threw, err, sent: sent.map((m) => m.type), fresh }); }
 
 // ---- SR: a connection superseded (or closed) while its request awaits never writes (review of PR #260: the old tab's
-// request still committed). The await is held by a gate in front of the real WorldLog.request (warm, the recheck,
-// requestSync); the wire handler is the real REQUEST_MESSAGES.request.
+// request still committed). The await is held by a gate in front of the whole real WorldLog.request (warm, the recheck,
+// requestSync), so the recheck's place after warm() isn't pinned here; the wire handler is the real REQUEST_MESSAGES.request.
 { const { REQUEST_MESSAGES } = await import("../../server/requestwire.ts");
   const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "tabs"), "tabs", "olive");
   const tw = new World("tabs");
@@ -163,7 +163,7 @@ if (process.platform !== "win32") { foundWorld(path.join(process.env.WORLDS_DIR,
 const { directoryFor } = await import("../../server/directory.ts");
 const idOf = (n) => directoryFor(process.env.WORLDS_DIR).resolve({ sub: `local:${n}`, name: n });
 const comps = (hw) => hw.log.live.state().entities["@world"]?.c ?? {};
-// RS9: a world at the default door (no access component) keeps its grants, custom roles and default-role
+// RS9: a world at the default door (no access component) keeps its grants and default-role (custom role-defs aren't driven here)
 { const { owner } = foundWorld(path.join(process.env.WORLDS_DIR, "nodoor"), "nodoor", "olive"); const hw = new World("nodoor"); const bob = idOf("bob");
   const a = hw.log.requestSync(owner, "set", { id: "@world", component: `roles:${bob}`, value: { role: "builder" } });
   const b = hw.log.requestSync(owner, "set", { id: "@world", component: "default-role", value: { role: "member" } });

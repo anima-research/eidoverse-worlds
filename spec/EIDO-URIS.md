@@ -96,7 +96,9 @@ So the type contract is: **media lives beside the reference, in the log.**
   (`glb`), so `model: "eido:sha256/<hex>"` is complete (translate-v1@8–@11
   wrote models this way; today a model is stored as its library path, the
   portable reference, with its bytes' hash beside it as
-  `model-hash: "sha256:<hex>"`, and a stored `eido:` model is still read). A
+  `model-hash: "sha256:<hex>"` when the catalogue knows that hash at the
+  write and the write isn't a capped one (a script's, a handler's or the
+  system's has none; so does one before the catalogue hashed the model), and a stored `eido:` model is still read). A
   whole-value reference
   whose media can vary needs a new versioned name with a `media` field
   (PROTOCOL §4: a changed meaning is a new name).

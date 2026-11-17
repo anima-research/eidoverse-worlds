@@ -3,9 +3,10 @@
 //
 //   bun test/mcpl/door-is-error-test.ts
 //
-// Acts are failed when the call didn't do what it asked (a refusal, a cut, a
-// climb or glide that fell short, a name the world refused), and done when it
-// did, including a no-op because what it asked for already held.
+// Acts are failed when the call didn't do what it asked (a refusal, a cut: the
+// body knocked down mid-act, a climb or glide that fell short, a name the world
+// refused), and done when it did, including a no-op because what it asked for
+// already held. A say trimmed to 4000 characters is done, and says so.
 //
 // In this protocol main's flight tools are folded into move {mode: "fly"},
 // act {verb: "land"} and anim's wings, and the rehearsal tools are no tools

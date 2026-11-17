@@ -344,7 +344,7 @@ function finishSwap(name: string, at: { D: string; temps: string[]; oldLog: bool
     const was = JSON.parse(fs.readFileSync(path.join(temps[0], SOURCE), "utf8"));
     const orig = fs.existsSync(path.join(D, "log.jsonl")) ? path.join(D, "log.jsonl") : path.join(D, ORIGINAL.log);
     const now = fs.existsSync(orig) ? sourceChanged(orig, was) : null;
-    if (now) die(`the in-place translation of "${name}" was interrupted, and ${stillWriting(orig, was, now)} Nothing was moved: remove ${D}/world.jsonl and ${temps[0]} (the interrupted translation), then translate again.`);
+    if (now) die(`the in-place translation of "${name}" was interrupted, and ${stillWriting(orig, was, now)} Nothing was moved: remove ${D}/world.jsonl and ${temps[0]} (the interrupted translation), rename any ${ORIGINAL.log}, ${ORIGINAL.snapshot} or ${ORIGINAL.poses} in ${D} back to log.jsonl, snapshot.json, poses.json, then translate again.`);
   }
   const did: string[] = [], stuck: string[] = [];
   const mv = (a: string, b: string) => { if (!fs.existsSync(a)) return; if (fs.existsSync(b)) { stuck.push(`${a} (${b} is already there)`); return; } fs.renameSync(a, b); did.push(`${path.relative(WORLDS_DIR, a).split(path.sep).join("/")} → ${path.relative(WORLDS_DIR, b).split(path.sep).join("/")}`); };

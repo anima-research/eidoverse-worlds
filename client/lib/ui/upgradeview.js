@@ -89,7 +89,7 @@ export function showOldFormat(root, refused, world) {
         const enter = el('button', 'sp-up-btn sp-up-enter', 'Enter the world'); enter.onclick = () => location.reload();
         const more = el('details', 'sp-up-more'); more.append(el('summary', null, 'Backup and undo'),
           el('p', null, 'A verified copy of the old world was saved on the server, at:'), el('pre', 'sp-up-backup', u.backup),
-          el('p', null, 'To undo: stop the server, then run this in a terminal on the server machine, from the folder the server runs in:'), el('pre', 'sp-up-rollback', u.rollback));
+          el('p', null, 'To undo: stop the server, then run this in a terminal on the server machine, from the eidoverse checkout folder (the one holding tools/):'), el('pre', 'sp-up-rollback', u.rollback));
         done.append(enter, ...(u.claimed ? [el('p', 'sp-up-owned', u.owned ?? "You're now this world's owner.")] : []), ...(u.warning ? [el('p', 'sp-up-err sp-up-owners', `Warning: ${u.warning}`)] : []), more);
         area.append(done);
       };

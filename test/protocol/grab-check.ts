@@ -4,7 +4,8 @@
 //   bun test/protocol/grab-check.ts --only G2,G4    just those
 //   bun test/protocol/grab-check.ts --tree <dir>    run the cases against another checkout's shared/ (a mutant, a base)
 //   bun test/protocol/grab-check.ts --control       the base commit (7a3d8435, before grabbable): every NEW case must be red
-//                                              there and every MIGRATION case green (today's behaviour, kept)
+//                                              there and every MIGRATION case green (today's behaviour, kept). Broken
+//                                              today: the base predates shared/protocol/, so it reports "no case ran"
 //   bun test/protocol/grab-check.ts --mutants       remove each gate in turn (a copy of the tree): its cases must go red; a
 //                                              no-op control mutation must stay green. The migration mutant (no physics
 //                                              fallback) also runs phys-check and physlive-check in the copy: they must

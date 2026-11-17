@@ -295,7 +295,7 @@ await C("D17", "the door: blocks is a list of layers (bodies, hulls, things), ea
     Object.fromEntries(Object.entries(r).map(([k, v]) => [k, show(v)]))]; });
 
 const LEASE_BEAT = 3100;   // just past LEASE.heartbeatMs
-await C("D28", "a hull's own blocks says what it stops, not what stops it (review 1.8): a boat with blocks ['bodies'] is stopped by a wall; only collider.enabled false drives through", () => {
+await C("D28", "a hull's own blocks says what it stops, not what stops it (review 1.8): a boat with blocks ['bodies'] is stopped by a wall; collider.enabled false drives through (a mask missing the wall's layer also does: D26)", () => {
   const run = (collider: any) => { const s = session({ hull: { ...HULL, collider } }); s.call("create", { id: "wall", components: { transform: tf([0, 0, 6]), mesh: { shape: "box", size: [6, 3, 0.2] }, hidden: true } }); s.board("vic");
     return [3, 6, 9].map((z) => s.call("drive", { id: "hull", pos: [0, 1, z], q: [0, 0, 0, 1] }, "vic")); };
   const boat = run({ blocks: ["bodies"] }), ghost = run({ enabled: false });

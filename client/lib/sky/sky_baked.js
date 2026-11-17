@@ -42,7 +42,7 @@ export function releaseLiveDomes() {
 export const liveDomesHeld = () => !!xrHeld;
 /** Teardown: hand back the held domes without re-adding them (held from birth they may be uncompiled). */
 export function takeHeldDomes() { const out = (xrHeld ?? []).map(([d]) => d); xrHeld = null; return out; }
-export const holdLiveDomesInXR = (skyApi) => holdLiveDomes(skyApi);   // probe name
+export const holdLiveDomesInXR = (skyApi) => holdLiveDomes(skyApi);   // the deleted sky-xr-livehold probe's name: no caller now
 let sys = null;        // sky engine internals
 let targets = null;    // [A, B] — A is the engine's _envTarget, B is ours
 let blendU = null;     // 0 → targets[0] on the dome, 1 → targets[1]

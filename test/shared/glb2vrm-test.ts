@@ -99,7 +99,7 @@ console.log("a tripo-named rig passes the gate");
 {
   // Bones alone are not a convertible body (no skin, no mesh), so conversion
   // still fails downstream. The assertion is that it gets PAST the gate:
-  // whatever it dies of is not a family rejection.
+  // whatever it dies of is not a family rejection (checked as: neither of the gate's two refusal messages).
   const glb = write("tripo.glb", ["Armature", ...TRIPO_BONES]);
   const r = await run(glb, "--name", "t");
   check("not refused as mixamo", !/Mixamo rig detected/.test(r.err), r.err.trim());

@@ -1,7 +1,7 @@
 // framebudget — one per-frame budget for background work, shared by every producer.
 //
 // warmqueue (pipeline warms), loadwork (parse/compile slices) and the baked sky (band renders) share it, so together
-// they spend one frame's budget (two can share a frame when their predicted costs fit). The shape Unity (asyncUploadTimeSlice) and React's scheduler use:
+// they spend one frame's budget (a later grant needs only some budget left; its predicted cost is held, not required to fit). The shape Unity (asyncUploadTimeSlice) and React's scheduler use:
 //
 //   - ONE budget per frame: a governor-set share of the measured frame period, never more than the old 6 ms slice
 //     (MAX_MS); a fixed SPLASH_MS while the splash covers the screen.

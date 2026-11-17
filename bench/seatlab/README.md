@@ -19,8 +19,8 @@ a page load. It exists for two jobs:
 Loading into a running client (import specifiers are absolute `/lib/...`, so
 the module works served from anywhere):
 
-```
-# browser console:
+```js
+// browser console:
 // upload answers src: 'sha256:<64 hex>', a world-script blob the authority runs — not a URL a browser can import
 // to use seatlab from the console, serve this file as a static module (e.g. copy it under client/lib/) and:
 const lab = await import('/lib/seatlab.js');

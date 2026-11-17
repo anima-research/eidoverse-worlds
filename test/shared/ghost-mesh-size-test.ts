@@ -1,4 +1,4 @@
-// ghost-mesh-size-test — every Create ▸ mesh the editor can hold, at every size the ghost keys reach (the ×1.1 ladder whole, the ×1.01 ladder sampled and at its ends, to both clamps), asks the door for a
+// ghost-mesh-size-test — every Create ▸ mesh the editor can hold, at sizes the ghost keys reach on one ladder (the ×1.1 ladder whole, the ×1.01 ladder sampled and at its ends, to both clamps; mixed steps aren't run), asks the door for a
 // size the door takes. A plane shrunk once (,) sent y = 0.05/1.1 and was refused at mesh.size's min (debt survey 2, §2.3).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/ghost-mesh-size-test.ts

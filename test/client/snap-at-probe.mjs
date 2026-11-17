@@ -2,7 +2,7 @@
 //
 //   bun test/client/snap-at-probe.mjs          (owns its scratch sequencer; one headless renderer)
 //
-// The gap it closes (notes/eidoverse/AGENT-ONLY-GAPS-glowing-tree-2026-10-04.md): an agent could only snapshot
+// The gap it closes (found building the glowing tree, 2026-10-04): an agent could only snapshot
 // through its own eyes / shoulder / a selfie, so checking something it built meant walking there, or reaching
 // into the client. Setup: an agent at the origin faces +z; a red crate sits 6 m BEHIND it. A first-person snap
 // must not see the crate (control); `at: crate` must put it in the middle of the frame. Before the change the

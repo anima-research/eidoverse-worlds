@@ -6,7 +6,7 @@
 //     Hebrew read right to left (the canvas applies the bidi algorithm to each line).
 //   - One house font: the nameplate's stack (avatar/nameplate.js), plus the system emoji fonts. A missing glyph paints nothing.
 //   - A canvas of ~96 px a line (at most 2048 × 2048; the density drops to fit), mipmapped, anisotropy 4: legible at an
-//     angle in a headset. Repainted only when the value changes.
+//     angle in a headset. Repainted when the value changes, and when its entity is re-realized (spawn, placeholder).
 //   - Flat (billboard off): two planes back to back facing ±Z, so it reads from behind unmirrored. yaw: it turns about
 //     world up toward the viewer. full: it faces the viewer with world up kept (roll-locked: a VR head tilt never tilts it).
 //   - Centred on the thing's origin (Godot Label3D). Its world extent is held to 30 m at the scale it is built at (a later rescale isn't re-held).

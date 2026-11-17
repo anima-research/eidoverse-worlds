@@ -36,9 +36,10 @@ behind a home NAT, no port forwarding):
   (standard ICE hole-punching). STUN is what lets each side learn its public
   address — which is why the default exists and why removing it breaks
   exactly and only the cross-network case.
-- **Outbound UDP must not be blocked** on the server's host firewall. werift
-  binds ephemeral UDP ports; there is nothing to forward, but there must be a
-  way out.
+- **Outbound UDP, and the replies to it, must not be blocked** on the server's
+  host firewall (a stateful firewall allows the replies; one that drops all
+  inbound UDP breaks the checks). werift binds ephemeral UDP ports; there is
+  nothing to forward, but there must be a way out and back.
 - **Symmetric NAT (some corporate/CGNAT setups) defeats hole-punching.** The
   symptom is ICE stalling in `checking` — the client logs it explicitly after
   8s and tells the user their mic is capturing but transmitting nothing. The

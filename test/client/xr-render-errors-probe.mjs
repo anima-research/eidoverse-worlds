@@ -5,9 +5,10 @@
 // throw lands inside renderer._renderOutput between `xr.enabled = false; autoClear = false` and their restore, so it
 // also left XR switched OFF on the renderer: later frames drew the desktop camera into the canvas, not the eyes.
 // Checks, over N session frames (default 40), on the real client (?xr=1), the real visor click, IWER (Quest 3):
-//   errors  — zero `frame …` reports (report() rate-limits but ALWAYS prints the first, so zero is meaningful)
+//   errors  — zero `frame …` reports in the session (report() always prints a message's first; a repeat of one the
+//             desktop already printed can fall in its rate-limit window, so zero is meaningful only if the desktop had none)
 //   state   — renderer.xr.enabled and autoClear are still on, and the session is presenting
-//   eyes    — the eye output really reaches the layer: every app frame in the session draws into the XR target
+//   eyes    — the eye output really reaches the layer: XR-target draws >= app frames (an aggregate, not per frame)
 // --control disarms the fix before entry (xr_nullfb's handle) — the checks above must go red.
 //   gated   — the fix installed only because this session's layer framebuffer is null (on hardware it never does)
 // Real hardware returns an opaque WebGLFramebuffer here and never took this path; this is the emulator's (and the
@@ -98,7 +99,7 @@ try {
   if (!CONTROL) check('gated: the session\'s null layer framebuffer installed it', st.fixInstalled && st.baseFb === 'null', `installed=${st.fixInstalled} baseFb=${st.baseFb}`);
   check('errors: zero `frame …` render reports during the session', frameErrs.length - deskErrs === 0, frameErrs.slice(deskErrs, deskErrs + 2).join(' | '));
   check('state: the renderer is still presenting with XR on and autoClear restored', st.presenting && st.xrEnabled && st.autoClear, JSON.stringify({ presenting: st.presenting, xrEnabled: st.xrEnabled, autoClear: st.autoClear }));
-  check('eyes: every app frame in the session draws into the XR target', st.appFrames > 0 && st.xrDraws >= st.appFrames, `${st.xrDraws} XR-target draws over ${st.appFrames} app frames (${st.frames} session callbacks)`);
+  check('eyes: at least as many XR-target draws as app frames in the session', st.appFrames > 0 && st.xrDraws >= st.appFrames, `${st.xrDraws} XR-target draws over ${st.appFrames} app frames (${st.frames} session callbacks)`);
   check('no page errors', pageErrs.length === 0, pageErrs.slice(0, 2).join(' | '));
   if (otherErrs.length) console.log(`  · other console errors (not asserted): ${otherErrs.length}: ${otherErrs.slice(0, 3).join(' | ')}`);
   await ev(() => window.__iwerDevice.activeSession?.end()).catch(() => {});

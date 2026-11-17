@@ -1,5 +1,6 @@
 // tools/import-v1/world.ts — translate an OLD (v1) world on disk into a NEW v4 world, once. The operator runs it
-// (bun tools/world.ts translate <v1 world> <new world>); nothing at runtime imports this directory
+// (bun tools/world.ts translate <v1 world> [<new world>] --no-founder-key, a --dry-run first; README.md has the
+// approval flags); nothing at runtime imports this directory
 // (test/protocol/nov1-check.ts enforces it). The v1 log is read, never written (R9).
 import { warmLamps, lampsOf } from "./lamps.ts";
 import fs from "node:fs";
@@ -201,7 +202,7 @@ const watchOf = (old: Any[]) => { const st: Any = v1Empty(); for (const e of old
 const hostContent = (p: string) => { const h = contentAddressOf(p); return h ? `sha256:${h}` : null; };
 /** The dry-run report: everything the translation would do that an owner should see before it does, and nothing that varies
  *  between runs (no nonce, no signatures; the ids are derived from this host's secret, so its hash is the same for the same old
- *  log, tool build and host). `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
+ *  log, tool build and host, until a spectator grant's `until` passes: watchOf reads this run's clock). `deferred` (features v4 doesn't carry yet) non-empty means the translation is REFUSED. The writer builds the same
  *  report from its own run and refuses an approval of any other hash. */
 /** Everyone the translated world gives a role, and whether an account is bound to them (R 10-28): {name, role, account,
  *  from} or {name, role, account: null, why, bind}, each with its `id` (the one the written world holds: bot #369); owners first.

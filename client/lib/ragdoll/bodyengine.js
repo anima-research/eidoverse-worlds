@@ -10,7 +10,7 @@
 //   setPin(joint, target, firm) / setPin(joint, null) / setPin(null)
 //   snapshot()          → {j,p,v} handover (rigmeasure.js owns the format)
 //   .pins .pinned .done .finalPose .p .maxV
-//   dispose()           — engines with off-heap state free it here
+//   dispose?.()         — only engines with off-heap state have one (Verlet has none): call it optionally
 //
 // Everything downstream goes through bodysim.makeRagdoll and cannot tell which engine answered. This class owns
 // the clocks and bookkeeping that MUST agree, never solving. Each engine supplies _topple(lean) (how a velocity

@@ -159,7 +159,7 @@ export function applyWater(args, heightAt) {
 
   // ---- foam: made by water moving at the edge ---------------------------------------------------------
   // `wet` = water standing here this instant (bed depth + wave). Foam is the uprush: the waterline's speed up the
-  // beach (rise over the ground's slope) weighted by wave size, so a pond's edge stays clean and the sea throws surf.
+  // beach (rise over the ground's slope) weighted by wave size, so a pond's edge keeps only a faint rim (band × 0.08) and the sea throws surf.
   const wet = d.add(disp);
   const band = float(1).sub(smoothstep(0.0, 0.3, wet));
   const lineSpeed = max(rise, float(0)).div(max(S.z, float(0.04)));

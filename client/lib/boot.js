@@ -15,7 +15,7 @@ export function setBootAssets({ items, bytes }) {
 }
 
 // Weights are measured shares of a cold boot; the late phases hold the tail so the bar never sits at 100%.
-// The splash covers "somewhere to stand"; the sky is deliberately not waited for.
+// The splash covers "somewhere to stand"; the sky has no phase here, but its first warm holds the splash, capped (world.js skyGate).
 const PHASES = [
   { key: 'engine', label: 'waking the engine', weight: 14 },
   { key: 'connect', label: 'finding the world', weight: 6 },

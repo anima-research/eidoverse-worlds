@@ -112,7 +112,7 @@ Every message belongs to exactly one plane:
 | `capture-capabilities` | service | embodied legs | `{capture: {version: 1, engine: "unreal", scene}}` | an opt-in native donor says it can capture (server/screenshots.ts captureCapability); anything else clears it. |
 | `world-fork` | admin | owner | `{to}` | a new world (its own genesis) whose founding request names this one, holding a copy of its current state; answers `world-forked`. |
 | `operator-repair` | admin | server operator (`SERVER_OPERATORS`) | `{id, verb, args}` | a server operator's recorded repair of the world it is in (PROTOCOL §7a): `set`/`delete` of @world `roles:<id>`, `access`, `default-role`, `role-defs`, `unban`; answers `reply` with `operator: true`; the request's body carries `operator: true`. |
-| `world-reset` | admin | owner | `{name}` (must equal the world's) | archives the log beside it and re-founds the world for the same owners. |
+| `world-reset` | admin | the most senior owner (its founder, unless they left ownership; `seniorOwner`) | `{name}` (must equal the world's) | archives the log beside it and re-founds the world for the same owners. |
 | `world-bans` | read | the owner, or anyone holding a moderation power here (`mute`, `kick`, `ban`, `pauseScripts`) | `{}` | answers a `mod` text summary. |
 | `world-upgrade-review` / `world-upgrade` | — | a server operator (`SERVER_OPERATORS`) or the world's owner (main's records bind the owner to this account, or name them with no account: server/ownerrecognise.ts `recogniseOwner`), by a session or an agent credential (no join needed) | `{id, world}` / `{id, world, approved: <report hash>}` | an old-format world's upgrade (docs/operator/TRANSLATING-OLD-WORLDS.md): the CLI's dry-run report `{ok, world, report, hash, owner?, warning?}`, then the backup and the CLI's translation bound to that hash `{ok, world, backup, report, rollback, people, owner?, claimed?, owned?, warning?}`. `owner {recognised: "bound" \| "name", name}`: how an owner was recognised; `claimed: true` + `owned`: an ownerless world's upgrader is now its owner; `warning`: no owner is bound to an account; `people`: everyone who holds a role, with the account bound to them (if any). Refused `{ok: false, refused: {code, reason, fix?}}`: not-old, rights (ask the server's operator or the world's owner), cli, shape (approved isn't a hash), busy, rate, stale (another hash), refused, failed (server/upgrade.ts). |
 | `server-ban` / `server-unban` / `server-bans` | admin | server operator (`SERVER_OPERATORS`) | `{id, days?, reason?}` | server-wide, persisted in `.bans.json`, not requests (there is no server-wide log). |
@@ -233,8 +233,9 @@ seven SFU-signaling messages arrive (`sfu-answer`, `sfu-ice`, `sfu-pos`,
 credentialed, gen-bound, inline in server.ts's switch beside join), plus
 server→client `voice-service` (incarnation-stamped state) and the attest
 `performed` receipt gaining `rung: "authorized-claim"` + `incarnation`.
-Reach travels inside presence pose bags (`pose.reach`, relayed opaquely —
-see the amended spec/PROTOCOL.md §5).
+Reach travels inside presence pose bags (`pose.reach`; the server drops a limb
+whose target isn't here or hasn't consented, `server/reachgate.ts` gateReach, and
+relays the rest unchanged — see the amended spec/PROTOCOL.md §5).
 
 Wire additions since the v0 freeze (each flagged in its commit):
 physics (spec/PHYSICS.md): `snapshot.physics` (the sim layer's snapshot: what flies,

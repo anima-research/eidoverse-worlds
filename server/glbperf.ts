@@ -122,7 +122,7 @@ function perfOf(json: any, view: ViewReader, { bptc = true }: { bptc?: boolean }
 }
 
 const cache = new Map<string, { key: string; perf: GlbPerf | null }>();
-/** glbPerf for a file on disk, cached on (size, mtime) — the catalog route runs per keystroke. null = unreadable. */
+/** glbPerf for a file on disk, cached on (size, mtime, ino, ctime) — the catalog route runs per keystroke. null = unreadable. */
 export function glbPerfOfFile(path: string): GlbPerf | null {
   try {
     const st = statSync(path);
