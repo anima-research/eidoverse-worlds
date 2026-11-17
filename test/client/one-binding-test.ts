@@ -81,6 +81,8 @@ const ROWS: Row[] = [
   // 333-cm b3: three writers spelt it noCameraCollide, which nothing reads
   { name: "the camera-ghost flag is spelt as its reader (colliders.js) reads it: userData.noCamCollide", owner: [], scope: walk("client").filter((f) => /\.(js|mjs)$/.test(f)),
     forbidden: [/\bnoCameraCollide\b/], requires: [["client/lib/colliders.js", /userData\?\.noCamCollide/]] },
+  { name: "an editor's file picker opens after the rights warning (mediaprefs.js RIGHTS_WARNING, #634)", owner: [], scope: ["client/lib/realize/pictures.js", "client/lib/realize/sounds.js"],
+    forbidden: [(l) => /q\('file'\)\?\.click\(\)/.test(l) && !/RIGHTS_WARNING/.test(l)] },
 ];
 for (const row of ROWS) {
   const scan = (row.scope ?? files).filter((f) => !row.owner.includes(f) && !(row.exempt ?? []).includes(f));

@@ -235,7 +235,7 @@ registerEditor(({ id, obj, bag, commit }) => {
         notes.set(id, { text: t, warn, about: pictureKey(about) });
         const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; }
       };
-      q('pick')?.addEventListener('click', () => q('file')?.click());
+      q('pick')?.addEventListener('click', () => { flashHint(`🖼 ${RIGHTS_WARNING}`, 4000); q('file')?.click(); });
       q('file')?.addEventListener('change', async (ev) => {
         const file = ev.target.files?.[0];
         if (!file) return;

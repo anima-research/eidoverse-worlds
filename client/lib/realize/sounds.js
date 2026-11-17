@@ -252,7 +252,7 @@ registerEditor(({ id, obj, bag, commit }) => {
         const said = q('description').value.trim(); if (said) data.description = said;   // (re)start: the authority stamps t0 on its clock
         return data;
       };
-      q('pick')?.addEventListener('click', () => q('file')?.click());
+      q('pick')?.addEventListener('click', () => { flashHint(`🔊 ${RIGHTS_WARNING}`, 4000); q('file')?.click(); });
       q('file')?.addEventListener('change', async (ev) => {
         const file = ev.target.files?.[0]; if (!file) return;
         msg(`uploading ${file.name}…`);
