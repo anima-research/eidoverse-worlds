@@ -1297,9 +1297,9 @@ export function editOps(ent, id, edits, live = {}) {
           if (next.type === raw) break;
           for (const p of Object.keys(next)) if (!['type', 'axis', 'pivot', 'phase', 't0', 'part', 'node'].includes(p)) delete next[p];
           next.type = raw;
-          // the door requires a path's points (Add Path's seed); a node's motion is in the node's frame, so it gets none.
-          // A path starts at its first point: its t0 goes, and the authority stamps a new one
-          if (raw === 'path') { delete next.t0; if (!Array.isArray(next.points) && next.node == null) next.points = pathPoints(ent); }
+          // the door requires a path's points (Add Path's seed); a node's motion (keyed, or a legacy `part`) is in the
+          // node's frame, so it gets none. A path starts at its first point: its t0 goes, and the authority stamps a new one
+          if (raw === 'path') { delete next.t0; if (!Array.isArray(next.points) && motionNode(mkey, next) == null) next.points = pathPoints(ent); }
         }
         else if (!writeField(MOTION_CARD[prev?.type] ?? 'Spin', param, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         motions.set(mkey, next);
