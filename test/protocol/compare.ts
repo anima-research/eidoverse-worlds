@@ -45,14 +45,14 @@ console.log(`${files.length} logs, ${diffs} unexplained differences`);
   else console.log(`ok   expected.json: every log folds to what the set says (${files.length})`); }
 
 // the reference reader's own suites. test_reader.py regenerates logs/ from its builders: they must come out byte-identical
-const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
+const before = new Map(files.map((f) => [f, fs.readFileSync(here + f)]));   // bytes: utf8 folds every invalid byte to U+FFFD
 let suiteFails = 0;
 for (const t of ["test_reader.py", "test_chain.py", "test_gov.py", "test_story.py", "ed25519/test_vectors.py"]) {   // test_gov: governance (§13), with the add-key rule (review 10-07 H4); the ed25519 row: §2.4 Keys
   const r = py([t]); const out = (r.stdout.toString() + r.stderr.toString()).trim().split("\n");
   console.log(`${r.exitCode === 0 ? "ok  " : "FAIL"} python ${t}: ${out.find((l) => /^\d+\/\d+ passed/.test(l)) ?? out.at(-1)}`);
   if (r.exitCode !== 0) { suiteFails++; console.log(out.slice(-8).join("\n")); }
 }
-const drift = files.filter((f) => fs.readFileSync(here + f, "utf8") !== before.get(f));
+const drift = files.filter((f) => !fs.readFileSync(here + f).equals(before.get(f)!));
 if (drift.length) { suiteFails++; console.log(`FAIL test_reader.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
 // The engine's OWN output against the spec's readers (review F1), not only the conformance logs. Found a world through
 // the engine authority, write a few kinds of request, then
