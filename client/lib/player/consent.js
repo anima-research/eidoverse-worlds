@@ -25,7 +25,7 @@ const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Obje
 export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Allow being posed and touched now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Allow being posed and touched.";
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;
 /** what the panel and the toast say of it */
-export const BLOCK_FOLLOW_WORDS = `for ${BLOCK_FOLLOW_MS / 86_400_000} days from when you set it, it follows you into the worlds you enter; where it has landed, it stays until you remove it`;
+export const BLOCK_FOLLOW_WORDS = `for ${BLOCK_FOLLOW_MS / 86_400_000} days from when you set it, it follows you into the worlds you enter from the browser you set it in; where it has landed, it stays until you remove it`;
 const OPS = ['allow', 'block', 'unlist'];
 /** a change that follows me into every world until BLOCK_FOLLOW_MS: a block, or an unlist from before the queue (its world unknown: it only ever takes someone off allow) */
 const follows = (q) => q.op === 'block' || (q.op === 'unlist' && q.world === null);
