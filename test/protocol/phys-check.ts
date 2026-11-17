@@ -134,8 +134,9 @@ function playground(name) {
     const c6 = call(W6, "rowan", "create", { id: "ghost", components: { transform: { pos: [0, 0, 0.3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "dynamic", who: "member", shape: [[-0.2, 0, -0.2], [0.2, 0.4, 0.2]] } } });
     const p6 = c6.ok ? call(W6, "rowan", "punt", { id: "ghost", power: 2 }) : null;   // punt first: a held thing is refused as "held"
     const g6 = c6.ok ? call(W6, "rowan", "grab", { id: "ghost" }) : null, t6 = g6?.ok ? call(W6, "rowan", "throw", { id: "ghost", v: [0, 2, 1] }) : null;
-    ok(!c6.ok || ((!t6 || t6.refused?.code === "no-shape") && (!p6 || p6.refused?.code === "no-shape")),
-      "D6 a shaped thing with no model is refused at the throw and the punt (or can't be made at all)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
+    // each refusal must be OBSERVED: a creation or a grab refused for another reason is a red setup, never a pass
+    ok(c6.ok && g6?.ok && t6?.refused?.code === "no-shape" && p6?.refused?.code === "no-shape",
+      "D6 a shaped thing with no model is made and grabbed, then refused at the throw and the punt (no-shape)", { made: c6.ok, made_refused: c6.refused, grab: g6?.ok ?? g6?.refused, throw: t6?.ok ?? t6?.refused, punt: p6?.ok ?? p6?.refused });
   }
   { // collider {shape: "sphere"} asks the authority for a sphere: it stamps one fitted to the model (the asker's shape
     // is never taken, Covenant III)
