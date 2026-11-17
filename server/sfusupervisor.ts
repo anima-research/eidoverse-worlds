@@ -1,7 +1,8 @@
-// Voice service health: a participant leg dying is not the relay dying. When the in-process SFU is broken but alive, text and
-// world service stay live, voice is visibly degraded, and clients make one clean fresh join. An unknown transport error exits
-// the whole process instead (sfuguard.ts reportFatal); the restart stales every credential (transport.ts incarnation). This
-// module owes the degraded state visible while the process lives.
+// Voice service health: a participant leg dying is not the relay dying. The seam for a broken-but-alive SFU: mark voice
+// degraded (text and world service stay live), broadcast it, and recover on a completed negotiation. Nothing marks it yet
+// while the process lives: the one caller is sfuguard.ts's fatal hook, just before an unknown transport error exits the
+// process (the restart stales every credential, transport.ts incarnation), and a negotiation timeout is only logged
+// (sfuadapter.ts negotiate).
 
 import { currentIncarnation } from "./transport.ts";
 

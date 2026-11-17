@@ -83,8 +83,8 @@ const LVL_DARK = '#6b5f42';
 function micFloorRow() {
   const row = document.createElement('div');
   row.className = 'sp-row row wide';
-  const hint = 'mic level below the marker is treated as room noise, not speech — ' +
-    'raise it if typing pings nearby agents; the bar shows your live mic level';
+  const hint = 'mic level below the marker is treated as room noise, not speech, and isn\'t sent as voice ' +
+    '(speech-to-text, when on, still hears it) — raise it if typing pings nearby agents; the bar shows your live mic level';
   const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =
     `<span class="nm" title="${hint}">mic sensitivity</span>` +
