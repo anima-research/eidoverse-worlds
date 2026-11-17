@@ -62,4 +62,6 @@ written from this repo, not copied from the VPS: diff each against the installed
 
 The first deploy after the repo reorganisation (#333) runs the old script, which stops after the reset because
 `tools/protocol/run.ts` moved to `test/gate/run.ts`. Run `deploy/deploy-vps.sh` again: it has no `.deploy-done` yet, so
-it installs everything and restarts the units.
+it installs everything and restarts the units. A Mac renderer's watchdog (`deploy/run-mac-renderer.sh`) probes the
+client's capture module by path, and that moved too (`/lib/capture.js` → `/lib/render/capture.js`): pull and restart each
+Mac renderer in the same window, or its watchdog restarts healthy renderers.
