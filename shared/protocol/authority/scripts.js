@@ -212,7 +212,8 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
 // The authority's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
 // world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
 // ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
-// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
+// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2). Under EIDO_SANDBOX=inprocess
+// (Windows' opt-in) nothing kills a native builtin, so that bound holds for bytecode only.
 export const DUTY = { windowMs: 1000, maxMs: 500, worldShare: 0.6 }; // one world gets at most worldShare of it (fairness between worlds)
 /** A host sets the process's script duty (a big server may give scripts more of each second; a test that fires a thousand
  *  activations in a tight loop opens it wide). Returns the previous setting. */

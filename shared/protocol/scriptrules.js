@@ -22,7 +22,8 @@ export const LIMITS = Object.freeze({
                         // backstop under load: fuel, not the clock, must stop runaway code (fuel is the same on every re-run)
   wallMs: 300,          // the wall-clock backstop per activation, host calls included (non-deterministic: a run that hits it
                         // writes nothing). The authority kills the activation's sandbox process at wallMs + GRACE (sandbox.js): a
-                        // native builtin can't outlast that. Generous on purpose: a loaded host can stall an innocent run
+                        // native builtin can't outlast that, except under EIDO_SANDBOX=inprocess (no process to kill). Generous on
+                        // purpose: a loaded host can stall an innocent run
   memory: 24 << 20,     // bytes per activation's runtime
   stack: 256 << 10,     // bytes of native stack
   calls: 64,            // host calls (reads) per activation (Decentraland's 40 in flight)
