@@ -62,6 +62,10 @@ console.log("\na world-point reach: solve, verdict, wire bag");
   const far = await ag.reach("leftHand", { p: [4, 1, 4] });
   check("an unreachable point says how short and why", /short|not arriving/.test(far.text) && /limited by/.test(far.text), far.text);
   check("...but still streams (the arm extends toward it)", ag.reaches.has("leftHand"));
+  const behind = await ag.reach("rightHand", { p: [0, 1.3, -4] });
+  const bound = /limited by: ([^)]*)\)/.exec(behind.text)?.[1].split(", ") ?? [];
+  check("far behind: reach and another limit both hold it, and it isn't promised to land by closing in (#441)",
+    bound.includes("reach") && bound.length > 1 && !/it will land/.test(behind.text), behind.text);
   const rel = ag.releaseReach("left");
   check("release with a generous limb name", rel.ok && rel.text.includes("left hand"), rel.text);
   check("released limb leaves the bag", !ag.reaches.has("leftHand"));

@@ -272,7 +272,7 @@ export class AgentReach {
     const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
     const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
     const advice = res.bound.includes("reach") && res.dist != null && res.arm != null
-      ? ` — the target is ${res.dist.toFixed(1)}m from your shoulder and your arm is ${res.arm.toFixed(2)}m long; get closer and it will land`
+      ? ` — the target is ${res.dist.toFixed(1)}m from your shoulder and your arm is ${res.arm.toFixed(2)}m long; get closer${res.bound.length > 1 ? ` (${res.bound.filter((b: string) => b !== "reach").join(", ")} may still hold it short)` : " and it will land"}`
       : "";
     return { ok: true, text: `${limbW} reaching toward ${what}: ${short}${why}${advice}. The arm extends that way and keeps tracking; it touches if the distance closes.` };
   }
