@@ -36,7 +36,7 @@ const _add = globalThis.addEventListener.bind(globalThis), _rm = globalThis.remo
 globalThis.addEventListener = (t, fn, o) => { if (t === 'resize') resizeListeners.add(fn); return _add(t, fn, o); };
 globalThis.removeEventListener = (t, fn, o) => { if (t === 'resize') resizeListeners.delete(fn); return _rm(t, fn, o); };
 
-const { initBoot, finishBoot, bootDone, startRays, stopRays, raysActive } = await import('../../client/lib/boot.js');
+const { initBoot, finishBoot, refuseBoot, bootDone, startRays, stopRays, raysActive } = await import('../../client/lib/boot.js');
 
 const S = suite("splash-lifecycle");
 const check = (name, ok, note) => S.check(name, ok, note);
@@ -126,6 +126,11 @@ console.log('SPLASH — SILENCE: what a broken module or a suppressed ack looks 
   check('a worker that never speaks leaves BOTH flags false', !rays().ack && !rays().nogl, JSON.stringify(rays()));
   check('...while the main-thread start flag is unaffected — which is exactly why it could not catch this', globalThis.__raysStarted === true);
   stopRays(); }
+
+console.log('SPLASH — a refusal inside the 620 ms fade stays up');
+{ refuseBoot('the world said no');   // the normal-boot finishBoot's hide timer is still pending (no await since)
+  await Bun.sleep(700);
+  check('the earlier fade timer does not hide the refusal', splash.style.display !== 'none' && splash.classList.contains('refused'), `display=${splash.style.display}`); }
 
 console.log('SPLASH — ?rays=0');
 { const r = Bun.spawnSync(['bun', import.meta.path], { env: { ...process.env, SPLASH_RAYS0: '1' }, stdout: 'pipe', stderr: 'pipe' });

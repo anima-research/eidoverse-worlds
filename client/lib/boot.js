@@ -172,6 +172,7 @@ export function initBoot({ world, name }) {
 
 // ?holdsplash=N keeps the splash up until N s after boot began, to preview a long load; only the dismissal waits.
 const HOLD_S = Number(CONFIG.params.get('holdsplash')) || 0;
+let hideTimer = null;
 export function finishBoot(reason = 'ready') {
   if (done || !el) return;
   if (HOLD_S > 0) {
@@ -188,7 +189,7 @@ export function finishBoot(reason = 'ready') {
   phaseEl.textContent = 'welcome';
   el.classList.add('gone');
   stopRays();
-  setTimeout(() => { el.style.display = 'none'; }, 620);
+  hideTimer = setTimeout(() => { el.style.display = 'none'; }, 620);
   const total = Math.round(performance.now() - startedAt);
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
@@ -201,6 +202,7 @@ export function refuseBoot(text) {
   if (!root) return;
   el = root;
   done = true;   // finishBoot, the 45 s ceiling and the progress painters all stand down
+  clearTimeout(hideTimer);   // a refusal inside finishBoot's fade must not be hidden by it
   clearInterval(tipTimer);
   clearInterval(itemsTimer);
   stopRays();
