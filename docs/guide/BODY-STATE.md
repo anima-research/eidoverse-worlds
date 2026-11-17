@@ -194,10 +194,11 @@ are local fixture receipts, not a claim that every checkout has those files.
 
 ## Moving close enough
 
-`move` (once `walk_to`) now defaults to 1cm destination accuracy. It previously stopped up
+`move` (once `walk_to`) now defaults to 1cm destination accuracy on a direct or structure route. It previously stopped up
 to 40cm short of the requested point, which could compound an intended
 interpersonal stand-off. `tolerance` (0–0.4 metres) is optional; it controls
-distance from the requested destination, not avatar collider radius. Results
+distance from the requested destination, not avatar collider radius. A route the navgrid plans (around colliders)
+arrives within at least 5cm (`NAV_NUDGE`, shared/navgrid.js), whatever smaller tolerance was asked. Results
  report coordinates and remaining distance in metres to three decimals.
 
 ```json
