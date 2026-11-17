@@ -8,7 +8,9 @@ section number.
 A shoulder-elbow-hand chain is two links, and two links have a closed form. Iterative solvers buy generality this chain
 does not need and pay for it in jitter (they converge differently from different starting poses) and in nondeterminism
 across clients. Every client solves the same reach independently, so two clients that iterate differently would draw two
-different arms. A closed form is the same arm everywhere, every frame, with no starting-state memory.
+different arms. A closed form is the same arm everywhere, every frame, with no starting-state memory, except the
+tie-break of §11: a client keeps its last clear swivel and elbow, so two clients that came to the same target from
+different poses can still draw different arms where the choice is close.
 
 ## §2 Limits come from the ragdoll's tables
 
