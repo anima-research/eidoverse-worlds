@@ -1,6 +1,6 @@
 // agent-reads-test: the agent's roster, terrain, heightmap, geometry and body-bone reads have a deadline (AbortSignal; not
 // yet rigbones.ts or physics.ts skeletonFor), and a geometry read that threw or timed out isn't cached, so the next walk
-// near that model asks again; an answer is kept, a non-ok one too.
+// near that model asks again; an answer is kept, a 4xx one too (a 5xx is the server's trouble: asked again).
 //   bun test/mcpl/agent-reads-test.ts
 process.env.WORLD_TOKEN = "";
 import { suite } from "../gate/suite.ts";
@@ -44,6 +44,13 @@ try {
   await ag.ground.geomFor("store/slow.glb");
   const kept = seen.filter((s) => s.url.includes("slow.glb")).length;
   check("...and the server's answer is kept: it isn't asked a third time", kept === 2, `${kept} read(s)`);
+  // a 503 is the server's own trouble, not an answer about the model: asked again once it recovers (bot #333 r2 173)
+  seen.length = 0;
+  answer = async () => new Response("busy", { status: 503 });
+  await ag.ground.geomFor("store/busy.glb");
+  answer = async () => new Response(JSON.stringify({ bbox: [[0, 0, 0], [1, 1, 1]] }), { headers: { "content-type": "application/json" } });
+  const back = await ag.ground.geomFor("store/busy.glb");
+  check("a geometry read the server answered 503 isn't kept: the next one gets the geometry", !!back?.bbox && seen.filter((x) => x.url.includes("busy.glb")).length === 2, JSON.stringify(back));
   ag.close();
 
   // a terrain.js that came back an error page isn't cached: the next build asks again (bot #333 107)
