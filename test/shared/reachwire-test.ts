@@ -32,6 +32,8 @@ console.log('\ntargets normalize or fold to nothing');
   check('unknown point → null', normalizeReachTarget({ who: 'mythos', point: 'tentacle' }) === null);
   check('standoff clamps to 0.2', normalizeReachTarget({ who: 'a', point: 'head_top', standoff: 9 })?.standoff === 0.2);
   check('negative standoff drops', normalizeReachTarget({ who: 'a', point: 'head_top', standoff: -1 })?.standoff === undefined);
+  { let r; try { r = normalizeReachTarget(JSON.parse('{"who":"a","point":"head_top","standoff":{"valueOf":0,"toString":0}}')); } catch (e) { r = `threw ${e}`; }
+    check('a standoff that is an object no Number() can read drops, never throws', r?.who === 'a' && r.standoff === undefined, String(JSON.stringify(r))); }
   const wp = normalizeReachTarget({ p: [1, 2, 3] });
   check('world point form, space omitted', !!wp && wp.space === undefined);
   check("space 'world' normalizes to omitted", normalizeReachTarget({ p: [1, 2, 3], space: 'world' })?.space === undefined);

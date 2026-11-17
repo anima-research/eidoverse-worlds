@@ -48,7 +48,7 @@ export function normalizeReachTarget(t) {
     const point = canonicalPoint(t.point);
     if (!point) return null;
     const out = { who: t.who, point };
-    const s = Number(t.standoff);
+    const s = typeof t.standoff === 'object' ? NaN : Number(t.standoff);   // an object's ToPrimitive can throw (JSON {"valueOf":0})
     if (Number.isFinite(s) && s >= 0) out.standoff = Math.min(0.2, s);
     return out;
   }
