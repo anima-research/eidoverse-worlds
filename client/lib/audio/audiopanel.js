@@ -128,7 +128,8 @@ function micFloorRow() {
   const beat = () => {
     if (!row.isConnected) return;
     const level = micLevelNow();
-    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb), so past the marker = gate open
+    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb). Under the SFU it reads the
+    // transport's peak while the gate reads RMS (micgate.js), so a peaky sound can pass the marker with the gate shut
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // latch above the gate's threshold, release at REL× it; repaint only on a state change (this runs at frame rate)
     const floor = gateThreshold();
