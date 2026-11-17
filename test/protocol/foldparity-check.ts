@@ -4,7 +4,7 @@
 //        FP_FROM=<world dir> also runs FP2 on a copy of that world's log, re-signed here)
 //   FP1 a boot from a cache with views leaves the covered prefix on disk (genesis and the tail read), and folds what the log folds
 //   FP2 equivalence: for synthetic worlds (chat, undo, roles, deletes; a physics one with checkpoints) and the repo's conformance
-//       logs, two copies booted with and without the cache answer every reader alike (state, chain heads, every view, the act
+//       logs (spec/conformance/ and its logs/, not physics/), two copies booted with and without the cache answer every reader alike (state, chain heads, every view, the act
 //       index, creators, history and modlog pages, chat pages, client cuts, sanctions, the sim), then take the same
 //       writes (a set, a create, an undo of an old act, a say) to the same bytes, and answer alike again (the conformance
 //       fixtures' writes are compared but not required to land: mustWrite false; a log with a governance entry is skipped)

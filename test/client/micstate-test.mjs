@@ -1,4 +1,5 @@
-// micstate.js + micgate.js EXECUTED, one process: the transport seam, every export, the ungated lane, release. Stubs stop at
+// micstate.js + micgate.js EXECUTED, one process: the transport seam, every micstate.js export (micgate's own setMonitorDelay
+// isn't called), the ungated lane, release. Stubs stop at
 // the browser boundary (AudioContext, net); `ctx` picks which AudioContext the next gateFor meets. PTT: mic-ptt-test.mjs.
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";

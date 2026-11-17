@@ -8,7 +8,8 @@
 //   P   placeholders: '$name' (JSON:API lid) is minted in-request, refs to it in the same request resolve, the reply maps it,
 //       and it never reaches the log
 //   Y   system acts keep ids verbatim (a fork's copy)
-//   D   delete nulls incoming typed references in the same act, and the reply says what it cleared
+//   D   delete nulls incoming typed references in the same act, and the reply says what it cleared (a script's scope ids
+//       excepted: left alone, followups.js clearRefsTo; lint then reports them)
 //   L   lint reports a stored reference that names nothing
 //   T   imported-behavior.attach holds an entity id and is typed ref (the one field T1 reads)
 //   S   scripts: world.create mints opaque and takes no id (api 2); an api-1 act re-runs as it was minted
