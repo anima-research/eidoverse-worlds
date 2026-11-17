@@ -43,6 +43,12 @@ const onTop = async (pg, m, sel) => pg.evaluate(([m, sel]) => {
   if (l >= r || t >= b) return true;
   return !!document.elementFromPoint((l + r) / 2, (t + b) / 2)?.closest('#emenu, #emenu-sub');
 }, [m, sel]);
+// a button by its words, clicked with the mouse (cdp-pw's selectors are querySelector's: no playwright :has-text)
+const clickText = async (pg, sel, text) => {
+  const at = await pg.evaluate(([s, t]) => { const e = [...document.querySelectorAll(s)].find((b) => b.textContent.includes(t)); if (!e) return null; const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, [sel, text]);
+  if (!at) throw new Error(`no ${sel} saying "${text}"`);
+  await pg.mouse.click(at.x, at.y);
+};
 const shot = async (pg, file) => { if (shotDir) await pg.screenshot({ path: `${shotDir}/${file}` }); };
 const box = (pg, sel) => pg.evaluate((s) => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect();
   const cs = getComputedStyle(e); if (!r.width || cs.display === 'none' || e.hidden) return null;
@@ -108,7 +114,7 @@ try {
   await pg.keyboard.press('Escape'); await sleep(200);
   check('Esc folds the popover — and only that (the panels stay open)', (await popState(pg)).hidden && (await framesOpen()) === before && before > 0, JSON.stringify({ before, after: await framesOpen() }));
   await pg.click('#stchip-webgl'); await sleep(150);
-  await pg.click('#stpop button:has-text("got it")'); await sleep(150);
+  await clickText(pg, '#stpop button', 'got it'); await sleep(150);
   check('"got it" folds it; the chip stays for the visit', (await popState(pg)).hidden && !!(await chip(pg, 'webgl')));
 
   // the lift
@@ -132,7 +138,7 @@ try {
 
   // don't show again: gone for good, under the card's old key
   await pg.click('#stchip-webgl'); await sleep(150);
-  await pg.click('#stpop button:has-text("show again")'); await sleep(150);
+  await clickText(pg, '#stpop button', 'show again'); await sleep(150);
   check('"don’t show again" removes the chip and remembers it (ew-capnotice-dismissed)', !(await chip(pg, 'webgl'))
     && (await pg.evaluate(() => JSON.parse(localStorage.getItem('ew-capnotice-dismissed') || '[]').includes('webgl'))));
   await pg.reload({ waitUntil: 'domcontentloaded' });
