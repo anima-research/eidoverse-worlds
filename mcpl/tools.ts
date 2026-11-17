@@ -427,7 +427,8 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   // a placed thing is checked as placed: at its scale (the body is not scaled)
   const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
   try { r = await okJson(await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(3 * HTTP_READ_MS) })); }
-  catch (err) { return fail(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+  catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${3 * HTTP_READ_MS / 1000} s; calling again may work`
+    : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
 };
@@ -1163,7 +1164,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         // who this body is, which calling again doesn't change: say who can
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
         try { d = await r.json(); } catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
-      catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
+      catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
       if (d.error || status < 200 || status > 299) return fail(`measure: the world server answered ${status}${d.error ? ` (${d.error})` : ""}, so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
