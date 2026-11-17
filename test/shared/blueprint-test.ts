@@ -159,7 +159,9 @@ console.log('\n7. the text tier — blueprints, create {from}, look() (mcpl), th
   const dry = await HANDLERS.create(ag, { from: `sha256:${hex.slice(0, 10)}`, id: 'lampb', dry: true }, {} as any, 'create');
   check('create {from: a blueprint prefix} (dry): the door answers it would create, and nothing is written', !(dry as any).isError && /would create/.test(txt(dry)) && Object.keys(W.view().entities).length === before, txt(dry));
   const live = await HANDLERS.create(ag, { from: `sha256:${hex.slice(0, 10)}`, at: [5, 5] }, {} as any, 'create');
-  check('create {from: a blueprint, at}: places a copy at 5,5 as one act', !(live as any).isError && Object.values(W.view().entities).filter((e: any) => e?.['copy-of']?.from === H && e['copy-of'].key === 'lamp').length === 2, txt(live));
+  const roots = Object.entries(W.view().entities).filter(([, e]: any) => e?.['copy-of']?.from === H && e['copy-of'].key === 'lamp');
+  const placed = roots.find(([id]) => id !== 'lampa')?.[1] as any, pp = placed?.transform?.pos ?? placed?.pos;
+  check('create {from: a blueprint, at}: places a copy at 5,5 as one act', !(live as any).isError && roots.length === 2 && Math.abs(pp?.[0] - 5) < 1e-6 && Math.abs(pp?.[2] - 5) < 1e-6, { text: txt(live), pos: pp });
   const r = await HANDLERS.create(ag, { from: 'sha256:ffff' }, {} as any, 'create');
   check('create {from}: an unknown hash is an error that points at blueprints', (r as any).isError && /blueprints tool lists them/.test(txt(r)));
   const look = ag.look();
