@@ -38,6 +38,9 @@ document.body.innerHTML = `
   <div id="door" class="scrim"><div class="sheet panel"></div></div>
   <div id="help" class="scrim"><div class="sheet panel"></div></div>`;
 
+// the build About shows: /version is asked once, as client/lib/version.js loads, so it is answered before any module does
+{ const realFetch = globalThis.fetch, v = { sha: "abc1234def", dirty: false, commitTime: "2026-10-01T01:00:00Z", startedAt: "2026-10-01T02:00:00Z" };
+  (globalThis as any).fetch = (u: any, o?: any) => (String(u).startsWith("/version") ? Promise.resolve(new Response(JSON.stringify(v))) : realFetch(u, o)); }
 const { bus } = await import("../stubs/dock-stub.mjs");
 const { fsvg } = await import("../../client/lib/ui/icons.js");
 const { makeFrame, getFrame, isLocked } = await import("../../client/lib/ui/windows.js");
@@ -476,13 +479,10 @@ console.log("DOCK — the waterfall: its top level (owner, 10-01)");
   toggleEMenu(true); top("keys")!.click();
   check("Keys opens the help sheet (at its key table) and the menu goes", document.getElementById("help")!.classList.contains("open") && menu().hidden);
   document.getElementById("help")!.classList.remove("open");
-  // ABOUT: the build, from /version
-  const realFetch = globalThis.fetch;
-  (globalThis as any).fetch = async (u: string) => ({ json: async () => (String(u).startsWith("/version") ? { sha: "abc1234def", dirty: false, commitTime: "2026-10-01T01:00:00Z", startedAt: "2026-10-01T02:00:00Z" } : {}) });
+  // ABOUT: the build, from the page's /version answer (stubbed at the top)
   toggleEMenu(true); top("about")!.click();
   await tick(); await tick(); await tick();
   check("About ▸ shows the build's version from /version", sub().hidden === false && /build abc1234/.test(sub().textContent!) && /code from/.test(sub().textContent!), sub().textContent!);
-  (globalThis as any).fetch = realFetch;
   top("panels")!.click();
   check("…and Panels ▸ takes the flyout's place (one at a time)", sub().querySelector(".mrow[data-layout]") !== null && !/abc1234/.test(sub().textContent!));
 }

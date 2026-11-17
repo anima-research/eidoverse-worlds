@@ -2,6 +2,7 @@
 import { chooseClient } from './litechoice.js';
 import { confirmCenter } from '../edit/confirmcenter.js';
 import { bus, CONFIG, forgetRememberedWorlds } from '../base.js';
+import { versionReady } from '../version.js';
 import { resizeZoneAt, getFrame, isLocked, setLocked } from './windows.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
 import { fsvg } from './icons.js';
@@ -279,10 +280,10 @@ function openKeys() {
   const h = [...el.help.querySelectorAll('h2')].find((x) => /^keys$/i.test(x.textContent.trim()));
   h?.scrollIntoView({ block: 'start' });
 }
-// About: what /version says this build is
+// About: what /version said this build is (the page's one answer, version.js: the build this page negotiated with)
 let versionAsk = null;
 function buildInfo() {
-  versionAsk ??= fetch('/version', { cache: 'no-store' }).then((r) => r.json()).then((v) => {
+  versionAsk ??= versionReady.then((v) => { if (!v) throw new Error('no /version'); return v; }).then((v) => {
     const sha = `${String(v.sha ?? '').slice(0, 7) || 'unknown'}${v.dirty === true ? ' +dirty' : ''}`;
     const when = (t) => (t && t !== 'unknown' ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown');
     return { sha, lines: [`build ${sha}`, `code from ${when(v.commitTime)}`, `server up since ${when(v.startedAt)}`] };

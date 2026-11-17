@@ -47,6 +47,11 @@ const { frameStub } = await import("../stubs/chat-frames-stub.mjs");
 const S = suite("chat-log");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 check("/version is fetched once: chat.js reads version.js's answer", versionAsks.length === 1, JSON.stringify(versionAsks));
+{ // …and no other client module asks it again (assets.js, main.js and About aren't loaded here, so read their source)
+  const fs = await import("node:fs"), path = await import("node:path"), root = path.join(import.meta.dir, "../../client");
+  const files = (fs.readdirSync(root, { recursive: true }) as string[]).filter((f) => /\.(js|html)$/.test(f) && !/node_modules/.test(f));
+  const askers = files.filter((f) => /fetch\(\s*['"`][^'"`]*\/version['"`?]/.test(fs.readFileSync(path.join(root, f), "utf8")));
+  check("version.js is the only client module that fetches /version", askers.length === 1 && /(^|\/)lib\/version\.js$/.test(askers[0].replace(/\\/g, "/")), JSON.stringify(askers)); }
 
 // A self row + two others: the self row exercises the "not yourself" skip of the
 // People Here double-click (a mention now; it opened a DM tab until whisper was removed, R 10-18).
