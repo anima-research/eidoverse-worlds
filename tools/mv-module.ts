@@ -34,8 +34,9 @@ const exists = (p: string) => [""].concat(".ts", ".js", ".mjs").some((e) => fs.e
 /** Where a relative specifier in `f` names something: beside f; else, outside client/, a page-relative ./lib/ or ./vendor/
  *  URL from client/ (a browser test's evaluate); else from the engine root (a `bun -e` run there); null: nowhere. */
 function base(f: string, bare: string): "file" | "page" | "root" | null {
-  const at = (d: string) => path.posix.normalize(path.posix.join(d, bare));
-  if (exists(at(path.posix.dirname(f)))) return "file";
+  // a target outside the checkout is never "resolved": whether it exists depends on the machine, so it must be listed
+  const at = (d: string) => path.posix.normalize(path.posix.join(d, bare)), inside = (p: string) => !p.startsWith("../");
+  if (inside(at(path.posix.dirname(f))) && exists(at(path.posix.dirname(f)))) return "file";
   if (!f.startsWith("client/") && /^\.\/(lib|vendor)\//.test(bare) && exists(at("client"))) return "page";
   return !at(".").startsWith("../") && exists(at(".")) ? "root" : null;
 }

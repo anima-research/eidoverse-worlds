@@ -44,6 +44,18 @@ const read = (dir: string, f: string) => fs.readFileSync(path.join(dir, f), "utf
   const r3 = run(d, ["--check"]);
   check("MV2c a known row that resolves now fails as stale", r3.status === 1 && r3.out.includes("STALE b.ts ./gone.js"), r3.out); }
 
+// MV9: a specifier that leaves the checkout is unresolved even when the file exists beside it (a sibling library is on
+// one machine and not another), so it must be listed
+{ const d = tree("outside", { "a/b.ts": `import "../../outside-mv9.js";\n` });
+  fs.writeFileSync(path.join(path.dirname(d), "outside-mv9.js"), "");
+  try {
+    const r1 = run(d, ["--check"]);
+    check("MV9a a specifier outside the checkout fails --check unlisted, though the file exists there", r1.status === 1 && r1.out.includes("UNRESOLVED a/b.ts:1 ../../outside-mv9.js"), r1.out);
+    fs.writeFileSync(path.join(d, "tools/mv-module-unresolved.json"), JSON.stringify({ "a/b.ts ../../outside-mv9.js": "outside the checkout" }));
+    const r2 = run(d, ["--check"]);
+    check("MV9b listed, it passes and is not stale while the file exists", r2.status === 0, r2.out);
+  } finally { fs.rmSync(path.join(path.dirname(d), "outside-mv9.js"), { force: true }); } }
+
 // MV3–MV4, MV6–MV7: one tree, moved step by step
 { const d = tree("move", {
     "client/lib/core.js": "export const c = 1;\n",

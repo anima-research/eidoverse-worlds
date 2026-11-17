@@ -7,6 +7,7 @@
  "test/client/reexport-binding-test.mjs ./y.js": "fixture source text",
  "test/gate/hygiene-check.ts ../f/": "a rule's sample text",
  "test/gate/hygiene-check.ts ../test/stubs/x.mjs": "a rule's sample text",
+ "test/gate/mv-module-test.ts ../../outside-mv9.js": "its scratch trees' fixture text",
  "test/gate/mv-module-test.ts ./gone.js": "its scratch trees' fixture text",
  "test/gate/mv-module-test.ts ./lib/render/core.js": "its scratch trees' fixture text",
  "test/gate/mv-module-test.ts ./server/s.ts": "its scratch trees' fixture text",
@@ -32,5 +33,6 @@
  "test/server/object-lod-test.ts ./canned.ktx2": "a fake tool's source, written to scratch beside its canned output",
  "test/server/store-variants-test.ts ./canned.ktx2": "a fake tool's source, written to scratch beside its canned output",
  "test/stubs/recovery-avatar-stub.mjs ./avatar.js": "a comment naming avatar.js's importers' form",
+ "tools/assets/rig-load.mjs ../../../eidoverse-video/eidoverse/assets/vrms/": "the sibling library outside the checkout (libraryRigs' default when EIDOVERSE_DIR is unset)",
  "tools/assets/rig-load.mjs ../../assets/opt/eidoverse/assets/vrms/": "the assets checkout, outside the engine"
 }
