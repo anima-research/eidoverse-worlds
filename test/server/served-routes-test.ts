@@ -86,6 +86,17 @@ for (const path of ["/", "/lib/core.js", "/shared/components.js"]) {
   } catch (e) { check(path, false, String(e).slice(0, 60)); }
 }
 
+// one URL, two encodings: each carries Vary (a shared cache must not hand the plain one to a gzip asker, or back), and
+// their ETags differ (a strong ETag names the bytes)
+try {
+  const gz = await fetch(`${BASE}/lib/core.js`, { headers: { "accept-encoding": "gzip" } }); await gz.arrayBuffer();
+  const plain = await fetch(`${BASE}/lib/core.js`, { headers: { "accept-encoding": "identity" } }); await plain.arrayBuffer();
+  const vary = (r: Response) => /accept-encoding/i.test(r.headers.get("vary") ?? "");
+  check("/lib/core.js: gzip and identity both carry Vary: accept-encoding, under different ETags",
+    gz.headers.get("content-encoding") === "gzip" && !plain.headers.get("content-encoding") && vary(gz) && vary(plain) && !!gz.headers.get("etag") && gz.headers.get("etag") !== plain.headers.get("etag"),
+    `gz vary=${gz.headers.get("vary")} etag=${gz.headers.get("etag")}; plain vary=${plain.headers.get("vary")} etag=${plain.headers.get("etag")}`);
+} catch (e) { check("gzip/identity Vary and ETag", false, String(e).slice(0, 60)); }
+
 // a q of 0 refuses gzip (RFC 9110 12.5.3): the file comes plain
 for (const ae of ["gzip;q=0", "br, GZIP; q=0.0, identity"]) {
   try {

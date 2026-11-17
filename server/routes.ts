@@ -270,21 +270,22 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     : cache && hardCacheable(path) ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
   // ETag from size+mtime: no-cache revalidation is a 304, not a re-download (an 11MB avatar per reload); the 304 carries
   // cache-control too (it refreshes the stored response's lifetime)
+  // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
+  // packed) are left out. Such a file varies by Accept-Encoding whichever it gets, and each encoding has its own ETag
+  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000, gz = gzippable && acceptsGzip(req);
+  if (gzippable) headers["vary"] = "accept-encoding";
   if (f.size > 0) {
-    const etag = `"${f.size}-${f.lastModified}"`;
+    const etag = `"${f.size}-${f.lastModified}${gz ? "-gz" : ""}"`;
     headers["etag"] = etag;
     if (req?.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
   }
-  // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
-  // packed) are left out
-  if (/\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && acceptsGzip(req) && f.size > 10_000) {
+  if (gz) {
     let entry = gzCache.get(path);
     if (!entry || entry.mtime !== f.lastModified) {
       entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
       gzCache.set(path, entry);
     }
     headers["content-encoding"] = "gzip";
-    headers["vary"] = "accept-encoding";
     return new Response(entry.gz, { headers });
   }
   return new Response(f, { headers });
