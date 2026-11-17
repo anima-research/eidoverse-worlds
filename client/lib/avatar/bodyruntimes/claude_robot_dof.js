@@ -16,7 +16,8 @@
 //   the hips' stages (below): setupLegDOF(vrm) once at load, before anything poses it; applyHardwareDOF then sets them
 //   the arms (below): initArmDOF(vrm, hinges) once at load, before anything poses it (hinges: the exporter's joints
 //   file's 'hinges', parsed first; its leftLowerArm record sets the elbow); then each frame, dt its real time step:
-//   the clip's mixer.update(dt), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
+//   the clip's mixer.update(dt), a write of every bound value (bodyruntime_core.js writeAll: three skips an unchanged
+//   key), keepArmPose(vrm) (THE CLIP'S POSE FOR THE ARM PASS, below); then
 //   rehomeBody(vrm), applyHardwareDOF(vrm, LEG_JOINTS), applyLegClearance(vrm, stats, dt) (THE LEGS' CLEARANCE, below),
 //   applyArmDOF(vrm, stats, dt), vrm.update(dt)
 //   (the hands, the head's expression and the crown have passes too; the whole order as this client runs it:
@@ -1123,7 +1124,7 @@ function wristSolve(q, W) {
 // mixer.update, keeps the clip's pose of the bones the arm pass reads (the clavicles, which rehomeBody folds into the upper
 // arms, the upper arms, the forearms, the hands); the frame loop has the mixer write every bound value first
 // (bodyruntime_core.js), so what it keeps is the clip's, not the pass's:
-//   mixer.update(dt); keepArmPose(vrm); rehomeBody(...); ...; applyArmDOF(...); ...
+//   mixer.update(dt); writeAll(mixer); keepArmPose(vrm); rehomeBody(...); ...; applyArmDOF(...); ...
 const ARM_POSE_BONES = ['Shoulder', 'UpperArm', 'LowerArm', 'Hand'].flatMap((b) => ['left' + b, 'right' + b]);
 const _armPose = new WeakMap();
 export function keepArmPose(vrm) {
