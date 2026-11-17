@@ -129,7 +129,7 @@ try {
   { const r = await join(port2, { world: "here", id: "ann", token: "wrong", hello: { ...good, v: VERSION + 1 } });
     check("F23 step 1 precedes step 2: a principal the door refuses gets the door's refusal, never update-required or unsupported-feature", r.msgs.length === 1 && r.msgs[0].type === "error" && !/update-required|unsupported-feature/.test(JSON.stringify(r.msgs)) && r.close === 4003, r); }
   { const r = await join(port2, { world: "here", id: "ann", ownerKey: "ed25519:BP7aKo17f474DD1aBSLG0a3Pb29Qs3yqQ6Ve0wSRVD0", hello: good });
-    check("F26 a key alone is no admission: a join presenting a founder's key and no host credential is refused at the door", r.msgs.length === 1 && r.msgs[0].type === "error" && /token/.test(r.msgs[0].error) && r.close === 4003, r); }
+    check("F26 a key alone is no admission: a join presenting an ownerKey and no host credential is refused at the door (an arbitrary key: this genesis names no founder's, so a real founder key is untested)", r.msgs.length === 1 && r.msgs[0].type === "error" && /token/.test(r.msgs[0].error) && r.close === 4003, r); }
   console.log("  (F26 pending design row, not a check) create quota: the server sets no per-identity create quota today (worldlog.ts: 'sets no quotas'), so 'no quota without a host capability' has nothing to bind to yet");
   // F23 step 4 over a world that requires a feature: a server that implements test:probe@1 (a preload adds it), a world founded requiring it
   const PROBE = "test:probe@1", pre = path.join(S, "probe-feature.ts");
