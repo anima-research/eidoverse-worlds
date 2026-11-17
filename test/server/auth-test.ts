@@ -63,13 +63,16 @@ function open(joinMsg: Record<string, unknown>, cookie = ""): Promise<Sock> {
     const ws = new WebSocket(WS_URL, cookie ? ({ headers: { cookie } } as any) : undefined);
     const s: Sock = { ws, msgs: [], errors: [], closedWith: null };
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "authtest", replica: true, ...joinMsg }));
+    // settled on the join's answer (a snapshot, a refusal or a close), not a fixed sleep; the timer only bounds a silent one
+    const settle = () => setTimeout(() => resolve(s), 50);
     ws.onmessage = (ev) => {
       const m = JSON.parse(String(ev.data));
       s.msgs.push(m);
       if (m.type === "error") s.errors.push(m.error);
+      if (m.type === "snapshot") settle();   // a refusal settles on the close that follows it
     };
-    ws.onclose = (ev) => { s.closedWith = ev.code; };
-    setTimeout(() => resolve(s), 700);
+    ws.onclose = (ev) => { s.closedWith = ev.code; resolve(s); };
+    setTimeout(() => resolve(s), 10_000);
   });
 }
 const snap = (s: Sock) => s.msgs.find((m) => m.type === "snapshot");
