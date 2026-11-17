@@ -1,7 +1,7 @@
 // One worldPose, one set of quaternion functions (audit 10-22, finding 7). The authority's composer (simlayer, whose
 // output checks.js compares as JSON text) and the scene tree's (hierarchy) must give the same bits for the same chain,
-// and every quaternion helper elsewhere must be shared/rot.js's: a few thousand seeded chains and quaternions, compared
-// bit for bit. Deterministic: one fixed seed.
+// and the quaternion helpers listed below (SAME) must be shared/rot.js's (shared/protocol/authority/math.js keeps its own
+// qmul/qrot, not checked here): a few thousand seeded chains and quaternions, compared bit for bit (Object.is: -0 ≠ +0). Deterministic: one fixed seed.
 //   bun test/protocol/onepose-check.ts
 import * as rot from "../../shared/rot.js";
 import { worldPose as simPose } from "../../shared/protocol/simlayer.js";
@@ -37,7 +37,8 @@ function scale(): number[] {
   }
 }
 const vec = (r = 50) => [range(-r, r), range(-r, r), range(-r, r)];
-const same = (a: unknown, b: unknown): boolean => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => same(x, b[i])) : a === b || (Number.isNaN(a) && Number.isNaN(b)));
+// Object.is, not ===: bit for bit means -0 and +0 differ (and NaN equals NaN)
+const same = (a: unknown, b: unknown): boolean => (Array.isArray(a) && Array.isArray(b) ? a.length === b.length && a.every((x, i) => same(x, b[i])) : Object.is(a, b));
 const gap = (a: number[], b: number[]) => Math.max(...a.map((x, i) => Math.abs(x - b[i])));
 const N = 3000;
 
@@ -55,8 +56,9 @@ function worlds(chain: Local[]) {
 const off: Record<string, { n: number; worst: number; example?: unknown }> = {};
 const note = (k: string, d: number, example: unknown) => { const o = (off[k] ??= { n: 0, worst: 0 }); o.n++; if (d >= o.worst) { o.worst = d; o.example = example; } };
 for (let t = 0; t < N; t++) {
-  const depth = 1 + Math.floor(rnd() * 4);
-  const chain: Local[] = Array.from({ length: depth }, () => ({ pos: vec(), q: quat(), scale: scale() }));
+  // the first chain is the signed-zero case: identities at the origin compose to zeros, whose sign must agree too
+  const zero = (): Local => ({ pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] });
+  const chain: Local[] = t === 0 ? [zero(), zero()] : Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => ({ pos: vec(), q: quat(), scale: scale() }));
   const { st, tree, leaf } = worlds(chain);
   const a = simPose(st, leaf), b = treePose(tree, leaf);
   const bs = Array.isArray(b.scale) ? b.scale : [b.scale, b.scale, b.scale];
