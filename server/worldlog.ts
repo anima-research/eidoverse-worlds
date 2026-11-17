@@ -29,8 +29,8 @@ export type ChatLine = { seq: number; ts: number; actor: string; verb: "say"; ar
 export type WorldView = { entities: Record<string, Any>; terrain: Any; grass: Any; sky: Any; assets: Any[]; recentChat: Any[]; chatTotal: number; roles: Record<string, Any>; bans: Record<string, Any> };
 
 /** An entry as clients are sent it: without the chain fields (world, head, sig) and an act/say body's salt, which nothing
- *  client-side reads and which dominated a short say's bytes. The log on disk keeps them. */
-function wireEntry(e: Any) {
+ *  client-side reads and which dominated a short say's bytes. The log on disk keeps them. Exported for txn-check's T3d. */
+export function wireEntry(e: Any) {
   if (!e || typeof e !== "object") return e;
   const { world: _w, head: _h, sig: _s, ...rest } = e;
   if ((rest.kind === "say" || rest.kind === "request") && rest.body && typeof rest.body === "object" && !Array.isArray(rest.body) && "salt" in rest.body) { const { salt: _t, ...b } = rest.body; rest.body = b; }
