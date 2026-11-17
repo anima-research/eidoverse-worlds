@@ -1486,7 +1486,7 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   // spawned with collide: the world fits it that way whatever its size
   if (collide === "exact" || collide === "box") {
     r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
-    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "exact" (edit {id, set: {"collider.shape": "exact"}})` });
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "mesh" (edit {id, set: {"collider.shape": "mesh"}})` });
   }
   const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
   L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`

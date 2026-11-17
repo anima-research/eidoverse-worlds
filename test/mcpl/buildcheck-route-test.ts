@@ -88,6 +88,9 @@ try {
     JSON.stringify({ levels: r6.levels, room15: room(r6), room1: room(r1) }).slice(0, 300));
   const saidForced = await tool("measure", { check: true,  id: "forced" });
   check("...and on one spawned collider.shape \"box\": solid, for that reason", /SOLID — spawned as a box/.test(saidForced) && /collider.shape "box"/.test(saidForced), saidForced.slice(0, 300));
+  const { COMPONENTS } = await import("../../shared/protocol/componentspec.js");
+  const advised = [...saidForced.matchAll(/"collider\.shape": "(\w+)"/g)].map((m) => m[1]);
+  check("...and the edit it advises sets a shape the authority takes (#368)", advised.length > 0 && advised.every((s) => COMPONENTS.collider.enums.shape.includes(s)), advised);
   const saidBad = await tool("measure", { check: true,  lib: bad.path });
   check("...and the problems, for a library path", /Problems:\n  - .*narrower than a body/.test(saidBad), saidBad.slice(0, 400));
   // the door is public, so new work is rate-limited per address (a cached answer never is)
