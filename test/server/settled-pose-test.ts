@@ -118,6 +118,8 @@ const ck = (n: string, got: unknown, want: unknown) => ok(JSON.stringify(got) ==
      /pose: settledPose\(o\.lastPose\)/.test(src), true);
   ck("no raw lastPose ships to other clients",
      /pose: o\.lastPose\b/.test(src), false);
+  ck("the restore path settles through it too (rememberPose: wireSettledPose) (#492)",
+     /^wireSettledPose\(settledPose\);$/m.test(src), true);
 }
 
 done();
