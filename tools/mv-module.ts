@@ -1,11 +1,12 @@
 // tools/mv-module.ts — move engine files and rewrite every path that names them: resolved, never substituted blind.
 //   bun tools/mv-module.ts <from> <to> [<from> <to> …]     a file to a file, or a directory to a directory
-//   bun tools/mv-module.ts --check                            only verify: every quoted relative specifier resolves (templates aren't read)
+//   bun tools/mv-module.ts --check                            only verify the quoted relative specifiers (templates aren't read; see check())
 // For each tracked text file (docs/history, spec/history and CHANGELOGs keep the paths of their day):
 //   1. a relative import specifier (from/import/export, import(), new URL(…, import.meta.url), require) is resolved from
 //      the importer's OLD place and rewritten from its NEW place to the target's NEW place: a moved importer and a moved
 //      target are the same case, an extensionless one (./foo for foo.ts) included, and an untracked target
-//      (../node_modules/…, a generated file under a moved directory) keeps pointing at the same file;
+//      (../node_modules/…, a generated file under a moved directory) keeps pointing at the same file; a page- or
+//      root-relative one (base()) is left to 2 and 3;
 //   2. a repo citation (client/lib/… at any prefix: ../../client/lib/…, engine/client/lib/…) becomes the new path;
 //   3. a served URL under /lib/ or /shared/ (/lib/x.js, /shared/x.js, a page-relative ./lib/x.js) becomes the new URL,
 //      when both the old and the new path are served there.
@@ -29,8 +30,18 @@ const TEXT = /\.(md|ts|js|mjs|cjs|json|jsonl|sh|html|css|ya?ml|txt|toml)$/;
 const CODE = /\.(ts|js|mjs|cjs|html)$/;
 const SPEC = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\bexport\s*\*\s*from\s*|\brequire\s*\(\s*|new\s+URL\s*\(\s*|import\.meta\.resolve\s*\(\s*)(['"])(\.\.?\/[^'"\n]*)\2/g;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const exists = (p: string) => [""].concat(".ts", ".js", ".mjs").some((e) => fs.existsSync(path.join(ROOT, p + e)));
+/** Where a relative specifier in `f` names something: beside f; else, outside client/, a page-relative ./lib/ or ./vendor/
+ *  URL from client/ (a browser test's evaluate); else from the engine root (a `bun -e` run there); null: nowhere. */
+function base(f: string, bare: string): "file" | "page" | "root" | null {
+  const at = (d: string) => path.posix.normalize(path.posix.join(d, bare));
+  if (exists(at(path.posix.dirname(f)))) return "file";
+  if (!f.startsWith("client/") && /^\.\/(lib|vendor)\//.test(bare) && exists(at("client"))) return "page";
+  return !at(".").startsWith("../") && exists(at(".")) ? "root" : null;
+}
 /** The URL the server answers for a repo path under client/ or shared/; null for any other path. */
 const servedAt = (p: string) => p.startsWith("client/") ? p.slice("client".length) : p.startsWith("shared/") ? "/" + p : null;
+const KNOWN = "tools/mv-module-unresolved.json";
 
 const args = process.argv.slice(2);
 if (args[0] === "--check") process.exit(check() ? 0 : 1);
@@ -75,6 +86,7 @@ for (const f of before) {
   if (CODE.test(f)) s = s.replace(SPEC, (m, pre, q, spec, at) => {
     if (/^new/.test(pre) && !/^\s*,\s*import\.meta\.url/.test(src.slice(at + m.length))) return m;   // new URL(x, location): not file-relative
     const [, bare, tail] = spec.match(/^([^?#]*)(.*)$/)!;
+    if (base(f, bare) === "page" || base(f, bare) === "root") return m;
     const abs = path.posix.normalize(path.posix.join(path.posix.dirname(f), bare));
     const target = moved(abs);
     let ns = path.posix.relative(path.posix.dirname(nf), target) + (bare.endsWith("/") ? "/" : "");
@@ -131,21 +143,25 @@ console.log(`moved ${move.size} files; rewrote ${counts.spec} specifiers, ${coun
 for (const n of [...new Set(notes)]) console.log("READ  " + n);
 process.exit(check() ? 0 : 1);
 
-/** Every quoted (not template) relative specifier in every tracked code file names a file that exists (or an untracked one beside node_modules). */
+/** Every quoted (not template) relative specifier in a tracked code file names something (base()), or is in KNOWN with why
+ *  it names nothing (a runtime file, fixture text, a comment); a KNOWN row that now resolves or is gone fails too. */
 function check(): boolean {
-  const bad: string[] = [];
+  const known: Record<string, string> = JSON.parse(fs.readFileSync(path.join(ROOT, KNOWN), "utf8"));
+  const bad: string[] = [], seen = new Set<string>();
   for (const f of tracked()) {
     if (!CODE.test(f) || /(^|\/)node_modules\//.test(f)) continue;
     let s: string; try { s = fs.readFileSync(path.join(ROOT, f), "utf8"); } catch { continue; }
     for (const m of s.matchAll(SPEC)) {
       if (/^new/.test(m[1]) && !/^\s*,\s*import\.meta\.url/.test(s.slice(m.index! + m[0].length))) continue;
-      const bare = m[3].replace(/[?#].*$/, ""), abs = path.join(ROOT, path.dirname(f), bare);
-      if (/\$\{|\*|<|…/.test(bare)) continue;
-      if (fs.existsSync(abs) || [".ts", ".js", ".mjs"].some((e) => fs.existsSync(abs + e))) continue;
+      const bare = m[3].replace(/[?#].*$/, "");
+      if (/\$\{|\*|<|…/.test(bare) || base(f, bare)) continue;
+      if (`${f} ${m[3]}` in known) { seen.add(`${f} ${m[3]}`); continue; }
       bad.push(`${f}:${s.slice(0, m.index).split("\n").length} ${m[3]}`);
     }
   }
+  const stale = Object.keys(known).filter((k) => !seen.has(k));
   for (const b of bad) console.log("UNRESOLVED " + b);
-  console.log(bad.length ? `${bad.length} relative specifiers resolve nothing` : "every relative specifier resolves");
-  return !bad.length;
+  for (const k of stale) console.log(`STALE ${k}  (in ${KNOWN}, but it resolves now or is gone: take it off)`);
+  console.log(bad.length || stale.length ? `${bad.length} relative specifiers resolve nothing, ${stale.length} stale ${KNOWN} rows` : `every relative specifier resolves (${seen.size} known in ${KNOWN})`);
+  return !bad.length && !stale.length;
 }

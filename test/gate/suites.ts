@@ -17,7 +17,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["freeze", "protocol/freeze-check.ts", 1],       // docs/decisions/LOG-VOCABULARY.md §F: feature declarations, provenance, the hello order, a key is not admission, custody read-only (F22–F31, P3)
   ["diffcheck", "gate/diffcheck.ts", 1], // the range is clean under `git diff --check`; two documented exemptions only
   ["stub-guard", "harness/stub-test.ts", 1], // a test stub that never applied, or applied to an import naming no file (a stale path after a move), fails its run
-  ["mv-module", "gate/mv-module-test.ts", 1], // tools/mv-module.ts: READ rows for what it can't rewrite, a failed git fatal
+  ["mv-module", "gate/mv-module-test.ts", 1], // tools/mv-module.ts: --check green on its own tree, page/root-relative specifiers kept, READ rows, a failed git fatal
   ["hygiene", "gate/hygiene-check.ts", 1],       // patterns that broke the gate site by site (Windows paths, sh -c, symlinks, fixed sleeps), refused as a class; debt only goes down
   ["paths", "gate/paths-check.ts", 1],          // every repo path a tracked doc, script or comment cites resolves (CONTRIBUTING "Style"; history and docs/design/ proposals excepted: paths-check ALLOW)
   ["body-state-bundle", "mcpl/body-state-bundle-test.ts", 1], // the built MCP entry points carry body_state and none of the test rig, corpus scanner or fixture paths

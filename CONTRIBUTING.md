@@ -75,7 +75,8 @@ Refused in review:
 - a move not made with `tools/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
   it). A move updates imports, dynamic imports, docs and served URLs under `/lib/` and `/shared/`, and a `mock.module`
   path only where it spells the full repo path; what it can't rewrite it prints as READ rows. `stub-guard` catches a
-  `stubResolve` stub left stale; nothing checks a `mock.module` path. Its receipt is a grep for
+  `stubResolve` stub left stale; nothing checks a `mock.module` path. `--check` lists the specifiers it knows resolve
+  nothing in `tools/mv-module-unresolved.json`. Its receipt is a grep for
   every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
 
 Questions to ask in review, never thresholds:

@@ -1,5 +1,6 @@
-// test/gate/mv-module-test.ts — tools/mv-module.ts does what its header says, in scratch git trees: READ rows for what it
-// can't rewrite; and a git that fails to run or is killed is fatal, never a short file list.
+// test/gate/mv-module-test.ts — tools/mv-module.ts does what its header says, in scratch git trees: --check is green on the
+// engine's own tree and red on an unlisted or stale row; page- and root-relative specifiers are resolved, not rewritten;
+// READ rows for what it can't rewrite; and a git that fails to run or is killed is fatal, never a short file list.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/gate/mv-module-test.ts      (RED=MV5: the old `if (r.status)` guard; MV5 goes red)
 import fs from "node:fs";
 import os from "node:os";
@@ -28,13 +29,38 @@ const run = (dir: string, args: string[], env: Record<string, string> = {}) => {
 };
 const read = (dir: string, f: string) => fs.readFileSync(path.join(dir, f), "utf8");
 
-// MV6–MV7: one tree, moved step by step
+// MV1: the engine's own tree (every row it can't resolve is in tools/mv-module-unresolved.json with why)
+{ const r = spawnSync(process.execPath, [TOOL, "--check"], { cwd: ENGINE, encoding: "utf8" });
+  check("MV1 --check is green on the engine's own committed tree", r.status === 0, (r.stdout ?? "").split("\n").slice(-4).join(" | ")); }
+
+// MV2: an unlisted row is red, a listed one green, a listed one that resolves now is stale (red)
+{ const d = tree("known", { "b.ts": `import "./gone.js";\n` });
+  const r1 = run(d, ["--check"]);
+  check("MV2a an unresolved specifier not in the known list fails --check", r1.status === 1 && r1.out.includes("UNRESOLVED b.ts:1 ./gone.js"), r1.out);
+  fs.writeFileSync(path.join(d, "tools/mv-module-unresolved.json"), JSON.stringify({ "b.ts ./gone.js": "fixture" }));
+  const r2 = run(d, ["--check"]);
+  check("MV2b the same row in the known list passes", r2.status === 0, r2.out);
+  fs.writeFileSync(path.join(d, "gone.js"), "");
+  const r3 = run(d, ["--check"]);
+  check("MV2c a known row that resolves now fails as stale", r3.status === 1 && r3.out.includes("STALE b.ts ./gone.js"), r3.out); }
+
+// MV3–MV4, MV6–MV7: one tree, moved step by step
 { const d = tree("move", {
+    "client/lib/core.js": "export const c = 1;\n",
     "client/lib/ui/x.js": "export const x = 1;\n",
     "client/lib/a.js": "export const a = 1;\n",
+    "client/main.js": `import { c } from "./lib/core.js";\n`,
+    "server/s.ts": "export const s = 1;\n",
+    "test/p-probe.mjs": "await page.evaluate(async () => { await import(\"./lib/core.js\"); });\nBun.spawnSync([\"bun\", \"-e\", `await import(\"./server/s.ts\")`], { cwd: ENGINE });\n",
     "test/url-probe.mjs": "const u = '/lib/a.js';\n",
     "tools/u.ts": `const L = "client/lib/"; export const p = L + "ui/x.js";\n`,
   });
+  const r0 = run(d, ["--check"]);
+  check("MV3 a page-relative ./lib/ URL and a root-relative ./server/ specifier in a test resolve under --check", r0.status === 0, r0.out);
+  const r1 = run(d, ["test/p-probe.mjs", "test/sub/p-probe.mjs"]), p1 = read(d, "test/sub/p-probe.mjs");
+  check("MV4a a moved test keeps its page- and root-relative specifiers (not rewritten as file-relative)", r1.status === 0 && p1.includes(`import("./lib/core.js")`) && p1.includes(`import("./server/s.ts")`), r1.out + p1);
+  const r2 = run(d, ["client/lib/core.js", "client/lib/render/core.js"]);
+  check("MV4b a moved lib file: its importer and its page-relative URL follow it", r2.status === 0 && read(d, "client/main.js").includes(`"./lib/render/core.js"`) && read(d, "test/sub/p-probe.mjs").includes(`import("./lib/render/core.js")`), r2.out);
   const r3 = run(d, ["client/lib/ui/x.js", "client/lib/ux/x.js"]);
   check("MV6 a directory-qualified lib-relative string (L + \"ui/x.js\") is a READ row", r3.out.includes("READ  lib-relative x.js  tools/u.ts:1"), r3.out);
   const r4 = run(d, ["client/lib/a.js", "client/xr/a.js"]);
