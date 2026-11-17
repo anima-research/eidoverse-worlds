@@ -212,13 +212,13 @@ try {
   alice.send({ type: "drag", id: IDS.of("box1"), pos: [9, 0, 9], yaw: 0.5 });
   await sleep(250);
   check("drag relays to others", bob.of("drag").some((m) => m.id === IDS.of("box1")));
-  check("drag is never logged", quiet() === n0);
+  local("drag is never logged", () => quiet() === n0);
 
   // --- typing is pure presence
   alice.send({ type: "typing", to: null });
   await sleep(200);
   check("typing relays to others", bob.of("typing").some((m) => m.id === "alice"));
-  check("typing is never logged", quiet() === n0);
+  local("typing is never logged", () => quiet() === n0);
 
   // --- typing STATE: a whitelisted social glyph rides presence; anything
   // else is stripped so presence stays presence (media PR)
@@ -235,7 +235,7 @@ try {
   alice.send({ type: "rtc", to: "bob", payload: { sdp: "offer-ish" } });
   await sleep(220);
   check("the retired rtc lane relays NOTHING", !bob.of("rtc").length);
-  check("...and is never logged", quiet() === n0);
+  local("...and is never logged", () => quiet() === n0);
   check("...and answers no error (unknown types fall to silence)", !alice.of("error").length, JSON.stringify(alice.of("error")));
 
   // --- refusals
