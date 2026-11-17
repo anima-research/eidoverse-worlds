@@ -142,7 +142,7 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
 // bot #462: a shove's refusal is the one naming its target; an unrelated error meanwhile is not read as the shove's
 { const mk = (err: string) => { const ag: any = { joined: false, people: new Map(), pos: { x: 0, y: 0, z: 0 }, lastRefusal: null, puppet() { ag.lastRefusal = { ts: Date.now(), text: err }; } }; return ag; };
   const other = await handleTool(ctxOf(mk("insufficient rank for that")), "act", { verb: "shove", args: { target: "Moss" } });
-  const mine = await handleTool(ctxOf(mk("Moss isn't taking shove right now")), "act", { verb: "shove", args: { target: "Moss" } });
+  const mine = await handleTool(ctxOf(mk("Moss's body isn't taking shove right now")), "act", { verb: "shove", args: { target: "Moss" } });
   ok(!other?.isError && /you shove Moss/.test(textOf(other)) && mine?.isError === true && /shove refused/.test(textOf(mine)),
     "462 shove reads only a refusal that names its target", { other: textOf(other), mine: textOf(mine) }); }
 
@@ -156,7 +156,7 @@ const creator = (reply: any = { ok: true, after: {} }) => { const sent: any[] = 
   ok(still && JSON.stringify(plannedFrom) === "[0,20]" && /spawn/.test(ag.lastWalkNote ?? ""), "453 a walk arriving at the spawn is planned again from the spawn", { plannedFrom, note: ag.lastWalkNote, still }); }
 
 // bot #462: every targeted presence call (pose {clear}, a ragdoll, a tracks anim) still reports its target's refusal
-{ const mk = () => { const ag: any = { name: "me", lastRefusal: null, animEnded() {}, puppet(to: string) { ag.lastRefusal = { ts: Date.now(), text: `${to} isn't taking pose right now` }; } }; return ag; };
+{ const mk = () => { const ag: any = { name: "me", lastRefusal: null, animEnded() {}, puppet(to: string) { ag.lastRefusal = { ts: Date.now(), text: `${to}'s body isn't taking pose right now` }; } }; return ag; };
   const outs = [await handleTool(ctxOf(mk()), "anim", { stop: true, target: "Moss" }), await handleTool(ctxOf(mk()), "anim", { ragdoll: true, target: "Moss" }),
     await handleTool(ctxOf(mk()), "anim", { tracks: { hips: [{ t: 0, q: [0, 0, 0, 1] }] }, dur: 1, target: "Moss" })];
   ok(outs.every((r) => r?.isError === true && /refused/.test(textOf(r))), "462 stop, ragdoll and tracks on a target each report its refusal", outs.map(textOf)); }
