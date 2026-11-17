@@ -1,6 +1,7 @@
 // localbody — my body in the world's physics: ragdoll, seats, being dragged, pins, shoves. The invariant every
 // section shares: my client owns my body. Everything that happens to it (a tumble, a seat, someone's hand, a nail, a
-// blast) is applied here and rebroadcast through ordinary presence, so nobody else needs code to simulate me.
+// blast) is applied here and rebroadcast through ordinary presence, so nobody else needs code to simulate me (but a
+// dragger: while someone drags me, their client runs my sim and streams it to me, ragdoll/bodydrag.js beginGrab).
 //
 // logChat arrives through initLocalBody rather than an import: chat.js sits in an import cycle this module must
 // not add another edge to.
@@ -36,9 +37,9 @@ import { getMe } from './mybody.js';
 
 let logChat = () => {};
 
-// Ragdoll: owner-simulated, presence-streamed, captured to a held pose. Only this client simulates its own body; the
-// result rides the pose field like any other pose, so remotes run no ragdoll physics (remotes.js only goes limp and
-// snaps across the limp edge). On settle the final bones stay
+// Ragdoll: owner-simulated (a drag aside: see the header), presence-streamed, captured to a held pose. This client
+// simulates its own body; the result rides the pose field like any other pose, so remotes run no ragdoll physics
+// (remotes.js only goes limp and snaps across the limp edge). On settle the final bones stay
 // as a held pose, not a replay of the flop; a late joiner gets them from the next presence packet (server.ts
 // settledPose drops a `ragdoll` clip's bones from the snapshot).
 let ragdoll = null;
