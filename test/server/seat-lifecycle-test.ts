@@ -154,6 +154,8 @@ try {
   {
     const bad = await fetch(`${BASE}/seat-profile?token=${namedToken}`, { method: "POST", body: JSON.stringify({ nonsense: true }) });
     check("a malformed proposal is refused with a named reason (422)", bad.status === 422, `${bad.status}: ${await bad.text()}`);
+    const bearer = await fetch(`${BASE}/seat-profile`, { method: "POST", headers: { authorization: `Bearer ${namedToken}` }, body: JSON.stringify({ nonsense: true }) });
+    check("the named actor by Authorization: Bearer reaches the proposal check (422, not 401)", bearer.status === 422, `${bearer.status}`);
     const sneaky = await fetch(`${BASE}/seat-profile?token=${namedToken}`,
       { method: "POST", body: JSON.stringify({ ...goodProfile, review: { status: "accepted", receipt: "x", by: "me" } }) });
     check("this door writes proposals ONLY — accepted is refused (403)", sneaky.status === 403, `${sneaky.status}`);

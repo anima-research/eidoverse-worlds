@@ -558,15 +558,14 @@ const ROUTES: Route[] = [
     handler: ({ req, url, srv }) => handleUpload(req, url, srv),
   },
   {
-    // POST /seat-profile — the live proposal door. A named actor only (?token= a tokens.json key or aid1 identity; an
-    // Authorization header isn't read); the anonymous
-    // door token may not write, since a seat profile moves every wearer. Writes proposals only; acceptance has no HTTP path
-    // (tools/operator/seat-accept.ts).
+    // POST /seat-profile — the live proposal door. A named actor only (a tokens.json key or aid1 identity, by
+    // Authorization: Bearer or, for older callers, ?token=); the anonymous door token may not write, since a seat
+    // profile moves every wearer. Writes proposals only; acceptance has no HTTP path (tools/operator/seat-accept.ts).
     match: (u, req) => u.pathname === "/seat-profile" && req.method === "POST",
     handler: async ({ req, url }) => {
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
         { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-      const tok = url.searchParams.get("token") ?? "";
+      const tok = bearerOf(req) || (url.searchParams.get("token") ?? "");
       const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
       if (!actor) {
         return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the authority token may not write seat profiles" }, 401);
