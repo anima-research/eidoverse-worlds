@@ -9,7 +9,8 @@ only what a translated log must be. Where this and §14 disagree, §14 wins.
 The first protocol (an untyped verb log) is retired. An old world's log can
 be translated once, one way, into a world of this protocol, in two steps.
 `bun tools/world.ts translate <world> --dry-run --no-founder-key`
-writes nothing and prints the **dry-run report** — the old log's size and
+writes no world (only this host's custody key, the first time one is needed; a
+translation an earlier run left half done is reported, not finished) and prints the **dry-run report** — the old log's size and
 sha256, the translator and fold build, `founderKey: null`, the counts
 (entries, changes, guards that become locks, models without bytes here),
 `output` (the digest of the state the translation writes, so new code or new

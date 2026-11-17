@@ -90,7 +90,7 @@ const reportNow = (D: string, name: string) => { try { return reportV1World(D, {
 function approvalFor(D: string, name: string, words = name): { approval: Approval; source: { size: number; sha256: string } } {
   const approved = flag("approved"), noOwner = rest.includes("--operator-only-no-owner");
   if (!approved) die(`translating "${name}" needs the operator's approval of its dry-run report first:
-  1. bun tools/world.ts translate ${words} --dry-run --no-founder-key${CLAIM ? " --claim" : ""}   (writes nothing; prints the report and its hash)
+  1. bun tools/world.ts translate ${words} --dry-run --no-founder-key${CLAIM ? " --claim" : ""}   (writes no world, only this host's custody key on first use; prints the report and its hash)
   2. read it: what is dropped by design, what would be refused, how many entries, guards, models
   3. translate ${words} --no-founder-key --approved <hash> --operator-only-no-owner${CLAIM ? " --claim" : ""}   (no owner can sign: ${NO_FOUNDER}; this host's custody operator key countersigns, and the act records that no owner was attested)
 Nothing was changed.`);
@@ -415,12 +415,15 @@ if (cmd === "found") {
   if (!words.length || words.length > 2 || !words.every((w) => NAME.test(w))) die(USAGE);
   const [src, dest] = words;
   for (const w of words) { try { if (fs.lstatSync(path.join(WORLDS_DIR, w)).isSymbolicLink()) die(`"${w}" in ${WORLDS_DIR} is a symlink: translate and its backup never follow one. Nothing was changed.`); } catch { /* absent */ } }
-  { const half = isWorldDir(path.join(WORLDS_DIR, src)) ? interruptedSwap(src) : null; if (half) { finishSwap(src, half); process.exit(0); } }
+  // an earlier run that stopped part way is finished (or cleared) below; a dry run writes nothing, so it only says so
+  const DRY = rest.includes("--dry-run"), stopped = (what: string) => die(`${what}. A dry run changes nothing, so it was left as it is: run the same translate without --dry-run to finish it.`);
+  { const half = isWorldDir(path.join(WORLDS_DIR, src)) ? interruptedSwap(src) : null; if (half) { if (DRY) stopped(`the in-place translation of "${src}" was interrupted mid-swap`); finishSwap(src, half); process.exit(0); } }
   if (dest !== undefined && isWorldDir(path.join(WORLDS_DIR, dest)) && fs.existsSync(path.join(WORLDS_DIR, dest, IDENTITIES))) {   // a new-name translation stopped before its identities were written (bot review 21)
+    if (DRY) stopped(`the translation into "${dest}" was interrupted after its world.jsonl landed`);
     const f = path.join(WORLDS_DIR, dest, IDENTITIES), n = putIdentities(JSON.parse(fs.readFileSync(f, "utf8"))); fs.rmSync(f);
     console.log(`the translation into "${dest}" was interrupted after its world.jsonl landed; finished it now: ${n} identit${n === 1 ? "y" : "ies"} added to the directory. "${dest}" is a translated world.`); process.exit(0); }
   { const D = path.join(WORLDS_DIR, src);   // marked but world.jsonl never landed: the swap died before its first rename, so nothing moved
-    if (isSwapUnfinished(D) && !fs.existsSync(path.join(D, "world.jsonl"))) { let t = ""; try { t = JSON.parse(fs.readFileSync(path.join(D, SWAP_MARKER), "utf8")).temp ?? ""; } catch { /* unreadable: no temp named */ }
+    if (isSwapUnfinished(D) && !fs.existsSync(path.join(D, "world.jsonl"))) { if (DRY) stopped(`the in-place translation of "${src}" stopped before its first rename (${SWAP_MARKER} is still there)`); let t = ""; try { t = JSON.parse(fs.readFileSync(path.join(D, SWAP_MARKER), "utf8")).temp ?? ""; } catch { /* unreadable: no temp named */ }
       if (t && path.dirname(t) === WORLDS_DIR && path.basename(t).startsWith(`.translating-${src}-`)) fs.rmSync(t, { recursive: true, force: true });
       fs.rmSync(path.join(D, SWAP_MARKER));
       console.log(`the in-place translation of "${src}" stopped before its first rename: nothing had moved. Cleared ${SWAP_MARKER}${t ? ` and ${path.basename(t)}` : ""}; "${src}" is the old-format world it was. Translate it again (the dry run, then --approved).`); process.exit(0); } }

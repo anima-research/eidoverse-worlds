@@ -524,6 +524,9 @@ const waiting = oldWorld("waiting");
 // log is the untouched file throughout, and a third run says it's already translated
 for (const k of [1, 3]) { const name = `halfway${k}`; const d = oldWorld(name); const fp = fingerprint(d);
   const died = await xlate([name], { WORLD_TS_DIE_AT_STEP: String(k) }); const mid = fingerprint(d); const midTemps = temps().filter((t) => t.includes(name)).length;
+  const dry = await tool(["translate", name, "--dry-run", "--no-founder-key"]);
+  ok(dry.code !== 0 && same(fingerprint(d), mid) && temps().filter((t) => t.includes(name)).length === midTemps && /--dry-run/.test(dry.out),
+    `IP13d (k=${k}) a dry run on the half-swapped directory changes nothing and says a run without --dry-run finishes it`, { code: dry.code, out: dry.out.slice(-300), same: same(fingerprint(d), mid) });
   const r = await tool(["translate", name, "--no-founder-key"]); const after = fingerprint(d);   // a recovery needs no new approval: it finishes the approved one
   const again = await xlate([name]);
   const info = await tool(["info", name]);
