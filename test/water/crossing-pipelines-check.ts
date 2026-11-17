@@ -129,7 +129,7 @@ try {
   check("WP3 the background: under the level after the first crossing, the far-water background makes no new pipeline", sum(under, "background") === 0, JSON.stringify(under.map((r) => [r.name, r.by])));
   check("WP4 after the first crossing, the backend links or makes nothing at all: rounds 2 and 3 cost 0", sum(later) === 0, JSON.stringify(later.map((r) => [r.name, r.made])));
   const wp5ev = { backend: setup.backend, settled: !!shotSettled, centre, adapter, red: { pts: redPts, mean: redMean }, ref: { pts: refPts, mean: refMean, settled: !!refSettled } };
-  const wp5 = wp5Verdict({ fb: typeof adapter === "object" && adapter ? (adapter as any).fb : null, settled: !!shotSettled, centre, ref: { pts: refPts, mean: refMean } });
+  const wp5 = wp5Verdict({ fb: typeof adapter === "object" && adapter ? (adapter as any).fb : null, settled: !!shotSettled, centre, ref: { pts: refPts, mean: refMean, settled: !!refSettled } });
   check(wp5 === "n/a" ? "WP5 N/A: fog colour isn't observable here (a fallback adapter renders the reference itself near-black); this row is not a water-correct pass"
     : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
   // a not-observable WP5 passes, so the gate would drop its row: an OPTIONAL line is what the gate's tally and receipt keep

@@ -8,4 +8,6 @@ check("WP5a control: a NON-fallback adapter with a black reference still fails",
 check("WP5b control: a fallback adapter with a readable reference still runs the red assertion (black fails, red passes)",
   wp5Verdict({ fb: true, settled: true, centre: K, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "fail" && wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [SKY, SKY, SKY], mean: SKY } }) === "pass");
 check("WP5c a fallback adapter with a black reference is not observable (n/a), never a pass", wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [K, K, K], mean: K } }) === "n/a");
+check("WP5d an unsettled shot or reference is never n/a (a black frame may only be one not yet drawn) (#392)",
+  wp5Verdict({ fb: true, settled: false, centre: R, ref: { pts: [K, K, K], mean: K, settled: true } }) === "fail" && wp5Verdict({ fb: true, settled: true, centre: R, ref: { pts: [K, K, K], mean: K, settled: false } }) === "fail");
 done();
