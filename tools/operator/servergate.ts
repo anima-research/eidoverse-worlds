@@ -41,6 +41,9 @@ const BATTERY: Row[] = [
   { name: "support-lifecycle", tool: "test/server/support-lifecycle-test.ts", timeoutMs: 420_000 },   // its own free port (freePort): nothing to sweep
 ];
 
+// an --only name the battery doesn't have (main's authtest/permtest became auth-test) is an error, not a quiet 0/0
+const unknown = only ? [...only].filter((n) => !BATTERY.some((r) => r.name === n)) : [];
+if (unknown.length) { console.error(`servergate: no row named ${unknown.join(", ")}; the rows are ${BATTERY.map((r) => r.name).join(", ")}`); process.exit(2); }
 const LOGDIR = mkdtempSync(join(tmpdir(), "ew-servergate-"));
 console.log(`\x1b[2mtool logs: ${LOGDIR}\x1b[0m`);
 const results: { name: string; ok: boolean; ms: number; tail: string }[] = [];
