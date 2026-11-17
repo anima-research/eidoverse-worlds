@@ -8,6 +8,7 @@ import * as TSL_RAW from '../../client/node_modules/three/build/three.tsl.js';
 export const THREE = THREE_RAW;
 export const camera = new THREE_RAW.PerspectiveCamera();
 export const canvas = document.createElement('canvas');
+export const DESKTOP_FOV = 55;   // controller.js restores the camera to it when photo mode ends
 // controller.js reaches water.js (swimming): it takes these from core.js at load.
 export const TSL = TSL_RAW;   // water.js builds its uniforms at load
 export const scene = new THREE_RAW.Scene();
