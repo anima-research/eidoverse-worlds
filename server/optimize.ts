@@ -371,7 +371,7 @@ export function minTexelDensity(f: number[], g: number[], t1: number[], t2: numb
   return Number.isFinite(d) ? d : 0;
 }
 
-/** TEXEL DENSITY: the longest side each texture needs so every part it covers still gets `texelsPerMetre`. Per
+/** TEXEL DENSITY: the longest side each texture needs so all but its least dense tenth (by area) still gets `texelsPerMetre`. Per
  *  triangle, density along its LEAST dense axis (minTexelDensity); the area-weighted 10th percentile is held at the
  *  target (not the minimum: a sliver of stretched UVs would pin the map at full size). Rounded up to a power of two,
  *  clamped to [64, house cap]. Unmeasurable textures (KHR_texture_transform, non-core slots) keep the house cap, except

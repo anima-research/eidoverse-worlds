@@ -53,7 +53,8 @@ export const LOD_GEN = 3;
 export const LOD_RATIO = 0.25;      // meshopt-simplify target ratio: the floor it may reach, not a quota
 // THE SCREEN-SPACE BUDGET, at the closest distance the 'auto' dial shows a LOD (shared/lod-distance.js lodNearest):
 // geometry error ≤ LOD_PX screen pixels (one world-space bound for the whole model), and ≥ LOD_TEXELS_PER_PX texels per
-// pixel over its least densely mapped part (unsampled mips dropped). Measurements: docs/research/store-variants-design.md#the-lod-screen-space-budget-lod_gen-3
+// pixel over all but its least densely mapped tenth by area (optimize.ts lodTexelCaps: a sliver of stretched UVs may fall
+// below it; unsampled mips dropped). Measurements: docs/research/store-variants-design.md#the-lod-screen-space-budget-lod_gen-3
 export const LOD_PX = 2;
 export const LOD_PPD = 25;          // pixels per degree: a Quest 3's centre, stricter than a desktop 55° view
 export const LOD_TEXELS_PER_PX = 1;
