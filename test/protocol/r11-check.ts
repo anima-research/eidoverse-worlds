@@ -173,7 +173,7 @@ const cases: Case[] = [
   { id: "D5", what: "a removed command answers why, as /w does: /ghost and /unghost resolve to an unlisted row that says ghost was removed, and chat answers it locally (not 'unknown command')", async run() {
       const reg = await import(TREE + "client/lib/ui/commands/registry.js"); const chat = readText("client/lib/ui/chat.js");
       const rows = ["ghost", "unghost"].map((c) => reg.resolveCommand?.(c) ?? null);
-      return { rows: rows.map((r) => r && { name: r.name, listed: r.listed, help: r.help }), local: /\n  ghost\(\) \{ logChat\('\*', 'ghost was removed/.test(chat) }; },
+      return { rows: rows.map((r) => r && { name: r.name, listed: r.listed, help: r.help }), local: /\n  ghost\(\) \{ logChat\('\*', ['"]ghost was removed/.test(chat) }; },
     good: (o) => o.rows.every((r: any) => r && r.name === "ghost" && r.listed === false && /ghost was removed/.test(r.help)) && o.local },
 ];
 
