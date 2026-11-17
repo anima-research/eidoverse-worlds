@@ -13,7 +13,7 @@ const VARS: [string, string, number | null, number, number, boolean, number | un
   ["PORT", "p", 8940, 1, 0, true, 65535, 8950],                       // 0 = an ephemeral port, as main read it
   ["UPLOAD_CAP_MB", "u", 20, 1_000_000, 0, true, undefined, 50],      // 0 taken, as main took it
   ["IMAGE_CAP_MB", "i", 8, 1_000_000, 0, true, undefined, 4],
-  ["MSG_RATE", "m", 60, 1, 0, true, undefined, 120],                    // NaN refused every message; 0 taken, as main took it
+  ["MSG_RATE", "m", 60, 1, 1, true, undefined, 120],                    // NaN or 0 refused every message (main took both): the floor is 1 a second
   ["EW_ID_LEN", "l", 64, 1, 0, true, undefined, 32],                     // limits.ts's table: "" read as 0
   ["CLIENTLOG_IP_PER_10MIN", "c", 30, 1, 0, true, undefined, 60],         // 0 = no rail; "" read as 0 turned it off
   ["OPT_CHILD_TIMEOUT_MS", "t", 1_800_000, 1, 0, true, undefined, 1500], // 0 = never kill; NaN never armed the killer

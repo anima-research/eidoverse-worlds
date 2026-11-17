@@ -82,7 +82,7 @@ const ANON_RATE_KIB = envNumber("ANON_RATE_KIB", 32, (n) => n > 0);
 export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 1000, bytes: RATE_KIB * 1024, anonBytes: ANON_RATE_KIB * 1024 };
 // Founding and copying a world: no limits (a copy is one synchronous call; long copies off the shared thread are wishlisted).
 /** All messages per client per second: 15 Hz of pose plus verbs plus slack; a token bucket with two seconds of burst (server/msgrate.ts). */
-export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 0);
+export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 1);   // at least 1 a second: 0 refuses every message, and under 0.5 the 2 s burst never holds a token
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle
 // Bytes of unsent backlog before frames to a client are dropped. Keep tight: proxy and kernel buffers absorb a lot before
