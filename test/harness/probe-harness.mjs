@@ -15,8 +15,9 @@ import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-// vrMicChoice: the pre-VR mic step (client/lib/xr/vrmic.js) would stop every visor-clicking probe, so contexts start as a
-// browser that answered "not now"; test/client/vrmic-probe.mjs passes null to drive it
+// vrMicChoice: the pre-VR mic step (client/lib/xr/vrmic.js) would stop every visor-clicking probe, so pages from the
+// returned page() start as a browser that answered "not now" (browser.newContext() pages don't); test/client/vrmic-probe.mjs
+// passes null to drive it
 /** One Chromium (SFU_TEST_CHROME, else chrome.ts findChrome). `mic: true` adds the fake-media flags (and mic permission). */
 export async function launchBrowser({ mic = false, vrMicChoice = 'later', args: extra = [] } = {}) {
   // no GPU watchdog: a software-rendered sky bake is a 4–7 s frame here, and the watchdog's kill loses every page's
@@ -159,7 +160,8 @@ export async function iwerInit(pg, { cloud = null } = {}) {
   });
 }
 
-/** Wait until the page has drawn `n` more animation frames: a wait on the render loop's progress, not on the clock.
+/** Wait until the page has run `n` more animation-frame callbacks: a wait on the document's frames, not on the clock. They
+ *  are rAF's, not the app's renderer's: a render loop that stopped while the document still animates passes.
  *  A loop that stops (a hidden page, a lost device) rejects instead of hanging the probe: after 3 s a frame, at least
  *  two minutes (a software-rendered boot measured 120 frames in 142 s). */
 export const drawn = (pg, n) => pg.evaluate((k) => new Promise((res, rej) => {

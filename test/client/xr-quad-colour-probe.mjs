@@ -77,9 +77,9 @@ try {
   for (const on of [false, true]) {
     const st = await ptt(on);
     await sleep(250);
-    const el = await pg.$('#sec-audio [data-meter]');
-    const rowEl = el ? await el.evaluateHandle((e) => e.closest('.sp-row')) : null;
-    const png = rowEl ? await rowEl.asElement().screenshot() : null;
+    // the meter's row, shot by its box (cdp-pw has no element handles)
+    const clip = await pg.evaluate(() => { const r = document.querySelector('#sec-audio [data-meter]')?.closest('.sp-row')?.getBoundingClientRect(); return r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null; });
+    const png = clip ? await pg.screenshot({ clip }) : null;
     if (png && shotDir) { const f = `${shotDir}/${shotN++}-dimmed-real-desktop-${on ? 'ptt-dimmed' : 'live'}.png`; writeFileSync(f, png); console.log(`  · shot ${f}`); }
     deskDim[on ? 'dim' : 'live'] = png ? await ev(async ([b64, fn]) => { const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
       const c = document.createElement('canvas'); c.width = img.width; c.height = img.height; const x = c.getContext('2d'); x.drawImage(img, 0, 0);

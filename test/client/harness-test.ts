@@ -80,15 +80,35 @@ try {
   const { launchCdp } = await import('../harness/cdp-pw.mjs');
   const dead = Bun.serve({ port: 0, fetch: () => new Response('') }); const deadPort = dead.port; dead.stop(true);
   const srv = Bun.serve({ port: 0, fetch: (r) => new URL(r.url).pathname === '/' ? new Response(`<link rel="icon" href="data:,"><img src="/a.png"><script src="http://127.0.0.1:${deadPort}/gone.js"></script>`, { headers: { 'content-type': 'text/html' } }) : new Response('x') });
-  const b = await launchCdp(); const pending = new Set<any>(), failed: string[] = [];
+  const b = await launchCdp(); const pending = new Set<any>(), failed: string[] = [], finished: string[] = [];
   try {
     const pg = await b.page();
-    pg.on('request', (r: any) => pending.add(r)); pg.on('requestfinished', (r: any) => pending.delete(r));
+    pg.on('request', (r: any) => pending.add(r)); pg.on('requestfinished', (r: any) => { if (pending.delete(r)) finished.push(r.url()); });
     pg.on('requestfailed', (r: any) => { pending.delete(r); failed.push(r.url()); });
     await pg.goto(`http://127.0.0.1:${srv.port}/`);
     await until('the page\'s requests settle', () => pending.size === 0 && failed.length > 0, { ms: 10_000 }).catch(() => {});
   } finally { await b.close(); srv.stop(true); }
-  check('cdp-pw: a finished request is the one requested, and a failed one names its URL', pending.size === 0 && failed.some((u) => u.endsWith('/gone.js')), JSON.stringify({ pending: [...pending].map((r) => r.url()), failed }));
+  check('cdp-pw: a finished request is the one requested, and a failed one names its URL', pending.size === 0 && failed.some((u) => u.endsWith('/gone.js')) && finished.some((u) => u.endsWith('/a.png')), JSON.stringify({ pending: [...pending].map((r) => r.url()), failed, finished }));
+}
+{ // the rest of playwright's slice the probes call: a context's userAgent, unroute, and a waitForFunction whose poll never settles
+  const { launchCdp } = await import('../harness/cdp-pw.mjs');
+  let sawUA = '';
+  const srv = Bun.serve({ port: 0, fetch: (r) => { const u = new URL(r.url); if (u.pathname === '/') sawUA = r.headers.get('user-agent') ?? ''; return new Response(u.pathname === '/r.txt' ? 'server' : '<link rel="icon" href="data:,">', { headers: { 'content-type': u.pathname === '/' ? 'text/html' : 'text/plain' } }); } });
+  const b = await launchCdp(), UA = 'cdp-pw-ua-sentinel (Linux; Android 14) Mobile';
+  const row = async (name: string, f: () => Promise<[boolean, unknown]>) => { try { const [ok, d] = await f(); check(name, ok, JSON.stringify(d)); } catch (e) { check(name, false, String(e)); } };
+  try {
+    const ctx = await b.newContext({ userAgent: UA }); const pg = await ctx.newPage();
+    await pg.goto(`http://127.0.0.1:${srv.port}/`);
+    await row('cdp-pw: newContext({userAgent}) is the page\'s navigator.userAgent and its requests\' header', async () => { const nav = await pg.evaluate(() => navigator.userAgent); return [nav === UA && sawUA === UA, { nav, sawUA }]; });
+    const get = () => pg.evaluate(() => fetch('/r.txt').then((r) => r.text()));
+    await row('cdp-pw: unroute stops a route, and the request reaches the server again', async () => {
+      await pg.route('**/r.txt', (r: any) => r.fulfill({ body: 'routed' })); const a = await get();
+      await pg.unroute('**/r.txt'); const z = await get(); return [a === 'routed' && z === 'server', { a, z }]; });
+    await row('cdp-pw: waitForFunction ends at its timeout when the page\'s promise never settles', async () => {
+      const t0 = performance.now(); let threw = false;
+      try { await pg.waitForFunction(() => new Promise(() => {}), null, { timeout: 1500 }); } catch { threw = true; }
+      const s = (performance.now() - t0) / 1000; return [threw && s < 15, { threw, s }]; });
+  } finally { await b.close(); srv.stop(true); }
 }
 console.log(`${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);

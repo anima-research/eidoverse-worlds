@@ -8,7 +8,7 @@ import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { findChrome, chromeArgs } from '../gate/chrome.ts';
 import { killChild } from '../gate/procgroup.ts';
-import { until, tryUntil, pause } from '../gate/wait.ts';
+import { until, tryUntil, pause, WAIT_SCALE } from '../gate/wait.ts';
 
 const KEYS = {
   Enter: [13, 'Enter', '\r'], Escape: [27, 'Escape'], Tab: [9, 'Tab'], Backspace: [8, 'Backspace'], Delete: [46, 'Delete'],
@@ -69,20 +69,20 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
     await until('Chrome exits', () => child.exitCode !== null || child.signalCode !== null, { ms: 5000 }).catch(() => {});
     killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* locked: goes with the scratch dir */ }
   };
-  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false, mobile = false, deviceScaleFactor = 1 } = {}) => {
+  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false, mobile = false, deviceScaleFactor = 1, userAgent = null } = {}) => {
     const { browserContextId } = await C.send('Target.createBrowserContext', { disposeOnDetach: true });
     const { targetId } = await C.send('Target.createTarget', { url: 'about:blank', browserContextId });
     const { sessionId } = await C.send('Target.attachToTarget', { targetId, flatten: true });
     const pg = makePage(C, sessionId, { targetId, browserContextId, metrics: { mobile, deviceScaleFactor } });
-    await pg._init({ initScripts, permissions, viewport, touch });
+    await pg._init({ initScripts, permissions, viewport, touch, userAgent });
     return pg;
   };
   // playwright's context: init scripts collected, then applied to each page it opens
-  const newContext = async ({ viewport = null, permissions = [], hasTouch = false, isMobile = false, deviceScaleFactor = 1 } = {}) => {
+  const newContext = async ({ viewport = null, permissions = [], hasTouch = false, isMobile = false, deviceScaleFactor = 1, userAgent = null } = {}) => {
     const inits = [], pages = [];
     return {
       addInitScript: async (fn, arg) => { inits.push([fn, arg]); },
-      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, initScripts: inits }); pages.push(p); return p; },
+      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); pages.push(p); return p; },
       close: async () => { for (const p of pages) await p.close(); },
     };
   };
@@ -170,8 +170,9 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
   };
   const touchscreen = { tap: async (x, y) => { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } };
   const pg = {
-    _init: async ({ initScripts, permissions, viewport, touch }) => {
+    _init: async ({ initScripts, permissions, viewport, touch, userAgent }) => {
       await send('Runtime.enable'); await send('Page.enable'); await send('Network.enable');
+      if (userAgent) await send('Emulation.setUserAgentOverride', { userAgent });   // navigator.userAgent and the request header
       if (permissions.length) await C.send('Browser.grantPermissions', { permissions: permissions.map((p) => p === 'microphone' ? 'audioCapture' : p), browserContextId });
       await pg.setViewportSize(viewport ?? size);
       if (touch) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
@@ -181,7 +182,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     waitForTimeout: (ms) => pause("Playwright's waitForTimeout (the bare wait is counted at its caller)", ms),
     evaluateHandle: async (fn, arg) => { const v = await evaluate(fn, arg); return { jsonValue: async () => v, dispose: async () => {} }; },
     waitForFunction: async (fn, arg, { timeout = 30_000, polling = 100 } = {}) => {
-      const v = await until(`page condition ${String(fn).slice(0, 80)}`, () => evaluate(fn, arg), { ms: timeout, step: typeof polling === 'number' ? polling : 100 });
+      // each poll is raced against what is left of the timeout: an evaluation that never settles (a hung import) ends the wait
+      const end = performance.now() + timeout * WAIT_SCALE;   // until's own deadline, scaled the same
+      const poll = () => { let t; return Promise.race([evaluate(fn, arg), new Promise((res) => { t = setTimeout(() => res(false), Math.max(0, end - performance.now())); })]).finally(() => clearTimeout(t)); };
+      const v = await until(`page condition ${String(fn).slice(0, 80)}`, poll, { ms: timeout, step: typeof polling === 'number' ? polling : 100 });
       return { jsonValue: async () => v };
     },
     waitForSelector: async (sel, { state = 'visible', timeout = 30_000 } = {}) => until(`${sel} ${state}`, () => evaluate(([s, st]) => {
@@ -206,8 +210,13 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     }),
     route: async (pattern, handler) => {
       const test = typeof pattern === 'function' ? (u) => pattern(new URL(u)) : typeof pattern === 'string' ? ((re) => (u) => re.test(u))(new RegExp('^' + pattern.split('**').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]*')).join('.*') + '$')) : (u) => pattern.test(u);
-      routes.push({ test, handler });
+      routes.push({ pattern, test, handler });
       await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
+    },
+    // playwright's: the routes with this pattern (and this handler, if given) stop; with none left, requests go straight through
+    unroute: async (pattern, handler) => {
+      for (let i = routes.length - 1; i >= 0; i--) if (routes[i].pattern === pattern && (!handler || routes[i].handler === handler)) routes.splice(i, 1);
+      if (!routes.length) await send('Fetch.disable');
     },
     click: async (sel, { button = 'left' } = {}) => { const { x, y } = await center(sel); await mouse.click(x, y, { button }); },
     hover: async (sel) => { const { x, y } = await center(sel); await mouse.move(x, y); },
@@ -225,7 +234,9 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     },
     getAttribute: async (sel, name) => evaluate(([s, n]) => document.querySelector(s)?.getAttribute(n) ?? null, [sel, name]),
     isVisible: async (sel) => evaluate((s) => { const e = document.querySelector(s); return !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none'; }, sel),
-    $: async (sel) => (await evaluate((s) => !!document.querySelector(s), sel)) ? { click: () => pg.click(sel), getAttribute: (n) => pg.getAttribute(sel, n), isVisible: () => pg.isVisible(sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), boundingBox: () => evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel) } : null,
+    $: async (sel) => (await evaluate((s) => !!document.querySelector(s), sel)) ? { click: () => pg.click(sel), getAttribute: (n) => pg.getAttribute(sel, n), isVisible: () => pg.isVisible(sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), boundingBox: () => evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel),
+      // playwright's element shot: the page's, clipped to the element's box
+      screenshot: async (o = {}) => { const clip = await evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel); return pg.screenshot({ ...o, clip }); } } : null,
     locator: (sel) => ({ click: (o) => pg.click(sel, o), hover: () => pg.hover(sel), isVisible: () => pg.isVisible(sel), fill: (v) => pg.fill(sel, v), press: (k) => pg.press(sel, k), getAttribute: (n) => pg.getAttribute(sel, n), count: () => evaluate((s) => document.querySelectorAll(s).length, sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), waitFor: (o) => pg.waitForSelector(sel, o) }),
     setViewportSize: async ({ width, height }) => { size = { width, height }; await send('Emulation.setDeviceMetricsOverride', { width, height, ...metrics }); },
     viewportSize: () => size,

@@ -93,8 +93,9 @@ async function hold(pg: any, src: string) {
   let release!: () => void;
   const gate = new Promise<void>((r) => { release = r; });
   let held = 0;
-  await pg.route((u: URL) => u.pathname.includes('/library/') && u.pathname.endsWith(file), async (route: any) => { held++; await gate; await route.continue(); });
-  return { release: async () => { release(); await pg.unroute((u: URL) => u.pathname.includes('/library/') && u.pathname.endsWith(file)); }, heldCount: () => held };
+  const mine = (u: URL) => u.pathname.includes('/library/') && u.pathname.endsWith(file);   // one reference: unroute matches the route by it
+  await pg.route(mine, async (route: any) => { held++; await gate; await route.continue(); });
+  return { release: async () => { release(); await pg.unroute(mine); }, heldCount: () => held };
 }
 
 try {
