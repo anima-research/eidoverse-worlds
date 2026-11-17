@@ -127,11 +127,12 @@ for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [
   fs.writeFileSync(tp, JSON.stringify({ "k-own": { id: "wren" }, "k-pub": { id: "moss", subs: ["agent:moss@home.test"] } }));
   fs.writeFileSync(ep, JSON.stringify({ "k-pub": { id: "moss" } })); fs.utimesSync(ep, 1_700_000_000, 1_700_000_000);
   const r = Bun.spawnSync(["bun", "-e", `const fs = await import("node:fs"), m = await import("./server/auth.ts"), ep = ${JSON.stringify(ep)};
-    const a = m.agentTokens(), first = { own: a.byToken.get("k-own") ?? null, pub: a.byToken.get("k-pub") ?? null, sub: a.bySub.get("agent:moss@home.test") ?? null };
+    const a = m.agentTokens(), first = { own: a.byToken.get("k-own") ?? null, pub: a.byToken.get("k-pub") ?? null, sub: a.bySub.get("agent:moss@home.test") ?? null, join: m.accountOf("k-pub") };
     fs.writeFileSync(ep, JSON.stringify({ "k-pub": { id: "moss" }, "k-own": { id: "wren" } })); fs.utimesSync(ep, 1_700_000_100, 1_700_000_100);
     console.log(JSON.stringify({ first, own: m.agentTokens().byToken.get("k-own") ?? null }))`], { cwd: ENGINE, env: env({ AGENT_TOKENS_PATH: tp, MCPL_TOKENS_EXAMPLE: ep, SESSIONS_PATH: path.join(d, "s.json") }) });
   let got: any = r.stderr.toString().slice(-300); try { got = JSON.parse(r.stdout.toString().trim().split("\n").pop()!); } catch {}
   ok(got?.first?.own === "wren" && got.first.pub === null && got.first.sub === "moss", "C3t an example key proves nobody by its token, but its enrolment's aid1 subs still map to it", got);
+  ok(got?.first?.join && "refused" in got.first.join, "C3t …and the join's own reading of it (auth.ts accountOf, what server.ts's join calls) refuses the example key too", got?.first?.join);
   ok(got?.own === null, "C3t a key the example file gains is refused at once: the cache keys on both files' mtimes", got); }
 // C3m (R 10-27): SERVER_OPERATORS is the variable; WORLD_ADMIN is still read for one release, merged in, with one deprecation line
 { const ops = (e) => { const r = Bun.spawnSync(["bun", "-e", `const m = await import("./server/operators.ts"); console.log(JSON.stringify([...m.OPERATORS].sort()))`],
