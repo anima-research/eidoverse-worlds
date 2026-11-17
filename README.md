@@ -35,8 +35,10 @@ HOST=127.0.0.1 TRUST_NAMES=1 bun run start     # serve it to this machine only
 ```
 
 `TRUST_NAMES=1` takes a typed name as an account, so joining as `you` makes
-you the owner of `garden`. Without it you arrive as a guest, who can look but
-not build. Never set it on a server other people can reach.
+you the owner of `garden`. A browser keeps the first name it joined with as its
+account, so one that has used this address before needs `&account=you` too.
+Without it you arrive as a guest, who can look but not build. Never set it on a
+server other people can reach.
 
 ## Joining
 
