@@ -18,7 +18,9 @@ import { suite } from "../gate/suite.ts";
 const { check, done } = suite("glb2vrm");
 
 function makeGLB(nodeNames: string[]): Uint8Array {
-  const json = { asset: { version: "2.0" }, nodes: nodeNames.map((name) => ({ name })), scenes: [{ nodes: [] }] };
+  return glbOf({ asset: { version: "2.0" }, nodes: nodeNames.map((name) => ({ name })), scenes: [{ nodes: [] }] });
+}
+function glbOf(json: unknown): Uint8Array {
   const jsonBytes = new TextEncoder().encode(JSON.stringify(json));
   const pad = (4 - (jsonBytes.length % 4)) % 4;
   const total = 12 + 8 + jsonBytes.length + pad;
@@ -74,6 +76,19 @@ console.log("mixamo family is refused by name, both paths");
   const measure = await run(glb, "--measure");
   check("--measure exits 1", measure.code === 1);
   check("--measure names the family", /Mixamo rig detected/.test(measure.err), measure.err.trim());
+}
+
+console.log("--measure on a VRM 1.0 reads its humanoid map by node index");
+{
+  // the head and node 0 are both unnamed: a lookup by name (undefined) lands on node 0 (#509)
+  const at = (name: string | undefined, t: number[]) => ({ ...(name ? { name } : {}), translation: t });
+  const nodes = [at(undefined, [0, 9, 0]), at(undefined, [0, 1.6, 0]), at("hips", [0, 1, 0]), at("lhand", [0.5, 1.2, 0]),
+    at("lfoot", [0.1, 0.1, 0]), at("ltoe", [0.1, 0.05, 0.15]), at("rfoot", [-0.1, 0.1, 0]), at("rtoe", [-0.1, 0.05, 0.15])];
+  const humanBones = { head: { node: 1 }, hips: { node: 2 }, leftHand: { node: 3 }, leftFoot: { node: 4 }, leftToes: { node: 5 }, rightFoot: { node: 6 }, rightToes: { node: 7 } };
+  const p = join(dir, "indexed.vrm");
+  writeFileSync(p, glbOf({ asset: { version: "2.0" }, nodes, scenes: [{ nodes: nodes.map((_, i) => i) }], extensions: { VRMC_vrm: { humanoid: { humanBones } } } }));
+  const m = await run(p, "--measure");
+  check("--measure reads head and hips by their humanoid node, not the first unnamed node (#509)", m.code === 0 && /head Y 1\.60\s+hips Y 1\.00/.test(m.out), m.out.trim() + m.err.trim());
 }
 
 console.log("prefix variants still identify as mixamo");
