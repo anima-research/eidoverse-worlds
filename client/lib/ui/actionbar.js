@@ -161,7 +161,7 @@ function emojiRenders(s) {
 // ---- the ring's action sub-wheel ----
 // Names as SVG text, not emoji (the ring paints drawn glyphs only). Postures lead, then the gestures in bar order;
 // every entry closes the ring on activation.
-const nameSvg = (t) => `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="16" font-family="system-ui, sans-serif" font-size="${t.length > 6 ? 5.5 : 7}" font-weight="600" text-anchor="middle" fill="#f2f7f5">${t}</text></svg>`;
+const nameSvg = (t) => `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="16" font-family="system-ui, sans-serif" font-size="${t.length > 6 ? 5.5 : 7}" font-weight="600" text-anchor="middle" fill="#f2f7f5">${escapeHtml(t)}</text></svg>`;   // a name is the world's data: escaped, or a bare & blanks the image
 export function ringActionEntries() {
   return [
     ...POSTURES.map((k) => ({ svg: nameSvg(k), label: k, on: () => (k === 'lie' ? getPosture() === 'lie' : k === 'sit' ? getPosture() === 'sit' : false), close: true, act: () => posture(k) })),

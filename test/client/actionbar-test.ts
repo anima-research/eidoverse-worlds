@@ -272,6 +272,8 @@ check('the XR quad\'s sit button takes the same path', postureCalls[0] === 'sitH
 postureCalls.length = 0;
 ringActionEntries().find((e: any) => e.label === 'stand')!.act();
 check('the ring\'s stand entry takes the same path', postureCalls[0] === 'standUp');
+{ ANIM_ORDER.push('rock & roll'); const svg = ringActionEntries().find((e: any) => e.label === 'rock & roll')?.svg ?? ''; ANIM_ORDER.pop();
+  check('a ring entry\'s name is escaped in its SVG (a bare & would leave the image blank)', svg.includes('rock &amp; roll') && !/&(?!amp;|lt;|gt;|quot;|#39;)/.test(svg), svg); }
 myState.clip = 'sit'; paint();
 check('the sit tile is lit while the body\'s clip is sit', tile('[data-posture=sit]').classList.contains('on') && !tile('[data-posture=stand]').classList.contains('on'));
 myState.clip = null; paint();
