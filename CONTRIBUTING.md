@@ -15,8 +15,9 @@ How to change this repo. Building *in* a world is [AGENTS.md](AGENTS.md); the do
   goes down (`--write` lowers it and refuses to raise it).
 - Suites run in lanes (`test/gate/suites.ts`): `CORE` runs first and stops the test gate on a failure, `BROWSER` lists every
   suite that launches a Chromium, and everything else is main. A browser suite missing from `BROWSER` fails preflight.
-- Every test-named file is in the test gate or in `test/gate/ungated.json` with one line why it isn't yet (hygiene's
-  `ungated` rows). Reviewers hold that list to only shrinking (hygiene checks each row, not the count): gate or delete a
+- Every test-named file in `test/` (outside `harness/`, `stubs/`, `fixtures/`, `labs/`) or directly in `tools/`,
+  `tools/water/`, `bench/` or `mcpl/` is in the test gate or in `test/gate/ungated.json` with one line why it isn't yet
+  (hygiene's `ungated` rows). Reviewers hold that list to only shrinking (hygiene checks each row, not the count): gate or delete a
   file to take it off; don't add one to dodge a red.
 - Names: `-test` is a deterministic unit contract; `-check` is a conformance or invariant check (it may boot a server);
   `-probe` drives a real browser or environment and reports evidence; `-mutants` breaks code in a scratch tree and
@@ -72,8 +73,9 @@ Refused in review:
 - a test not named for its subject (`<source basename>[-aspect]`) and its kind: `-test`, `-check` or `-probe`, as
   "The loop" says;
 - a move not made with `tools/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
-  it). A move updates imports, dynamic imports, docs and served URLs, and a `mock.module` path only where it spells the
-  full repo path; `stub-guard` catches a stub left stale. Its receipt is a grep for
+  it). A move updates imports, dynamic imports, docs and served URLs under `/lib/` and `/shared/`, and a `mock.module`
+  path only where it spells the full repo path; what it can't rewrite it prints as READ rows. `stub-guard` catches a
+  `stubResolve` stub left stale; nothing checks a `mock.module` path. Its receipt is a grep for
   every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
 
 Questions to ask in review, never thresholds:

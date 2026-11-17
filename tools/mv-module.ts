@@ -7,21 +7,30 @@
 //      target are the same case, an extensionless one (./foo for foo.ts) included, and an untracked target
 //      (../node_modules/…, a generated file under a moved directory) keeps pointing at the same file;
 //   2. a repo citation (client/lib/… at any prefix: ../../client/lib/…, engine/client/lib/…) becomes the new path;
-//   3. a served URL (/lib/x.js, /shared/x.js, a page-relative ./lib/x.js) becomes the new URL.
-// Then it prints what it could not rewrite: template specifiers in moved files, and quoted bare basenames and lib/-relative
-// strings in test/ tools/ bench/ (path.join pieces), for a person to read. One commit per family; the script goes with D2.
+//   3. a served URL under /lib/ or /shared/ (/lib/x.js, /shared/x.js, a page-relative ./lib/x.js) becomes the new URL,
+//      when both the old and the new path are served there.
+// Then it prints READ rows for what it could not rewrite: template specifiers in moved files; the old URL of a client/ or
+// shared/ file that 3 didn't rewrite (moved out of /lib/ or /shared/, or /vendor/…, /main.js); and in test/ tools/ bench/,
+// quoted bare basenames and lib-relative strings (path.join pieces: "lib/ui/x.js", L + "ui/x.js"). A git failure is fatal.
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 const ROOT = path.resolve(import.meta.dir, "..");
-const git = (...a: string[]) => { const r = spawnSync("git", ["-C", ROOT, ...a], { encoding: "utf8", maxBuffer: 1 << 28 }); if (r.status) throw new Error(`git ${a.join(" ")}: ${r.stderr}`); return r.stdout; };
+// a git that didn't run, was killed or overflowed the buffer (status null) is as fatal as one that failed: its stdout is partial
+const git = (...a: string[]) => {
+  const r = spawnSync("git", ["-C", ROOT, ...a], { encoding: "utf8", maxBuffer: 1 << 28 });
+  if (r.error || r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.error?.message ?? (r.signal ? `killed by ${r.signal}` : r.stderr)}`);
+  return r.stdout;
+};
 const tracked = () => git("ls-files", "-z").split("\0").filter(Boolean);
 const HISTORY = [/^docs\/history\//, /^spec\/history\//, /CHANGELOG[^/]*\.md$/];
 const TEXT = /\.(md|ts|js|mjs|cjs|json|jsonl|sh|html|css|ya?ml|txt|toml)$/;
 const CODE = /\.(ts|js|mjs|cjs|html)$/;
 const SPEC = /(\bfrom\s*|\bimport\s*\(\s*|\bimport\s+|\bexport\s*\*\s*from\s*|\brequire\s*\(\s*|new\s+URL\s*\(\s*|import\.meta\.resolve\s*\(\s*)(['"])(\.\.?\/[^'"\n]*)\2/g;
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** The URL the server answers for a repo path under client/ or shared/; null for any other path. */
+const servedAt = (p: string) => p.startsWith("client/") ? p.slice("client".length) : p.startsWith("shared/") ? "/" + p : null;
 
 const args = process.argv.slice(2);
 if (args[0] === "--check") process.exit(check() ? 0 : 1);
@@ -44,6 +53,7 @@ for (const [from, to] of move) {
   if (dest.has(to)) throw new Error(`${dest.get(to)} and ${from} both move to ${to}`);
   dest.set(to, from);
 }
+const served = (p: string) => p.startsWith("client/lib/") || p.startsWith("shared/") ? servedAt(p) : null;
 const isFile = (p: string) => { try { return fs.statSync(path.join(ROOT, p)).isFile(); } catch { return false; } };
 const moved = (p: string) => {
   if (move.has(p)) return move.get(p)!;
@@ -78,7 +88,6 @@ for (const f of before) {
       if (!s.includes(a.split("/").pop()!)) continue;
       const cite = new RegExp(`(?<![\\w-])${esc(a)}(?![\\w-])`, "g");
       s = s.replace(cite, () => { counts.cite++; touched.add(nf); return b; });
-      const served = (p: string) => p.startsWith("client/lib/") ? p.slice("client".length) : p.startsWith("shared/") ? "/" + p : null;
       const ua = served(a), ub = served(b);
       // a quoted /lib/… URL, and a page-relative ./lib/… one in a browser test's evaluate (never ../lib/…: that is a specifier)
       if (ua && ub) s = s.replace(new RegExp(`(?<![\\w.-])(\\.?)${esc(ua)}(?![\\w-])`, "g"), (m, dot) => { counts.url++; touched.add(nf); return dot + ub; });
@@ -105,11 +114,16 @@ for (const f of after) {
   const s = fs.readFileSync(path.join(ROOT, f), "utf8"), lines = s.split("\n");
   lines.forEach((l, i) => {
     if (movedNew.has(f) && CODE.test(f) && /\bimport\s*\(\s*`|new\s+URL\s*\(\s*`|new\s+Worker\s*\(\s*['"`]/.test(l)) notes.push(`template/worker specifier  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
+    for (const [a, b] of move) {
+      const url = servedAt(a);
+      if (url && !(served(a) && served(b)) && new RegExp(`(?<![\\w.-])\\.?${esc(url)}(?![\\w-])`).test(l)) notes.push(`served URL ${url}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
+    }
     if (!/^(test|tools|bench)\//.test(f) || f === "tools/mv-module.ts") return;
     for (const [a] of move) {
-      const base = a.split("/").pop()!;
+      const base = a.split("/").pop()!, inLib = a.replace(/^client\/lib\//, "");
       if (new RegExp(`['"\`]${esc(base)}['"\`]`).test(l)) notes.push(`bare basename ${base}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
-      if (new RegExp(`(?<![\\w/-])lib/${esc(a.replace(/^client\/lib\//, ""))}`).test(l) && !l.includes("/lib/")) notes.push(`lib-relative ${base}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
+      if (new RegExp(`(?<![\\w/-])lib/${esc(inLib)}`).test(l) && !l.includes("/lib/")) notes.push(`lib-relative ${base}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
+      else if (a.startsWith("client/lib/") && inLib.includes("/") && new RegExp(`['"\`]${esc(inLib)}['"\`]`).test(l)) notes.push(`lib-relative ${base}  ${f}:${i + 1}: ${l.trim().slice(0, 140)}`);
     }
   });
 }

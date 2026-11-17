@@ -22,6 +22,7 @@ const ALLOW: [where: string, paths: string[] | null, why: string][] = [
   ["docs/decisions/CUTOVER-ARTIFACTS.md", ["client/lib/voice.js", "tools/voice-lifecycle-test.ts"], "its removal list names the files the cutover deleted"],
   ["test/protocol/nov1-check.ts", null, "its GONE list names deleted v1 files that must not come back"],
   ["test/gate/hygiene-check.ts", null, "its fixtures are made-up paths"],
+  ["test/gate/mv-module-test.ts", null, "its fixtures are paths in the scratch git trees it builds"],
   ["test/protocol/procgroup-check.ts", ["client/b.txt", "client/c.txt"], "scratch files it writes"],
   ["test/protocol/catalogue-check.ts", ["shared/protocol/labmodels.js"], "checks that it is gone"],
   ["test/shared/shape-import-test.ts", ["shared/protocol/shaperepair.js"], "checks that it is gone"],
