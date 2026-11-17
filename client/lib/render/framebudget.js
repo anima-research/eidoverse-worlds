@@ -9,8 +9,9 @@
 //     each grant holds the lane's EWMA of that until its own measurement replaces it. The first grant of a frame may
 //     overrun, even under debt (progress is guaranteed); the overrun is carried as debt into the next frame (capped
 //     at one budget), so it delays the OTHER producers.
-//   - Nothing starves: turn() grants a waiter that has been denied AGE_FRAMES frames in a row (per waiter, so one
-//     busy work record cannot hold the others back).
+//   - Nothing starves on time: turn() grants a waiter that has been denied AGE_FRAMES frames in a row (per waiter, so
+//     one busy work record cannot hold the others back). Aging lifts the ms budget only: a GPU waiter still needs the
+//     frame's one gpu unit free, so another GPU asker taking it first every frame can hold it back.
 //   - GPU work counts in UNITS, not ms (GPU timers answer frames late): at most one gpu unit per frame.
 //
 // The frame is the render loop's: frameloop.js calls tick() first thing, and a yield (nextFrame) is window rAF — which
