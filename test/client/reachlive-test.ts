@@ -281,6 +281,8 @@ console.log("\nself-touch does not hunt");
     // oscillated, so the test has to CLOSE it — passing null here would be a
     // check that cannot see the bug it was written for (it passed against the
     // reintroduced bug on the first attempt, which is how this was caught).
+    // Only the pole hint is fed back: no lastGap/lastSwivel, so reach.js's held-elbow and
+    // held-swivel branches don't run here (this target is never reached anyway).
     let pole: number[] | null = null;
     for (let f = 0; f < 60; f++) {
       const out: any = step(chain, av, target, pole);
