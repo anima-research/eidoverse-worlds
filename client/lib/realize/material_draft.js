@@ -56,7 +56,7 @@ function slotsOf(obj) {
   for (const m of meshes(obj)) origOf(m).forEach((mat) => {
     if (!mat || slot.has(mat)) return;
     const base = slotKey(mat.name, slot.size); const c = (used.get(base) ?? 0) + 1; used.set(base, c);
-    slot.set(mat, c > 1 ? `${base}-${c}`.slice(0, 48) : base);
+    slot.set(mat, c > 1 ? `${base.slice(0, 47 - String(c).length)}-${c}` : base);   // the number survives the 48 cap
   });
   return slot;
 }

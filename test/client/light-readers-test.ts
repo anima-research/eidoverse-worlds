@@ -53,6 +53,13 @@ console.log("\nlight readers — a lit Empty is found by what it is\n");
   check("materialsOf(a lit Empty) is [] — the gizmo is no material slot", materialsOf(obj).length === 0, JSON.stringify(materialsOf(obj).map((m) => m.slot)));
 }
 
+{ // two materials whose names normalize to the same 48-character key are still two slots (the "-2" is not cut off)
+  const long = "a".repeat(60), mesh = (name: string) => ({ isMesh: true, material: { name }, userData: {}, children: [] });
+  const obj = { userData: { entityId: "twin" }, children: [mesh(long), mesh(long.toUpperCase())] };
+  const slots = materialsOf(obj).map((m) => m.slot);
+  check("two long same-key material names get two distinct slots", slots.length === 2 && slots[0] !== slots[1] && slots.every((k) => k.length <= 48), JSON.stringify(slots));
+}
+
 {
   const obj = litEmpty("lamp"); obj.position.set(4, 2, -3); obj.updateMatrixWorld(true);
   lod.entities.set("lamp", obj);
