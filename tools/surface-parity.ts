@@ -34,8 +34,9 @@
 //
 // Probe hooks (not features): the camera is placed by Runtime.evaluate on client/lib/core.js's exported `camera` (a
 // spectator's camera only moves when it follows someone, so it stays put, which is read back after a few frames), and
-// Date.now() is pinned inside the page to the old tree's commit time (sky.js derives the sun and the weather from it;
-// serverclock.js reads performance.timeOrigin, so motion phases are untouched). --no-pin-clock turns the pin off.
+// Date.now() is pinned inside the page to the old tree's commit time. Only Date.now(): sky.js takes the sun and the
+// weather from serverNow() (serverclock.js: performance.timeOrigin plus the server's offset), which the pin doesn't
+// reach, so a time-dependent sky can differ between the trees (SURFACE-PARITY.md). --no-pin-clock turns the pin off.
 // Browser hygiene: teardown in finally and on signals; waits are on conditions, not clocks; evaluate is raced against a
 // clock; frames are proved by a render counter; the sky and GPU-loss guards from test/harness/harness.ts are applied to
 // every page. Run one headless browser at a time: the script checks memory but takes no lock.
