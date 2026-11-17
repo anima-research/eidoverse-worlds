@@ -25,7 +25,8 @@ export const isMinted = (s: string) => /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(s
 // the ONE shape of an id: a person, never a world, a name or a kind (PROTOCOL §6a rule 2). Minted here, and by tools/import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
-/** The tag a display name takes when another account wears it: stable per account, and carries none of it (a hash, not its digits). */
+/** The tag a display name takes when another account wears it: stable per account and shows none of its digits (a hash). The
+ *  salt is public, so anyone can test a guessed account against a tag: it hides the id, it doesn't anonymise it. */
 export const accountTag = (sub: string) => sha256(`eidoverse-name-tag:${sub}`).slice(0, 4);
 
 /** `existingWorlds` is accepted but no longer read: the v1 → v2 upgrade keeps every id server-wide without it. */
