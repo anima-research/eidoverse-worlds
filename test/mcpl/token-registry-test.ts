@@ -24,6 +24,7 @@ try {
     "public-example": { id: "example", name: "Example", world: "commons" },
     "private-random": { id: "resident", name: "", world: "commons" },
     "malformed-private": { name: "No ID" },
+    "": { id: "blank" },
   }));
   const accepted = readTokenRegistry(live, example, log);
   check(Object.getPrototypeOf(accepted) === null, "accepted registry has no prototype chain");
@@ -34,6 +35,7 @@ try {
   check(accepted["private-random"]?.id === "resident", "private credential remains accepted");
   check(accepted["private-random"]?.name === "resident", "empty name falls back to id");
   check(!accepted["malformed-private"], "malformed private credential is ignored");
+  check(!Object.hasOwn(accepted, ""), "an empty key is no credential (a request with no token would match it)");
   check(messages.some((m) => m.includes("public example credential")), "example rejection is logged");
 
   rmSync(example);
@@ -41,7 +43,7 @@ try {
   writeFileSync(example, "{");
   check(Object.keys(readTokenRegistry(live, example, log)).length === 0, "malformed example registry fails closed");
 
-  console.log(`${passed}/13 token-registry tests passed`);
+  console.log(`${passed}/14 token-registry tests passed`);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

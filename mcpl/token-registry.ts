@@ -60,6 +60,8 @@ export function readTokenRegistry(tokensPath: string, examplePath: string, log: 
   const accepted: Record<string, TokenAuth> = Object.create(null);
   for (const [token, candidate] of Object.entries(live)) {
     const digest = createHash("sha256").update(token).digest("hex").slice(0, 12);
+    // an empty key would match a request that sends no token at all
+    if (!token) { log.error(`[mcpl] token registry has an empty key — ignored`); continue; }
     if (exampleKeys.has(token)) {
       const id = candidate && typeof candidate === "object" && typeof candidate.id === "string" ? candidate.id : "unknown";
       log.warn(`[mcpl] rejected public example credential sha256:${digest} id=${id}`);
