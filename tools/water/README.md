@@ -15,7 +15,7 @@ is the one reader (`mediumOf` → `{medium, level, flow, body, priority}`).
 | Component | Parameters and behavior |
 | --- | --- |
 | `zone` | `{shape, size, priority?, blend?, weight?, global?}` on a thing, centred on its origin. Water reads a `box` zone for now (a sphere, capsule or cylinder under water or water-exclusion is refused). Where zones overlap the higher `priority` decides; a tie goes to the later id. |
-| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-volume {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body stays horizontal and axis-aligned; its thing's rotation turns only its centre. |
+| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-volume {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body's box turns with its thing's rotation (zone.js `toLocal`) while its surface stays level. |
 | `water-exclusion` | `{bodies?}` on a thing with a sibling zone: a dry pocket. It keeps out every body at or below its zone's priority (only `bodies` when named), `@world`'s level included. It follows its thing (and any carrier) through the parent chain, so a moving vessel carries its dry interior. |
 
 Upstream's components map as follows (translate-v1 `VOLUMES`): `water {center, size,
@@ -41,8 +41,9 @@ The renderer supports four water bodies, sixteen pockets, and eight waves per bo
 Excess bodies and pockets produce a diagnostic and aren't drawn: an excess body still
 swims, and an excess pocket still keeps water out but is fogged as wet (the highest-priority
 ones are drawn). The fog reads each pocket's mask of the bodies it clears
-(zone.js `fogSlots`), so the GPU keeps the same law as `mediumOf`; one corner differs:
-a pocket naming only a higher body also stops the fog of a lower one there.
+(zone.js `fogSlots`), so the GPU keeps the same law as `mediumOf`, with two differences: a pocket naming only a higher
+body also stops the fog of a lower one there, and the fog bounds a turned body by its world box (zone.js `waterBox`), so
+outside a rotated body but inside that box can be fogged as wet.
 
 The optical pass measures the camera-to-fragment distance through water, subtracts
 dry intervals, and applies RGB Beer–Lambert extinction plus scattering. Looking
