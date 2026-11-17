@@ -209,7 +209,8 @@ export const worlds = new Map<string, World>();
 
 // a function declaration on purpose: module-scope callers rely on hoisting
 /** Does this world exist (in memory, or on disk in exact case: worldDirNamed)? getWorld() opens, and throws on a miss.
- *  forkWorld refuses an occupied name in any case (fs.existsSync). */
+ *  forkWorld refuses an occupied name by fs.existsSync, which folds case only where the filesystem does (macOS,
+ *  Windows): on Linux, Commons and commons are two names. */
 export function worldExists(name: string): boolean {
   if (!WORLD_NAME_RE.test(name)) return false;
   return worlds.has(name) || worldDirNamed(name);

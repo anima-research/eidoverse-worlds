@@ -6,8 +6,8 @@ export type TokenAuth = {
   /** NARROWING only: keeps this agent to these worlds ("*" = any). Absent =
    *  no narrowing — the worlds themselves decide who comes in (server/access.ts). */
   worlds?: string[];
-  /** `false` narrows founding away. Absent = founding as any signed-in member
-   *  (no cap on how many: server/worldlog.ts foundOwnedWorld). */
+  /** `false` narrows founding away. Absent: no narrowing, though no agent founds through the door today (a join
+   *  never founds; founding is tools/world.ts found). */
   create?: boolean;
 };
 

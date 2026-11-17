@@ -236,8 +236,8 @@ export function expireRoles(w) {
   });
 }
 // Bounded (it runs at world load on the shared thread): at most ORPHANS.holders holders leave a load (the rest's holds
-// just end, {deferred}, and their lifts settle with the others) and ORPHANS.lifts lifts; the lifts past that wait for the
-// next load
+// just end, {deferred}, and their lifts settle with the others, in this same load while under ORPHANS.lifts) and
+// ORPHANS.lifts lifts; only the lifts past that wait for the next load
 export const ORPHANS = { holders: 16, lifts: 64 };
 /** A world opened after its host stopped without settling presence (a crash: no leave ran). A persisted hold
  *  (test/harness/filehost.ts) is settled as `leave` settles it. A lost hold (server/livehost.ts) left the thing lifted out
@@ -250,7 +250,7 @@ export function settleOrphans(w, present = []) {
   if (holders.length > ORPHANS.holders) { const late = new Set(holders.slice(ORPHANS.holders));
     for (const [id, h] of Object.entries(w.presence.holds)) if (late.has(h?.by)) { ended.push({ id, by: h.by }); delete w.presence.holds[id]; }
     for (const who of late) delete w.presence.bodies[who];
-    out.push({ deferred: late.size, why: `more than ${ORPHANS.holders} holders at once: their holds ended; what the log still has lifted settles at the next load` }); }
+    out.push({ deferred: late.size, why: `more than ${ORPHANS.holders} holders at once: their holds ended; what they lifted settles with the rest, now while under ${ORPHANS.lifts} lifts, else at the next load` }); }
   for (const who of holders.slice(0, ORPHANS.holders)) {
     const r = request(w, who, "leave", {}); out.push({ holder: who, left: r.ok, dropped: r.dropped ?? [] });
     // a holder the authority won't take requests from now (banned since): the hold just ends, and what the log lifted is
