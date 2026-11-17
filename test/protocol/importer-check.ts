@@ -434,6 +434,11 @@ row("IM-I3b", () => {
   ok(!live.length, "IM-I3b every module the old fold reads is a frozen copy under import-v1/ (none is a live runtime module)", live);
 });
 
+row("IM-I3c", () => {   // main's build at 6dab22f5's frozen copies; an edit here refuses every approval made against the old stamp
+  const { v1FoldBuild } = require("../../tools/import-v1/build.ts");
+  ok(v1FoldBuild() === "7feb119105cfe539", "IM-I3c the old fold and its frozen copies are byte-for-byte main's (v1FoldBuild 7feb119105cfe539): even a comment there moves the stamp", v1FoldBuild());
+});
+
 // ---- IM-I38: a lone surrogate anywhere in the old log refuses the whole import (bot review #367) ----
 row("IM-I38", () => {
   const TV = require("../../tools/import-v1/translate-v1.js"); const translate = TV.translate, loneSurrogateIn = (L: any) => TV.loneSurrogateIn?.(L) ?? null;

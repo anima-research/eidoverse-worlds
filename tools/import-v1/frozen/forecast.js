@@ -1,4 +1,3 @@
-// FROZEN: shared/forecast.js as it stood at 6dab22f5, read only by ../fold.js; the runtime words below are history.
 // forecast — the deterministic ambient-weather oracle, and the one sky fold
 // every plane shares.
 //
@@ -19,7 +18,7 @@
 // simultaneous clients all land on the same segment of the same forecast.
 
 export const WEATHERS = ['clear', 'fair', 'sunshower', 'overcast', 'rain', 'storm', 'cyclone', 'darkstorm'];
-// The cloud kinds the sky realizes (client/lib/sky/sky.js re-exports this; the
+// The cloud kinds the sky realizes (client/lib/sky.js re-exports this; the
 // world entity's Sky record names the same list).
 export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 
