@@ -1399,6 +1399,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   }
   // a body-mode declaration: any of the six, for looks; it holds until the mover's next real transition or the
   // next declaration, and grants nothing. Alone, or beside a name (the anim then plays in that mode)
+  const declaredBefore = ag.modeTracker.declared;   // a refused call below puts it back (a refused call changes nothing)
   if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
     if (a.target) return { content: [{ type: "text", text: "anim {bodyMode} declares your own body's mode" }], isError: true };
     ag.bodyMode = String(a.bodyMode);
@@ -1456,7 +1457,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (a.name != null) {
     const n = String(a.name);
     const from = animFrom(ag, n);
-    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) return fail(t.text); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
+    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) { ag.modeTracker.declare(declaredBefore ?? null); return fail(t.text); } if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
     const mode = (mode0 ?? ANIM_MODES[n] ?? "once") as "once" | "loop" | "hold";
     // once overlays what is held and returns to it (sit + wave is still sitting): the held anim goes on, unstopped
     if (mode === "once") { ag.playOnce(n); return playing(n, "once", `everyone sees it${ag.anim ? `, over ${ag.anim.name}, which goes on` : ""}`, from); }

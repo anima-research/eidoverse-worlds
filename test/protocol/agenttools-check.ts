@@ -323,6 +323,8 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const wings = await call("anim", { name: "wings-folded" });
   // this body's bones aren't known here, so nothing folds: the door answers that as failed, in the fold's words
   ok(wings.isError && /wings unchanged/.test(T(wings)), "AT6f anim {name: \"wings-folded\"} (this body: nothing folded, failed, in the fold's words)", T(wings));
+  const modeWas = ag.bodyMode, wings2 = await call("anim", { name: "wings-folded", bodyMode: "sit" });
+  ok(wings2.isError && ag.bodyMode === modeWas, "AT6f2 a refused wings-folded leaves the body-mode as it was (a refused call changes nothing, #604)", { reply: T(wings2), was: modeWas, now: ag.bodyMode });
   const letgo = await call("reach", { release: true });
   ok(!letgo.isError && /releas|let go|weren't reaching/.test(T(letgo)), "AT6g reach {release: true} lets go (clear_reach folded; nothing held: said)", T(letgo));
   // the library
