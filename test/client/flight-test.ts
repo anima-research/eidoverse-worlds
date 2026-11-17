@@ -928,7 +928,7 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   //    through the colliders -- two different floors, differing by the height
   //    of every deck and slab in the world.
   check('client flight and client walking resolve the SAME ground',
-        /resolveColliders\(_gp, heightAt\)/.test(ctl));
+        /groundY: flightGround\b/.test(ctl) && /function flightGround\([^)]*\) \{[^}]*resolveColliders\(_gp, heightAt\)/.test(ctl));
 
   // 3. "it just makes me stuck standing or walking (unable to steer) depending
   //    on which one i was doing at the time of pressing f; pressing f again
