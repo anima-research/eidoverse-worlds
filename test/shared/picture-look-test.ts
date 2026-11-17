@@ -26,7 +26,7 @@ out = ag.look();
 check("a replace reads as the new line, not both", /re-hung/.test(out) && !/hearth at dusk/.test(out), line());
 const bad = await act("set", { id: "console", component: "picture", value: { src: "http://example.com/x.png", description: "smuggled" } }, { who: "antra" });
 out = ag.look();
-check("an invalid source is refused at the door and nothing changes", !bad.ok && bad.refused?.code === "shape" && !/smuggled/.test(out), JSON.stringify([bad.refused, line()]));
+check("an invalid source is refused at the door and nothing changes (the re-hung picture still reads)", !bad.ok && bad.refused?.code === "shape" && !/smuggled/.test(out) && /re-hung/.test(out), JSON.stringify([bad.refused, line()]));
 await act("delete", { id: "console", component: "picture" }, { who: "antra" });
 out = ag.look();
 check("a removed picture is gone from look()", !/a picture/.test(out), line());

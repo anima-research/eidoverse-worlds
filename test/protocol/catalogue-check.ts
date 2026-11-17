@@ -44,7 +44,10 @@ const ONE = Object.freeze({ get: (n) => (n === "crate" ? { label: "a crate", siz
   ok("C4 …and the bare authority (worldOf with no catalogue) holds none: it falls back to NO_CATALOGUE, which names nothing", bare.catalogue === null && NO_CATALOGUE.get("crate") === undefined && NO_CATALOGUE.list("").length === 0, bare.catalogue); }
 
 // C5: the suites' lab table is a fixture: it lives in test/, and no runtime file (shared/ server/ mcpl/ client/ services/) imports it (a comment may point at it)
-{ const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-lE", "(from|import\\() *[\"'][^\"']*labmodels", "--", "shared", "server", "mcpl", "client", "services"]);
+{ const PAT = "(from|import *\\(|require *\\() *[\"'][^\"']*labmodels";   // an import, a dynamic import (spaced or not), a require
+  const samples = ["import { X } from '../test/harness/labmodels.js'", "await import ('../test/harness/labmodels.js')", "require('../test/harness/labmodels.js')"];
+  ok("C5 (self-sample) the pattern sees an import, a spaced dynamic import and a require", samples.every((t) => new RegExp(PAT).test(t)), samples.filter((t) => !new RegExp(PAT).test(t)));
+  const g = Bun.spawnSync(["git", "-C", ENGINE, "grep", "-lE", PAT, "--", "shared", "server", "mcpl", "client", "services"]);
   const users = String(g.stdout).split("\n").filter(Boolean);
   ok("C5 the lab table is test/harness/labmodels.js and no runtime file imports it", g.exitCode === 1 && !fs.existsSync(path.join(ENGINE, "shared/protocol/labmodels.js")) && !users.length && !!LAB_CATALOGUE.get("crate"), users); }
 
