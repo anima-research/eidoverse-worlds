@@ -83,6 +83,10 @@ console.log('STYLE — every swatch and dial repaints its token, persists it, su
     const [key, ...more] = wrote(before);
     const name = sw.nextElementSibling?.textContent ?? `swatch ${i}`;
     check(`the ${name} swatch repaints one token the sheet declares`, !!key && key in SHEET && more.length === 0 && computed(key) !== SHEET[key], `${key} ${more}`);
+    // which token, and to the colour picked (the label is what the person reads; the panel token is an r,g,b triple)
+    const WANT: Record<string, string> = { panel: '--panel-rgb', accent: '--brand', attention: '--attn', text: '--fg' };
+    const hex = sw.value.toLowerCase(), rgb = [1, 3, 5].map((o) => parseInt(hex.slice(o, o + 2), 16)).join(',');
+    check(`the ${name} swatch writes ${WANT[name] ?? '(a token its label names)'}, the colour picked`, key === WANT[name] && computed(key).toLowerCase().split(/[\s,]+/).join(key === '--panel-rgb' ? ',' : '') === (key === '--panel-rgb' ? rgb : hex), `${key} = ${computed(key ?? '')}, picked ${hex}`);
     if (!key) continue;
     swatchKeys.push(key);
     check(`${key}: …persists it`, tokens()[key] === computed(key), JSON.stringify(tokens()));
