@@ -28,7 +28,8 @@
 //                 where a helper that forgot to advance (or two sharing one counter) could run time backwards silently. Use
 //                 test/gate/clock.ts (labClock().advance, pin, unpinned).
 //   agent-url     a WorldAgent built without `url`: it falls back to 127.0.0.1:8940, whatever runs there (or a closed port,
-//                 which hangs ~2 min on a mirrored-network host). Pass the test's own server: test/harness/no-world.ts noWorldUrl().
+//                 which hangs ~2 min on a mirrored-network host). Pass the test's own server: its scratch world's URL for an
+//                 agent that joins, test/harness/no-world.ts noWorldUrl() for one that never does (it answers nothing).
 //                 Checked over tools/, bench/ and test/.
 //   own-ok        a suite counting its own rows (`let pass = 0, fail = 0`) instead of importing suite.ts.
 //   posix-mode    a file's mode asserted equal to an octal literal (`=== 0o600`) on a line that doesn't say what Windows does:

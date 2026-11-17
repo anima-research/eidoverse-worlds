@@ -1,4 +1,5 @@
-// test/gate/run.ts — the protocol gate: every protocol suite, one command, three required lanes.
+// test/gate/run.ts — the protocol gate: every gated protocol suite (test/gate/ungated.json lists the rest and why), one
+// command, three required lanes.
 //   bun test/gate/run.ts                 the declared gate (= bun run test:protocol): core, then main, then browser
 //   bun test/gate/run.ts hostile phys    only the named suites (a PARTIAL run: it says so, and it is not the gate)
 //   bun test/gate/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
@@ -112,7 +113,7 @@ function manifestDrift(): string | null {
   const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
   if (a < 0 || b < a) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`;
   return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
-     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (regenerate it: bun test/gate/run.ts --manifest)`;
+     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --manifest prints the table: paste it between the BEGIN/END GENERATED lines)`;
 }
 
 const argv = process.argv.slice(2);
