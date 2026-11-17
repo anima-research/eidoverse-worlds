@@ -44,10 +44,12 @@ export const APPROACH_REFRACT_MS = env("EW_APPROACH_REFRACT_SEC", 600) * 1000;
 export const APPROACH_RADIUS = 2.5;
 export const REARM_RADIUS = 6;
 
-/** DWELL: an approach means "walked up AND STOPPED within arm's reach", so
- *  passing through never counts. The inward crossing only opens a pending
- *  approach; it is delivered once the person has been still inside the radius
- *  this long, and cancelled if they leave the radius first. */
+/** DWELL: an approach means "came within arm's reach and lingered", so a
+ *  straight pass-through never counts. The inward crossing only opens a pending
+ *  approach; it is delivered once the person has been still (under
+ *  APPROACH_STILL_MPS, so a slow drift counts) inside the radius this long, or
+ *  inside it at all for APPROACH_MAX_WAIT_MS (pacing included), and cancelled
+ *  if they leave the radius first. */
 export const APPROACH_DWELL_MS = env("EW_APPROACH_DWELL_SEC", 2.5) * 1000;
 /** Below this observed ground speed (m/s) a body counts as STILL. Measured
  *  from observed positions, never the sender-controlled pose `speed` field.

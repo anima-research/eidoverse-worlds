@@ -160,7 +160,7 @@ const TAG_ONTOLOGY = {
   ],
   tags: {
     [EIDO.approach]: {
-      desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
+      desc: "Someone came within arm's reach of your body and lingered: slowed to a near-stop there, or stayed inside a while. Directed at you, but not speech — nothing was said.",
       facet: "addressing",
       implies: [CHAT.addressed],
     },

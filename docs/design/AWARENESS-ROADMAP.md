@@ -37,7 +37,7 @@ did not get it yet."
 
 **This is a bug, not a feature request**, which is why it goes first.
 
-`mcpl/declaration.ts` declares the event as:
+`mcpl/declaration.ts` declared the event as (before the fix below; it now says "lingered"):
 
 > "Someone walked up to your body **and stopped** within arm's reach."
 
