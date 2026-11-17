@@ -20,7 +20,7 @@ for (const p of [port, CONTROL]) {
 const child = Bun.spawn([process.execPath, "server/server.ts"], { env: { ...process.env,
   HOST: "127.0.0.1", PORT: String(port), JOIN_TOKEN: DOOR, WORLDS_DIR: join(scratch, "worlds"),
   OPT_DIR: join(scratch, "opt"), RELAY_STATE_DIR: join(scratch, "opt"), SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0",
-  HN_SESSIONS_FILE: join(scratch, "sessions.json"), HN_ISSUER_KEY: "", HN_REQUIRE_LOGIN: "0",
+  HN_SESSIONS_FILE: join(scratch, "sessions.json"), AGENT_TOKENS_PATH: join(scratch, "tokens.json"), HN_ISSUER_KEY: "", HN_REQUIRE_LOGIN: "0",
 }, stdout: "ignore", stderr: "pipe" });
 let control: ReturnType<typeof Bun.serve> | undefined, ws: WebSocket | undefined;
 try {
