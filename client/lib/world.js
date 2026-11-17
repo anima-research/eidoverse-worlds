@@ -138,15 +138,14 @@ export function applyTerrainState(args) {
   // no terrain, or a flat one: the stage floor at that height, with the world's water on it when it has some
   // (realize/environment.js groundArgs)
   const flat = flatHeightOf(args);
+  const key = args ? JSON.stringify(args) : null;
+  if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed (a flat one too)
   if (!args || args.stageFloor === true || flat !== null) {
-    const key = args ? JSON.stringify(args) : null;
     if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); } setFlatGround(flat ?? 0);
       try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
     return;
   }
   stageFloor = false; setFlatGround(0);
-  const key = JSON.stringify(args);
-  if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
   lastTerrainArgs = key;
   enqueueWorldBuild('terrain', async () => {

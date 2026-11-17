@@ -840,6 +840,10 @@ try {
     const layersAfter = () => st4().entities["@world"]?.c?.terrain?.layers ?? [];
     check("GR4 the tint row recolours the first layer and keeps its repeat and the second layer (the Build tab's recipe)", await waitDisk(() => myActs().length === n0 + 1 && layersAfter()[0]?.color !== two[0].color) && layersAfter().length === 2 && layersAfter()[0].repeat === 4 && JSON.stringify(layersAfter()[1]) === JSON.stringify(two[1]),
       { layers: layersAfter(), acts: myActs().slice(n0).map((a) => a.e.verb) });
+    // GR5: a flat edit's echo releases it like any other, so a later terrain is the base, not our old bag (#560)
+    const gr5 = await page(`const w = await import('/lib/world.js'); const keep = w.currentTerrainArgs(); const a = { kind: 'flat', height: 0.5 };
+      w.noteTerrainSent(a); w.applyTerrainState(a); w.applyTerrainState({ kind: 'flat', height: 1 }); const base = w.terrainEditBase(); w.applyTerrainState(keep); return JSON.stringify(base);`);
+    check("GR5 a flat terrain edit's echo releases it: the next terrain to land is the edit base", JSON.parse(gr5)?.height === 1, gr5);
     await evalJson(`(window.__gp.remove(), true)`); }
 
   // ---- ST: a seat on a socket that's switched off is no seat on the client either (review 10-12 S3-3) ----
