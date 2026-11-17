@@ -136,14 +136,18 @@ const PERSON_DOCS = ["AGENTS.md", "DESIGN.md", "README.md", ...(fs.readdirSync(p
 const PERSON_OK: [string, RegExp, string][] = [["docs/design/ROADMAP.md", /makes no split between humans and AIs/, "names the split in order to deny it"]];
 const SPLIT = /(?<!["'`])\b(?:people|humans)\s+and\s+AIs\b|\bAIs\s+and\s+(?:people|humans)\b(?!["'`])/i;
 // Markdown wraps a sentence across lines, so a .md file is also read two lines at a time (reported at the second line)
+// a quotation of the retired wording (in "…", “…” or `…`) is a mention, not a use: the quoted spans are blanked first
+const unquoted = (t: string) => t.replace(/"[^"\n]*"|“[^”\n]*”|`[^`\n]*`/g, '""');
 const personScan = (rel: string, text: string, out: string[] = offences) => { const lines = text.split("\n"); lines.forEach((line, i) => {
   const next = rel.endsWith(".md") && i + 1 < lines.length ? lines[i + 1] : null;
-  const hit = (re: RegExp): [number, string] | null => re.test(line) ? [i + 1, line] : next !== null && !re.test(next) && re.test(`${line} ${next}`) ? [i + 2, `${line.trim()} ${next.trim()}`] : null;
+  const u = unquoted(line), un = next === null ? null : unquoted(next);
+  const hit = (re: RegExp): [number, string] | null => re.test(u) ? [i + 1, line] : un !== null && !re.test(un) && re.test(unquoted(`${line} ${next}`)) ? [i + 2, `${line.trim()} ${next!.trim()}`] : null;
   if (PERSON_OK.some(([f, re]) => rel === f && re.test(line))) return;
   const p = hit(PERSON), q = hit(SPLIT);
   if (p) out.push(`${rel}:${p[0]}: "person" set against "agent" means human: write human (AGENTS.md rule 6) — ${p[1].trim().slice(0, 100)}`);
   if (q) out.push(`${rel}:${q[0]}: "humans and AIs" splits kinds: say participants, or "humans, AIs, and whatever else comes" (AGENTS.md rule 6) — ${q[1].trim().slice(0, 100)}`); }); };
 { const got: string[] = []; personScan("x.md", "for people and\nAIs alike\nand a person or\nagent", got); if (got.length !== 2) offences.push(`personScan self-test: a sentence wrapped across two Markdown lines is ${got.length} offences, want 2`); }
+{ const got: string[] = []; personScan("x.md", 'The old README said "for people and AIs". It said `a person or agent` too.', got); if (got.length) offences.push(`personScan self-test: a quotation of the retired wording, mid-quote, is an offence: ${got.join(" | ")}`); }
 const personWalk = (dir: string) => {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) { if (SKIP_DIR.has(e.name)) continue; const p = path.join(dir, e.name);
     if (e.isDirectory()) personWalk(p); else if (EXT.test(e.name)) personScan(path.relative(ROOT, p).split(path.sep).join("/"), fs.readFileSync(p, "utf8")); } };
