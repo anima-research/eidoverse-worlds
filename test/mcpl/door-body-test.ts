@@ -223,8 +223,8 @@ console.log("a walk carried across a rejoin");
     ag.close();
     release();
     const how = await joining;
-    check("a body closed while its snapshot was read stays closed: not joined, no ticker", !ag.joined && !ag.ticker,
-      JSON.stringify({ joined: ag.joined, ticker: !!ag.ticker, how }));
+    check("a body closed while its snapshot was read stays closed: not joined, no ticker", reading && !ag.joined && !ag.ticker,
+      JSON.stringify({ entered: reading, joined: ag.joined, ticker: !!ag.ticker, how }));
     if (ag.ticker) clearInterval(ag.ticker);
   }
   world.stop(true);

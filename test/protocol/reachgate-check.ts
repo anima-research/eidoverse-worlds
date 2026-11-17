@@ -364,6 +364,10 @@ let skipped = null; const SKIP = Symbol("skip");
     // the delivery barrier: the refusal in r1 came from the relay, which had the pose by then; a reply to Vic's own request lands
     // after anything the relay sent her directly. Frames go out on the stage-frames tick, so one still due after it isn't covered
     const barrier = await vreq("whois", { id: hepId() }); ok(barrier && !barrier.timeout, "(AG1 barrier) Vic's own request is answered after the relay handled the reach", barrier);
+    // and a stage-frames tick after it: the agent streams its body every tick, so a frame of it reaching Vic now came
+    // from a tick run after the barrier, when any queued chest_front pose had gone out
+    { const kb = msgs.length; ok(await tryUntil("a frame of the agent after the barrier", () => msgs.slice(kb).some((m) => m.type === "frame" && m.poses?.Hep), { ms: 5000, step: 25 }),
+      "(AG1 barrier) a stage-frames tick has run since"); }
     ok(!seenReach(k, "chest_front"), "AG1 Vic receives no frame carrying the agent's hand on her chest_front", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-3));
     ok(/not shown/.test(T(r1)) && /intimate/.test(T(r1)) && !ag.reaches.has("rightHand"), "AG1 the reach reply says the hand was not shown and why, and the agent stops streaming it", { text: T(r1), reaches: [...ag.reaches.keys()] });
     // AG2
