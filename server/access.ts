@@ -3,11 +3,12 @@
 //   @world.access {join: anyone|signed-in|listed, watch?: "anyone", max?, soft?, minAccountDays?}
 //   @world.default-role, roles:<id> {role, …, until?}
 // Every door asks here:
-//   entryFor      the decision for a connection or an HTTP caller: bans → kick → operator / moderation powers → the
-//                 world's access (shared entryOf) → account age → capacity (embodied joins only)
+//   entryFor      the decision for a connection or an HTTP caller: bans → a locked door → the world's access (shared
+//                 entryOf) → account age → capacity (embodied joins only). Operators skip bans; operators, owners and
+//                 holders of a moderation power skip account age and capacity
 //   httpCaller    who is asking over HTTP (cookie session, or a bearer the door takes)
 //   doorFor       a world's door, read from the index when the world isn't loaded (a /worlds listing never loads one)
-//   settleAccess  after roles or access change: remove whoever may no longer stay (4010)
+//   settleAccess  after roles or access change: remove whoever may no longer stay (4010; a ban 4006)
 //   sweepAccess   timed grants: warn five minutes out, then the authority writes the end (expire-roles) and settle
 // Never imports server.ts: the session's expel is injected by the caller.
 
@@ -28,7 +29,7 @@ import { lookup, ownerIn, type IndexEntry } from "./worldindex.ts";
 import { sha256 } from "../shared/protocol/hash.js";
 
 /** Close code for "this world is not open to you": refused at the door, or removed because access ended or changed.
- *  Clients don't redial it (4006 is moderation's, 4005 a bad link). */
+ *  Clients don't redial it (4006 is moderation's; 4005 a refused join, retried only when its reason is "full"). */
 export const ACCESS_CLOSE = 4010;
 /** Close code for "there is nothing here YET": a spectator of a world nobody has founded. Not a refusal: clients redial
  *  it with their usual backoff, so an observer started early joins once the world exists. */
@@ -198,7 +199,7 @@ export function whoOf(c: Client): Who {
 export type Expel = (w: World, target: Client, why: string, until?: number | null, code?: number) => void;
 
 /** After a world's roles or access change: everyone who may no longer be here, as they are (embodied or watching), is
- *  removed with 4010 and the reason. Aux legs go with their primary (expel reaps them). Capacity never removes anyone. */
+ *  removed with 4010 (4006 for a ban) and the reason. Aux legs go with their primary (expel reaps them). Capacity never removes anyone. */
 export function settleAccess(w: World, expel: Expel, now = Date.now()) {
   if (!w.log) return;
   const door = doorOfWorld(w);
@@ -213,7 +214,7 @@ export function settleAccess(w: World, expel: Expel, now = Date.now()) {
 
 // timed grants: who has been warned about which end (world\0actor\0until)
 const warned = new Set<string>();
-/** Every second (server.ts registers it): in each loaded world, tell anyone whose timed grant ends within five minutes,
+/** Every ACCESS_SWEEP_MS (server.ts registers it; default 1 s, at least 250 ms): in each loaded world, tell anyone whose timed grant ends within five minutes,
  *  once; then the authority writes the ends that have passed (expire-roles), and whoever lost entry with them is
  *  removed. */
 export function sweepAccess(worlds: Iterable<World>, expel: Expel, now = Date.now()) {

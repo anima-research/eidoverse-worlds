@@ -52,7 +52,7 @@ export function doorOf(wc) {
 /** What `who` may do at this world's door: "embody" (come in with a body), "watch" (no body), or "none", with the reason
  *  in words for a refusal. `who`: {actor?, anon? (no account), bypass? (an owner, a holder of a moderation power, an
  *  operator: they always get in), trustedRenderer? (the renderers' credential: may watch any world, never embody)}.
- *  Bans, kicks, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
+ *  Bans, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
 export function entryOf(wc, who = {}, worldName = "this world", now = null) {
   if (who.bypass) return { may: "embody" };
   if (who.trustedRenderer) return { may: "watch" };   // the renderers' credential never embodies, whatever the door

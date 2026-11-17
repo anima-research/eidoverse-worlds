@@ -295,7 +295,7 @@ function ownerSince(w, st, x) {
       if (o.op === "set" && o.comp === comp && R.isOwner(o.value)) since = i; else return since; } }
   return since;
 }
-/** The most senior owner here (the start of the longest unbroken run as owner; the founder unless they left it), or null. */
+/** The most senior owner here (whose current unbroken run as owner started first; the founder unless they left it), or null. */
 export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = Infinity;
   for (const k of ownersOf(st)) { const x = k.slice(6), t = ownerSince(w, st, x); if (t < at) { at = t; best = x; } } return best; }
 function seniority(w, st, who, op) {

@@ -286,7 +286,7 @@ export class WorldLog {
     const from = this.live.entries.length;
     try { authorityTick(this.live); } finally { if (this.live.entries.length > from) this.afterWrite(from); }
   }
-  /** Timed grants (server/access.ts sweepAccess, once a second): the authority writes the end of every roles:<id> whose
+  /** Timed grants (server/access.ts sweepAccess, every ACCESS_SWEEP_MS): the authority writes the end of every roles:<id> whose
    *  `until` has passed (expire-roles), sent out like any write. → the identities whose grant ended. */
   expireRoles(): string[] {
     if (this.retired || this.live.state().status !== "ok") return [];

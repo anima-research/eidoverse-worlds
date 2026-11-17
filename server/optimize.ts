@@ -786,8 +786,8 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
         inPath = join(tmp, mime === "image/png" ? `${i}.png` : `${i}.jpg`);
         await Bun.write(inPath, src);
       } else if (sharp) {
-        // best-effort, exactly the GLB arm's posture: a sharp failure skips
-        // the TEXTURE, never the file
+        // best-effort: a sharp failure skips the TEXTURE, never the file. Unlike --ktx2 (all or nothing),
+        // this arm ships a partial result
         try {
           let s = sharp(Buffer.from(src));
           const meta = await s.metadata();
