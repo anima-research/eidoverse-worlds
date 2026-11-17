@@ -233,6 +233,16 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   const says = (t: string) => /part geometry unavailable here/.test(t) && /asking again won't change that/.test(t) && /face \{x, z\}|move \{to: \[x, z\]\}/.test(t);
   ok(!r.ok && !faced.length && out.isError && says(out.content[0].text) && says(beside.refusal ?? ""), "on a part-riding socket, face and beside say a retry won't help and coordinates near it will", { face: out.content[0].text, beside }); }
 
+// a world server in trouble (503) whose body happens to be JSON: a read is the answer only when it is ok (bot #333 r2 174)
+{ const sick = Bun.serve({ port: 0, fetch: (r) => new Response(new URL(r.url).pathname === "/check" ? JSON.stringify({ ok: true, fits: true }) : "[]", { status: 503, headers: { "content-type": "application/json" } }) });
+  const ag: any = { httpBase: `http://127.0.0.1:${sick.port}`, readHeaders: {}, world: "w", entities: new Map() };
+  const geo = Bun.serve({ port: 0, fetch: () => new Response(JSON.stringify({ bbox: { size: [1, 1, 1] }, tris: 12 }), { status: 503, headers: { "content-type": "application/json" } }) });
+  const agGeo: any = { httpBase: `http://127.0.0.1:${geo.port}`, readHeaders: {}, world: "w", entities: new Map() };
+  const [av, lib, chk, meas]: any[] = await Promise.all([handleTool({ agent: ag } as any, "set_avatar", {}), handleTool({ agent: ag } as any, "library", { kind: "models" }), handleTool({ agent: ag } as any, "measure", { check: true, lib: "x.glb" }), handleTool({ agent: agGeo } as any, "measure", { lib: "x.glb" })]);
+  sick.stop(true); geo.stop(true);
+  const err = (o: any) => o?.isError && /503/.test(o.content?.[0]?.text ?? "");
+  ok(err(av) && err(lib) && err(chk) && err(meas), "a 503 with a JSON body is a failed read, not an empty roster, an empty library, a check's verdict or a measurement", [av, lib, chk, meas].map((o) => o?.content?.[0]?.text?.slice(0, 120))); }
+
 // a world server that takes the request and never answers: the door's read is bounded (tools.ts HTTP_READ_MS), and the
 // tool answers as a failed call instead of hanging the agent's turn
 { const { HTTP_READ_MS } = await import("../../mcpl/tools.ts"); const { pause } = await import("../gate/wait.ts");

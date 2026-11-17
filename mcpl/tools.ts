@@ -26,6 +26,8 @@ import { rigBonesFor } from "./rigbones.ts";
 /** How long the door waits on one world-server read before the tool answers as failed (a hung server never holds a turn). */
 export const HTTP_READ_MS = 10_000;
 const READ = () => ({ signal: AbortSignal.timeout(HTTP_READ_MS) });
+/** A read's JSON, only when the server answered ok: a 503's body (even `[]`) is no answer about what was asked. */
+const okJson = async (r: Response) => { if (!r.ok) throw new Error(`the world server answered ${r.status}`); return r.json(); };
 /** A failed world-server read in words: AbortSignal.timeout's own message is a bare "The operation timed out." */
 const readWhy = (e: unknown, what: string) => (e as Error)?.name === "TimeoutError"
   ? `the world's server didn't send ${what} within ${HTTP_READ_MS / 1000} s; calling again may work`
@@ -424,7 +426,7 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   let r: any;
   // a placed thing is checked as placed: at its scale (the body is not scaled)
   const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
-  try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(3 * HTTP_READ_MS) })).json(); }
+  try { r = await okJson(await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(3 * HTTP_READ_MS) })); }
   catch (err) { return fail(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
@@ -548,7 +550,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
     typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
       let roster: { name: string; path: string }[];
-      try { roster = await (await fetch(`${ag.httpBase}/avatars`, READ())).json(); }
+      try { roster = await okJson(await fetch(`${ag.httpBase}/avatars`, READ())); }
       catch (e) { return fail(`set_avatar: ${readWhy(e, "the avatar roster")}. You're still wearing your current body.`); }
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
@@ -631,10 +633,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
       try { if (kind === "avatars") {
-        const roster = (await (await fetch(`${ag.httpBase}/avatars`, READ())).json()) as { name: string; height?: number | null }[];
+        const roster = (await okJson(await fetch(`${ag.httpBase}/avatars`, READ()))) as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
-        const hits = (await (await fetch(`${ag.httpBase}/library-models`, READ())).json()) as { path: string; name: string; preview: string | null }[];
+        const hits = (await okJson(await fetch(`${ag.httpBase}/library-models`, READ()))) as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
           // items: the hash filename means nothing — show the given name
@@ -1162,7 +1164,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
         try { d = await r.json(); } catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
-      if (d.error) return fail(`measure: the world server answered ${status} (${d.error}), so nothing was measured`);
+      if (d.error || status < 200 || status > 299) return fail(`measure: the world server answered ${status}${d.error ? ` (${d.error})` : ""}, so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
