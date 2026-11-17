@@ -103,6 +103,7 @@ try {
     const bad = r.starters.got.filter(([n, rk]) => w.has(n) && String(w.get(n) ?? null) !== String(rk ?? null));
     check(`the starter view (empty box) carries the catalog's rank on each starter (${rated} rated of ${w.size})`, rated > 0 && bad.length === 0 && r.starters.got.length === w.size, { bad, got: r.starters.got }); }
   check('the page rendered every catalog entry for the query', r.cards.length === r.json.length && r.json.length > 10, `${r.cards.length} vs ${r.json.length}`);
+  check('…in the catalog\'s order: card i is entry i (a card out of place skips every check below for it)', mism.filter((m) => /^card \d+ is /.test(m)).length === 0, mism.filter((m) => /^card \d+ is /.test(m)).slice(0, 3));
   check('each card\'s chip matches its status (⚠ refused/deferred/stale; LOD when built; else none)', mism.filter((m) => /chip/.test(m)).length === 0, mism.filter((m) => /chip/.test(m)).slice(0, 3));
   check('every reason the server gave is in the card\'s hover', mism.filter((m) => /hover/.test(m)).length === 0, mism.filter((m) => /hover/.test(m)).slice(0, 3));
   check('rank pill on every card with a perf record, equal to the server\'s rank, and named in the hover', mism.filter((m) => /rank/.test(m)).length === 0 && r.json.filter((h) => h.perf).length > 10, mism.filter((m) => /rank/.test(m)).slice(0, 3));
