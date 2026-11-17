@@ -85,6 +85,10 @@ const SAME: [string, unknown, unknown][] = [
   ["reach.qConj", reach.qConj, (rot as any).qConj], ["reach.qAxisAngle", reach.qAxisAngle, (rot as any).qAxisAngle],
 ];
 for (const [name, f, g] of SAME) check(`OQ ${name} is rot.js's own function`, typeof g === "function" && f === g, typeof f);
+// rot.qRotate's out-array contract (its callers pass one, aliased to v too): the rows above pin identity, not this
+{ const q = [0, Math.SQRT1_2, 0, Math.SQRT1_2], out = [9, 9, 9], v = [1, 2, 3], want = rot.qRotate(q, [1, 2, 3]);
+  const got = rot.qRotate(q, [1, 2, 3], out), alias = rot.qRotate(q, v, v);
+  check("OQ rot.qRotate writes into out (and returns it), even when out is v", got === out && alias === v && [out, v].every((a) => a.every((x, i) => Math.abs(x - want[i]) < 1e-12)), { out, v, want }); }
 // motioneval.qAxisAngle wraps rot.js's (it normalizes the axis first): the same bits on unit axes
 { let differ = 0, worst = 0, example: unknown;
   for (let t = 0; t < N; t++) {
