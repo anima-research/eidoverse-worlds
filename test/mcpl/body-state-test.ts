@@ -204,8 +204,10 @@ try {
   const generation = (await read(owner)).bodyGeneration.value;
   owner.setAvatar("fixtures/large-body.vrm");
   await waitUntil("the peer's sample", () => peer.people.get(owner.name)?.avatar === "fixtures/large-body.vrm");
-  const big = await read(owner, { detail: "bones" });
-  check("body replacement invalidates geometry, including scale", big.bodyGeneration.value !== generation && Math.abs(big.joints?.head?.selfPosition[1] - 3.6) < 1e-6, JSON.stringify(big.geometry));
+  // A read that races the new body's skeleton answers "read again" (body-state.ts), so read until it has a generation.
+  const big = await tryUntil("the new body's geometry", async () => { const r = await read(owner, { detail: "bones" }); return r.bodyGeneration ? r : null; }, { ms: 4000, step: 50 })
+    ?? await read(owner, { detail: "bones" });
+  check("body replacement invalidates geometry, including scale", big.bodyGeneration?.value !== generation && Math.abs(big.joints?.head?.selfPosition[1] - 3.6) < 1e-6, JSON.stringify(big.geometry ?? big.error));
   const old = await agent("body-vrm0", "fixtures/old-body.vrm");
   const v0 = await read(old, { detail: "bones" });
   check("VRM0 half-turn is preserved", near(v0.joints?.leftHand?.selfPosition, [-.8, 1.5, 0]));
