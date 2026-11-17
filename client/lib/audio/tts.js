@@ -25,7 +25,7 @@ export const isTtsEnabled = () => ttsEnabled && !!ttsFn;
 export function setTtsSource(fn, name = 'TTS') {
   ttsFn = fn || null;
   ttsName = fn ? name : '';
-  if (!fn) ttsEnabled = false;
+  if (!fn) setTtsEnabled(false);   // through the toggle, so speech in flight stops too
 }
 
 /** The audio panel's toggle; an agent turns it on once its source is registered. */

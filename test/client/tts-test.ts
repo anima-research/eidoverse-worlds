@@ -258,6 +258,21 @@ console.log("\n— disable / replace: stale async can never become current —")
     `speech=${speechSum()} vs one line ${ONE}, queued=${tts.mouthInfo().queued}`);
 }
 
+console.log("\n— removing the speaking voice stops it (ttsrow's remove: setTtsSource(null) then setTtsEnabled(false)) —");
+{
+  synthCalls = []; written.length = 0;
+  synthDelay = 80;
+  const p = tts.speak("removed mid-synthesis");
+  await until("the synthesis is in flight", () => synthCalls.includes("removed mid-synthesis"));
+  tts.setTtsSource(null); tts.setTtsEnabled(false);
+  await p; await pause("the disable's async hop", 150);
+  check("removing the source stills the pacer and empties the queue (#410)", !tts.mouthInfo().pacing && tts.mouthInfo().queued === 0,
+    `pacing=${tts.mouthInfo().pacing} queued=${tts.mouthInfo().queued}`);
+  synthDelay = 5;
+  tts.setTtsSource(engine, "fake-engine"); tts.setTtsEnabled(true);
+  await fenceSpeak();
+}
+
 console.log("\n— dead generator: rebuilt once, senders re-bound, no SDP churn —");
 {
   const g1 = tts.ensureGenerator();
