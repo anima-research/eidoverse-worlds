@@ -73,13 +73,15 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const V = lazy ? cfile.views : null, from0 = lazy ? cfile.coversIndex : 0;   // from0: the first line read at boot
   let logEnd = 0, lastStart = 0, genEnd = 0;   // where the head line sits in the file (the next cache's offsets)
   let entries: Any[];
+  let torn = false;   // a torn last line is cut only after the governance check below, so its refusal changes nothing
   if (lazy) { entries = lazy.entries; genEnd = cfile.at.g; logEnd = lazy.size; lastStart = lazy.lastStart; }
-  else { const buf = readLogBytes(logPath, { cut: !opts.readOnly }); entries = readLog(buf).map(posAt);
+  else { const buf = readLogBytes(logPath, { cut: false }); entries = readLog(buf).map(posAt); torn = fs.existsSync(logPath) && fs.statSync(logPath).size !== buf.length;
     logEnd = buf.length; genEnd = buf.indexOf(0x0a) + 1; lastStart = logEnd ? buf.lastIndexOf(0x0a, logEnd - 2) + 1 : 0; }
   // governance is reserved (§13): this server neither writes nor validates governance entries, so it refuses to serve a world
   // holding one rather than fold past it and write on (a cache with views is never written over one)
   { let g = -1; for (let s = from0; s < entries.length; s++) if (isE(entries[s]) && entries[s].kind === "governance") { g = s; break; }
     if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
+  if (torn && !opts.readOnly) readLogBytes(logPath);   // cuts it (and says so); the bytes kept are the ones read above
   const blobPath = (h: string) => path.join(blobDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(h))) throw new Error(`not a blob name: ${h}`);

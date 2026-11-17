@@ -25,5 +25,8 @@ try {
   check("G3 …and the refusal is truthful: it names the entry's seq, says governance is reserved here, and that nothing was changed",
     /seq \d+/.test(err) && /governance/i.test(err) && /reserved/i.test(err) && /nothing (was|is) (changed|written)/i.test(err), { err });
   check("G4 …and the world's files are untouched (the log's bytes and the directory listing as they were)", fs.readFileSync(log).equals(before.log) && fs.readdirSync(gov).sort().join(",") === before.files, { files: fs.readdirSync(gov).sort() });
+  fs.appendFileSync(log, '{"torn');   // an interrupted write after the governance entry: refusing must not cut it either (#480)
+  const torn = fs.readFileSync(log); let err5 = ""; try { openLive(gov, "gov"); } catch (x) { err5 = String((x as Error)?.message ?? x); }
+  check("G5 …and with a torn last line too, the refusal still leaves every byte (nothing was changed means nothing)", !!err5 && fs.readFileSync(log).equals(torn), { err5, was: torn.length, now: fs.statSync(log).size });
 } finally { fs.rmSync(W, { recursive: true, force: true }); }
 done();
