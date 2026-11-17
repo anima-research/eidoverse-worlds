@@ -1119,7 +1119,10 @@ console.log('\nFOLDED AND REMOVED TOOLS');
 // Main's tools that this protocol folds into general tools are refused with the call that does it now, and nothing
 // runs (world_access among them: folded into @world's own components); world_verb and whisper were removed, whisper
 // with world chat's private channel (#260 r3 I3: a retired name is refused with a pointer, never "no such tool").
-for (const name of Object.keys(TOOL_FOLDS)) {   // every folded name, from the table the door answers from
+// main's folded names, pinned here so a name dropped from the table fails, plus every name the table adds
+const FOLDED = ['take_off', 'climb_to', 'glide_to', 'land_at', 'fold_wings', 'unfold_wings', 'rehearse_down', 'rehearse_recover',
+  'clear_reach', 'clear_pose', 'ragdoll', 'library_preview', 'library_sheet', 'remove', 'kick', 'list_bans', 'world_access', 'blueprint_place'];
+for (const name of new Set([...FOLDED, ...Object.keys(TOOL_FOLDS)])) {
   r = await door(name, {});
   check(`${name} is refused as folded, and nothing runs`, failed(r) && new RegExp(`^${name} folded into a general tool: .* — nothing ran$`).test(said(r)), said(r));
 }
