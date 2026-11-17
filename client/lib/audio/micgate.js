@@ -76,8 +76,9 @@ export function gateStream(stream, levelFn) {
   } catch (e) {
     report('mic gate graph', e);
     release();
-    // fail closed; allowUngated(true) is the explicit way back to raw
+    // fail closed; allowUngated(true) is the explicit way back to raw, and then the raw tracks are the gate (driveRawTracks)
     _gateUnavailable = true;
+    if (_ungatedConsent) { _rawStream = stream; _rawWanted = 1; }
     return _ungatedConsent ? stream : null;
   }
 }

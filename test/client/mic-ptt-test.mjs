@@ -33,12 +33,12 @@ mock.module(fileURLToPath(new URL('../../client/lib/net.js', import.meta.url)), 
 // openness 0 forever and every assertion below would vacuously pass).
 // The analyser reports a level WE set, so the level side of the machine can
 // be driven: `room` is the RMS the "microphone" hears right now.
-let room = 0;
+let room = 0, sourceThrows = false;   // sourceThrows: the graph's build fails part-way (a device Web Audio can't read)
 mock.module(fileURLToPath(new URL('../../client/lib/audio/audioctx.js', import.meta.url)), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
-    createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
+    createMediaStreamSource: () => { if (sourceThrows) throw new Error('no source'); return { connect() {}, disconnect() {} }; },
     createGain: () => ({ gain: { value: 0, setTargetAtTime(v) { this.value = v; } }, connect() {}, disconnect() {} }),
     createMediaStreamDestination: () => ({ stream: { getTracks: () => [], getAudioTracks: () => [] } }),
     createDelay: () => ({ delayTime: { value: 0, setTargetAtTime() {} }, connect() {}, disconnect() {} }),
@@ -180,6 +180,14 @@ t('mictoggle: badge gold is gated on the key under PTT', /!pttMode\(\) \|\| pttH
 t('mictoggle: V guard is typing-aware, not any-INPUT', !/\['INPUT', 'TEXTAREA'\]\.includes\(document\.activeElement/.test(mt) && /typingTarget\(\)/.test(mt) && /checkbox|TEXT_INPUT/.test(mt));
 const ap = readFileSync(new URL('../../client/lib/audio/audiopanel.js', import.meta.url), 'utf8');
 t('audiopanel: sensitivity row dims under PTT (no control that lies)', /audio:ptt.*dimFloor|dimFloor[\s\S]{0,400}audio:ptt/.test(ap.replace(/\n/g, ' ')) || (/dimFloor/.test(ap) && /bus\.on\('audio:ptt', dimFloor\)/.test(ap)));
+
+// ── the graph fails part-way and the person allowed ungated voice: PTT still closes the raw track ──
+{ const raw = { kind: 'audio', enabled: true, stop() {} }, rs = { getTracks: () => [raw], getAudioTracks: () => [raw] };
+  sourceThrows = true; mg.allowUngated(true);
+  const out = mg.gateStream(rs, () => 0);
+  const closed = mg.driveRawTracks(false);
+  t('a graph that throws part-way, ungated allowed: the raw stream is the lane and PTT released disables its track', out === rs && closed === true && raw.enabled === false);
+  sourceThrows = false; mg.allowUngated(false); mg.release(); }
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
