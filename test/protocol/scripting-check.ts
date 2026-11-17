@@ -47,7 +47,7 @@ const cases: Case[] = [
       const r = Bun.spawnSync(["bun", path.join(KIT, "run.ts"), path.join(KIT, "examples/bellkeeper.js"), "--self", "bell1", "--knobs", '{"lamp":"lamp1"}', "--use", '{"action":"ring","by":"you"}'], { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
       const ref = RUN?.runEvents(example("bellkeeper.js"), { self: "bell1", knobs: { lamp: "lamp1" }, events: [{ on: "use", action: "ring", by: "you" }] });   // what it must print, from the runner itself
       return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString(), says: ref?.says ?? [], console: ref?.console ?? [] }; },
-    good: (o) => o.code === 0 && /set bell1 motion .*pendulum/.test(o.out) && o.says.length === 1 && o.console.length === 1 && [...o.says, ...o.console].every((t: string) => o.out.includes(t)) && /use lamp1 toggle/.test(o.out) },
+    good: (o) => o.code === 0 && /set bell1 motion .*pendulum/.test(o.out) && o.says.length === 1 && o.console.length === 1 && o.says.every((t: string) => o.out.includes(`  say ${JSON.stringify(t)}`)) && o.console.every((t: string) => o.out.includes(`  console ${t}`)) && /use lamp1 toggle/.test(o.out) },   // each under its label: speech and console told apart
 ];
 
 let pass = 0, fail = 0;
