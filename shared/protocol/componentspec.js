@@ -486,7 +486,8 @@ export const COMPONENTS = {
                help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1), modes? (walk | swim | fly | climb; absent, every mode)}. Where speed volumes overlap, only those whose modes take the body's current mode count, and the highest zone priority among them decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
-  // a behaviour. Keyed, so §4's creator rule decides who may change it and who its SPONSOR is. The install check's lists
+  // a behaviour. Keyed, so §4's creator rule decides who may change it; its SPONSOR is whoever last changed more than
+  // `paused` (an owner's edit sponsors it: scriptaudit.js sponsorAt). The install check's lists
   // are here so the pin sees them: itemEnums.on ('changed:*' = changed:<component>), itemEnums["scope.bodies"], scopeFields
   script:    { keyed: true, key: "instance", fields: { src: "string", scope: "object", on: "array", every: "number", always: "bool", knobs: "object", paused: "bool" },
                required: ["src", "scope"], grammar: { src: "sha256" }, units: { every: "s" }, ranges: { every: { min: 5 } },

@@ -1142,7 +1142,7 @@ refusal code `body`).
 A script is a `script:<name>` component: `{src, scope, on, every?,
 always?, knobs?, paused?}`, where `src` names a source blob. It acts with
 its **sponsor's** rights — whoever's rights admitted the latest write to
-that key — re-checked at every activation and never wider than the `scope`
+that key (a write that only pauses it adopts nothing; an owner's edit makes the owner its sponsor) — re-checked at every activation and never wider than the `scope`
 it declares. The visitor whose `use` triggers it adds no rights. A demoted
 sponsor's scripts go dormant; a banned sponsor's are suspended.
 
