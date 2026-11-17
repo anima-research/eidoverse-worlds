@@ -11,7 +11,8 @@
 //
 // Every angle is reported in ANATOMICAL terms — flexion vs extension, not the
 // unsigned cone angle the solver stores — because that is the axis on which a
-// pose reads as wrong. Reference ranges in the header of each block are the
+// pose reads as wrong. Knees and elbows excepted so far: their fold is an
+// unsigned acos, so a hyperextension reads as flexion (see the hinge block). Reference ranges in the header of each block are the
 // usual clinical figures for a relaxed (not stretched, not athletic) body.
 
 import { plugin } from 'bun';

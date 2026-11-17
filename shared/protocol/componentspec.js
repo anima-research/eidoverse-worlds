@@ -3,7 +3,8 @@
 // Every parameter is written down (PROTOCOL §4). The authority writes a component's defaults into the stored value when
 // it's created or set (materialize, below): `defaults` always, and each `when` rule ({if, absent, set}) that holds. So a
 // renderer supplies no number the log doesn't hold for a value written today (an older value's missing field is read as its
-// `absentMeans` says), and changing a default here never changes an old world. A default
+// `absentMeans` says, as is a field with no default: a structure's slabT, never written), and changing a default here never
+// changes an old world. A default
 // that lives only in help text or a renderer is a bug (pretrans-check D7); a changed default, type or enum is a changed
 // meaning (spec/registry-pin.json, D8).
 //
@@ -483,7 +484,7 @@ export const COMPONENTS = {
                docs: { kind: "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
                  factor: "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows",
                  modes: "which movement modes it touches: walk | swim | fly | climb (Unreal's per-mode settings); absent: all. Main's slow water translates to ['swim']" },
-               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1), modes? (walk | swim | fly | climb; absent, every mode)}. Where speed volumes overlap, only those whose modes take the body's current mode count, and the highest zone priority among them decides" },
+               help: "on a thing with a zone {shape: 'box', size} (or global): {kind: 'speed', factor? (× a body's own speed inside, 0.05..10; absent 1), modes? (a list of walk | swim | fly | climb, e.g. ['swim']; absent, every mode)}. Where speed volumes overlap, only those whose modes take the body's current mode count, and the highest zone priority among them decides" },
   "terrain-grid": { status: "reserved", on: "world", help: "reserved: the sculpt grid; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", help: "reserved: a sculpted tile, keyed <i>-<j>; no shape is pinned until a world needs one (a sketch: docs/reference/RESERVED-SHAPES.md)" },
   // a behaviour. Keyed, so §4's creator rule decides who may change it; its SPONSOR is whoever last changed more than

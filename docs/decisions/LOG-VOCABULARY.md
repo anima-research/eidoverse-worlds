@@ -56,7 +56,7 @@ Each row: the decision, the referent, the surfaces, and the hash effect.
 ### 1.2 `sim` (kind) → `physics`; `sim` (actor) stays
 
 - **Referent.** The authority's own record of a physics boundary: verbs `launch`, `lift`, `catch`, `digest`, `checkpoint`. Written by the authority, never by a client, never refused. `actor` is the thrower or lifter for `launch`/`lift`/`catch` and `sim` for `digest`/`checkpoint`.
-- **`cause` is the request,** on every physics entry but `checkpoint`, which has none (a quiet-time cut, `scriptrun.js` checkpointSim). For a wake it is the request whose change removed the support, not the change: `writes.js` sets `cause` to the seq the request entry takes, and every `launch` in `spec/conformance/physics/arc-onto-table.jsonl` carries its request's seq. Request → change → physics is the reading order, not a `cause` chain.
+- **`cause` is the request,** on every physics entry but two: `checkpoint` has none (a quiet-time cut, `scriptrun.js` checkpointSim), and a settle's `digest` names the `launch` entry it settles (`physics.js` settleSim, `cause: group[0].seq`). For a wake it is the request whose change removed the support, not the change: `writes.js` sets `cause` to the seq the request entry takes, and every `launch` in `spec/conformance/physics/arc-onto-table.jsonl` carries its request's seq. Request → change → physics is the reading order, not a `cause` chain.
 - **Checkpoint body.** `{seq, engine, tick, clock, sim: <digest>, state: <blob>}`. `seq` is a position (§1.4). The body field `sim` names the sim layer, which keeps its name.
 - **Hash.** Every physics skeleton. Digest, world id: none.
 - **v1 translator.** Never emits `physics`: each rest is a plain change by actor `sim`, caused by the imported request.

@@ -23,8 +23,10 @@
 //   Ids: the translator keeps every entity id (enc() escapes only what the §2.3 grammar refuses, and an id that starts
 //   with its own escape prefixes x-- or h--), so ids are matched
 //   through enc(); people's names (roles, bans, authors) are matched through the translated world's directory.
-//   Numbers compare with a 1e-9 tolerance; everything else exactly. What the comparison leaves out is only the
-//   translator's own DROPPED table (printed by name with its reason), and nothing else.
+//   Numbers compare with a 1e-9 tolerance; everything else exactly. What the comparison leaves out: the translator's own
+//   DROPPED table (printed by name with its reason), and what both sides lose alike, since project() applies the
+//   translator's cuts to the snapshot too (a sound description past 200 characters, sky.by / sky.seq), so such a loss
+//   never shows as a difference.
 //
 // usage: bun tools/import-v1/snapshot-oracle.ts [<world dir> …]
 //   a world dir translated in place is read through its kept originals (log.original.jsonl, snapshot.original.json)
@@ -332,7 +334,7 @@ if (import.meta.main) {
   const dirs = args.length ? args.map((a) => path.resolve(a)) : [...fixtureWorlds(), ...(roots ? findWorlds(pathList(roots)) : [])];
   if (!args.length && !roots) console.log("OPTIONAL oracle-host-worlds: compared the repo's reference fixtures only (set ORACLE_WORLDS or PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows) to add a host's old worlds: log.jsonl + snapshot.json)");
   console.log(`snapshot oracle: the translator against the OLD ENGINE's own folded state (snapshot.json), ${dirs.length} world dir(s)`);
-  console.log(`not compared (translate-v1 DROPPED, the translator's documented table; nothing else is left out):`);
+  console.log(`not compared (translate-v1 DROPPED, the translator's documented table; a cut both sides make alike, such as a sound description past 200 characters, doesn't show either):`);
   for (const [k, why] of Object.entries(DROPPED)) console.log(`   - ${k}: ${why}`);
   console.log(`model addresses: library ${process.env.EIDOVERSE_DIR ?? path.resolve(ENGINE, "..", "eidoverse-video")}; store ${STORE ?? "NONE (set OPT_DIR to the serving checkout's assets/opt): store models compare as paths on both sides"}`);
   console.log(`   (comp.guard, comp.door, motion.rpm and a mounted thing's own pose are not left out: they ARE compared, through the mapping above)`);

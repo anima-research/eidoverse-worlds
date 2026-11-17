@@ -65,7 +65,8 @@ rename: an old server still writing to it refuses the swap (stop it, then transl
 interrupted swap checks the same before it moves anything. The identities the translation mints join the shared
 directory only once the swap has succeeded (kept until then in the temporary directory as `.identities.json`, which the
 recovery of an interrupted swap writes): a failed attempt leaves none behind, so retries don't pile up unused ones. On any failure, before or during the swap, whatever moved is
-put back, the temporary directory is removed, and it says why. A directory whose `world.jsonl` is a world is served as one, so the
+put back, the temporary directory is removed, and it says why; a piece it can't put back (a filesystem error on the reverse rename)
+is listed to move by hand, and the world stays marked. A directory whose `world.jsonl` is a world is served as one, so the
 kept `log.original.jsonl` never makes it look old; translating it again refuses. `translate <old world> <new name>`
 still translates into a new name instead, leaving the old directory exactly as it was (its own dry run naming both: `translate <old> <new> --dry-run …`; the in-place hash does not approve it, the world's name is in the hash).
 

@@ -34,8 +34,9 @@ import { LOD_FRACTION, LOD_HYST } from '../../../shared/lod-distance.js';
 export const PRESSURE_EDGE = 0.5;
 /** GPU memory / proto budget at which the policy calls it pressure. */
 export const PRESSURE_AT = 0.8;
-/** Metres inside which EVERY placement is full detail, on every dial and at every scale: a lod-tier placement owns no
- *  collider, no support surface (models.js), and what is in reach must have them. The unscaled radius never came this
+/** Metres from a placement's ORIGIN inside which it is full detail, on every dial and at every scale: a lod-tier placement
+ *  owns no collider, no support surface (models.js), and what is in reach must have them. A long model's far end can still
+ *  be in reach while its origin is past this (chooseTier's dist is to the origin). The unscaled radius never came this
  *  close (R ≥ 80m → an eco upgrade edge of 13.5m); a scaled-down placement would — a 0.1× rack at 4m. */
 export const LOD_NEAR_MIN = 10;
 

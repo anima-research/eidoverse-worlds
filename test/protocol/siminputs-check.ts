@@ -1,7 +1,8 @@
 // test/protocol/siminputs-check.ts — what the sim reads that isn't in the log (shared/protocol/siminputs.js, #260 review #144).
 //   I   the guard: the sim's import closure is pinned here, and only a module SIM_INPUTS names may read outside data, so a new
-//       outside input (a mesh collider from a GLB, say) can't enter the sim without joining the list the replica waits on
-//       (per module: a second input added inside an already-named module is not caught)
+//       outside input (a mesh collider from a GLB, say) can't enter the sim without joining the list the replica waits on.
+//       Per module, and by the reads OUTSIDE knows (fetch, file reads, storage, import(), a set…Loader seam): a second input
+//       inside an already-named module, or a read of a global (globalThis.x) in any module, is not caught
 //   G   a client that lacks an input refolds once it lands: the authority reads its heightmap from disk, a client fetches it
 //       G1/G2 late at join, G3 control (held from the start), G4 a terrain changed mid-session to one not yet fetched
 // usage: bun test/protocol/siminputs-check.ts

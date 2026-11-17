@@ -16,7 +16,8 @@
 //             is called, the act is `skipped` with that reason, never flagged and never counted verified. An act with no
 //             such reads that differs is still flagged `rerun`. Soundness: everything but the identities is still checked
 //             (sponsor, depth, seed, src, the read shape); but an act that read who was near and differs is skipped even
-//             when its result didn't depend on them (a forged constant write after near() is not flagged).
+//             when its result didn't depend on them, so a forged write in such an act is never flagged: tampering
+//             there goes undetected, and no flag is not proof of none.
 //   arrivals — an `enter` / `leave` activation (and a `grab` / `release` whose event names no `by`) records no
 //             identity: the script heard `by` live, the act keeps neither a trigger actor nor event.by. A re-run gets a
 //             stand-in identity; a result that doesn't depend on who
