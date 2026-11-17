@@ -1,15 +1,16 @@
-// image-container-sweep — a tool, not a gate test: every embedded image in every GLB/VRM under the host's serving
-// roots, checked against its declared mimeType. The optimizer refuses to write such a file (server/optimize.ts
+// image-container-sweep — a tool, not a gate test: every bufferView image in every GLB/VRM under the host's serving
+// roots, checked against its declared mimeType (an image by uri, a data: URI included, isn't read: findImageLies). The optimizer refuses to write such a file (server/optimize.ts
 // findImageLies, #122); this finds the variants written before that guard.
 //   bun run tools/assets/image-container-sweep.ts              # PATCH_DIR + OPT_DIR + LIBRARY_DIR (config.ts LADDER)
 //   bun run tools/assets/image-container-sweep.ts <dir|file>…  # explicit roots
-//   bun run tools/assets/image-container-sweep.ts --host https://…  # a live server: /library-list, each entry fetched with ?ktx2=1
+//   bun run tools/assets/image-container-sweep.ts --host https://…  # a live server: /library-list, each entry fetched with the ktx2 key its /version publishes
 // Exit 1 if anything lies about its own bytes, else 0 (an unreadable file is printed and counted, not failed).
 
 import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { findImageLies } from "../../server/optimize.ts";
 import { LADDER } from "../../server/config.ts";
+import { keyFromVersion, negotiate } from "../../shared/ktx2.js";
 
 const argv = process.argv.slice(2);
 const hostFlag = argv.indexOf("--host");
@@ -48,11 +49,15 @@ function walk(dir: string, base: string) {
 }
 
 if (host) {
-  const list = await (await fetch(`${host.replace(/\/$/, "")}/library-list`)).json() as { path: string }[];
+  const base = host.replace(/\/$/, "");
+  // the key this server publishes, as a client reads it (shared/ktx2.js): a retired one is an unflagged fetch of the original
+  const key = keyFromVersion(await fetch(`${base}/version`).then((r) => r.json()).catch(() => null));
+  if (!key) { console.log(`  ${base}/version publishes no ktx2Key: it serves no KTX2 variant to sweep`); process.exit(2); }
+  const list = await (await fetch(`${base}/library-list`)).json() as { path: string }[];
   const models = list.filter((f) => /\.(glb|vrm)$/i.test(f.path));
   console.log(`image container check — ${models.length} model(s) from ${host} (as a KTX2-capable client sees them)\n`);
   for (const f of models) {
-    const r = await fetch(`${host.replace(/\/$/, "")}/library/${f.path}?ktx2=1`);
+    const r = await fetch(negotiate(`${base}/library/${f.path}`, key));
     if (!r.ok) { console.log(`  ? ${f.path} — HTTP ${r.status}`); unreadable++; continue; }
     report(f.path, new Uint8Array(await r.arrayBuffer()));
   }
