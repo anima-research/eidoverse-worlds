@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { newBucket, admitMessage, type MsgBucket } from "./msgrate.ts";
 import { envNumber } from "./limits.ts";
 
-const num = (k: string, d: number) => envNumber(k, d);   // an operator's rail (README): 0 = none
+const num = (k: string, d: number) => envNumber(k, d, (n) => Number.isInteger(n) && n >= 0);   // an operator's rail (README), a count: 0 = none
 export const LIMITS = {
   ipPer10Min: num("CLIENTLOG_IP_PER_10MIN", 30),        // posts per address (IPv6 by /64) per 10 min, the burst the same
   senderPer10Min: num("CLIENTLOG_SENDER_PER_10MIN", 30), senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit

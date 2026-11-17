@@ -11,7 +11,7 @@ export function envNumber(name: string, fallback: number, ok: (n: number) => boo
   console.warn(`[config] ${name}=${JSON.stringify(raw)} is not valid — using ${fallback}`);
   return fallback;
 }
-const env = (k: string, d: number) => envNumber(k, d);
+const env = (k: string, d: number) => envNumber(k, d, (n) => Number.isInteger(n) && n >= 0);   // every limit here is a count
 /** A world's name at the serving doors (the sequencer, the agent door, the routes): letters, digits, - and _, at most 64. Founding (worldlog.ts FOUND_NAME) and the world CLI (oldworlds.ts NAME) are stricter. */
 export const WORLD_NAME_RE = /^[a-z0-9_-]{1,64}$/i;
 

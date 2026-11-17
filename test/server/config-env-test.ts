@@ -39,6 +39,9 @@ for (let i = 0; i < Math.max(...cases.map((c) => c.length)); i++) {
     if (got.v[key] !== want || (wantWarn ? !warned : named)) { fail++; console.error(`FAIL ${name}=${JSON.stringify(raw)}: got ${got.v[key]}, want ${want}; warning ${named ? "given" : "none"}, want ${wantWarn ? "one" : "none"}`); }
   });
 }
+// a count (limits.ts LIMITS, clientlog.ts) is a whole number: a fraction falls back with the warning (EW_PAGE_MAX=1.5 left every page unbounded)
+{ const got = read({ EW_ID_LEN: "1.5", CLIENTLOG_IP_PER_10MIN: "0.5" }); rows++;
+  if (got.v.l !== 64 || got.v.c !== 30 || !got.warn.includes('EW_ID_LEN="1.5" is not valid') || !got.warn.includes('CLIENTLOG_IP_PER_10MIN="0.5" is not valid')) { fail++; console.error(`FAIL a fractional count: got l=${got.v.l} c=${got.v.c}, want 64 and 30 with warnings`); } }
 // the budget's own default is machine-derived (half the usable memory): finite, never negative
 if (!(Number.isFinite(budgetDefault) && budgetDefault >= 0)) { fail++; console.error(`FAIL OPT_MEM_BUDGET_MB default ${budgetDefault}`); }
 if (fail) process.exit(1);
