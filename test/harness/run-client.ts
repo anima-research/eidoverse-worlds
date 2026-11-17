@@ -116,6 +116,9 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     if (dead && /^error: Cannot find (?:module|package) '[^./]/.test(dead)) return done({ file, kind: strictEnv ? "red" : "env", why: `a dependency isn't installed here: ${dead.slice(7)}`, ms, tail });
     if (dead) return done({ file, kind: "dead", why: `${dead} (at ${(ms / 1000).toFixed(1)} s)`, ms, tail });
     if (timedOut) return done({ file, kind: "timeout", why: `still running at ${TIMEOUT_S} s`, ms, tail });   // before loaded: a hung top-level await never loaded (#260 187)
+    // a stub that never applied loaded the wrong module (stub.ts verifyStubs prints FAIL and exits 1): dead, not loaded
+    const stub = /^FAIL stub (?:never applied|applied to a path that isn't there)[^\n]*/m.exec(out)?.[0];
+    if (importOnly && stub) return done({ file, kind: "dead", why: stub.slice(5), ms, tail });
     if (importOnly) return done({ file, kind: "loaded", ms });
     if (code === 0) return done({ file, kind: "pass", ms });
     if (code === 2 && /no browser|no chrome|chromium|no gpu|webgpu/i.test(out)) return done({ file, kind: "env", why: tail.split("\n").pop(), ms, tail });

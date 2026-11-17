@@ -57,6 +57,14 @@ const rc4 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run
   { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", RUN_CLIENT_NO_MCPL: "1" }, timeout: 45_000 });
 const out4 = rc4.stdout.toString() + rc4.stderr.toString();
 ok(rc4.exitCode === 1 && /^RED\s+\S*f-mcpl-test\.ts/m.test(out4), "--strict-env: missing mcpl/node_modules is a red too, and fails the run", { code: rc4.exitCode, out: out4.slice(-400) });
+// --import-only: a file that loaded but whose stubs never applied (test/harness/stub.ts verifyStubs prints FAIL and exits 1)
+// is dead at import, not loaded (bot #333 r2 157)
+const dir5 = path.join(root, "deadstub"); fs.mkdirSync(dir5);
+fs.writeFileSync(path.join(dir5, "f-dead-stub-test.ts"), `console.log("FAIL stub never applied: /x\\.js$/ (registered at here); its module moved or the import is gone"); process.exitCode = 1;\n`);
+const rc5 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir5, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+const out5 = rc5.stdout.toString() + rc5.stderr.toString();
+ok(/^DEAD\s+\S*f-dead-stub-test\.ts/m.test(out5) && rc5.exitCode === 1, "--import-only: a stub that never applied is dead at import and fails the run, not loaded", { code: rc5.exitCode, out: out5.slice(-300) });
 const dir3 = path.join(root, "slowonly"); fs.mkdirSync(dir3);
 fs.writeFileSync(path.join(dir3, "e-slow-test.ts"), `await new Promise(() => {});\n`);
 const rc3 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir3, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
