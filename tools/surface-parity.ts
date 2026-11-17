@@ -129,6 +129,8 @@ if (!CHROME) await missing("browser binary", `none of these is a real Chromium: 
 ok("browser binary", CHROME);
 
 // ---- 2. the two trees ----------------------------------------------------------------------------------------------
+/** A word a POSIX shell reads back as itself (a pasted hint's path with a space in it). */
+const shq = (s: string) => /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 const treeOk = (t: string) => ["server/server.ts", "client/lib/core.js", "client/lib/sky/sky.js", "tools/world.ts"].every((f) => existsSync(join(t, f)));
 if (!treeOk(NEW)) await missing("new tree", `${NEW} is not a checkout of this repo (server/server.ts, client/lib/core.js …)`);
 const headOf = (t: string) => Bun.spawnSync(["git", "-C", t, "rev-parse", "--short", "HEAD"]).stdout.toString().trim();
@@ -182,7 +184,7 @@ for (const w of SELECTED) {
   if (!g || g.body?.dialect !== "eidoverse-log" || g.body?.v !== 4) {
     const others = (existsSync(dir) ? readdirSync(dir) : []).filter((f) => f.endsWith(".jsonl"));
     const hint = others.length
-      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, in two steps (tools/import-v1/README.md): WORLDS_DIR=${dirname(resolve(dir))} bun tools/world.ts translate ${basename(resolve(dir))} --dry-run --no-founder-key, then … --approved <report-hash> --operator-only-no-owner`
+      ? `it holds ${others.join(", ")}, which isn't a current-format world log (neither tree opens it: server.ts:351 refuses the join). A v1 log.jsonl translates once, in place, in two steps (tools/import-v1/README.md): WORLDS_DIR=${shq(dirname(resolve(dir)))} bun tools/world.ts translate ${shq(basename(resolve(dir)))} --dry-run --no-founder-key, then … --approved <report-hash> --operator-only-no-owner`
       : `no world.jsonl with a current {dialect:"eidoverse-log", v} genesis, and no other *.jsonl either`;
     await missing(`world copy: ${w}`, `${dir} is not a world this protocol serves —`, hint);
   }
