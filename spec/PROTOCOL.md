@@ -503,9 +503,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   units, friction and restitution limits, the combine enums: spec/PHYSICS.md
   §3.2). `nestedEnums` closes a vocabulary inside a nested grammar, keyed by
   its path (`structure`'s `levels[].apertures[][3]`: door, window, arch; wall
-  axes 0..3; tile halves A, B). All three are pinned: a `nestedEnums` member
-  removed is a break like an enum's; `reservedKinds` and `reservedShape` are
-  recorded (a change shows in the pin's diff) but not yet judged by the
+  axes 0..3; tile halves A, B). `nestedEnums` and `reservedKinds` are pinned: a `nestedEnums` member
+  removed is a break like an enum's; `reservedKinds` is recorded (a change shows in the pin's diff) and the
+  reserved field names with it (`reservedFields`), but `reservedShape` is not in the pin yet (componentspec.js pinOf), and none is yet judged by the
   tripwire.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
