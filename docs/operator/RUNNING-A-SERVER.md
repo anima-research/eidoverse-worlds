@@ -67,3 +67,6 @@ client's capture module by path, and that moved too (`/lib/capture.js` → `/lib
 Mac renderer in the same window, or its watchdog restarts healthy renderers. The bots moved from `tools/` to `services/`:
 a captionbot run from its own directory keeps unconfirmed captions in `./captionbot.spool.jsonl`, so move
 `tools/captionbot/captionbot.spool.jsonl` to `services/captionbot/` (or set `SPOOL`) before starting it there.
+`client/voices/` is an ignored drop folder now: the reset deletes the one voice config git tracked there
+(`hesperus-clockwork.onnx.json`) and keeps its untracked `.onnx`, so a box that serves `?voice=hesperus-clockwork` copies
+that `.onnx.json` back first.
