@@ -48,6 +48,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["entryBy reads a purged cause act", "protocol/authority/rights.js", "if (b === null) return { seq: e.seq, by, rights: null };", "if (b === null) return { seq: e.seq, by, rights: by };", ["Q2"]],
   ["readback ignores the purge index", "protocol/authority/storage.js", "if (purgedSeqs(w).has(seq)) return null;", "", ["Q3"]],
   ["an unregistered refusal code", "protocol/authority/scriptrun.js", "refuse(\"stale\", `${a.id}.${key}", "refuse(\"stale-x\", `${a.id}.${key}", ["G1"]],
+  ["an unregistered single-quoted code on a path the suite never runs", "protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7: the one gate ----------\nif (globalThis.__never) refuse('zz-unregistered', 'x');", ["G1"]],
   ["a verb without a row", "protocol/verbspec.js", "  inbox: {", "  inbox_gone: {", ["V1"]],
   ["a reserved request is just unknown", "protocol/authority.js", "if (!h && Object.hasOwn(RESERVED_VERBS, verb)) refuse(\"reserved\"", "if (false) refuse(\"reserved\"", ["X4"]],
   ["CONTROL (no-op: must stay green)", "protocol/authority/gate.js", "// ---------- L7: the one gate ----------", "// ---------- L7:  the one gate ----------", []],
@@ -335,8 +336,8 @@ const cases: Case[] = [
       ...REG.REFUSAL_SOURCES];
     const used = new Map<string, string>(); const dynamic: string[] = [];
     for (const f of files) { const src = read(f);
-      for (const m of src.matchAll(/\brefuse\("([a-z0-9-]+)"/g)) used.set(m[1], f);
-      for (const m of src.matchAll(/\bcode: "([a-z0-9-]+)"/g)) used.set(m[1], f);
+      for (const m of src.matchAll(/\brefuse\((["'`])([a-z0-9'-]+?)\1/g)) used.set(m[2], f);   // any quote (#453); a code may hold an apostrophe
+      for (const m of src.matchAll(/\bcode: (["'`])([a-z0-9'-]+?)\1/g)) used.set(m[2], f);
       for (const m of src.matchAll(/\brefuse\(([a-zA-Z_][\w.?]*)[,)]/g)) if (f.endsWith("authority.js") || f.startsWith("shared/protocol/authority/")) dynamic.push(m[1]); }
     const reg = new Set(Object.keys(REG.REFUSAL_CODES));
     const missing = [...used.keys()].filter((c) => !reg.has(c) && !REG.NOT_REFUSALS.includes(c));

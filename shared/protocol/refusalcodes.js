@@ -86,6 +86,7 @@ export const REFUSAL_CODES = Object.freeze({
   "disabled":       { meaning: "it's switched off", when: "handling, using or standing on a thing that is (or hangs under) disabled" },
   "in-flight":      { meaning: "the engine has it until it rests", when: "any write to a launched thing before its rest" },
   "not-at-rest":    { meaning: "the engine doesn't have it at rest", when: "a rest the engine doesn't agree with" },
+  "not-the-engine's": { meaning: "the rest isn't where the engine has it", when: "a rest whose pose differs from the engine's resting pos or q (checks.js restCheck)" },
   "implausible":    { meaning: "physics wouldn't leave it there", when: "a put or place whose result floats or interpenetrates" },
   "full":           { meaning: "this world is at its entity limit", when: "a write that adds entities past capacity" },
   "too-many":       { meaning: "too many of those", when: "more scripts than script-settings.max" },
