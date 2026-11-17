@@ -48,8 +48,9 @@ behind a home NAT, no port forwarding):
 
 ## How you know it's working (no ssh required)
 
-- **`/relay-diag`** (server): per-leg `state` / `rxPackets` / `hears` /
-  `publishing`, plus consent, mutes and forwarded counts. `rxPackets: 0` on a
+- **`/relay-diag?world=<name>`** (server; without `world` it reports `commons`): per-leg `state` / `rxPackets` / `hears` /
+  `publishing`, plus consent, mutes and forwarded counts. On a box with `JOIN_TOKEN` it needs the key as
+  `Authorization: Bearer <key>` (or a signed-in session), like `/snap`. `rxPackets: 0` on a
   `connected` leg that is `publishing` and not muted = signaling fine, media path dead → read the NAT
   paragraph (a listener-only or muted leg counts nothing).
 - **`/audio`** (typed in the client): the phone-holder's report — starts with

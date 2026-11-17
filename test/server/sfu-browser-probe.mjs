@@ -132,7 +132,7 @@ try {
         : bad('audio survived revocation');
 
   // Server-side truth, not just what the client believes.
-  const diag = await (await fetch(`${BASE}/relay-diag?world=staging`)).json();
+  const diag = await (await fetch(`${BASE}/relay-diag?world=staging`, { headers: { authorization: `Bearer ${KEY}` } })).json();   // behind the door
   console.log(`  server diag: forwarded=${diag.forwarded} suppressed=${JSON.stringify(diag.suppressed)}`);
   diag.forwarded > 0 ? ok('server confirms it forwarded packets')
                      : bad('server forwarded nothing — client may be hearing itself');
