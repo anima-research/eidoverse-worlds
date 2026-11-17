@@ -101,6 +101,9 @@ await everyoneHas(x, "garbled frame");
 check("a string mic and a numeric hear never reach the peer", !!peer.last && !("mic" in peer.last) && !("hear" in peer.last), JSON.stringify(peer.last));
 check("...and the rest of that pose still travelled", peer.last?.clip === "idle");
 check("voiceWire itself sends no non-boolean", JSON.stringify(voiceWire({ mic: "yes", hear: 1 })) === "{}");
+x = ownerSends({ mic: true, hear: 1 }, true);
+await everyoneHas(x, "half-garbled frame");
+check("...one field at a time: a good mic beside a numeric hear still reaches the peer", peer.last?.mic === true && !("hear" in peer.last), JSON.stringify(peer.last));
 
 console.log("silence is unknown, never a default:");
 x = ownerSends(null);
