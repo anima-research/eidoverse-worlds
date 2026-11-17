@@ -923,6 +923,9 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
         /if \(e\.repeat\) return;/.test(toggles) &&
         toggles.indexOf('e.repeat') < toggles.indexOf('BODY_KEYS.find') &&
         /const BODY_KEYS = \[[\s\S]*?code: 'KeyF'/.test(ctl));
+  // ...and the guard is on the listener, not the emit: build.js's nudge and raise keys need the repeats
+  check('but the key bus still carries repeats (build.js nudges need them)',
+        /bus\.emit\('key'/.test(ctl) && !/if \(e\.repeat\) return;\s*\n\s*bus\.emit\('key'/.test(ctl));
 
   // 2. Flight measured the ground with raw terrain while take-off measured it
   //    through the colliders -- two different floors, differing by the height
