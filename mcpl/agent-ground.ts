@@ -126,6 +126,8 @@ export class AgentGround {
       }
     }
     if (rev !== this.terrainRev) return;   // a newer terrain started while this one loaded
+    // a body closed while this loaded commits nothing: the height and water fields are the process's, a successor's now
+    if (this.a.closed) return;
     this.pendingTerrain = null;
     const flat = flatHeightOf(args);   // a flat terrain is level ground at its height: no mesh to build
     const t = flat !== null ? { heightAt: () => flat } : (globalThis as any).makeTerrain({ ...args, layers: [] });

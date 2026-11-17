@@ -56,6 +56,15 @@ try {
   const tries = seen.filter((s) => s.url.endsWith("/library/eidoverse/terrain.js")).length;
   check("a terrain.js that answered 503 isn't kept: the next build fetches it again", tries === 2 && ag2.ground.terrainSrc === "", `${tries} read(s), cached ${JSON.stringify(ag2.ground.terrainSrc)}`);
   ag2.close();
+  // a terrain build still loading when its body closes commits nothing: the height and water fields are the process's
+  // (a successor's by then), so the departed world's ground must not land on them (bot #333 r2 171)
+  { const ag3 = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "closing", world: "w" } as any);
+    let release!: () => void; const held = new Promise<void>((r) => { release = r; });
+    answer = async (u) => { if (u.endsWith("/terrain.js")) { await held; return new Response("globalThis.makeTerrain = () => ({ heightAt: () => 7 });"); } return new Response("no", { status: 404 }); };
+    (ag3 as any).ground.terrainSrc = null;
+    const build = (ag3 as any).ground.buildTerrain({ kind: "noise" });
+    ag3.close(); release(); await build.catch(() => {});
+    check("a terrain build that finishes after its body closed commits no ground", !(ag3 as any).ground.terrain, String(!!(ag3 as any).ground.terrain)); }
 } finally {
   globalThis.fetch = realFetch;
 }
