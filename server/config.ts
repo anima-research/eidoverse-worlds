@@ -67,7 +67,8 @@ mkdirSync(WORLDS_DIR, { recursive: true });
 export const STATE_CACHE_EVERY = envNumber("STATE_CACHE_EVERY", 1000, (n) => n >= 0);
 /** A sim checkpoint once this many entries follow the last (authority checkpointSim, which waits for the sim to rest): a boot replays about this many; 0 = only after launches (cost: simckpt-check PC9). */
 export const SIM_CHECKPOINT_EVERY = envNumber("SIM_CHECKPOINT_EVERY", 1000, (n) => n >= 0);
-// ---- server policy: every limit a server runner may set, in one place ----
+// ---- server policy: the limits a server runner may set, in one place (the WebSocket message cap, EW_WS_MESSAGE_BYTES,
+// is in server/limits.ts) ----
 /** One person's acts per window, logged entries (Matrix rc_message's shape; shared/protocol/authority/gate.js rateCheck). */
 export const ACT_RATE = envNumber("ACT_RATE", 60, (n) => n > 0);
 /** One person's says per window, counted apart from acts so chat and building can't starve each other. */

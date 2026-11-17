@@ -49,7 +49,8 @@ try {
     Object.keys(good.suggested.places).length === good.suggested.rooms.length + good.suggested.doors.length + good.suggested.stairs.length);
 
   console.log("\nbroken buildings:");
-  // the walking body is the mover's (radius 0.2: it needs more than 0.4 m), so the narrow door is 0.3 m
+  // the walking body is the mover's (radius 0.2, a push under 5 cm a nudge: test/mcpl/buildcheck-route-test.ts passes 0.45 m
+  // and a scaled 0.25 m door), and this narrow door, 0.3 m, it can't pass
   const narrow = await run("narrow", without(isFront, [-3, FLOOR, 2.8, -0.15, 6.3, 3], [0.15, FLOOR, 2.8, 3, 6.3, 3], [-0.15, 2.4, 2.8, 0.15, 6.3, 3]));
   check("a 0.3m doorway: the inside is reachable only through a passage narrower than a body, and it says where",
     kinds(narrow).includes("narrow") && narrow.warnings.some((w: any) => w.kind === "narrow" && Math.abs(w.at[0]) < 0.5 && w.at[2] > 2.2 && w.at[2] < 3.6), say(narrow));

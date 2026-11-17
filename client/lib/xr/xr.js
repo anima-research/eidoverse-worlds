@@ -1,7 +1,8 @@
 // xr — the door into the headset, and everything your hands do inside it.
 //
 // Owns the session and rig, and the hands: stick locomotion only fills xrIntent (the controller does the moving),
-// either hand's ray feeds sceneSelect (the xr:select event, main.js), grip alone grabs a panel by its background or title (never by a control),
+// either hand's ray feeds sceneSelect (the xr:select event, main.js; the left one only while a right controller is
+// connected: the pointer loop sits inside the right-stick block), grip alone grabs a panel by its background or title (never by a control),
 // and the radial menu opens panels and local acts (recentre, ears, mic, leave). Never navigate mid-session.
 
 import { confirmCenter } from '../edit/confirmcenter.js';

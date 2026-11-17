@@ -8,15 +8,13 @@
 //   AT3  act shove reports the server's refusal as an error naming the consent class (shove), and its description no longer
 //        says agents are performers by default (every body is Normal)
 //   AT4  every advertised tool carries a title and honest MCP annotations (readOnly / destructive / idempotent / openWorld)
-//   AT5  two sections share this number: a light is create {components: {light}} (AT5a–e), and look points at a real tool
-//        where one exists (lock and hidden are edit fields), not at the act hatch
+//   AT5  a light is create {components: {light}} (AT5a–e)
 //   AT6  the surface after the fold (REPOINT-PLAN 10-14 §4; R's standard 09:47: a name intuitive to everyone AND useful in
 //        general situations, or it is an alias): ~30 tools; the flight nine are move {mode: "fly"} + act land; the body
 //        sugar is anim {name|joints|ragdoll|stop} (pose is an unknown tool) / reach {release} / act shove; three library tools are one; moderation is
 //        act {kick|ban|unban|bans}; light/remove/blueprint_place are create / act delete / create {from}; a folded name
 //        resolves to no handler and is refused naming the call that does it now (tools.ts TOOL_FOLDS)
-//   AT8  a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4);
-//        AT8a–c (a second section under this number): one resolveWho for every verb that names a `who`
+//   AT8  (AT8a–c) one resolveWho for every verb that names a `who`
 //   AT7  an agent is a body under the same consent as a person (its table on join; no `pushable`; say takes `to`)
 //   AT9  an old name runs nothing and is refused as an unknown tool (walk_to, spawn, snapshot); world_verb and main's old verbs
 //        are refused as removed, naming the call that does it now (R 10-27)
@@ -25,6 +23,8 @@
 //   AT11 a timed grant takes main's for: "2h" again through act set (decision table row 14)
 //   AT13 yaw says its unit wherever an agent writes or reads it (#147): create's at in radians, measure in degrees (radians beside), edit's pos.yaw in degrees,
 //        every angle in a tool schema, verb arg or component doc labelled, and PROTOCOL §9's rule covering verbs, notes and presence
+//   AT14 look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
+//   AT15 a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";

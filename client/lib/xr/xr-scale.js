@@ -6,7 +6,8 @@ import { CONFIG, bus, tee, wornNameOf } from '../base.js';
 let scaleHost = { presenting: () => false, self: () => null };
 export function bindScaleHost(host) { scaleHost = host; }
 // ---- device scale (Basis BasisHeightDriver: the avatar is scaled to the player)
-// k = avatarEyeY / median of the first 120 HMD heights (> 0.5 m), clamped .6–1.6, saved per avatar. The puppet is
+// k = avatarEyeY / median of the first 120 HMD heights (> 0.5 m; fewer, at least 30, once 3 s have passed, so a slow
+// frame rate locks sooner), clamped .6–1.6, saved per avatar. The puppet is
 // scaled (vrm.scene.scale = 1/k), never the tracking, so hands sit on the controllers. Restored on session end.
 const SCALE_LS = 'ew-xr-scale';
 let wornName = '';   // the per-body key for a saved scale

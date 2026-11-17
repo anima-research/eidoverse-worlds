@@ -65,7 +65,7 @@ bus.on('edit-refused', ({ text }) => {
   chooseXR({ title: 'refused — nothing changed', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
-// a physics act refused (grab, put, throw…): the desk says it in chat, which a headset doesn't show. The card goes by
+// a physics act refused (grab, put, throw…): the desk says it in chat, which a headset person seldom has open. The card goes by
 // itself after PLAY_CARD_MS; OK only puts it away sooner. A timed-out or offline request may yet land, and says so.
 const PLAY_CARD_MS = 4000;
 bus.on('thingphysics-refused', ({ text, refused: x }) => {

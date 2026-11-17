@@ -6,7 +6,8 @@
 //
 // The contract:
 //   · a store upload gets a KTX2 variant BESIDE the original (store/<hash>.glb.ktx2.glb), built from the original
-//   · all of it KTX2, or a RETRYABLE refusal (exit 5, no .failed marker; exit 2 + marker only with nothing to convert, or a size verdict: not under 1.25× the source)
+//   · all of it KTX2, or a refusal: RETRYABLE (exit 5, no .failed marker) when the environment failed; exit 2 + marker with
+//     nothing to convert or a size verdict (not under 1.25× the source); exit 1 + marker for a file that won't convert (a corrupt GLB)
 //   · a variant, marker or .tmp is never listed as an asset (/library-models, /library-list, the boot sweep)
 //   · the negotiation key is a GENERATION a browser reads from the RUNNING sequencer's /version (section 8: a pull
 //     landing under it can't poison the key)

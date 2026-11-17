@@ -9,7 +9,8 @@ import { foundWorlds, saysIn } from "../harness/harness.ts";
 import { createServer } from "node:net";
 import { helloOf } from "../../shared/protocol/hello.js";
 
-// kernel-handed ports, so two runs on one machine never read each other's world
+// kernel-handed ports: two runs on one machine rarely share one (a released port can be handed out again before the
+// sequencer binds it)
 const freePort = () => new Promise<number>((resolve, reject) => {
   const s = createServer();
   s.once("error", reject);

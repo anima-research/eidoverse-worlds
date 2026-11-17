@@ -1,6 +1,6 @@
 // Real WS relay/late-join/authority regression on an isolated throwaway sequencer.
 // The world is founded first (joining never founds one), a join folds the log (replica: true), a say is a request, and
-// the log is world.jsonl's say/act/change entries.
+// the log is world.jsonl's say/request/change entries (an accepted create or set is a request, then its change).
 import { foundWorlds, freePort } from '../harness/harness.ts';
 import { strict as assert } from 'node:assert';
 import { mkdtempSync, readFileSync } from 'node:fs';

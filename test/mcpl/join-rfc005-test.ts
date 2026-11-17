@@ -448,7 +448,7 @@ async function shut(h: { ws: WebSocket }) {
   ownWorld.ws.close();
 
   // ── 4e. channels/changed carries the epoch ────────────────────────────────
-  // It is the client's only epoch source.
+  // The client's live epoch source (channels/list's metadata.epoch, 4d above, reads the committed one).
   const eh = await connectHost("roamer-token");
   await eh.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   await tryUntil("the host hears channels/changed", () => eh.inbound.some((m) => m.method === "channels/changed"));

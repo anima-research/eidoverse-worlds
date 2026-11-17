@@ -101,7 +101,7 @@ function uploadEffect(w, actor, a) {
 }
 // At install (any set of script:<name>), by whoever's rights carry the write: the scripts permission, a scope within
 // those rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that
-// parses, `always` only by an owner, the world's script count (the timer floor is the registry's range).
+// parses (where the host has a sandbox to ask: checkSyntax is optional, so without one only hygiene is checked), `always` only by an owner, the world's script count (the timer floor is the registry's range).
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;

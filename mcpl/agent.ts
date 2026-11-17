@@ -225,8 +225,8 @@ export class WorldAgent {
    *  not a change to the world. `null` clears. */
   heldPose: Record<string, PoseValue> | null = null;
   /** Where heldPose came from. An AUTHORED pose (the anim tool, a puppet, the
-   *  server's settled memory) is a place: it survives walking, posture changes
-   *  and sleep. A PHYSICS pose (sim frame, drag stream, knockdown slump) is a
+   *  server's settled memory) is a place: it survives posture changes and sleep,
+   *  and walking only when pinned with `hold` (heldPoseSticky). A PHYSICS pose (sim frame, drag stream, knockdown slump) is a
    *  moment: it only ever leaves this process under the "ragdoll" clip, and any
    *  decision to move sheds it. */
   heldPoseAuthored = false;

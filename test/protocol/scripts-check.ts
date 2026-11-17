@@ -1614,7 +1614,7 @@ const SUITE = suite("scripts-check", { cap: 700 }); let na = 0;
 // I0 keeps that from hiding a regression: isolation must be on everywhere else.
 const { SANDBOX: SBX } = await import("../../shared/protocol/sandbox.js");
 const isolating = !!SBX.isolated(), mustIsolate = process.platform !== "win32" && process.env.EIDO_SANDBOX !== "inprocess";
-SUITE.ok(isolating || !mustIsolate, `(I0) isolation is on on every host but Windows (here: ${process.platform}, isolated ${isolating})`);
+SUITE.ok(isolating || !mustIsolate, `(I0) isolation is on on every host but Windows and EIDO_SANDBOX=inprocess (here: ${process.platform}${process.env.EIDO_SANDBOX === "inprocess" ? ", inprocess" : ""}, isolated ${isolating})`);
 const all = [...cases, ...(argv.includes("--no-server") ? [] : serverCases)];
 for (const c of all) {
   if (ONLY && !ONLY.includes(c.id)) continue;
