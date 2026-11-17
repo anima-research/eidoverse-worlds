@@ -304,7 +304,7 @@ await C("M4", "the importer: spin rpm → degPerSec (× 6); orbit center/face/pe
   const v = finalOf(r); const imported = Object.entries(v).flatMap(([id, c]: any) => Object.keys(c).filter((k) => k.startsWith("imported:")).map((k) => `${id}.${k}`));
   const W = world(); const made = ["fan", "boat", "cart"].map((id) => why(W.call("create", { id, model: "crate", components: { motion: (({ t0, ...m }) => m)(v[id].motion) }, place: { at: [id.length, 0] } })));
   return [r.stats.divergences === 0 && v.fan.motion.degPerSec === 18 && !("rpm" in v.fan.motion) && v.boat.motion.period === 20 && v.boat.motion.face === false && v.boat.motion.center?.[2] === 5
-    && v.cart.motion.points?.length === 2 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];
+    && JSON.stringify(v.cart.motion.points) === "[[9,0,0],[9,0,6]]" && v.cart.motion.speed === 0.5 && v.cart.motion.loop === "pingpong" && !imported.length && made.every((x) => x === "ok"), { fan: v.fan.motion, boat: v.boat.motion, cart: v.cart.motion, imported, made, div: r.stats.divergences }];
 });
 await C("M5", "the editor: a rate typed on an orbit drops its period (one speed); Add Path starts where the thing stands", () => {
   const ent = { model: "crate", pos: [3, 0, -2], motion: { type: "orbit", radius: 1, period: 4 } };
