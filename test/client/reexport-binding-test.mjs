@@ -29,7 +29,9 @@ const strip = (src) => src
 // where a USE is looked for: also without the insides of quoted strings (a path like './markup.js' names no binding)
 // and trailing comments
 // (a `//` after a colon is a URL's, as in a template literal: `https://h/${X}` still uses X)
-const code = (src) => src.replace(/(['"])(?:\\.|(?!\1)[^\\\n])*\1/g, '""').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
+// a template literal goes first, down to its ${…} expressions, so an apostrophe in its text isn't a quote
+const templates = (src) => src.replace(/`(?:\\[\s\S]|\$\{[^}]*\}|[^`\\])*`/g, (t) => ` ${[...t.matchAll(/\$\{([^}]*)\}/g)].map((m) => m[1]).join(' ')} `);
+const code = (src) => templates(src).replace(/(['"])(?:\\.|(?!\1)[^\\\n])*\1/g, '""').replace(/(^|[^:\\])\/\/.*$/gm, '$1');
 
 const S = suite('reexport-binding');
 const findings = [];
@@ -72,6 +74,8 @@ for (const dir of SCAN) for (const file of walk(dir))
 
 // self-sample: a use inside a template literal's URL still counts (the `//` there is not a comment)
 S.check('self-sample: a re-exported name used in `https://h/${X}` is caught', unbound("export { X } from './x.js';\nconsole.log(`https://h/${X}`);\n").includes('X'));
+// …and apostrophes in a template's text are not a quoted string swallowing the ${X} between them
+S.check("self-sample: a use in `don't ${X} say 'hello'` is caught", unbound("export { X } from './x.js';\nconsole.log(`don't ${X} say 'hello'`);\n").includes('X'));
 
 S.check('no module uses a name it only re-exports', findings.length === 0,
   findings.map((f) => `${f.file} uses ${f.name}, which it only re-exports (fix: \`import { X } from ...; export { X };\` so a local binding exists)`).join('; '));
