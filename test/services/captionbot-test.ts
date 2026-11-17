@@ -5,7 +5,8 @@
 //   A. segmentation — one caption per burst, t0/t1 on the burst's edges
 //      (media time), finals only;
 //   B. revision doctrine — a partial never becomes a caption; a revision
-//      before settle replaces; one after emission is counted and dropped;
+//      before settle replaces; one after emission, once the segment has
+//      ended, is counted and dropped;
 //   C. the stage cue labels the NEXT caption, not the ones already written;
 //   D. a segment is SEALED once its finals settle: a revision after that is
 //      counted and dropped, never a second caption, and the segment's own

@@ -6,9 +6,10 @@
 //
 // The provider seam is voice-kit's: SttProvider / SttSession / SttTranscript
 // (Scribe, AssemblyAI, the test's fake). Settle policy: a caption is emitted
-// when its utterance is `final` and no revision has arrived for `settleMs`;
-// once the segment has ended, later revisions are counted and dropped, never
-// applied (the world log is append-only); while it is open, one is a new caption.
+// when its utterance is `final` and no revision has arrived for `settleMs`
+// (a revision before then replaces it, segment ended or not). A revision of an
+// emitted caption is counted and dropped once the segment has ended, never
+// applied (the world log is append-only); while it is open, it is a new caption.
 import { EnergyVad } from '@animalabs/voice-kit';
 import type { SttProvider, SttSession, SttTranscript } from '@animalabs/voice-kit';
 import type { PcmConsumer } from './tap.ts';
@@ -19,9 +20,9 @@ export interface CaptionerOptions {
   rateHz: number;
   provider: SttProvider;
   /** The stage cue: who is speaking through the screen right now, if the
-   *  operator has said. Read when a SEGMENT ENDS — the line was spoken under
-   *  that cue — so a cue change lands on the next line, never on one already
-   *  spoken. A final that settles before its segment ends carries the
+   *  operator has said. Read when a SEGMENT ENDS (after the VAD hangover), so a
+   *  cue change made during the hangover lands on the line just spoken, and a
+   *  later one on the next line. A final that settles before its segment ends carries the
    *  provider's speaker (or none) instead. */
   speaker?: () => string | undefined;
   /** Quiet period after `final` before a caption is emitted (default 300). */
