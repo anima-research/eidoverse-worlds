@@ -71,7 +71,7 @@ try {
   if (tripped) await page.addInitScript((w) => {
     try { localStorage.setItem(`ew-boot-attempt:${w}`, '1'); localStorage.setItem(`ew-boot-retried:${w}`, '1'); } catch { /* storage blocked */ }
   }, lobby);
-  await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${key}`);
+  await page.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${encodeURIComponent(key)}`);
   const boot = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
   console.log(JSON.stringify({ tripped, boot }));
   assert.equal(boot.lite, false, `the roaming renderer boots the full client: ${JSON.stringify(boot)}`);
@@ -132,7 +132,7 @@ try {
   // is bad").
   await page.close();
   const again = await browser.newPage();
-  await again.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${key}`);
+  await again.goto(`${base}/?world=${lobby}&renderer&roam&name=roam-check&key=${encodeURIComponent(key)}`);
   const againWorld = () => again.evaluate(async () => (await import('/lib/base.js')).CONFIG.world).catch(() => null);
   const tb = Date.now(); while (Date.now() - tb < 30000 && (await againWorld()) !== world) await Bun.sleep(250);
   const backMs = Date.now() - tb;
