@@ -68,7 +68,8 @@ try {
   const surfaced = { y: await y(), diving: await diving() };
   // look down and push forward: a desk dives the way a headset does, no dive key (R 10-28: "Minecraft rules")
   await put(-1.1); await pause("the float settles", 1200);
-  await js(`${C}.setCamPitch(1.1); return true;`); await key("add", "KeyW"); await pause("W held, looking down", 1500);
+  await js(`${C}.setCamPitch(1.1); return true;`); await key("add", "KeyW");
+  await until("a metre under, W held looking down", async () => (await y()) < floating.y - 1, { ms: 10000 }).catch(() => {});   // the depth, as LD3 (macOS CI 44116652297: -2.07 vs -2.13 at a fixed 1.5 s); a miss is LD5's evidence
   const lookDive = { y: await y(), diving: await diving() };
   await key("delete", "KeyW"); await js(`${C}.setCamPitch(0.32); return true;`);
   // a thing held afloat: C sinks the swimmer and never throws it; Q throws it (LEGACY-PINS item 1: C was throw/punt too)
