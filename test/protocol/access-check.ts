@@ -764,7 +764,7 @@ const gonePid = await exitedPid();
   ok(b.owner && b.listed && b.roleHolder && b.operator && b.renderer && refused(b.stranger) && refused(b.member) && b.list && b.boot,
     "A13n an unreadable .bans.json locks the door: the owner, a role holder, an operator and the trusted renderer join; a guest and an unlisted account are refused (4010) with the plain reason; the boot log and server-bans say LOCKED", b);
   const a = await run("sanctions");
-  ok(a.owner && a.roleHolder && a.operator && refused(a.stranger) && a.list, "A13n …and an unreadable .addr-sanctions.json alone locks it the same way", a);
+  ok(a.owner && a.roleHolder && a.operator && refused(a.stranger) && a.list, "A13n …and an unreadable .addr-sanctions.json alone locks it: the owner, a role holder and an operator join, a guest is refused", a);
   fs.rmSync(BJ, { force: true }); fs.rmSync(SJ, { force: true });
   const s = await start(); const carl = await sock(s.port); const jc = await carl.join("lockt", "Carl");
   ok(!!jc.snapshot, "A13n …and with both files readable (absent) the stranger joins the open world", jc.errors);

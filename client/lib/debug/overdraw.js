@@ -5,7 +5,8 @@
 // vertex stage (NodeMaterial.copy shares the node graph; a scene.overrideMaterial would lose the meadow's positionNode).
 //   mode 'actual' — real depth state and draw order: fragments that pass depth (alpha-tested ones count: shaded, then discarded)
 //   mode 'raw'    — depth test off: every fragment rasterised; raw − actual is what early-Z already saves
-// perTag adds one pass per category (grass, terrain, sky, avatars, …): that category counts, the rest write depth only.
+// perTag adds one pass per category (grass, terrain, sky, avatars, …): that category counts, the rest write depth only
+// (in 'raw' nothing writes depth, so the rest add nothing).
 //
 // Limits: unbatched, one mono view, the live frame held during capture (a brief black blink in a headset). Per-category
 // passes sum to the total within ~0.1 %, not exactly; `stable` checks the frame itself.

@@ -109,8 +109,8 @@ must be able to carry every field.
 **Reserved, not written (shape audit 2026-10-16)**, all but two. `mass` and
 `density` stay open fields: the contact push reads them (`shared/shove.js`
 `massOf`: the authority's contact gate (`punt {contact: true}`), the walker and
-the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight, so
-they are `physics`' *reserved fields*: their names (the registry's `reservedFields`) and
+the agent cap a push by mass), though eidosim's flight doesn't yet. Nothing reads the other eight (save
+`surface`, whose carried values still pick `massOf`'s density), so they are `physics`' *reserved fields*: their names (the registry's `reservedFields`) and
 meanings of absence below (`absentMeans`) are pinned; their units and limits are written in
 the registry's `docs` and are not yet a pinned shape. Every write of one is
 refused (code `reserved`) until an engine declares that it reads it. A number

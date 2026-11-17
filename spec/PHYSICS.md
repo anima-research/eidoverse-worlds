@@ -406,7 +406,7 @@ the log stays exact for everyone.
 - **Rests**: every rest in a log MUST equal the carried engine's result for
   its launch (the sim layer's `checks.disagree` is empty).
 - **Cross-engine**: results MUST be bit-identical across JavaScript
-  engines (test/shared/simmath-test.ts for the kernel, bun only; the `browser` suite
+  engines (test/shared/simmath-test.ts for the kernel, bun against node or deno; the `browser` suite
   runs the fold/authority core in headless Chromium byte for byte against bun,
   not the kernel).
 - `bun test/gate/run.ts phys physlive physseeds` runs the physics suites:

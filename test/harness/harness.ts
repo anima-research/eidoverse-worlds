@@ -247,8 +247,9 @@ export async function scratchBench(name: string, opts: ScratchOptions & { headed
   await new Promise((res, rej) => { cws.onopen = res as any; cws.onerror = rej as any; });
   // Every page this bench drives runs under the server's Content-Security-Policy (server/csp.ts). A violation is the
   // client trying something the policy refuses (an inline handler, a host connect-src doesn't name) — a feature that
-  // silently stopped working, so every browser probe is a CSP regression test: any violation fails the run at cleanup,
-  // unless the probe causes them on purpose (cspExpected).
+  // silently stopped working, so every probe on this bench is a CSP regression test: any violation fails the run at
+  // cleanup, unless the probe causes them on purpose (cspExpected). A probe that launches its own browser
+  // (probe-harness.mjs launchBrowser) gets no such check.
   const cspViolations: string[] = [];
   cws.addEventListener("message", (ev) => {
     const m = JSON.parse(String(ev.data));

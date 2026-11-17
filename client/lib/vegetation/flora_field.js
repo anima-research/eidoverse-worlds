@@ -40,7 +40,8 @@ export function strokeApplied(f, eff, i = 0) {
 /** The whole field's draw truth. `off` (eff ≤ 0) is enforced by group
  *  visibility — terrain hides the group — so it applies even where count
  *  dialing is unsupported; any positive factor needs every live stroke's
- *  actual count to match what densityCount requested. */
+ *  actual count to match what densityCount requested (a tiled stroke: at
+ *  most that, since its falloff under-draws on purpose). */
 function fieldApplied({ fields, groupVisible }, eff) {
   if (eff <= 0) {
     const ok = groupVisible === false;

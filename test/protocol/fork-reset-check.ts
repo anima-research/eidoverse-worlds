@@ -177,7 +177,7 @@ ok(["fl-src", "fl-rate"].every((n) => tool(["found", n, "--owner", "Fay"]).code 
 { const P = await start({ ACT_RATE: "5" });
   const fay = await sock(P.port); const jf = await fay.join("fl-src", "Fay");
   const six = []; for (let i = 1; i <= 6; i++) six.push(await fay.raw({ type: "world-fork", to: `fl-free${i}` }, "world-forked", 8000));
-  ok(!!jf.snapshot && six.every((m) => m?.type === "world-forked"), "FL1 with the server's defaults, six copies back to back all happen (no fork limits)", six.map((m) => m?.error ?? m?.type));
+  ok(!!jf.snapshot && six.every((m) => m?.type === "world-forked"), "FL1 with the server's fork defaults (only ACT_RATE lowered, for FL2), six copies back to back all happen (no fork limits)", six.map((m) => m?.error ?? m?.type));
   const fr = await sock(P.port); await fr.join("fl-rate", "Fay");
   const made = []; for (let i = 0; i < 8; i++) { const r = await fr.req("create", { id: `fl${i}`, model: MODEL }); made.push(r.ok ? "ok" : r.refused?.code); }
   const firstRate = made.indexOf("rate");

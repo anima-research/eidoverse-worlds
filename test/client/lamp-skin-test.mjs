@@ -49,7 +49,8 @@ function makeBody() {
   // VRM0 faces -Z and the importer flips the scene node 180 degrees about Y
   // (VRMUtils.rotateVRM0), so the mesh node's world rotation is NOT the
   // identity even on a standing body. That flip is half of why the old math
-  // drifted, and a test rig without it cannot show the defect.
+  // drifted: with it the defect shows on a standing body; an unflipped rig
+  // shows it only once the chest is posed (below).
   const scene0 = new THREE.Group(); scene0.name = 'vrmScene';
   scene0.rotation.set(0, Math.PI, 0);
   root.add(scene0);

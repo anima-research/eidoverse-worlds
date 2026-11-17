@@ -1,6 +1,7 @@
 // sky-interim-probe — the world first, the sky last (owner, 09-27). After a fresh sky build: one interim gradient in
 // the sky system's own time-of-day colours stands in, the big domes stay out of the scene and never enter the serial
-// warm conductor, the curtain doesn't wait on the sky, and the real sky replaces the gradient only once the world
+// warm conductor, the curtain doesn't wait on the sky (save, on a live-tier boot where VR is
+// supported, the cap's bake program: up to 40 s under the splash, sky.js), and the real sky replaces the gradient only once the world
 // near you has settled. Cloud quality OFF before load (a software cloud bake exhausts this machine); the tier still
 // builds, holds and bakes. Real client.
 //   bun test/client/sky-interim-probe.mjs

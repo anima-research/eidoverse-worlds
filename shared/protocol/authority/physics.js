@@ -88,8 +88,8 @@ function settleSim(w) {
       if (!groundReady(st2)) continue;   // the ground still loading: no rest-attach judged on a guessed height
       const sup = bx ? supportUnder(st2, bx, fam) : supportBelow(st2, r.p[0], r.p[2], r.p[1] + 0.02, fam);
       if (sup.id === "ground" || (bx && sup.y < bx.min[1] - 0.03)) continue;
-      // never under a support whose scale isn't uniform (a domino: a crate at [1, 2, 0.2]): a child of a rotated, non-uniformly
-      // scaled parent is SHEARED by the composition
+      // never under a support whose scale isn't uniform (a domino: a crate at [1, 2, 0.2]) unless the child sits axis-aligned
+      // in it (shearFree): a child of a rotated, non-uniformly scaled parent is SHEARED by the composition
       const wt = worldT(st2, r.id); const s3 = scratch(st2, [setOp(r.id, "parent", { to: sup.id })]); const lt = localFrom(s3, sup.id, wt);
       if (!shearFree(worldT(st2, sup.id).scale, lt.q)) continue;
       const attach = [setOp(r.id, "parent", { to: sup.id }), setOp(r.id, "transform", lt)];

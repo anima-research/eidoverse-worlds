@@ -38,7 +38,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["persist before publish: entries before the disk", "shared/protocol/authority/storage.js", "durably(\"log\", () => io.writeLine(line));", "entries.push(posAt(parsed, seq)); durably(\"log\", () => io.writeLine(line)); entries.pop();", ["T3c", "T3d"]],
   ["the door decided at join only: recheck without it", "server/request-capability.ts", "  if (door) return", "  if (false) return", ["T4", "T5"]],
   ["recheck without the role", "server/request-capability.ts", "  if (role && w.log.roleOf(cap.actorId) !== cap.role) return", "  if (false) return", ["T4b"]],
-  ["identity read after the await: recheck without it", "server/request-capability.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
+  ["the identity recheck dropped: a connection that became someone else while waiting is not refused", "server/request-capability.ts", "  if (c.actorId !== cap.actorId ||", "  if (false &&", ["T6", "T6b"]],
   ["an await in the authority's commit", "shared/protocol/authority/writes.js", "function commit(w, actor, verb, args, build) {", "async function __m() { await 0; }\nfunction commit(w, actor, verb, args, build) {", ["T7"]],
   ["new directories' names not synced: mkdir alone", "server/durable.ts", "  if (first === undefined) return;", "  return;", ["T8c"]],
   ["a founded world's directory made by plain mkdir", "server/worldlog.ts", "  mkdirDurable(dir);", "  fs.mkdirSync(dir, { recursive: true });", ["T8c"]],

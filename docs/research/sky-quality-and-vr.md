@@ -24,7 +24,8 @@ Design notes behind `client/lib/sky/sky.js`, `sky_baked.js` and `sky_swapchain.j
 - Revisit once VR rides WebGPU-XR: measure fps and eye agreement with live clouds and lift the cap if they hold.
 - The cap's flip waits for the entry curtain, so its bake doesn't take the GPU before the headset's first frames.
 - With a headset present, medium's bake program is prebuilt on the desktop (a 64x32 bake into a temporary target;
-  a bake's shader doesn't depend on its size), so entry is a program-cache hit.
+  a bake's shader doesn't depend on its size), so entry is a program-cache hit. The prebuild waits 15 s after the
+  sky build and stands down once VR is presenting, so an entry inside those 15 s still compiles cold.
 
 ## No rebuild while presenting
 
@@ -43,4 +44,5 @@ gradient in the hour's colours and compile only after the world near you has loa
 
 The baked tier's graph cache keys on whether the preset is `clear`, and the cloud-carrying graph costs a ~1.5 MB WGSL
 compile that stalls the whole GPU process 5-10 s cold, even async. On cloud-capable tiers `clear` is respelled as an
-empty cumulus so the graph pins at the boot bake, inside the splash, and every later sky change is uniform writes.
+empty cumulus so the graph pins at the boot bake (finishSky waits for the world to settle, so after the splash, not
+inside it), and every later sky change is uniform writes.

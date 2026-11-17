@@ -14,8 +14,8 @@
 //   paintHud(status)   the ∃ mark itself (#hud): lit while net.status is 'live', pulsing while it connects (main.js, 1 Hz)
 //
 // Placement: the strip continues the ∃'s status line past its glyphs: along the ∃'s row on a vertical rail, down its
-// column on a horizontal one. It depends only on the ∃ and its glyphs, never on frames or the action bar, so no
-// placement cycle can form; those count it as chrome (actionbar.js roomFor, windows.js CHROME_ANCHOR '#hudstatus').
+// column on a horizontal one. It depends on the ∃ and its glyphs, the builder menu bar on that row and the lantern pill
+// (where the row ends), never on frames or the action bar, so no placement cycle forms through those; those count it as chrome (actionbar.js roomFor, windows.js CHROME_ANCHOR '#hudstatus').
 //
 // Imports only icons and base.js (the bus): the governor and capnotice post here, and this must not pull the engine in with it.
 import { rsvg } from './icons.js';

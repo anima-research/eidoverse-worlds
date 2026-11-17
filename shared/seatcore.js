@@ -178,7 +178,8 @@ export function seatGateCore({ sock, verdict, pose = "sitchair" }) {
  *  fallback "sit"/"idle" never consumes a chair profile); `loadedClipSha256` is
  *  the digest of the bytes the action was built from (null until loaded).
  *  Returns {apply:true, contactY} or {apply:false, reason}; the reason is the
- *  string all three consumers declare. */
+ *  string the browser readers declare (the headless one, mcpl/effective.ts,
+ *  has only the contract half, seatGateCore, so no runtime reasons). */
 export function seatGate({ sock, verdict, pose = "sitchair", currentSlot, loadedClipSha256, currentClipSha256 }) {
   const core = seatGateCore({ sock, verdict, pose });
   if (!core.apply) return core;

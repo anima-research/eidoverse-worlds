@@ -47,7 +47,7 @@ const M: Mutant[] = [
   // ---- M1–M8: the architecture note's items (M9 has no mutant here; M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
   { id: "M1", what: "a throw from a durable write reported rolled-back (no ambiguous outcome)", file: "shared/protocol/authority/storage.js",
     find: '  if (newLog || newMod) return { outcome: "ambiguous"', repl: '  if (false) return { outcome: "ambiguous"', suite: "txn", rows: ["T2"], expect: 1 },
-  { id: "M2", what: "the identity is read after the await (the capability not rechecked at the commit seam)", file: "server/request-capability.ts",
+  { id: "M2", what: "a connection that became someone else while its request waited is not refused (the capability's identity not rechecked at the commit seam)", file: "server/request-capability.ts",
     find: "  if (c.actorId !== cap.actorId ||", repl: "  if (false &&", suite: "txn", rows: ["T6"], expect: 1 },
   { id: "M3", what: "the operator's repair is not recorded as the operator's (no operator: true in the act)", file: "shared/protocol/authority/writes.js",
     find: "CTX.operator && CTX.operator === actor && !ctx.cap ? { ...(ctx.actExtra ?? {}), operator: true } : ctx.actExtra", repl: "ctx.actExtra", suite: "authority", rows: ["OP3"], expect: 9 },

@@ -8,7 +8,7 @@
 // confident wrong number). A cast also yields a NORMAL, which a contact point needs as much as a position.
 //
 // Two rules:
-//   - measure in the REST pose, never the live one;
+//   - measure in the REST rotations, never the live ones (a held pose's raw translate/scale is not undone);
 //   - store the answer in the BONE's local space, so it follows the body for free.
 
 import { THREE } from '../core.js';
@@ -46,9 +46,11 @@ function restoreBounds(saved) {
   }
 }
 
-/** A short fan of rays near the intended anatomical site. Never accept the
- * far side of the body when a ray misses a thin hand or forearm. Prefer the
- * central ray; nearby rays rescue gaps without averaging points into air. */
+/** A short fan of rays near the intended anatomical site. A hit farther than
+ * `radius` from the site is rejected, which keeps the far side of a thick body
+ * out when a ray misses a thin hand or forearm (a surface within `radius`
+ * behind the seed can still pass). Prefer the central ray; nearby rays rescue
+ * gaps without averaging points into air. */
 function localSurface(meshes, at, dir, radius) {
   const tangent = new THREE.Vector3(0, 1, 0);
   if (Math.abs(tangent.dot(dir)) > 0.9) tangent.set(1, 0, 0);

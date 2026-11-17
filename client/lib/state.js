@@ -19,7 +19,7 @@ import { emptyView } from '../../shared/protocol/view.js';
 export const state = {
   /** the view (view.js viewState): {entities, sky, terrain, grass, assets, roles, bans, recentChat, chatTotal} */
   st: emptyView(),
-  /** Highest chat seq covered (seq × 1000); -1 before hydration. */
+  /** The chat seq the join's view covered (seq × 1000), set at hydrate; -1 before. net.js keeps the live cursor. */
   lastSeq: -1,
   hydrated: false,
 };

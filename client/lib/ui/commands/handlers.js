@@ -195,7 +195,8 @@ function showMembers() {
 
 // /kick <name> [reason…], /ban <name> [days|forever] [reason…], /mute <name> [minutes] [voice|chat] [reason…],
 // /warn <name> <reason…>: the authority enforces the permission and the rank (only below you);
-// everyone else is told "A removed B" by the server. A kick takes someone out now (they must be here, and may come straight back); the others also
+// the server tells everyone else of a kick, ban or mute (a warning is private: only its person and moderator).
+// A kick takes someone out now (they must be here, and may come straight back); the others also
 // reach someone who has left (the world's lookup).
 function moderate(cmd, arg) {
   const [id, ...rest0] = (arg || '').trim().split(/\s+/).filter(Boolean);

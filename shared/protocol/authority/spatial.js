@@ -174,7 +174,7 @@ function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]);
 
 // THE GROUND: the authority stands things and bodies on the ground the walker walks on: @world's terrain through
 // shared/terrainmath.js (terrainParams → makeHeightField, the same law as the sim, client and agent) and its water
-// (terrainshape's waterParams). No terrain component: y 0 and no water. Built once per terrain VALUE (values are
+// (terrainshape's waterParams). No terrain component: y 0, and @world.water's level if it has one. Built once per terrain VALUE (values are
 // replaced, never mutated). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
 // fallback, it is never cached, and any read of its height refuses with words; readers that only advise (warnings,
 // the settle's rest-attach) ask groundReady first and skip.
@@ -182,7 +182,7 @@ const GROUND = new WeakMap();
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
-// the water level is @world.water's (or an older terrain.water until the maintenance command moves it),
+// the water level is @world.water's (an older terrain.water is not read: the maintenance command moves it),
 // so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
   const wc = st.entities["@world"]?.c; const t = wc?.terrain; const w = worldWater(wc);

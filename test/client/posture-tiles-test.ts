@@ -1,5 +1,5 @@
 // posture tiles (client/lib/player/controller.js sitHere / standUp / setMountedHook / getPosture) — the action bar's
-// sit·stand·lie tiles share X's seat search, and a declared-seat MOUNT (sockets, localbody.js) is neither a
+// sit tile shares X's seat search (stand is standUp, lie is setPosture('lie'): neither searches), and a declared-seat MOUNT (sockets, localbody.js) is neither a
 // posture nor myState.seat: on a mount the sit tile is a no-op and the stand tile is the dismount. Drives the
 // REAL controller.js against test/stubs/posture-tiles-stub.mjs (flat world, one optional chair pan) with the same
 // hook pair localbody.js registers (mounted → dismount; seat in reach → mount; else fall through).

@@ -8,7 +8,8 @@
 // a green. `bun test/client/boot-check.mjs http://host:port` probes a LIVE deployment instead, identity checks skipped.
 // Recipe: `bun test/client/boot-check.mjs` (needs `bun install` in root + client and a Playwright Chromium). Knobs:
 //   BOOT_CHECK_QUERY='&xr=1' (appended to the boot URL; the asserted decisions follow from it)
-//   BOOT_CHECK_VIEWPORT=1000x700 (below the default arrangement's width: bar hidden at boot, capability card top-centre)
+//   BOOT_CHECK_VIEWPORT=1000x700 (any WxH: boots under it; the arrangement follows windows.js's fit, and capability
+//   notices are status-strip chips now, not a card)
 //   BOOT_CHECK_ABORT_VRM=1 (every body request fails: the failed-body arrival path)
 //   BOOT_CHECK_REQUIRE_BODY=1 (a body ON SCREEN, not merely settled: for a clone serving the library)
 //   BOOT_CHECK_RESIZE_TO=390x844 (shrink mid-run). No command runs a viewport matrix now; the old one (deleted in

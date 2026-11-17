@@ -1,5 +1,6 @@
 // syncSupport's model re-check (#260 house I81): an id whose model changes while its geometry is in flight registers
-// nothing from the old fetch. No server: the agent's geometry and mesh fetches are stubbed and held open.
+// nothing from the old fetch. No server: the agent's geometry fetch is stubbed and held open (its mesh fetch answers
+// null at once, so the mesh-fitting path is not exercised).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/mcpl/support-swap-test.ts
 import { noWorldUrl } from "../harness/no-world.ts";

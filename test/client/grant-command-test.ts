@@ -75,7 +75,8 @@ check('/epoch still sends the physics-engine set the help teaches', sent.at(-1)?
   check('…and names +gen, +fly and /epoch', /\+gen/.test(help) && /\+fly/.test(help) && /\/epoch/.test(help) && /\+gen/.test(g) && /\+fly/.test(g), g); }
 
 // R 10-28 (item 13): a word /access doesn't take is refused with the doors it does take, each said; the role names are the
-// world's registry's (an owner renamed member here), never typed into the words. No aliases.
+// world's registry's (an owner renamed member here), never typed into the words. The rows below are words that are no
+// door and no alias (handlers.js takes private, invite, closed, listed, spectators and builders as aliases).
 { const cmd = async (c: string, arg: string) => { sent.length = 0; messages.length = 0; dispatch(c, arg); await settle(); };
   world.c = { 'role-defs': { member: { name: 'Regular' } } };
   for (const w of ['members', 'visitors']) { await cmd('access', w);

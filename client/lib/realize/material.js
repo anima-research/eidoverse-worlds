@@ -21,7 +21,8 @@ const revision = new Map();
 const bump = (id) => { const r = (revision.get(id) ?? 0) + 1; revision.set(id, r); return r; };
 const current = (id, r) => revision.get(id) === r;
 
-/** The meshes under `node` that are this thing's own: never a child thing riding it, never a picture's quad. */
+/** The meshes under `node` that are this thing's own: never a child thing riding it, never a picture's quad below it
+ *  (a `node` that names the quad group itself is taken as asked). */
 function meshesOf(node) {
   const others = new Set(entities.values()), out = [];
   const own = (o) => { for (let p = o; p && p !== node; p = p.parent) if (others.has(p) || p.userData?.pictureQuad) return false; return true; };

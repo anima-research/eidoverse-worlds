@@ -276,7 +276,7 @@ console.log('\nDOWN-SPEC §4 -- involuntary, unfakeable, never by verb');
       } catch { /* wrong arity for this shape; not a way in */ }
     }
   }
-  check('no exported function except bodyDown can produce a DOWN state',
+  check('no exported function except bodyDown turns a healthy state DOWN (four argument shapes tried)',
         offenders.length === 0, `offenders: ${offenders.join(', ')}`);
 
   // Recovery from the ground takes the full breath: sit up first.

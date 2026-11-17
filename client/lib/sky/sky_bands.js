@@ -1,5 +1,5 @@
-// sky_bands — where the baked sky's strips are cut (sky_baked.js), kept free of imports so test/client/sky-lifecycle-test.mjs
-// can load it under node.
+// sky_bands — where the baked sky's strips are cut (sky_baked.js), kept free of imports so a test loads it with no
+// stubs (test/client/sky-lifecycle-test.mjs).
 
 /** Band edges in v (0..1) for re-marching a width x height equirect in strips of equal COST (rows are weighted by an
  *  inverse-elevation march-chord estimate). Shared by the cadence and the boot bake. */

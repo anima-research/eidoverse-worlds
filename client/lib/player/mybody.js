@@ -32,9 +32,10 @@ if (!myAvatarPath) {
 }
 if (myAvatarPath) setMyAvatarPath(myAvatarPath);
 export const rosterLazy = () => fetch('/avatars').then((r) => r.json()).catch(() => []);
-// Cold cache only: START the roster fetch now, await it never. The multi-MB VRM
-// is the long pole, so its download starts as early as possible. Warm boots
-// have the cached path and skip the request.
+// Cold cache only: START the roster fetch now; resolving the avatar path takes
+// whichever lands first, it or the snapshot's roster. The multi-MB VRM is the
+// long pole, so its download starts as early as possible. Warm boots have the
+// cached path and don't wait for the roster (they refresh it, below).
 const rosterEarly = myAvatarPath ? null : rosterLazy();
 // Warm boots still REFRESH the stored resolution in the background: the cached
 // path carries a frozen ?v= stamp, so a redeployed avatar would otherwise replay

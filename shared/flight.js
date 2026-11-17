@@ -230,7 +230,8 @@ export function glideRatio(cfg, airspeed) {
 
 /** Airspeed after one frame at a given pitch: nose down trades altitude for speed, nose up trades it back, so a stall
  *  is reachable by holding the nose up and R1 is a reflex that catches what the pilot did. PHYSICS, not input
- *  mapping, so it lives here: a verb-flown climb spends speed on the same curve a hand-flown one does. */
+ *  mapping, so it lives here. A hand-flown climb spends speed on it; a verb-flown one (mcpl/agent-flight.ts
+ *  coursePilot) rises on added lift at level pitch, so spends none. */
 export function airspeedAfter(cfg, airspeed, pitch, dt) {
   const p = cfg.polar;
   const g = 9.81;

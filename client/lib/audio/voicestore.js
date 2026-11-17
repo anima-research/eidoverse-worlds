@@ -84,7 +84,7 @@ export async function forgetVoice(id) {
 }
 
 /** Can we read this remembered voice RIGHT NOW, without prompting?
- *  'granted' → usable. 'prompt' → we know the file, need a gesture.
+ *  'granted' → permission held (the file itself may be gone; openVoice's getFile finds out). 'prompt' → we know the file, need a gesture.
  *  'denied'/'gone' → the entry is dead weight and should be offered for removal. */
 export async function voiceReadable(entry) {
   const hs = entry?.handles || [];

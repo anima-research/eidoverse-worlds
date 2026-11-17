@@ -1,7 +1,8 @@
 // By default only a body with a LAMP in it casts and receives (client/lib/render/materials.js,
 // client/lib/avatar/avatar.js); the own-body pref opts your own body in (applyOwnBodyShadow, below).
 //
-// Why the lamp is the gate: a body's depth pipelines never reach warmqueue's warmDepth (only registered MODELS do),
+// Why the lamp is the gate: a body's depth pipelines never reach warmqueue's warmDepth (only registered MODELS do, and
+// your own body once the real-shadow pref opts it in: mybody.js applyOwnBodyShadow),
 // so they compile in-frame on the first shadow render, and bodies bypass the distance-ranked caster budget; in a
 // crowded room that is N bodies compiling. Janus: "set the change for now to only shadowed body by default if you
 // have the lamp like mythos... we can test the performance of having more on the shared server later." Every path

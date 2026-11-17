@@ -218,8 +218,8 @@ export class Sfu {
       return false;
     }
     const track = new MediaStreamTrack({ kind: "audio" });
-    // identity rides with the track: the speaker id is the msid (e.streams[0].id in the browser), never inferred from arrival
-    // order. werift derives msid from the sender's `streams`, not from fields on MediaStreamTrack.
+    // identity rides with the track: the speaker id is the msid (e.streams[0].id in the browser), not arrival order (the
+    // browser's sfu-route queue is only the fallback for a missing or 'default' msid, i.e. an older server). werift derives msid from the sender's `streams`, not from fields on MediaStreamTrack.
     const stream = new MediaStream({ id: speakerId, tracks: [track] });
     listener.outbound.set(speakerId, { track, negotiated: false });
     listener.pc.addTransceiver(track, { direction: "sendonly", streams: [stream] } as any);

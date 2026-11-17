@@ -10,7 +10,8 @@ import { RESERVED, entryBy } from "./rights.js";
 
 // How much a world holds: at most @world.capacity.entities entities (all but @world, sockets included), and the world's
 // account-less people TOGETHER at most capacity.guestEntities (a guest is a fresh identity per connection, so a
-// per-identity budget can't hold). Only a write that adds entities is refused (full). capacity.avatar isn't enforced.
+// per-identity budget can't hold). Only a write that adds entities, or sockets past SOCKETS_PER_HOST to one host (a
+// reparent too), is refused (full). capacity.avatar isn't enforced.
 // CAPACITY is this server's default per absent field, CAPACITY_CEILING the most an owner may set: server policy
 // (PROTOCOL §9.2), reported by schema. entities 10 000 is what test/protocol/scale-check.ts fills under budget.
 export const CAPACITY = { entities: 10000, guestEntities: 500, avatar: 2000 };

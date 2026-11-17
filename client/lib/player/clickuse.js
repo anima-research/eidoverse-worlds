@@ -1,8 +1,9 @@
 // clickuse — the mouse on things. LEFT-CLICK is the thing's primary use (grab a ball, open a door, sit on a seat);
-// RIGHT-CLICK opens a menu of everything it offers. The keys stay (T, Q, E, X): the mouse sends the same requests
+// RIGHT-CLICK opens a menu of what it offers (while I hold something else, "put X on it" takes pick-up's place). The keys stay (T, Q, E, X): the mouse sends the same requests
 // they do, so the authority's refusals read the same.
 //   A click is a press and release that didn't travel (a drag is the camera's orbit, either button). Not in edit mode
-// (a click selects there), not in a headset, not over a person (bodydrag's capture listener takes that press first).
+// (a click selects there), not in a headset, not a left press on a limp body (bodydrag's capture
+// listener takes that one first; a standing person, or a right press, falls through to what is behind).
 // The cursor is an open hand over what a click would pick up, a pointing finger over any other use.
 import { THREE, camera, canvas } from '../core.js';
 import { outOfMyView } from '../edit/myview.js';
@@ -81,7 +82,8 @@ async function fetchIt(id, offer) {
   if (why === 'blocked' || why === 'timeout' || why === 'arrived') flashHint(`couldn't get to ${nameOf(id) ?? id}: something is in the way`, 3800, 'attn');
   return null;
 }
-/** The world point under the pointer: the nearest surface of anything placed (not what I hold), else the ground. [x, y, z] or null. */
+/** The world point under the pointer: the nearest surface of anything placed (not what I hold), else the level plane
+ *  at my feet (not the terrain: a hillside is no placed thing). [x, y, z] or null. */
 const aimRay = new THREE.Raycaster(), aimNdc = new THREE.Vector2(), aimPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), aimHit = new THREE.Vector3();
 let lastXY = null;
 canvas.addEventListener('mousemove', (e) => { lastXY = [e.clientX, e.clientY]; });

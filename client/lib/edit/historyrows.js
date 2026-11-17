@@ -1,5 +1,6 @@
 // Rows for the editor's History: pure, testable without a browser. A refused write is logged as an act whose body
 // carries refused {code} (shared/protocol/authority.js logRefusal): shown as an attempt, never counted as a deed.
+// Not every refusal has a row: logRefusal only counts a rate refusal or a contact punt, and drops presence verbs.
 import { phraseOf } from '../../../shared/credits.js';
 export function worldHistoryRows(entries, nameOf) {
   return entries.filter((e) => e.kind === 'request').reverse().map((e) => {

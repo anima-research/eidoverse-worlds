@@ -193,9 +193,9 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
   check('every pose drives a full skeleton (≥8 bones)', none('poses'), bad.poses.join(' '));
   check('the rendered root lies down with the body', none('lying'), bad.lying.join(' '));
   check('sim twist stays sane (renders as zero regardless)', none('twist'), bad.twist.join(' '));
-  check('folds no more than the Verlet on the same rig', none('crumple'), bad.crumple.join(' '));
+  check('folds no more than the Verlet on the same rig (×1.35 + 0.17 rad, at least 1.15 rad)', none('crumple'), bad.crumple.join(' '));
   check('no hidden spin late in the fall (≤12 rad/s)', none('spin'), bad.spin.join(' '));
-  check('knees never hyperextend (positions, not quats)', none('knees'), bad.knees.join(' '));
+  check('knees never hyperextend past 40° (positions, not quats)', none('knees'), bad.knees.join(' '));
 }
 
 // ---------------------------------------------------------------------------
@@ -1046,9 +1046,9 @@ const { G_FINGER } = await import('../../client/lib/ragdoll/ammodoll-tuning.js')
 }
 
 // ---- the collision filter fits in a SHORT --------------------------------
-// ammo.js declares addRigidBody's group and mask as short, not int. Anything
-// above bit 14 truncates on the way into wasm, and a group of 0 collides with
-// NOTHING -- which is why hair, wings and fingers fell through the floor, and
+// ammo.js declares addRigidBody's group and mask as short, not int. Bit 15
+// lands as the sign (-32768), anything above it truncates on the way into
+// wasm, and a group of 0 collides with NOTHING -- which is why hair, wings and fingers fell through the floor, and
 // why both feet (the last two bits under the old 16-bit budget) were ghosts.
 // The failure is completely silent, so it is asserted rather than remembered.
 {

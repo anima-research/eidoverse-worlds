@@ -47,8 +47,8 @@ function spokenOf(a, now) {
   if (a.spoken !== true || !Number.isSafeInteger(a.utt) || a.utt < 0) return {};
   return { spoken: true, utt: a.utt, ...(typeof a.t0 === "number" && Number.isFinite(a.t0) ? { t0: Math.round(Math.min(now, Math.max(now - MAX_UTTER_MS, a.t0))) } : {}) };
 }
-// L7 rate: per actor, over a 10 s window by the authority's clock, in ENTRIES and in BYTES, talk (say) apart from building
-// (acts) so neither starves the other. An identity with no account (io.kindOf → "anon") gets less. Refused requests are
+// L7 rate: per actor, over a 10 s window by the authority's clock, in ENTRIES (talk, say, counted apart from building
+// acts so neither starves the other's count) and in BYTES (one budget for both). An identity with no account (io.kindOf → "anon") gets less. Refused requests are
 // logged inside the same byte budget.
 // the defaults; a server injects its own policy (io.rate, server/config.ts RATE_POLICY): never process.env here (browsers run this)
 export const RATE_DEFAULT = Object.freeze({ n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 });

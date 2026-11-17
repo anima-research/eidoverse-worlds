@@ -2,7 +2,8 @@
 // (sky.js) and shadow-depth variants (below, driven by lightrig's casterPass). Concurrency is one: the GPU process
 // compiles one thing at a time while frames keep presenting (a 2-wide lane let compiles fight each other).
 //
-// Between items, one real requestAnimationFrame yield (scheduler.yield starves rAF on Chromium). Errors are swallowed
+// Between items, one nextFrame (loadwork.js): a real requestAnimationFrame yield while the page draws (scheduler.yield
+// starves rAF on Chromium); a hidden tab, or a stopped frame clock's watchdog, resolves it without a frame. Errors are swallowed
 // but counted in warmStats(); warmDepth and warmLit catch their own compile rejections, so those count as done.
 
 import { renderer, scene, sun, camera, THREE, TSL } from '../core.js';
@@ -22,7 +23,7 @@ export const P_MODEL = 1;    // a thing someone is about to see (default)
 export const P_AMBIENT = 2;  // sky domes, shadow-depth variants
 
 /** Enqueue an async warm. Runs fn() alone — highest class first, arrival order
- *  within a class — one real frame between items. Resolves when the item has
+ *  within a class — one nextFrame yield between items. Resolves when the item has
  *  RUN; never rejects (errors are swallowed and counted). */
 export function warm(label, fn, { p = P_MODEL } = {}) {
   return new Promise((resolve) => {

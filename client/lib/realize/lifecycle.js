@@ -3,7 +3,8 @@
 // The realizer says it once, `release(id, phase)`, and the modules that subscribe let go on that word,
 // synchronously (colliders.js the collider, lightrig.js the caster and the entity's lamps; material.js and emitters.js go
 // on the 'entity' remove/demote events instead). A registry that
-// forgets to subscribe leaks; test/client/realized-lifecycle-test.ts pins the registries at every seam.
+// forgets to subscribe leaks; test/client/realized-lifecycle-test.ts pins the realizer's word at every seam (the
+// registries there are stubs, so a real module dropping its subscription is not caught by it).
 //
 // `tracked` is the realizer's own record; gen guards an async load completion against acting for a reservation
 // retired and re-created while its bytes flew.

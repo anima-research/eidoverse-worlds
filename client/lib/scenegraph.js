@@ -1,7 +1,7 @@
 // scenegraph — the world as a tree, and the scripts that animate it. Two sections in the world panel:
 //
-//   🌳 scene    every entity as a row (mounted things indent under their parent, seated bodies as occupants). A
-//               selected row opens the inspector: a transform editor (pos / yaw / scale), the semantic editors
+//   🌳 scene    every realized entity as a row (a switched-off thing is retired from the scene: no row; mounted
+//               things indent under their parent, seated bodies as occupants). A selected row opens the inspector: a transform editor (pos / yaw / scale), the semantic editors
 //               evaluator modules register through edit/inspect.js, a meaning-free component editor (any comp type
 //               as raw JSON; a save replaces that type's data wholesale), and find / attach / detach / remove.
 //               Attach keeps the current world transform (shared/hierarchy.js).

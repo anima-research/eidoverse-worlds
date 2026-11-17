@@ -1,7 +1,8 @@
 // structure_ui — the griddled-building editor's client half (docs/research/griddled-structures.md).
 //
 // Every edit is a pure function in shared/structure-edit.js, so this file answers three questions: which building,
-// where on its grid, which tool. The preview draws the same result that commits.
+// where on its grid, which tool. The preview draws the walls (sweeps) of the same plan that commits; its box parts
+// (floors) are not ghosted.
 //
 // One component carries a whole building, so an edit re-sends it whole as ONE request with `expect` on the building
 // as this viewer saw it: a concurrent change is refused (`changed`), never silently eaten. Undo is writes.js's.

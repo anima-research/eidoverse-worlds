@@ -374,7 +374,8 @@ export function minTexelDensity(f: number[], g: number[], t1: number[], t2: numb
 /** TEXEL DENSITY: the longest side each texture needs so every part it covers still gets `texelsPerMetre`. Per
  *  triangle, density along its LEAST dense axis (minTexelDensity); the area-weighted 10th percentile is held at the
  *  target (not the minimum: a sliver of stretched UVs would pin the map at full size). Rounded up to a power of two,
- *  clamped to [64, house cap]. Unmeasurable textures (KHR_texture_transform, non-core slots) keep the house cap. */
+ *  clamped to [64, house cap]. Unmeasurable textures (KHR_texture_transform, non-core slots) keep the house cap, except
+ *  an extension's texture whose materials had core slots measured: it takes their largest cap (below). */
 export function lodTexelCaps(doc: Document, texelsPerMetre: number): Map<Texture, number> {
   const slotsOf = (mt: any): [Texture | null, any][] => [
     [mt.getBaseColorTexture(), mt.getBaseColorTextureInfo()], [mt.getEmissiveTexture(), mt.getEmissiveTextureInfo()],

@@ -1,6 +1,6 @@
 // bun test/client/library-badge-probe.mjs — World › Build library cards show each model's optimization status
 // (catalog.js optBadge over /library-models `opt`): refused/deferred/stale → ⚠ chip; a built LOD → 'LOD' chip; the
-// hover (title) lists every pass with its reason. Searches broadly so the page renders the server's real catalog, then
+// chip's hover (title) lists every pass with its reason (a card with no chip, e.g. all passes pending, has no such list). Searches broadly so the page renders the server's real catalog, then
 // checks every card against the JSON the route returned for the same query.
 import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
 const { check, done } = checker();

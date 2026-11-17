@@ -337,7 +337,7 @@ export class WorldAgent {
     for (const m of Array.isArray(messages) ? messages : []) {
       if (!m || typeof m !== "object") continue;
       const ts = Date.now(); let text: string | null = null;
-      // a row reads `* <who> <text>` (look, net-server): who is the actor's name, text the rest
+      // a row reads `* <who> <text>` (look, net-server): who is the actor's name (its id when none is known), text the rest
       const actor = m.from ?? m.by, subj = typeof actor === "string" ? this.nameOfActor(actor) ?? actor : "world";
       // what the authority did: it let the act reach this body, and recorded it
       if (m.type === "body" && m.kind === "shove") {   // a shove the authority delivered (a blast's): applied as the relay's is
@@ -1076,7 +1076,8 @@ export class WorldAgent {
   }
 
   /** Reconcile the derived maps from the folded state — the ONLY writer of
-   *  this.entities/this.mounts outside the sim stamp. Fresh objects each
+   *  this.entities outside the sim stamp, and of this.mounts' logged rows (a
+   *  body's seat is presence: setOccupant and AgentSenses write those). Fresh objects each
    *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
   private reconcileFromFold() {
     const seen = new Set<string>();
@@ -2777,8 +2778,8 @@ export class WorldAgent {
     });
   }
 
-  /** The world's flight recorder: why things bounced — every request the authority refused (rights, locks,
-   *  shapes, rate limits, bans), and with `script` / `scripts`, what the world's scripts did.
+  /** The world's flight recorder: why things bounced — the refusals the authority recorded (rights, locks, shapes,
+   *  rate limits, bans; at most 20 per connection per 10 s, 300 events kept), and with `script` / `scripts`, what the world's scripts did.
    *  The log answers "what happened"; this answers "why didn't it". */
   worldDebug(opts: { limit?: number; kinds?: string[]; script?: string; scripts?: boolean } = {}):
       Promise<{ events: any[]; status?: string }> {
@@ -2798,8 +2799,9 @@ export class WorldAgent {
   }
 
   /** Where a thing ACTUALLY is right now: the mount chain and any whole-entity
-   *  motion, composed by effective.ts with the renderer's closed forms. Every
-   *  numeric spatial claim in perception goes through this, never `e.pos`. */
+   *  motion, composed by effective.ts with the renderer's closed forms. Numeric
+   *  spatial claims in perception go through this, never `e.pos` (one exception:
+   *  look's room-of, agent-senses localizePoint, still reads the saved pose). */
   eff(id: string, nowMs: number): Effective {
     return effectiveWorldTransform(id, {
       entity: (eid) => this.entities.get(eid),

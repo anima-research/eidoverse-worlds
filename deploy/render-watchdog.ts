@@ -39,8 +39,9 @@ const ROAM = /^(1|true|yes)$/i.test(process.env.ROAM ?? "");
 // lite=0: the client's boot tripwire (index.html, `ew-boot-attempt:<world>`)
 // demotes a device to the engine-less LITE client when its last full boots were
 // killed before the dwell, and this watchdog kills renderers for a living, in
-// a profile that persists: a lite renderer never joins, is killed, and comes up
-// lite again. The client never makes a ?renderer page lite (index.html rule 0);
+// a profile that persists: a lite renderer never joins AS a renderer (lite.js
+// claims no ?renderer; a door key admits it as a spectator, the renderers'
+// credential refuses it), is killed, and comes up lite again. The client never makes a ?renderer page lite (index.html rule 0);
 // asking here as well keeps a renderer whole against a sequencer serving an
 // older client, since the URL outranks the tripwire.
 const URL = `${SHOW_URL}/?world=${WORLD}&renderer&lite=0&name=mac-gpu-${ROAM ? "roam-" : ""}${WORLD}` + (ROAM ? "&roam" : "") + (KEY ? `&key=${KEY}` : "");

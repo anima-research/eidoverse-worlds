@@ -5,7 +5,7 @@
 // Sources are independent — the desktop key, the "always show names" setting, a timed pulse from the action list — and the reveal is on
 // while ANY of them is; the level ramps from wherever it was, so a quick tap-release-tap never snaps.
 //
-// THE KEY: N ("names") — bare, bound nowhere else in the client (Alt is taken three times over, and a bare Alt
+// THE KEY: N ("names") — no Ctrl/Alt/Meta (Shift+N reveals too), bound nowhere else in the client (Alt is taken three times over, and a bare Alt
 // release focuses the menu bar in Windows browsers). Ignored while typing and on autorepeat; released on blur, since
 // a keyup never arrives when focus leaves with the key down (mictoggle.js's stuck-key class).
 import { revealRamp, revealEase } from './platesize.js';

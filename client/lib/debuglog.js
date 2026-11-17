@@ -19,9 +19,8 @@ export function why(topic, msg) {
   if (ring.length > RING) ring.shift();
 }
 
-/** The most recent narration for a topic, or a fixed absent-marker — a probe
- *  that formats this must be able to tell "quiet subsystem" from "no such
- *  topic ever spoke", and both from a real message. */
+/** The most recent narration for a topic, or a fixed absent-marker, so a probe can tell a real message from silence.
+ *  A quiet subsystem and an unknown topic read the same: no registry of topics exists to tell them apart. */
 export function lastWhy(topic) {
   const ring = topics.get(topic);
   return ring?.length ? ring[ring.length - 1].msg : '(nothing logged)';

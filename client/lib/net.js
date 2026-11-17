@@ -104,7 +104,7 @@ export const guests = new Set();
 net.modMuted = {};
 export const identityOf = (name) => (name === CONFIG.name ? net.you ?? null : identities.get(name) ?? null);
 /** Say something in the world (the authority's `say`). Never silent: a line typed while the connection is down is
- *  queued and sent when the world is back, and a refused say is shown to the person in plain words. */
+ *  queued (up to 20; past that it is refused and said so) and sent when the world is back, and a refused say is shown to the person in plain words. */
 const sayQueue = [];   // {args, resolve}: says typed while reconnecting, sent in order on the next snapshot
 const SAY_QUEUE_MAX = 20;
 const excerpt = (t) => { const s = String(t ?? '').replace(/\s+/g, ' ').trim(); return `“${s.length > 40 ? `${s.slice(0, 39)}…` : s}”`; };

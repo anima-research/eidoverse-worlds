@@ -952,7 +952,7 @@ dropped packet without a visible stall" (`remotes.js:16-18`).
 Lesson: server-to-local offset must be low-passed or the render cursor jitters
 with every frame's network noise.
 (The clock is now `client/lib/serverclock.js`: round trips, the smallest
-winning, slewed rather than stepped on screen; before the first round trip, the
+winning, slewed rather than stepped on screen (a change over 500 ms snaps); before the first round trip, the
 one-way samples keep the least-delayed one (`shared/clockoffset.js`, from #201),
 so a frame handled late can't drag it seconds early.)
 

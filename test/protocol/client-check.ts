@@ -4,7 +4,8 @@
 // guard only when PROTOCOL_HEADLESS_LOCK and PROTOCOL_PERF_GUARD are set (test/gate/run.ts); otherwise unguarded
 //
 //   B   boot: the page knows it's in a world; its own fold of the log stream = the log on disk (digest)
-//   P   place from the Build tab's ghost: one `create` act, the page waited for the authority
+//   P   place from the Build tab's ghost: one `create` act, then the page's own fold draws it (that nothing showed before
+//       the authority answered is not checked here)
 //   G   a gizmo drag is presence until release: ONE act, `set transform` with expect on where it started
 //   HP  at a helm, P won't start photo mode and a photo mode started anyway ends (the helm owns the keys and camera)
 //   CL  nearbyClimb follows a route's changes: found, gone when disabled, found where its points moved

@@ -2,7 +2,7 @@
 // authority holds for me (consent {}) and sends only what differs, in order on one socket — the gates I chose in one
 // request, then one allow / block per person, and an unlist only for someone I took off a list here (mcpl
 // replayConsent's model). The server checks it before it forwards anyone's knock-over, pose, grab or touch, so a table
-// that never lands leaves me on the world's defaults while my switches say otherwise — and the server answers in my
+// that never lands leaves me on what the authority last held (the world's defaults, for a newcomer) while my switches say otherwise — and the server answers in my
 // name. Only my own changes are sent (consent.js's queue), never my whole list over the world's. The sync runs on
 // every arrival (a world's presence plane is its own) and every change; a refusal is said once and the table is sent
 // again on a timer and on the next arrival.

@@ -5,7 +5,8 @@
 // fallback), and headless Chromium may rasterize it fine, so tests can't see it. Any emoji that carries meaning in
 // this UI is a silent-failure risk.
 //
-// Path data is verbatim from lucide-icons/lucide (ISC licence), 24x24 viewBox: store the `d` strings, build Path2D
+// Path data is verbatim from lucide-icons/lucide (ISC licence) unless an entry says it is ours (the headphones),
+// 24x24 viewBox: store the `d` strings, build Path2D
 // lazily, and let each surface render them its own way.
 //
 //   stroke(ctx, name, size)  → canvas / 3D sprite (Path2D, cached)

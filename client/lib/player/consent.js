@@ -1,7 +1,7 @@
 // My body's consent: two gates — Move me, Touch me — each on or off, and two lists of people — Allow (always
 // yes) and Block (always no), whatever the gates say. The authority is the only place it's decided (shared/protocol/
-// consent.js decide; no client-side gate). This module remembers my choice (localStorage, so it survives the session and
-// follows me between worlds) and hands it to consentsync, which sends it on every arrival and every change.
+// consent.js decide; no client-side gate). This module remembers my choice (localStorage, so it survives the session; a
+// narrowing, a block or a gate off, follows me between worlds, a widening, an allow or a gate on, stays where it was made) and hands it to consentsync, which sends it on every arrival and every change.
 // A leaf with no lib imports. setPushable/setPosable keep main's /pushable and /posable meanings: the move and touch gates.
 import { GATES, DEFAULT_GATES, CONSENT_SHAPE } from '../../../shared/protocol/consent.js';
 export { GATES };
@@ -19,7 +19,8 @@ const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* private mo
 const plainList = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([id, n]) => typeof id === 'string' && typeof n === 'string')) : {});
 
 /** Stored: {v, move?, touch?, notice?, opened?: {gate: world}, allow: {id: name}, block: {id: name}, queue: [{op, id, name, at, world, acked}]}; a gate absent = never chosen.
- *  Older keys are carried in by readStored, never wider (Touch me stays off and `notice` is set when main's posable can't carry). */
+ *  Older keys are carried in by readStored, never wider (Touch me stays off and `notice` is set when main's posable can't carry; an old switch
+ *  of refuse or ask already said no to posing, so it carries no notice). */
 /** what a person whose old "allow posing" couldn't carry over is told, once (takeNotice) */
 export const TOUCH_NOTICE = "Your old \u201callow posing\u201d setting couldn't carry over: Allow being posed and touched now covers being touched, intimate places included, as well as being posed, so it is off. To turn it on, open Settings ▸ body and tick Allow being posed and touched.";
 export const BLOCK_FOLLOW_MS = 30 * 86_400_000;

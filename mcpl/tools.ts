@@ -83,7 +83,8 @@ export type ToolCtx = {
 // is an alias. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose modes
 // carry the old bespoke verbs (flight is move {mode: "fly"} + act land; poses and wings are anim; kick/ban are act);
 // the old names in TOOL_FOLDS answer by teaching where they went (pose and animate aren't among them). High-volume sugar (look, say, face, stop…) stays.
-// Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/mcpl/flight-exit-test.ts).
+// Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/mcpl/flight-exit-test.ts,
+// door-is-error-test.ts).
 
 const TOOL_ROWS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports body-mode, the clip playing, the named poses held (wings-folded), position, held poses/reaches and freshness; for yourself it also carries flight: where the sky has left you (altitude, heading, airspeed, stamina, how far your best glide reaches, which layer is flying) — or that you are falling, or on the ground. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, gestures and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
@@ -436,7 +437,8 @@ type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: 
 // Verbs `act` answers before the authority: the body's own (land, shove — presence, like a person's /push) and
 // moderation by NAME (kick/ban/unban resolve a name to an identity through whois, then ask the authority; bans
 // reads what's in force). Each answers in act's shape: {ok, text} as text, isError on a refusal.
-// One answer to "who" for every verb that takes one: an identity (u-…) as given, else a name via the directory
+// One answer to "who" for every world verb that takes one (a global ban/unban sends `who` to server moderation as
+// given): an identity (u-…) as given, else a name via the directory
 // (whois), so an absent person can be banned too. Returns {who} or {err: <tool result>}; `verb` only shapes words.
 async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: string } | { err: any }> {
   const id = String(raw ?? "").trim();

@@ -1,7 +1,7 @@
 // humanoid — the VRM humanoid bone vocabulary, and what counts as a well-formed pose over it.
 //
-// One vocabulary, one validator, every runtime: a typo'd bone name or a malformed quaternion is reported, never taken
-// silently. The bone list is VRM 1.0's (three-vrm normalizes VRM0 rigs onto these names).
+// One vocabulary, one validator: where a pose is validated (mcpl's pose tool), a typo'd bone name or a malformed
+// quaternion is reported, never taken silently. The browser console's EW.pose does not validate. The bone list is VRM 1.0's (three-vrm normalizes VRM0 rigs onto these names).
 
 /** Bones every humanoid rig has. */
 export const REQUIRED_BONES = [

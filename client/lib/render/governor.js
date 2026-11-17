@@ -337,7 +337,8 @@ let calmReached = false;  // sticky: arrival proved smooth once this session
 const calmWaiters = [];
 
 /** Resolves once smoothness (the restore ladder's >52fps read, fed at 1Hz)
- *  has held 5 consecutive seconds with the busy predicate false throughout.
+ *  has held 5 consecutive seconds with the busy predicate false at each 1Hz
+ *  sample (a job that starts and ends between two samples goes unseen).
  *  Sticky: this is a storm-edge signal for boot-deferred extras, and once
  *  the arrival has proven itself the answer stays yes. */
 export function whenCalm() {

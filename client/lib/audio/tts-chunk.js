@@ -93,7 +93,8 @@ function fastFirst(chunk) {
   return [shapeContinuation(chunk.slice(0, cut).trim()), chunk.slice(cut).trim()];
 }
 
-/** A mid-sentence chunk ends with a comma: espeak renders it as a continuation rise, not a full stop. */
+/** A mid-sentence chunk ends in punctuation: a comma is added unless it already ends in one (, ; : — – . ! ? …).
+ *  espeak renders the comma as a continuation rise, not a full stop. */
 function shapeContinuation(chunk) {
   return /[,;:—–.!?…]$/.test(chunk) ? chunk : chunk + ',';
 }

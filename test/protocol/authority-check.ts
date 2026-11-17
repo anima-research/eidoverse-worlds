@@ -1076,9 +1076,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const badSock = (sock) => R("ann", "create", { components: { parent: { to: "horse" }, transform: { pos: [0, 1, 0] }, socket: { name: "s", ...sock } } }).refused?.code;
   ok(badSock({ pose: "sit" }) === "schema" && badSock({ body: { action: "sit" } }) === "schema", "SS4 a socket's pose is its station's anim: socket.pose is an unknown key, and socket.body is refused for the station (schema)");
   ok(bad({ action: "Ride Now" }) === "shape", "SS4 station.action is a lower-case verb");
-  ok(bad({ who: "king" }) === "shape", "SS4 station.who is visitor, builder or owner");
+  ok(bad({ who: "king" }) === "shape", "SS4 station.who must be a role (an undefined one, king, is refused)");
   ok(R("ann", "set", { id: kidOf("horse", "saddle"), component: "station", value: { action: "ride", anchor: "hips", anim: { by: "speed", clips: [[0, "idle"], [2, "walk"], [6, "run"]] }, leaveBy: "jump" } }).ok
-    && bad({ action: "ride", reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, fromSeat: true }) === "reserved", "SS5 a saddle with a blend by speed and leaveBy is taken; reins, look limits, a driver's input are reserved");
+    && bad({ action: "ride", reach: { leftHand: { at: [-0.2, 1.4, 0.5], vr: "near" } }, look: { yaw: [-90, 90] }, input: { move: "drive", look: "aim" }, fromSeat: true }) === "reserved", "SS5 a saddle with a blend by speed and leaveBy is taken; one with reins, look limits and fromSeat is refused as reserved");
   ok(bad({ anchr: "hips" }) === "schema" && bad({ reach: { leftHand: { at: [0, 1, 0], grip: 1 } } }) === "reserved", "SS6 closed keys: an unknown station key is refused (schema), and a reach is reserved whole");
   ok(bad({ leaveBy: "teleport" }) === "shape" && bad({ look: { pitch: [10, -10] } }) === "reserved"
     && bad({ anim: { by: "mood", clips: [[0, "idle"], [1, "walk"]] } }) === "shape" && bad({ enter: 42 }) === "reserved", "SS7 enums and signals are checked; look and enter are reserved");

@@ -56,7 +56,8 @@ function needsReload(row) {
 }
 const pct = (v) => v === 'auto' ? 'auto (adaptive)' : `${Math.round(v * 100)}%`;
 
-// The same dials as a VR quad (rail id 'settings'), through the same getters and setters the desk's rows call.
+// The same dials as a VR quad (rail id 'settings'), through the same getters and setters the desk's rows call; all but
+// the renderer choice, which applies on reload and stays on the desk.
 // Discrete choices are list rows with a 'use' action: 'auto' appears in four of the lists, so a bare row click is ambiguous.
 function videoFields() {
   const pick = (k, values, cur, label) => ({ t: 'list', label,

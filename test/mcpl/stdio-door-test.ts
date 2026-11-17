@@ -12,8 +12,8 @@ import { scratchSequencer, mkCheck, ROOT } from '../harness/harness.ts';
 import { tryUntil } from '../gate/wait.ts';
 import { join } from 'node:path';
 
-// a scratch sequencer with the door's world founded by the agent itself (TRUST_NAMES: its typed name is its account,
-// so it is the owner and may light the lamp below); no browser is involved
+// a scratch sequencer with the door's world founded up front for owner stdiobot (TRUST_NAMES: the agent's typed name
+// is its account, so it is that owner and may light the lamp below); no browser is involved
 const { PORT, cleanup, die } = await scratchSequencer('stdiodoor', { worlds: ['stdiodoor'], owner: 'stdiobot', serverEnv: { TRUST_NAMES: '1', SKIP_OPT_SWEEP: '1' } });
 const { check, tally } = mkCheck();
 

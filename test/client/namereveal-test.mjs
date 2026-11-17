@@ -3,7 +3,7 @@ import { suite } from "../gate/suite.ts";
 //
 //   bun test/client/namereveal-test.mjs
 //
-// What must hold: N (bare, not autorepeat, not a chord, not while typing in a field) starts the reveal (the keydown
+// What must hold: N (no Ctrl/Alt/Meta chord, Shift allowed; not autorepeat, not while typing in a field) starts the reveal (the keydown
 // predicate; the window listeners themselves are not driven here); sources are independent (the key and a second
 // source, `xr`, which no controller binds today — releasing one keeps the other's hold); the level ramps from where
 // it is, reaching 1 and 0 in REVEAL_EASE_MS; the action is registered where every binding list reads (actions.js) with

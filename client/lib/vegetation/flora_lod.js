@@ -46,7 +46,8 @@ export const BLADE_COARSE_INDICES = 12;   // 2 quads: loops 0→2→4
 const COARSE_QUADS = [0, 1, 4, 1, 5, 4, 4, 5, 8, 5, 9, 8];  // original winding, loops skipped
 
 /** Coarse far index: every blade at 2 segments instead of 4. Same structural
- *  proof as bladeLodIndex — version skew degrades to null, never a torn tuft. */
+ *  proof as bladeLodIndex: a count mismatch or a cross-blade reference degrades
+ *  to null. A reorder WITHIN a blade passes the proof and is not caught. */
 export function bladeCoarseIndex(index, vertexCount) {
   if (!index) return null;
   const blades = index.length / BLADE_INDICES;

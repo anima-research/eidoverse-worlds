@@ -122,7 +122,7 @@ function shoot(W, who = "vic", v = [0, -1, 6]) {   // a visitor throws crate-1 a
   const shL = lv("sh"), frL = lv("fr");
   // (a lying A-frame's faces are all 10 cm beams: no room for a 22 cm ball, refused honestly, at its top level)
   ok(!shOn && onSh.ok && onFr.refused?.code === "no-room" && new RegExp(`level ${frL.length - 1} `).test(onFr.refused.reason) && asc(shL) && asc(frL) && shL.length > 0 && Math.abs(shL.at(-1).y - top("sh")) < 1e-9 && Math.abs(frL.at(-1).y - top("fr")) < 1e-9,
-    "K9 a shelf or a swing-frame laid down lists its levels bottom to top, no face buried under its own parts; the default is its top (the shelf's takes a ball; the frame's beam honestly has no room)",
+    "K9 a shelf or a swing-frame laid down lists its levels bottom to top; the default is its top (the shelf's takes a ball; the frame's beam honestly has no room)",
     { sh: onSh.ok ? true : onSh.refused?.reason, fr: onFr.ok ? true : onFr.refused?.reason, shY: shL.map((x: any) => x.y), frY: frL.map((x: any) => x.y) }); }
 // K10 (review r8): faces at one height are one level height, so measure's rounded list stays bottom to top (a shelf at
 // scale 0.9 face-down at yaw 0.3 put its 0.1575 front edge on a rounding half: [3.158, 3.157, 3.158])

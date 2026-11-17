@@ -163,7 +163,7 @@ ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldN
   const own = d.resolve({ sub: "human:discord:777", name: "Bo" }); request(w, own, "create-world", { title: "b" });
   request(w, own, "set", { id: "@world", component: "default-role", value: { role: "builder" } });
   const big = request(w, own, "say", { text: "x".repeat(9000) });
-  ok(big.refused?.code === "too-big", "B1 a say is at most 8 KiB of text", big.refused);
+  ok(big.refused?.code === "too-big", "B1 a say is at most 8192 characters (string length, not bytes)", big.refused);
   // the flood is big VALUES, not chat (20 says of 8 KiB stay under the cap): 60 KiB draft bags, well under 60 entries
   // (a label is capped at 80 since f5dbb31e; a namespaced draft component has no schema, so it carries the bulk)
   request(w, own, "create", { id: "slab", model: "crate", place: { at: [4, 4] } });

@@ -202,7 +202,8 @@ function scheduleLoad(id, ent, gen, tier = null) {
     if (t?.gen === gen) t.loading = false;
     if (e?.name === 'AbortError') return;
     if (t) t.failedAt = Date.now();   // the sweep backs off
-    // a failed load keeps its reservation: the id stays addressable (a later remove folds cleanly), it just never renders
+    // a failed load keeps its reservation: the id stays addressable (a later remove folds cleanly), it just doesn't
+    // render until the sweep retries it (30 s after failedAt, while it is still in range)
     report(`realize spawn ${id}`, e);
   });
 }

@@ -444,7 +444,7 @@ const cases: Case[] = [
     good: (o) => !o.none && o.crowRoles?.[0] === "generated-with" && o.crowRoles.length === 4 && o.suit[0] === "digi" && /CC-BY/.test(o.suit[1]) && o.palm[0] === "eidoverse/assets/models/" && o.palm[1] === "CC0-1.0" && o.palm[2] && o.palm[3] === 0 && o.bases },
 
   // ---------------- A: what an agent reads ----------------
-  { id: "A1", what: "help's schema knows story, text, picture, sound and look-at (with their fields), the play handler, and look carries a says line for each", run(s) { cast(s);
+  { id: "A1", what: "help's schema knows story, text, picture, sound and look-at (a help line each), the play handler, and look carries a says line for each", run(s) { cast(s);
       const sch = (c: string) => s.call("olive", "schema", { component: c }).components?.[c];
       const names = ["story", "text", "picture", "sound", "look-at"].filter((c) => sch(c)?.help);
       const rx = s.call("olive", "schema", { component: "reactions" }).components?.reactions?.handlers ?? {};

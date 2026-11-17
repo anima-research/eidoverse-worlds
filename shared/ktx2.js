@@ -28,8 +28,8 @@ export function negotiate(url, key) {
   return url + (url.includes('?') ? '&' : '?') + `ktx2=${key}`;
 }
 
-/** The LOD recipe the running server published on /version, or null when it published none (an unknown tier would be
- *  served as the original, immutable, under the flagged URL). Never a default. */
+/** The LOD recipe the running server published on /version, or null when it published none (an unknown tier is
+ *  answered provisionally, no-cache: the original or its KTX2 variant, never the tier asked for). Never a default. */
 export function lodFromVersion(json) {
   const l = json && typeof json === 'object' ? json.lodRecipe : undefined;
   return typeof l === 'string' && l.length > 0 && l.length <= 64 ? l : null;

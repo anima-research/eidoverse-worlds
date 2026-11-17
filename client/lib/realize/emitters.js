@@ -48,7 +48,8 @@ async function spriteTexture(path) {
 
 // ---- quality ---------------------------------------------------------------
 // One world-wide tier, lowered by the perf governor. It scales drawn sprites only: preset, state and seed stay
-// identical on every machine, so everyone is looking at the same fire.
+// identical on every machine, so everyone in range is looking at the same fire (one that slept past 90 m resumes
+// where it stopped, so it need not match a viewer who stayed).
 let tier = 'auto';
 const handles = new Set();
 

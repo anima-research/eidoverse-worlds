@@ -1,7 +1,8 @@
 // a11y — how a thing reads to anyone who perceives by reading, on the accessibility model: its NAME (label), its DESCRIPTION (description), then what
 // it CAN do and its STATE, GENERATED from its components, so a description need not restate an affordance (nothing checks one that
-// contradicts it). One reading for the authority's look/inspect (shared/protocol/authority/reads.js), mcpl's look
-// (mcpl/agent-senses.ts) and the human inspector (shared/editschema.js), so they can't disagree. Compact on purpose: an agent's
+// contradicts it). One reading function for the authority's look/inspect (shared/protocol/authority/reads.js), mcpl's
+// look (mcpl/agent-senses.ts) and the human inspector (shared/editschema.js). Each passes what it knows (only the
+// authority knows heldBy), and mcpl's look reads only some components through it, so they agree where they share. Compact on purpose: an agent's
 // context is precious, so each line is a short phrase and only what a component actually says.
 //
 // What isn't here: a visible nameplate. That is a child thing carrying `text` (billboard: 'yaw'), drawn for eyes; this

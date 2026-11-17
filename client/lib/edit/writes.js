@@ -54,7 +54,8 @@ export function writesOf(req) {
   return ops.filter((o) => o.verb === 'set').map((o) => [idOut(o.args.id), o.args.component]);
 }
 
-/** May this viewer lift a lock? By the build permission, never a role name. The authority decides either way; this
+/** May this viewer lift a lock? By the build permission (rights with no permissions list, from an older server: the
+ *  owner only). The authority decides either way; this
  *  only chooses between the "Move anyway" dialog and the refusal. */
 export const mayLift = () => { const r = net.myRights; if (!r) return false;
   return Array.isArray(r.permissions) ? r.permissions.includes('build') : isOwner(r); };
@@ -101,7 +102,8 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   let r = await sendRequest(req.verb, req.args);
   // A lock: someone who may lift it is asked "This is locked. Move anyway?"
   //   through: the SAME request with throughLock (one act, the lock stays on);
-  //   cancel:  nothing is written, the thing goes back (revert);
+  //   cancel:  the edit is not written, the thing goes back (revert); a lock this edit already lifted stays lifted
+  //            (the hint says so);
   //   unlock:  delete the lock, then the request as it was (two acts, so Ctrl+Z undoes the edit first); not offered
   //            to undo/redo, whose act isn't mine to stack under an unlock.
   // A refusal with mayLift: false (a lock above your rank) shows as words, no buttons. Another lock further up asks again.

@@ -1,5 +1,6 @@
 // world-card-probe — Create ▸ Environment and the Hierarchy's environment rows open the world's card for that component
-// and bring its header into view (333-cm bug a5). A real browser against an owned world.
+// (333-cm bug a5); the Hierarchy's row also scrolls its header into view (a5 below), Create ▸ Environment does not.
+// A real browser against an owned world.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/world-card-probe.ts
 //

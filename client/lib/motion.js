@@ -108,8 +108,8 @@ function evalPart(m, t, obj, pbase) {
 const _liveParts = new Map();
 const _seenParts = new Set();
 
-/** Called once per frame from the main loop. Iterates only entities that have
- *  a motion component — the map is tiny compared to the scene.
+/** Called once per frame from the main loop. Walks every placed thing's components (bags()) and acts on those with
+ *  a motion component: there is no motion-only index.
  *  Epoch clock, NOT the rAF timestamp: t0s are the authority clock's stamps (wall ms, never backwards: livehost.ts now()),
  *  and agreeing with other clients matters more than agreeing with vsync. */
 // the camera's WORLD position: in XR camera.position is rig-local

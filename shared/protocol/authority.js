@@ -1,5 +1,5 @@
-// The authority. Every request is resolved here once; the log receives the request as sent (a `request` entry: the act) and
-// the plain results it produced (one `change` entry, `cause` = the act's seq). Replay never runs this file.
+// The authority. Every request is resolved here once; the log receives a write request as sent (a `request` entry: the act)
+// and the plain results it produced (one `change` entry, `cause` = the act's seq); a read (look, inspect…) writes nothing. Replay never runs this file.
 // PROTOCOL L7: every state write, from every path (requests, use handlers, undo, put, create-from, rests, the authority's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
 // locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a change entry is

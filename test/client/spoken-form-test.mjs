@@ -3,7 +3,7 @@ import { spokenForm, ttsChunks } from '../../client/lib/audio/tts-chunk.js';
 import { suite } from '../gate/suite.ts';
 const S = suite('spoken-form');
 const t = (name, got, want) => S.check(name, got === want, `got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
-t('fenced code never speaks', spokenForm('before ```js\nconst x = 1;\n``` after'), 'before after');
+t('``` fenced code never speaks (a ~~~ fence is not one)', spokenForm('before ```js\nconst x = 1;\n``` after'), 'before after');
 t('unterminated fence drops to end', spokenForm('look: ```raw dump of everything'), 'look:');
 t('bare URL becomes link', spokenForm('grab https://a-b.trycloudflare.com/?k=v&x=1 now'), 'grab link now');
 t('markdown link keeps its label', spokenForm('see [the runbook](https://x.y/z) here'), 'see the runbook here');

@@ -1,8 +1,8 @@
 // emitter_field — the `particles` component's lifecycle, DOM- and THREE-free (test/client/particles-test.ts).
 //
-// A built emitter adds a mesh to the scene and a hook to the shared per-frame array (autohooks.js) with no way to
-// undo either; this registry owns every emitter so a replacement retires the old one instead of stacking a second
-// system. Idempotent: the same state twice is a no-op, and a build that finishes after its entity was replaced
+// A built emitter adds a mesh to the scene and a hook to the shared per-frame array (autohooks.js), and only its
+// owner's dispose() takes them back out; this registry owns every emitter so a replacement retires the old one
+// instead of stacking a second system. Idempotent: the same state twice is a no-op, and a build that finishes after its entity was replaced
 // retires itself.
 
 import { releaseHook } from '../render/autohooks.js';

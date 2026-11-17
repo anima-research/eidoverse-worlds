@@ -154,7 +154,7 @@ console.log("\nshift = fine, ctrl = snap:");
   inp.dispatchEvent(pe("pointerup", 213, { ctrlKey: true }));
 }
 
-console.log("\nsoft limit bounds the drag, typing passes both bounds (the door refuses):");
+console.log("\nsoft limit bounds the drag, typing passes both bounds (the door judges a typed value: scale to 1000):");
 {
   const host = document.createElement("div");
   const calls: any[] = [];

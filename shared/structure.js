@@ -31,8 +31,8 @@ export const GRID_DEFAULTS = Object.freeze({
   slabT: 0.10,    // floor slab thickness (it sits ON the level's y: its top, the walk surface, is y + slabT)
 });
 
-/** Aperture profiles: how much wall is left below (`bottom`) and above (`top`) the hole. An aperture spans its whole
- *  segment with no side jambs, and is an absence of boxes, so collision needs no concept of a hole (§4). */
+/** Aperture profiles: the hole's lower edge (`bottom`) and upper edge (`top`), in metres above the level; the wall
+ *  below `bottom` and above `top` (the lintel) stays. An aperture spans its whole segment with no side jambs, and is an absence of boxes, so collision needs no concept of a hole (§4). */
 export const APERTURES = Object.freeze({
   door:   { bottom: 0.00, top: 2.10 },
   window: { bottom: 0.90, top: 2.10 },
@@ -427,7 +427,8 @@ function levelBoxes(level, g) {
     boxes.push(...wallBoxes(edge, ap, g, floorY));
   }
   boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
-  // diagonal collision is stair-stepped: one yaw per building's collider, steps well under a body radius (§9)
+  // diagonal collision is stair-stepped: one yaw per building's collider, steps under a body radius (§9) up to a
+  // diagonal of 64 steps; the count caps there, so a longer one (a big tile) steps coarser
   for (const [k, e] of level.walls) {
     if (e.axis < 2) continue;
     const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
@@ -725,7 +726,7 @@ export function levelAt(plan, lx, lz, ly = 0) {
 
 // ---- routing ----------------------------------------------------------------
 // The grid IS the navigation graph: an edge between neighbours is passable unless a wall stands on it with no door or
-// arch in it (§1; the search is structure-route.js's).
+// arch in it (§1; the search is structure-route.js's, where a door's lintel still blocks a walker high enough to meet it).
 
 /** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
  * resolver, not floor ordering or x/z overlap, owns that basis:

@@ -126,7 +126,8 @@ await slow;
 check("a failed read doesn't clear the list another read just stored",
   Array.isArray(two.bodyBoneNames) && two.bodyBoneNames.length === WINGED.length);
 
-console.log('\nEVERY READER OF A BODY FILE: a failed read is never remembered, a good one is');
+console.log('\nEVERY READER OF A BODY FILE: a failed download is never remembered, a good read is');
+// (a model that downloads but can't be used IS remembered for its version: body-state-test.ts)
 {
   // one humanoid body all three read: loadBodyBones its node names, rigBonesFor its bones, bodyHeightFor its stature
   const humanoid = (magic = 0x46546c67) => {

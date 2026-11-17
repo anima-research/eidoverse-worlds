@@ -730,7 +730,7 @@ const WIRE_BLOCKED = {
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Oscillate: 1, Path: 1 };
 // not offered by Add Component: what the authority refuses today (none). test/protocol/shiplist-check.ts R1 sends
-// every offered entry to the real door: all must be accepted.
+// every offered entry that needs no further choice to the real door: all must be accepted.
 const NOT_OFFERED = new Set();
 /** The words people search Add Component with that aren't in a component's name or summary ("seat" is Sockets).
  *  Shared so an agent's surface can use the same words. */

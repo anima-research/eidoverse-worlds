@@ -37,8 +37,8 @@ build, lang, event tally and last event; `/stt say` posts that line into the wor
 
 ## Diagnostics must exist before they are needed
 
-The phone has no console. The tally and last event are module-scope and assigned at load: a probe that only exists
-once STT has run reads exactly like "no events". `flashHint` is a 2.6 s overlay, not a log, so a failure worth telling
+The phone has no console. The tally is module-scope and its probe (`__sttTally`) is assigned at load: a probe that only
+exists once STT has run reads exactly like "no events". `__sttLast` appears with the first event. `flashHint` is a 2.6 s overlay, not a log, so a failure worth telling
 someone about goes to the chat log as well.
 
 ## Sound is not speech

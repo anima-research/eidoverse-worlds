@@ -605,7 +605,7 @@ async function enterVR({ retryOf = null } = {}) {
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
     hands.left ??= slots[0]; hands.right ??= slots[1];   // guess until 'connected' files them by handedness
     presenting = true; bus.emit('xr:state', true); xrVeilShow(false); vrprobe(true);
-    try { localStorage.setItem(PREF_HEADSET_SEEN, String(Date.now())); } catch { /* private mode */ }   // the next boot picks WebGL up front
+    try { localStorage.setItem(PREF_HEADSET_SEEN, String(Date.now())); } catch { /* private mode */ }   // on auto, a next boot that can't present VR from WebGPU picks WebGL up front (backend_choice.js)
     // a switched-off headset still grants a session: no viewer pose for 2.5 s → say so, mark absent, leave
     hadPose = false;
     const thisSession = sessionNo;

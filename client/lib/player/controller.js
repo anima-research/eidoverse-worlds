@@ -588,7 +588,8 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
-  // on a climb route (climb.js) the route owns the body; presence carries {host, progress}, not a world pose
+  // on a climb route (climb.js) the route owns the body; receivers place it by presence's {host, progress} (p and yaw
+  // still ride along)
   const climb = stepOnClimb(dt);
   myState.climb = climbPresence() ?? undefined;
   if (climb) {
@@ -599,7 +600,7 @@ export function updateMe(dt, me) {
     me.locomotion = null; me.root.position.copy(myState.pos); me.root.rotation.set(0, myState.yaw, 0); me.setClip('climb', climb.speed);
     updateFollowCamera(dt, me); return;
   }
-  // kill-Z (shared/spawn.js): fallen below @world.bounds.min.y, back to an arrival place; the authority records why
+  // kill-Z (shared/spawn.js): fallen more than KILL_MARGIN below @world.bounds.min.y, back to an arrival place; the authority records why
   { const fold = worldFold(); if (fold && belowWorld(fold, myState.pos.toArray(), { riding: !!myState.seat || mountedHook() })) respawnMe(fold, FELL); }
   { const near = nearbyClimb(myState.pos), hint = near ? `${near.host}/${near.dir}` : null;
     if (hint && hint !== lastClimbHint) flashHint(`E — ${near.dir < 0 ? 'climb down' : 'climb up'} ${near.name}`);

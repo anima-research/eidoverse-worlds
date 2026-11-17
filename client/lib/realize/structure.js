@@ -2,7 +2,8 @@
 // `structure` component becomes merged geometry through the material factory plus declared boxes in the collider
 // hash. The pure half is shared/structure.js; this hosted half executes its plan.
 //
-// - Wholesale rebuild on any component change: buildings are edited rarely, a rebuild is a few hundred boxes, and it
+// - Wholesale rebuild when the structure's data changes (a realize with the same data, e.g. after a collider change,
+//   only re-poses and re-declares its boxes): buildings are edited rarely, a rebuild is a few hundred boxes, and it
 //   cannot drift from the fold.
 // - Merged, not instanced: one draw call per material per building. Instancing pays off with dozens of buildings
 //   sharing a kit (flora.js is the precedent); nothing outside this file addresses a wall as an Object3D.
@@ -332,7 +333,7 @@ function onChange({ id, what, comp }) {
 /** Wire the realizer to state. Called once from main.js, beside the others. */
 export function initStructureRealizer() {
   // the style overlay (defs.js), applied when the registry lands or a defs-updated push invalidates it; a failed
-  // fetch keeps the built-in style
+  // fetch keeps whatever style is on (the built-in one, if no overlay has landed yet)
   const restyle = () => defsRegistry()
     .then((reg) => applyPaletteStyle(reg.structurePalette))
     .catch((e) => report('structure palette', e));

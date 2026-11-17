@@ -9,8 +9,9 @@
 //   A. remove under a held load — nothing installs after data:null;
 //   B. replace under a held load — older A finishing after newer B leaves B;
 //   C. entity removed under a held load — nothing installs, no clone kept;
-//   D. entity removed and a new one spawned (its own minted id: a same-id
-//      re-realize is unreachable) under a held load — nothing lands on it;
+//   D. entity removed and a new one spawned (its own minted id; a same-id
+//      return, an undo of the delete, is not exercised here) under a held load
+//      — nothing lands on it;
 //   E. world reset under a held load — nothing installs;
 //   F. the unheld happy path still hangs (the gate refuses only STALE loads);
 //   G. LOD demote + promote under a held load with the entity PRESENT — the

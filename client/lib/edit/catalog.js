@@ -217,7 +217,8 @@ async function paintBuild(body) {
   showStarters();
 }
 
-// Assets uploaded into the world join the palette live, for everyone.
+// Assets uploaded into the world: everyone gets the name (libLabels) and a toast at once; an open palette's cards
+// are not refreshed.
 bus.on('asset', ({ name, path }) => {
   libLabels.set(path, name);
   toast(`${name} joined the world's palette`, 'info');

@@ -8,7 +8,8 @@
 // pass (WebGL 2 has none), so headsets and desktops run the same path.
 //
 // Billboarding is in the mesh's own frame: the camera's right and up are carried into the emitter's local space each
-// frame, so a quad faces the viewer however its thing is turned, and grows with its thing's scale. A headset's two
+// frame, so a quad faces the viewer however its thing is turned, and grows with its thing's scale (a non-uniform
+// scale shears it off the camera plane). A headset's two
 // eyes share the head's basis.
 //
 // Cost is bounded three ways: what an effect may hold (EFFECT_LIMITS, checked at the door), the viewer's tier (the perf

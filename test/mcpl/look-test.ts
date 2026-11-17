@@ -25,7 +25,8 @@ out = ag.look();
 ok(out.includes("apricot: 5.0m"), "later finite pose restores ordinary spatial perception");
 ok(out.includes("at (3.0, -4.0)"), "finite coordinates render normally");
 
-// Heading (#225): every person line says which way they face, from pose.yaw
+// Heading (#225): a person line says which way they face, from pose.yaw (not for a seated or lying body, nor a
+// non-finite yaw)
 // (world yaw: 0 faces +z, which bearing() names S; +π/2 faces +x, E).
 const lineFor = (id: string, text: string) => text.split("\n").find((l) => l.includes(`- ${id}:`)) ?? "";
 // the direction must end at a word boundary, so a cardinal row fails on a diagonal (S ≠ SE)

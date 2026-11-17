@@ -134,7 +134,7 @@ function buildUndo(ctx, a, w) {
   const keys = new Map();
   const madeHere = new Set(flat.filter((o) => o.op === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
   // what the act's delete cleared in others' things (clearRefsTo, the authority's follow-up) comes back as a follow-up
-  // too, put back exactly as it was (touchedBy skips it if anyone changed it since), so the referrer's lock or key can't
+  // too, put back exactly as it was (touchedBy skips it if anyone but the act's author changed it since), so the referrer's lock or key can't
   // veto the undo any more than it could the delete
   // Only an op the target entry itself marks as a follow-up (its `cascade`) is restored as one: the
   // asker's own write in the same batch is theirs, and putting it back meets their rights and the locks now, like any undo.

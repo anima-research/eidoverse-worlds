@@ -188,8 +188,9 @@ console.log('\n— 5. THE SEAM, executed: decide → act → what the caller mus
 {
   // handleEntryFailure IS the catch body. The round-three mutation rewrote the shipping line as
   //   const did = false ? entryEffects.apply(...) : 'surface';
-  // keeping the text for every regex while disabling retry, absence and reload. There is now nothing
-  // between the product and this function for such a rewrite to hide in.
+  // keeping the text for every regex while disabling retry, absence and reload. These rows run the seam itself;
+  // a rewrite around its call can still pass the wiring regexes (the PRODUCT rows below), and xr-lifecycle-probe.mjs (mutation 1)
+  // is what catches that in the shipping xr.js.
   const mk = () => { const r = rig(); return { ...r,
     run: (error, { intent = 101, retryOf = null, gpu = false } = {}) =>
       handleEntryFailure({ effects: r.eff, decide: decideEntryFailure, error, intent, retryOf, gpu }) }; };

@@ -5,7 +5,8 @@
 //                           sooner: the pressured band, always). Persisted per
 //                           browser like clouds⚙ and grass⚙; never a verb.
 //   the DISTANCE            how far the placement sits from the resident's
-//                           eye, against the entity's own residency radius
+//                           eye or body, whichever is nearer (models.js
+//                           entDist), against the entity's own residency radius
 //                           (R_BASE + bbox diagonal × k, shared/lod-distance.js) — so a
 //                           cathedral goes reduced later than a mug.
 //   DEVICE PRESSURE         GPU memory against the proto budget (assets.js
@@ -60,7 +61,7 @@ export function makeModelQuality(store) {
 }
 
 /** The tier to fetch for a placement.
- *  `dist` metres from the resident's eye; `radius` the entity's residency
+ *  `dist` metres from the resident's eye or body, the nearer; `radius` the entity's residency
  *  radius; `quality` the dial; `recipe` what /version published (null → no
  *  negotiation, ever); `pressure` gpu memory / budget (0..∞); `shed` the
  *  governor's session dial; `current` the tier it wears now, for hysteresis; `scale` the placement's uniform scale.

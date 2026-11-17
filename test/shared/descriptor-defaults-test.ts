@@ -92,7 +92,8 @@ console.log("\nthe Inspector offers only what the door takes; every axis takes t
       offeredRows++; offered.add(`${g.group}.${f.k} ${j(o.v)}`); row(`the Inspector offers ${g.group}.${f.k} ${j(o.v)}, and the door takes it`, `${g.group}.${f.k} ${j(o.v)}`, !!r.ok, j(r.refused ?? r));
     }
   }
-  // every axis row offers x, y and z, never a signed letter (R 10-11; each sent above is taken)
+  // every axis row offers x, y and z, never a signed letter (R 10-11; each sent above is taken); a STORED signed axis
+  // still shows as itself (editschema.js), which these fresh entities don't carry
   for (const k of ['motion.type "path"', 'look-at.forward "[0.6,0,0.8]"', ...["motion.axis", "look-at.forward", "look-at.up", "openable.axis"].flatMap((a) => ["x", "y", "z"].map((l) => `${a} ${j(l)}`))]) check(`the Inspector's ${k} was offered and sent`, offered.has(k));
   for (const k of ["motion.axis", "look-at.forward", "look-at.up", "openable.axis"].flatMap((a) => ["-x", "-y", "-z"].map((l) => `${a} ${j(l)}`))) check(`the Inspector doesn't offer ${k} (a negative turn is a negative angle)`, !offered.has(k));
   { const la = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, "look-at": { target: "@viewer", forward: [0.6, 0, 0.8] } });

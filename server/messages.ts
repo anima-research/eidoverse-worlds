@@ -164,7 +164,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "bodydrag": ({ c, ws, now, expel }, msg) => {
     const okSim = (v: any) => {
       if (!v || typeof v !== "object") return false;
-      // snapshot() (rapierdoll.js/ragdoll.js) hands over {j, p, v}: joint names, positions, velocities (no quats).
+      // snapshot() (client/lib/ragdoll/ammodoll.js, or the verlet ragdoll.js) hands over {j, p, v}: joint names, positions, velocities (no quats).
       const { j, p, v: vel } = { j: v.j, p: v.p, v: v.v };
       if (!Array.isArray(j) || j.length === 0 || j.length > 24) return false;
       if (!Array.isArray(p) || !Array.isArray(vel)) return false;

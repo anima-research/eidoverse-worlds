@@ -1257,7 +1257,7 @@ export class Avatar {
     // the held pose's raw bones — last, so it wins every bone it names
     if (this._override) this._applyRawPose();
 
-    // ---- the lamp breathes on BREATH (shared/breath.js), the wing idle's period, so lamp and wings rise together:
+    // ---- the lamp breathes on BREATH (shared/breath.js), the wing idle's period (same period, not a locked phase: the wings keep their own per-body clock):
     // |sin|^LAMP_SHAPE at half the angular rate. The emissive surface and the cast light move together.
     if (this._lampMats === undefined) {
       this._lampMats = [];

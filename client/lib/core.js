@@ -67,8 +67,8 @@ export const headsetSeenRecently = () => {
 
 // ?xr=1 is a BOOT flag, not a runtime toggle: three's XRManager rides WebGPU (XRGPUBinding — Chrome flags) only if the
 // adapter was requested xrCompatible, read off renderer.xr.enabled at init(), so the flag sets it BEFORE init below.
-// The backend is a CONSTRUCTION choice: an XR boot rides WebGPU-XR when the browser exposes XRGPUBinding and takes
-// WebGL otherwise (on WebGPU without it the xrCompatible request can hang, and three does not fall back on its own).
+// The backend is a CONSTRUCTION choice: an XR boot rides WebGPU-XR when the browser exposes XRGPUBinding (and WebGL
+// is not asked for: ?webgl=1 or the preference), and takes WebGL otherwise (on WebGPU without it the xrCompatible request can hang, and three does not fall back on its own).
 // The decision is a pure function, decideBackend in backend_choice.js, tested headless (test/client/backend-choice-test.mjs).
 // ?xr is value-parsed: `?xr=1` boots XR, `?xr=0` and absence do not.
 export const WEBGPU_XR = 'XRGPUBinding' in globalThis;               // WebGPU can present VR here (Chrome flags)

@@ -446,7 +446,7 @@ export class AgentSenses {
   }
 
   /** Recent pings, for a plain-MCP host that polls (takePings) instead of
-   *  subscribing (onPing). A ring, like every buffer in this file. */
+   *  subscribing (onPing). A ring (the inbox is not one: it is the unread log, and inboxCursor indexes it). */
   private static readonly PING_RING = 64;
 
   ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }) {

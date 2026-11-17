@@ -45,7 +45,7 @@ export type LogHost = {
   rightsChanged(): void;                   // tell every client its rights again
   debug(kind: string, detail: Record<string, unknown>): void;
   /** who is here (embodied, not spectating): their identity and last known position. Scripts' timers sleep when this
-   *  is empty, and world.near(r) reads it */
+   *  is empty (an `always` timer excepted), and world.near(r) reads it */
   present?(): { id: string; at: number[] | null }[];
   /** send to one identity's embodied leg(s); false when they aren't here */
   toActor?(actor: string, msg: unknown): boolean;
@@ -405,7 +405,8 @@ export class WorldLog {
     this.poses[id] = settle(pose);
     try { replaceDurable(this.posesPath, JSON.stringify(this.poses)); } catch (err) { console.error(`[world:${this.name}] poses`, err); }
   }
-  /** What the snapshot says about this world's protocol ({dialect, v} gate a joiner; `world` is the id, `name` the directory). */
+  /** The snapshot's {name (the directory), verbs (how to talk to it)}; {dialect, v, world} come from clientSnapshot and
+   *  versionLine (server.ts). */
   info() { return { name: this.name, verbs: "send {type: 'request', id, verb, args}; reply {type: 'reply', id, …}" }; }
 }
 

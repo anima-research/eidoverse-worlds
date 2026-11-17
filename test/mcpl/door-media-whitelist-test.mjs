@@ -35,8 +35,8 @@ check('outbound refusal returns before the send', /refusing to forward non-media
 const inbound = src.slice(src.indexOf('case "relay-cred":'), src.indexOf('case "snapshot":'));
 for (const fwd of ['relay-cred', 'sfu-offer', 'sfu-ice', 'sfu-route',
                    'voice-consent', 'surface-transition',
-                   // the server broadcasts both to every client: without them an
-                   // agent can't learn its voice has degraded or that it was muted
+                   // the server sends voice-service to every client, voice-moderated
+                   // to every client of that world: without them an agent can't learn its voice has degraded or that it was muted
                    'voice-service', 'voice-moderated']) {
   check(`inbound forwards ${fwd}`, inbound.includes(`case "${fwd}":`));
 }

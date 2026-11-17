@@ -97,7 +97,8 @@ export const getCloudQuality = () => cloudQuality;
 
 // VR cap: in a headset on the WebGL backend, 'high' clouds swap to 'medium' once the entry curtain is up (or after 4 s;
 // the live march per eye is far too slow, and each eye marches its own noise), and the saved choice comes back on exit.
-// Until the swap lands the live march still shows. Revisit with WebGPU-XR.
+// Until the flip starts the live march still shows; from then the gradient stands in until the baked dome attaches.
+// Revisit with WebGPU-XR.
 let xrPresenting = false;
 let xrCappedFrom = null;          // the level the cap replaced, restored on exit
 const CAP_FROM = 'high', CAP_TO = 'medium';
@@ -569,7 +570,8 @@ async function finishSky(api) {
 // Entering VR from 'high': the cap swaps to 'medium' at entry, and compiling its bake program then left the headset
 // with no frame to present. With a headset present it is compiled on the desktop instead, once: a tiny bake of
 // medium's pass count into a temporary target (the shader doesn't depend on size), kept by retainBakeGraphs so the
-// entry's full bake is a program-cache hit.
+// entry's full bake is a program-cache hit. It waits 15 s after the sky build and stands down while presenting, so an
+// entry before then still compiles cold.
 let capPrebuiltFor = null;   // the sky build whose cap program is already compiled (or compiling)
 const headsetPresent = async () => { try { return !!(await navigator.xr?.isSessionSupported?.('immersive-vr')); } catch { return false; } };
 async function prebuildCapBake(api) {

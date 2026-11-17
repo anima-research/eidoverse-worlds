@@ -260,7 +260,8 @@ const USE_VERBS = {
   },
 };
 // A script on @world that lists `use` is world-level (docs/guide/SCRIPTS.md): it hears every logged use after the thing's own
-// reaction, never its own use nor the @world script that use just ran. `ran`: the script name the use ran on @world
+// reaction, never a use any @world script made (they share one actor, script:@world) nor, for a use of @world itself,
+// the script that use just ran. `ran`: the script name the use ran on @world
 function worldHears(w, id, action, by, act, args, held, ran) {
   const wc = w.state().entities["@world"]?.c ?? {}, out = [];
   for (const [k, v] of Object.entries(wc)) { const name = k.slice(7);
