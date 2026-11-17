@@ -47,6 +47,8 @@ const M: [string, string, string | string[][], string, string[]][] = [
 const only = process.argv.includes("--only") ? process.argv[process.argv.indexOf("--only") + 1] : null;
 const g = process.argv.includes("--group") ? /^(\d+)\/(\d+)$/.exec(process.argv[process.argv.indexOf("--group") + 1] ?? "") : null;
 if (process.argv.includes("--group") && !(g && +g[1] >= 1 && +g[1] <= +g[2])) { console.log("FAIL --group takes I/N, 1 ≤ I ≤ N"); process.exit(1); }
+// an --only that names no mutant ran nothing: say so and fail, not '0 wrong'
+if (only && !M.some(([name]) => name.includes(only))) { console.log(`FAIL --only ${only}: no mutant's name contains it`); process.exit(1); }
 let bad = 0;
 for (const [k, [name, file, find, repl, want]] of M.entries()) {
   if (only && !name.includes(only)) continue;
