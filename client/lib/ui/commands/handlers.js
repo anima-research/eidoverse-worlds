@@ -1,7 +1,8 @@
 // The behavior behind /commands, registered into the pure registry (§14 6c). Each handler imports its own deps;
 // chat.js never imports THIS file (only registry.js), or the cycle chat→handlers→net→chat closes.
-// The punt and push disambiguators are each ONE handler: things win the name lookup over people (they were here
-// first), and that order lives inside the handler bodies.
+// The punt and push disambiguators are each ONE handler, things before people, and that order lives inside the
+// handler bodies: /punt takes a thing by its id only (a label isn't looked up, so a person named like one is shoved),
+// /push matches a thing by its label first.
 
 import { CONFIG, bus, report } from '../../base.js';
 import { SHOVE_REACH } from '../../../../shared/protocol/physconst.js';

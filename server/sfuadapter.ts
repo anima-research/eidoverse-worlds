@@ -26,7 +26,7 @@ export function sfuState(world: string): SfuWorldState {
   let s = worlds.get(world);
   if (!s) {
     s = {
-      // the incarnation is opaque, not monotonic, and durable across restarts (transport.ts)
+      // the incarnation is opaque, not monotonic, and kept across restarts (transport.ts; not fsynced)
       incarnation: currentIncarnation(),
       sfu: new Sfu({ onNegotiationNeeded: (legId) => {
         const send = senders.get(wkey(world, legId));

@@ -3,8 +3,9 @@
 //
 //   busy (another page holds the session) — retry once after BUSY_RETRY_MS; a second busy failure on the
 //     same entry intent gives up until the visor is clicked again.
-//   no device / not supported — mark the headset absent, do not retry.
-//   any other failure on a WebGPU backend — reload onto WebGL, where three's classic path runs (the error isn't read).
+//   any other failure on a WebGPU backend — reload onto WebGL, where three's classic path runs (the error isn't read:
+//     a no-device or not-supported failure there reloads too, and the headset isn't marked absent).
+//   no device / not supported (WebGL) — mark the headset absent, do not retry.
 //   anything else — surface it; retrying an unknown error is guessing.
 export const BUSY_RETRY_MS = 1500;
 

@@ -57,7 +57,7 @@ import { newBucket, admitMessage } from "./msgrate.ts";
 import { DEFAULT_BODY } from "../shared/avatardefs.js";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
-// the incarnation is durable (transport.ts): a restart strands every old credential. Scratch servers keep their counter beside their own logs.
+// the incarnation is kept across restarts (transport.ts): a restart strands every old credential. Scratch servers keep their counter beside their own logs.
 bootIncarnation(process.env.RELAY_STATE_DIR ?? OPT_DIR);
 
 // the transport guard is installed here, once, never by constructing an Sfu (sfuguard.ts)

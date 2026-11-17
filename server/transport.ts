@@ -1,4 +1,4 @@
-// Which voice transport is live, and the durable incarnation every credential carries. Imports no adapter, so asking
+// Which voice transport is live, and the incarnation (kept across restarts) every credential carries. Imports no adapter, so asking
 // "are we on the SFU?" never loads one.
 
 import { join } from "node:path";
@@ -15,8 +15,8 @@ export const voiceTransport = (): "sfu" | "off" =>
 
 export const relayEnabled = () => voiceTransport() !== "off";
 
-// ---- durable incarnation ----------------------------------------------------
-// Advanced atomically at every boot; every credential carries it, so a restart strands every old one. Starts process-unique
+// ---- the incarnation, kept across restarts ----------------------------------------
+// Advanced atomically at every boot (atomicWrite: no fsync, so a power loss just after boot can lose the advance); every credential carries it, so a restart strands every old one. Starts process-unique
 // (not a fixed sentinel: processes that never boot, like tests and tools, would otherwise share one incarnation).
 let incarnation = nextIncarnation(null, crypto.randomUUID().slice(0, 8));
 

@@ -1,5 +1,6 @@
 // The relay adapter's pure decision logic (admission refusals, incarnation rules), testable with no transport, sockets or clock.
-//   incarnation — the durable relay identity: a durably advanced counter + entropy, not an epoch
+//   incarnation — the relay identity across restarts: a counter advanced at each boot + entropy, not an epoch (written
+//                 without fsync, so a power loss right after boot can repeat a count; the entropy still tells them apart)
 //   mediaGen — this participant's relay-leg generation (the credential names exactly one)
 //   nonce — a single-use credential id: a replayed bearer credential would re-admit a removed participant
 

@@ -323,8 +323,9 @@ export function drainPromoteTail() {
   }
 }
 
-/** An Empty: a transform with nothing to draw (pivot, group parent, target). A bare Group, so every entities-map
- *  consumer treats it as an entity; no collider, caster or load. Announces as 'spawn' (what comp evaluators
+/** A thing with no model: a bare Group, so every entities-map consumer treats it as an entity; no load. With nothing to
+ *  draw it is an Empty (pivot, group parent, target: no collider or caster); its parts (a mesh component, syncParts)
+ *  draw on it and then bring their collider and caster (partsChanged). Announces as 'spawn' (what comp evaluators
  *  rebuild on); a light component brings its light (syncCompLight) and gizmo. */
 function createHost(id, ent) {
   reserve(id, { kind: 'host' });

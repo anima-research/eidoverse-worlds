@@ -5,7 +5,8 @@
 //   restore   — soft → fast → soft renders byte-identical to the first soft render
 //   look      — fast differs from soft on a small share of the canopy's pixels (solid interiors are the same colour)
 //   fill      — EW.overdraw: fast shades far fewer canopy fragments than soft
-//   raycast   — a ray through the canopy hits each leaf plane once (the core twin answers no raycasts)
+//   raycast   — a ray through the canopy hits leaf planes and never the core twin (which answers no raycasts); how many
+//               planes, or each once, isn't counted
 //   clones    — a prototype gets no core; a clone placed before or after the switch gets one, and soft hides it
 //   warm      — a core behind the viewer is compiled with culling off
 //   auto      — resolves to soft on the desktop

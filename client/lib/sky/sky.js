@@ -637,7 +637,7 @@ async function worldSettled() {
     if (bootDone() && !loadingBusy()) { if (++calm >= 4) break; } else calm = 0;
     await new Promise((r) => setTimeout(r, 250));
   }
-  teeNow(`[sky] world settled after ${((performance.now() - t0) / 1000).toFixed(1)} s: compiling the sky now`);
+  teeNow(`[sky] world settled after ${((performance.now() - t0) / 1000).toFixed(1)} s: compiling the sky now`);   // at the cap too: the sky doesn't wait past 60 s
 }
 // 'sky-busy': the sky is still arriving (the stand-in gradient is up, or a tier swap is compiling or baking). Heard by
 // xr.js's entry curtain and by `arriving` above.

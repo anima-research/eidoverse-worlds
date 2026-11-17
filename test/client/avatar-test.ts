@@ -14,7 +14,8 @@
 // has no business providing, so these drive the real METHODS against a real
 // THREE.AnimationMixer bound to a real skeleton. That is where the contract
 // lives: actions are play()ed at load and cross-faded by WEIGHT ever after (an
-// eased switch resets and replays the incoming one), so anything that deactivates them is unrecoverable.
+// eased switch resets and replays the incoming one), so anything that deactivates one stops it until an eased switch to
+// it replays it.
 
 import { plugin } from 'bun';
 import { stubResolve } from '../harness/stub.ts';

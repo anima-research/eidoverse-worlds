@@ -163,8 +163,8 @@ export function nodeGraph(level) {
 
 // ---- normalization ----------------------------------------------------------
 
-/** Coerce one component payload into a shape the planner can trust totally: a malformed structure yields an EMPTY
- *  plan, never a throw (§14). */
+/** Coerce one component payload into a shape the planner can trust totally: a malformed structure plans what is valid
+ *  in it (an empty plan when nothing is), never a throw (§14). */
 export function normalize(data) {
   const d = (data && typeof data === 'object') ? data : {};
   const num = (v, dflt) => (Number.isFinite(v) && v > 0 ? v : dflt);

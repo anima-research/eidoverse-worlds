@@ -5,8 +5,8 @@
 // slim centre pillar, so you can walk under what they carry. Anything room-sized collides against its real triangles,
 // so you can walk into it. Why the rules are what they are: docs/research/collider-heuristics.md.
 //
-// This is also where Layer-0 affordances come from: a fitted box's walkable top is, by the same data, sittable (findSeat;
-// exact and heightfield surfaces aren't) and placeable-on. Nobody authors that.
+// This is also where Layer-0 affordances come from: a fitted box's walkable top is, by the same data, sittable when it is
+// seat height above you (findSeat: a 0.25–0.85 m rise; exact and heightfield surfaces aren't) and placeable-on. Nobody authors that.
 
 import { THREE } from './core.js';
 import { MOVER } from '../../shared/mover.js';

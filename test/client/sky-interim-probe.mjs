@@ -2,7 +2,7 @@
 // the sky system's own time-of-day colours stands in, the big domes stay out of the scene and never enter the serial
 // warm conductor, the curtain doesn't wait on the sky (save, on a live-tier boot where VR is
 // supported, the cap's bake program: up to 40 s under the splash, sky.js), and the real sky replaces the gradient only once the world
-// near you has settled. Cloud quality OFF before load (a software cloud bake exhausts this machine); the tier still
+// near you has settled (or 60 s have passed: sky.js worldSettled gives up there). Cloud quality OFF before load (a software cloud bake exhausts this machine); the tier still
 // builds, holds and bakes. Real client.
 //   bun test/client/sky-interim-probe.mjs
 import { launchBrowser, ownedWorld, checker, skyBoot } from '../harness/probe-harness.mjs';

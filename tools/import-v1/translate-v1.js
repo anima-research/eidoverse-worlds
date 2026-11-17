@@ -41,7 +41,8 @@ import { ENGINES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 // impulse, v4's {kind: "impulse", angular: x} exactly.
 // v1 took any key in any component; v4's catalogue components are closed (the authority refuses an unknown key, L7). A
 // v1 key the v4 component doesn't define (a lamp's `flicker`) goes to imported:<component> {key: value} beside it (if that slot is taken, the component stays whole): carried,
-// never dropped (R10), and the component itself is one the v4 door and every editor take as it is.
+// never dropped (R10), and the split component is one the v4 door and every editor take as it is (one kept whole because
+// its slot was taken still holds the unknown key, so an edit that sends it back is refused).
 // v1 took a CSS hex colour where three.js does ("#fff"); v4's colours are 0xRRGGBB integers. Lossless.
 export const hexColor = (x) => { if (typeof x !== "string") return x; const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(x.trim());
   if (!m) return Object.hasOwn(CSS_NAMES, x.trim().toLowerCase()) ? CSS_NAMES[x.trim().toLowerCase()] : x;   // @24: a CSS name, as three.js read it

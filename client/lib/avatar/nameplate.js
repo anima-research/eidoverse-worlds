@@ -13,7 +13,8 @@ import { Fn, userData, positionView, cameraNear, cameraFar, min, viewZToPerspect
 
 // ---------------------------------------------------------------- sprites
 
-// Own-body clearance: labels are hidden by scenery past their clearance (≥ 0.35 m) and by other avatars, never by their owner's body. Body-attached
+// Own-body clearance: labels are hidden by scenery and other avatars past their clearance (0.35–1.2 m), not by their owner's
+// body within it. Body-attached
 // sprites are depth-tested but write their depth as if `userData.plateClear` metres nearer the eye (platesize.js).
 // One node graph reads the per-object value, so every such sprite shares one pipeline. Alternatives rejected:
 // docs/research/avatar-design-notes.md.

@@ -4,9 +4,10 @@
 // Shape: up close the plate is a world object (s = 1); once its capitals would fall under TEXT_DEG it holds that angle
 // (Microsoft's mixed-reality typography puts comfortable reading at 0.6–0.75°); past MAX_GROW perspective shrinks it
 // again so a far crowd recedes.
-// Occlusion: a plate is hidden by scenery and other bodies, never its owner's own: the sprite's depth is written as if
+// Occlusion: a plate is hidden by scenery and other bodies, not by its owner's own: the sprite's depth is written as if
 // it stood plateClear() metres nearer the eye, that clearance being the farthest its own body reaches from the anchor
-// (ownClearance). Only the depth test moves; the picture stays put.
+// (ownClearance, CLEAR_MIN..CLEAR_MAX). Only the depth test moves; the picture stays put. So a wall or body nearer the
+// plate than the clearance doesn't hide it, and an own limb reaching past CLEAR_MAX (1.2 m) can.
 // Hold-to-reveal: while the reveal key is held every plate in range draws through everything at the held size, fading
 // only past REVEAL_FULL–REVEAL_GONE. `k` is the eased reveal level 0..1, so press and release ease over REVEAL_EASE_MS.
 
