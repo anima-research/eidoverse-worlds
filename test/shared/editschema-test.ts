@@ -276,6 +276,10 @@ console.log("\npicture + sound: schema groups, validated before any op:");
   const pause = val(editOps(playing, "c", { "sound.pause": true }), "sound");
   check("pause keeps t0 (batch 2: a resume restarts on the door's clock)", pause?.playing === false && pause.t0 === 5000);
   check("silence → delete sound", dels(editOps(playing, "c", { "sound.silence": true }), "sound").length === 1);
+  { // a stored over-long description is clipped where it draws (realize/pictures.js, sounds.js {clip: true}), so the inspector shows it as working
+    const long = "x".repeat(250), info = (e: any, grp: string) => inspectSchema(e, "c", { parts }).groups.find((x: any) => x.group === grp)?.fields.filter((f: any) => f.t === "info").map((f: any) => f.value) ?? [];
+    const pic = info({ ...crate, picture: { src: PNG, lit: "scene", description: long } }, "picture"), son = info({ ...playing, sound: { ...playing.sound, description: long } }, "sound");
+    check("a stored picture or sound with a 250-character description isn't shown as 'not shown' / 'not heard' (it draws, clipped)", !pic.some((v: string) => /not shown/.test(v)) && !son.some((v: string) => /not heard/.test(v)), JSON.stringify({ pic, son })); }
   const sg = inspectSchema(playing, "c").groups.find((x: any) => x.group === "sound");
   check("a playing sound offers pause + restart, not play", sg.fields.some((f: any) => f.k === "pause") && sg.fields.find((f: any) => f.k === "play")?.label === "restart");
 }

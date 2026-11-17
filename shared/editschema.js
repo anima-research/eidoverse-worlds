@@ -609,7 +609,7 @@ export function inspectSchema(ent, id, live = {}) {
       PI('description', { label: 'description', value: p.description ?? '', placeholder: 'what it shows, in words', hint: `${DESCRIPTION_HINT} (≤${PICTURE_DESCRIPTION_MAX})` }),
       PI('lit', { label: 'lit', value: p.lit === 'self' ? 'self' : 'scene', options: Object.entries(PICTURE_LIT).map(([v, label]) => ({ v, label })) }),
     ];
-    const n = normalizePicture(p);
+    const n = normalizePicture(p, { clip: true });   // read as it draws (realize/pictures.js): a stored over-long description is clipped
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
     else if (n.notes.length) fields.push({ t: 'info', label: '', value: n.notes.join(' · ') });
     fields.push({ t: 'btn', k: 'down', label: 'take down', danger: true });
@@ -639,7 +639,7 @@ export function inspectSchema(ent, id, live = {}) {
       ...(tier.tier === 'link' && live.untrusted === false ? [{ t: 'info', label: '', value: '🛡 you don\'t hear this: it links to a site that isn\'t trusted (Settings › 🛡 safety)' }] : []),
       { t: 'check', k: 'rings', label: 'plays when used', value: rings, hint: 'using it plays it again from the top (a doorbell): adds a reaction {ring: {kind: "play"}}' },
     ];
-    const n = normalizeSound(d);
+    const n = normalizeSound(d, { clip: true });   // read as it plays (realize/sounds.js)
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not heard: ${n.why}` });
     fields.push(playing ? { t: 'btn', k: 'pause', label: 'pause' } : { t: 'btn', k: 'play', label: '▶ play', hint: 'starts it for everyone at the same moment' });
     if (playing) fields.push({ t: 'btn', k: 'play', label: 'restart', hint: 'back to the top, for everyone at once' });
