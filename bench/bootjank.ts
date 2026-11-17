@@ -464,7 +464,7 @@ for (const r of [...resources].sort((a, b) => b.bytes - a.bytes).slice(0, 8)) {
 
 if (data.bills?.length) {
   // EW.frame() returns [{name, ms, every, enabled}]; ms is an EWMA (sustained load, not spikes)
-  console.log(`\n${bold("── frame bill over time")}  ${dim("(per-system EWMA ms, 1Hz samples — top 5 at each)")}`);
+  console.log(`\n${bold("── frame bill over time")}  ${dim("(per-system EWMA ms, a sample every 60th frame — top 5 at each)")}`);
   for (const b of data.bills.filter((_: any, i: number) => i % 5 === 0 || i === data.bills.length - 1)) {
     const rows = (Array.isArray(b.bill) ? b.bill : [])
       .filter((s: any) => (s?.ms ?? 0) > 0.05)

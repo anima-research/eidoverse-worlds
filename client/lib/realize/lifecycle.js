@@ -1,4 +1,5 @@
-// lifecycle — what the realizer holds, and the one word every registry built on a realized object listens for.
+// lifecycle — what the realizer holds, and the word the registries built on a realized object let go on (most of them:
+// see below).
 //
 // The realizer says it once, `release(id, phase)`, and the modules that subscribe let go on that word,
 // synchronously (colliders.js the collider, lightrig.js the caster and the entity's lamps; material.js and emitters.js go

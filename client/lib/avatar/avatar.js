@@ -308,8 +308,9 @@ export class Avatar {
     a.timeScale = slot === 'swim' || slot === 'tread' ? 1 : clipRate(speed, CLIP_SPEED[slot], this.userScale);
   }
 
-  /** Standing height in metres, from the skeleton at rest (the head joint plus a forehead — the stature
-   *  rule the portrait framing uses), at this body's current size. What water depth is measured against. */
+  /** Standing height in metres, from the skeleton with its rotations zeroed (the head joint plus a forehead — the stature
+   *  rule the portrait framing uses), at this body's current size, cached per size. What water depth is measured against.
+   *  A hips translation is left as posed (restBonePositions), so a first reading under a crouching pose is low, and kept. */
   bodyHeight() {
     const key = this.userScale ?? 1;
     if (this._bodyH && this._bodyHKey === key) return this._bodyH;

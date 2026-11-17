@@ -7,7 +7,8 @@
 //      key for key — change one without the other and this goes red.
 //   B. The VR painter (edit/fieldpanels.js renderCanvas, theme 'edit' → edit/paint.js) keeps the VR floor:
 //      every hit target >= 34 canvas px tall; no line < 2 px (stroke width after the transform, and
-//      no hairline fillRect); every glyph >= 17 px; no pictograph ever handed to fillText.
+//      no hairline fillRect); every glyph >= 17 px; no MAPPED pictograph (theme.js PICTO_ICON) handed to fillText
+//      (an unmapped one in a user's label still is, and can paint nothing without the font).
 //   C. It dispatches what the legacy painter dispatches (same actions and payloads; but no lock on an occupant row, and
 //      the enum options legacy clipped), and a disabled field still takes no hits.
 //   D. The quad's texture is sRGB (xrpanels makePanel) — measured on the real module, not grepped.
