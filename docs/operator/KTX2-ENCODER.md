@@ -66,7 +66,8 @@ layout is load-bearing here too — the tools find `libktx` by rpath).
 Under systemd the sequencer's PATH is not your shell's (the same reason
 upload.ts spawns `process.execPath` and not `bun`): put
 `Environment=KTX2_TOKTX=/usr/bin/toktx` in the unit, or the boot sweep logs
-`no encoder` and every `?ktx2=<key>` answer (the key `/version` publishes) stays webp. That is the show box's
+`no encoder` and no new variant is built: a `?ktx2=<key>` answer (the key `/version` publishes) is a variant already in
+`assets/opt/` if there is one, else webp. So a KTX2 answer doesn't show the encoder is on PATH now. That is the show box's
 state as of 2026-08-24 — verified from outside: every library and store
 model fetched with `?ktx2=1` (that day's key) came back `EXT_texture_webp`, none
 `KHR_texture_basisu`. The §20 arc is built and dormant there until this
