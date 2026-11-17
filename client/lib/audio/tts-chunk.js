@@ -4,7 +4,7 @@
  * Batch port of the token-router's LiveSay aggregation. The constants are measured: a
  * 152-char sentence is ≈ 5s of unbroken speech, so clauses past 90 chars get a soft split.
  * Sanitization lives here too: markdown marks and pictographic emoji are dropped for the voice only
- * (piper reads emoji by name; a flag's regional-indicator letters survive); the say keeps its glyphs.
+ * (piper reads emoji by name; skin tones go with them; a flag's regional-indicator letters survive); the say keeps its glyphs.
  */
 
 const ABBREVS = new Set([
@@ -28,7 +28,7 @@ export function spokenForm(text) {
     .replace(/\[([^\]]{1,80})\]\((?:[^)]+)\)/g, '$1')           // [label](url) → label
     .replace(/\bhttps?:\/\/\S+/gi, 'link')                     // bare URLs → "link"
     .replace(/[*_`#]+/g, '')
-    .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]/gu, '')   // a skin tone goes with its emoji
     .replace(/[→⇒↔▸▶◦‣·•]+/g, ', ')                            // glyphs espeak names aloud
     .replace(/(?:->|=>|::)+/g, ', ')                           // ASCII arrows / double colon
     .replace(/(?<=[a-zA-Z])[:](?=[a-zA-Z])/g, ', ')            // world:staging → pause, 6:04 untouched

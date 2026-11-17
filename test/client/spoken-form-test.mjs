@@ -15,4 +15,7 @@ t('emphasis + emoji still stripped', spokenForm('*hello* 🌒 **there**'), 'hell
 t('spaced colon untouched (prosodic already)', spokenForm('one thing: the gate'), 'one thing: the gate');
 // end-to-end: chunks of a fenced-only message = nothing to say
 t('fence-only utterance is silent', JSON.stringify(ttsChunks('```\nlogs\n```')), '[]');
+// a skin tone rides its emoji: dropped with it, so a toned emoji alone says nothing either
+t('a skin-toned emoji is stripped whole', spokenForm('nice 👍🏽 work'), 'nice work');
+t('a toned-emoji-only utterance is silent', JSON.stringify(ttsChunks('👍🏽')), '[]');
 S.done();
