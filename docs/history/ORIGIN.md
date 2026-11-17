@@ -8,7 +8,7 @@ placeOn, makeCreature) isn't used here; what is built is in DESIGN.md.*
 The video toolkit already solved the hard 90%: characters with physics
 locomotion and geometry-derived maneuvers, procedural creatures/robots/terrain
 /weather, placement helpers that make clumsy input land correctly, and a
-creative API that is *intent-shaped* (`walkTo`, `seatOn`, `placeOn`,
+creative API that is *agent-intent-shaped* (`walkTo`, `seatOn`, `placeOn`,
 `say`, `makeCreature`). Crucially, construction is **seeded and deterministic**
 (built for reproducible batch renders) — which makes toolkit calls replicable
 as-is. And it's all browser tech run headless: the same code renders fluently
@@ -26,7 +26,7 @@ multi-participant authority. That layer is this repo.
   idle/walk/run crossfade (full eidoverse controller port is a follow-up)
 - Writes: place a model, move it, say something
 - Two browsers, one world; reload-and-refold proof
-- Then: MCPL (text perception + `say`/`walkTo`/`spawn`), retina service,
+- Then: agent MCPL (text perception + `say`/`walkTo`/`spawn`), retina service,
   replay-to-film demo
 
 Deferred deliberately then: server physics, prediction, contested objects,
