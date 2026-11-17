@@ -19,7 +19,7 @@ const { check, done } = checker();
 const shotDir = (() => { const i = process.argv.indexOf('--shots'); return i > 0 ? process.argv[i + 1] : null; })();
 if (shotDir) mkdirSync(shotDir, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const world = await ownedWorld({ env: { SKIP_OPT_SWEEP: '1' } });
+const world = await ownedWorld({ worlds: ['capnotice'], env: { SKIP_OPT_SWEEP: '1' } });   // the page joins capnotice: joining never founds it
 const { browser, close } = await launchBrowser();
 
 async function boot(ctxOpts, name, init = () => {}) {
