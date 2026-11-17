@@ -1,6 +1,6 @@
 /** voiceengines — a registry of speech engines; this module knows no engine names.
  *  An engine registers itself, declares what files it recognises, and returns what
- *  setTtsSource() takes: (text) => { pcm: Int16Array, sampleRate: number }.
+ *  setTtsSource() takes: (text) => { pcm: Int16Array, sampleRate: number }, or a Promise of it (Piper's speak is async).
  *  Adding an engine = its own file calling registerEngine(), plus its line in engines.js (the import picker in
  *  ttsrow.js still asks for Piper's .onnx pair).
  */

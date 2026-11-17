@@ -326,8 +326,9 @@ function nowHours() {
   return clock ? hoursAt({ ...clock.args, ts: clock.t0 }, serverNow()) : 12;
 }
 
-// How far the sky has been degraded to keep it working on this GPU: 0 = everything on; 1 = the engine's GPU caches
-// off (its light cache uses textureStore, which some WebGPU layouts refuse); 2 = three's SkyMesh.
+// How far the sky has been degraded to keep it working on this GPU: 0 = as configured; 1 = the light cache off (it uses
+// textureStore, which some WebGPU layouts refuse; below 'high' it is off already, so this changes only 'high'; the
+// density cache stays on either way); 2 = three's SkyMesh.
 let degrade = 0;
 // rebuilds are expensive and stack: without a hard budget a per-frame fault would build atmosphere after atmosphere
 let skyBuilds = 0;

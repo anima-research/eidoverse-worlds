@@ -242,7 +242,8 @@ export function airspeedAfter(cfg, airspeed, pitch, dt) {
 }
 
 /** How far this altitude can carry you at best glide, in metres: `glide_to` beyond range lands SHORT of the target
- *  (T2), never rubber-banded to it. */
+ *  (T2), never rubber-banded to it. The agent passes its y (mcpl/agent-flight.ts), not its height over the ground, so
+ *  over ground below 0 the real reach is longer than this says. */
 export function glideRange(cfg, altitude) {
   return Math.max(0, altitude) * bestGlide(cfg).ratio;
 }
@@ -347,8 +348,9 @@ export function initialState(over = {}, cfg = null) {
 
 // ---------------------------------------------------------------- events
 //
-// The adapter seam: the ONLY way the body learns it is down or recovered. Trusted, not verified: the local HUD emits
-// them for rehearsal, a reviewed adapter for real, and the body behaves identically either way.
+// The adapter seam: the ONLY way the body learns it is down or recovered. Trusted, not verified: today only a rehearsal
+// control or a bench emits them (mcpl/agent-flight.ts flightBodyDown); a reviewed adapter for real body state is to come,
+// and the body will behave identically either way.
 
 /** Involuntary. Never enterable by verb (down-spec §4). Entering LEAF from the
  *  air; on the ground it is a ragdoll where you stand (down-spec §2). */

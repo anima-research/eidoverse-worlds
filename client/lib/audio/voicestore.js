@@ -65,7 +65,8 @@ export async function listVoices() {
   return (rows || []).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
 }
 
-/** Remember one pick. `handles` are FileSystemFileHandles (a File is not persistable). */
+/** Remember one pick. `handles` are FileSystemFileHandles: a live handle, which a File isn't (a File's bytes could be
+ *  stored in IndexedDB too, but this store keeps handles only). */
 export async function rememberVoice(id, name, handles, identity = null) {
   if (!id || !handles?.length) return false;
   try {
