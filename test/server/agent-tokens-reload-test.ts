@@ -27,6 +27,12 @@ check("a malformed reload: the old key authorizes nobody", !b.byToken.has("secre
 check("...nor the old aid1 sub", !b.bySub.has("agent:aid1:alice"), JSON.stringify([...b.bySub]));
 check("...and alice's name stays reserved against plain joins", b.names.has("alice"), JSON.stringify([...b.names]));
 
+// a registry that parses but isn't an object (a JSON array) is as malformed: the name stays reserved
+writeFileSync(live, "[]");
+const arr = new Date(Date.now() + 7_500); utimesSync(live, arr, arr);
+const c = agentTokens();
+check("an array reload: authorizes nobody and alice's name stays reserved", !c.byToken.has("secret-key") && c.names.has("alice"), JSON.stringify([...c.names]));
+
 // repaired: authorizes again
 writeFileSync(live, JSON.stringify({ "secret-key": { id: "alice" } }));
 const fixed = new Date(Date.now() + 10_000); utimesSync(live, fixed, fixed);

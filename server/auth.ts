@@ -123,6 +123,7 @@ export function agentTokens() {
         // as mcpl/token-registry.ts: a key copied from the public example proves nobody
         const accepted = readTokenRegistry(AGENT_TOKENS_PATH, AGENT_TOKENS_EXAMPLE);
         const raw = JSON.parse(readFileSync(AGENT_TOKENS_PATH, "utf8")) as Record<string, { id?: string; subs?: string[] }>;
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("not an object of tokens");
         const entries = Object.entries(raw).filter(([, v]) => typeof v?.id === "string" && v.id);
         const spellings = new Map<string, Set<string>>(); for (const [, v] of entries) { const k = v.id!.toLowerCase(); spellings.set(k, (spellings.get(k) ?? new Set()).add(v.id!)); }
         // the id is the account (agent:token:<id>); two tokens on one id (a key rotation) are one account; an ill-formed id proves nobody
