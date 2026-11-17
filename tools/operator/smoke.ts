@@ -135,7 +135,7 @@ try {
   // parse every client module first: a syntax error in one takes the whole client down with a blank page
   {
     const dir = join(import.meta.dir, "..", "..", "client");
-    const files = [join(dir, "main.js")];
+    const files = readdirSync(dir).filter((f) => f.endsWith(".js")).map((f) => join(dir, f));   // each entry: main.js, lite.js
     for (const f of readdirSync(join(dir, "lib"), { recursive: true }) as string[]) {   // every folder: one bad module in lib/edit/ blanks the page too
       if (f.endsWith(".js")) files.push(join(dir, "lib", f));
     }
