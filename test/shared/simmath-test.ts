@@ -3,8 +3,8 @@
 //   bun test/shared/simmath-test.ts
 //
 // Three claims, each load-bearing for PROTOCOL_v2:
-//   1. ACCURACY — sinT/cosT/atan2T/expT track the host libm within a few
-//      ulp over the sim's working domain (the kernel must be a real math
+//   1. ACCURACY — sinT/cosT/atan2T/expT track the host libm to a few
+//      1e-16 absolute over the sim's working domain (the kernel must be a real math
 //      library, not a deterministic wrong answer);
 //   2. IDENTITY ACROSS ENGINES — a fixed 48k-point sweep digests to the
 //      same sha256 under Bun (JSC) and whichever of node (V8) and deno (V8,
@@ -39,8 +39,8 @@ console.log("\naccuracy against the host libm (which the sim itself may never ca
     worstS = Math.max(worstS, Math.abs(sinT(x) - Math.sin(x)));
     worstC = Math.max(worstC, Math.abs(cosT(x) - Math.cos(x)));
   }
-  check("sinT within 2 ulp over ±330 rad", worstS <= 4.5e-16, `worst ${worstS.toExponential(2)}`);
-  check("cosT within 2 ulp over ±330 rad", worstC <= 4.5e-16, `worst ${worstC.toExponential(2)}`);
+  check("sinT within 4.5e-16 absolute (≈2 ulp at magnitude 1) over ±330 rad", worstS <= 4.5e-16, `worst ${worstS.toExponential(2)}`);
+  check("cosT within 4.5e-16 absolute (≈2 ulp at magnitude 1) over ±330 rad", worstC <= 4.5e-16, `worst ${worstC.toExponential(2)}`);
   let worstFar = 0;
   for (const x of [1e4, 12345.678, 1e5, 999999.25, 1e6]) {
     worstFar = Math.max(worstFar, Math.abs(sinT(x) - Math.sin(x)), Math.abs(cosT(x) - Math.cos(x)));

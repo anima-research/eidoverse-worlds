@@ -6,7 +6,8 @@
 // THE COEFFICIENTS ARE THE VERSION: changing any constant, reduction word or polynomial order changes what old logs
 // replay to. That is an epoch bump (SIMMATH_ID), never a patch.
 //
-// Accuracy ~1–3 ulp, not correctly rounded (identical matters, not perfect). Two-word Cody–Waite reduction keeps full
+// Accuracy: within ~4.5e-16 absolute of libm (about 2 ulp of a result near 1; near a zero of sin/cos that is many ulps of
+// the tiny result), not correctly rounded (identical matters, not perfect). Two-word Cody–Waite reduction keeps full
 // accuracy to |x| ≤ ~1e6 rad; beyond that it degrades identically everywhere. NaN in → NaN out; sinT/cosT(±∞) → NaN;
 // expT(−∞) → 0, expT(+∞) → +∞.
 
