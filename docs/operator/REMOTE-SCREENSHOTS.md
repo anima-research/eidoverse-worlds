@@ -172,9 +172,10 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
   world whose own (pinned) renderer left in the last 2 minutes, since that renderer is restarting; a roamer beside a
   pinned renderer counts as parked. A roamer that never reaches a world it was swept to is backed off (15 s, doubling to 10
   minutes) and logged.
-- **No partial worlds:** before capturing, a renderer moves its camera to the followed body (residency loads what is
+- **No half builds:** before capturing, a renderer moves its camera to the followed body (residency loads what is
   near it) and waits until the world is realized there — the body in its scene, the world's builds done, no model
-  loading or standing in, steady for a second. It waits as long as the server says it may: each `capture` carries
+  loading or standing in, steady for a second. A model still queued (no load started yet) doesn't hold the capture,
+  so the frame can lack it. It waits as long as the server says it may: each `capture` carries
   `wait`, the frame's window less a 2 s margin: up to 38 s for a roamer that arrived within the last 40 s (sent by
   this request, a pre-warm or a sweep), less if the request's 55 s deadline has less left; otherwise the frame
   window (`SNAP_TIMEOUT_SEC`) less the margin, 10 s by default, pinned renderers included. If the world is still not realized by then, the screenshot fails with the counts
@@ -185,6 +186,6 @@ A renderer is normally pinned to one world, so an agent building alone in its ow
 
 `bun test/client/roaming-renderer-check.ts` (its own server; or `LOBBY=… WORLD=… JOIN_KEY=… AGENT_TOKEN=… bun test/client/roaming-renderer-check.ts http://host:port`: two worlds the operator founded, the door key, and a token enrolled as `builder-agent`, the name it joins and follows — only an enrolled agent's arrival pre-warms;
 it creates four crates in `WORLD` and leaves them, so use a scratch world) exercises it end to end (pre-warm, a screenshot asked 4 s after the
-pre-warm lands, while the world may still be loading, the renderer's realized model count at capture, the watchdog's check, and a roamer restarted into
+pre-warm lands, while the world may still be loading, the renderer's realized model count read just after the capture, the watchdog's check, and a roamer restarted into
 its lobby being swept back before the next screenshot). `GRACE_MS=0` asks as soon as the pre-warm lands (the crates
 are already made by then, so neither setting asks during the world's first load).

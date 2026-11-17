@@ -2,8 +2,8 @@
 //
 //   bun test/client/snap-settle-test.ts
 //
-// net_capture.js settle() waits for a just-arrived renderer's world to finish loading before it captures (no partial
-// worlds). It used to stop at a fixed 20 s while the server would wait 40 s for a summoned roamer, so a world that
+// net_capture.js settle() waits for a just-arrived renderer's world to finish loading before it captures (no half
+// builds). It used to stop at a fixed 20 s while the server would wait 40 s for a summoned roamer, so a world that
 // finished loading at 22 s became a failed first snapshot (2026-10-24). Each snap now carries `wait` from the server
 // (server/screenshots.ts dispatch), and settle uses it.
 //

@@ -5,7 +5,8 @@
 //   name /snap follows); joining never founds one. It leaves its four crates in WORLD: use a scratch world)
 // A roaming renderer page waits in a lobby world; an "agent" then joins another world alone and builds there (several
 // crates). Its arrival alone must send the renderer over (pre-warm); a screenshot must come only once the world is
-// REALIZED (every crate loaded — never a partial frame); a second screenshot is fast (the renderer stays). Then the
+// REALIZED (read just after the reply: as many real models as crates, nothing loading; a crate finishing between the
+// capture and that read, or another model in the count, still passes); a second screenshot is fast. Then the
 // watchdog's own check (deploy/render-health.ts health) runs over real devtools: the roamer is healthy, a page with no
 // client is not joined.
 import { chromium } from 'playwright';
@@ -105,7 +106,8 @@ try {
   const first = await snap();
   console.log(JSON.stringify({ first: { status: first.status, ms: first.ms, err: first.err.slice(0, 160) } }));
   assert.equal(first.status, 200, `the roamer came and served the screenshot: ${first.err}`);
-  // read after the reply: every crate a real model, nothing loading (a load ending mid-reply would still pass)
+  // read after the reply: at least as many real models as crates, nothing loading (a load ending mid-reply, or another
+  // realized model standing in for a crate's count, would still pass)
   const where = await page.evaluate(async () => { const { CONFIG } = await import('/lib/base.js'); const m = await import('/lib/realize/models.js');
     const r = m.residencyDebug(); return { world: CONFIG.world, real: r.real, loading: r.loading, standins: r.standins }; });
   console.log(JSON.stringify({ renderer: where }));
