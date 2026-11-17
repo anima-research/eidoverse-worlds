@@ -384,7 +384,7 @@ function loupeHtml(rec) {
   // what each metric IMPACTS, shown on hovering the label
   const LABEL_TIP = {
     triangles: 'geometry the GPU rasterizes each frame; high counts tax vertex processing & fill',
-    'draw calls': 'separate GPU submissions (≈1 per material/group); high counts are CPU-bound overhead — often the true bottleneck',
+    'draw calls': 'estimated, not measured: one per geometry group (or per material when ungrouped); three may merge some, so the GPU can see fewer. High counts are CPU-bound overhead — often the true bottleneck',
     materials: 'distinct material instances; more = more state changes & draw calls',
     textures: 'number of distinct texture images this subject references',
     'tex VRAM': 'estimated GPU memory the textures occupy (w·h·bpp ×1.33 mips); compressed textures use their real mip payloads',
@@ -400,7 +400,7 @@ function loupeHtml(rec) {
       tier == null ? '<div></div>' : `<div class="plp" title="${esc(boundsTip(label, key))}">${badge(tier, TIER_SHORT[Math.min(4, tier)], true)}</div>`}`;
   const rows = [
     row('triangles', rec.tris.toLocaleString(), rec.tiers.tris, 'tris'),
-    row('draw calls', rec.draws, rec.tiers.draws, 'draws'),
+    row('draw calls', `≈${rec.draws}`, rec.tiers.draws, 'draws'),   // estimated (the header: measured and estimated stay labelled)
     row('materials', rec.mats.size, rec.tiers.mats, 'mats'),
     row('textures', rec.texs.size, null),
     texRows ? `<div class="pl-texwrap">${texRows}</div>` : '',
