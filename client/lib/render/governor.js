@@ -316,7 +316,8 @@ const history = [];   // recent lever moves, for the debug surface
 // ---- loading grace + the calm signal (§16.2.D) ------------------------------
 
 /** The busy predicate: is the engine loading RIGHT NOW? framebudget's busy() (the warm conductor, loadwork's lanes)
- *  plus the promote tail's pending boulders. (syncgate's deferred links link off-thread and cost no frames.) */
+ *  plus the promote tail's pending boulders. (syncgate's deferred links link off-thread, so
+ *  they're left out, though a big one can still stall the GPU on a cold cache: syncgate.js.) */
 function loadingBusy() {
   return budgetBusy() || promoteTailPending() > 0;
 }

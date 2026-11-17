@@ -254,7 +254,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["lock-strength", "client/lock-strength-test.ts", 1], // review of PR #260 (edit/panels.js:479): the Hierarchy row's padlock word is the lock the thing holds now: a builder's re-lock after an owner's reads as a builder's, and a refused ask is asked again
   ["swim-lists", "client/swim-lists-test.ts", 1], // review of PR #260 (watervolumes.js:123): swimming reads every water body and dry pocket, not only the ones the fog keeps
   ["build", "protocol/build-check.ts", 1],       // ship-list group B (10-07): building walls at the authority, nested blueprints, the editor's new script
-  ["counter", "protocol/counter-check.ts", 1],   // PR #208 review's twelve-line list, as a counter button: publish/attach (§4.1), a script on sponsor rights (§8), the algebra (§7a) — C1…C12; blueprint-test.ts (tools/, run-client) is the pure half it leans on
+  ["counter", "protocol/counter-check.ts", 1],   // PR #208 review's twelve-line list, as a counter button: publish/attach (§4.1), a script on sponsor rights (§8), the algebra (§7a) — C1…C12; shared/blueprint-test.ts (the "blueprint" row) is the pure half it leans on
   ["blueprint", "shared/blueprint-test.ts", 1], // blueprints through the door (publish, create {from}, its undo) and the agent's tools
   ["build-client", "protocol/build-probe.ts", 1], // …and in a real browser: a building edit and its undo, turn/size before placing, the new-script card (one browser, guarded)
   ["shiplist", "protocol/shiplist-check.ts", 1], // ship list group A (audit 10-07): openable, reactions checked at write, motion fields, help text, people's words

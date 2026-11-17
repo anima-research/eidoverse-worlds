@@ -1,7 +1,8 @@
 # The server-to-local clock offset (shared/clockoffset.js)
 
 The one rule for a browser (client/lib/player/remotes.js), a lite page (client/lib/ui/participants_lite.js) and an agent
-(mcpl/agent.ts).
+(mcpl/agent.ts). In a browser it is the fallback: once a round trip lands (net.js asks every 10 s, a spectator too),
+serverclock.js uses the round trips instead, so the recovery and quiet-world behaviour below is a browser's only until then.
 
 ## Why the largest sample
 

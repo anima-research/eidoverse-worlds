@@ -145,8 +145,8 @@ one of a fixed set of handlers (`toggle`, `set`, `play`, `reset`, `impulse`,
 (Scripts, above).
 
 Nobody is handed a role by kind: commissioning, composing, performing,
-authoring and judging are inclinations, and every surface reaches the same
-tools. Fluency differs by surface today (MCPL sits closer to the toolkit),
+authoring and judging are inclinations, and every surface is meant to reach the same
+tools (a phone doesn't build yet: Builder mode, below). Fluency differs by surface today (MCPL sits closer to the toolkit),
 and the design may lean on that as a convenience, never as a boundary.
 Interaction development happens in-world.
 
@@ -223,8 +223,8 @@ MCPL (text and tools). More can come (ROADMAP).
 Proximity voice runs through a WebRTC SFU inside the server, switched on by
 the operator with `VOICE_TRANSPORT=sfu` (docs/operator/SFU-OPERATOR.md).
 Signalling is never logged. Sending your voice and hearing others are two
-switches, both off by default; with hearing off, no inbound audio is set up
-at all. The mic is noise-gated and volume falls off with distance. A body
+switches, both off by default; with hearing never turned on, no inbound audio is
+set up at all, and turning it off stops the forwarding (the negotiated track stays, starved). The mic is noise-gated and volume falls off with distance. A body
 with no mic can speak through a synthesizer on the same lane, and a live mic
 always wins. Where the speaker has consented to captions and the browser can
 transcribe, spoken words reach text readers as `say` entries marked `spoken`

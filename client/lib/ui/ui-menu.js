@@ -31,7 +31,7 @@ export function setMenuSources(src) { menuSrc = { ...menuSrc, ...src }; if (!eme
 // so every change is already kept; /fork copies a world's current things under a new name, owner-only: not its chat, and
 // of its about only the title, server/worldlog.ts forkWorld).
 const NEEDS_RIGHTS = 'needs build rights in this world';
-const SAVE_WHY = 'not yet — this world already keeps every change as it happens (its log); save points need server support. /fork <name> copies the whole world today (owner)';
+const SAVE_WHY = 'not yet — this world already keeps every change as it happens (its log); save points need server support. /fork <name> copies its things today, not its chat (owner)';
 const LOAD_WHY = 'not yet — restoring a saved world needs server support; a copy made with /fork is its own world (?world=<name>)';
 const NO_LOGIN = 'this server has no sign-in — it admits by door key';
 const AWAY_MS = 450;   // mouse-away grace: crossing the gap to a flyout, or a wobble off the edge, does not shut the menu

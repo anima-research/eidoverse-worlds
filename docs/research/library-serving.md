@@ -2,7 +2,8 @@
 
 ## The /library ladder
 
-Order, first hit wins: `?native=1` provenance bytes (no Draco/WebP shadow; native importers may lack those decoders)
+Order, first hit wins: `?native=1` unoptimized bytes (no Draco/WebP shadow; native importers may lack those decoders;
+a deliberate patch still wins inside it, so these are the patched file where one exists, not the original)
 → a deliberate upstream patch (PATCH_DIR) → the LOD variant → the KTX2 variant →
 store-min (store uploads) → the optimized mirror (draco+webp, ~30x smaller) → the original.
 
