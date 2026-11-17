@@ -314,7 +314,8 @@ await C("D19", "a drive step whose inline commit keeps failing keeps its driver 
   const occ = s.w().presence.occupants ?? {};
   return [rs.some((r) => r.dropped === true) && occ.vic?.to === "helm", { rs: rs.map((r) => r.threw ? "threw" : r.dropped ? "dropped" : r.ok ? "ok" : (r.refused?.code ?? JSON.stringify(r).slice(0, 80))), occ }]; });
 // collision layers and masks (componentspec collider.layer/mask: Godot's collision_layer/collision_mask; owner 10-30, Basil 1.1)
-const TV = await imp("tools/import-v1/translate-v1.js");
+// the translator's path on this tree, else before the reorg (a --tree of an older checkout)
+const TV = await imp("tools/import-v1/translate-v1.js").then((m) => m.__missing ? imp("tools/protocol/import-v1/translate-v1.js") : m);
 const climb = (s: any, id: string, x: number) => { const out: any[] = []; for (let y = 2; y <= 6; y++) { const r = s.call("drive", { id, pos: [x, y, 0], q: [0, 0, 0, 1] }, id === "hull" ? "vic" : "pat"); out.push(r.ok ? "ok" : `${r.refused?.code}:${r.refused?.blocker ?? ""}`); if (!r.ok) break; } return { steps: out, at: posOf(s, id)?.[1] ?? null, lease: s.w().presence.drives?.[id]?.pose?.pos?.[1] ?? null }; };
 await C("D25", "Basil 1.1, the translator's band (vehiclePartsOf {minY: 0, maxY: 3}): the banded hull still stops at its ceiling, and a second hull climbs past it to 6 m", () => {
   const v = TV.vehiclePartsOf?.("hull", { helm: [0, 0.5, 0], speed: 4, minY: 0, maxY: 3 }); if (!v) return [false, { missing: TV.__missing }];
