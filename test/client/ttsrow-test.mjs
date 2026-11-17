@@ -187,7 +187,7 @@ for (const [name, st, wantNote, wantDim] of [
   renderVoiceList(solo, { items: [], selected: null, on: {}, loading: { id: 'new', name: 'new', since } });
   renderVoiceList(listed, { items: [{ id: 'v', name: 'v' }], selected: null, on: {}, loading: { id: 'v', name: 'v', since } });
   const first = clocks(); await pause('two of the clocks\' 1 s ticks: elapsed time is what this row reads', 2_200); const later = clocks();
-  t('clock: a new voice\'s loading row and a listed voice\'s both count up by themselves', first.length === 2 && later.every((x, i) => x !== first[i]), JSON.stringify({ first, later }));
+  t('clock: a new voice\'s loading row and a listed voice\'s both count up by themselves', first.length === 2 && later.length === 2 && later.every((x, i) => x !== first[i]), JSON.stringify({ first, later }));
   solo.remove(); listed.remove();
 }
 

@@ -234,9 +234,9 @@ const paired = (small: () => any, large: () => any) => { let sm: any = null, lg:
 // the same world built at n and at 72 things: check {} reads every thing by design (bounded by the work budget, Q3), so it isn't held to growth
 const scaleGrows = (n: number) => (s: any) => { let first = true;
   const { small, large: o } = paired(() => scaleCase(72)(session()), () => scaleCase(n)(first ? ((first = false), s) : session()));
-  if (!o?.ms || !small?.ms) return { ...o, small };
+  if (!o?.ms || !small?.ms) return { ...o, small, grew: null };   // no baseline measured: growth unknown, which fails the row
   return { ...o, small: small.ms, grew: growth(small.ms, o.ms, ["check"]) }; };
-const scaleGood = (o: any) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound) && (o.grew === undefined || grewOk(o.grew))
+const scaleGood = (o: any) => !!o.ms && Object.values(o.ms).every((v: any) => v <= o.bound) && (o.grew === undefined || (o.grew !== null && grewOk(o.grew)))
   && JSON.stringify(o.codes) === JSON.stringify({ delete: "ok", step: "ok", check: "ok", place: "ok", placeVisitor: "rights", look: "ok", create: "ok", set: "ok", batch: "ok", grab: "ok" });
 
 // a synthetic building, as triangles: a 6 × 3 m house (floor 0.1 m, walls 0.15 m) with a 1 m doorway in its +z wall
@@ -488,8 +488,8 @@ const cases: Case[] = [
         fill(s, n); for (let k = 0; k < 3; k++) s.call("olive", "create", { id: `kid-${k}`, model: "book", components: { parent: { to: "c-0" }, transform: T0([0, 0.6, 0]) } });
         const x = best(5, () => s.call("vic", "look", {})); return { ms: { look: r1(x.ms) }, r: x.r }; };
       let first = true; const { small, large } = paired(() => at(session(), 72), () => at(first ? ((first = false), s) : session(), 2000)); const x = { ms: large.ms.look, r: large.r };
-      return { ms: r1(x.ms), grew: growth(small.ms, large.ms), bound: r1(bound()), n: x.r.things?.length, total: x.r.total, first: x.r.things?.slice(0, 5).map((t: any) => `${t.id}@${t.depth}`) }; },
-    good: (o) => o.ms <= o.bound && grewOk(o.grew) && o.n === 40 && o.total === 2003 && JSON.stringify(o.first) === '["c-0@0","kid-0@1","kid-1@1","kid-2@1","c-1@0"]' },
+      return { ms: r1(x.ms), grew: growth(small.ms, large.ms), bound: r1(bound()), n: x.r.things?.length, total: x.r.total, first: x.r.things?.slice(0, 40).map((t: any) => `${t.id}@${t.depth}`) }; },
+    good: (o) => o.ms <= o.bound && grewOk(o.grew) && o.n === 40 && o.total === 2003 && JSON.stringify(o.first) === JSON.stringify(["c-0@0", "kid-0@1", "kid-1@1", "kid-2@1", ...Array.from({ length: 36 }, (_, i) => `c-${i + 1}@0`)]) },
   { id: "G2", what: "the index a state's queries use (derived from the last one, write by write) files exactly what a fresh build files, through moves, re-parenting, deletes of parents, creates and undo", run(s) { cast(s);
       if (!D.indexAudit) return { skipped: "no audit at this tree" };
       fill(s, 60); const bad: any[] = []; let rnd = 7; const rand = (n: number) => ((rnd = (rnd * 16807) % 2147483647) % n);
