@@ -65,6 +65,8 @@ notes/surface-parity/
 
 # the protocol gate's sibling checkouts (run.ts --siblings: mcpl/ and services/captionbot/ take them by file:, deploy-vps.sh too)
 /.siblings/
+# deploy/deploy-vps.sh: the commit whose installs last finished
+/.deploy-done
 # their pre-reorg home, still on an upgraded VPS: ignored so provenance doesn't read the tree as dirty
 tools/protocol/.siblings/
 

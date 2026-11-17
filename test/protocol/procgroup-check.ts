@@ -4,7 +4,7 @@
 // what the OS reports. PG3/PG4 prove the Windows path's parsing and tree walk on fixed tables, including an orphan whose
 // parent already exited (Windows keeps the dead parent's id on the child). PG5–PG12, PG14, PG16 and PG17: zombies, the async
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
-// evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight.
+// evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -194,5 +194,24 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG22 mcpl/ and services/captionbot/ take the siblings from .siblings/ (gitignored), never beside the checkout, and deploy-vps.sh installs mcpl/ through run.ts --siblings",
     !bad.length && !/path\.resolve\(ENGINE, "\.\."/.test(rs) && /^\/\.siblings\/$/m.test(src("../../.gitignore"))
     && /^"\$BUN" test\/gate\/run\.ts --siblings$/m.test(dv) && !/cd mcpl && "\$BUN" install/.test(dv), bad); }
+
+{ // PG23: deploy installs are keyed to the last deploy that finished, so a retry after a failed install redoes it
+  const dv = fs.readFileSync(new URL("../../deploy/deploy-vps.sh", import.meta.url), "utf8");
+  const fn = dv.match(/^changed\(\) \{.*\}$/m)?.[0];
+  if (win || !fn) { if (win) na("PG23 deploy installs keyed to the last finished deploy", "bash and a POSIX git fixture"); else check("PG23 deploy-vps.sh defines changed()", false); }
+  else {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pg23-"));
+    const sh = (c: string) => spawnSync("bash", ["-c", c], { cwd: dir, encoding: "utf8" });
+    sh("git init -q && echo a>package.json && git add . && git -c user.email=t@t -c user.name=t commit -qm a && echo b>package.json && git -c user.email=t@t -c user.name=t commit -qam b");
+    const B = sh("git rev-parse --short HEAD").stdout.trim(), A = sh("git rev-parse --short HEAD~1").stdout.trim();
+    const run = (done_at: string, p = "package.json") => sh(`${fn}\nafter=${B}; done_at='${done_at}'; changed ${p} && echo changed || echo same`).stdout.trim();
+    const got = { none: run(""), same: run(B), older: run(A), unknown: run("deadbee"), untouched: run(A, "other.txt") };
+    fs.rmSync(dir, { recursive: true, force: true });
+    const installs = (dv.match(/^if changed /gm) ?? []).length, stamp = /^git rev-parse --short HEAD > \.deploy-done$/m.test(dv.split("\n").slice(-4).join("\n"));
+    check("PG23 deploy installs are keyed to the last finished deploy (.deploy-done, written last): none or an unknown stamp installs, a matching one skips",
+      got.none === "changed" && got.same === "same" && got.older === "changed" && got.unknown === "changed" && got.untouched === "same" && installs === 3 && stamp,
+      { got, installs, stamp });
+  }
+}
 
 done();

@@ -12,6 +12,9 @@ cd "$(dirname "$0")/.."
 BUN="$HOME/.bun/bin/bun"
 
 before=$(git rev-parse --short HEAD)
+# Installs are keyed to the last deploy that finished (.deploy-done, gitignored), not to the pre-reset HEAD,
+# so a retry after a failed install, or after an older script stopped partway, redoes them.
+done_at=$(cat .deploy-done 2>/dev/null || true)
 git fetch origin main
 # An installed unit whose new version needs an EnvironmentFile the box lacks stops the deploy
 # here, before the reset, so the old unit still finds the code it points at.
@@ -27,10 +30,12 @@ done
 git reset --hard origin/main
 after=$(git rev-parse --short HEAD)
 echo "code: $before -> $after"
+# true when these paths moved since the last finished deploy, or there is none to compare with
+changed() { [ -n "$done_at" ] && git diff --quiet "$done_at" "$after" -- "$@" 2>/dev/null && return 1; return 0; }
 
 # deps only when the manifests/lockfiles moved (bun.lock: a lockfile change that goes unwatched
 # ships a client importing a module the VPS never installed, and boot hangs)
-if ! git diff --quiet "$before" "$after" -- client/package.json client/bun.lock 2>/dev/null; then
+if changed client/package.json client/bun.lock; then
   (cd client && "$BUN" install)
 fi
 # mcpl/'s siblings (mcpl-core-ts, which the door imports, and agent-framework) and services/captionbot's: run.ts pins them,
@@ -42,12 +47,12 @@ fi
 # root deps: server/optimize.ts (the store's GLB diet) and what the sequencer imports (werift,
 # pngjs, quickjs-emscripten, three). Under set -e a failed install stops this
 # script here, before the chat bridge's install and the restarts.
-if ! git diff --quiet "$before" "$after" -- package.json bun.lock 2>/dev/null; then
+if changed package.json bun.lock; then
   "$BUN" install
 fi
 # chat bridge (services/chatbridge) — optional service; deps on manifest change,
 # restarted below only where its unit is installed
-if ! git diff --quiet "$before" "$after" -- services/chatbridge/package.json services/chatbridge/bun.lock 2>/dev/null; then
+if changed services/chatbridge/package.json services/chatbridge/bun.lock; then
   (cd services/chatbridge && "$BUN" install)
 fi
 
@@ -80,4 +85,5 @@ sudo systemctl restart eidoverse eidoverse-mcpl
 sleep 2
 # one unit at a time: `is-active a b` exits 0 when any one of them is up
 for name in "${units[@]}"; do systemctl is-active --quiet "$name" || { echo "deploy: $name is not running after the restart (journalctl -u $name)" >&2; exit 1; }; done
+git rev-parse --short HEAD > .deploy-done
 echo "deployed $after"
