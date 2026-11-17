@@ -94,6 +94,8 @@ Questions to ask in review, never thresholds:
   header, or a comment on a complex class or function, may run longer when it explains what the thing is and how
   it fits. Anything else over about three lines is a candidate to cut. The story (what broke, what was tried)
   goes in the commit message.
+- When you change a file, read its comments too and make them match the code; a comment that drifts is worse than none
+  (most of #333's second review was comments that had drifted on main).
 - New docs are UPPER-CASE.md and live in `docs/` (a binding protocol doc in `spec/`), except the root five (README, AGENTS, CONTRIBUTING, DESIGN,
   THIRD-PARTY), a directory's own README, and docs/research/ notes (lower-case, named by subject).
 - Every relative link and every repo path in a doc outside docs/history and docs/design, or in a comment, resolves
