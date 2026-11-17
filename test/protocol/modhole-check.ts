@@ -3,7 +3,7 @@
 // local mod. This check keeps it that way.
 //
 //   MH1  every place the client turns something into running code — a dynamic import of a non-literal, eval, new
-//        Function, importScripts, a Worker from anything but a fixed URL, a blob: URL — is on the list below, with what
+//        Function, importScripts, a Worker from anything but a fixed URL, a blob: URL, a script element — is on the list below, with what
 //        it loads and why that's ours (a fixed path on this server, or your own local mod). A new one fails here until
 //        someone writes down why it can't be fed by a world.
 //   MH2  the mod runner (runSource) is reached only from mods.js: your 🧩 panel, your autoruns, EW.mods.run
@@ -30,9 +30,9 @@ const code = (p: string) => fs.readFileSync(p, "utf8").split("\n").map((l, i) =>
   .filter(({ t }) => !t.startsWith("//") && !t.startsWith("*") && !t.startsWith("/*"));
 
 // ---- MH1 ----
-const LOADS = [/\bimport\(\s*(?!['"])/, /(^|[^.\w$])eval\s*\(/, /\(0,\s*eval\)/, /new Function\s*\(/, /importScripts\s*\(/, /new (Shared)?Worker\(\s*(?!new URL\(\s*['"][^'"]*['"]\s*,\s*import\.meta\.url\s*\))/, /createObjectURL\(/];
+const LOADS = [/\bimport\(\s*(?!(['"`])[^'"`$]*\1\s*\))/, /(^|[^.\w$])eval\s*\(/, /\(0,\s*eval\)/, /new Function\s*\(/, /importScripts\s*\(/, /new (Shared)?Worker\(\s*(?!new URL\(\s*['"][^'"]*['"]\s*,\s*import\.meta\.url\s*\))/, /createObjectURL\(/, /createElement\(\s*['"]script['"]\s*\)/];
 // the patterns themselves, on lines that must and mustn't match (`new URL(worldPath, …)` once slipped the Worker rule)
-const CAUGHT = ["new Worker(new URL(path, import.meta.url))", "new SharedWorker(url)", "new Worker(blobUrl, { type: 'module' })", "new Worker(new URL('./w-' + kind + '.js', import.meta.url))", "new Worker(new URL('./a.js', base))"], PASSED = ["new Worker(new URL('./phon.worker.js', import.meta.url), { type: 'module' })", 'new Worker(new URL("./a.js", import.meta.url))'];
+const CAUGHT = ["import('./modules/' + name)", "import(`./m-${kind}.js`)", "new Worker(new URL(path, import.meta.url))", "new SharedWorker(url)", "new Worker(blobUrl, { type: 'module' })", "new Worker(new URL('./w-' + kind + '.js', import.meta.url))", "new Worker(new URL('./a.js', base))"], PASSED = ["await import('./engine-piper.js')", "new Worker(new URL('./phon.worker.js', import.meta.url), { type: 'module' })", 'new Worker(new URL("./a.js", import.meta.url))'];
 ok(CAUGHT.every((l) => LOADS.some((r) => r.test(l))) && PASSED.every((l) => !LOADS.some((r) => r.test(l))), "MH1 (the rule) a Worker from anything but a fixed URL is caught; a quoted new URL(...) passes", { caught: CAUGHT.map((l) => LOADS.some((r) => r.test(l))), passed: PASSED.map((l) => !LOADS.some((r) => r.test(l))) });
 // [file, the line, why it can't be fed by a world]
 const ALLOWED: [string, RegExp, string][] = [
@@ -41,6 +41,8 @@ const ALLOWED: [string, RegExp, string][] = [
   ["lib/mods.js", /await import\(\/\* @vite-ignore \*\/ url\)/, "…the same local mod, imported from that blob"],
   ["lib/audio/engines.js", /await import\(p\)/, "voice engines: the literal './engine-*.js' list in this file"],
   ["lib/audio/engine-piper.js", /await import\(\/\* @vite-ignore \*\/ url\)/, "onnxruntime's webgpu bundle: a fixed new URL('../node_modules/…') beside it"],
+  ["index.html", /createElement\('script'\)/, "the entry point: ./lite.js or ./main.js, two fixed names the lite flag picks between"],
+  ["lib/ragdoll/ammo-load.js", /createElement\('script'\)/, "Ammo's classic Emscripten build: a script tag whose src is the fixed /vendor/ammo/ammo.wasm.js"],
   ["lib/audio/phon.worker.js", /await import\(wasmPaths\.js\)/, "the phonemizer's own module: piperphon.js builds wasmPaths from fixed /vendor/piper URLs"],
 ];
 const found: string[] = [];
