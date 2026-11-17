@@ -1,9 +1,10 @@
 # import-v1: the one-way importer for old (v1) worlds
 
 Everything here exists to read a world saved on disk in the first protocol's format (a `log.jsonl` of v1 verbs) **once**,
-and write it out as a new v4 world. Nothing at runtime uses it: the server, the browser client and the agents speak v4
-only, and a directory that holds only an old log is refused at open. It lives under `tools/`, so the server never serves
-it and nothing at runtime can load it; `test/protocol/nov1-check.ts` (in `bun run test:protocol`) fails if anything under
+and write it out as a new v4 world. No runtime module imports it: the server, the browser client and the agents speak v4
+only, and a directory that holds only an old log is refused at open. The one runtime path to it is a child process: an
+owner's in-world upgrade (`world-upgrade-review`, `world-upgrade`, server/upgrade.ts) runs `tools/world.ts translate`,
+which loads it. It lives under `tools/`, so the server never serves it; `test/protocol/nov1-check.ts` (in `bun run test:protocol`) fails if anything under
 `client/`, `mcpl/`, `server/`, `shared/` or the deployed `services/` bots imports anything under `tools/import-v1/`.
 
 | file | what it is |
@@ -91,7 +92,8 @@ sentence on its splash, suite `refusedjoin`). The sweep
 
 **This directory is temporary.** It stays only until the live Commons has been cut over to v4 (decided 2026-10-06); a
 follow-up change, about a month after that cutover, deletes this directory, the sweep's v1 half and the v1 fixtures in
-`test/fixtures/v1-worlds/`.
+`test/fixtures/v1-worlds/`, and with them the in-world upgrade (server/upgrade.ts and `tools/world.ts translate`), which
+other old worlds still use until then.
 
 ## The Commons and governance keys (PROTOCOL §13)
 
