@@ -28,7 +28,7 @@ import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HIN
 import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
-import { AXES } from './axes.js';
+import { AXES, POSITIVE_AXES } from './axes.js';
 import { ESSENTIAL_NAMES, instanceOf, effectFor, effectBlobName, modernize, instanceProblem, paramShown, essentialNameOf, angleParam } from './particle_effects.js';
 import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
@@ -98,14 +98,21 @@ export function parseEntry(text, current) {
   return Number.isFinite(v) ? v : null;
 }
 
-function axisName(m, def) {
+// A stored axis as its option value: a letter the field's door takes (`letters`), else the vector's JSON text, which
+// the write parses back (axisWrite), so the current option is always one the door takes
+function axisName(m, def, letters = AXES) {
   const a = m.axis;
   if (typeof a === 'string' && AXES[a.toLowerCase()]) return a.toLowerCase();
   if (Array.isArray(a) && a.length === 3) {
-    for (const [k, v] of Object.entries(AXES)) if (v.every((c, i) => c === a[i])) return k;
-    return 'custom';
+    for (const [k, v] of Object.entries(letters)) if (v.every((c, i) => c === a[i])) return k;
+    return JSON.stringify(a);
   }
   return def;
+}
+/** An axis option back to what is stored: a vector's JSON text to the vector, a letter lowercased; null if neither. */
+function axisWrite(raw) {
+  if (typeof raw === 'string' && raw.startsWith('[')) { let v; try { v = JSON.parse(raw); } catch {} return Array.isArray(v) && v.length === 3 && v.every(Number.isFinite) ? v : null; }
+  return AXES[String(raw).toLowerCase()] ? String(raw).toLowerCase() : null;
 }
 const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 /** A card's row from its descriptor (shared/descriptors.js): the widget facts (ui), the value read through the
@@ -385,7 +392,7 @@ export function inspectSchema(ent, id, live = {}) {
   if (laKeys.length) {
     // the door's axis letters (componentspec `axis`: x, y, z or a vector); a stored vector shows as itself
     const AX = ['z', 'x', 'y'];
-    const axOf = (f, dflt) => (typeof f === 'string' ? f : Array.isArray(f) ? (axisName({ axis: f }) === 'custom' ? JSON.stringify(f) : axisName({ axis: f })) : dflt);
+    const axOf = (f, dflt) => (typeof f === 'string' ? f : Array.isArray(f) ? axisName({ axis: f }, dflt, POSITIVE_AXES) : dflt);
     const fwdOf = (f) => axOf(f, 'z');
     const axOpts = (cur, front) => [...AX, ...(AX.includes(cur) ? [] : [cur])].map((v) => ({ v, label: front && v === 'z' ? '+z (its front)' : v }));
     const fields = [];
@@ -508,9 +515,9 @@ export function inspectSchema(ent, id, live = {}) {
     if (slides) ['x', 'y', 'z'].forEach((a, i) => fields.push({ t: 'num', k: `slide|${i}`, label: `slide ${a}`, value: +o.slide[i] || 0, def: 0, step: 0.05, dp: 2, ...limitsOf('openable', 'slide'), hint: SPEC.openable.docs.slide }));
     else {
       fields.push(O('angle', { label: 'turns', value: Number.isFinite(o.angle) ? o.angle : Math.PI / 2, hint: 'how far it turns when open; negative turns the other way' }));
-      // x, y, z only (a negative turn is a negative angle); a stored signed axis still shows as itself
-      const hx = axisName(o, 'y'), hopts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
-      fields.push(O('axis', { label: 'hinge axis', value: hx, options: AXES[hx] && !hopts.some((p) => p.v === hx) ? [...hopts, { v: hx, label: hx }] : hopts, hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
+      // x, y, z only (a negative turn is a negative angle); a stored vector shows as itself, a negative one too
+      const hx = axisName(o, 'y', POSITIVE_AXES), hopts = ['x', 'y', 'z'].map((v) => ({ v, label: v }));
+      fields.push(O('axis', { label: 'hinge axis', value: hx, options: hopts.some((p) => p.v === hx) ? hopts : [...hopts, { v: hx, label: hx }], hint: 'y: an upright hinge (a door); x: a lid or a hatch' }));
       if (Array.isArray(box) && !o.part) {
         fields.push({ t: 'btn', k: 'hingeL', label: 'hinge on its left edge', hint: 'puts its pivot on the -x edge of its box (it turns about the pivot)' });
         fields.push({ t: 'btn', k: 'hingeR', label: 'hinge on its right edge', hint: 'puts its pivot on the +x edge of its box' });
@@ -1288,7 +1295,7 @@ export function editOps(ent, id, edits, live = {}) {
         const prev = c[mkey]; if (!prev) { errors.push(`${key}: no ${mkey} on ${id}`); break; }
         if (param === 'rest') { motions.set(mkey, null); break; }
         const next = motions.get(mkey) ?? { ...prev };
-        if (param === 'axis') { if (raw === 'custom') break; if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
+        if (param === 'axis') { const a = axisWrite(raw); if (a == null) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')} or [x, y, z]`); break; } next.axis = a; }
         else if (param === 'type') {
           if (!MOTION_TYPES.includes(raw)) { errors.push(`${key}: type must be one of ${MOTION_TYPES.join(' ')}`); break; }
           // a type change keeps only what carries across (the evaluator would
@@ -1311,7 +1318,7 @@ export function editOps(ent, id, edits, live = {}) {
         if (k === 'hingeL' || k === 'hingeR') { const box = live.box; if (!Array.isArray(box)) { errors.push(`${key}: its box isn't known yet`); break; }
           comps.set('pivot', { pos: [round(k === 'hingeL' ? box[0][0] : box[1][0], 4), round(box[0][1], 4), round((box[0][2] + box[1][2]) / 2, 4)] }); break; }
         if (k === 'by') { if (raw === 'slide') { delete next.angle; delete next.axis; next.slide = Array.isArray(next.slide) ? next.slide : [0.9, 0, 0]; } else if (raw === 'turn') { delete next.slide; next.angle = Number.isFinite(next.angle) ? next.angle : round(Math.PI / 2, 6); } else { errors.push(`${key}: turn or slide`); break; } }
-        else if (k === 'axis') { if (!AXES[String(raw).toLowerCase()]) { errors.push(`${key}: axis must be one of ${Object.keys(AXES).join(' ')}`); break; } next.axis = String(raw).toLowerCase(); }
+        else if (k === 'axis') { const a = axisWrite(raw); if (a == null || (typeof a === 'string' && !POSITIVE_AXES[a])) { errors.push(`${key}: axis must be x, y, z or [x, y, z]`); break; } next.axis = a; }
         else if (k.startsWith('slide|')) { const n = num(f, raw); if (n == null) break; next.slide = [...(Array.isArray(next.slide) ? next.slide : [0, 0, 0])]; next.slide[+k.slice(6)] = round(n, 4); }
         else if (!writeField('Openable', k, key, f, raw, next)) { errors.push(`${key}: no such field`); break; }
         comps.set('openable', next);

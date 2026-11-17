@@ -75,7 +75,14 @@ console.log("\nthe Inspector offers only what the door takes; every axis takes t
     if (NEEDS[d.key]) e[d.key] = NEEDS[d.key](e[d.key]); if (d.key === "mesh" || d.key === "light") delete e.model; return e; }).filter(Boolean),
     { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, physics: materialize("physics", { kind: "dynamic" }).value },
     { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, "look-at": { target: "@viewer", forward: [0.6, 0, 0.8] } },   // a custom forward: its current-value option
-    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "spin" } }];   // a spin switched to path
+    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "spin" } },   // a spin switched to path
+    // each axis-bearing motion type on its own (the axis rows below are per type), and stored axes no letter names:
+    // a custom vector, and a negative one where the door takes no negative letter
+    ...["pendulum", "spin", "oscillate"].map((type) => ({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type } })),
+    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "spin", axis: [0.6, 0, 0.8] } },
+    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, openable: { open: false, axis: [0.6, 0, 0.8] } },
+    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, openable: { open: false, axis: [-1, 0, 0] } },
+    { model: "store/x.glb", pos: [0, 0, 0], yaw: 0, "look-at": { target: "@viewer", forward: [-1, 0, 0], up: [0, -1, 0] } }];
   // a known gap pinned as STILL red so a fix flips it (and its entry goes); none open
   const GAPS: Record<string, string> = {};
   const gapSeen = new Set<string>();
@@ -83,17 +90,23 @@ console.log("\nthe Inspector offers only what the door takes; every axis takes t
     if (!GAPS[key]) return check(name, ok, detail);
     gapSeen.add(key); check(`gap, still open: ${key}: ${GAPS[key]}`, !ok, "it is fixed: drop its GAPS entry");
   };
-  let offeredRows = 0; const offered = new Set<string>();
+  let offeredRows = 0; const offered = new Set<string>(), byType = new Set<string>();
   for (const ent of ents) {
     const id = seed(ent), rec = D.rec(id);
     for (const g of inspectSchema(rec, id).groups) for (const f of g.fields as any[]) for (const o of Array.isArray(f.options) ? f.options : []) {
       const plan: any = editOps(rec, id, { [`${g.group}.${f.k}`]: o.v });
       const r = plan.errors.length ? { ok: false, refused: plan.errors } : D.sendAll(plan.ops, { dry: true });
-      offeredRows++; offered.add(`${g.group}.${f.k} ${j(o.v)}`); row(`the Inspector offers ${g.group}.${f.k} ${j(o.v)}, and the door takes it`, `${g.group}.${f.k} ${j(o.v)}`, !!r.ok, j(r.refused ?? r));
+      // a choice other than the current one that plans nothing was never sent (sendAll answers an empty plan ok); a rotate
+      // order is the viewer's (returned, not written), and the target chips' "(a thing)" waits for a pick
+      const sent = !!r.ok && (o.v === f.value || !r.noop || plan.rotOrder != null || (f.k.endsWith("target@") && o.v === ""));
+      offeredRows++; offered.add(`${g.group}.${f.k} ${j(o.v)}`); if (ent.motion?.type) byType.add(`${ent.motion.type} ${g.group}.${f.k} ${j(o.v)}`);
+      row(`the Inspector offers ${g.group}.${f.k} ${j(o.v)}, and the door takes it`, `${g.group}.${f.k} ${j(o.v)}`, sent, j(r.refused ?? r));
     }
   }
-  // every axis row offers x, y and z, never a signed letter (R 10-11; each sent above is taken); a STORED signed axis
-  // still shows as itself (editschema.js), which these fresh entities don't carry
+  for (const k of ["pendulum", "spin", "oscillate"].flatMap((t) => ["x", "y", "z"].map((l) => `${t} motion.axis ${j(l)}`))) check(`the Inspector's ${k} was offered and sent`, byType.has(k));
+  // a stored axis no letter the door takes names shows as its vector (and is sent above, so the door takes it back)
+  for (const k of ['motion.axis "[0.6,0,0.8]"', 'openable.axis "[0.6,0,0.8]"', 'openable.axis "[-1,0,0]"', 'look-at.forward "[-1,0,0]"', 'look-at.up "[0,-1,0]"']) check(`a stored axis shows as itself: ${k} offered`, offered.has(k));
+  // every axis row offers x, y and z, never a signed letter (R 10-11; each sent above is taken)
   for (const k of ['motion.type "path"', 'look-at.forward "[0.6,0,0.8]"', ...["motion.axis", "look-at.forward", "look-at.up", "openable.axis"].flatMap((a) => ["x", "y", "z"].map((l) => `${a} ${j(l)}`))]) check(`the Inspector's ${k} was offered and sent`, offered.has(k));
   for (const k of ["motion.axis", "look-at.forward", "look-at.up", "openable.axis"].flatMap((a) => ["-x", "-y", "-z"].map((l) => `${a} ${j(l)}`))) check(`the Inspector doesn't offer ${k} (a negative turn is a negative angle)`, !offered.has(k));
   { const la = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, "look-at": { target: "@viewer", forward: [0.6, 0, 0.8] } });
@@ -102,6 +115,9 @@ console.log("\nthe Inspector offers only what the door takes; every axis takes t
   { const sp = seed({ model: "store/x.glb", pos: [0, 0, 0], yaw: 0, motion: { type: "spin" } });
     const plan: any = editOps(D.rec(sp), sp, { "motion.type": "path" }); const v = plan.ops.flat(9).find((o: any) => o?.args?.component === "motion")?.args?.value;
     check("switching motion.type spin → path writes a path with its points", v?.type === "path" && Array.isArray(v?.points) && v.points.length > 0, j(v)); }
+  { const far = seed({ model: "store/x.glb", pos: [10, 2, 5], yaw: 0, motion: { type: "spin" } });
+    const plan: any = editOps(D.rec(far), far, { "motion.type": "path" }); const v = plan.ops.flat(9).find((o: any) => o?.args?.component === "motion")?.args?.value;
+    check("…and the path starts where the thing stands (no jump)", same(v?.points?.[0], [10, 2, 5]), j(v)); }
   // a part's motion is in the part's frame, so the thing's position is no seed for it: a legacy `part`, or a keyed one without `node`
   for (const [mk, m] of [["motion", { type: "spin", part: "lid" }], ["motion:lid", { type: "spin" }]] as const) {
     // the door refuses these spellings now (repaired to motion:<slot> {node}), so the record is an old log's, built here
