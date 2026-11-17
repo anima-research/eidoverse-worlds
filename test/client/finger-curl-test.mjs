@@ -60,6 +60,8 @@ check('the runnable model matches the product’s filter expression',
   /st\.x \+= oneEuroAlpha\(CURL_MIN_CUTOFF \+ CURL_BETA \* Math\.abs\(st\.dx\), dt\) \* \(raw - st\.x\)/.test(fnSrc));
 check('…and the SPEED estimate is low-passed too, not taken raw',
   /st\.dx \+= oneEuroAlpha\(CURL_D_CUTOFF, dt\) \* \(dRaw - st\.dx\)/.test(fnSrc));
+check('…and the model’s alpha is the product’s oneEuroAlpha, term for term (#508)',
+  src.includes('const oneEuroAlpha = (cutoffHz, dt) => { const te = 1 / (2 * Math.PI * cutoffHz); return 1 / (1 + te / dt); };'));
 
 let lo = Infinity, hi = -Infinity;   // every filtered value any row below produced
 const step = (ms, vIndex, vGrip = 0) => { clock += ms;
