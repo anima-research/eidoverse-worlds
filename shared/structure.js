@@ -712,7 +712,7 @@ export function roomAt(plan, lx, lz, ly = 0) {
   return levelAt(plan, lx, lz, ly)?.room ?? null;
 }
 
-/** The storey a point stands on AND the room it stands in, resolved once: the highest level whose surface is at most
+/** The storey a point stands on AND the room it stands in, resolved once: the highest level whose floor (its y, not its slab's top) is at most
  *  half a metre above the point that has a room at that cell. Null when there is none. */
 export function levelAt(plan, lx, lz, ly = 0) {
   let best = null;

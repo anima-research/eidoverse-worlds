@@ -281,7 +281,7 @@ export function checkSyntax(text) {
 // The authority's thread sends the job down a named pipe and reads the process's lines back without blocking, answering the
 // script's world.* calls itself (makeHost). So an activation stays one synchronous step of the authority (L7: one act + one
 // batch, admitted at the head it read), and the authority holds the process's handle: at `wallMs + GRACE` after the job was
-// sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
+// sent it SIGKILLs the process (certain: a signal, not a request) and returns "time" ("unavailable" if the host starved it: STARVED); a warm spare takes the next job.
 // Nothing a script does, a native builtin included, can hold the authority's thread past that deadline, give or take one
 // host answer: a world.* call is answered on this thread and runs to its end.
 // (Not a Worker: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3.)
@@ -365,7 +365,7 @@ const TICK_MS = 10; // USER_HZ is 100 on Linux (getconf CLK_TCK)
 function cpuMs(pid) { if (globalThis.process?.env?.EIDO_SANDBOX_CPU === "none") return null; // tests: the macOS/Windows path on Linux
   try { const f = fsm.readFileSync(`/proc/${pid}/stat`, "utf8"); const r = f.slice(f.lastIndexOf(")") + 2).split(" ");
   return (Number(r[11]) + Number(r[12])) * TICK_MS; } catch { return null; } }
-export const STARVED = 0.3; // a job that got under this share of the deadline's wall time on a CPU was starved, not stuck
+export const STARVED = 0.3; // a job that got under this share of its own wall time (the deadline's, less what the authority spent answering it) on a CPU was starved, not stuck
 /** Run one activation with its VM side in a sandbox process. Same input and result as runScript. */
 export function runIsolated(x) {
   const h = makeHost(x); const L = h.limits;

@@ -103,7 +103,7 @@ function admit(w, st, who, ops) {
     if (op.op === "set" && op.comp === "parent" && op.value && typeof op.value === "object" && !Array.isArray(op.value) && "order" in op.value) { const { order: _o, ...rest } = op.value; op.value = rest; }
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
-      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values under 64 KiB`, "keep values small; a script's source or an effect goes through upload {text|effect}"); }
+      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values to 64 KiB (65,536 bytes) at most`, "keep values small; a script's source or an effect goes through upload {text|effect}"); }
     const e = s.entities[op.id];
     if (word === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
       if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");

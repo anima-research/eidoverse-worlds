@@ -58,7 +58,7 @@ export const DEFAULT_CONFIG = {
   // glider flies). A polar has TWO optima: minSinkSpeed loses altitude slowest (circle a thermal); best glide goes
   // furthest per metre lost, and is always faster. Best glide is DERIVED from the curve (bestGlide), never typed in:
   // a range prediction wrong in the flier's favour is the rubber-banding T2 forbids. Speeds suit a human-scale world
-  // (5.5 m/s min sink, best glide ~6.4 m/s: a fast jog); the glide RATIO (~12.9) is what T2's numbers depend on.
+  // (minimum sink at 5.5 m/s airspeed, 0.46 m/s down; best glide ~6.4 m/s: a fast jog); the glide RATIO (~12.9) is what T2's numbers depend on.
   polar: {
     minSinkSpeed: 5.5,        // m/s -- minimum sink. The shape parameter.
     sinkAtMinSink: 5.5 / 12,  // m/s at that speed
@@ -195,7 +195,7 @@ export function sinkRate(cfg, airspeed) {
 }
 
 /** The polar's ACTUAL best-glide point, found by searching the curve: anything that predicts range consults this, not
- *  a config literal. Memoised per config object (the search is ~2400 evaluations; glideRange is called per verb).
+ *  a config literal. Memoised per config object (the search is ~1,230 evaluations; glideRange is called per verb).
  *
  *  @returns {{speed:number, ratio:number, sink:number}}
  */

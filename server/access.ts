@@ -4,8 +4,8 @@
 //   @world.default-role, roles:<id> {role, …, until?}
 // Every door asks here:
 //   entryFor      the decision for a connection or an HTTP caller: bans → a locked door → the world's access (shared
-//                 entryOf) → account age → capacity (embodied joins only). Operators skip bans; operators, owners and
-//                 holders of a moderation power skip account age and capacity
+//                 entryOf) → account age → capacity (embodied joins only). Operators skip bans; operators, and owners and
+//                 holders of a moderation power whom the world lists (an explicit role row: bypassOf), skip account age and capacity
 //   httpCaller    who is asking over HTTP (cookie session, or a bearer the door takes)
 //   doorFor       a world's door, read from the index when the world isn't loaded (a /worlds listing never loads one)
 //   settleAccess  after roles or access change: remove whoever may no longer stay (4010; a ban 4006)
