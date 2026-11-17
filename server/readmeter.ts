@@ -1,7 +1,8 @@
 // server/readmeter.ts — reads (and dry runs) are rate-limited per connection, by count and by the authority's time they took,
 // over a sliding window; the authority only limits writes, and a spectator looping reads would otherwise hold the one thread
 // every world shares. EIDO_METER_SCALE (default 1) multiplies the time limit only, for a slower host such as Windows CI.
-export const METER_SCALE = Math.max(1, Number(globalThis.process?.env?.EIDO_METER_SCALE ?? 1) || 1);
+import { envNumber } from "./limits.ts";
+export const METER_SCALE = envNumber("EIDO_METER_SCALE", 1, (n) => n >= 1);
 export const READ = { n: 300, ms: 1500 * METER_SCALE, window: 10_000 };
 
 /** The authority's own time for one request's reply (server/worldlog.ts requestSync sets it; never sent to anyone). */
