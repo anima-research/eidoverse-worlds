@@ -51,7 +51,8 @@ export function tickLookAt() {
       if (key !== 'look-at' && !key.startsWith('look-at:')) continue;
       const la = bag[key]; if (!la || typeof la !== 'object' || typeof la.target !== 'string') continue;
       const obj = entities.get(id); if (!obj) continue;
-      if (obj.position.distanceToSquared(_eye) > 8100) continue;   // 90 m, as motion: nobody sees it turn from there
+      const here = obj.userData.mountedTo ? obj.getWorldPosition(_p) : obj.position;   // where it IS (a child's own pos is local)
+      if (here.distanceToSquared(_eye) > 8100) continue;   // 90 m, as motion: nobody sees it turn from there
       const part = key === 'look-at' ? null : key.slice(8);
       const node = part ? findPart(obj, part) : obj; if (!node || !node.parent) continue;
       const k = `${id}\u0000${key}`; seen.add(k);

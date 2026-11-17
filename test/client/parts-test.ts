@@ -39,6 +39,7 @@ const CORE = fileURLToPath(new URL('../stubs/core-stub.mjs', import.meta.url));
 const PARTS = fileURLToPath(new URL('../stubs/parts-stub.mjs', import.meta.url));
 const COLLIDERS = fileURLToPath(new URL('../stubs/colliders-stub.mjs', import.meta.url));
 const REMOTES = fileURLToPath(new URL('../stubs/remotes-stub.mjs', import.meta.url));
+const LOOKAT = fileURLToPath(new URL('../stubs/lookat-stub.mjs', import.meta.url));
 plugin({
   name: 'parts-stub',
   setup(build) {
@@ -51,6 +52,9 @@ plugin({
     stubResolve(build, /^(\.\.?\/)+colliders\.js$/, () => ({ path: COLLIDERS }));
     // motion.js reads one clock from remotes.js, whose own cone is every remote body (avatar.js, the renderer)
     stubResolve(build, /^(\.\.?\/)+(player\/)?remotes\.js$/, () => ({ path: REMOTES }));
+    // lookats.js (the look-at rows) reads bus/CONFIG from base.js and identityOf from net.js, nothing else
+    stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: LOOKAT }));
+    stubResolve(build, /^(\.\.?\/)+net\.js$/, () => ({ path: LOOKAT }));
   },
 });
 
@@ -173,6 +177,21 @@ console.log('\n━━ a parented thing keeps its own motion, in its parent\'s fr
   const turned = 2 * Math.acos(Math.min(1, Math.abs(lid.quaternion.w)));
   check('a parented lid opens (turned about its local hinge)', Math.abs(turned - Math.PI / 2) < 0.02, `angle=${turned.toFixed(3)}`);
   comps.delete('lid'); entities.delete('lid');
+}
+
+// look-at's 90 m gate reads where the thing IS, as motion's does: a child beside the camera under a far parent turns
+{
+  const { tickLookAt, _lookats } = await import('../../client/lib/realize/lookats.js');
+  const parent = new THREE.Object3D(); parent.position.set(-100, 0, 0);
+  const child = new THREE.Object3D(); child.position.set(100, 0, 0); child.userData.mountedTo = 'far';
+  parent.add(child); parent.updateMatrixWorld(true);
+  entities.set('gazer', child); comps.set('gazer', { 'look-at': { target: '@viewer' } });
+  tickLookAt();
+  check('a parented look-at beside the camera (local x=100, world x=0) is not skipped as 100 m away', _lookats.has('gazer\u0000look-at'));
+  parent.position.set(200, 0, 0); child.position.set(1, 0, 0); parent.updateMatrixWorld(true); _lookats.clear();
+  tickLookAt();
+  check('…and one 201 m away though its local pos is near is', !_lookats.has('gazer\u0000look-at'));
+  comps.delete('gazer'); entities.delete('gazer');
 }
 
 console.log(S.fail ? `\n\x1b[31m${S.fail} failure(s)\x1b[0m` : `\n\x1b[32mall ${S.pass} checks passed\x1b[0m`);
