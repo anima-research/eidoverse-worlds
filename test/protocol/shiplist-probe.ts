@@ -999,7 +999,7 @@ try {
   check("VM4 leaving build mode puts the view back: no override, nothing isolated away", out && !out.over && out.anchor, out);
   });
   // ---- FC: the free camera (R, 10-10: Body | Free on the top line; WASD flies it; the body holds an "I'm working" pose;
-  // B steps back into the body and keeps the spot; Body resets) ----
+  // B steps back into the body and keeps the spot; Body resets). B itself isn't pressed here: FC3/FC4 call setBuildMode ----
   await stage("FC", async () => {
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(300);
   const st = () => evalJson(`Promise.all([import('/lib/player/controller.js'), import('/lib/core.js')]).then(([c, k]) => ({ free: c.isFreeCam(), focus: c.freeCamState().focus, body: c.myState.pos.toArray(), pose: !!c.myState.pose, cam: k.camera.position.toArray(), sw: [...document.querySelectorAll('.edit-camsw .edit-cam.on')].map((b) => b.dataset.cam) }))`);
@@ -1018,7 +1018,7 @@ try {
   const posed = (limbs: any) => !!(limbs && limbs.leftHand.fwd > 0.35 && limbs.rightHand.fwd > 0.35 && limbs.palmOut[0] > 0.6 && limbs.palmOut[1] > 0.6 && limbs.leftHand.up > 0.05 && limbs.leftHand.up < limbs.leftShoulder.up && limbs.rightHand.up < limbs.leftShoulder.up && limbs.leftHand.side * limbs.rightHand.side < 0);
   // the pose eases in over frames: wait for it (a slow runner draws few frames a second), then read it
   const limbs = (await tryUntil("my body has eased into the working pose", async () => { const l = await measure(); return posed(l) ? l : null; }, { ms: 8000, step: 200 })) ?? await measure();
-  check("FC1b the working pose (a mage casting): both hands well out in front, below the shoulders, on their own sides, palms facing out", posed(limbs), limbs);
+  check("FC1b the working pose (a mage casting): both hands well out in front, below the shoulders, on opposite sides (which is which isn't checked), palms facing out", posed(limbs), limbs);
   check("FC1 the Free switch: the camera is its own, the switch shows it, and my body holds a pose", s0.sw.join() === "body" && s1.free && s1.sw.join() === "free" && s1.pose && !s0.pose, { s0, s1 });
   // hold W until the camera's centre has flown > 1 m (it moves per frame: a fixed hold measured the frame rate, not the flight)
   await evalJson(`(window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true })), true)`);
@@ -1028,7 +1028,7 @@ try {
   check("FC2 W flies the camera's centre; my body stays where it stood", d(s2.focus, s1.focus) > 1 && d(s2.body, s1.body) < 1e-6 && s2.pose, { moved: d(s2.focus, s1.focus), body: d(s2.body, s1.body) });
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(false), true))`); await sleep(600);
   const s3 = await st();
-  check("FC3 leaving build mode (setBuildMode(false); the B key isn't pressed) puts the view back on my body at once, and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
+  check("FC3 leaving build mode (setBuildMode(false); the B key isn't pressed) puts the view back on my body (read 600 ms later, so a reset that lags under that passes), and the pose ends", !s3.free && !s3.pose && d(s3.cam, s3.body) < 17, s3);
   await evalJson(`import('/lib/edit/build.js').then((m) => (m.setBuildMode(true), true))`); await sleep(600);
   const s4 = await st();
   check("FC4 entering it again (setBuildMode(true)) returns to where I left the camera, pose and all", s4.free && s4.pose && d(s4.focus, s2.focus) < 1e-6, { s4: s4.focus, s2: s2.focus });

@@ -33,8 +33,8 @@ vector/quaternion/matrix math. The renderer-coupled remainder — 30 modules,
    `render/draw_batches.js`, `avatar/platecard.js`, `water.js`, `xr/pointer.js`):
    `core.js` (three + tsl, re-exported as the whole namespace), `assets.js` (loaders), `colliders.js` + `debug.js`
    (three-mesh-bvh), `realize/structure.js` (BufferGeometryUtils).
-   Everything else reaches three through `core.js` — a WIDE seam, but a
-   singular one. The swap surface is "what core.js hands out", and today
+   Everything else then reached three through `core.js` — a WIDE seam, but a
+   singular one (narrowing `core.js` alone no longer seals it: the direct importers above use `three` too). The swap surface is "what core.js hands out", and today
    the answer is "everything".
 2. **The globals contract (bad, and invisible to import graphs).**
    `core.js` installs the eidoverse module-host contract:

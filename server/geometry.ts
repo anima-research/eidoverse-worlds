@@ -264,8 +264,8 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
           lie = fin.lie;
 
           // ---- per-cell ray certification ----------------
-          // A body may stand ANYWHERE in a cell, so each offered cell proves its whole surface: CERT_SUBSAMPLE² rays
-          // (rough cells re-prove on 8×8); any miss or spread beyond CERT_SPREAD serves null.
+          // A body may stand ANYWHERE in a cell, so each offered cell samples its surface: CERT_SUBSAMPLE² rays (rough cells
+          // re-sample on 8×8); any miss or spread beyond CERT_SPREAD serves null. A hole between the rays goes unseen.
           const bvhMod = tris <= SAMPLE_ABOVE_TRIS ? await getBVH() : null;   // a sampled-scale mesh gets no certification, hence no grid
           if (bvhMod) {
             const soup: number[] = [];

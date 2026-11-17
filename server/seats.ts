@@ -153,8 +153,9 @@ export class SeatStore {
     this.lockNonce = null;
   }
 
-  /** Every mutation runs WHOLE under the lock (forced reload, re-check, append, rename, swap), so two writers can't
-   *  both build rev N+1 from rev N: the second waits or refuses. */
+  /** Every mutation runs WHOLE under the lock (forced reload, re-check, append, rename, swap), so two writers don't
+   *  both build rev N+1 from rev N: the second waits or refuses. Narrowed, not closed: in the dead-lock rename/restore race
+   *  a writer can lose the lock between ownsLock() and its append (docs/research/seat-store-integrity.md). */
   private withLock<T>(fn: () => T): T | { ok: false; status: number; why: string } {
     if (!this.acquireLock())
       return { ok: false, status: 503, why: `another writer holds the seat-profile lock (waited ${this.lockTimeoutMs}ms) — nothing was written; retry after it releases` };
@@ -249,8 +250,8 @@ export class SeatStore {
     const next: Store = { rev: this.store.rev + 1, profiles: inertProfiles(JSON.parse(JSON.stringify(this.store.profiles))) };
     mutate(next);
     mkdirSync(this.dir, { recursive: true });
-    // COMMIT GATE: the on-disk lock must still be ours before each irreversible step; a breach is a refused write,
-    // never a forked history
+    // COMMIT GATE: the on-disk lock must still be ours before each irreversible step; a breach seen here is a refused
+    // write (check and step are separate calls, so this narrows a fork rather than ruling it out)
     if (!this.ownsLock())
       return { ok: false, why: "lock ownership lost before commit — nothing was written; retry" };
     try {
