@@ -11,7 +11,8 @@ export function captureCapability(value: unknown): CaptureCapability | undefined
     ? { version: 1, engine: "unreal", scene: v.scene } : undefined;
 }
 // `retryAfter` (seconds) marks a failure that asking again soon can fix: the renderer still loading, busy, slow,
-// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `snapshot` tool asks again only when it is there (or once, for a proxy's HTML 502),
+// or gone mid-shot. GET /snap sends it as Retry-After, and the MCPL `screenshot` tool (mcpl/tools.ts screenshotTool) asks
+// again only when it is there, or once more when the server can't be reached or a proxy answers with its own HTML 502,
 // so a refusal that will not change in seconds (no renderer and no roamer to send, invite-only) is answered at once.
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
   | { ok: false; err: string; status: number; retryAfter?: number };
