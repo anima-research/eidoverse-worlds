@@ -50,6 +50,13 @@ const out2 = rc2.stdout.toString() + rc2.stderr.toString();
 ok(/^SLOW\s+\S*c-hangs-at-import-test\.ts/m.test(out2), "--import-only: a hung top-level await is a timeout, not loaded", out2.slice(-400));
 ok(/^RED\s+\S*d-missing-package-test\.ts/m.test(out2), "--strict-env: a missing package is a red, not an env note", out2.slice(-400));
 ok(rc2.exitCode === 1, "…and the import-only run exits 1 on the missing package", { code: rc2.exitCode });
+// the mcpl pre-check is the same missing dependency: under --strict-env a red too (#474); RUN_CLIENT_NO_MCPL stands in for its absence
+const dir4 = path.join(root, "mcpl"); fs.mkdirSync(dir4);
+fs.writeFileSync(path.join(dir4, "f-mcpl-test.ts"), `import "../../mcpl/agent.ts";\n`);
+const rc4 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir4, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", RUN_CLIENT_NO_MCPL: "1" }, timeout: 45_000 });
+const out4 = rc4.stdout.toString() + rc4.stderr.toString();
+ok(rc4.exitCode === 1 && /^RED\s+\S*f-mcpl-test\.ts/m.test(out4), "--strict-env: missing mcpl/node_modules is a red too, and fails the run", { code: rc4.exitCode, out: out4.slice(-400) });
 const dir3 = path.join(root, "slowonly"); fs.mkdirSync(dir3);
 fs.writeFileSync(path.join(dir3, "e-slow-test.ts"), `await new Promise(() => {});\n`);
 const rc3 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir3, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
