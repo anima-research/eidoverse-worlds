@@ -246,11 +246,11 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
 // a world server that takes the request and never answers: the door's read is bounded (tools.ts HTTP_READ_MS), and the
 // tool answers as a failed call instead of hanging the agent's turn
 { const { HTTP_READ_MS } = await import("../../mcpl/tools.ts"); const { pause } = await import("../gate/wait.ts");
-  let hits = 0; const hung = Bun.serve({ port: 0, fetch: () => { hits++; return new Promise<Response>(() => {}); } });
+  let hits = 0; const asked = new Set<string>(); const hung = Bun.serve({ port: 0, fetch: (r) => { hits++; asked.add(new URL(r.url).pathname); return new Promise<Response>(() => {}); } });
   const ag: any = { httpBase: `http://127.0.0.1:${hung.port}`, readHeaders: {} };
   const t0 = Date.now();
   const call = (name: string, args: any) => Promise.race([handleTool({ agent: ag } as any, name, args), pause(`the hang guard: past the read bound and its slack, ${name} hung`, HTTP_READ_MS + 5_000).then(() => "hung")]);
-  const slow = Bun.serve({ port: 0, fetch: () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("{")); } }), { headers: { "content-type": "application/json" } }) });
+  let slowHits = 0; const slow = Bun.serve({ port: 0, fetch: () => (slowHits++, new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("{")); } }), { headers: { "content-type": "application/json" } })) });
   const agSlow: any = { httpBase: `http://127.0.0.1:${slow.port}`, readHeaders: {}, world: "w" };
   const measured = Promise.race([handleTool({ agent: agSlow } as any, "measure", { lib: "x.glb" }), pause("the hang guard: measure hung", HTTP_READ_MS + 5_000).then(() => "hung")]);
   const [out, sheet, models, geomHung]: any[] = await Promise.all([call("set_avatar", { avatar: "x" }), call("library", { kind: "avatars" }), call("library", { kind: "models" }), call("measure", { lib: "y.glb" })]);
@@ -259,8 +259,9 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   const said = (o: any) => o !== "hung" && o?.isError && /didn't send .* within \d+ s; calling again may work/.test(o.content?.[0]?.text ?? "") && !/operation timed out/i.test(o.content?.[0]?.text ?? "");
   ok(said(out) && said(sheet) && said(models), "…and set_avatar and the library's sheets say the server didn't answer in time, and that a retry may work", [out, sheet, models].map((o) => o?.content?.[0]?.text ?? o));
   ok(said(geomHung), "…and measure, when /geom sends no headers at all, says the same (not the bare timeout message)", geomHung?.content?.[0]?.text ?? geomHung);
+  ok(asked.has("/avatars") && asked.has("/library-models") && asked.has("/geom"), "…each of those reads reached the hung server (none timed out before asking)", [...asked]);
   const m: any = await measured;
-  ok(said(m) && /^measure: nothing was measured/.test(m.content[0].text), "…and measure, whose answer's body stalls after the headers, says the server didn't send it in time (not 'isn't geometry')", m?.content?.[0]?.text ?? m);
+  ok(said(m) && slowHits >= 1 && /^measure: nothing was measured/.test(m.content[0].text), "…and measure, whose answer's body stalls after the headers (the server sent them), says the server didn't send it in time (not 'isn't geometry')", m?.content?.[0]?.text ?? m);
   hung.stop(true); slow.stop(true); }
 
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

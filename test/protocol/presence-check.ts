@@ -10,8 +10,8 @@
 //       none by default) BEFORE they're forwarded; the
 //       authority's body inbox (acts delivered, revocations) is pushed to its person's socket
 //   PR  puppet / bodydrag / typing reach the IDENTITY the sender named (targetActor / toActor, the opaque u-… id every
-//       arrive carries), not whoever wears a name: the actor wins over the name; an actor who isn't here is refused (typing
-//       isn't: it goes out with to: null); a
+//       arrive carries), not whoever wears a name: the actor wins over the name; a puppet to an actor who isn't here is
+//       refused (a bodydrag to one is dropped silently, the drag being moot; typing goes out with to: null); a
 //       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
 // @ts-nocheck
 import fs from "node:fs";
@@ -120,8 +120,8 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   sly.send({ type: "bodydrag", target: "Vic", targetActor: vic.actor, grab: { joint: "hips" } }); await tryUntil("Vic is sent the grab", () => got(k, "bodydrag").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "bodydrag").length === 1, "BC2 …and the grab", vic.since(k).map((m) => m.type));
   k = vic.msgs.length; ks = sly.msgs.length;
-  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
-  ok(got(k, "puppet").length === 0, "BC2b …but a pose is not: posing is behind the touch gate, never move", sly.since(ks));
+  sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, pose: { head: [0, 0, 0, 1] } }); const told = await tryUntil("Sly is told the pose is refused", () => sly.since(ks).some((m) => m.type === "error" && /pose/.test(m.error)), { ms: 2000 });
+  ok(!!told && got(k, "puppet").length === 0, "BC2b …but a pose is not: posing is behind the touch gate, never move (Sly is told so)", sly.since(ks));
   // range: none unless the world sets one (R 10-28 13:44; reachgate RR2 sets one)
   sly.at(20, 0); await sly.req("help"); k = vic.msgs.length;
   sly.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent the knock-over from 20 m", () => got(k, "puppet").length, { ms: 2000 });
