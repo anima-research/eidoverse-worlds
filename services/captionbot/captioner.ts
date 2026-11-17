@@ -1,5 +1,6 @@
-// The captions consumer: VAD segments the tap's audio; each segment's audio
-// goes to one STT session; the session's FINAL transcript becomes one
+// The captions consumer: VAD segments the tap's audio; each segment's audio from its onset on
+// goes to one STT session (the onset window's frames went by before the session opened: the segment's TIME
+// starts before them, its audio doesn't); the session's FINAL transcript becomes one
 // caption stamped with the segment's media time. Partials never leave this
 // file — a log is not a place for text that will be revised.
 //
@@ -74,9 +75,9 @@ export class Captioner implements PcmConsumer {
     if (this.segment && !this.segment.t1) this.close();
   }
 
-  /** VAD onset: a segment begins at the media time of the frame that
-   *  tripped it (minus the onset window, which the VAD has already consumed
-   *  — the first syllable is inside the segment, not before it). */
+  /** VAD onset: a segment's time begins at the frame that tripped it minus the onset window, so its
+   *  stamp covers the first syllable; the recognizer only hears from here on (those frames were fed before
+   *  this session existed). */
   private open(): void {
     const t0 = Math.max(0, this.lastFrameTime - (this.opts.onsetMs ?? 60) / 1000);
     this.segment = { t0, pending: new Map(), emitted: new Set(), sealed: false };
