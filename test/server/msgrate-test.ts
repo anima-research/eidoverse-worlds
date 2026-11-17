@@ -61,7 +61,9 @@ const run = (limiter: (now: number) => string, handledAt: number[]) => { const t
   try {
     const flood = await join("flooder"), calm = await join("calm");
     for (let i = 0; i < 2 * WIRE_RATE + 25; i++) flood.ws.send(JSON.stringify({ type: "request", id: `f${i}`, verb: "help", args: {} }));
-    await h.sleep(1500);   // a quiet period: the refusal count below is over the whole flood
+    // the count below is over the whole flood: wait until its answers stop (none new for 750 ms), not a fixed time
+    { const { until } = await import("../gate/wait.ts"); let n = -1, since = performance.now();
+      await until("the flood's answers stop coming", () => { const k = flood.msgs.length; if (k !== n) { n = k; since = performance.now(); return false; } return performance.now() - since >= 750; }, { ms: 20_000, step: 50 }); }
     const rate = flood.msgs.filter((m) => m.type === "reply" && m.reply?.refused?.code === "rate");
     check("W1 a flood past MSG_RATE on one connection is refused with code rate, from this connection", rate.length > 0 && rate.every((m) => /from this connection/.test(m.reply.refused.reason)), rate[0] ?? flood.msgs.length);
     check("W1 ...at most MSG_RATE refusals answered in that second (a flood can't buy replies)", rate.length <= WIRE_RATE, rate.length);
