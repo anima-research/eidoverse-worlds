@@ -370,7 +370,7 @@ function headDimmed() {
       }
       renderVoiceList(listHost, {
         items, selected: _selected, busy: _busy,
-        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
+        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, get status() { return _busy; } } : null,   // live: liveStatus updates _busy between builds
         on: {
           select: (id) => {
             if (id === '__pending') return pick(id);
@@ -473,7 +473,7 @@ function headDimmed() {
       }
       renderVoiceList(listHost, {
         items, selected: _selected, busy: _busy,
-        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
+        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, get status() { return _busy; } } : null,   // live: liveStatus updates _busy between builds
         // while TTS is off the radio only marks (a load pulls a ~63MB graph); with TTS on it is a live switch
         on: {
           select: (id) => {

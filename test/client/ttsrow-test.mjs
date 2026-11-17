@@ -14,7 +14,7 @@ const flush = async (n = 6) => { for (let i = 0; i < n; i++) await new Promise((
 const deferred = () => { let resolve; const promise = new Promise((r) => { resolve = r; }); return { promise, resolve }; };
 
 // the remembered voices; a load parks on `gate` when set, and fails when `loadFails`
-let voices = [], gate = null, loadFails = false;
+let voices = [], gate = null, loadFails = false, report = null;   // report: the running load's progress callback
 const opened = [], loaded = [];
 let tts;
 mock.module(M('net.js'), () => ({ sendTyping: () => {}, requestHistory: () => {} }));
@@ -29,8 +29,9 @@ mock.module(M('audio/voicestore.js'), () => ({
 }));
 mock.module(M('audio/voiceengines.js'), () => ({
   matchEngine: (files) => files.some((f) => /\.onnx$/.test(f.name)) && files.some((f) => /\.json$/.test(f.name)),
-  loadFromFiles: async (files) => {
+  loadFromFiles: async (files, onProgress) => {
     loaded.push(files.map((f) => f.name).join('+'));
+    report = onProgress;
     if (gate) await gate.promise;
     if (loadFails) throw new Error('engine refused');
     tts.setTtsSource(async () => ({ pcm: new Int16Array(1), sampleRate: 22050 }), files[0].name.replace(/\.onnx$/, ''));
@@ -188,6 +189,22 @@ for (const [name, st, wantNote, wantDim] of [
   const first = clocks(); await pause('two of the clocks\' 1 s ticks: elapsed time is what this row reads', 2_200); const later = clocks();
   t('clock: a new voice\'s loading row and a listed voice\'s both count up by themselves', first.length === 2 && later.every((x, i) => x !== first[i]), JSON.stringify({ first, later }));
   solo.remove(); listed.remove();
+}
+
+{ // an engine's progress text survives the loading row's clock (the clock read the status the row was built with)
+  const handle = (name) => ({ getFile: async () => new File(['x'], name) });
+  let answers = [];
+  window.showOpenFilePicker = async () => answers.shift() ?? null;
+  await reset({});
+  await pause('the earlier rows\' failure timers (3 s) clear the status; let them run out first', 3_200);
+  gate = deferred(); const progress = 'compiling voice model';
+  answers = [[handle('slow.onnx')], [handle('slow.onnx.json')]];
+  host.querySelector('.vl-add').click(); await flush(12);
+  report?.({ text: progress }); await flush();
+  const shown = () => host.querySelector('.vl-loading .vl-note')?.textContent ?? '(no row)';
+  const at = shown(); await pause('one of the clock\'s 1 s ticks, which repainted the old status', 1_300); const later = shown();
+  t('progress: the engine\'s text stays on the loading row past a clock tick (the clock may add its seconds)', at.startsWith(progress) && later.startsWith(progress), JSON.stringify({ at, later }));
+  report = null; gate.resolve(); await flush(12);
 }
 
 console.log(`\n${ok} ok, ${bad} failed`);
