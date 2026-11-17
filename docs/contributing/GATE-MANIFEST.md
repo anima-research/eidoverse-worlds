@@ -163,8 +163,8 @@ Linux and, where there is no `/proc`, by whether the process ever took the job (
 `.github/workflows/protocol-gate.yml` runs the whole gate on all three OSes on every PR and on pushes to `main` and
 the protocol PR's own branch, and each run uploads a receipt (`--receipt <file>`): the head (on a pull_request run, GitHub's merge of the PR
 into its base), whether the tree was dirty, OS, runtimes, the asset library's head, every suite's result and a hash of its
-output, and one hash over all of them. The PR's own head (`prHead`) and the merge's parents (`mergeOf`) are only in the
-per-shard receipts (`gate-shard-receipt-*`), not in the merged `gate-receipt-<os>.json`. That receipt, not a sentence in a PR
+output, and one hash over all of them; on a pull_request run, also the PR's own head (`prHead`) and the merge's parents
+(`mergeOf`), in each shard's receipt and in the merged `gate-receipt-<os>.json`. That receipt, not a sentence in a PR
 comment, is the evidence of a pass.
 
 The macOS and Windows paths were first written on Linux (the macOS process path against `ps`, the Windows tree walk on

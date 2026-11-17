@@ -19,6 +19,8 @@ const stale: Record<string, number>[] = [{}, Object.fromEntries(names.map((n) =>
 ok(stale.every((t) => n18.every((n) => covers(partition(names, t, n)))), "P2 timings that are empty, NaN, negative, huge, or name suites that are gone still cover SUITES exactly once (a time moves a suite, never drops one)");
 const again = n18.every((n) => JSON.stringify(partition(names, times, n)) === JSON.stringify(partition([...names].reverse(), { ...times }, n)));
 ok(again && partitionHash(partition(names, times, 4)) === partitionHash(partition(names, times, 4)), "P3 deterministic: the same bins (and hash) on every call, whatever order SUITES lists them in");
+{ const b4 = partition(names, times, 4), moved = b4.map((b) => [...b]); moved[1].push(moved[0].shift()!);
+  ok(new Set([b4, partition(names, times, 3), moved].map(partitionHash)).size === 3, "P3b the hash fingerprints the split: 3 bins, 4 bins, and 4 bins with one suite moved hash apart"); }
 const w = (k: string) => times[k] ?? DEFAULT_SECONDS, total = names.reduce((a, k) => a + w(k), 0), longest = Math.max(...names.map(w));
 ok(n18.every((n) => Math.max(...partition(names, times, n).map((b) => b.reduce((a, k) => a + w(k), 0))) <= total / n + longest + 1e-9), "P4 balanced: no shard weighs more than total/N + the longest suite (LPT's bound)",
   `total ${Math.round(total)} s, longest ${longest} s`);
@@ -53,5 +55,11 @@ const says = (r: ReturnType<typeof merge>, re: RegExp) => r.problems.length > 0 
   const r = m(good(4, lossy), { bins: lossy }); ok(says(r, /: ran 0 time/), "M11 coverage is checked against SUITES, not the partition: a partition that lost a bin FAILS even when every shard agrees with it", r.problems.slice(0, 2)); }
 { const g = good(); const a = g[0].receipt.shard!.assigned; g[0].receipt.shard!.assigned = a.slice(1); g[0].receipt.suites = g[0].receipt.suites.slice(1); g[1].receipt.shard!.assigned.push(a[0]); g[1].receipt.suites.push({ name: a[0], lane: "main", status: "pass", ms: 1, leftovers: 0 });
   ok(says(m(g), /^shard 1\/4: assigned/), "M12 a shard that ran another split (stale timings on its side) FAILS: assigned is recomputed here", m(g).problems.slice(0, 3)); }
+{ const g = good(); g[0].receipt.shard!.hash = "f".repeat(64);   // the assigned list kept: only the fingerprint is wrong
+  ok(says(m(g), /^shard 1\/4: partition f{12}, this checkout's is/), "M13 a shard whose partition hash differs (assigned unchanged) FAILS, named", m(g).problems.slice(0, 2)); }
+{ const g = good(); const pr = "d".repeat(40), of = ["e".repeat(40), pr];
+  for (const x of g) Object.assign(x.receipt, { prHead: pr, mergeOf: of });
+  const r = m(g) as any; ok(r.merged.prHead === pr && JSON.stringify(r.merged.mergeOf) === JSON.stringify(of) && r.merged.shards.every((s: any) => s.prHead === pr),
+    "M14 a pull_request run's merged receipt names the PR's head and the merge's parents (the workflow header's promise), as each shard does", { prHead: r.merged.prHead, mergeOf: r.merged.mergeOf }); }
 
 done(`: ${names.length} suites`);

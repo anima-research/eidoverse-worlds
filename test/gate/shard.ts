@@ -39,7 +39,7 @@ export type SuiteResult = { name: string; lane: string; status: string; why?: st
 export type Receipt = { v: number; verdict: string; head: string; dirty: boolean; os: { platform: string; release: string; arch: string };
   runtimes: unknown; library: unknown; scratch: { dir: string | null; kept: boolean } | null; seconds: number;
   tally: Record<string, { pass: number; fail: number; skip: number }>; notSelected: number; suites: SuiteResult[]; logSha256: string;
-  shard?: { index: number; of: number; hash: string; assigned: string[] } };
+  shard?: { index: number; of: number; hash: string; assigned: string[] }; prHead?: string | null; mergeOf?: string[] | null };
 
 /** Whether `got` (shard receipts, any order, unparseable ones as null) is the whole gate at `head`, split `of` ways as this
  *  checkout's SUITES and timings split it; and the merged receipt (run.ts's shape, plus `shards`). Any problem fails. */
@@ -83,12 +83,12 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
   for (const r of shards) for (const [l, t] of Object.entries(r.tally)) { const m = (tally[l] ??= { pass: 0, fail: 0, skip: 0 }); m.pass += t.pass; m.fail += t.fail; m.skip += t.skip; }
   const first = shards[0];
   const merged = {
-    v: 1, verdict: problems.length ? "FAILED" : "PASS", head: first?.head ?? null, dirty: shards.some((r) => r.dirty),
+    v: 1, verdict: problems.length ? "FAILED" : "PASS", head: first?.head ?? null, prHead: first?.prHead ?? null, mergeOf: first?.mergeOf ?? null, dirty: shards.some((r) => r.dirty),
     os: first?.os ?? null, runtimes: first?.runtimes ?? null, library: first?.library ?? null,
     scratch: { dir: null, kept: shards.every((r) => r.scratch?.kept) },   // per shard: shards[].scratch
     seconds: Math.max(0, ...shards.map((r) => r.seconds)), tally, notSelected: names.length - suites.length, suites,
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
-    shards: shards.map((r) => ({ index: r.shard!.index, of: o.of, hash: r.shard!.hash, verdict: r.verdict, head: r.head, seconds: r.seconds, suites: r.suites.length, scratch: r.scratch, logSha256: r.logSha256 })),
+    shards: shards.map((r) => ({ index: r.shard!.index, of: o.of, hash: r.shard!.hash, verdict: r.verdict, head: r.head, prHead: r.prHead ?? null, seconds: r.seconds, suites: r.suites.length, scratch: r.scratch, logSha256: r.logSha256 })),
     partition: { of: o.of, hash }, problems,
   };
   return { problems, merged };
