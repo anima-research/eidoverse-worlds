@@ -28,7 +28,7 @@ const ALLOW: [where: string, paths: string[] | null, why: string][] = [
   ["test/protocol/build-check.ts", ["client/lib/newscript.js"], "its fallback imports the planner by its pre-reorg name, for an older tree"],
   ["test/protocol/roles-check.ts", ["tools/protocol/import-v1/translate-v1.js", "shared/protocol/translate-v1.js"], "the translator's homes in an older --tree"],
   ["test/protocol/drive-check.ts", ["tools/protocol/import-v1/translate-v1.js"], "the translator's home in an older --tree"],
-  ["docs/operator/RUNNING-A-SERVER.md", ["tools/protocol/run.ts"], "names the runner the pre-reorg deploy script calls, to explain why that deploy stops"],
+  ["docs/operator/RUNNING-A-SERVER.md", ["tools/protocol/run.ts", "/lib/capture.js", "tools/captionbot/captionbot.spool.jsonl", "client/voices"], "its crossing note names the pre-reorg paths a first deploy across the move has to deal with"],
   ["shared/oldformat.js", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],
   ["test/protocol/upgrade-check.ts", ["docs/TRANSLATING-OLD-WORLDS.md"], "the URL server/routes.ts serves that doc at"],
   ["test/client/named-pose-test.ts", ["defs/animations/idle.json"], "a file in the scratch asset library it builds"],

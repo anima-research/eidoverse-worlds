@@ -44,7 +44,7 @@ check("unswapped, the same fetch registers the crate's support", ag.ground.suppo
 console.log("a body closed while its geometry is in flight:");
 ag.entities.set("c", { id: "c", model: "crate.glb", pos: [50, 0, 0], yaw: 0, actor: "x" });
 const third = ag.ground.syncSupport("c");
-await new Promise((r) => setTimeout(r, 0));
+await tryUntil("the crate's fetch is in flight", () => typeof held["crate.glb"] === "function", { ms: 3000 });
 check("setup: the crate's fetch is in flight", typeof held["crate.glb"] === "function");
 ag.close();
 held["crate.glb"]?.(deck);
