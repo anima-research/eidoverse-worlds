@@ -113,7 +113,7 @@ function installCheck(w, st, s, who, op) {
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
   const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, dirty.fix ?? "refused at install: reviewers must see what runs");
   w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
-  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/guide/SCRIPTS.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
+  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "fix the source, upload it again and set the new src (docs/guide/SCRIPTS.md shows the API); a dry run tests only an installed script");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
     refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
