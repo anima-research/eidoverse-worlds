@@ -1,7 +1,8 @@
 // bun test/server/pose-handler-test.ts — the pose fence (server/posecheck.ts sanePose), and that it is PRODUCT-BOUND: the real "pose" message handler
 // (server/messages.ts) neither updates lastPose nor stages a frame for a malformed sample, and does both
 // for a finite one. Deleting sanePose() from the handler turns this red; so does deleting posecheck.ts.
-process.env.WORLDS_DIR ??= require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/pose-handler-");
+// a scratch dir of its own, removed at the end; an inherited WORLDS_DIR is someone's worlds and is left alone
+const ownDir = process.env.WORLDS_DIR ? null : (process.env.WORLDS_DIR = require("node:fs").mkdtempSync(require("node:os").tmpdir() + "/pose-handler-"));
 process.env.JOIN_TOKEN ??= "test-door";
 const { MESSAGES } = await import("../../server/messages.ts");
 const { sanePose } = await import("../../server/posecheck.ts");
@@ -70,4 +71,4 @@ ok(sanePose({ ...good, pins: wide }) === null, "a container wider than MAX_KEYS 
   ok(f?.scale === 1.5 && f?.plateY === 0.3, "in-range scale/plateY relay as sent");
 }
 console.log("pose-handler: 33 ok");
-import("node:fs").then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });
+if (ownDir) import("node:fs").then((fs) => { try { fs.rmSync(ownDir, { recursive: true, force: true }); } catch {} });
