@@ -1,7 +1,7 @@
 // image-container-sweep — a tool, not a gate test: every embedded image in every GLB/VRM under the host's serving
 // roots, checked against its declared mimeType. The optimizer refuses to write such a file (server/optimize.ts
 // findImageLies, #122); this finds the variants written before that guard.
-//   bun run tools/assets/image-container-sweep.ts              # OPT_DIR + LIBRARY_DIR
+//   bun run tools/assets/image-container-sweep.ts              # PATCH_DIR + OPT_DIR + LIBRARY_DIR (config.ts LADDER)
 //   bun run tools/assets/image-container-sweep.ts <dir|file>…  # explicit roots
 //   bun run tools/assets/image-container-sweep.ts --host https://…  # a live server: /library-list, each entry fetched with ?ktx2=1
 // Exit 1 if anything lies about its own bytes, else 0 (an unreadable file is printed and counted, not failed).
@@ -9,7 +9,7 @@
 import { readdirSync, statSync, existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { findImageLies } from "../../server/optimize.ts";
-import { OPT_DIR, LIBRARY_DIR } from "../../server/config.ts";
+import { LADDER } from "../../server/config.ts";
 
 const argv = process.argv.slice(2);
 const hostFlag = argv.indexOf("--host");
@@ -57,7 +57,7 @@ if (host) {
     report(f.path, new Uint8Array(await r.arrayBuffer()));
   }
 } else {
-  const bases = roots.length ? roots : [OPT_DIR, LIBRARY_DIR];
+  const bases = roots.length ? roots : LADDER;
   console.log(`image container check — ${bases.join(", ")}\n`);
   for (const b of bases) {
     if (!existsSync(b)) { console.log(`  (skipped, absent: ${b})`); continue; }
