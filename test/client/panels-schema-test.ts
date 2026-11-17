@@ -131,14 +131,14 @@ console.log('PANELS — every WIDGETS entry draws on every surface: the desktop,
   const { WIDGETS } = await import('../../client/lib/edit/widgets.js');
   // a sample per type, and the action(s) its quad target dispatches ([]: painted, takes no hit)
   const SAMPLE: Record<string, [any, string[]]> = {
-    info: [{ t: 'info', k: 'i', label: 'i', value: 'v' }, []], log: [{ t: 'log', k: 'lg', lines: ['a'] }, []],
+    info: [{ t: 'info', k: 'i', label: 'i', value: 'v' }, []], log: [{ t: 'log', k: 'lg', lines: ['log-line-a'] }, []],
     num: [{ t: 'num', k: 'n', label: 'n', value: 1 }, ['n']], range: [{ t: 'range', k: 'rg', label: 'r', value: 0.5 }, ['rg']],
     vec3: [{ t: 'vec3', k: 'v3', label: 'v', value: [1, 2, 3] }, ['v3']],
     enum: [{ t: 'enum', k: 'en', label: 'e', value: 'a', options: [{ v: 'a', label: 'a' }, { v: 'b', label: 'b' }] }, ['en']],
     color: [{ t: 'color', k: 'co', label: 'c', value: 0xff0000 }, ['co']], check: [{ t: 'check', k: 'ck', label: 'c', value: true }, ['ck']],
     text: [{ t: 'text', k: 'tx', label: 't', value: 'x' }, []], json: [{ t: 'json', k: 'js', label: 'j', value: '{}' }, []],
     ref: [{ t: 'ref', k: 'rf', label: 'r', value: 'id1' }, ['rf']], btn: [{ t: 'btn', k: 'bt', label: 'b' }, ['bt']],
-    pop: [{ t: 'pop', k: 'pp', label: 'p', items: [] }, []], tiles: [{ t: 'tiles', k: 'tl', value: 'a', options: [{ v: 'a', label: 'a' }] }, ['tl']],
+    pop: [{ t: 'pop', k: 'pp', label: 'pop-label', items: [] }, []], tiles: [{ t: 'tiles', k: 'tl', value: 'a', options: [{ v: 'a', label: 'a' }] }, ['tl']],
     group: [{ t: 'group', k: 'gp', label: 'g', open: true }, ['fold']],
     list: [{ t: 'list', k: 'ls', label: 'l', rows: [{ id: 'r1', label: 'r', actions: [{ k: 'la', label: 'a' }] }] }, ['la']],
     tree: [{ t: 'tree', k: 'tr', rows: [{ id: 't1', label: 't', depth: 0, kids: 1, locked: false }] }, ['open', 'lock']],
@@ -162,6 +162,12 @@ console.log('PANELS — every WIDGETS entry draws on every surface: the desktop,
       paintLog.length = 0; renderCanvas(document.createElement('canvas'), [SAMPLE[t]![0]], { width: W, rowH: ROW, pad: PAD, ...(theme ? { theme } : {}) });
       return !paintLog.some((l) => l.startsWith('fillText(') && l.includes(String(SAMPLE[t]![0].value))); });
     check(`${theme ?? 'legacy'} quad: every type with a text or number value paints it (color: a swatch)`, unpainted.length === 0, unpainted.join(','));
+    // a type with neither a target nor a scalar value (log, pop) is checked by its words: its first line, else its label
+    const words = (t: string) => SAMPLE[t]![0].lines?.[0] ?? SAMPLE[t]![0].label;
+    const silent = types.filter((t) => SAMPLE[t] && !SAMPLE[t]![1].length && !['string', 'number'].includes(typeof SAMPLE[t]![0].value) && words(t)).filter((t) => {
+      paintLog.length = 0; renderCanvas(document.createElement('canvas'), [SAMPLE[t]![0]], { width: W, rowH: ROW, pad: PAD, ...(theme ? { theme } : {}) });
+      return !paintLog.some((l) => l.startsWith('fillText(') && l.includes(String(words(t)))); });
+    check(`${theme ?? 'legacy'} quad: a type with no target and no value (log, pop) paints its words`, silent.length === 0, silent.join(','));
   }
 }
 

@@ -74,10 +74,15 @@ check('audioContextState() reports the shared instance', mod.audioContextState()
 // Reading the source is the only way to see that from here.
 const clientDir = fileURLToPath(new URL('../../client/', import.meta.url));
 const direct: string[] = [];
+// every spelling of a construction: bare, (window.…), and through window / globalThis / self, webkit-prefixed or not
+const NEW_CTX = /new\s+\(?\s*(?:(?:window|globalThis|self)\s*\.\s*)?(?:webkit)?AudioContext\b/g;
+{ const samples = ['new AudioContext()', 'new (window.AudioContext || window.webkitAudioContext)()', 'new window.AudioContext()', 'new globalThis.webkitAudioContext()', 'new self.AudioContext()'];
+  const missed = samples.filter((t) => !t.match(NEW_CTX));
+  check('(self-sample) the guard sees every spelling of a construction', missed.length === 0, missed.join(' | ')); }
 for (const f of new Bun.Glob('**/*.js').scanSync(clientDir)) {
   const rel = f.replaceAll('\\', '/');
   if (/^(vendor|node_modules)\//.test(rel) || rel === 'lib/audio/audioctx.js') continue;
-  const n = [...(await Bun.file(path.join(clientDir, f)).text()).matchAll(/new\s+(?:\(window\.)?(?:webkit)?AudioContext/g)].length;
+  const n = [...(await Bun.file(path.join(clientDir, f)).text()).matchAll(NEW_CTX)].length;
   if (n) direct.push(`${rel} ×${n}`);
 }
 check('no client module but audioctx.js constructs an AudioContext directly', direct.length === 0,
