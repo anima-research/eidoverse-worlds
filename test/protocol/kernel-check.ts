@@ -14,7 +14,8 @@
 //                                                              kernel as the first deployed one. No old reader was deployed, so its
 //                                                              vectors are synthetic: <dir>/vectors.json, each {name, entries, verdict},
 //                                                              the verdict the deployed reader gives (negatives, and a clean control)
-//   bun test/protocol/kernel-check.ts --pin --ack "<why>"     a SCOPE EXTENSION only (as roles and access joined the kernel, 10-18):
+//   bun test/protocol/kernel-check.ts --pin --ack "<why>"     a SCOPE EXTENSION (as roles and access joined the kernel, 10-18), or a
+//                                                              SCOPE TRIM with its held / dropped accounting (kernelspec.js):
 //                                                              every change is a kernel component entering the pin with the shape
 //                                                              spec/registry-pin.json already pinned for it; no byte changes meaning, so
 //                                                              no translator or vectors are asked; the ack is, and the pin records the names

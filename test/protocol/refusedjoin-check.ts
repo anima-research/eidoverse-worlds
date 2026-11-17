@@ -1,6 +1,7 @@
 // test/protocol/refusedjoin-check.ts — a join the server refuses (close 4005) is SHOWN in the browser, in the server's words.
-// The way it is lost: the inline boot script's early socket catches the refusal, and connect() throws that socket away
-// (and with it the refusal) and dials again, so the page shows an empty world and no message.
+// The way it was lost: the inline boot script's early socket caught the refusal, and connect() threw that socket away
+// (and with it the refusal) and dialled again, so the page showed an empty world and no message. Now connect() reads the
+// buffered refusal for this page's join (net.js) and shows it; these rows hold that.
 // One headless Chromium against a scratch sequencer (test/harness/harness.ts scratchBench) whose worlds dir holds:
 //   old-x   a first-protocol log.jsonl (an old-format world: the server answers the operator with the "translate" visitor
 //           sentence, a guest with world-unavailable, as nope: F23, Mica 11-05)

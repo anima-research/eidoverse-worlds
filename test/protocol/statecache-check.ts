@@ -5,7 +5,8 @@
 //   SC2 a corrupted cache: unparseable → folded from genesis; a tampered state → the re-derive finds it, says BUG, discards it,
 //       and the live state is the fold from genesis again; SC2b a re-derive that can't run is "couldn't verify", not a BUG
 //   SC3 a cache written by another fold (foldKey) is never read; SC3b nor one whose fold sources can't be read (no throw)
-//       SC3c a change to fold.js or any module it imports (transitively) moves the foldKey
+//       SC3c a change to fold.js or any module it imports by `from` (transitively) moves the foldKey (a bare side-effect
+//       import './x.js' isn't followed)
 //   SC4 a log cut back and regrown past the cache (another line at coversIndex) → not read
 //   SC5 a purge: the cache holding the purged value leaves the disk at once; a purge after coversIndex → not read
 //   SC6 a fork carries no cache, and the source's cache dropped in a fork is not read

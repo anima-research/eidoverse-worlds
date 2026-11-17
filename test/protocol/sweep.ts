@@ -1,5 +1,6 @@
 // test/protocol/sweep.ts — the translators against real logs, and the pins the core relies on.
-//   bun test/protocol/sweep.ts                  # every distinct log.jsonl under test/fixtures/v1-worlds and spec/fixtures (the repo's own)
+//   bun test/protocol/sweep.ts                  # every distinct log.jsonl under test/fixtures/v1-worlds and spec/fixtures (the repo's own),
+//                                               # five directories deep at most (walk's depth)
 //   PROTOCOL_WORLDS=<dir>[:<dir>…] (`;` on Windows) bun test/protocol/sweep.ts
 // Required, for every distinct world log found:
 //   - translate-v1: 0 divergences (the fold agrees with the projection of the engine's own fold after EVERY
