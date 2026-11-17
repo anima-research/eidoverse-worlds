@@ -137,8 +137,14 @@ try {
     ok(!w.isError && anyPunt("still").length === n0, "AS3 walking along its face, then standing beside it 2.5 s: no punt", { punts: anyPunt("still").map((e) => e.body), text: T(w) }); }
   // AS4
   { const m0 = await call("move", { to: [18, 0] }); ok(!m0.isError, "(AS4 setup) the agent stands south of the locked crate", T(m0));
-    const w = await call("move", { to: [18, 4] }); await ag.request("wait", {});   // behind any punt on the agent's socket: logged before this reply
-    ok(anyPunt("locked").length === 0, "AS4 a locked crate in the path: no punt in the log (a refused contact punt is counted, not written)", anyPunt("locked").map((e) => e.body)); }
+    // what the agent SENDS is watched too: a refused contact punt is counted, never written, so the log alone can't see one
+    const sent: any[] = [], req = ag.request.bind(ag); ag.request = (verb, args, ...rest) => { if (verb === "punt" && args?.id === N("locked")) sent.push(args); return req(verb, args, ...rest); };
+    let reach = 0, walking = true;
+    const wp = call("move", { to: [18, 4] }).finally(() => { walking = false; });
+    await whileWalking(() => walking, () => { reach = Math.max(reach, ag.pos.z); });
+    await wp; ag.request = req; await ag.request("wait", {});   // behind any punt on the agent's socket: logged before this reply
+    ok(reach >= 0.9, "(AS4 setup) the walk reached the crate (the behaviour at it was exercised)", { reach });
+    ok(anyPunt("locked").length === 0 && sent.length === 0, "AS4 a locked crate in the path: the agent sends no punt at it, and none is in the log", { sent, logged: anyPunt("locked").map((e) => e.body) }); }
   // AS5
   { const r = await mk("fixed", { model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     ok(r.ok, "(AS5 setup) a static tall crate", r);
