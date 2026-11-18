@@ -85,7 +85,9 @@ await lane('mic off (synth provider)', async (device) => {
 });
 
 {
-  // a reconnect supersedes acquisition A while the live session presses for B: A must touch nothing the session owns
+  // a reconnect supersedes acquisition A while the live session presses for B: A must touch nothing the session owns.
+  // [serialization] rows bind sfuPublish's one-acquisition guard (B cannot exist before A settles); [stale-acquisition
+  // noninterference] rows bind the supersede check running before gateFor/micstate (the guard alone does not keep them).
   await sfu.sfuConnect({}, () => {});
   const a0 = acquisitions.length;
   const pA = sfu.sfuMic(true);
@@ -93,17 +95,17 @@ await lane('mic off (synth provider)', async (device) => {
   await sfu.sfuConnect({}, () => {});
   const pB = sfu.sfuMic(true);
   for (let i = 0; i < 20; i++) await flush();
-  t('superseded: the live session\'s acquisition waits for the stale one (one acquisition at a time)', acquisitions.length === a0 + 1);
+  t('[serialization] superseded: the live session\'s acquisition waits for the stale one (one acquisition at a time)', acquisitions.length === a0 + 1);
   const A = mkStream(mkTrack('device A')), g0 = gated.length;
   acqA.resolve(A);
   const acqB = await nextAcquisition(a0 + 1);
   await pA;
-  t('superseded: the stale acquisition is stopped and touches no shared mic state (no gate graph, micstate not on it)',
+  t('[stale-acquisition noninterference] superseded: the stale acquisition is stopped and touches no shared mic state (no gate graph, micstate not on it)',
     A.track.stopped && gated.length === g0 && mic.rawMicStream() !== A);
   const B = mkStream(mkTrack('device B'));
   acqB.resolve(B);
   await pB;
-  t('superseded: the live session\'s device B is live, current and attached, intent kept',
+  t('[stale-acquisition noninterference] superseded: the live session\'s device B is live, current and attached, intent kept',
     !B.track.stopped && mic.rawMicStream() === B && added.at(-1) === gated.at(-1)?.track && !gated.at(-1).track.stopped
       && mic.micDeviceLive() && sfu.sfuMicWanted() && sfu.sfuMicOn());
 }
@@ -130,7 +132,7 @@ noGate = true;
   const device = mkStream(mkTrack('device'));
   acq.resolve(device);
   await p;
-  t('gate unavailable, superseded: the stale refusal keeps the live session\'s intent and stops its device',
+  t('[stale-acquisition noninterference] gate unavailable, superseded: the stale refusal keeps the live session\'s intent and stops its device',
     sfu.sfuMicWanted() && device.track.stopped);
 }
 
