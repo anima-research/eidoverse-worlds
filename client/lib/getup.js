@@ -8,8 +8,9 @@
 // 0.55m) and nowhere else: on a landing the feet started inside the solid
 // stair, upstairs under the floor the body lay on.
 //
-// The floor it stands on is the highest surface under its HIPS: the landing
-// it fell on — not a slab overhead, not the terrain beneath the building.
+// The floor it stands on is the highest surface below its HIPS' height, at
+// its root's x/z (where getUp stands it, feet and all): the landing it fell
+// on — not a slab overhead, not the terrain beneath the building.
 
 import { THREE } from './core.js';
 import { surfaceUnder } from './colliders.js';
