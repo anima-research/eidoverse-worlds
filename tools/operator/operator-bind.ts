@@ -41,8 +41,9 @@ export function bindIdentity(worldsDir: string, world: string, who: string, acco
   const id = imported[0], name = dir.nameOf(id) ?? id;
   const worn = dir.idOfSub(account);
   if (worn && worn !== id) return no(`that account already wears ${dir.nameOf(worn) ?? "an identity"} (${worn}) on this server: it can't be two people. Joining the two into one person is an alias merge, coming with portable identity; until then, to give them ${name}'s roles, operator-repair set/delete (docs/operator/TRANSLATING-OLD-WORLDS.md)`);
+  const tag = accountTag(account, nameTagKey(worldsDir));   // reads custody, so before the bind: a throw here changes nothing
   dir.bind(id, account);
-  const out: Out = { ok: true, id, name, account: `${account.split(":").slice(0, 2).join(":")}:… (tag ${accountTag(account, nameTagKey(worldsDir))})`, logged: "world.mod.jsonl" };
+  const out: Out = { ok: true, id, name, account: `${account.split(":").slice(0, 2).join(":")}:… (tag ${tag})`, logged: "world.mod.jsonl" };
   const rec = { ts: Date.now(), actor: "system", verb: "bind", who: id, by: String(by).slice(0, 64), operator: true };
   // the bind is in the directory already: a failed append is said, never undone (a retry would refuse: bound = not imported)
   try { modLogAt(path.join(wd, "world.mod.jsonl")).appendMod(rec); } catch (e) { out.logged = null; out.warn = `bound, but world.mod.jsonl took no record (${(e as Error)?.message ?? e}): add this line by hand: ${JSON.stringify(rec)}`; }
