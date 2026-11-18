@@ -41,13 +41,17 @@ C.clearColliders();
 C.fitCollider('house', house, { collide: 'exact' });
 check('wasm door opens', await ensureAmmo());
 
+/** Every fall, and whether its doll settled within the step limit (checked at the end). */
+const falls: { at: number[]; settled: boolean; steps: number }[] = [];
 /** Go limp standing at (x, y, z), let the doll settle, and answer where the
  *  body would get up — with the rig's hips readable the way a VRM's are. */
 function fallAndGetUp(x: number, y: number, z: number, withHips = true, terrainAt: (x: number, z: number) => number = flat) {
   const av: any = makeAvatar(wingRig.P, { realParent: wingRig.realParent });
   av.root.position.set(x, y, z); av.root.updateMatrixWorld(true);
   const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
-  for (let k = 0; k < 900 && !rd.done; k++) rd.step(1 / 60);
+  let k = 0;
+  for (; k < 900 && !rd.done; k++) rd.step(1 / 60);
+  falls.push({ at: [x, y, z], settled: !!rd.done, steps: k });
   av.root.updateMatrixWorld(true);
   // getup.js reads the hips the way a VRM offers them (attached after the
   // doll settles: the doll reads this rig its own way)
@@ -128,5 +132,8 @@ for (const [where, x, y, z, floor] of [
   check('...moved off it, at its root raised by the reach', standingYWithoutAvatar(measured, { x: 3.3, y: 0.74, z: -2.3 }, 1) === 0.74 + 1.1);
   check('...a 2× body by twice the reach', standingYWithoutAvatar(undefined, { x: 3.3, y: 0.5, z: -2.3 }, 2) === 0.5 + 2.2);
 }
+// the rows above read a SETTLED body: a doll still tumbling at the step limit proved nothing about one
+check(`every doll settled within its 900-step limit (${falls.length} falls)`, falls.length > 0 && falls.every((f) => f.settled),
+  JSON.stringify(falls.filter((f) => !f.settled)));
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
