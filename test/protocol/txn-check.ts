@@ -18,6 +18,7 @@
 //   T8g founding writes the ledger row before the world lands
 //   T8h an unreadable founders ledger refuses the founding and is left as it was
 //   T8i a fork counts the roles it copied that imported identities hold
+//   T8j a durable file (a blob, a ledger) takes the process umask, never a fixed mode
 //   T9  operator-repair: operator status revoked while queued → refused
 //   T9f operator-repair from an account that isn't an operator: refused, pointed to whoever runs the server, not the world's owners
 //   T10 no false refusals: 100 serial requests from an unchanged guest connection all committed
@@ -45,6 +46,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a replaced file renamed in unsynced", "server/durable.ts", "writeAll(fd, typeof data === \"string\" ? Buffer.from(data, \"utf8\") : data); fs.fsyncSync(fd); }", "writeAll(fd, typeof data === \"string\" ? Buffer.from(data, \"utf8\") : data); }", ["T8d"]],
   ["the keys file's directory made by plain mkdir", "server/custody.ts", "    mkdirDurable(path.dirname(file));", "    fs.mkdirSync(path.dirname(file), { recursive: true });", ["T8e"]],
   ["a replaced file's new name left unsynced", "server/durable.ts", "  fs.renameSync(tmp, file);\n  syncDir(path.dirname(file));   //", "  fs.renameSync(tmp, file);\n  path.dirname(file);   //", ["T8e"]],
+  ["fchmod put back: a durable file's mode ignores the umask", "server/durable.ts", "  const fd = fs.openSync(tmp, \"wx\", mode);   //", "  const fd = fs.openSync(tmp, \"wx\", mode); fs.fchmodSync(fd, mode);   //", ["T8j"]],
   ["short writes: writeSync's count ignored", "server/durable.ts", "    const n = fs.writeSync(fd, buf, off, buf.length - off);", "    fs.writeSync(fd, buf, off, buf.length - off); const n = buf.length - off;", ["T8", "T8b"]],
   ["operator status checked before the queue only: operator-repair rechecks liveness only", "server/requestwire.ts", "      const gone = recheck(cap, Date.now(), { role: false });", "      const gone = c.world === w && !c.superseded && w.clients.has(c) ? null : \"gone\";", ["T9"]],
   ["a non-operator sent to the world's owners", "server/requestwire.ts", 'reason: "operator-repair needs a server operator\'s account (SERVER_OPERATORS)", fix: "ask whoever runs this server" } }); return; }', 'reason: "operator-repair needs a server operator\'s account (SERVER_OPERATORS)", fix: "repair through the world\'s own roles: ask an owner" } }); return; }', ["T9f"]],
@@ -57,13 +59,13 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a reset's fresh log renamed in unsynced", "server/worldlog.ts", "  try { syncDir(dir); } catch (e) { console.warn(`[world] reset:", "  try { } catch (e) { console.warn(`[world] reset:", ["T8f"]],
   ["CONTROL (no-op: must stay green)", "server/request-capability.ts", "// the door: the same decision", "// the door:  the same decision", []],
 ];
-// T8c, T8e and T8f check directory syncs, which the server doesn't make on win32 (durable.ts syncDir): there the rows that only
-// they would turn red have nothing to catch, so their mutants are skipped
-const DIR_SYNC_ROWS = new Set(["T8c", "T8e", "T8f"]);
+// T8c, T8e and T8f check directory syncs, which the server doesn't make on win32 (durable.ts syncDir), and T8j mode bits, which
+// win32 doesn't have: there the rows that only they would turn red have nothing to catch, so their mutants are skipped
+const DIR_SYNC_ROWS = new Set(["T8c", "T8e", "T8f", "T8j"]);
 if (process.argv.includes("--mutants")) {
   const ENGINE = path.resolve(import.meta.dir, "../.."); let bad = 0, ran = 0;
   for (const [name, file, find, repl, rows] of MUTANTS) {
-    if (process.platform === "win32" && rows.length && rows.every((x) => DIR_SYNC_ROWS.has(x))) { console.log(`skip mutant '${name}': the server syncs no directory on win32`); continue; }
+    if (process.platform === "win32" && rows.length && rows.every((x) => DIR_SYNC_ROWS.has(x))) { console.log(`skip mutant '${name}': the server syncs no directory and sets no mode bits on win32`); continue; }
     ran++;
     const d = scratch("txnmut");
     for (const dir of ["server", "shared", "client", "mcpl"]) copyTree(path.join(ENGINE, dir), path.join(d, dir));
@@ -93,7 +95,7 @@ const { openLive } = await import("../harness/labhost.ts");
 const { appendDurable } = await import("../../server/durable.ts");
 const { OPERATORS } = await import("../../server/operators.ts");
 const nodefs = (await import("node:fs")).default;
-const { ok, done } = suite("txn-check");
+const { ok, na, done } = suite("txn-check");
 const W = process.env.WORLDS_DIR;
 const logFile = (name) => path.join(W, name, "world.jsonl");
 const lines = (name) => fs.readFileSync(logFile(name), "utf8").split("\n").filter(Boolean);
@@ -328,6 +330,14 @@ for (const row of WAITED) {
   nodefs.writeFileSync(lp, before ?? "{}");
   ok(garbled.ok === false && /can't be read/.test(garbled.err ?? "") && !garbled.world && garbled.same,
     "T8h an unreadable founders ledger refuses the founding and is left byte-for-byte (never replaced by a one-row ledger)", garbled); }
+// ---------------- T8j ----------------
+// a durable file takes the process umask: fchmod would set the mode outright, so a blob or a ledger came out world-readable under umask 077
+if (process.platform === "win32") na("T8j a durable file takes the process umask", "Windows has no umask or mode bits");
+else { const { replaceDurable, putBlobFile } = await import("../../server/durable.ts");
+  const f = path.join(root, "t8j", "ledger.json"), b = path.join(root, "t8j", "blobs", "ab", "cafe.txt"); const was = process.umask(0o077);
+  try { replaceDurable(f, "x"); putBlobFile(b, "a blob", "sha256:unused"); } finally { process.umask(was); }
+  const modes = { file: fs.statSync(f).mode & 0o777, blob: fs.statSync(b).mode & 0o777 };
+  ok(modes.file === 0o600 && modes.blob === 0o600, "T8j under umask 077 a replaced file and a blob are 0600: the umask applies (fchmod would override it)", { file: modes.file.toString(8), blob: modes.blob.toString(8) }); }   // win32: na above (no mode bits)
 
 // ---------------- T8d, T8e ----------------
 // a key a mint hands out must survive a crash, or the genesis it signed (synced) names a key no one holds: the keys file is

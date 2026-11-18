@@ -33,6 +33,7 @@
 //   IM-W1–6 main #248's water volume and air boxes → zone + water / water-exclusion children, sized and turned as main read them
 //   IM-U1   a key no component has rides imported:<component>, listed
 //   IM-I40–45 the ids the dry run reports are the ids the real run writes (keyed per host); the bind advice works as written
+//   IM-I46  an unreadable custody file stops bind before the directory changes (the tag is read first); a retry works
 //   F19     an entity id in the reserved person shape refuses the translation
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/importer-check.ts
 // @ts-nocheck
@@ -56,7 +57,7 @@ const TV1 = await import("../../tools/import-v1/translate-v1.js");
 const { readLog, fold } = await import("../../shared/protocol/fold.js");
 const { custodyAt } = await import("../../server/custody.ts");
 const { custodyFileIn } = await import("../../server/keyfiles.ts");
-const { isMinted } = await import("../../server/directory.ts");
+const { isMinted, directoryFor } = await import("../../server/directory.ts");
 const { bindIdentity } = await import("../../tools/operator/operator-bind.ts");
 const { HN_ISS } = await import("../../server/auth.ts");
 const { emptyState: v1Empty, foldEntry: v1Fold } = await import("../../tools/import-v1/fold.js");
@@ -524,6 +525,18 @@ row("IM-I45", () => {
   const bound = advice.map((a: any, i: number) => bindIdentity(w.worlds, "new", a.arg ?? "", `human:test:a${i}`));
   ok(advice.length === 2 && bound.every((b: any) => b.ok) && new Set(bound.map((b: any) => b.id)).size === 2 && bound.every((b: any, i: number) => b.id === rep.report.people[i].id),
     "IM-I45 (#369) Ann and ann, two unbound role holders: the report's bind advice for each, pasted as written, binds that one person (by id; by name it would be refused as ambiguous)", { advice, bound });
+});
+
+row("IM-I46", () => {
+  const w = oldWorld([BASIC[0], { actor: "world", verb: "grant", args: { id: "Cy", role: "builder" } }]); const rep = W1.reportV1World(w.src, { name: "new" });
+  W1.translateV1World(w.src, w.dest, { approval: approvalFor(w, rep.hash) });
+  const cf = custodyFileIn(w.worlds), good = fs.readFileSync(cf), id = rep.report.people.find((p: any) => p.name === "Cy")?.id;
+  fs.writeFileSync(cf, "{ not json");
+  const why = threw(() => bindIdentity(w.worlds, "new", id, "human:test:i46"));
+  const kind = directoryFor(w.worlds).entry(id)?.kind;
+  fs.writeFileSync(cf, good); const retry = bindIdentity(w.worlds, "new", id, "human:test:i46");
+  ok(!!why && kind === "imported" && retry.ok === true,
+    "IM-I46 a custody file that can't be read stops bind before the directory changes: the identity stays imported, and once custody is restored a retry binds", { why, kind, retry });
 });
 
 // ---- F19 (P3): an entity id in the reserved person shape refuses the translation (was the minor-0 migration's guard) ----

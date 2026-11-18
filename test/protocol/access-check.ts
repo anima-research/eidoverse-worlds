@@ -486,7 +486,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const nameOf = (sub) => { try { return Object.values(JSON.parse(fs.readFileSync(path.join(W, ".directory.json"), "utf8")).ids ?? {}).find((e) => (e.subs ?? []).includes(sub))?.name; } catch { return undefined; } };
   await tryUntil("the spectator's directory record is written", () => nameOf("local:watcher") !== undefined, { ms: 5000, step: 50 });
   const theirs = nameOf(`local:${LONG.toLowerCase()}`), seen = nameOf("local:watcher") ?? "";
-  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${(await import("../../server/directory.ts")).accountTag("local:watcher")}`) && seen.toLowerCase() !== LONG.toLowerCase(),
+  ok(!!jb.snapshot && !!jw.snapshot && theirs === LONG && seen.length <= 64 && seen.endsWith(`-${await import("../../server/directory.ts").then((D) => D.accountTag("local:watcher", D.nameTagKey(W)))}`) && seen.toLowerCase() !== LONG.toLowerCase(),
     "D12 (door) a spectator's first sight under a 64-character name another account wears records that name cut to keep its own account's tag (accountTag), within the limit, never the other account's name",
     { joins: [jb.errors, jw.errors], snapshots: [!!jb.snapshot, !!jw.snapshot], theirs, seen });
   body.close(); watch.close(); op.close(); try { s.proc.kill(); await s.proc.exited; } catch {} fs.rmSync(path.join(W, ".bans.json"), { force: true }); }
