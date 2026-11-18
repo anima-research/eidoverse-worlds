@@ -3,6 +3,8 @@
 // still on their way, and which of those are near a body.
 
 import { solidOff } from '../../shared/protocol/simlayer.js';
+import { qNorm, qFromYaw, qRotate } from '../../shared/rot.js';
+import { scale3 } from '../../shared/scale3.js';
 
 /** How near the circle around a model's footprint has to come to the body to matter (m, across the ground). */
 export const NEAR = 16;
@@ -32,23 +34,30 @@ const num = (v) => (v == null || v === '' ? NaN : Number(v));
 
 /** Where a placed model stands on the ground: its footprint's centre (x, z)
  *  and the radius r of the circle around it, from the server's geom bbox
- *  ({ center, size }, model-local) placed as the entity is (pos, yaw, scale).
+ *  ({ center, size }, model-local) placed at its WORLD pose ({ pos, q or yaw,
+ *  scale: one number or [x, y, z] }; for a parented model, its chain folded:
+ *  shared/hierarchy.js worldPose, as the renderer places it). The circle holds
+ *  every corner of the box as turned, so a tilted model's height counts too.
  *  Until the geom has said the model's size, or while its place isn't a
  *  number, r is Infinity: a model that can't be ruled out is near. */
-export function footprintOf(ent, geom) {
-  const sc = num(ent?.scale), s = sc > 0 ? sc : 1;
-  const yw = num(ent?.yaw), yaw = Number.isFinite(yw) ? yw : 0;
-  const [px, , pz] = Array.isArray(ent?.pos) ? ent.pos.map(num) : [NaN, NaN, NaN];
+export function footprintOf(pose, geom) {
+  const [px, , pz] = Array.isArray(pose?.pos) ? pose.pos.map(num) : [NaN, NaN, NaN];
   const b = geom?.bbox;
   if (!Number.isFinite(px) || !Number.isFinite(pz) || !Array.isArray(b?.size)) return { x: px, z: pz, r: Infinity };
-  const [cx = 0, , cz = 0] = Array.isArray(b.center) ? b.center : [];
-  // the bbox centre turned as the model is (three.js rotation.y) and scaled
-  const c = Math.cos(yaw), sn = Math.sin(yaw);
-  return {
-    x: px + (cx * c + cz * sn) * s,
-    z: pz + (-cx * sn + cz * c) * s,
-    r: (Math.hypot(b.size[0] ?? 0, b.size[2] ?? 0) / 2) * s,
-  };
+  const yw = num(pose.yaw);
+  const q = qNorm(pose.q) ?? qFromYaw(Number.isFinite(yw) ? yw : 0);
+  const s = scale3(pose.scale).map((v) => (num(v) > 0 ? num(v) : 1));
+  const size = [0, 1, 2].map((i) => num(b.size[i]) || 0);
+  const c = Array.isArray(b.center) ? [0, 1, 2].map((i) => num(b.center[i]) || 0) : [0, size[1] / 2, 0];   // realize/models.js libBox's default
+  // the box's centre and corners scaled, then turned, as three.js renders it (scale, then rotation)
+  const at = (v) => qRotate(q, [v[0] * s[0], v[1] * s[1], v[2] * s[2]]);
+  const o = at(c);
+  let r = 0;
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+    const k = at([c[0] + sx * size[0] / 2, c[1] + sy * size[1] / 2, c[2] + sz * size[2] / 2]);
+    r = Math.max(r, Math.hypot(k[0] - o[0], k[2] - o[2]));
+  }
+  return { x: px + o[0], z: pz + o[2], r };
 }
 
 /** The solid placed models still on their way whose footprint's circle comes
