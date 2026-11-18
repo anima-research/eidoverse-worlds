@@ -351,10 +351,23 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
     const told = (l, by) => l.length === 1 && l[0].end === true && l[0].reason === "out-of-reach" && l[0].by === by && !l[0].pose;
     placed.push(at(nia, 40 + band)); const after = send(nia, una, sample);
     placed.push(at(nia, 43)); const t0 = Date.now(), regrab = send(nia, una, { grab: { joint: "hips" } }, t0);
-    placed.push(at(nia, 40 + band)); const quiet = send(nia, una, sample, t0 + 1201);   // the owner's silence rule (1.2 s): no drag under way
+    placed.push(at(nia, 40 + band)); const quiet = send(nia, una, sample, t0 + P.DRAG_SILENCE_MS + 1);   // the owner's silence rule: no drag under way
     send(nia, una, { end: true });
     ok(placed.every(Boolean) && told(broke.tgt, "Nia") && told(broke.from, "Una") && after.tgt.length === 0 && regrab.tgt.length === 1 && quiet.tgt.length === 0,
       "RR11 …past it the drag ends: both are told it was released out of reach; a sample back at 5.5 m is dropped (no drag left), as is one after 1.2 s of quiet", { placed, broke, after, regrab, quiet }); }
+  // RR12: the reach verb at a range under BODY_REACH (range 1, bodies 1.2 m apart), both shapes; RR13: no pose to measure from fails closed
+  { const ola = person("Ola", "ol", [10, 0, -10]), pim = person("Pim", "pm", [11.2, 0, -10]);
+    const one = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 1 } });
+    const pimGates = (on) => { req(pim, "consent", { move: on, touch: on }); return req(pim, "consent", {})?.table?.touch === on; };
+    const both = () => [req(ola, "reach", { who: pim.actorId, point: "shoulder_l" }), req(ola, "reach", { at: [10.95, 1.6, -10] })].map((r) => (r?.ok ? "ok" : `${rf(r)?.code}|${rf(r)?.reason}`));
+    const open = pimGates(true) ? both() : "setup", shut = pimGates(false) ? both() : "setup";
+    ok(one?.ok && JSON.stringify(open) === JSON.stringify(shut) && open.every((x) => /^out-of-reach\|\S+ is 1\.2 m away/.test(x)), "RR12 at range 1, reach {who, point} and reach {at} on Pim 1.2 m away are refused out-of-reach, the same whatever his touch gate", { one, open, shut });
+    w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
+    const ghost = person("Gus", "gu", [41, 0, 40]); ghost.lastPose = null;   // 1 m from Una, but no pose at the relay
+    const shove = () => { const k = una.got.length, kg = ghost.got.length; MESSAGES["puppet"]({ c: ghost, ws: ghost.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Una", ragdoll: true });
+      return { got: una.got.slice(k).filter((x) => x.type === "puppet").length, err: ghost.got.slice(kg).find((x) => x.type === "error")?.error ?? null }; };
+    const on = gates(true) ? shove() : "setup", off = gates(false) ? shove() : "setup";
+    ok(on.got === 0 && off.got === 0 && /can't tell where/.test(on.err ?? "") && on.err === off.err, "RR13 a knock-over from someone with no pose yet is refused the same whatever her move gate (nothing to measure from)", { on, off }); }
   w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
 let skipped = null; const SKIP = Symbol("skip");

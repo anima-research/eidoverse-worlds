@@ -111,7 +111,7 @@ function activate(w, id, name, ev) {
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, ...(uses.length ? { uses } : {}), sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
-  for (const b of res.bodies) { const far = farFrom(w, `script:${id}`, worldT(st, id)?.pos, b.to); if (far) return mark(far.code, far.reason);   // range from the scripted thing, before consent
+  for (const b of res.bodies) { const far = farFrom(w, `script:${id}`, id === "@world" ? null : worldT(st, id)?.pos, b.to); if (far) return mark(far.code, far.reason);   // range from the scripted thing (@world has no place), before consent
     const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }
   // an arrival, a departure, or a hand event with no entry of its own records no identity: the log would otherwise hold
   // who handled what only because a script listened. A hand event with an act already names its actor: keep `trigger`
