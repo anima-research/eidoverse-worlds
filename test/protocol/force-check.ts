@@ -33,6 +33,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["a blast counts toward the cool-down once", "protocol/authority/bodyconsent.js", "if (!extra.uncounted) noteRefusal(w, from, to, cls, now);", "noteRefusal(w, from, to, cls, now);", ["F11"]],
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
   ["a blast within the caster's body reach only", "protocol/authority/bodyverbs.js", "    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", "    { const me = w.presence.bodies[actor]; if (me && Math.hypot(...me.at.map((v, i) => v - a.at[i])) > 2.5) refuse(\"out-of-reach\", \"too far\", \"walk closer\"); }\n    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", ["F13"]],
+  ["range before consent", "protocol/authority/bodyverbs.js", "const out = farFrom(w, actor, from, who); if (out)", "const out = farFrom(w, actor, from, who); if (false)", ["F16"]],
   ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "(!d.listed && P.throttle?.[`${from}:${cls}`] > now", "(P.throttle?.[`${from}:${cls}`] > now", ["F14"]],
   ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F15"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
@@ -161,10 +162,18 @@ const cases: Case[] = [
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       return { ...t, cooled: cooled(s) }; },
     good: (o) => o.ok && o.cooled === 1 },
-  { id: "F13", what: "a blast needs no reach from the caster to `at` (R 10-28 13:44: body ranges are a future world setting, consent decides; shove's BODY_REACH is the body verb's): bob 15 m away (his body there, asserted) punts the crate and shoves vic", run(s) { cast(s);
+  { id: "F13", what: "with no range set, a blast needs no reach from the caster to `at` (shove's BODY_REACH is the body verb's; F16 sets a range): bob 15 m away (his body there, asserted) punts the crate and shoves vic", run(s) { cast(s);
       s.call("bob", "move", { to: [0, 0, 15] }); s.call("vic", "move", { to: [-1, 0, 1] }); const at = s.w().presence.bodies.bob?.at;
       const r = s.call("bob", "force", { at: [-1, 0, 0] }); return { at, r: show(r), punted: r.punted?.map((p: any) => p.id), vic: shovesIn(s, "vic").length }; },
     good: (o) => Math.hypot(o.at?.[0] + 1, o.at?.[1], o.at?.[2]) > 14 && o.r === "ok" && o.punted?.join() === "crate" && o.vic === 1 },
+  { id: "F16", what: "where the world sets a range (5 m), a body past it from the caster is left be with the same answer whatever her move gate; within it the gate decides again", run(s) { cast(s, { physics: false });
+      const set = s.call("olive", "set", { id: "@world", component: "body-default", value: { range: 5 } });
+      s.call("vic", "move", { to: [-1, 0, 1] }); s.call("bob", "move", { to: [-1, 0, 16] });
+      const blast = () => { const r = s.call("bob", "force", { at: [-1, 0, 1], radius: 1 }, 1000); return JSON.stringify({ r: show(r), bodies: r.bodies, notes: r.notes ?? [] }); };
+      const arms = () => { s.call("vic", "consent", { move: true }); const open = blast(); s.call("vic", "consent", { move: false }); return { open, shut: blast() }; };
+      const far = arms(); const mv = [12, 8, 4].map((z) => s.call("bob", "move", { to: [-1, 0, z] }, 1000)).at(-1); const near = arms();
+      return { set: show(set), mv: show(mv), far, near, vic: shovesIn(s, "vic").length }; },
+    good: (o) => o.set === "ok" && o.mv === "ok" && o.far.open === o.far.shut && /"refused":1/.test(o.far.open) && /range/.test(o.far.open) && o.near.open !== o.near.shut && /"shoved":1,"refused":0/.test(o.near.open) && /"shoved":0,"refused":1/.test(o.near.shut) && o.vic === 1 },
   { id: "F14", what: "allow = yes regardless, a cool-down too (review full-260 L15): a body that always allows bob takes his shove while he's cooled; others still see the cool-down", run(s) { const t = optedOut(s);
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       s.call("dee", "move", { to: [0, 0, 6.5] }); const al = s.call("dee", "consent", { allow: "bob" }); s.call("eve", "move", { to: [0.5, 0, 6] });
