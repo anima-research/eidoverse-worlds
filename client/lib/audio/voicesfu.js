@@ -9,7 +9,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from '../ui/chat.js';   // a dead media path must be visible to the person, not only the console
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from '../debuglog.js';
-import { rawMicStream, setMicLive, dropDevice } from './micstate.js';
+import { rawMicStream, setMicLive, dropDevice, gateFor, gateIsUnavailable, ungatedAllowed } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 let _myAn = null, _myBuf = null, _myStream = null;   // my outbound analyser (sfuMyLevel); cleared by sfuConnect
@@ -231,6 +231,13 @@ async function sfuPublish() {
     const { voiceSource } = await import('./voicesource.js');
     const asked = wantMic;
     const raw = await voiceSource({ micWanted: asked });
+    // superseded during acquisition: stop what we acquired and touch nothing shared (micstate, wantMic), which the live
+    // session owns; its replay publishes. First, and with no await before gateFor, so a stale answer never reaches them.
+    if (myPc !== pc) {
+      why('publish', 'pc superseded during acquisition — dropping this publish');
+      for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
+      return;
+    }
     // re-read intent after the await: a mic toggled during the prompt means this answer is stale
     if (wantMic !== asked) {
       why('publish', `intent changed during acquisition (asked mic=${asked}, now ${wantMic}) — dropping ${raw?.synthetic ? 'synth' : 'device'}`);
@@ -239,17 +246,8 @@ async function sfuPublish() {
       return 'intent-changed';
     }
     // gate it before the sender sees it (gateFor passes a synthetic source through untouched)
-    const { gateFor, gateIsUnavailable, ungatedAllowed, setMicLive } = await import('./micstate.js');
     const s = gateFor(raw);
     setMicLive(!raw?.synthetic && wantMic);   // micstate's "a device is capturing" state
-    // superseded during acquisition: stop what we acquired and let the new session's replay publish
-    // (before the refusal, which clears wantMic: a superseded invocation never clears the live session's intent)
-    if (myPc !== pc) {
-      why('publish', 'pc superseded during acquisition — dropping this publish');
-      for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
-      try { setMicLive(false); } catch { /* probe env */ }
-      return;
-    }
     if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
       // refuse rather than publish ungated; the audio panel offers the explicit opt-in
       bus.emit('voice-gate-unavailable', {});

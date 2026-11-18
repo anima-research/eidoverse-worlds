@@ -1,7 +1,8 @@
 // voicesfu, executed: the raw mic DEVICE stops whenever the transport stops holding it, so the browser's mic indicator
 // goes out. Under a gated publish the stream on the wire is the gate's destination, and the device feeding it is a
-// separate stream; each row is a way the transport lets go of the device: a reconnect, a swap to the synth voice, and a
-// refusal because the gate could not be built.
+// separate stream; each row is a way the transport lets go of the device: a reconnect, a swap to the synth voice, a
+// refusal because the gate could not be built, and an acquisition a reconnect superseded, which must also leave the live
+// session's device and micstate alone.
 //
 // Stubbed: the browser boundary (RTCPeerConnection, and a WebAudio context whose MediaStreamDestination yields a track
 // of its own, or none while `noGate` is set), voiceSource() as a deferred acquisition the test resolves by hand, the
@@ -82,6 +83,30 @@ await lane('mic off (synth provider)', async (device) => {
   t('mic off (synth provider): the swap to synth stops the device', device.track.stopped);
   provider = null;
 });
+
+{
+  // a reconnect supersedes acquisition A while the live session presses for B: A must touch nothing the session owns
+  await sfu.sfuConnect({}, () => {});
+  const a0 = acquisitions.length;
+  const pA = sfu.sfuMic(true);
+  const acqA = await nextAcquisition(a0);
+  await sfu.sfuConnect({}, () => {});
+  const pB = sfu.sfuMic(true);
+  for (let i = 0; i < 20; i++) await flush();
+  t('superseded: the live session\'s acquisition waits for the stale one (one acquisition at a time)', acquisitions.length === a0 + 1);
+  const A = mkStream(mkTrack('device A')), g0 = gated.length;
+  acqA.resolve(A);
+  const acqB = await nextAcquisition(a0 + 1);
+  await pA;
+  t('superseded: the stale acquisition is stopped and touches no shared mic state (no gate graph, micstate not on it)',
+    A.track.stopped && gated.length === g0 && mic.rawMicStream() !== A);
+  const B = mkStream(mkTrack('device B'));
+  acqB.resolve(B);
+  await pB;
+  t('superseded: the live session\'s device B is live, current and attached, intent kept',
+    !B.track.stopped && mic.rawMicStream() === B && added.at(-1) === gated.at(-1)?.track && !gated.at(-1).track.stopped
+      && mic.micDeviceLive() && sfu.sfuMicWanted() && sfu.sfuMicOn());
+}
 
 // The gate cannot build and ungated audio is not consented: the publish is refused.
 noGate = true;
