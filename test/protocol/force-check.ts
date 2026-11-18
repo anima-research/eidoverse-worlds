@@ -34,6 +34,7 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["…and does count", "protocol/authority/bodyconsent.js", "if (tos.length) noteRefusal(w, from, tos, cls, w.now());", "if (false) noteRefusal(w, from, tos, cls, w.now());", ["F12"]],
   ["a blast within the caster's body reach only", "protocol/authority/bodyverbs.js", "    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", "    { const me = w.presence.bodies[actor]; if (me && Math.hypot(...me.at.map((v, i) => v - a.at[i])) > 2.5) refuse(\"out-of-reach\", \"too far\", \"walk closer\"); }\n    let act = null; const actOnce = () => (act ??= w.append(actOf(w, actor, \"force\"", ["F13"]],
   ["range before consent", "protocol/authority/bodyverbs.js", "const out = farFrom(w, actor, from, who); if (out)", "const out = farFrom(w, actor, from, who); if (false)", ["F16"]],
+  ["a bodiless caster is told to place a body", "protocol/authority/bodyverbs.js", "${from ? \"out of this world's range\" : \"you have no body here to measure this world's range\"}", "out of this world's range", ["F17"]],
   ["an allow list passes a cool-down", "protocol/authority/bodyconsent.js", "(!d.listed && P.throttle?.[`${from}:${cls}`] > now", "(P.throttle?.[`${from}:${cls}`] > now", ["F14"]],
   ["a guest's tables go when they leave", "protocol/authority/bodyverbs.js", "if (CTX.isAnon(actor)) C.forgetIdentity(w.presence, actor);", "", ["F15"]],
   ["CONTROL (no-op: must stay green)", "blast.js", "// shared/blast.js — the", "//  shared/blast.js — the", []],
@@ -174,6 +175,11 @@ const cases: Case[] = [
       const far = arms(); const mv = [12, 8, 4].map((z) => s.call("bob", "move", { to: [-1, 0, z] }, 1000)).at(-1); const near = arms();
       return { set: show(set), mv: show(mv), far, near, vic: shovesIn(s, "vic").length }; },
     good: (o) => o.set === "ok" && o.mv === "ok" && o.far.open === o.far.shut && /"refused":1/.test(o.far.open) && /range/.test(o.far.open) && o.near.open !== o.near.shut && /"shoved":1,"refused":0/.test(o.near.open) && /"shoved":0,"refused":1/.test(o.near.shut) && o.vic === 1 },
+  { id: "F17", what: "in a ranged world, a caster with no body here leaves bodies be, and the note says to place a body (not that they were too far)", run(s) { cast(s, { physics: false });
+      s.call("olive", "set", { id: "@world", component: "body-default", value: { range: 5 } }); s.call("vic", "move", { to: [-1, 0, 1] });
+      const me = !!s.w().presence.bodies.bob; const r = s.call("bob", "force", { at: [-1, 0, 1], radius: 1 });
+      return { me, r: show(r), bodies: r.bodies, notes: JSON.stringify(r.notes ?? []), vic: shovesIn(s, "vic").length }; },
+    good: (o) => !o.me && o.r === "ok" && JSON.stringify(o.bodies) === '{"shoved":0,"refused":1}' && /no body here/.test(o.notes) && /move/.test(o.notes) && o.vic === 0 },
   { id: "F14", what: "allow = yes regardless, a cool-down too (review full-260 L15): a body that always allows bob takes his shove while he's cooled; others still see the cool-down", run(s) { const t = optedOut(s);
       for (let k = 0; k < 5; k++) s.call("bob", "force", { at: [0, 0, 0] }, 1000);
       s.call("dee", "move", { to: [0, 0, 6.5] }); const al = s.call("dee", "consent", { allow: "bob" }); s.call("eve", "move", { to: [0.5, 0, 6] });

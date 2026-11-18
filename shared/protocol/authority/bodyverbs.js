@@ -387,7 +387,7 @@ const EMBODIED_VERBS = {
       const g = bodyGate(w, actor, who, "shove", { uncounted: true, spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
       if (!g.ok) { bodies.refused++; if (g.code === "consent") denied.push(who); } else { g.deliver(); bodies.shoved++; } }
     if (denied.length) noteBlastRefusals(w, actor, denied, "shove");   // one attempt toward the cool-down, however many refused
-    if (nFar) notes.push({ why: `${nFar} ${nFar === 1 ? "body" : "bodies"} left be: out of this world's range (${bodyRangeOf(w.presence.bodyDefault)} m) from you` });
+    if (nFar) notes.push({ why: `${nFar} ${nFar === 1 ? "body" : "bodies"} left be: ${from ? "out of this world's range" : "you have no body here to measure this world's range"} (${bodyRangeOf(w.presence.bodyDefault)} m) from${from ? " you" : "; move first"}` });
     actOnce();
     return { ok: true, act, at: a.at, radius, power, bodies, punted, ...(skipped.length ? { skipped } : {}), ...(notes.length ? { notes } : {}) };
   },
