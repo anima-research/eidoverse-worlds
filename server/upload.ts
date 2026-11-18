@@ -408,16 +408,22 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
 async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients
   const upTok = bearerOf(req) || (url.searchParams.get("token") ?? "");
-  let upAgent = agentTokens().byToken.get(upTok);
-  // the aid1 leg the join door has (guests enrolled via archipelago-home carry no tokens.json entry); same derivation
-  // as the doors, no jti burn (reusable until expiry)
-  if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
-  // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the
-  // join door takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
-  const session = sessionOfRequest(req);
-  // (embodied access, worlds:join — what the join door asks of a login that is not spectating)
-  const upPerson = session && session.scopes.includes("worlds:join") ? session.name : null;
-  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent && !upPerson)
+  // Who the request proves, asked before the body read and again after it: a credential revoked, an aid1 token expired or a
+  // session logged out during a 20 MB read must not still write. `id` names every credential that held (null: none did).
+  const who = () => {
+    const key = !!JOIN_TOKEN && upTok === JOIN_TOKEN;
+    // an enrolled bearer, or the aid1 leg the join door has (guests enrolled via archipelago-home carry no tokens.json
+    // entry; no jti burn: reusable until expiry)
+    const agent = key ? undefined : agentTokens().byToken.get(upTok) ?? aid1JoinIdentity(upTok)?.slug;
+    // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the join door
+    // takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
+    // Embodied access (worlds:join), what the join door asks of a login that is not spectating.
+    const s = sessionOfRequest(req), person = s && s.scopes.includes("worlds:join") ? s : null;
+    const id = key || agent || person ? JSON.stringify([key, agent ?? null, person?.sub ?? null]) : null;
+    return { id, agent, person: person?.name ?? null };
+  };
+  const first = who(), upAgent = first.agent, upPerson = first.person;
+  if (JOIN_TOKEN && !first.id)
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
@@ -428,6 +434,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   u.n++; uploadWin.set(ip, u);
   if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
   const body = await readCappedBytes(req, UPLOAD_CAP);
+  if (JOIN_TOKEN && who().id !== first.id)
+    return new Response("not stored: your sign-in ended while the upload was read (sign in again and resend)", { status: 401 });
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
   // main's script store left with the old protocol: say where a script goes now
   if (url.searchParams.get("as") === "script") return new Response(SCRIPT_MOVED, { status: 415 });

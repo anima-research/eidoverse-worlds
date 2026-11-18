@@ -566,11 +566,14 @@ const ROUTES: Route[] = [
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
         { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
       const tok = bearerOf(req) || (url.searchParams.get("token") ?? "");
-      const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
+      // asked again after the body read: a credential revoked during the read writes nothing
+      const who = () => agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
+      const actor = who();
       if (!actor) {
         return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the authority token may not write seat profiles" }, 401);
       }
       const text = await readCapped(req, MAX_PROPOSAL_BYTES);
+      if (who() !== actor) return j({ error: "not stored: your credential ended while the proposal was read" }, 401);
       if (text === null) {
         return j({ error: `proposal exceeds ${MAX_PROPOSAL_BYTES} bytes` }, 413);
       }
