@@ -285,6 +285,7 @@ bus.on('bodydrag', (msg) => {
       draggedBy = null;
       if (msg.pinAt?.joint && Array.isArray(msg.pinAt.at)) hooks.addPin?.(String(msg.pinAt.joint), msg.pinAt.at);
       hooks.endDragged(msg);
+      if (msg.reason === 'out-of-reach') flashHint(`${by} lost hold of you: out of reach`);
     }
     else if (drag && drag.id === by) {
       // I was the dragger and the OWNER revoked (broke free, or refused), or the server ended it past the break distance
