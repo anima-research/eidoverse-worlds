@@ -1,5 +1,5 @@
 // arrivalhold-test — the arrival hold's decision (client/lib/arrivalhold.js solidArriving) through the REAL realizer
-// (client/lib/realize/models.js modelArriving, modelFootprint), on records the v4 door wrote: a model's footprint is
+// (client/lib/realize/models.js modelArriving, modelFootprint), on records the door wrote: a model's footprint is
 // where the renderer puts it, its chain folded by shared/hierarchy.js worldPose.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/arrivalhold-test.ts
 // Same cone as realized-lifecycle-test (test/stubs/lod-client-stub.mjs: loads the test holds open). The pure rules:
