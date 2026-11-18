@@ -275,7 +275,6 @@ const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID(
 function sendGeomFollowup(w: World, c: Client) {
   const libs = new Set<string>();
   for (const e of Object.values(w.state.entities)) if (e.model) libs.add(e.model);
-  if (!libs.size) return;
   (async () => {
     const geom: Record<string, { bbox: unknown }> = {};
     for (const lib of libs) {
@@ -285,8 +284,8 @@ function sendGeomFollowup(w: World, c: Client) {
         if (sum?.bbox) geom[lib] = { bbox: sum.bbox };
       } catch { /* a lib that won't parse simply has no placeholder */ }
     }
-    // sent even empty: it tells the client that every size this join will get
-    // has come (the arrival hold stops waiting on unsized models then)
+    // sent even empty, a world without models too: it tells the client that every
+    // size this join will get has come (the arrival hold stops waiting on unsized models then)
     if (c.ws.readyState === 1) {
       c.ws.send(JSON.stringify({ type: "geom", geom }));
     }

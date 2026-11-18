@@ -424,6 +424,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["getup-floor", "client/getup-floor-test.ts", 1], // #274: a limp body gets up on the floor it lay on (client/lib/getup.js), not at height 0; the real Bullet ragdoll on the skeleton fixture
   ["arrival-hold", "client/arrival-hold-test.ts", 1], // #274: which placed models a restored body waits for, and which are near it (client/lib/arrivalnear.js); the hold in a real browser is getup-browser-test, outside the gate
   ["arrivalhold", "client/arrivalhold-test.ts", 1], // #274 (#338 review): the hold's decision through the real realizer on v4 door records: a parented model's footprint at its folded world pose (worldPose), per-axis scale, a tilt
+  ["geom-followup", "server/geom-followup-test.ts", 1], // #274 (#338 review): every join gets its geom follow-up after the snapshot, a world without models too (the arrival hold stops waiting on unsized models then)
   ["consent-scripts-list", "server/consent-scripts-list-test.ts", 1], // consent {allow|block} naming a script or a sponsor's scripts reaches the authority through the server; an allow naming nobody says how to name someone
   ["custody-save", "server/custody-save-test.ts", 1], // a governance key is handed out only once the keys file holds it: a failed save hands out nothing
   ["briefing", "server/briefing-test.ts", 1], // #214: a join's briefing names the agent guide and its version; /agents.md serves it with an etag

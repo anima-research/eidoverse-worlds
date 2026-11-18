@@ -54,6 +54,19 @@ stub.camera.position.set(0, 0, 0);
 
 console.log('\narrival hold — a restored body at the origin, a building still loading near it or not\n');
 
+// AH0 (first: the realizer keeps geomLanded for the page's life): a model far beyond its residency radius, of a size
+// no geom has given, may yet be big enough to reach the body: it is waited on until the join's geom follow-up lands,
+// and then, still unsized, it is not (server.ts sends the follow-up even empty: geom-followup-test)
+{
+  door('create', { id: 'far', model: lib('far'), components: { transform: { pos: [500, 0, 0] } } });
+  await settle();
+  ok(M.realizedAs('far') && !stub.held.some((x: any) => x.model === lib('far')), 'AH0 setup: tracked, nothing loading', said('far'));
+  ok(M.modelArriving('far') && H.solidArriving(0, 0), 'AH0a before the geom follow-up, an unsized model far off holds the body', said('far'));
+  bus.emit('lib-geom', {});
+  ok(!M.modelArriving('far') && !H.solidArriving(0, 0), 'AH0b after an empty follow-up, it no longer does', said('far'));
+  door('delete', { id: 'far' });
+}
+
 // AH1: the carrier stands far off, turned and scaled; the building's local offset brings it back under the body.
 // Its record's own pos (parent-local) is 100 m away. Mutation (must go red): footprint from the record's own pos/yaw/scale.
 {
