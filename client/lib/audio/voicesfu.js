@@ -9,7 +9,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from '../ui/chat.js';   // a dead media path must be visible to the person, not only the console
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from '../debuglog.js';
-import { rawMicStream, setMicLive } from './micstate.js';
+import { rawMicStream, setMicLive, dropDevice } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 let _myAn = null, _myBuf = null, _myStream = null;   // my outbound analyser (sfuMyLevel); cleared by sfuConnect
@@ -41,10 +41,11 @@ export async function sfuConnect(credential, send) {
   cred = credential;
   // a mic track belongs to the pc that published it: stop the old stream (and its hardware light)
   // so the bridge's replay publishes afresh on the live pc. wantMic is kept: intent survives a reconnect.
-  // A gated stream is the gate's, so the device under it (rawMicStream) is stopped too, or it keeps capturing.
+  // A gated stream is the gate's, so the device under it is dropped too (micstate dropDevice), or it keeps capturing.
   if (micStream) {
-    for (const t of [...micStream.getTracks(), ...(rawMicStream()?.getTracks() ?? [])]) { try { t.stop(); } catch { /* already dead */ } }
+    for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* already dead */ } }
     micStream = null;
+    dropDevice();
   }
   // close the predecessor with its handlers nulled, or a ghost's 'failed' would diagnose the new pc
   if (pc) {
@@ -241,17 +242,19 @@ async function sfuPublish() {
     const { gateFor, gateIsUnavailable, ungatedAllowed, setMicLive } = await import('./micstate.js');
     const s = gateFor(raw);
     setMicLive(!raw?.synthetic && wantMic);   // micstate's "a device is capturing" state
-    if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
-      // refuse rather than publish ungated; the audio panel offers the explicit opt-in
-      bus.emit('voice-gate-unavailable', {});
-      wantMic = false;
-      return;
-    }
     // superseded during acquisition: stop what we acquired and let the new session's replay publish
+    // (before the refusal, which clears wantMic: a superseded invocation never clears the live session's intent)
     if (myPc !== pc) {
       why('publish', 'pc superseded during acquisition — dropping this publish');
       for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
       try { setMicLive(false); } catch { /* probe env */ }
+      return;
+    }
+    if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
+      // refuse rather than publish ungated; the audio panel offers the explicit opt-in
+      bus.emit('voice-gate-unavailable', {});
+      wantMic = false;
+      dropDevice();
       return;
     }
     why('publish', `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
