@@ -131,6 +131,51 @@ console.log('\narrival hold — a restored body at the origin, a building still 
   door('delete', { id: 'hut' }); door('delete', { id: 'raft' });
 }
 
+// AH6-AH9: the hold's life (heightHeld), on a clock the test turns. A building loads under the body throughout.
+{
+  const realNow = performance.now.bind(performance);
+  let now = realNow();
+  (performance as any).now = () => now;
+  const warned: string[] = [];
+  const realWarn = console.warn;
+  console.warn = (...a: unknown[]) => { warned.push(a.join(' ')); };
+  try {
+    bus.emit('lib-geom', { [lib('pad')]: BLDG });
+    door('create', { id: 'pad', model: lib('pad'), components: { transform: { pos: [0, 0, 0] } } });
+    await settle();
+    const body = { x: 0, y: 3, z: 0 };
+    ok(M.modelArriving('pad') && S.state.hydrated, 'AH6 setup: a building loads under the body; the world is hydrated', said('pad'));
+    ok(!H.heightHeld(body), 'AH6 with no restore, nothing is held');
+    // Mutation (must go red): start the clock in holdHeightUntilSolid instead of at the first step.
+    H.holdHeightUntilSolid(1000);
+    now += 5000;   // the avatar took 5 s to load: the first step comes now
+    const first = H.heightHeld(body);
+    now += 900;
+    const late = H.heightHeld(body);
+    ok(first && late, 'AH7 a restore holds the body while the building loads; its bound runs from the first step, not the restore', JSON.stringify({ first, late }));
+    now += 200;
+    ok(!H.heightHeld(body) && warned.length === 1 && /gave up .* 1s .*still on its way near it: pad/.test(warned[0]),
+      'AH8 at its bound the hold gives up, and says once what was still on its way', JSON.stringify(warned));
+    ok(!H.heightHeld(body) && warned.length === 1, 'AH8 ...and holds nothing after', JSON.stringify(warned));
+    door('delete', { id: 'pad' });
+    H.holdHeightUntilSolid(1000);
+    ok(!H.heightHeld(body), 'AH9 with nothing near on its way, a restore lets go at the first step');
+    door('create', { id: 'pad2', model: lib('pad'), components: { transform: { pos: [0, 0, 0] } } });
+    await settle();
+    ok(M.modelArriving('pad2') && !H.heightHeld(body), 'AH9 ...and a model that starts loading under it later does not hold it again', said('pad2'));
+    door('delete', { id: 'pad2' });
+    // last: a reset leaves the view unhydrated, as a restore that lands before the snapshot is folded finds it
+    S.reset();
+    H.holdHeightUntilSolid(1000);
+    ok(!S.state.hydrated && H.heightHeld(body), 'AH10 before the world is hydrated, a restore holds: nothing is known to have arrived');
+    now += 1100;
+    ok(!H.heightHeld(body) && /the world never hydrated/.test(warned.at(-1) ?? ''), 'AH10 ...up to its bound', JSON.stringify(warned.at(-1)));
+  } finally {
+    (performance as any).now = realNow;
+    console.warn = realWarn;
+  }
+}
+
 stub.setHold(false);
 for (const h of stub.held.splice(0)) h.release();
 await settle();
