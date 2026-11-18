@@ -3,10 +3,12 @@
 // raw device would let a muted person be heard. sfu-mic-intent-race runs only the consented ungated lane, where the
 // published track IS the device track, so it can't tell the two apart; this suite runs the gated lane.
 //
-// Only the browser boundary is stubbed: RTCPeerConnection, and a WebAudio context whose MediaStreamDestination yields a
-// track of its own, distinct from the device's. voicesfu.js, micstate.js and micgate.js are the shipped modules, and
+// Stubbed: the browser boundary (RTCPeerConnection, and a WebAudio context whose MediaStreamDestination yields a track
+// of its own, distinct from the device's), voiceSource() as a deferred acquisition the test resolves by hand, and
+// net.js, ui/chat.js and audiounlock.js as no-ops. voicesfu.js, micstate.js and micgate.js are the shipped modules, and
 // ungated consent is never given, so a gate that failed to build refuses the publish (the setup rows catch that).
-// Each of the three ways a track reaches a sender (bare addTrack, our own sendonly sender, the inactive floor) is a lane.
+// Each of the three ways a track reaches a sender (bare addTrack, our own sendonly sender, the inactive floor) is a lane;
+// a transceiver is named by its role, so a lane says which branch chose it, and lane B offers the floor first.
 //
 // Run: bun test/client/sfu-mic-gated-test.mjs
 import { fileURLToPath } from "node:url";
@@ -39,17 +41,17 @@ mock.module(M('audio/voicesource.js'), () => ({
   voiceSource: ({ micWanted = true } = {}) => new Promise((resolve, reject) => acquisitions.push({ micWanted, resolve, reject })),
 }));
 // the transceivers the next pc starts with; every track handed to any sender is recorded in `handed`
-let nextTransceivers = () => [];
+let nextTransceivers = () => [], lastPc = null;
 const handed = [];
 class FakePC {
-  constructor() { this.connectionState = 'new'; this.iceConnectionState = 'new'; this.tx = nextTransceivers(); }
+  constructor() { this.connectionState = 'new'; this.iceConnectionState = 'new'; this.tx = nextTransceivers(); lastPc = this; }
   getTransceivers() { return this.tx; }
   addTrack(track, stream) { handed.push({ via: 'addTrack', track, stream }); }
   close() {}
 }
-const mkTx = (direction, currentDirection) => ({
-  direction, currentDirection,
-  sender: { replaceTrack: async (track) => { handed.push({ via: `replaceTrack(${currentDirection ?? direction})`, track }); } },
+const mkTx = (role, direction, currentDirection) => ({
+  role, direction, currentDirection,
+  sender: { replaceTrack: async (track) => { handed.push({ via: `replaceTrack(${role})`, track }); } },
 });
 globalThis.RTCPeerConnection = FakePC;
 
@@ -65,12 +67,12 @@ const watchdog = setTimeout(() => {
 }, 5000);
 const flush = () => new Promise((r) => setImmediate(r));
 
-async function lane(name, transceivers, via) {
+async function lane(name, transceivers, via, after = null) {
   nextTransceivers = transceivers;
   await sfu.sfuConnect({}, () => {});
   const h0 = handed.length, g0 = gated.length, a0 = acquisitions.length;
   const p = sfu.sfuMic(true);
-  await flush();
+  while (acquisitions.length === a0) await flush();   // the publish imports voiceSource first; the watchdog bounds this
   const device = mkStream(mkTrack('device'));
   acquisitions[a0]?.resolve(device);
   await p; await flush();
@@ -83,12 +85,15 @@ async function lane(name, transceivers, via) {
   t(`${name}: the track on the wire is the gate's, not the device's`, !!gatedTrack && mine[0]?.track === gatedTrack
     && mine[0]?.track !== device.track);
   if (via === 'addTrack') t(`${name}: …and the stream handed with it is the gated stream`, mine[0]?.stream === gated[g0]);
+  if (after) t(`${name}: ${after[0]}`, after[1]());
   await sfu.sfuMic(false);
 }
 
 await lane('A solo (bare addTrack)', () => [], 'addTrack');
-await lane('B our own sendonly sender', () => [mkTx('sendrecv', 'sendonly')], 'replaceTrack(sendonly)');
-await lane('C the inactive floor', () => [mkTx('inactive', 'inactive')], 'replaceTrack(inactive)');
+await lane('B our own sendonly sender', () => [mkTx('floor', 'inactive', 'inactive'), mkTx('owned', 'sendrecv', 'sendonly')], 'replaceTrack(owned)',
+  ['…and the floor offered before it is left alone', () => lastPc.tx[0].direction === 'inactive']);
+await lane('C the inactive floor', () => [mkTx('floor', 'inactive', 'inactive')], 'replaceTrack(floor)',
+  ['…and the floor is turned sendonly', () => lastPc.tx[0].direction === 'sendonly']);
 
 clearTimeout(watchdog);
 console.log(`\n${ok} ok, ${bad} failed`);
