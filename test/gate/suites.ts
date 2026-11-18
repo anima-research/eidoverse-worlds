@@ -378,6 +378,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sfu-adapter", "server/sfu-adapter-test.ts", 1], // admitParticipant's refusal branches through the decision layer and the in-process SFU adapter, one table; legs keyed per world
   ["relay-decision", "server/relay-decision-test.ts", 1], // relay incarnation and consent rules (#104 amendments 2, 3)
   ["sfu-mic-intent-race", "client/sfu-mic-intent-race-test.mjs", 1], // the SFU transport executed: mic intent that changes while an acquisition is in flight ends where the latest intent says (#148)
+  ["sfu-mic-gated", "client/sfu-mic-gated-test.mjs", 1], // the SFU transport publishes the gated stream, never the raw device: each sender path executed on the gated lane
   ["mic-ptt", "client/mic-ptt-test.mjs", 1], // push-to-talk: the gate decision executed under both regimes, the hang time and the rate limit
   ["mic-meter-gate", "client/mic-meter-gate-test.mjs", 1], // the sensitivity meter reads live exactly when the gate opens (gateThreshold, one dB track)
   ["stt-ptt", "client/stt-ptt-test.mjs", 1], // captions under push-to-talk: nothing posts with the key up; a release still flushes what was heard while held

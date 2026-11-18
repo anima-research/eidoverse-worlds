@@ -5,7 +5,7 @@ import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, directoryFor, isMinted, accountTag, foldName, lockFor } from "../../server/directory.ts";
+import { directoryAt, directoryFor, isMinted, accountTag, nameTagKey, foldName, lockFor } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../harness/labhost.ts";
@@ -43,9 +43,21 @@ const file = path.join(tmp, "worlds", ".directory.json");
   const first = again.spectatorName(long, "human:discord:555", max), firstFree = free(first);
   again.resolve({ sub: "human:discord:666", name: first });   // another account now wears that first candidate
   const second = again.spectatorName(long, "human:discord:555", max), own = again.spectatorName("Zed", "human:discord:555", max);
-  const tag = accountTag("human:discord:555");
+  const tag = accountTag("human:discord:555", nameTagKey(path.dirname(file)));
   ok(firstFree && free(second) && second !== first && own === "Zed" && first.endsWith(`-${tag}`) && second.endsWith(`-${tag}2`) && !/555/.test(tag),
     "D12 a spectator's name is the typed one unless another account wears it; otherwise a name that keeps its account's tag (a hash: none of the account's digits), fits the limit and no other account wears", { first, second, own, tag }); }
+// D12d: the tag is keyed by this host's custody secret: two hosts' tags differ, and neither is the public hash
+{ const crypto = await import("node:crypto"); const { sha256 } = await import("../../shared/protocol/hash.js");
+  const subs = Array.from({ length: 8 }, (_, i) => `human:discord:77${i}`), k1 = crypto.randomBytes(32), k2 = crypto.randomBytes(32);
+  const rows = subs.map((s) => ({ s, a: accountTag(s, k1), b: accountTag(s, k2), pub: sha256(`eidoverse-name-tag:${s}`).slice(0, 4) }));
+  ok(rows.every((r) => /^[0-9a-f]{4}$/.test(r.a) && r.a === accountTag(r.s, k1)) && rows.some((r) => r.a !== r.b) && rows.some((r) => r.a !== r.pub) && rows.some((r) => r.b !== r.pub),
+    "D12d an account's tag is keyed: stable under one key, different under another host's, never the public sha256 salt (8 accounts, so a 4-hex collision can't flake it)", rows); }
+// D12e: the tag's key is read from custody, never minted: no sequencer key → the public hash and no custody file made
+{ const D = await import("../../server/directory.ts"); const bare = path.join(tmp, "d12e-bare"), held = path.join(tmp, "d12e-held"); fs.mkdirSync(bare); fs.mkdirSync(held);
+  let r: any; try { const none = D.nameTagKey(bare), made = fs.existsSync(path.join(bare, CUSTODY_FILE));
+    custodyAt(custodyFileIn(held)).sequencer(); const key = D.nameTagKey(held);
+    r = { none, made, same: !!key && key.equals(custodyAt(custodyFileIn(held)).secret("name-tag")) }; } catch (e) { r = { threw: String(e) }; }
+  ok(r.none === null && r.made === false && r.same === true, "D12e the tag's key is custody's secret(\"name-tag\"), read without minting: a worlds dir with no sequencer key gets none (the public hash) and no custody file", r); }
 
 // D13: a Latin letter's accent folds away, as the M3 comment claims; a kana's dakuten or a Devanagari vowel sign stays
 ok(foldName("Marígold") === foldName("marigold") && foldName("JOSÉ") === foldName("jose") && foldName("Ångström") === "angstrom"
