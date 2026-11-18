@@ -753,9 +753,16 @@ copy that was updated and is published again keeps its parts' keys.
   part of consent: the relay forwards a knock-over, pose or grab of another
   body from any distance unless the world sets `@world.body-default.range`
   (m). Where it does, every act on another body (a puppet, a drag, a reach
-  descriptor, the `body` and `reach` verbs) is refused out of range before
-  consent is asked, with the same answer whatever that body's gates and
-  lists (a reach descriptor's limb is dropped without a note). Only
+  descriptor, the `body` and `reach` verbs, each body a `force` blast
+  reaches, a script's body act) is refused out of range before consent is
+  asked, with the same answer whatever that body's gates and lists. A reach
+  descriptor's limb is dropped without a note; a blast counts such a body as
+  refused and says so in a note; a script's act is measured from the scripted
+  thing, and one with no place (a script on `@world`) is out of range. A drag
+  must start within the range; once under way it follows out to 1.5 × the
+  range, and past that the server ends it, sending each side a `bodydrag {end:
+  true, reason: "out-of-reach"}` from the other (a grab with no sample for
+  1.2 s is no longer under way). All of it is presence: nothing is logged. Only
   the owner changes their own answers. The gates and lists are the one part of
   the presence plane a host keeps across a restart (a block is a safety tool:
   one that lapsed with the process would leave its person unguarded while their
