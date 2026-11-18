@@ -124,7 +124,7 @@ function farFrom(w, actor, at, to) { syncDefault(w); to = bodyRef(to); const r =
   if (r == null || !t || to === actor) return null;
   if (!Array.isArray(at)) return { code: "out-of-reach", reason: `this world's range is ${r} m, and this act has no place here to measure ${to}'s distance from`, fix: "act from a body or a placed thing" };
   const m = dist(at, t.at); return m > r ? { code: "out-of-reach", reason: `${to} is ${r3(m)} m away (this world's range is ${r} m)`, fix: "get closer" } : null; }
-function outOfRange(w, actor, me, to) { const f = farFrom(w, actor, me.at, to); if (f) refuse(f.code, f.reason, f.fix); }
+function outOfRange(w, actor, me, to) { const f = farFrom(w, actor, me.at, to); if (f) refuse("out-of-reach", f.reason, f.fix); }
 const BODY_VERBS = {
   // my body's two gates and my two lists; only I change them
   consent(w, actor, a) { const P = w.presence;
