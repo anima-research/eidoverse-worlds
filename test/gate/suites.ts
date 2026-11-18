@@ -427,8 +427,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["door-frame", "mcpl/door-frame-test.ts", 1],   // a malformed frame from anyone closes that one socket, never the MCPL door (Bun 1.4's ws throws an 'error' nobody listens for)
   // gated by the #333 trim: green with no blocker left (their ungated.json reasons had gone stale)
   ["auth", "server/auth-test.ts", 1], // the aid1 doors (garbage, expired, wrong audience, jti replay, spectate-only scope), sessions, an enrolled agent's name; permtest merged in
-  ["door-reresolve", "server/door-reresolve-test.ts", 1], // /upload and /seat-profile ask who the caller is again after the body read: a credential revoked or a session ended mid-read writes nothing
-  ["door-admit-revoke", "mcpl/door-admit-revoke-test.ts", 1], // the MCPL door's admit() asks for the credential again: a token revoked while the dial waits on /access admits nobody and takes over no session
+  ["door-reresolve", "server/door-reresolve-test.ts", 1], // /upload (behind JOIN_TOKEN) and /seat-profile ask who the caller is again after the body read: a credential revoked or a session ended mid-read writes nothing
+  ["door-admit-revoke", "mcpl/door-admit-revoke-test.ts", 1], // the MCPL door's admit() asks for the credential again: a token revoked, expired or narrowed while the dial waits on /access admits nobody and takes over no session
   ["mutant-anchors", "gate/mutant-anchors-check.ts", 1], // every mutant table's find text occurs exactly once in its file (static: reads the tables, runs no mutant; #333 H1)
   ["wp5-verdict", "water/wp5-verdict-test.ts", 1], // water-cross's WP5 verdict on synthetic evidence: its negative controls, no browser
   ["actionbar", "client/actionbar-test.ts", 1], // the action bar (actionbar.js): nine tiles, whole-tile snapping, postures on the desktop body and at VR entry

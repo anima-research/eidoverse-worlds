@@ -1,8 +1,8 @@
-// bun test/server/door-reresolve-test.ts — /upload and /seat-profile ask who the caller is again after the body read: a
-// credential revoked (or a session logged out) while the body streams in writes nothing. In-process and deterministic:
-// the body stream's second pull() does the revoke, and a stream's second pull runs only once the door is reading
-// (the first fills the queue at construction), so the first check has passed by then. Each revoke row has a control.
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, rmSync } from "node:fs";
+// bun test/server/door-reresolve-test.ts — /upload (behind JOIN_TOKEN) and /seat-profile ask who the caller is again after
+// the body read: a credential revoked (or a session logged out) while the body streams in writes nothing. In-process and
+// deterministic: the body stream's second pull() does the revoke, and a stream's second pull runs only once the door is
+// reading (the first fills the queue at construction), so the first check has passed by then. Each revoke row has a control.
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { suite } from "../gate/suite.ts";
@@ -58,11 +58,15 @@ let validAtRevoke = false;
 const revoked = await upload(bearer, () => { validAtRevoke = "account" in (accountOf("reresolve-bearer") ?? {}); revokeToken(); });
 check("setup: the revoke ran inside the read, while the bearer was still valid", revoked.body.ran && validAtRevoke, JSON.stringify({ ran: revoked.body.ran, validAtRevoke }));
 check("setup: ...and the bearer is gone after it", !("account" in (accountOf("reresolve-bearer") ?? {})));
-check("/upload: a bearer revoked during the body read → 401, in the after-read words", revoked.status === 401 && /ended while the upload was read/.test(revoked.text), `${revoked.status} ${revoked.text.slice(0, 90)}`);
+check("/upload: a bearer revoked during the body read → 401, naming the bearer (not a sign-in)", revoked.status === 401 && /bearer .*could not be confirmed after the read/.test(revoked.text) && !/sign/.test(revoked.text), `${revoked.status} ${revoked.text.slice(0, 120)}`);
 check("...and nothing was stored", storedImages().length === 0, storedImages());
 enrol();
 const kept = await upload(bearer, () => {});
 check("control: the same flow with no revoke → 200, stored", kept.status === 200 && kept.body.ran && storedImages().length === 1, `${kept.status} ${kept.text.slice(0, 90)} stored=${storedImages().length}`);
+
+const tooBig = await upload(bearer, revokeToken, new Uint8Array(21_000_000));
+check("/upload: a bearer revoked during an over-cap read → 413, the refusal a renewed bearer would get too", tooBig.body.ran && tooBig.status === 413, `${tooBig.status} ${tooBig.text.slice(0, 90)}`);
+enrol();
 
 // ---- /upload, a session that logs out during the read ----
 const sid = "a".repeat(64);
@@ -76,6 +80,20 @@ check("...and nothing was stored", storedImages().length === 1, storedImages());
 signIn();
 const stayed = await upload(cookie, () => {}, png2);
 check("control: the session that stays signed in → 200", stayed.status === 200, `${stayed.status} ${stayed.text.slice(0, 90)}`);
+const png3 = (() => { const b = png.slice(); b[b.length - 6] ^= 1; return b; })();
+const gained = await upload({ ...cookie, authorization: "Bearer later-enrolled" }, () =>
+  writeFileSync(tokensPath, JSON.stringify({ ...ENROLLED, "later-enrolled": { id: "latecomer" } })), png3);
+check("/upload: a session whose request also gains a bearer during the read → 200 (the session it stood on still holds)", gained.body.ran && gained.status === 200, `${gained.status} ${gained.text.slice(0, 90)}`);
+enrol();
+
+// ---- /upload, the door key also enrolled as an agent keeps its name in the manifest ----
+const manifest = () => JSON.parse(readFileSync(join(OPT, "store", "images", "manifest.json"), "utf8")) as Record<string, { by: string }>;
+writeFileSync(tokensPath, JSON.stringify({ ...ENROLLED, "door-key": { id: "keyholder" } }));
+const png4 = (() => { const b = png.slice(); b[b.length - 7] ^= 1; return b; })();
+const keyed = await upload({ authorization: "Bearer door-key" }, () => {}, png4);
+const keyedBy = keyed.status === 200 ? manifest()[JSON.parse(keyed.text).path.split("/").pop().split(".")[0]]?.by : undefined;
+check("/upload: the door key enrolled as an agent → stored by that agent's id", keyedBy === "keyholder", `${keyed.status} by=${keyedBy}`);
+enrol();
 
 // ---- /seat-profile, through route(); the store is stubbed, so a write is a call to propose() ----
 const proposed: string[] = [];
@@ -87,7 +105,7 @@ async function seat(during: () => void) {
 }
 enrol();
 const seatRevoked = await seat(revokeToken);
-check("/seat-profile: a bearer revoked during the body read → 401, nothing proposed", seatRevoked.body.ran && seatRevoked.status === 401 && proposed.length === 0, `${seatRevoked.status} ${seatRevoked.text.slice(0, 90)} proposed=${proposed.length}`);
+check("/seat-profile: a bearer revoked during the body read → 401, naming the bearer, nothing proposed", seatRevoked.body.ran && seatRevoked.status === 401 && /bearer .*could not be confirmed after the read/.test(seatRevoked.text) && proposed.length === 0, `${seatRevoked.status} ${seatRevoked.text.slice(0, 90)} proposed=${proposed.length}`);
 enrol();
 const seatKept = await seat(() => {});
 check("control: the same proposal with no revoke → 200, proposed by the enrolled name", seatKept.status === 200 && proposed.join() === "uploader", `${seatKept.status} ${seatKept.text.slice(0, 90)} proposed=${proposed.join()}`);
