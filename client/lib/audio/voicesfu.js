@@ -41,8 +41,9 @@ export async function sfuConnect(credential, send) {
   cred = credential;
   // a mic track belongs to the pc that published it: stop the old stream (and its hardware light)
   // so the bridge's replay publishes afresh on the live pc. wantMic is kept: intent survives a reconnect.
+  // A gated stream is the gate's, so the device under it (rawMicStream) is stopped too, or it keeps capturing.
   if (micStream) {
-    for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* already dead */ } }
+    for (const t of [...micStream.getTracks(), ...(rawMicStream()?.getTracks() ?? [])]) { try { t.stop(); } catch { /* already dead */ } }
     micStream = null;
   }
   // close the predecessor with its handlers nulled, or a ghost's 'failed' would diagnose the new pc
