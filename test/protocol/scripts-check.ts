@@ -73,8 +73,9 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["a script's body effect meets consent", "authority/scriptrun.js", "const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason);", "const g = { ok: true, consent: \"standing\", deliver: () => {} };", ["C1"]],
   ["the beat drains scripts", "authority/scriptrun.js", "checkpointSim(w);\n    drainAll(w);", "checkpointSim(w);\n    ;", ["E6"]],
   ["enter() restores the outer call's queues", "authority.js", "Object.assign(CTX, outer); w.changedQ = wq.changedQ; w.sayQ = wq.sayQ;", "Object.assign(CTX, outer); w.sayQ = wq.sayQ;", ["E5"]],
+  ["a dry run meets the range too", "authority/scriptrun.js", "if (far) return mark(far.code,", "if (far && !dry) return mark(far.code,", ["C7"]],
   ["a script on @world has no place", "authority/scriptrun.js", "id === \"@world\" ? null : worldT(st, id)?.pos", "worldT(st, id)?.pos", ["C6"]],
-  ["a script's body act is held to the range first", "authority/scriptrun.js", "if (far) return mark(far.code, far.reason);", "if (false) return mark(far.code, far.reason);", ["C5"]],
+  ["a script's body act is held to the range first", "authority/scriptrun.js", "if (far) return mark(far.code,", "if (false) return mark(far.code,", ["C5"]],
   ["bodies need scope.bodies", "authority/scriptrun.js", "for (const b of res.bodies) if (!(v.scope?.bodies ?? []).includes(b.kind)) return mark(\"scope\"", "for (const b of res.bodies) if (false) return mark(\"scope\"", ["C2"]],
   ["sponsor-wide body allowance", "authority/bodyconsent.js", "&& !named(from) && named(`scripts-by:${sponsor}`) ?", "&& false ?", ["C3"]],
   ["a behaviour's own entry answers for it", "authority/bodyconsent.js", "&& !named(from) && named(`scripts-by:${sponsor}`) ?", "&& named(`scripts-by:${sponsor}`) ?", ["C4"]],
@@ -1249,12 +1250,22 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
       s.call("bob", "set", { id: "gate", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
       const inst = install(s, "olive", "@world", "push", onUse(`world.shove("vic");`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] }).r;
       s.call("bob", "move", { to: [0, 0, 1] }); s.call("vic", "move", { to: [0, 0, 2] });
-      const last = () => { const l = s.call("olive", "scripts", {}).scripts?.find((x: any) => x.id === "@world")?.last?.at(-1); return `${l?.status} ${l?.code ?? ""}|${l?.why ?? ""}`; };
-      const step = () => { s.call("bob", "use", { id: "gate", action: "open" }, 2000); return last(); };
+      const ring = () => s.call("olive", "scripts", {}).scripts?.find((x: any) => x.id === "@world")?.last ?? [];
+      const step = () => { const t = ring().at(-1)?.ts; s.call("bob", "use", { id: "gate", action: "open" }, 2000); const l = ring().at(-1);   // this use's own entry (a new ts), or say there was none
+        return l && l.ts !== t ? `${l.status} ${l.code ?? ""}|${l.why ?? ""}` : "no new entry"; };
       const arms = () => { s.call("vic", "consent", { move: true }); const open = step(); s.call("vic", "consent", { move: false }); return { open, shut: step() }; };
       const none = arms(); const set = s.call("olive", "set", { id: "@world", component: "body-default", value: { range: 5 } }); const ranged = arms();
       return { inst: show(inst), set: show(set), none, ranged }; },
     good: (o) => o.inst === "ok" && o.set === "ok" && /^ran/.test(o.none.open) && /^refused consent/.test(o.none.shut) && o.ranged.open === o.ranged.shut && /^refused out-of-reach/.test(o.ranged.open) },
+  { id: "C7", what: "a dry run meets the range as a real run does (the range needs no consent asked), and a range refusal says how to mend it", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "body-default", value: { range: 5 } });
+      s.call("bob", "create", { id: "trap", model: "crate", place: { at: [0, 0] } });
+      install(s, "bob", "trap", "spring", onUse(`world.shove("vic");`), { scope: { ids: "self", comps: [], bodies: ["shove"] }, on: ["use"] });
+      s.call("bob", "set", { id: "trap", component: "reactions", value: { step: { kind: "script", script: "spring" } } });
+      s.call("bob", "move", { to: [0, 0, 1] }); s.call("vic", "move", { to: [0, 0, 15] });
+      const dry = s.call("bob", "use", { id: "trap", action: "step", dry: true }, 2000), real = s.call("bob", "use", { id: "trap", action: "step" }, 2000);
+      return { dry: st(s, dry), real: st(s, real), why: real.script?.why ?? "" }; },
+    good: (o) => o.dry === "refused out-of-reach" && o.real === "refused out-of-reach" && /closer/.test(o.why) },
   { id: "B20b", what: "a script that throws a falsy value (0, \"\", null, undefined, false) fails, and the writes it made first are not kept", run(s) { cast(s);
       s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
       const vals = ["0", '""', "null", "undefined", "false"];
