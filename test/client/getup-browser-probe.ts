@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { buildGlb } from '../fixtures/two-storey-fixture.ts';
 import { scratchBench, mkCheck, sleep, legacyVerb, sceneId } from '../harness/harness.ts';
 import { helloOf } from '../../shared/protocol/hello.js';
+import { capsule } from '../../shared/mover.js';
 
 const OPT = mkdtempSync(join(tmpdir(), 'getup-opt-'));
 // joining never founds a world: the bench founds it, owned by the driver's typed name (TRUST_NAMES)
@@ -30,15 +31,15 @@ async function until(f: () => any, label: string, timeout = 60_000) {
 
 // an 8×8m house, walls 7m: ground floor 0.3, a solid stair landing (2×3m,
 // 1.8m up) in one corner, an upper floor at 3.3 over the west half, and a
-// solid dais 1.8m up in the south-east corner, big enough for a 2× body
+// solid dais 3m up in the south-east corner, big enough for a 2× body
 // (3.6m square, walled on two sides) to fall and stay on
-const FLOOR = 0.3, LANDING = 1.8, UPPER = 3.3;
+const FLOOR = 0.3, LANDING = 1.8, UPPER = 3.3, DAIS = 3.0;
 const boxes = [
   [-4, 0, -4, 4, FLOOR, 4],
   [-4, FLOOR, -4, -3.8, 7, 4], [3.8, FLOOR, -4, 4, 7, 4], [-4, FLOOR, -4, 4, 7, -3.8], [-4, FLOOR, 3.8, 4, 7, 4],
   [1.8, 0, -3.8, 3.8, LANDING, -0.8],
   [-3.8, 3.1, -3.8, -0.5, UPPER, 3.8],
-  [0.2, 0, 0.2, 3.8, LANDING, 3.8],
+  [0.2, 0, 0.2, 3.8, DAIS, 3.8],
 ];
 const msgs: any[] = [];
 const dws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
@@ -70,6 +71,7 @@ const page = `${BASE}/?name=lier&world=${WORLD}`;
 // out before a reload can be expected to wake on it (a headless page renders
 // slowly, so a fixed wait isn't a receipt)
 let sentFloor: number | null = null;
+let sentRoot: number | null = null;   // the root height a pose carrying that floor said
 let sentBare = 0;   // lying poses sent without a floor
 let lastRestore: unknown = null;
 cws0.addEventListener('message', (ev) => {
@@ -80,7 +82,7 @@ cws0.addEventListener('message', (ev) => {
   if (m.method !== 'Network.webSocketFrameSent' || !m.params.response.payloadData.includes('"ragdoll"')) return;
   try {
     const p = JSON.parse(m.params.response.payloadData).pose;
-    if (p?.clip === 'ragdoll') { if (Number.isFinite(p.floor)) sentFloor = p.floor; else sentBare++; }
+    if (p?.clip === 'ragdoll') { if (Number.isFinite(p.floor)) { sentFloor = p.floor; sentRoot = p.p?.[1] ?? null; } else sentBare++; }
   } catch { /* not a pose */ }
 });
 // a slow connection: while `slowModels`, the house's model download is held
@@ -171,6 +173,20 @@ async function standAt(x: number, y: number, z: number) {
   await evalJson(`(async () => { const { myState } = await import('/lib/player/controller.js'); myState.pos.set(${x}, ${y}, ${z}); })()`);
   await sleep(800);
 }
+/** The controller's step-up at a body's size (colliders.js resolveColliders: the mover's step, grown with the body). */
+const stepUp = (u: number) => capsule(u).step;
+/** A settled heap's root lies only about 0.9 of a step-up below its floor, at any size, so a wake at the root would be
+ *  stepped back onto the floor and hide a lost settledPose rewrite. Placed, not settled: the lying root is put `below`
+ *  under the floor the body measured, and the measurement re-stamped there (net.js sends it only while the root is where
+ *  it was measured). Then waits until a pose with that root and floor has gone out. */
+async function sinkRoot(below: number) {
+  sentFloor = null; sentRoot = null;
+  const at = await evalJson(`(async () => { const { myState } = await import('/lib/player/controller.js');
+    myState.pos.y = myState.floor.y - ${below}; myState.floor = { y: myState.floor.y, root: myState.pos.toArray() };
+    return myState.pos.y; })()`);
+  await until(() => sentRoot != null && Math.abs(sentRoot - at) < 1e-6, `a pose carrying the placed root ${at.toFixed(2)}`, 30_000);
+  return { root: sentRoot as number, floor: sentFloor as number };
+}
 async function lieDown() {
   sentFloor = null;
   await evalJson(`(async () => { (await import('/lib/player/localbody.js')).goLimp(); })()`);
@@ -218,35 +234,39 @@ try {
   }
   // rejoin while lying on the stair landing: the server remembers the body
   // standing on the floor it lay on; the reload wakes there — not at its
-  // root, which lies inside the solid stair, over a metre below the landing
+  // root, placed inside the solid stair out of the step-up's reach (sinkRoot)
   await standAt(2.8, LANDING + 0.05, -2.3);
   await lieDown();
   const lay = await body();
   await floorSent(LANDING);
+  const sunk = await sinkRoot(stepUp(1) + 0.4);
+  check(`(lying on the stair landing, the pose it sends has its root more than a step-up (${stepUp(1)}m) below the landing)`,
+    LANDING - sunk.root > stepUp(1) + 0.3 && Math.abs(sunk.floor - LANDING) < 0.02, `settled root ${lay.y.toFixed(2)}; sent root ${sunk.root.toFixed(2)}, floor ${sunk.floor}`);
   const woke = await reloadThroughHold('reloading while lying on the stair landing', LANDING);
   check('reloading while lying on the stair landing wakes standing on it (1.8m), not inside the stair',
     !woke.downed && Math.abs(woke.y - LANDING) < 0.06, `lay with its root at ${lay.y.toFixed(2)}; restored ${JSON.stringify((lastRestore as any)?.p)}; woke ${JSON.stringify(woke)}`);
 
-  // ...and the same with a 2× body, whose heap lies twice as far below the
-  // floor: its root is well over a step under the dais however it falls, so
-  // the controller's step-up can't put it back on top. (At 1× a heap can lie
-  // within a step of the floor, and the step-up would hide a missing floor.)
-  // The remembered floor (presence `floor` → settledPose) wakes it at 1.8m;
-  // the server's fallback for a floorless record would wake it twice the
-  // reach above its root, and the held height tells the two apart.
+  // ...and the same with a 2× body, whose size is remembered too. Its step-up
+  // is twice as long (1.6m), and a settled heap lies within it, so its root is
+  // placed past it (sinkRoot). The remembered floor (presence `floor` →
+  // settledPose) wakes it on the dais; without that rewrite it wakes at its
+  // root, out of the step-up's reach, and stays under the dais.
   // chosen as Profile › Avatar chooses it (mybody.js setMyBodyPref): saved for this body in this browser, so the
   // reloaded page wears it again, as a real reload does
   await evalJson(`(async () => { (await import('/lib/player/mybody.js')).setMyBodyPref({ scale: 2 }); })()`);
-  await standAt(2.0, LANDING + 0.05, 0.8);
+  await standAt(2.0, DAIS + 0.05, 0.8);
   await lieDown();
   const big = await body();
-  check('(a 2× body lying on the dais has its root well over a step below it)', LANDING - big.y > 1.2 && big.floor != null && Math.abs(big.floor - LANDING) < 0.02,
-    `root ${big.y.toFixed(2)}, ${(LANDING - big.y).toFixed(2)}m under the dais; floor ${big.floor}`);
-  await floorSent(LANDING);
-  const bigWoke = await reloadThroughHold('reloading while a 2× body lies on the dais', LANDING);
+  check('(a 2× body lies on the dais and knows it)', big.floor != null && Math.abs(big.floor - DAIS) < 0.02, JSON.stringify(big));
+  await floorSent(DAIS);
+  const bigSunk = await sinkRoot(stepUp(2) + 0.4);
+  check(`(a 2× body lying on the dais sends its root more than 1.2m, and more than its step-up (${stepUp(2)}m), below it)`,
+    DAIS - bigSunk.root > Math.max(1.2, stepUp(2) + 0.3) && Math.abs(bigSunk.floor - DAIS) < 0.02,
+    `settled root ${big.y.toFixed(2)} (${(DAIS - big.y).toFixed(2)}m under); sent root ${bigSunk.root.toFixed(2)} (${(DAIS - bigSunk.root).toFixed(2)}m under), floor ${bigSunk.floor}`);
+  const bigWoke = await reloadThroughHold('reloading while a 2× body lies on the dais', DAIS);
   const bigScale = await evalJson(`(async () => (await import('/lib/player/mybody.js')).getMe()?.userScale ?? null)()`);
-  check('reloading while a 2× body lies on the dais wakes it standing on the dais (1.8m), not inside or under it, still 2×',
-    !bigWoke.downed && Math.abs(bigWoke.y - LANDING) < 0.06 && bigScale === 2, `lay with its root at ${big.y.toFixed(2)}; woke ${JSON.stringify(bigWoke)} at scale ${bigScale}`);
+  check('reloading while a 2× body lies on the dais wakes it standing on the dais (3m), not inside or under it, still 2×',
+    !bigWoke.downed && Math.abs(bigWoke.y - DAIS) < 0.06 && bigScale === 2, `lay with its root at ${big.y.toFixed(2)}; woke ${JSON.stringify(bigWoke)} at scale ${bigScale}`);
 
   // the bound: a hold that runs out lets go while the house is still on its
   // way, and says so once, naming what it was still waiting for
