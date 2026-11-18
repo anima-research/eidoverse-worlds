@@ -6,7 +6,7 @@
 // its own), voiceSource() as a deferred acquisition the test resolves by hand, and net.js, ui/chat.js and audiounlock.js
 // as no-ops. voicesfu.js, micstate.js and micgate.js are the shipped modules.
 //
-// Run: bun test/client/sfu-devtrack-test.mjs
+// Run: bun test/client/voicesfu-devtrack-test.mjs
 import { fileURLToPath } from "node:url";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";

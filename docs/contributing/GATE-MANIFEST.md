@@ -529,7 +529,7 @@ time.
 | 348 | sfu-adapter | main | `test/server/sfu-adapter-test.ts` | bun | 0.5 s | 180 s |
 | 349 | relay-decision | main | `test/server/relay-decision-test.ts` | bun | 0.2 s | 180 s |
 | 350 | sfu-mic-intent-race | main | `test/client/sfu-mic-intent-race-test.mjs` | bun | 0.3 s | 180 s |
-| 351 | sfu-devtrack | main | `test/client/sfu-devtrack-test.mjs` | bun | 0.3 s | 180 s |
+| 351 | voicesfu-devtrack | main | `test/client/voicesfu-devtrack-test.mjs` | bun | 0.3 s | 180 s |
 | 352 | mic-ptt | main | `test/client/mic-ptt-test.mjs` | bun | 7.2 s | 180 s |
 | 353 | mic-meter-gate | main | `test/client/mic-meter-gate-test.mjs` | bun | ? | 300 s |
 | 354 | stt-ptt | main | `test/client/stt-ptt-test.mjs` | bun | ? | 300 s |
