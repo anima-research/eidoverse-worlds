@@ -54,7 +54,7 @@ The bone (normative): **every act on someone else's body goes through one reques
 | The lists | `allow` (always yes, every class, whatever the gates say) and `block` (always no, whatever the gates say), per person, standing until changed | trial |
 | Order | `block` > `allow` > my gate for the class > the world's `body-default` for that gate > the default | trial |
 | Default | `move` on, `touch` off; a world sets its own with `@world.body-default {move?, touch?}` | default |
-| A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause. A world's range (`@world.body-default.range`) is a separate, distance-only no, said before consent is asked at every act on another body (presence acts, the body verbs, a blast's bodies, a script's), so it reads the same whatever the gates and lists | **guarantee** |
+| A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause. A world's range (`@world.body-default.range`) is a separate, distance-only no, said before consent is asked at every act on another body (presence acts, the body verbs, a blast's bodies, a script's), so it reads the same whatever the gates and lists. The one exception: a drag under way was admitted in range and keeps answering to consent out to its break distance (1.5 × the range), so its dragger learns the target's gates there | **guarantee** |
 | Who sets it | Only the body's owner | **guarantee** |
 | A refused act | Leaves no record in the world log: the asker gets the uniform refusal, and the body owner's own record keeps the cause | **guarantee** · ratified tel0s 11-06 (delegated) (D6) |
 

@@ -762,8 +762,12 @@ copy that was updated and is published again keeps its parts' keys.
   must start within the range; once under way it follows out to 1.5 × the
   range, and past that the server ends it, sending each side a `bodydrag {end:
   true, reason: "out-of-reach"}` from the other (a grab with no sample for
-  1.2 s is no longer under way). All of it is presence: nothing is logged. Only
-  the owner changes their own answers. The gates and lists are the one part of
+  1.2 s is no longer under way). This is the one exception to "the same
+  answer": between 1 × and 1.5 × the range, a drag under way still answers
+  from consent, so its dragger, who was in range when it began, learns the
+  target's gates there (a nail gets the consent words, and once a closed gate
+  has stopped the samples for 1.2 s, passing 1.5 × brings no released event).
+  All of it is presence: nothing is logged. Only the owner changes their own answers. The gates and lists are the one part of
   the presence plane a host keeps across a restart (a block is a safety tool:
   one that lapsed with the process would leave its person unguarded while their
   panel says it stands); the reference keeps each world's in `consent.json`
