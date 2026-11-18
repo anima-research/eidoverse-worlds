@@ -29,10 +29,10 @@ import { makeRagdoll } from './bodysim.js';
 import { sendBodyDrag } from '../net.js';
 import { flashHint, toast } from '../ui/ui.js';
 import { isBuilding } from '../edit/build.js';
+import { DRAG_SILENCE_MS } from '../../../shared/protocol/physconst.js';   // owner resumes itself after this much quiet
 
 const GRAB_RANGE = 5;        // how far a body may be from ME to grab (m)
 const STREAM_MS = 66;        // sim → owner cadence, matches presence
-const SILENCE_MS = 1200;     // owner resumes itself after this much quiet
 
 let hooks = null;            // localbody.js: my own body's state and effects
 export function initBodyDrag(h) { hooks = h; }
@@ -342,7 +342,7 @@ export function updateBodyDrag(dt, now = performance.now()) {
     }
   }
   // dragged: a silent dragger loses the body — nobody stays possessed
-  if (draggedBy && now - lastSampleAt > SILENCE_MS) {
+  if (draggedBy && now - lastSampleAt > DRAG_SILENCE_MS) {
     draggedBy = null;
     hooks?.endDragged({});
   }

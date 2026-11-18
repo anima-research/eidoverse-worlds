@@ -6,6 +6,7 @@ import { WORLDS_DIR, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
 import { gateReach, rangeRefusal } from "./reachgate.ts";
+import { DRAG_SILENCE_MS } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor, foldName, isMinted } from "./directory.ts";
@@ -26,8 +27,6 @@ import { sha256 } from "../shared/protocol/hash.js";
  *  the people here. A display name can't be shaped like an actor id (refused at join). */
 const ACTOR_ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
 /** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy. */
-/** A grab with no forwarded sample for this long is no drag under way: the owner has taken its body back (client bodydrag.js SILENCE_MS). */
-const DRAG_SILENCE_MS = 1200;
 const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
 
 /** Body consent at the server (PROTOCOL §5): a presence act on someone else's body is checked against THEIR consent

@@ -20,6 +20,8 @@ export const SHOVE_REACH = 2.5;
 export const BODY_RANGE = null;
 // a drag starts within the range and ends past range × BODY_BREAK: the band between lets the body lag the hand without flickering at the edge
 export const BODY_BREAK = 1.5;
+// a drag's owner takes its body back after this much dragger silence, and the server then counts no drag under way
+export const DRAG_SILENCE_MS = 1200;
 /** a world's @world.body-default value → the range (m) an act on another body must come from within, or null */
 export const bodyRangeOf = (bd) => (bd && typeof bd === "object" && typeof bd.range === "number" && bd.range > 0 ? bd.range : BODY_RANGE);
 /** …→ the distance (m) past which a drag under way ends, or null */
