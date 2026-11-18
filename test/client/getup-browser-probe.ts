@@ -3,7 +3,7 @@
 // the shipping call sites (localbody.js getUp; a reload's restore through the
 // server's settledPose and main.js), not at height 0 and not at its root,
 // which lies below that floor.
-//   bun test/client/getup-browser-test.ts [--headed]
+//   bun test/client/getup-browser-probe.ts [--headed]
 // The helper half: test/client/getup-floor-test.ts.
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';

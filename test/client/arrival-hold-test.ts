@@ -1,7 +1,7 @@
 // the arrival hold's rules (client/lib/arrivalnear.js): which placed models a
 // restored body waits for, and which are near it. Pure: no page, no renderer.
 //   bun test/client/arrival-hold-test.ts
-// Through the real realizer: test/client/arrivalhold-test.ts; in a real browser: test/client/getup-browser-test.ts.
+// Through the real realizer: test/client/arrivalhold-test.ts; in a real browser: test/client/getup-browser-probe.ts.
 import { stillArriving, footprintOf, arrivingNear, NEAR } from '../../client/lib/arrivalnear.js';
 import { mkCheck } from '../harness/harness.ts';
 
