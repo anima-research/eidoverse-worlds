@@ -752,7 +752,10 @@ copy that was updated and is published again keeps its parts' keys.
   per asker per minute whatever the asker tries meanwhile. Distance is no
   part of consent: the relay forwards a knock-over, pose or grab of another
   body from any distance unless the world sets `@world.body-default.range`
-  (m). Only
+  (m). Where it does, every act on another body (a puppet, a drag, a reach
+  descriptor, the `body` and `reach` verbs) is refused out of range before
+  consent is asked, with the same answer whatever that body's gates and
+  lists (a reach descriptor's limb is dropped without a note). Only
   the owner changes their own answers. The gates and lists are the one part of
   the presence plane a host keeps across a restart (a block is a safety tool:
   one that lapsed with the process would leave its person unguarded while their

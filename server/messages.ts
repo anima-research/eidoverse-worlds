@@ -5,8 +5,7 @@
 import { WORLDS_DIR, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
-import { gateReach } from "./reachgate.ts";
-import { bodyRangeOf } from "../shared/protocol/physconst.js";
+import { gateReach, rangeRefusal } from "./reachgate.ts";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
 import { directoryFor, foldName, isMinted } from "./directory.ts";
@@ -36,15 +35,8 @@ function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"):
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
-  // a range only where the world sets one (@world.body-default.range): m between the two bodies' last frames.
-  // Range before consent, so someone out of reach can't learn the target's gates here (not yet in reachgate.ts or a non-grab bodydrag)
-  const r = bodyRangeOf(live.state?.()?.entities?.["@world"]?.c?.["body-default"]);
-  if (r != null) {
-    const a = c.lastPose?.p, b = tc.lastPose?.p;
-    if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
-    const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-    if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (this world's range is ${r} m) — get closer`;
-  }
+  // range before consent: out of range reads the same whatever their gates (reachgate.ts rangeRefusal)
+  const far = rangeRefusal(c, c.lastPose?.p, tc); if (far) return far;
   const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, liveBodyDefault(live));
   if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause: the real cause is the target's; they are told (once per asker per cooldown)
   return null;
@@ -196,9 +188,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` }));
         endAlone(); return;
       }
-      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
-      if (d.mode === "deny") {
-        if (nail) ws.send(JSON.stringify({ type: "error", error: refusalWords(tc.id, "displace") }));
+      const far = rangeRefusal(c, c.lastPose?.p, tc);   // range before consent, as bodyRefusal
+      const d = far ? null : consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
+      if (far || d?.mode === "deny") {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: far ?? refusalWords(tc.id, "displace") }));
         endAlone(); return;
       }
     }

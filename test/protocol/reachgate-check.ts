@@ -311,6 +311,31 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   pose(far, { p: [70, 0, 40], yaw: 0 }); const shut = puppet({ ragdoll: true });
   req(una, "consent", { move: true }); const open = puppet({ ragdoll: true });
   ok(shut.got === 0 && open.got === 0 && /get closer/.test(shut.err ?? "") && shut.err === open.err, "RR5 …and out of range the answer is the same whatever her gates, so distance can't read them", { shut, open });
+  // RR6–RR9: the same rule at the other three sites. Each act runs once with Una's gates open and once shut (the arms);
+  // RR9 runs them within range, where the arms must differ, so the shut arm really was shut
+  const gates = (on) => { req(una, "consent", { move: on, touch: on }); const t = req(una, "consent", {})?.table; return t?.move === on && t?.touch === on; };
+  const nail = (from, tgt) => { const k = tgt.got.length, kf = from.got.length;
+    MESSAGES["bodydrag"]({ c: from, ws: from.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: tgt.id, pinAt: { joint: "hips", at: [40, 1, 40] } });
+    return { got: tgt.got.slice(k).filter((x) => x.type === "bodydrag").length, err: from.got.slice(kf).find((x) => x.type === "error")?.error ?? null }; };
+  const hand = (from, tgt) => { const k = from.got.length, out = reachTo(from, { who: tgt.id, point: "shoulder_l" });
+    return { relayed: !!out?.reach, notes: refusals(from, k).map((r) => r.why) }; };
+  const verb = (from, tgt) => { const r = req(from, "body", { to: tgt.actorId, kind: "pose" }), x = rf(r); return { ok: r?.ok === true, code: x?.code ?? null, reason: x?.reason ?? null }; };
+  const arms = (f) => { const on = gates(true) ? f() : "setup: gates didn't open"; const off = gates(false) ? f() : "setup: gates didn't shut"; return { on, off }; };
+  { const { on, off } = arms(() => nail(far, una));
+    ok(on.got === 0 && off.got === 0 && /get closer/.test(on.err ?? "") && on.err === off.err, "RR6 a non-grab bodydrag nail from 30 m forwards nothing and says the range, the same whatever her move gate", { on, off }); }
+  { skew += REACH_NOTE_MS + 1; const { on, off } = arms(() => hand(far, una));
+    ok(!on.relayed && !off.relayed && on.notes.length === 0 && off.notes.length === 0, "RR7 a reach descriptor on Una's shoulder from 30 m is stripped and says nothing, the same whatever her touch gate", { on, off }); }
+  // the authority keeps its own bodies, inside this world's bounds (x, z ±20): the same 30 m pair there
+  const placed = [[una, [-15, 0, 15]], [far, [15, 0, 15]]].every(([c, p]) => req(c, "move", { to: p })?.ok === true);
+  { const { on, off } = placed ? arms(() => verb(far, una)) : { on: "setup: bodies not placed", off: null };
+    ok(!on.ok && !off.ok && on.code === "out-of-reach" && off.code === "out-of-reach" && on.reason === off.reason, "RR8 the authority's body {kind: pose} from 30 m is refused out-of-reach, the same whatever her touch gate", { on, off }); }
+  { const nia = person("Nia", "ni", [43, 0, 40]);   // 3 m from Una, inside range 5, at the relay and the authority
+    ok(req(nia, "move", { to: [-12, 0, 15] })?.ok === true, "(RR9 setup) Nia's authority body stands 3 m from Una's");
+    skew += REACH_NOTE_MS + 1; gates(true); const on = { nail: nail(nia, una), hand: hand(nia, una), verb: verb(nia, una) };
+    skew += REACH_NOTE_MS + 1; gates(false); const off = { nail: nail(nia, una), hand: hand(nia, una), verb: verb(nia, una) };
+    ok(on.nail.got === 1 && !on.nail.err && on.hand.relayed && on.verb.ok, "RR9 within range, with her gates open, the nail, the hand and the body verb all go through", on);
+    ok(off.nail.got === 0 && off.nail.err === refusalWords("Una", "displace") && !off.hand.relayed && off.hand.notes.length === 1 && !/get closer|away/.test(off.hand.notes[0])
+      && off.verb.code === "consent", "RR9 …with them shut, all three get the consent words, so the shut arm of RR6–RR8 was really shut", off); }
   w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
 let skipped = null; const SKIP = Symbol("skip");

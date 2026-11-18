@@ -32,7 +32,7 @@ const ROWS: Row[] = [
     /\bUSE_REACH\s*=\s*[\d.]/, /\bBODY_RANGE[^=\n]*=\s*\{/, /\bHAND_REACH\s*=\s*[\d.]/],
     requires: [["shared/protocol/authority.js", /from "\.\/physconst\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
       ["client/lib/ui/useprompt.js", /from '\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/], ["client/lib/ui/commands/handlers.js", /from '\.\.\/\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
-      ["server/messages.ts", /from "\.\.\/shared\/protocol\/physconst\.js"/], ["shared/grab.js", /from '\.\/protocol\/physconst\.js'/]] },
+      ["server/reachgate.ts", /from "\.\.\/shared\/protocol\/physconst\.js"/], ["shared/grab.js", /from '\.\/protocol\/physconst\.js'/]] },
   { name: "a 3-place rounding or −0 scrub is round.js's", owner: [ROUND], forbidden: [/\bconst r3\s*=/, /\bnoNeg0\s*=\s*\(/, /\bunNegZero\s*=\s*\(/, /\bconst r9\s*=/],
     requires: [["shared/protocol/authority.js", /from "\.\/round\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/round\.js'/],
       ["shared/protocol/launchplan.js", /from "\.\/round\.js"/], ["shared/protocol/simlayer.js", /from "\.\/round\.js"/], ["shared/hierarchy.js", /from '\.\/protocol\/round\.js'/],
