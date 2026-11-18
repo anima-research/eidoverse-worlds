@@ -9,22 +9,24 @@ import { scale3 } from '../../shared/scale3.js';
 /** How near the circle around a model's footprint has to come to the body to matter (m, across the ground). */
 export const NEAR = 16;
 
-/** A tracked model's arrival: is more of it still coming here? A load in
- *  flight is, a retry included, and so is a realized model whose promote tail,
- *  which fits its collider, is still queued. A stand-in (a bare reservation,
- *  null, or a placeholder) is while the realizer will or may load it: as
- *  models.js modelArriving says, within its residency radius or of a size the
- *  geom has yet to give, and not waiting out a failed load's back-off. A model
- *  realized and fitted has arrived, collider or not (decorative, a structure's
- *  walls, mounted cargo, a reduced tier): nothing more of it is coming. So has
- *  an id the realizer holds nothing for (undefined).
+/** A tracked model's arrival: is more of it still coming here? A stand-in's
+ *  load in flight is, a retry included, and so is a realized model whose
+ *  promote tail, which fits its collider, is still queued. A stand-in (a bare
+ *  reservation, null, or a placeholder) is while the realizer will or may load
+ *  it: as models.js modelArriving says, within its residency radius or of a
+ *  size the geom has yet to give, and not waiting out a failed load's back-off.
+ *  A model realized and fitted has arrived, collider or not (decorative, a
+ *  structure's walls, mounted cargo, a reduced tier), and stays arrived while
+ *  it fetches another tier: its collider stands meanwhile. So has an id the
+ *  realizer holds nothing for (undefined).
  *  t: the realizer's tracked entry ({ kind, loading? }); obj: what it holds for
  *  the id (realize/models.js `entities`); tailPending, resident, backingOff:
  *  its answers for the id (models.js modelArriving). */
 export function stillArriving(t, obj, { tailPending = false, resident = false, backingOff = false } = {}) {
   if (!t || t.kind !== 'model') return false;
-  if (t.loading || tailPending) return true;
+  if (tailPending) return true;
   const standIn = obj === null || Boolean(obj?.userData?.placeholder);
+  if (t.loading) return standIn;   // over a realized model, a load is a re-tier: its collider stands meanwhile
   return standIn && resident && !backingOff;
 }
 

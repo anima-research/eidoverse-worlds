@@ -19,6 +19,8 @@ check('a load in flight is still on its way, wherever it is', stillArriving({ ..
 check('a realized model whose promote tail (its collider) is still queued is still on its way', stillArriving(model, real, { tailPending: true }) === true);
 check('a realized model whose tail has run has arrived, collider or not (decorative, a structure\'s, a reduced tier)',
   stillArriving(model, real, resident) === false);
+check('a realized, fitted model fetching another tier (a re-tier: its collider stands meanwhile) has arrived',
+  stillArriving({ ...model, loading: true }, real, resident) === false);
 check('a stand-in waiting out a failed load\'s back-off is not waited on', stillArriving(model, null, { resident: true, backingOff: true }) === false);
 check('...but its retry, in flight, is', stillArriving({ ...model, loading: true }, null, { resident: true, backingOff: true }) === true);
 check('...and a retry that loaded, its collider still queued, is: the old failure doesn\'t count',
