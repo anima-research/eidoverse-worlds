@@ -4,8 +4,13 @@
 
 `{ type: 'pose', pose }` at ≤15 Hz per embodied client; the server batches the latest per id into
 `frame` messages and keeps `lastPose` for late joiners. Nothing here reaches the log; a signed-in body's settled last pose
-(`settledPose` strips mic/hear/t/seq, a once-anim and ragdoll) is kept by identity in `poses.json` for `restore`. The server
-refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
+is kept by identity in `poses.json` for `restore`. `settledPose` (server/server.ts) strips mic/hear/t/seq, a once-anim and
+`floor`, and remembers a ragdoll standing: `clip` idle, its held `pose` dropped, `p` raised to its `floor`, or without one
+by how far a lying root sits below its floor at its `scale` (shared/presencewire.js standingYFromLyingRoot). At the source
+(`server/posecheck.ts`) a sample is dropped whole when `p`, `yaw`/`pitch`/`speed`, `q`, `locomotion`, `xr` or
+`pose`/`pins`/`reach`/`seat` is non-finite or malformed, or it is too big; a bad optional field (`use`, `mic`, `hear`,
+`poses`, `wingsFolded`, `bodyMode`, `climb`, `t`, `seq`, `scale`, `plateY`, `floor`, an over-long string) is deleted and the
+rest kept.
 
 | field | type | meaning |
 |---|---|---|
@@ -17,6 +22,7 @@ refuses non-finite or malformed samples at the source (`server/posecheck.ts`).
 | `pose` | `{bone: quat}` | a held custom pose (bodydrag / gestures); blended a→b by receivers |
 | `bodyMode` | string | stand \| sit \| lie \| swim \| fly \| fall: the body's mode, apart from `clip` (what plays); the mover sets it on real transitions, the owner may declare any for looks; it grants nothing (`shared/bodymode.js`; a sample without it: read off `clip`) |
 | `poses` | `[name]` | the poses this body holds by NAME (one frame each; R 10-17): `"wings-folded"` today, each rig resolving it its own way; `[]` holds none, absent says nothing (`shared/wingpresence.js`; was the boolean `wingsFolded`, still read) |
+| `floor` | number | sent only while lying limp (`clip: 'ragdoll'`): the height of the surface the settled body lies on (client/lib/getup.js), and only while its root is still where it measured it (shared/presencewire.js floorStillUnder). `settledPose` stands a remembered body on it, then strips it |
 | `pins`, `reach`, presence | | see their modules (`shared/reachwire.js`, `shared/presencewire.js`) |
 | `xr` | object | **tracked head + hands (C18, 2026-09-06)** — below |
 | `mic`, `hear` | boolean | this body's mic is live / it is hearing voices — **shared with everyone in the world**, below |
