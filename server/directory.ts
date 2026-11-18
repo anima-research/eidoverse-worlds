@@ -8,7 +8,9 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readLog, worldIdOf } from "../shared/protocol/fold.js";
-import { directoryFileIn } from "./keyfiles.ts";
+import { directoryFileIn, custodyFileIn } from "./keyfiles.ts";
+import { secretOf } from "./custody.ts";
+import { readCustody } from "./custodycheck.ts";
 import { replaceDurable, withFileLock } from "./durable.ts";
 import { sha256 } from "../shared/protocol/hash.js";
 
@@ -25,9 +27,18 @@ export const isMinted = (s: string) => /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/.test(s
 // the ONE shape of an id: a person, never a world, a name or a kind (PROTOCOL §6a rule 2). Minted here, and by tools/import-v1/world.ts for an old log.
 /** The account prefixes above (only the prefix is checked); a stored account with none of them is refused at boot (named, kept on disk), never worn. */
 export const ACCOUNT_SHAPE = /^(human|agent:token|aid1|local):/;
-/** The tag a display name takes when another account wears it: stable per account and shows none of its digits (a hash). The
- *  salt is public, so anyone can test a guessed account against a tag: it hides the id, it doesn't anonymise it. */
-export const accountTag = (sub: string) => sha256(`eidoverse-name-tag:${sub}`).slice(0, 4);
+// keyed by this host's custody secret, so a tag tells nothing off this server; with no key, the public hash (nameTagKey)
+export const accountTag = (sub: string, key: Buffer | null) =>
+  key ? crypto.createHmac("sha256", key).update(sub).digest("hex").slice(0, 4) : sha256(`eidoverse-name-tag:${sub}`).slice(0, 4);
+const untagged = new Set<string>();
+/** The name-tag key of `worldsDir`'s custody (secret "name-tag"), read without minting (custodycheck.ts readCustody); null when it
+ *  holds no sequencer key, so its worlds are refused already (custodycheck.ts custodyVerdict). */
+export function nameTagKey(worldsDir: string): Buffer | null {
+  const file = custodyFileIn(worldsDir), priv = readCustody(file).sequencer?.priv;
+  if (priv) return secretOf(priv, "name-tag");
+  if (!untagged.has(file)) { untagged.add(file); console.log(`[directory] ${file} holds no sequencer key: name tags use the public hash until one is minted`); }
+  return null;
+}
 
 /** `existingWorlds` is accepted but no longer read: the v1 → v2 upgrade keeps every id server-wide without it. */
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
@@ -129,7 +140,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
      *  fits in `max`, and a number after the tag until no other account wears the result. */
     spectatorName(name: string, sub: string, max: number): string {
       if (!claimedByOther(name, sub)) return name;
-      const tag = accountTag(sub);
+      const tag = accountTag(sub, nameTagKey(path.dirname(file)));
       for (let k = 1; ; k++) { const suffix = k === 1 ? tag : `${tag}${k}`; const n = `${name.slice(0, Math.max(0, max - suffix.length - 1))}-${suffix}`;
         if (!claimedByOther(n, sub)) return n; }
     },

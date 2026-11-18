@@ -34,7 +34,7 @@ import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
 import { withoutOnceAnim } from "../shared/onceanim.js";
-import { directoryFor, foldName, accountTag } from "./directory.ts";
+import { directoryFor, foldName, accountTag, nameTagKey } from "./directory.ts";
 // the HTTP surface: one route table (routes.ts; /upload in upload.ts); avatarRoster rides back for the join snapshot
 import { route, avatarRoster } from "./routes.ts";
 import { joinBriefing } from "./briefing.ts";
@@ -430,7 +430,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         || (!!c.anonymous && dir.claimedName(n))
         || (!!c.account && dir.claimedByOther(n, c.account));   // H2: nor an account under another account's name, here or not
       if (taken(c.id)) {
-        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${accountTag(c.account ?? "")}`;
+        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${accountTag(c.account ?? "", nameTagKey(WORLDS_DIR))}`;
         let n = base.slice(0, LIMITS.ID_LEN), k = 2;
         while (taken(n)) n = `${base.slice(0, LIMITS.ID_LEN - 3)} ${k++}`;
         c.id = n;
