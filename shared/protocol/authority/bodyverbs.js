@@ -6,7 +6,7 @@ import { VOLUME_MODES, physicsVolumesOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, fallBackOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
-import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN } from "../physconst.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN, bodyRangeOf } from "../physconst.js";
 import { blastArgs, falloff } from "../../blast.js";
 import { r3, noNeg0 } from "../round.js";
 import { unitTransform } from "../componentspec.js";
@@ -379,15 +379,15 @@ const EMBODIED_VERBS = {
         catch (x) { if (!(x instanceof Refusal)) throw x; skipped.push({ id, code: x.code }); } }
     } else notes.push({ why: "this world runs no physics: things stay put" });
     // bodies: presence, so only counted (who was shoved is theirs, never the log's)
-    const bodies = { shoved: 0, refused: 0 }, denied = [], from = w.presence.bodies[actor]?.at; let far = null, nFar = 0;
+    const bodies = { shoved: 0, refused: 0 }, denied = [], from = w.presence.bodies[actor]?.at; let nFar = 0;
     for (const [who, b] of Object.entries(w.presence.bodies)) {
       const f = falloff(a.at, b.at, radius, power); if (!f || f.mag < BLAST.min) continue;
-      const out = farFrom(w, actor, from, who); if (out) { bodies.refused++; nFar++; far ??= out; continue; }   // range before consent: the same count whatever their gates
+      const out = farFrom(w, actor, from, who); if (out) { bodies.refused++; nFar++; continue; }   // range before consent: the same count whatever their gates
       const m = Math.min(BLAST.body, f.mag);
       const g = bodyGate(w, actor, who, "shove", { uncounted: true, spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
       if (!g.ok) { bodies.refused++; if (g.code === "consent") denied.push(who); } else { g.deliver(); bodies.shoved++; } }
     if (denied.length) noteBlastRefusals(w, actor, denied, "shove");   // one attempt toward the cool-down, however many refused
-    if (far) notes.push({ why: `${nFar} ${nFar === 1 ? "body" : "bodies"} left be, out of range (the first: ${far.reason})` });
+    if (nFar) notes.push({ why: `${nFar} ${nFar === 1 ? "body" : "bodies"} left be: out of this world's range (${bodyRangeOf(w.presence.bodyDefault)} m) from you` });
     actOnce();
     return { ok: true, act, at: a.at, radius, power, bodies, punted, ...(skipped.length ? { skipped } : {}), ...(notes.length ? { notes } : {}) };
   },
