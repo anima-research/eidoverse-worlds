@@ -1,8 +1,8 @@
 // shared/protocol/authority/gate.js — L7, the one gate: admit (every state write, from every path, is admitted here),
 // the rate over everything an actor makes the log hold, locks and lock levels, the rights a write needs (lacks, rights,
-// needWords), keyed components and owner seniority, grants and role definitions (refactor split, 2026-10-17; moved from
-// authority.js's "L7: the one gate" section unchanged; its value checks are authority/checks.js, capacity
-// authority/capacity.js). occupyRights (occupants.js's) and serverWritten (the write path's) are above it, reached through UP.
+// needWords), keyed components and owner seniority, grants and role definitions. Its value checks are
+// authority/checks.js, capacity authority/capacity.js. occupyRights (occupants.js's) and serverWritten (the write
+// path's) are above it, reached through UP.
 import { DEFAULT_WHO, grabOf } from "../../grab.js";
 import { cowState, applyCow, checkIJSON, isEntityId, isComponent, jcs, utf8Len, REDACTED } from "../fold.js";
 import { PERSON_ID } from "../ids.js";
@@ -21,8 +21,7 @@ import { installCheck, particlesCheck, pauseOnly, pausedBy, scriptRights, sponso
 import { vacateWhy, vacatesFor } from "./occupants.js";
 import { capacityCheck } from "./capacity.js";
 import { colliderRules, restCheck, valueCheck, zoneRules } from "./checks.js";
-// the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
-// authority.js binds at load
+// the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 const occupyRights = (...a) => UP.occupyRights(...a);
 const serverWritten = (...a) => UP.serverWritten(...a);
@@ -31,49 +30,43 @@ const serverWritten = (...a) => UP.serverWritten(...a);
 // who = { actor, cap? }. With no cap the asker's own role decides. A cap is a scoped capability the request names:
 //   reaction — a `use` exercises a handler; it may change only the component the handler names, on that thing, and
 //              only while the handler's author could still change it themselves (the cause chain records both);
-//   handle   — a settlement of something you hold (physics.who decides who may), transform/parent of that thing only;
+//   handle   — a settlement of something you hold (grabbable.who decides who may; a punt, physics.who), transform/parent of that thing only;
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   system   — the authority's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
-//   founding — the `new` act's first write to @world, by an owner named in genesis, once.
-// What a lock guards (§5; R 10-11 16:21, Second Life's Locked): EVERYTHING on the locked thing and on anything attached to
-// it — every component set, added or removed, its place, its parent, its model, its removal — until the lock is lifted
-// (throughLock: a request by someone who may lift it acts through it). The first protocol's matrix left labels, lights,
-// motion, physics and reactions open; review 10-11 C-S1-1 showed what that let a builder do to an owner-locked piece
-// (switch it off, hide it, take its physics away). USE stays open: a lock stops authoring, not using, so a handler's own
-// writes may change a locked thing's state (a door's openable, a label) but never move, re-parent, swap or remove it.
-const RELOCATES = new Set(["transform", "parent", "model"]);   // what even USE may not change on a locked thing (a lock covers everything else for authoring)
-// L7 rate (round-2 review R6): per actor, over a 10 s window by the authority's clock. Counted in ENTRIES and in BYTES, with
-// talk (say) apart from building (acts), so chat can't starve building or the other way round, and one identity can't
-// make a world unhostable by bytes (one master file, nothing ever split out of it: 53 MB in one window was possible).
-// An identity with no account (io.kindOf → "anon") gets less. A say's text is at most 8 KiB (the Commons' longest real
-// line is 4.5 KB). Refused requests are logged (R7) inside the same byte budget.
-// The spoken-say trio (from the first protocol's say, kept by the Commons audit, agents #4): display metadata for a voice
-// that already performed as captions. Only inside the protocol (spoken: true and a non-negative safe-integer utt); t0 is
-// a reorder key on every client, so it's clamped to a bounded utterance window ending now. Anything else: all three
-// dropped, and the say is an ordinary say.
+//   founding — the create-world act's first write to @world, by an owner named in genesis, once;
+//   script   — an activation's batch: its sponsor's rights NOW, inside the scope it declared (scripts.js scriptRights);
+//   caption  — the caption request: that screen's captions only, by one of its captioners or whoever may edit it.
+// A lock guards EVERYTHING on the locked thing and on anything attached to it (§5) until it is lifted (throughLock). USE
+// stays open: a handler's own writes may change a locked thing's state but never move, re-parent, swap or remove it.
+const RELOCATES = new Set(["transform", "parent", "model"]);   // what even USE may not change on a locked thing
+// The spoken-say trio: display metadata for a voice that already performed as captions. Only inside the protocol
+// (spoken: true and a non-negative safe-integer utt); t0 is a reorder key on every client, so it's clamped to a bounded
+// utterance window ending now. Anything else: all three dropped, and the say is an ordinary say.
 const MAX_UTTER_MS = 300_000;
 function spokenOf(a, now) {
   if (a.spoken !== true || !Number.isSafeInteger(a.utt) || a.utt < 0) return {};
   return { spoken: true, utt: a.utt, ...(typeof a.t0 === "number" && Number.isFinite(a.t0) ? { t0: Math.round(Math.min(now, Math.max(now - MAX_UTTER_MS, a.t0))) } : {}) };
 }
+// L7 rate: per actor, over a 10 s window by the authority's clock, in ENTRIES (talk, say, counted apart from building
+// acts so neither starves the other's count) and in BYTES (one budget for both). An identity with no account (io.kindOf → "anon") gets less. Refused requests are
+// logged inside the same byte budget.
 // the defaults; a server injects its own policy (io.rate, server/config.ts RATE_POLICY): never process.env here (browsers run this)
 export const RATE_DEFAULT = Object.freeze({ n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 });
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? utf8Len(JSON.stringify(e));   // UTF-8 bytes, as the log stores it (storage: bytes)
 // FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
 class Admitted { constructor(who, ops, after, notes = [], vacate = [], cascade = []) { this.who = who; this.ops = ops; this.after = after; this.notes = notes; this.vacate = vacate; this.cascade = cascade; Object.freeze(this); } }
-// L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the authority's clock. One function:
-// admit calls it for state writes, and every word that logs without a state write (say, grab's lift, throw, drop, a
-// teleport) calls it before appending. The lab has no agents (`for` is unwritten until keys, L4), so "that actor's
-// agents" is the actor alone here. A refused write's values aren't logged (its attempt is: authority.js logRefusal), so it costs the authority, not the log (authority practice).
+// One function: admit calls it for state writes, and every word that logs without one (say, a grab's lift, throw, drop, a
+// teleport) calls it before appending. A refused write's values aren't logged (its attempt is: authority.js logRefusal).
+const rated = (cap) => !cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption";
 function rateCheck(w, actor, kind = "act", extra = 0) {
   if (w.leaving === actor) return; // a disconnect's settlement is the authority's duty, not the leaver's request: never rate-refused
-  const RATE = w.rate ?? RATE_DEFAULT, r = rateOf(w, actor, RATE.ms); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
-  if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
+  const RATE = w.rate ?? RATE_DEFAULT, r = writeRateOf(w, actor, RATE.ms); const cap = w.kindOf?.(actor) === "anon" ? RATE.anonBytes : RATE.bytes;
+  if (kind === "say" ? r.says >= RATE.says : r.acts >= RATE.n) refuse("rate", `${said(actor)} has made ${kind === "say" ? r.says : r.acts} ${kind === "say" ? "says" : "entries"} in ${RATE.ms / 1000} s`, kind === "say" ? "slow down" : `wait until the oldest of them is ${RATE.ms / 1000} s old (a batch is refused until then too); after that a batch {requests} counts as one`);
   if (r.bytes + extra > cap) refuse("rate", `${said(actor)} has written ${Math.round(r.bytes / 1024)} KiB in ${RATE.ms / 1000} s (at most ${cap / 1024} KiB)`, "slow down; keep values small (a script's source or an effect goes through upload {text|effect})");
 }
 // what this actor put in the log over the window: acts, says (counted apart), and all their bytes (incl. results)
-function rateOf(w, actor, ms) {
+function writeRateOf(w, actor, ms) {
   const now = w.now(); let acts = 0, says = 0, bytes = 0;
   for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i];
     if (isE(e) && Number.isInteger(e.ts) && now - e.ts > ms) break; // ts never decreases: everything earlier is older
@@ -90,11 +83,11 @@ export const REPAIR_COMP = (c) => c === "access" || c === "default-role" || c ==
 const operatorRepairs = (who, op) => !!CTX.operator && CTX.operator === who.actor && !who.cap && op.id === "@world" && REPAIR_COMP(op.comp) && (op.op === "set" || op.op === "delete");
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
-  if (!cap || cap.kind === "reaction" || cap.kind === "handle" || cap.kind === "caption") rateCheck(w, actor);
+  if (rated(cap)) rateCheck(w, actor);
   if (!ops.length) refuse("nothing", "that changes nothing", "");
   const role = roleOf(st, actor);
   const keysMade = new Set(); // keyed components this very write brings into being (their creator is the asker)
-  // L6 (33 F1): a launched thing belongs to the engine until it rests. No write may touch it in flight except its rest
+  // L6: a launched thing belongs to the engine until it rests. No write may touch it in flight except its rest
   // (cap rest) or the authority's own follow-ups; an epoch cut (a write to @world.physics-engine) may freeze it (P6, force).
   const sf = st.entities["@world"]?.c["physics-engine"] && !(cap && ["rest", "system"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "physics-engine") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
@@ -105,12 +98,12 @@ function admit(w, st, who, ops) {
     const { op: word, ...rest } = raw; const op = { op: word, ...shapeOneOrRefuse(word, rest, i) };
     const fu = raw[FOLLOW_UP] === true; if (fu) fuOps.add(op);
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
-    // parent.order is gone (shape audit 10-16): whatever path a parent value takes to the door (a request, a copy of a stored
+    // parent.order is gone: whatever path a parent value takes to the door (a request, a copy of a stored
     // one, the lift), the order it carries is dropped here, never written again
     if (op.op === "set" && op.comp === "parent" && op.value && typeof op.value === "object" && !Array.isArray(op.value) && "order" in op.value) { const { order: _o, ...rest } = op.value; op.value = rest; }
     const at = `${op.id}${op.comp !== undefined ? "." + op.comp : ""}`;
     if ("value" in op) { try { checkIJSON(op.value); } catch (x) { refuse("shape", `${at}: the value isn't I-JSON (${x.code} ${x.detail})`, "finite numbers, integers within 2^53, no -0"); }
-      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values under 64 KiB`, "keep values small; a script's source or an effect goes through upload {text|effect}"); }
+      const vb = utf8Len(jcs(op.value)); if (vb > 65536) refuse("too-big", `${at} is ${vb} bytes; the authority keeps values to 64 KiB (65,536 bytes) at most`, "keep values small; a script's source or an effect goes through upload {text|effect}"); }
     const e = s.entities[op.id];
     if (word === "create") { if (e) refuse("exists", `'${op.id}' already exists`, "choose another id, or leave id out and the authority mints one");
       if (PERSON_ID.test(op.id)) refuse("shape", `'${op.id}' is shaped like a person's identity (u- + 20 letters): a thing can't wear one, or a reference to it could mean either`, "choose another id, or leave id out and the authority mints one");
@@ -142,15 +135,13 @@ function admit(w, st, who, ops) {
     if (!fu) lockLevelCheck(w, st, s, who, op, at);
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.op === "create") made.add(op.id);
-    // a lock covers EVERYTHING on the thing and on what hangs under it (R 10-11 16:21, Second Life's Locked): every component
-    // set, added or removed, not only where it stands (review 10-11 C-S1-1: a builder could switch off, hide or un-physics an
-    // owner-locked thing). Open still: USE (a reaction's own writes), the engine's rest, the authority's follow-ups, and the
-    // thing's own lock (lockLevelCheck says who may lift it).
+    // a lock covers EVERYTHING on the thing and on what hangs under it, not only where it stands. Open still: USE (a
+    // reaction's own writes), the engine's rest, the authority's follow-ups, and the thing's own lock (lockLevelCheck)
     else if (!fu && !made.has(op.id) && !["rest", "system"].includes(cap?.kind) && !(op.comp === "lock" && lockedC(s.entities[op.id]?.c))
       && (cap?.kind !== "reaction" || op.comp === undefined || RELOCATES.has(op.comp))) {   // use stays open, but no handler moves, re-parents, swaps or removes a locked thing
-      // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
-      // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
-      // put or throw settles it. Its OWN lock still binds, and picking it up off a locked thing is refused at grab.
+      // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles": a lock set
+      // on the table while the cup is in a hand doesn't bind the cup in the hand, so its put or throw settles it. Its OWN
+      // lock still binds, and picking it up off a locked thing is refused at grab.
       const held = cap?.kind === "handle" && cap.ids.includes(op.id);
       const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = held ? null : ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
       const k = own ?? anc;
@@ -167,7 +158,7 @@ function admit(w, st, who, ops) {
   if (!CTX.forking) { const bad = zoneRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
   if (!CTX.forking) { const bad = colliderRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
   rolesCheck(st, s, norm);
-  for (const op of norm) if (op.op === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // 41 §3.14: at install (not a pause: it needs no source, no scope)
+  for (const op of norm) if (op.op === "set" && op.comp.startsWith("script:") && !pauseOnly(op.value, prevOf.get(op))) installCheck(w, st, s, who, op); // at install, not at a pause
   if (!CTX.forking) for (const op of norm) if (op.op === "set") particlesCheck(w, op); // a particles value names an effect this world has, with params it declares (shared/particle_effects.js)
   if (cap?.kind === "script") for (const id of cap.made ?? []) if (s.entities[id] && !cap.ids.some((r) => r === id || ancestors(s, id).includes(r)))
     refuse("scope", `${cap.key} may create only inside its subtree; ${id} isn't under ${cap.ids[0]}`, "give it parent {to: <an entity in the scope>} in the same batch");
@@ -176,11 +167,9 @@ function admit(w, st, who, ops) {
   return new Admitted(who, norm, s, vacate.map((u) => ({ who: u.who, vacated: true, socket: u.socket, why: vacateWhy(u) })), vacate,
     norm.flatMap((o, i) => (fuOps.has(o) ? [i] : [])));
 }
-// A lock binds everyone, the locker and owners included (§5). `throughLock: true` on the request lets anyone who may
-// lift that lock act through it, and the log records only the edit (the act carries the request as sent, flag and all).
-// It covers the asker's OWN writes: a capability (a handler's author, a hand, the authority's own follow-ups) never acts
-// through a lock. Who may lift it (recut B2, R 10-20): anyone at its setter's rank NOW or above, who may also delete the
-// component (L7 rights) — a soft barrier by rank; the padlock asks before it acts.
+// A lock binds everyone, the locker and owners included (§5). `throughLock: true` lets anyone who may lift it act through
+// it, for the asker's OWN writes only (a capability never acts through a lock). Who may lift it: anyone at its setter's
+// rank NOW or above who may also delete the component.
 function lockCheck(w, st, who, role, k, op, at) {
   const strength = lockStrength(w, st, k);
   const below = !who.cap && rankOf(st, who.actor) < strength;
@@ -195,7 +184,7 @@ function lockCheck(w, st, who, role, k, op, at) {
   refuse("locked", what, fix, { lock: k, rank: strength, ...(by && !by.deleted ? { by: by.by } : {}), mayLift: mayUnlock });   // the padlock's question offers its buttons on true only
 }
 // A write to a lock itself: setting, re-setting or removing a lock on a locked thing is lifting it, so it needs the
-// lock's strength (a re-set by someone lower would otherwise move its setter down: recut B2). A capability is judged by
+// lock's strength (a re-set by someone lower would otherwise move its setter down). A capability is judged by
 // its holder (a handler's author, a script's sponsor); the authority's own follow-ups never touch a lock.
 function lockLevelCheck(w, st, s, who, op, at) {
   if (op.comp !== "lock" || op.id === "@world") return;
@@ -214,14 +203,12 @@ function shapeOneOrRefuse(verb, op, i) {
   const out = { id: op.id }; if (op.comp !== undefined) out.comp = op.comp; if (verb === "set" && "value" in op) out.value = op.value;
   return out;
 }
-// L7 keys rights on the component, not on the word that carried it (research roles §server rules 2). What a write
-// needs is a SWITCH (roles.js), never a rank:
-//   a thing          build when you make it or made it; editOthers when someone else made it
-//   @world.blueprints:*  build (publish);  @world.assets:*  generate (where the old `asset` spend gate landed)
-//   the world's look  editWorld: about, sky (and weather), terrain, terrain-grid, terrain-tile:*, grass, terrain-paint:*,
-//                     bounds, spawn (EDIT_WORLD_PERMISSION; off = owner)
-//   @world.roles:*    the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
-//   the rest of @world (role-defs, default-role, access, physics-engine, script-settings, schemas, imported records…): owner, never a permission
+// L7 keys rights on the component, not on the word that carried it. What a write needs is a SWITCH (roles.js), never a rank:
+//   a thing              build when you make it or made it; editOthers when someone else made it
+//   @world.blueprints:*  build (publish);  @world.assets:*  generate
+//   the world's look     editWorld (WORLD_LOOK, terrain-tile:* and terrain-paint:*)
+//   @world.roles:*       the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
+//   the rest of @world   owner, never a permission
 const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "water", "bounds", "spawn"]);
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
@@ -245,21 +232,16 @@ function lacks(w, st, holder, op, made, { viaCap = false } = {}) {
   if (eff.can.editOthers || op.op === "create" || made?.has(op.id)) return null;
   const c = creatorOf(w, op.id); return c && c.rights === holder ? null : "editOthers";
 }
-// the words a refusal uses for what was missing (kept "needs owner" / "needs builder" where those were the words)
+// the words a refusal uses for what was missing
 const needWords = (n) => (n === "owner" ? "owner" : n === "build" ? "builder" : n === "grantRoles" ? "owner or grantRoles" : `the ${n} permission`);
 function rights(w, st, s, who, role, op, at, made, pause) {
   const { actor, cap } = who;
-  // a screen's captions are written by the caption request only (its session, order and generation rules), never set by
-  // hand; an owner may still set them whole (a copy of the world, a repair) and anyone who may edit the screen may
-  // delete them (CAPTIONS below)
-  // an imported world's records (its old bindings, unmapped fields incl. a sim epoch, bans) are carried, never
-  // written by a request: nothing reads them as live (bans are the moderator log's; scripts are script:<name>; a guard
-  // merged into lock). An owner may (a copy of the world, a repair); deleting one is an ordinary edit.
+  // an imported world's records are carried, never written by a request (nothing reads them as live); an owner may still set one
   if (!cap && op.op === "set" && !R.isOwner(role) && IMPORTED_ONLY(op.comp)) refuse("imported", `${at} is an imported world's record, carried as it was; it isn't written by hand`, "what it meant lives elsewhere now: lock for a guard, the moderator log for bans (ban/unban), script:<name> for a behaviour");
-  // a server-written component (componentspec writtenBy: copy-of): the authority's own verbs write it (a copy, a rebase,
-  // a duplicate); no capability (a handler, a script) ever does, and a hand set or create below owner is refused where the
-  // request is built (serverWritten, buildSet and buildCreate)
+  // a server-written component (componentspec writtenBy): no capability ever writes it; a hand set below owner is refused
+  // where the request is built (serverWritten)
   if (op.op === "set" && cap && ["reaction", "script"].includes(cap.kind) && defOf(op.comp)?.writtenBy === "server") serverWritten(at);
+  // a screen's captions are written by the caption request only; an owner may still set them whole (a copy, a repair)
   if (!cap && op.comp === "captions" && op.op === "set" && !R.isOwner(role)) refuse("caption-only", `${at} is written by the caption request, one line at a time`, "caption {id, session, n, t0, t1, text, speaker?, title?} (or {id, session, end: true}); who may is the screen's captioners {ids}");
   if (cap?.kind === "caption") { if (!cap.ids.includes(op.id) || op.comp !== "captions") refuse("rights", `a caption writes only ${cap.ids.join(", ")}'s captions`, "");
     const ids = st.entities[op.id]?.c.captioners?.ids;
@@ -272,10 +254,9 @@ function rights(w, st, s, who, role, op, at, made, pause) {
     refuse("rights", `changing ${at} needs ${needWords(n)}; you are ${role}`, n === "owner" ? "ask the world's owner; help shows your role and permissions; say {text, to: <owner>} reaches them" : `ask a moderator or an owner for ${n}; help shows your role and permissions`, { needs: n });
   }
   if (cap.kind === "script") {
-    // WHO MAY COME IN is changed by the world's owners directly, never by a script (upstream #258): a script closing a
-    // world, or timing someone's grant, would skip the door's settle pass (server/access.ts) and leave people inside who
-    // may no longer be; and in a world that admits only people listed, a script grants nothing at all (demoting the last
-    // listed owner there would leave nobody able to open it). Ordinary role grants stay open to an owner's scripts.
+    // WHO MAY COME IN is changed by the world's owners directly, never by a script: a script would skip the door's settle
+    // pass (server/access.ts), and in a listed-only world a script grants nothing at all. Ordinary role grants stay open
+    // to an owner's scripts.
     if (op.id === "@world" && (op.comp === "access" || op.comp === "default-role")) refuse("rights", `a script can't change ${at}: who may come into a world is changed by its owners directly`, "change it yourself: set {id: '@world', component: '" + op.comp + "', value}");
     if (op.id === "@world" && op.comp?.startsWith("roles:") && ((op.op === "set" && op.value?.until !== undefined) || st.entities["@world"]?.c?.access?.join === "listed"))
       refuse("rights", `a script can't ${op.value?.until !== undefined ? "time a grant" : "grant in a world that admits only people listed"} (${at})`, "who may come into a world is changed by its owners directly");
@@ -284,7 +265,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.op} ${at}`, "a capability is scoped to what it names");
   if (cap.kind === "reaction" && lacks(w, st, cap.author, op, made, { viaCap: true })) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   // a hand's settlement: who may is grabbable.who (grabOf: the one reader, with the physics fallback); a punt is a launch,
-  // not a hand, and keeps physics.who (research: "physics.who now means who may punt or push it")
+  // not a hand, and keeps physics.who (who may punt or push it)
   if (cap.kind === "handle" && cap.via === "punt") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? DEFAULT_WHO;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can punt`, "");
     if (!admits(st, actor, n)) refuse("rights", `only ${whoWords(n)} may punt ${op.id}; you are ${role}`, "ask the owner to set physics.who"); }
@@ -295,24 +276,16 @@ function rights(w, st, s, who, role, op, at, made, pause) {
   if (cap.kind === "founding") { const g = w.entries[0], k = w.custody()?.operator?.();
     if (!k || !g.body.owners?.some((t) => t.includes(k)) || w.entries.some((e) => isE(e) && e.kind === "change")) refuse("rights", "founding writes happen once, in a world this server founded", ""); }
 }
-// §5 / L7: a KEYED component (`<name>:<key>`, an instance such as blueprints:<hash> or roles:<id>) that exists may be
-// changed or deleted only by its creator (creatorOf, a view over the log: whose rights first made this life of the key)
-// or by an owner. Making a new key needs only the component's ordinary rank. A capability changes it with the rights it
-// carries: a handler with its author's. The authority's own scoped follow-ups (rest, system, handle, founding) touch no keys
-// that someone else made; founding makes roles:<founder>. A whole-entity delete is gated per key (§3d H7, keyRights above).
+// §5 / L7: an existing KEYED instance component (`<name>:<key>`) may be changed or deleted only by its creator (creatorOf:
+// whose rights first made this life of the key) or an owner; roles:<id> follows the grant rule instead (keyRights). Making a new key needs only the component's ordinary rank. A
+// whole-entity delete is gated per key at the call site (§3d H7).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
-// §5 (23:40): each keyed name's schema says which kind it is. INSTANCE keys (script:, blueprints:, roles:) carry the creator
-// rule; PARTITION keys (terrain-tile:, terrain-paint:) are pieces of one shared surface: ordinary rank rules only.
-// A keyed name with no schema here is an instance (note 49: the spec doesn't say; this is the safe side).
+// §5: INSTANCE keys (script:, blueprints:; roles: is one, but under the grant rule) carry the creator rule; PARTITION keys (terrain-tile:, terrain-paint:)
+// are pieces of one shared surface, ordinary rank rules only. No schema: instance, the safe side.
 export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
-// H5 (security review 10-06): owners are protected from each other by SENIORITY, as Matrix room v12 protects creators.
-// An owner can't change or remove the role of an owner who has been one longer (the founder, whose ownership is in
-// genesis or the founding grant, is the most senior and can't be demoted by anyone). Without it, a co-owner — or anyone
-// who got owner by mistake — could demote the founder and ban them, and only an operator editing the log could undo it.
-// Seniority is the START of an owner's current unbroken run as owner: the earliest write to roles:<x> after which every
-// write kept it owner (the founding grant is the earliest of all). It read the LAST write, so a junior owner who
-// "re-affirmed" the founder ({role: owner}) reset the founder's seniority to now, then demoted and banned them
-// (top-down review 10-06, S0-1). Writes that keep someone owner never move their seniority.
+// Owners are protected from each other by SENIORITY (as Matrix room v12 protects creators): an owner can't change the role
+// of an owner who has been one longer. Seniority is the START of the current unbroken run as owner, so a write that
+// keeps someone owner never moves it.
 function ownerSince(w, st, x) {
   if (roleOf(st, x, false) !== "owner") return Infinity;
   const comp = `roles:${x}`; let since = -1;
@@ -322,23 +295,23 @@ function ownerSince(w, st, x) {
       if (o.op === "set" && o.comp === comp && R.isOwner(o.value)) since = i; else return since; } }
   return since;
 }
-/** The most senior owner here (the start of the longest unbroken run as owner; the founder unless they left it), or null. */
+/** The most senior owner here (whose current unbroken run as owner started first; the founder unless they left it), or null. */
 export function seniorOwnerOf(w) { const st = w.state(); let best = null, at = Infinity;
   for (const k of ownersOf(st)) { const x = k.slice(6), t = ownerSince(w, st, x); if (t < at) { at = t; best = x; } } return best; }
 function seniority(w, st, who, op) {
   if (op.id !== "@world" || !op.comp?.startsWith("roles:")) return;
-  // a capability acts with its holder's rights, seniority included (review 10-07: a junior owner's reaction demoted the
-  // founder); the authority's own scoped follow-ups (rest, system, handle, founding) never write a role
+  // a capability acts with its holder's rights, seniority included; the authority's own scoped follow-ups (rest,
+  // system, handle, founding) never write a role
   const cap = who.cap; if (cap && cap.kind !== "reaction" && cap.kind !== "script") return;
   const holder = cap?.kind === "reaction" ? cap.author : cap?.kind === "script" ? cap.sponsor : who.actor;
   const target = op.comp.slice(6);
   if (target === holder || roleOf(st, target, false) !== "owner") return;
-  // a write that keeps them owner is still a write to a more senior owner's entry: refused like any other (it used to
-  // pass as a "re-affirm", and reset their seniority: S0-1). Your own entry, and juniors', remain yours to write.
+  // a write that keeps them owner is still a write to a more senior owner's entry: refused like any other. Your own
+  // entry, and juniors', remain yours to write.
   if (ownerSince(w, st, target) <= ownerSince(w, st, holder))
     refuse("rights", `${said(target)} has been an owner here longer than you; an owner can't demote one more senior`, "ask them; an owner can only change the roles of owners made after them");
 }
-// The grant rule (research §3, server rule 5): a roles:<id> write by someone who isn't an owner needs grantRoles, and
+// The grant rule: a roles:<id> write by someone who isn't an owner needs grantRoles, and
 //   the person must rank below you, before AND after; the role you give must rank below yours; that role's permissions,
 //   and any `can: true` (or legacy gen: true), must be permissions you hold. Ownership stays an owner's (seniority).
 function grantCheck(w, st, s, actor, op, at) {
@@ -368,7 +341,7 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   // roles:<id> is changed under the grant rule (grantCheck: rank and permissions), not its creator's: a moderator may
   // change the role an owner gave a member. A capability never reaches here for roles (lacks: owner).
   if (!cap && op.comp.startsWith("roles:")) return;
-  // research §6 (scripts): a pause made by someone who outranks you can be lifted only by them, or at their rank or above
+  // a pause made by someone who outranks you can be lifted only by them, or at their rank or above
   if (pause && op.value?.paused !== true && s.entities[op.id]?.c[op.comp]?.paused === true) {
     const pb = pausedBy(w, op.id, op.comp);
     if (pb && pb.by !== holder && rankOf(st, holder) < rankOf(st, pb.by))
@@ -383,7 +356,7 @@ function keyRights(w, st, s, who, op, at, keysMade, pause = false) {
   refuse("rights", `${at} is ${c?.rights ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.op === "delete" ? "delete" : "change"} it`,
     op.comp.startsWith("blueprints:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c?.rights ? said(c.rights) : "an owner"}`);
 }
-// @world.role-defs as a whole (research §component shapes): checked against the state the write leaves, so a batch
+// @world.role-defs as a whole: checked against the state the write leaves, so a batch
 // that moves people off a role and deletes it lands as one act; a custom role somebody still holds can't vanish.
 function rolesCheck(st, s, ops) {
   if (!ops.some((o) => o.id === "@world" && o.comp === "role-defs")) return;
@@ -394,4 +367,4 @@ function rolesCheck(st, s, ops) {
   if (bad) refuse(bad.code, `@world.role-defs: ${bad.reason}`, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
   // who fields that name a removed custom role read as owner (whoRank): nothing opens; nothing else to check here
 }
-export { Admitted, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, spokenOf };
+export { Admitted, SAY_MAX, admit, lacks, lockCheck, needWords, rateCheck, rated, spokenOf };

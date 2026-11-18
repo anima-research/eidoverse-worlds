@@ -5,9 +5,8 @@
 //   GET  /heightmap?world=W     the world's CURRENT ground (noise, heightmap and features together) as a
 //                               16-bit grayscale PNG, its height range in the headers and in a tEXt chunk
 //
-// The server decodes once and stores integers, so the client, the agents and the sim never each run an image
-// decoder over the same bytes and disagree about a pixel. The sim (shared/sim.js, via terrainmath.js) must
-// read a grid SYNCHRONOUSLY while folding a log, so this module also gives the shared law its disk loader.
+// The server decodes once and stores integers, so no two readers disagree about a pixel. The sim (shared/sim.js via
+// terrainmath.js) reads a grid synchronously while folding, so this module also gives it its disk loader.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
@@ -69,9 +68,7 @@ function readTextChunk(png: Uint8Array, key: string): string | null {
 /** Decode an uploaded PNG into a grid, and store both. */
 export function ingestHeightmap(body: Uint8Array, hash: string):
     { grid: string; png: string; w: number; h: number; bits: number; meta: HeightmapMeta | null } | { error: string; status: number } {
-  // Dimensions from the IHDR BEFORE decoding (review on #237): a few KB of PNG can claim a 60000² image,
-  // and decoding first would make the serving process unpack and allocate all of it just to refuse it.
-  // IHDR is always the first chunk: width and height are big-endian u32s at bytes 16 and 20.
+  // dimensions from the IHDR before decoding (a few KB of PNG can claim a 60000² image): big-endian u32s at bytes 16 and 20
   if (body.length < 24 || String.fromCharCode(...body.subarray(12, 16)) !== "IHDR")
     return { error: "not a PNG with an image header", status: 415 };
   const dv = new DataView(body.buffer, body.byteOffset, body.byteLength);
@@ -106,20 +103,15 @@ export function ingestHeightmap(body: Uint8Array, hash: string):
   return { grid, png, w, h, bits: img.data instanceof Uint16Array ? 16 : img.depth, meta };
 }
 
-// Exports run on the thread that serves the worlds (review on #237), so their work is BOUNDED, and the
-// bound is checked BEFORE any work is done:
-//   · at most EXPORT_MAX samples a side;
-//   · the last EXPORT_CACHE results kept by (terrain, resolution) — a terrain that has not changed is
-//     never re-sampled, and a cached answer costs nothing and is never refused;
-//   · an uncached export must first be granted a slot: EXPORT_PER_ADDRESS a minute per address, and
-//     EXPORT_PER_MINUTE a minute for the whole process (so many addresses cannot add up to a busy thread),
-//     and only one at a time. A refused request does no sampling and caches nothing.
+// Exports run on the thread that serves the worlds, so they are bounded before any work: at most EXPORT_MAX samples a side;
+// the last EXPORT_CACHE results kept by (terrain, resolution), a cached answer never refused; an uncached export first granted
+// a slot (EXPORT_PER_ADDRESS and EXPORT_PER_MINUTE a minute), one at a time.
 export const EXPORT_MAX = 513;
 export const EXPORT_CACHE = 6;
 export const EXPORT_PER_ADDRESS = 6;
 export const EXPORT_PER_MINUTE = 30;
 const exportCache = new Map<string, { png: Uint8Array; meta: HeightmapMeta }>();
-const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts, shared with /check
+const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts: the limiter /check uses too, each door its own budget
 let exporting = false;
 
 const exportKey = (terrainArgs: Record<string, unknown>, n: number, world?: string) => `${n}|${world ?? ""}|${JSON.stringify(terrainArgs)}`;
@@ -167,10 +159,13 @@ export function heightRange(terrainArgs: Record<string, unknown>): HeightmapMeta
   return { min: lo, max: hi > lo ? hi : lo + 1, size: P.size };
 }
 
+/** Exports sampled in this process, so a test counts the work a refusal skipped (terrainshape-test). */
+export const exportStats = { made: 0 };
 /** A world's current ground, sampled into a 16-bit PNG. `res` samples a side, spanning the terrain's `size`
  *  square edge to edge — so a re-import at the same size lands every sample back where it was taken. */
 export function exportHeightmap(terrainArgs: Record<string, unknown>, res: number, world?: string):
     { png: Uint8Array; meta: HeightmapMeta } {
+  exportStats.made++;
   const P = terrainParams(terrainArgs);
   const hf = makeHeightField(P);
   const n = Math.max(2, Math.min(MAX_GRID, Math.round(res)));

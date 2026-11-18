@@ -1,5 +1,5 @@
 {
- "about": "Exact-digest re-pins under an unchanged engine version, each held by engine-check EN4/EN9 through tools/protocol/fixture-repin.ts; a receipt directory keeps the old bytes the hashes name",
+ "about": "Exact-digest re-pins under an unchanged engine version, each held by engine-check EN4/EN9 through test/protocol/fixture-repin.ts; a receipt directory keeps the old bytes the hashes name",
  "repins": [
   {
    "why": "the retired shape-repair ceremony left the scenario logs (Mica's EN4 rulings, 11-05): the engine is unchanged, so the exact digests re-pin under eidosim@1.0.0",

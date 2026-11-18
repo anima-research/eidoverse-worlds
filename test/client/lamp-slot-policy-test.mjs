@@ -1,0 +1,117 @@
+// WHO MAY CLAIM THE ONE CASTING SLOT (client/lib/render/lightrig.js attachLamps).
+//
+// The contract (#193 review):
+//   - emissive AVATARS may request slot 0, and their body gets cast/receive;
+//   - any other emissive thing given a lamp is an ordinary light and does NOT
+//     request the shadow slot.
+//
+// attachLamps takes shadow intent as an option that defaults to false. Today
+// avatar.js is its only caller (a placed model infers no lamp: its lights are
+// light components) and passes true. The claim is a SWAP (wanting shadows
+// outranks not wanting it), so a default of true would let a closer,
+// higher-ranked glowing prop take slot 0 off the body standing next to it. It
+// must not, and must stay lit.
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+GlobalRegistrator.register();
+HTMLCanvasElement.prototype.getContext = function () { const a = new Proxy(function () {}, { get: (_t, k) => (k === 'width' ? 100 : a), apply: () => a, set: () => true }); return new Proxy({}, { get: (_t, k) => (k === 'measureText' ? () => ({ width: 100 }) : a), set: () => true }); };
+import { plugin } from 'bun';
+import { stubResolve } from '../harness/stub.ts';
+import { suite } from "../gate/suite.ts";
+const HERE = import.meta.dir; const here = (p) => `${HERE}/${p.replace(/^\.\//, '')}`;
+plugin({ name: 'core-stub', setup(build) {
+  stubResolve(build, /^(\.\.?\/)+core\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+base\.js$/, () => ({ path: here('../stubs/core-stub.mjs') }));
+  stubResolve(build, /^(\.\.?\/)+(render\/)?loadwork\.js$/, () => ({ path: here('../stubs/loadwork-stub.mjs') }));
+} });
+const { THREE, camera } = await import('../stubs/core-stub.mjs');
+const rig = await import('../../client/lib/render/lightrig.js');
+
+const S = suite("lamp-slot-policy");
+const check = (name, ok, note) => S.check(name, ok, note);
+
+// An emissive thing attachLamps will find: glow must clear its 0.5 threshold.
+function glowing(name, pos, glow = 3) {
+  const g = new THREE.Group();
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute([0,0,0, 0.02,0,0, 0,0.02,0], 3));
+  const m = new THREE.MeshBasicMaterial();
+  m.emissive = new THREE.Color(1, 0.85, 0.6);
+  m.emissiveIntensity = glow;
+  const mesh = new THREE.Mesh(geo, m);
+  mesh.name = name;
+  g.add(mesh); g.position.set(...pos); g.updateMatrixWorld(true);
+  return g;
+}
+
+// The camera decides ranking (nearest wins within a tier), so put the PROP
+// closer than the avatar: it outranks the body on distance and is therefore
+// the hardest case for the policy.
+camera.position.set(0, 1.6, 0);
+const avatarObj = glowing('lampglass', [0, 1.47, -3.0]);   // a body, 3m away
+const propObj   = glowing('lantern',   [0, 1.00, -0.6]);   // a prop, 0.6m away
+
+// the bare seam, no opts (no shipped caller calls it this way today)
+const propLamps = rig.attachLamps(propObj, 'entity:lantern-1');
+// avatar.js's call shape: the one that claims the slot
+const avatarLamps = rig.attachLamps(avatarObj, 'body:mythos:1', { shadows: true });
+
+check('both objects produced a lamp request', propLamps.length > 0 && avatarLamps.length > 0,
+  `prop ${propLamps.length}, avatar ${avatarLamps.length}`);
+
+for (const t of [1000, 2000, 3000, 9000]) rig.updateRig(t);
+const d = rig.rigDebug();
+const req = (k) => d.requests.find((r) => r.key === k) || {};
+const propKey = propLamps[0].key, avatarKey = avatarLamps[0].key;
+const slotOf = (k) => req(k).slot;
+const CAST = d.shadows.castingSlot;
+
+console.log('SLOT POLICY — a closer glowing PROP versus an avatar');
+// THE POLICY: only the avatar asked, so only the avatar may hold slot 0 --
+// even though the prop is five times closer and would outrank it on distance.
+check('the avatar holds the casting slot', slotOf(avatarKey) === CAST,
+  `avatar on slot ${slotOf(avatarKey)}, casting slot ${CAST}`);
+check('the closer prop does NOT hold it', slotOf(propKey) !== CAST,
+  `prop on slot ${slotOf(propKey)} — it stole the casting slot`);
+// ...and the prop is not punished for losing: it is still an ordinary light.
+check('the prop is still assigned a slot', slotOf(propKey) >= 0,
+  `prop slot ${slotOf(propKey)}`);
+check('the prop is still LIT', (d.slotState[slotOf(propKey)] || {}).intensity > 0,
+  `slot ${slotOf(propKey)} intensity ${(d.slotState[slotOf(propKey)] || {}).intensity}`);
+check('the avatar is lit too', (d.slotState[CAST] || {}).intensity > 0,
+  `slot ${CAST} intensity ${(d.slotState[CAST] || {}).intensity}`);
+check('they do not share a slot', slotOf(propKey) !== slotOf(avatarKey));
+
+console.log('SHADOW INTENT — reported per request');
+const wants = d.shadows.wantsShadows.map((w) => w.key);
+check('only the avatar wants shadows', wants.length === 1 && wants[0] === avatarKey,
+  `wantsShadows = ${JSON.stringify(wants)}`);
+check('and it is actually casting', d.shadows.anyCasting === true);
+
+console.log('THE SEAM DEFAULT — shadow intent must be asked for');
+// The regression guard: if the default ever flips back to true, a bare call
+// claims the slot again and this goes red.
+rig.releaseOwner('entity:lantern-1');
+rig.releaseOwner('body:mythos:1');
+const bare = rig.attachLamps(glowing('orb', [0, 1, -0.4]), 'entity:orb-2');
+rig.updateRig(20000);
+const d2 = rig.rigDebug();
+check('a bare attachLamps() call requests NO shadows',
+  d2.shadows.wantsShadows.length === 0,
+  `wantsShadows = ${JSON.stringify(d2.shadows.wantsShadows.map((w) => w.key))}`);
+const bareReq = d2.requests.find((r) => r.key === bare[0].key) || {};
+check('...but it is still a working light',
+  bareReq.slot >= 0 && (d2.slotState[bareReq.slot] || {}).intensity > 0,
+  `slot ${bareReq.slot} intensity ${(d2.slotState[bareReq.slot] || {}).intensity}`);
+
+// THE EMITTER RULE (fixes PR): an MToon body's unlit trick — emissive ≈ white + an emissive MAP at strength 1 — is
+// not a lamp; a flat emissive colour with no map is; a map driven above strength 1 is.
+{
+  const toon = glowing('toon', [0, 1, -1.2], 1); toon.children[0].material.emissiveMap = new THREE.Texture(); toon.children[0].material.emissive.set(1, 1, 1);
+  check('an emissive-map body at strength 1 gets NO lamp', rig.attachLamps(toon, 'body:toon:1').length === 0, 'MToon unlit look');
+  const flat = glowing('flat', [0, 1, -1.3], 1);
+  check('a flat emissive colour (no map) gets a lamp', rig.attachLamps(flat, 'body:flat:1').length === 1, 'a real emitter');
+  const hot = glowing('hot', [0, 1, -1.4], 2); hot.children[0].material.emissiveMap = new THREE.Texture();
+  check('an emissive map driven above strength 1 gets a lamp', rig.attachLamps(hot, 'body:hot:1').length === 1, 'strength 2');
+}
+
+S.done();

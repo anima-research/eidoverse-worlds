@@ -1,11 +1,7 @@
-// The bones an avatar actually has, by name — what a pose over arbitrary bones
-// is checked against (shared/humanoid.js validatePose `rig`). Humanoid names
-// are a vocabulary every rig shares; `L_Wing_Upper` or `Pelvis` exist only on
-// the rigs that have them, and a pose naming one a rig lacks does nothing on
-// every renderer, silently. So the check needs the rig, and the rig is in the
-// file's JSON chunk — the header bytes, not the multi-megabyte body.
+// The bones an avatar actually has, by name, for shared/humanoid.js validatePose `rig` (a pose naming a bone the rig
+// lacks silently does nothing). Read from the GLB's JSON chunk only, not the multi-megabyte body.
 import { glbJson, humanBones, stature, GLB_MAX_JSON } from "./rig.ts";
-import { nameFromAvatarPath } from "../client/lib/seatcore.js";
+import { nameFromAvatarPath } from "../shared/seatcore.js";
 import { setOwn } from "../shared/humanoid.js";
 
 export type RigBones = {
@@ -56,7 +52,7 @@ export function rigBonesFor(httpBase: string, avatarPath: string): Promise<RigBo
  *  chunk is, past GLB_MAX_JSON refused. Identity-encoded so /library answers ranged instead of gzipping the whole
  *  file; a server that ignores Range answers 200 with the whole file, already downloaded when the cap is checked,
  *  so there the cap only refuses parsing it. Throws when the download fails, which may pass; null for a file this
- *  won't read. */
+ *  won't read. No deadline yet: a server that never finishes holds every caller of this key. */
 async function headerAndJson(url: string): Promise<Uint8Array | null> {
   const upTo = (end: number) => fetch(url, { headers: { Range: `bytes=0-${end}`, "Accept-Encoding": "identity" } });
   const head = await upTo(19);

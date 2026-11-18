@@ -1,10 +1,6 @@
-// server/reachgate.ts — touch consent at the relay (design review 10-15, "spec vs code" item 1). A reach travels as a
-// descriptor inside the presence packet (shared/reachwire.js) and every receiver draws the hand where it points, so the gate
-// for touching someone can't be the target's own client (it doesn't render other people's screens) and can't be a request
-// nobody sends: it is here, on the one path every pose takes. Each limb whose target is ANOTHER body is held to that body's
-// table through the authority (WorldLog.reachAdmits → authority.js reachAdmits); a refused limb is taken out of the packet,
-// and the rest of the pose relays as it came. Presence only: nothing is logged. Judged by where the hand is aimed, as the
-// authority judges a reach (42 P8): a named point by the social/intimate split, a bare point by the body capsule it falls in.
+// server/reachgate.ts — touch consent at the relay. A reach rides the presence packet (shared/reachwire.js) and every receiver
+// draws it, so the gate is here, on the one path every pose takes: each limb aimed at another body is held to that body's
+// consent table through the authority (WorldLog.reachAdmits), and a refused limb is taken out of the packet. Nothing is logged.
 import { namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { normalizeReachTarget, REACH_LIMBS } from "../shared/reachwire.js";
 import type { Client } from "./world.ts";
@@ -13,14 +9,14 @@ type Cls = "touch" | "intimate";
 type Hit = { tc: Client; cls: Cls; point: string | null };
 
 const fin3 = (p: unknown): p is number[] => Array.isArray(p) && p.length === 3 && p.every((n) => typeof n === "number" && Number.isFinite(n));
-const scaleOf = (pose: any) => (typeof pose?.scale === "number" && Number.isFinite(pose.scale) && pose.scale > 0 ? pose.scale : 1);
+const poseScale = (pose: any) => (typeof pose?.scale === "number" && Number.isFinite(pose.scale) && pose.scale > 0 ? pose.scale : 1);
 const bodyLeg = (o: Client) => !o.spectator && (o.surface ?? "world") === "world";
 const sameBody = (c: Client, o: Client) => o === c || (!!c.actorId && o.actorId === c.actorId);
-/** a body's root frame → world, as three.js root.localToWorld does it: the body's scale, then its turn, which is `q` when
- *  the pose carries one (a swimmer's whole-body turn: remotes.js gives q precedence over yaw) and else yaw about +y */
+/** root frame → world, as root.localToWorld (the root never scales: a `space` point is metres at any size, docs/guide/BODY-STATE.md):
+ *  `q` if present (remotes.js gives it precedence), else yaw about +y */
 function frameToWorld(pose: any, local: number[]): number[] | null {
   if (!fin3(pose?.p)) return null;
-  const p = pose.p as number[], s = scaleOf(pose), l = local.map((v) => v * s);
+  const p = pose.p as number[], l = local;
   const q = pose.q;
   if (Array.isArray(q) && q.length === 4 && q.every((n: unknown) => typeof n === "number" && Number.isFinite(n))) {
     const n = Math.hypot(q[0], q[1], q[2], q[3]) || 1, x = q[0] / n, y = q[1] / n, z = q[2] / n, w = q[3] / n;
@@ -45,7 +41,7 @@ function bodiesAt(c: Client, pt: number[]): Hit[] {
   const out: Hit[] = [];
   for (const o of c.world?.clients ?? []) {
     if (!bodyLeg(o) || sameBody(c, o) || !fin3(o.lastPose?.p)) continue;
-    const at = o.lastPose!.p!, s = scaleOf(o.lastPose);
+    const at = o.lastPose!.p!, s = poseScale(o.lastPose);
     const d = unturn(o.lastPose!.q, [pt[0] - at[0], pt[1] - at[1], pt[2] - at[2]]);   // into their frame: a turned body's capsule turns with it
     const cls = pointClass([0, 0, 0], [d[0] / s, d[1] / s, d[2] / s]) as Cls | null;
     if (cls) out.push({ tc: o, cls, point: null });
@@ -67,9 +63,9 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
   if (t.space === "self" || t.space === c.id) { const at = frameToWorld(pose, t.p); return at ? bodiesAt(c, at) : null; }
   const tc = legNamed(c, t.space); if (!tc) return null;
   if (sameBody(c, tc)) return [];
-  // the point is drawn where it lands in the world (reachnet.js resolves it in their frame), so it is held to every body it
-  // lands in, not only theirs: a point in Vic's frame that rests on Tom is Tom's to allow
-  const cls = pointClass([0, 0, 0], t.p) as Cls | null;   // in their own root frame, so already at their size
+  // held to every body it lands in (reachnet.js resolves it in their frame): a point in A's frame resting on B is B's to allow
+  const s = poseScale(tc.lastPose);   // their capsule at their size, as bodiesAt scales it; the point stays metres
+  const cls = pointClass([0, 0, 0], [t.p[0] / s, t.p[1] / s, t.p[2] / s]) as Cls | null;
   const own: Hit[] = cls ? [{ tc, cls, point: null }] : [];
   const at = frameToWorld(tc.lastPose, t.p);
   return at ? [...own, ...bodiesAt(c, at).filter((h) => h.tc !== tc && !sameBody(tc, h.tc))] : own;

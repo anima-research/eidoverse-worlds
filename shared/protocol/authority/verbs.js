@@ -1,7 +1,7 @@
 // shared/protocol/authority/verbs.js — the verb table's own bodies, in the groups authority.js spreads into VERBS in
 // their table order: FOUNDING_VERBS (create-world), SCHEMA_VERBS (schema), WRITE_VERBS (create, set, delete, place,
 // turn, publish, update), SAY_VERBS (say, undo, caption), BATCH_VERBS (sky, weather, batch, fork-copy), and
-// buildBatch (refactor split, 2026-10-17; moved from authority.js's VERBS table unchanged). Only schema's did-you-mean reads UP (its guess).
+// buildBatch. Only schema's did-you-mean reads UP (its guess).
 import { cowState, applyCow, DIALECT, VERSION, emptyState, keyOk, utf8Len } from "../fold.js";
 import { checkRequires, KNOWN_FEATURES } from "../features.js";
 import { valueCheck } from "./checks.js";
@@ -25,10 +25,9 @@ const FOUNDING_VERBS = {
   "create-world"(w, actor, a) {
     if (w.exists) refuse("exists", `world '${w.name}' exists`, "you're in it already: look shows what's here; help shows your role");
     if (a.dry) return { ok: true, dry: true, would: { found: w.name, you: "owner", title: a.title ?? w.name } };
-    // a fork or a reset names the world it came from; that's provenance in the founding act, so its shape is checked
-    // a FORK names its parent with the seq it was copied at ({world, seq, head}): that's genesis.parent, part of the new
-    // world's id, the merge base a later merge folds from (PROTOCOL §13; review 10-07 H5). A reset names its predecessor
-    // without a seq: provenance in the founding act only (it copies nothing, so it has no merge base)
+    // a fork or a reset names the world it came from, so its shape is checked. A FORK names its parent with the seq it was
+    // copied at ({world, seq, head}): that's genesis.parent, part of the new world's id, the merge base a later merge folds
+    // from (PROTOCOL §13). A reset names its predecessor without a seq: provenance in the founding act only (no merge base)
     if (a.from !== undefined) { const f = a.from, hex = (x) => typeof x === "string" && /^[0-9a-f]{64}$/.test(x);
       if (!f || typeof f !== "object" || !(typeof f.world === "string" && /^sha256:[0-9a-f]{64}$/.test(f.world)) || !hex(f.head) || (f.name !== undefined && typeof f.name !== "string") || (f.seq !== undefined && !(Number.isInteger(f.seq) && f.seq >= 0)) || Object.keys(f).some((k) => !["world", "head", "name", "seq"].includes(k)))
         refuse("shape", "create-world {from} names the world it came from: {world: sha256:<64 hex>, head: <64 hex>, seq? (a fork: the seq it was copied at), name?}", ""); }
@@ -44,8 +43,8 @@ const FOUNDING_VERBS = {
     if (a.ownerKey !== undefined && (a.ownerKey === cu.operator() || a.ownerKey === cu.sequencer())) refuse("shape", "ownerKey must be your own key, not this server's", "");
     const ops = [setOp("@world", "about", { name: a.title ?? w.name, text: a.text ?? "" }), setOp("@world", "bounds", { min: [-20, -50, -20], max: [20, 12, 20] }),
       setOp("@world", `roles:${actor}`, { role: "owner" }),
-      // starter config (R 10-21): in a NEW world newcomers are builders until the owner gates it (newcomers → member, or a
-      // grant of member by hand). Written, never implied: a world without it (every world founded before) keeps member
+      // starter config: in a NEW world newcomers are builders until the owner gates it (newcomers → member, or a
+      // grant of member by hand). Written, never implied: a world without it (an older world) keeps member
       setOp("@world", "default-role", { role: "builder" })];
     // the founding writes' values are checked before anything is appended, against the state genesis folds to: a refusal
     // after genesis would leave a world that exists and that nobody owns
@@ -59,12 +58,10 @@ const FOUNDING_VERBS = {
   },
 };
 const SCHEMA_VERBS = {
-  // particles names an effect: its schema also lists the Essentials and each one's params (the knobs an instance sets), so
-  // an agent can write one without a second question; effect {name} returns a whole document
-  // every definition carries its status (trial | reserved | stable); statuses says what each means
-  // and server: this server's policy numbers (PROTOCOL §9.2): the default an absent field means today, and the ceiling an owner may set
-  // one component is read through the registry's resolver (componentspec defOf): a keyed name or an alias answers its
-  // definition, and a name the registry doesn't have is refused, never answered ok with nothing
+  // every definition, with its status (trial | reserved | stable; `statuses` says what each means), and `server`: this
+  // server's policy numbers (PROTOCOL §9.2), the default an absent field means and the ceiling an owner may set.
+  // One component is read through componentspec defOf (a keyed name or an alias answers; an unknown name is refused).
+  // particles also lists the Essentials and each one's params, so an agent can write one without a second question
   schema(w, actor, a) { const one = a.component ? defOf(String(a.component)) : undefined;
     if (a.component && !one) refuse("not-found", `no component called '${a.component}'`, "schema {} lists every component", { didYouMean: UP.guess(String(a.component), Object.keys(COMPONENTS)) });
     return { ok: true, components: a.component ? { [a.component]: one } : COMPONENTS, statuses: STATUSES,
@@ -82,8 +79,8 @@ const WRITE_VERBS = {
 };
 const SAY_VERBS = {
   say(w, actor, a) { if (!a.text) refuse("shape", "say needs text", "");
-    // a chat mute refuses every say: a say with `to` is still a public line in the log (review 10-07). There is no private
-    // channel in world chat (whisper was removed, R 10-18): the refusal says until when, and why when a reason was given
+    // a chat mute refuses every say: a say with `to` is still a public line in the log (world chat has no private
+    // channel). The refusal says until when, and why when a reason was given
     { const m = muteOf(w, actor, "chat"); if (m)
       refuse("muted", `you're muted in this world's chat${m.until !== undefined ? ` until ${new Date(m.until).toISOString()}` : ""}${m.reason ? ` (${m.reason})` : ""}`, "it ends on its own; the moderator who muted you can lift it sooner", { until: m.until ?? null }); }
     if (typeof a.text !== "string" || a.text.length > SAY_MAX) refuse("too-big", `a say is at most ${SAY_MAX} characters (this one is ${String(a.text).length})`, "split it, or put a long text in a blob");
@@ -109,13 +106,13 @@ const SAY_VERBS = {
 const BATCH_VERBS = {
   // the sky panel's two verbs, with the first protocol's meaning (shared/forecast.js foldSkyEntry):
   // `sky` replaces the sky, stamped with the AUTHORITY's clock (hours advance from it); `weather` merges onto the standing
-  // sky. The old fold also echoed who and at which seq into the value: derived (the log says so), so never stored here (R8).
+  // sky. Who wrote it and at which seq are derived from the log, so never stored in the value (undo.js skyValue).
   sky: (w, actor, a) => commit(w, actor, "sky", a, (ctx) => buildSky(ctx, a, w)),
   weather: (w, actor, a) => commit(w, actor, "weather", a, (ctx) => buildWeather(ctx, a, w)),
   batch(w, actor, a) { return commit(w, actor, "batch", a, (ctx) => buildBatch(ctx, a, w)); },
   // a fork's copy of its parent (server/worldlog.ts forkWorld): an ordinary batch through the same gate, logged under its
-  // own verb so a reader tells inherited things from births (PROTOCOL §13; review 10-07 H5), and carrying what the parent
-  // already holds as it is (an old world's bare invention). Only forkCopy() below reaches it: no request word does.
+  // own verb so a reader tells inherited things from births (PROTOCOL §13), and carrying what the parent
+  // already holds as it is (an old world's bare invention). Only authority.js's forkCopy() reaches it: no request word does.
   "fork-copy"(w, actor, a) {
     if (!CTX.forking) refuse("rights", "fork-copy is the server's own copy of a world into its fork; it isn't a request", "fork a world with the fork request (an owner of the source)");
     return commit(w, actor, "fork-copy", a, (ctx) => buildBatch(ctx, a, w));
@@ -123,13 +120,13 @@ const BATCH_VERBS = {
 };
 function buildBatch(ctx, a, w) { {
       // the next op sees this one's result: ONE working copy for the whole batch, copied per entity as ops touch it (a
-      // copy of the world per op made a batch cost its length times the world's size: review 10-06 S0-2). Every view
+      // copy of the world per op would cost the batch's length times the world's size). Every view
       // cached on that copy is dropped after each op; per-thing geometry checks what it read (geoOf)
       const all = []; let st = ctx.st; let work = null;
       const forget = (x) => { SPATIAL.delete(x); scriptMemo.delete(x); };
-      // every child request is checked against its verb's arguments BEFORE any is built, exactly as it would be outside a
-      // batch (review of PR #260, verbs.js:127): unchecked, {verb: "delete", args: {id, componnent}} built a whole-entity delete
-      // `requests` (D3, §1.15): a batch's children are requests {verb, args}; `ops` is the log's word for a change's operations
+      // every child request is checked against its verb's arguments BEFORE any is built, as it would be outside a batch
+      // (a misspelt arg must never turn a component delete into a whole-entity one); the request flags throughLock and
+      // expect go on the batch itself, so a child carrying one is refused as an unknown arg
       if ("ops" in a) refuse("shape", "batch {ops} is now batch {requests}: nothing ran", "send {verb: 'batch', args: {requests: [{verb, args}, …]}}");
       (a.requests ?? []).forEach((o, i) => {
         if (!o || typeof o !== "object" || Array.isArray(o)) refuse("shape", `batch request ${i} is {verb, args}, got ${JSON.stringify(o)}`, "batch takes requests [{verb, args}, …]", { index: i });

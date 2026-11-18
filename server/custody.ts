@@ -1,25 +1,23 @@
-// server/custody.ts — the authority's governance keys (PROTOCOL §2.4, §3d C1), held outside every log.
-// One sequencer key per keys file, and one key per identity that founds a world through this server, so two worlds one
-// person founds here carry the same keys and only genesis's nonce tells them apart. Keys never enter a log; the file
-// is written 0600. Same layout and key encoding as the lab's custody (the protocol lab's authority.js custodyOf).
+// server/custody.ts — the authority's governance keys (spec/PROTOCOL.md §2.4, §3d C1), held outside every log, 0600.
+// One sequencer key per keys file, and one key per identity founding a world through this server.
 import { appendDurable, readLogBytes, replaceDurable, mkdirDurable, withFileLock } from "./durable.ts";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { envNumber } from "./limits.ts";
 
 type Key = { pub: string; priv: string };
 type File = { sequencer?: Key; operator?: Key; holders: Record<string, Key> };
 
 /** How long a mint waits for another process's mint to finish before it gives up. */
-const LOCK_WAIT_MS = Number(process.env.EIDO_CUSTODY_LOCK_WAIT_MS) || 10_000;   // how long a mint waits on a held lock (a slow host may raise it)
+const LOCK_WAIT_MS = envNumber("EIDO_CUSTODY_LOCK_WAIT_MS", 10_000, (n) => n > 0);
 const mk = (): Key => {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
   return { pub: "ed25519:" + (publicKey.export({ format: "jwk" }) as { x: string }).x, priv: privateKey.export({ format: "der", type: "pkcs8" }).toString("base64") };
 };
 
-/** One custody per keys file per process (review of #260, server I5): every world under a worlds root opens the same file,
- *  and separate handles, each with its own cache, each minting a missing key and writing its whole cache back, overwrote
- *  one another's keys. */
+/** One custody per keys file per process: every world under a worlds root opens the same file, and separate handles
+ *  (each caching, minting and writing its whole cache back) would overwrite one another's keys. */
 const byFile = new Map<string, ReturnType<typeof openCustody>>();
 /** Custody over the keys file at `file` (created on first use). */
 export function custodyAt(file: string) {
@@ -35,10 +33,8 @@ function openCustody(file: string) {
     c.sequencer ??= d.sequencer; c.operator ??= d.operator; c.holders = { ...(d.holders ?? {}), ...c.holders }; };
   // durably: a key handed out must survive a crash, or the genesis it signed (already synced) names a key no one holds
   const save = () => replaceDurable(file, JSON.stringify(c, null, 1), 0o600);
-  // A mint reads the file, adds a key and writes the whole file back, so two processes minting at once (the server and a
-  // found / translate tool) would each write back what it read and the later rename would drop the other's key. The read,
-  // the mint and the write therefore run holding `<file>.lock` (durable.ts withFileLock): a process waits for it, and
-  // removes one whose holder is gone.
+  // a mint writes the whole file back, so two processes minting at once would drop each other's keys: read, mint and
+  // write run under `<file>.lock` (durable.ts withFileLock)
   const lock = `${file}.lock`;
   const minting = (missing: () => boolean, mint: () => void) => {
     if (!missing()) return;
@@ -55,17 +51,17 @@ function openCustody(file: string) {
   return {
     sequencer(): string { minting(() => !c.sequencer, () => { c.sequencer = mk(); }); return c.sequencer!.pub; },
     /** The operator's GOVERNANCE key (tier 1 of the custodial default, §2.4): never the same key as the sequencer, so a
-     *  stolen writing key isn't also the only override (round-2 review R4). */
+     *  stolen writing key isn't also the only override. */
     operator(): string { minting(() => !c.operator, () => { c.operator = mk(); }); return c.operator!.pub; },
     /** The OPERATOR's signature over msg (base64url Ed25519 by the operator key above, never the sequencer's): the host's
-     *  COUNTERSIGNATURE on a translation approval (tools/protocol/world.ts approvalFor; PROTOCOL §14). */
+     *  COUNTERSIGNATURE on a translation approval (tools/world.ts approvalFor; PROTOCOL §14). */
     signOperator(msg: string): string {
       minting(() => !c.operator, () => { c.operator = mk(); });
       const key = crypto.createPrivateKey({ key: Buffer.from(c.operator!.priv, "base64"), format: "der", type: "pkcs8" });
       return crypto.sign(null, Buffer.from(msg, "utf8"), key).toString("base64url");
     },
     /** This host's secret for `purpose` (HMAC-SHA256 keyed by the sequencer's private bytes): the same on every run here, never
-     *  the key itself, and nothing another host can derive (import-v1/world.ts identitySalt). */
+     *  the key itself, and nothing another host can derive (tools/import-v1/world.ts identitySalt). */
     secret(purpose: string): Buffer {
       minting(() => !c.sequencer, () => { c.sequencer = mk(); });
       return crypto.createHmac("sha256", Buffer.from(c.sequencer!.priv, "base64")).update(`eidoverse-secret:${purpose}`).digest();
@@ -82,7 +78,7 @@ function openCustody(file: string) {
 
 /** A world's moderator log (§2.1: never in the world log): read it, and append one record per line. */
 export function modLogAt(file: string) {
-  // read as a reader; the first append repairs a torn tail first, as the log's writer (review of #260, server I127)
+  // read as a reader; the first append repairs a torn tail first, as the log's writer
   const mod = fs.existsSync(file) ? readLogBytes(file, { cut: false }).toString("utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
   let repaired = false;
   return { mod, appendMod: (r: object) => { if (!repaired) { readLogBytes(file); repaired = true; } appendDurable(file, JSON.stringify(r)); } };

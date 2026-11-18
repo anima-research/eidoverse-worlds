@@ -58,7 +58,7 @@ The bone (normative): **every act on someone else's body goes through one reques
 | Who sets it | Only the body's owner | **guarantee** |
 | A refused act | Leaves no record in the world log: the asker gets the uniform refusal, and the body owner's own record keeps the cause | **guarantee** · ratified tel0s 11-06 (delegated) (D6) |
 
-The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/CONSENT-TABLE-RECORD.md`, not as a direction.
+The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/decisions/CONSENT-TABLE-RECORD.md`, not as a direction.
 
 ### World roles (who may do what in a world)
 
@@ -68,7 +68,7 @@ does, and no role overrides it).
 | Choice | Value | Status · source |
 |---|---|---|
 | The ladder | `member` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · ratified tel0s 11-06 (delegated) |
-| States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · ratified tel0s 11-06 (delegated) |
+| States off the ladder | `banned` (not in the world); never a rank. (A neutral spectator role is wishlisted.) | trial · ratified tel0s 11-06 (delegated) |
 | Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `member` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `member` included, beats it: an owner demotes one person by hand | default · ratified tel0s 11-06 (delegated) |
 | Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `member` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · ratified tel0s 11-06 (delegated) |
 | No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · ratified tel0s 11-06 (delegated) |
@@ -92,7 +92,7 @@ does, and no role overrides it).
 A 10-17 audit found the line between the two tables isn't yet drawn for **avatars**: once an avatar's parts are entities,
 they fall under the *thing* rules (roles, log history, and an owner who can do anything), not under body consent. The
 spec's "Body ownership (avatars)" section keeps the one rule (every write to a body goes through the one request path,
-and the body's owner decides); how it is built is direction in `docs/AVATAR-DIRECTION.md` until avatars are shared. Five
+and the body's owner decides); how it is built is direction in `docs/design/AVATAR-DIRECTION.md` until avatars are shared. Five
 write paths (the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
 
 ### Not yet listed

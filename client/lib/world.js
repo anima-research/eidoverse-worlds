@@ -1,27 +1,18 @@
 // world — the authored plane's scene registries and world-scope builders.
 //
-// The log's MEANING lives in shared/protocol/fold.js (state.js folds it; the
-// realizers in realize/ project it into the scene). What remains here is
-// what every consumer shares: the entity/comp/mount registries, the
-// world-build queue that gates arrival on ground, the world-scope
-// application functions the environment/social realizers drive, mount
-// transforms, and the deferred shadow drain. The applyEntry switch that
-// once folded entries directly into the scene — and the pendingOps/
-// pendingMounts machinery that reconstructed ordering downstream — is
-// gone: state is folded once, realizers read it, and every load
-// completion re-reads current state (TEL0S_NOTES §11).
+// The log's meaning lives in shared/protocol/fold.js (net.js folds it through replica.js; realize/ projects it into
+// the scene). Here is what every consumer shares: the entity registry and fold readers, the world-build queue that
+// gates arrival on ground, the world-scope appliers the environment/social realizers drive, and mount transforms.
 
 import { bodyOf } from '../../shared/components.js';
 import { socketsUnder, resolveSeat } from '../../shared/sockbody.js';
 import { THREE, scene, camera, renderer } from './core.js';
 import { report, bus, CONFIG } from './base.js';
-// net.js does NOT import this module (its own note: "live grants keep it fresh
-// via world.js"), so this direction closes no cycle.
-import { net, replica } from './net.js';
+import { net, replica } from './net.js';   // net.js does not import this module: no cycle
 import { enc, dec } from '../../shared/protocol/names.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
-import { prepareObject } from './materials.js';
-import { beginWork } from './loadwork.js';
+import { prepareObject } from './render/materials.js';
+import { beginWork } from './render/loadwork.js';
 import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt, setFlatGround } from './terrain.js';
 import { flatHeightOf } from '../../shared/terrainmath.js';
@@ -29,65 +20,51 @@ import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, 
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
 import { applyWater } from './water.js';
-import { buildFloraField, warmField, loadFloraModule } from './flora.js';
-import { applySky, whenSkyWarm } from './sky.js';
+import { buildFloraField, warmField, loadFloraModule } from './vegetation/flora.js';
+import { applySky, whenSkyWarm } from './sky/sky.js';
 import { whenBooted, bootDone } from './boot.js';
-import { warm, P_GATE } from './warmqueue.js';
-// seat correction for mounted occupants (upstream #101) — the me-drive frame
-// calls these for every seated body; their import fell on the fork side of
-// a merge hunk while the call site auto-merged, and every SIT threw 56
-// ReferenceErrors a second (antra, live, from a swing in commons2)
-import { occupyCorrectionFor } from './occupants.js';
-import { applySeatCorrection } from './seatcore.js';
+import { warm, P_GATE } from './render/warmqueue.js';
+import { occupyCorrectionFor } from './player/occupants.js';
+import { applySeatCorrection } from '../../shared/seatcore.js';
 import { isOwner } from '../../shared/protocol/roles.js';
 
-/** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
- *  duplicate spawn in the same tick can't create two bodies for one id. */
+/** id -> Object3D. `null` is a reservation held while the GLB downloads, so a duplicate spawn can't make two bodies. */
 export const entities = new Map();
-/** A thing's fold record as this client folds it (shared/protocol/replica.js): {model?, transform, parent?, …components},
- *  component keys as the fold spells them (shared/protocol/names.js). ONE record for every reader — the Hierarchy, the
- *  Inspector, every evaluator (motion.js reads `motion`; a seat reads its socket child's `socket`; the server reads `reactions`) — so
- *  nothing is held beside the fold to drift (C7c; the `comps` Map the realizer mirrored it into is gone). Frozen in
- *  dev: a reader that writes into it throws. Data is opaque here, as on the server: unknown types just sit in it.
- *  Read it where you need it; never keep it across an ingest — a write replaces the record (the frozen one is thawed
- *  by copy), so a kept reference goes stale. */
+/** A thing's fold record (shared/protocol/replica.js): {model?, transform, parent?, …components}, keys as the fold
+ *  spells them (shared/protocol/names.js). The one record for every reader, so nothing is held beside the fold to
+ *  drift. Frozen in dev. Never keep it across an ingest: a write replaces the record. */
 export const bagOf = (id) => replica.st?.entities?.[enc(String(id))]?.c ?? null;
 /** Every placed thing's [id, record], ids as the page spells them (the world entity excluded). */
 export function* bags() {
   const es = replica.st?.entities; if (!es) return;
   for (const k in es) if (k !== '@world') yield [dec(k) ?? k, es[k].c];
 }
-/** A thing's model, for the panels: {model?}, read from the fold (entityMeta is gone, C7c). */
+/** A thing's model, for the panels: {model?}, read from the fold. */
 export const metaOf = (id) => { const c = bagOf(id); return c ? { ...(typeof c.model === 'string' ? { model: c.model } : {}) } : null; };
-/** The tree's edges as this client's fold indexes them (shared/protocol/replica.js, kept at every ingest): the ids a
- *  carrier holds (id order), a thing's carrier, the ids above it nearest first — ids as the page spells them. One
- *  index for the realizer's carrier checks, the panels and the seats; no map is kept beside the fold (C12b). */
+/** The tree's edges as the fold indexes them (shared/protocol/replica.js): a carrier's children (id order), a thing's
+ *  carrier, the ids above it nearest first; ids as the page spells them. */
 const out = (k) => dec(k) ?? k;
 export const childrenOf = (id) => replica.childrenOf?.(enc(String(id))).map(out) ?? [];
 export const parentIdOf = (id) => { const p = replica.parentOf?.(enc(String(id))); return p == null ? null : out(p); };
 export const ancestorsOf = (id) => replica.ancestors?.(enc(String(id))).map(out) ?? [];
-/** A host's sockets (PLAN-sockets-entities: a socket is a child entity {transform, parent: {to: host}, socket: {name,
- *  part?, body?, accepts?, radius?}}): [{id, name, sock}], from the fold's children index. The one reader every client
- *  surface shares (clickuse, localbody, seatbody, the Inspector, xrpointer, the scene panel). */
+/** A host's sockets (a socket is a child entity with a `socket` component): [{id, name, sock}], from the fold's
+ *  children index. The one reader every client surface shares. */
 export const socketsOn = (host) => socketsUnder(String(host), childrenOf, bagOf);
 /** A socket child as a seat reads it: {id (the socket), host, name, sock (its socket component)}, or null when `id` isn't
  *  a socket in the fold (yet, or any more), or is switched off. */
 export function seatSocket(id) {
   const c = id == null ? null : bagOf(id);
   if (!c?.socket || typeof c.socket !== 'object') return null;
-  // a socket switched off (or under something switched off) is closed to occupying, as the authority reads it (occupants.js: offChain):
-  // whoever sits there lets go (localbody's per-frame check), and a frame naming it seats nobody (review 10-12 S3-3)
+  // a socket switched off (or under something switched off) is closed to occupying, as the authority reads it
   if (c.disabled === true || ancestorsOf(id).some((a) => bagOf(a)?.disabled === true)) return null;
   return { id: String(id), host: parentIdOf(id), name: c.socket.name, sock: c.socket, station: c.station && typeof c.station === 'object' ? c.station : null };
 }
-// Avatar attachments: the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
-import { avatarMounts } from './mounts.js';
+// the map is mounts.js's (a leaf, so the lite client's net.js can read it); re-exported for the rest
+import { avatarMounts } from './player/mounts.js';
 export { avatarMounts };
-/** A body's seat is PRESENCE (PROTOCOL: bodies aren't entities; nothing is logged): its owner's pose frame carries
- *  `seat: {to: <socket id>}` while seated, so every receiver sets it from the frame and clears it when a frame comes
- *  without one. A frame from a client before sockets were entities says {to: <host>, slot}: it names the host's socket
- *  child of that name (shared/sockbody.js resolveSeat, one release). A seat naming no socket here is no seat. My own is
- *  set here by localbody.js and rides my frames (net.js sendPose). */
+/** A body's seat is presence, not logged: its owner's pose frame carries `seat: {to: <socket id>}` while seated, so
+ *  every receiver sets it from the frame and clears it when a frame comes without one. An older frame's {to: <host>,
+ *  slot} names the host's socket child of that name (shared/sockbody.js resolveSeat). My own is set by localbody.js. */
 export function setBodySeat(id, seat) {
   const cur = avatarMounts.get(id);
   const to = seat?.to ? seatSocketId(seat) : null;
@@ -104,9 +81,8 @@ function seatSocketId(seat) {
   const hit = resolveSeat(replica.st, { to: enc(String(seat.to)), slot: seat.slot });   // the old frame: the host's socket of that name
   return hit ? (dec(hit.to) ?? hit.to) : null;
 }
-/** What else a seat frame carries (shared/sockbody.js): the pose the occupant chose from the socket's menu and when
- *  (`pose`, `at`: a sync group follows the latest choice), and their input (`in`: throttle, steer, aimYaw, aimPitch)
- *  when the socket routes it. Read by occupybody.js for every occupant, mine and everyone else's, the same way. */
+/** What else a seat frame carries: the pose the occupant chose and when (`pose`, `at`), and their input (`in`:
+ *  throttle, steer, aimYaw, aimPitch) when the socket routes it. Read by occupybody.js for every occupant. */
 function seatExtras(m, seat) {
   const fin = Number.isFinite;
   if (typeof seat.pose === 'string' && /^[a-z0-9][a-z0-9_-]{0,31}$/i.test(seat.pose)) { m.pose = seat.pose; m.at = fin(seat.at) ? seat.at : 0; } else { delete m.pose; delete m.at; }
@@ -115,23 +91,15 @@ function seatExtras(m, seat) {
 }
 
 
-export const liveEntities = () => [...entities.values()].filter(Boolean);
-
-/** ids someone is actively editing — the residency sweep must never demote
- *  them (review S4: id-based, because promote/demote SWAPS the object a
- *  userData flag would ride). build.js and panel editors add/remove. */
+/** ids someone is actively editing; the residency sweep (realize/models.js) must never demote them. */
 export const editHolds = new Set();
 
-// Heavy world construction (terrain ~2s, grass ~1s of main-thread geometry
-// generation) runs on its own ordered chain so log replay — and everything
-// after it — doesn't wait behind it. Safe because spawns carry their logged y,
-// and the terrain step re-seats ground objects when it lands.
+// Heavy world construction (terrain, grass: seconds of main-thread geometry) runs on its own ordered chain so log
+// replay doesn't wait behind it; the terrain step re-seats ground objects when it lands.
 let worldBuild = Promise.resolve();
 let buildDepth = 0;
 let gatingDepth = 0;
-// Terrain gates arrival — you cannot stand in a world with no ground. Grass
-// does not: it is decoration, it costs seconds of main-thread geometry
-// generation, and it can grow around someone who is already walking.
+// terrain gates arrival (you cannot stand in a world with no ground); grass is decoration and grows around you
 const GATING = new Set(['terrain']);
 function enqueueWorldBuild(what, fn) {
   buildDepth++;
@@ -140,8 +108,6 @@ function enqueueWorldBuild(what, fn) {
   worldBuild = worldBuild
     .then(() => {
       loadTrack(`build:${what}`, `growing ${what}`);
-      // a work record too — terrain/grass builds were the biggest UNNAMED
-      // frame gaps in the first Safari beacon (2.4s "(unattributed)")
       const work = beginWork(`build ${what}`);
       return Promise.resolve(fn()).finally(() => work.end());
     })
@@ -153,49 +119,39 @@ function enqueueWorldBuild(what, fn) {
       bus.emit('build-queue', { depth: buildDepth, what });
     });
 }
-// The sky's arrival gate rides its own counter, NOT the worldBuild chain:
-// grass parks that chain on whenBooted(), so a sky queued behind it would
-// hold the curtain against itself (see applySkyFolded).
+// the sky's arrival gate rides its own counter, not the worldBuild chain: grass parks that chain on whenBooted(), so
+// a sky queued behind it would hold the curtain against itself (applySkyFolded)
 let skyGate = 0;
 export const buildsPending = () => gatingDepth + skyGate;
 export const anyBuildsPending = () => buildDepth + skyGate;
 
-// Guards so a re-join (avatar switch, reconnect) that replays the log doesn't
-// regenerate an identical world.
+// dedupe keys: a re-join that replays the log must not regenerate an identical world
 let lastTerrainArgs = null;
 let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
 
 // ---- world-scope state application ------------------------------------------
-// Driven by the environment/social realizers (realize/environment.js,
-// realize/social.js). Written during the migration window as one
-// implementation under two drivers; the legacy driver is gone, the names
-// stay.
+// Driven by the environment/social realizers (realize/environment.js, realize/social.js).
 
-/** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
- *  a re-join replaying the same world does not regenerate identical ground. */
+/** Build (or rebuild) the terrain from its authored bag; deduped by args. */
 export function applyTerrainState(args) {
-  // no terrain: the stage floor returns, with the world's water on it when it has some (environment.js groundArgs
-  // {stageFloor, water}; house review I8) and without the old ground's water when it doesn't
-  // …and a flat terrain is that floor at its height (componentspec terrain kind flat)
+  // no terrain, or a flat one: the stage floor at that height, with the world's water on it when it has some
+  // (realize/environment.js groundArgs)
   const flat = flatHeightOf(args);
+  const key = args ? JSON.stringify(args) : null;
+  if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed (a flat one too)
   if (!args || args.stageFloor === true || flat !== null) {
-    const key = args ? JSON.stringify(args) : null;
     if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); } setFlatGround(flat ?? 0);
       try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
     return;
   }
   stageFloor = false; setFlatGround(0);
-  const key = JSON.stringify(args);
-  if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed
   if (lastTerrainArgs === key) return;
   lastTerrainArgs = key;
   enqueueWorldBuild('terrain', async () => {
     await loadEidoModule('terrain.js');
-    // A heightmap's grid is fetched BEFORE the build, so the ground arrives shaped rather than snapping from
-    // noise to image a moment later (and the walking heightAt never disagrees with the mesh in between).
-    // No grid, no build: the ground already standing stays (noise is not this world's ground), and the
-    // build runs once the grid lands — the same readiness the sim waits on (shapeReady).
+    // a heightmap's grid is fetched before the build, so the ground arrives shaped; no grid, no build: the ground
+    // already standing stays and the build runs once the grid lands
     const shape = shapeParams(args);
     if (shape?.heightmap && !(await requestGrid(shape.heightmap.grid))) {
       if (lastTerrainArgs !== key) return;
@@ -209,35 +165,19 @@ export function applyTerrainState(args) {
     }));
     const t = globalThis.makeTerrain({ ...args, layers });
     if (t && shape) reshapeTerrain(t, args);
-    // the layer textures ride the engine's colorNode, unreachable from
-    // material properties — carry them so terrain disposal can free them
-    // (review S5)
+    // the layer textures ride the colorNode, unreachable from material properties: carry them so terrain.js can free them
     if (t) t.layerTextures = layers.map((l) => l.map);
-    // the factory dresses the ground BEFORE its compile: wetness + cloud
-    // shade + receiveShadow (real terrain never received before — only the
-    // stage floor did, and that hides when this lands)
+    // dress the ground (wetness, cloud shade, receiveShadow) before its compile
     if (t?.mesh) prepareObject(t.mesh, { kind: 'terrain' });
-    // compile the ground's pipelines BEFORE it enters the scene — an
-    // unprecompiled terrain material otherwise codegens synchronously
-    // inside the first render() that sees it. UNCAPPED, through the warm
-    // conductor and awaited fully (§16.2.A): this build gates arrival, so
-    // the splash simply holds a moment longer and the ground enters
-    // compiled. (A 1200ms Promise.race cap lived here for slow-compile
-    // Safari boots — but past the cap the biggest material in the world
-    // entered the scene UNCOMPILED and codegen'd inside the first render()
-    // that saw it, §16.1c. An uncompiled ground is worse than a longer
-    // splash.)
+    // compile the ground's pipelines before it enters the scene (an uncompiled material codegens synchronously in the
+    // first render that sees it); awaited fully at P_GATE, since arrival waits on this
     if (t?.mesh) {
-      // P_GATE: arrival waits on THIS item — the first 8b gate measured a
-      // rain world booting in 16s because the cloud-march compiles queued
-      // ahead of the ground the curtain was actually waiting for
       await warm('compile terrain', () => renderer.compileAsync(t.mesh, camera, scene).catch(() => {}), { p: P_GATE });
     }
     setTerrain(t);
-    // the water reads the ground it fills (its per-vertex depth), so it is built on THIS terrain
+    // the water reads the ground it fills (per-vertex depth), so it is built on this terrain
     try { applyWater(args, heightAt); } catch (e) { report('water', e); }
-    // re-seat only ground-level entities — anything with a meaningful y
-    // (seated on furniture, elevated) keeps its logged height
+    // re-seat only ground-level entities; anything with a meaningful y keeps its logged height
     for (const [id, obj] of entities) {
       if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
@@ -248,8 +188,8 @@ export function applyTerrainState(args) {
   });
 }
 
-// A heightmap terrain whose grid did not come: ask again as the fetch backoff allows (shared/terrainshape.js
-// gridRetryIn), and build THIS bag once — unless a newer terrain has arrived meanwhile.
+// a heightmap terrain whose grid did not come: retry as the fetch backoff allows (shared/terrainshape.js gridRetryIn)
+// and build this bag once, unless a newer terrain has arrived
 let terrainRetry = null;
 function retryTerrainWhenGridLands(args, key, ref) {
   clearTimeout(terrainRetry);
@@ -267,9 +207,8 @@ export const terrainPending = () => terrainRetry !== null && lastTerrainArgs !==
 /** The authored terrain bag this client last built from — what EW.terrain(patch) edits. */
 export function currentTerrainArgs() { return lastTerrainArgs ? JSON.parse(lastTerrainArgs) : null; }
 
-// Edits sent but not yet echoed: two quick patches must compose (the second builds on the first), not both
-// build on the last echo and the second erase the first. A sent bag stands as the base until the world
-// echoes something, or PENDING_MS passes with no echo (the edit was refused).
+// edits sent but not yet echoed: two quick patches must compose, so a sent bag is the base until the world echoes
+// that same bag or PENDING_MS passes (the edit was refused)
 let pendingTerrain = null;   // { args, at }
 const PENDING_MS = 5000;
 /** The bag a new terrain edit should build on: the newest sent-but-unechoed edit, else the built one. */
@@ -280,10 +219,8 @@ export function terrainEditBase() {
 /** Record a terrain bag as sent, so the next edit composes with it. Returns the bag. */
 export function noteTerrainSent(args) { pendingTerrain = { args, at: Date.now() }; return args; }
 
-/** Placed features and heightmaps (shared/terrainshape.js) over the toolkit's noise mesh: the same law the
- *  agents and the sim ground bodies on. Every vertex re-heighted, normals redone, and the walking heightAt
- *  swapped for the shaped one — so what you see is what you stand on. The vertex-colour layer weights stay
- *  the toolkit's (baked from the unshaped noise); the panel's single-layer ground has none to disagree. */
+/** Placed features and heightmaps (shared/terrainshape.js) over the toolkit's noise mesh, the same law the agents
+ *  ground bodies on: every vertex re-heighted, normals redone, and the walking heightAt swapped for the shaped one. */
 function reshapeTerrain(t, args) {
   const hf = shapedHeightAt(t.heightAt, args);
   const pos = t.mesh.geometry.attributes.position;
@@ -295,11 +232,8 @@ function reshapeTerrain(t, args) {
   t.heightAt = hf;
 }
 
-// Def hot-reload (§24): the sequencer pushes `defs-updated` when a def file
-// changes on disk. Re-hydrate the registry (replacing — edits land, removals
-// leave) and regrow the meadow from the SAME authored args: the world state
-// is untouched, only the content the defs shape rebuilds. The dedupe key is
-// cleared so applyGrassState treats the regrow as new work.
+// def hot-reload: on `defs-updated`, re-hydrate the flora registry and regrow the meadow from the same authored args
+// (the dedupe key is cleared so the regrow counts as new work)
 bus.on('defs-updated', async () => {
   try {
     const mod = await loadFloraModule();
@@ -313,58 +247,31 @@ bus.on('defs-updated', async () => {
   }
 });
 
-/** Grow (or mow) the grass field. Same dedupe-by-args contract. */
+/** Grow (or mow) the grass field; deduped by args. */
 export function applyGrassState(args) {
   if (!args) return;
   const key = JSON.stringify(args);
   if (lastGrassArgs === key) return;
   lastGrassArgs = key;
-  if (args.clear) { clearGrass(); return; }   // an empty field: mow it
+  if (args.clear) { clearGrass(); return; }
   enqueueWorldBuild('grass', async () => {
-    // yields the main thread to arrival; resolves instantly once booted
-    await whenBooted();
-    // vegetation brush (createFlora) — makeGrass's replacement upstream.
-    // Legacy makeGrass bags persisted in old world logs are mapped
-    // inside buildFloraField; the log itself is never rewritten.
+    await whenBooted();   // yields the main thread to arrival; instant once booted
+    // legacy makeGrass bags in old logs are mapped inside buildFloraField; the log is never rewritten
     const field = await buildFloraField(args, { scene, heightFn: heightAt });
-    // factory pass before the precompile (field.mesh is the whole stroke
-    // group): wet sheen on the meadow, sweep markers, no shadow receipt
-    // (grass never received, and its fragment cost is the client's biggest)
-    if (field?.mesh) prepareObject(field.mesh, { kind: 'grass' });
-    // warm EVERY render object off the render path. The old field-level
-    // compileAsync silently skipped whatever applyTiles had culled against
-    // the boot camera (visible=false / out of frustum), and those tiles
-    // compiled synchronously inside render() when first looked at.
-    // warmField (flora.js) detaches per object, defeats culling, compiles
-    // one per frame, then re-settles tile counts against the live camera —
-    // still inside this build's beginWork('build grass') accounting.
+    if (field?.mesh) prepareObject(field.mesh, { kind: 'grass' });   // wet sheen, sweep markers, no shadow receipt
+    // warm every render object off the render path: a field-level compileAsync would skip whatever the boot camera
+    // culled (flora.js warmField)
     if (field?.mesh) await warmField(field, renderer, camera, scene);
     setGrass(field);
   });
 }
 
-/** Apply an already-FOLDED sky bag (state.st.sky or foldSkyEntry output).
- *  `ts` anchors live transition timing; a snapshot passes the bag's own. */
-// During INITIAL hydration, arrival gates on the sky's pipeline warm
-// (§16.2.D): the dome compiles are ~3s of splash instead of ~3s of visible
-// jank — the warm used to await whenBooted() and land squarely AFTER the
-// curtain lifted (§16.1g). Capped: a degraded or headless sky must never
-// brick arrival (lightbench's bolt-seam section knows sky can degrade) —
-// past the cap the curtain lifts and the warm continues in the conductor
-// behind it. A mid-session sky verb (bootDone) gates nothing and behaves
-// exactly as before; a world with no sky verb never reaches this and gates
-// on nothing. The gate registers synchronously inside the hydration
-// realizer pass — before checkReady can ever observe an empty queue (same
-// ordering guarantee terrain leans on, realize/environment.js).
+// During initial hydration, arrival gates on the sky's pipeline warm, so the dome compiles are splash rather than jank
+// after the curtain. Capped: past SKY_GATE_MAX_MS the curtain lifts and the warm continues behind it (a degraded or
+// headless sky must never brick arrival). A mid-session sky verb gates nothing.
 let skyGated = false;
-// 25s, was 8: the gate now covers the first bake's cloud-graph compile
-// (§19a — measured 9.3s ending at t=15.3s on THIS box's cold GPU cache;
-// a slower GPU must not have the curtain lift mid-stall, and the gate
-// resolves EARLY via whenBakeReady the moment the pipeline is warm — the
-// cap only binds pathological cases. Near-zero on warm Dawn caches.
-// tel0s chose splash over a mid-session stall until upstream can cache
-// the graph per flavour.)
-const SKY_GATE_MAX_MS = 25000;
+const SKY_GATE_MAX_MS = 25000;   // covers the first bake's cloud-graph compile on a cold GPU cache; whenSkyWarm usually resolves far sooner
+/** Apply an already-folded sky bag (state.st.sky). `ts` anchors live transition timing; a snapshot passes the bag's own. */
 export function applySkyFolded(bag, ts) {
   if (!bag) return Promise.resolve();
   const p = Promise.resolve(applySky(bag, ts ?? bag.ts)).catch((e) => report('sky', e));
@@ -383,9 +290,7 @@ export function applySkyFolded(bag, ts) {
       loadDone('build:sky');
       bus.emit('build-queue', { depth: buildDepth, what: 'sky' });
       if (how === 'timeout') {
-        // visible in __loadLog: the gate line names the giving-up, and the
-        // still-running warm keeps its own conductor records
-        work.phase('lifted-at-cap');
+        work.phase('lifted-at-cap');   // named in __loadLog
         setTimeout(() => work.end(), 2);
       } else work.end();
     });
@@ -393,44 +298,30 @@ export function applySkyFolded(bag, ts) {
   return p;
 }
 
-/** An upload became part of this world's vocabulary: the palette grows for
- *  everyone, live (broadcast) and forever (replay/snapshot for joiners). */
+/** An upload became part of this world's vocabulary: the palette grows for everyone. */
 export function applyAssetState(args) {
   if (!args?.path) return;
   libLabels.set(args.path, args.name ?? 'upload');
   bus.emit('asset', { name: args.name ?? 'upload', path: args.path });
 }
 
-/** Mirror one role record so the UI can say what you are here, live.
- *  Enforcement is the server's; narration is the LIVE driver's business
- *  (legacy case or livechat.js), not this mirror's. */
+/** Mirror one role record so the UI can say what someone is here. Enforcement is the server's (`your-rights`). */
 export function applyGrantState(id, rec) {
-  // a role taken away: back to the world's default (the authority reads @world default-role)
+  // a role taken away: back to the world's default
   if (!rec) { worldRoles.delete(id); bus.emit('roles', { id, role: null }); return; }
   worldRoles.set(id, { role: rec.role ?? 'member', gen: rec.can?.generate === true, fly: rec.can?.fly === true || Boolean(rec.fly) });
   bus.emit('roles', { id, ...worldRoles.get(id) });
-  // (What I MAY DO is the server's answer, `your-rights`, re-sent whenever a role changes; this mirror is the HUD's.)
 }
 
-// (The deferred shadow-in drain that lived here — markShadowless /
-// drainShadows, one caster per 250ms beat, lanes-idle trigger, 30s fallback
-// — is gone: object.castShadow is in no pipeline cache key, so the light
-// rig budgets the caster set live by camera distance, reversibly.
-// lightrig.js §12.5.)
-
-// Per-world roles (@world roles:<id>), mirrored from the view. A mirror for UI honesty — the authority enforces; this only
-// lets the client SAY what someone is.
+// per-world roles (@world roles:<id>), mirrored from the view for the HUD
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;
 export const worldHasOwner = () => [...worldRoles.values()].some(isOwner);
 
 // ---- named parts ------------------------------------------------------------
 
-/** root Object3D -> Map(partName -> {obj|null, at}). Misses retry once a
- *  second rather than caching forever: models load ASYNC, so the part a comp
- *  names may simply not exist yet — freezing out a legitimate name because
- *  the GLB was still downloading would be a load-order bug, not a contract.
- *  Shared by motion.js (animating parts) and mounting (riding them). */
+/** A named part under a root, cached per root. Misses retry once a second rather than caching forever: models load
+ *  async, so the part a comp names may simply not exist yet. */
 const _partCache = new WeakMap();
 export function findPart(root, name) {
   let map = _partCache.get(root);
@@ -445,9 +336,8 @@ export function findPart(root, name) {
 
 // ---- mounting ---------------------------------------------------------------
 
-/** World-space position of a socket (a socket child's id), for reach checks and hints: its host's transform composed
- *  with the socket's own (local to the host). Ignores a part's motion on purpose: "how far is the seat" should not
- *  oscillate with the swing. Fills out; returns null when either half is missing. */
+/** World-space position of a socket, for reach checks and hints: its host's transform composed with the socket's own.
+ *  Ignores a part's motion on purpose ("how far is the seat" should not oscillate with the swing). Null when missing. */
 export function socketWorldPos(id, out) {
   const s = seatSocket(id);
   const host = s?.host != null ? entities.get(s.host) : null;
@@ -457,24 +347,20 @@ export function socketWorldPos(id, out) {
   return out.set(...(Array.isArray(p) && p.length === 3 ? p : [0, 0, 0])).applyMatrix4(host.matrixWorld);
 }
 
-// A seated body's world transform, live: the SOCKET's realized object (realize/models.js: an Empty attached to its host,
-// or into the host's moving part at rest), read through its matrixWorld — the host's CURRENT transform (mid-pendulum,
-// mid-path: motion.js has already ticked it this frame), the part's displacement when the socket rides one, then the
-// socket's own pose. This is what makes an occupant actually RIDE the swing: their body is derived, not streamed. The
-// scene graph carries the part, so an occupant and a thing on that socket ride it the same way.
+// A seated body's world transform is derived live from the socket's realized object (realize/models.js) through its
+// matrixWorld: the host's current transform, a moving part's displacement, then the socket's own pose. That is what
+// makes an occupant ride the swing: their body is derived, not streamed.
 const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtR = new THREE.Quaternion(), _mtS = new THREE.Quaternion(), _UP = new THREE.Vector3(0, 1, 0);
-/** Fill outPos with the occupant's ROOT position on its seat; returns {q (the root's whole rotation), socketPos, socketQ,
- *  body, sock, upright, yaw, pose, to (the socket), host, slot (its name), seatState, seatReason} or null when not
- *  mounted (or the socket isn't live yet). `occ` is {path, av} — the roster path and live wrapper of the body.
+/** Fill outPos with the occupant's root position on its seat; returns {q, socketPos, socketQ, body, sock, upright, yaw,
+ *  pose, to (the socket), host, slot, seatState, seatReason} or null when not mounted. `occ` is {path, av}.
  *
- *  Where the root goes is the socket's ANCHOR (shared/sockbody.js): the body point that lands on the socket — hips for
- *  a seat, feet for a standing place, head, or the root itself — measured from the occupant's posed skeleton
- *  (avatar.anchorOffset), so any body in any clip puts its hips on the cushion. A pose may add an offset (socket frame).
- *  Until the body has been measured the root sits at the socket, declared approximate. A socket whose body anchors at
- *  'surface' (the seat authors its support plane, D14) takes the seat-profile correction (#101) instead. */
+ *  The root goes where the socket's anchor (shared/sockbody.js: hips, feet, head or root) lands on the socket,
+ *  measured from the occupant's posed skeleton (avatar.anchorOffset); a pose may add an offset. Until the body is
+ *  measured the root sits at the socket, declared approximate. A 'surface' anchor takes the seat-profile correction
+ *  (occupants.js) instead. */
 const _mtP = new THREE.Vector3(), _mtW = new THREE.Quaternion();
 export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
   const m = avatarMounts.get(occupantId);
@@ -488,8 +374,7 @@ export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
   _mtF.setFromMatrixPosition(sObj.matrixWorld);
   // the socket's whole world rotation (a rocket seat lies on its back), part displacement and host included
   const socketQw = sObj.getWorldQuaternion(_mtW);
-  // the occupant's: the socket's, or, where the occupant set its own heading, the socket's frame without its own turn (the
-  // host's, a part's displacement included) then that heading
+  // the occupant's rotation: the socket's, or, where the occupant set a heading, the socket's frame without its own turn then that heading
   if (Number.isFinite(m.yaw)) { const lq = bagOf(s.id)?.transform?.q; _mtR.copy(socketQw).multiply(_mtS.fromArray(Array.isArray(lq) && lq.length === 4 ? lq : [0, 0, 0, 1]).invert()).multiply(_mtQ.setFromAxisAngle(_UP, m.yaw)); }
   else _mtR.copy(socketQw);
   const upright = _mtV.set(0, 1, 0).applyQuaternion(_mtR).y > 0.966;   // within 15°
@@ -505,7 +390,7 @@ export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
       else reason = occ?.av ? `measuring the ${body.anchor}` : 'body loading';
     }
   } else {
-    // the seat-height correction (#101) is a world-up subtraction, so it only holds while the socket stands upright
+    // the seat-height correction is a world-up subtraction, so it only holds while the socket stands upright
     const seat = upright ? occupyCorrectionFor(occ, s.station) : { applied: false, reason: 'the socket is tilted (the seat profile assumes upright)' };
     if (seat.applied) { const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale); if (c) _mtF.set(c[0], c[1], c[2]); state = 'profiled'; }
     else reason = seat.reason;
@@ -516,8 +401,7 @@ export function mountTransform(occupantId, outPos, occ, poseOffset = null) {
     seatState: state, seatReason: reason };
 }
 
-// sky.js owns the current args; world.js only needs them to merge a weather
-// verb on top. Imported lazily to keep the module graph one-directional.
+// sky.js owns the current sky args; main.js hands in the reader so the module graph stays one-directional
 let currentSkyArgs = () => ({});
 export function setSkyArgsSource(fn) { currentSkyArgs = fn; }
 

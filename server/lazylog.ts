@@ -1,14 +1,13 @@
-// server/lazylog.ts — a log whose prefix stays on disk: genesis and the tail read from the cache's offsets; a prefix line is read
-// and strictly parsed on first access (a holey array whose prototype answers a hole), so every reader sees the eager entries.
+// server/lazylog.ts — a log whose prefix stays on disk: genesis and the tail are read at the cache's offsets, and a prefix line
+// is read on first access (a holey array whose prototype answers a hole), so readers see the same entries as an eager load.
 import fs from "node:fs";
-import { readLog, Malformed } from "../shared/protocol/fold.js";
+import { readLog, isE } from "../shared/protocol/fold.js";
 import { posAt } from "../shared/protocol/authority.js";
 import type { At } from "./statecache.ts";
 
 type Any = any;
-const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
 const CHUNK = 8 << 20;
-const BULK = 4096;   // single prefix lines read before the rest load at once: a reader walking the prefix (review L20)
+const BULK = 4096;   // single prefix lines read before the rest load at once: a reader walking the prefix
 
 function readAt(fd: number, pos: number, len: number) {
   const b = Buffer.allocUnsafe(len); let off = 0;
@@ -39,8 +38,7 @@ export function openTail(logPath: string, coversIndex: number, coversHead: strin
   } finally { fs.closeSync(fd); }
 }
 
-/** Lines 1..hi-1 of E (on disk before byte `end`) load on first read (after BULK of them, all at once). → {onDisk(), loadAll()}: how many are still on disk,
- *  and read the rest at once (a purge, a refold from genesis). */
+/** Lines 1..hi-1 of E (on disk before byte `end`) load on first read; after BULK single reads, all at once. */
 function lazyPrefix(E: Any[], logPath: string, hi: number, end: number, ident: { dev: number; ino: number }) {
   let offs: Float64Array | null = null, left = Math.max(0, hi - 1), fd: number | null = null, reads = 0;
   const open = () => {

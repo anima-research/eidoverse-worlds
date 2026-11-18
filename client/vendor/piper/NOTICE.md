@@ -17,15 +17,15 @@ artifacts (checked 2026-08-11).
 **Licenses**:
 - `@diffusionstudio/piper-wasm`: MIT (https://github.com/diffusion-studio/piper-wasm)
 - Upstream `piper-phonemize` (rhasspy): MIT (https://github.com/rhasspy/piper-phonemize)
-- The `.data` bundle contains espeak-ng data: GPL-3.0 (https://github.com/espeak-ng/espeak-ng) —
-  espeak-ng's data and library are GPLv3; it reaches the browser as a
-  self-contained wasm+data pair loaded at runtime by MIT-licensed glue.
-  This repository does not link against it server-side; nothing of the
-  sequencer derives from it.
+- espeak-ng (https://github.com/espeak-ng/espeak-ng): GPL-3.0, data and library. **Both files are
+  GPL-3.0**: the `.data` bundle is espeak-ng's data, and the `.wasm` is the piper-phonemize CLI with
+  libespeak-ng statically linked in (`strings piper_phonemize.wasm` shows "Failed to initialize eSpeak",
+  `--espeak_data`). The MIT parts above stay MIT inside it. The pair is loaded by the browser at runtime;
+  the sequencer neither links nor derives from it.
 
 ## License compliance (r3 B5 — operator decision required to merge)
 
-The `.data` bundle embeds espeak-ng data, licensed **GPL-3.0**. Distributing
+Both files carry espeak-ng (the `.data` its data, the `.wasm` its library), licensed **GPL-3.0**. Distributing
 these bytes from this repository is *binary distribution of a GPL-3.0-covered
 work*, so the repository operator must explicitly accept the obligations or
 choose not to vendor. What this directory now carries toward compliance:
@@ -33,13 +33,13 @@ choose not to vendor. What this directory now carries toward compliance:
 - `LICENSE-GPL-3.0.txt` — the full license text (GPLv3 §4 requires conveying
   it with the work).
 - **Corresponding source** (GPLv3 §6): the exact sources are public —
-  [espeak-ng](https://github.com/espeak-ng/espeak-ng) (the data) and
+  [espeak-ng](https://github.com/espeak-ng/espeak-ng) (the data and library) and
   [rhasspy/piper-phonemize](https://github.com/rhasspy/piper-phonemize) +
   [diffusion-studio/piper-wasm](https://github.com/diffusion-studio/piper-wasm)
   (the build recipe producing exactly these artifacts, pinned at
   `@diffusionstudio/piper-wasm@1.0.0`). A repo distributing the binaries
   should keep this written offer accurate, or mirror the sources.
-- The MIT glue (`piper-phonemize`, `piper-wasm`) needs only attribution,
+- The MIT parts (`piper-phonemize`, `piper-wasm`) need only attribution,
   carried above.
 
 **The alternative, if the operator declines**: do not vendor — the loader

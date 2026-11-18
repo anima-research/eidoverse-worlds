@@ -1,29 +1,18 @@
-// event-wire — the tag set each world event goes out with, extracted so it is
-// TESTABLE, as ping-wire.ts is for pings.
+// event-wire — the tag set each world event goes out with, kept out of net-server.ts (which listens at module load)
+// so test/mcpl/event-wire-test.ts can import it. Delivery decisions stay in net-server.ts.
 //
-// net-server.ts cannot be imported by a test (it listens at module level), so
-// the event→tags mapping used to live only inside its onEvent closure, and a
-// test could only check tag sets it had built itself. The door's delivery
-// decisions (door open or closed, held for pull-only hosts) stay in
-// net-server.ts; what each event IS lives here, and tools/event-wire-test.ts
-// holds it to that.
-//
-// The kind facet (RFC-001 rev 3): a notice nobody sent (weather, a visible
-// change to the world, someone arriving or leaving, the activity digest, the
-// catch-up header) carries `chat:system` beside `chat:ambient`, so a host that
-// routes speech by the latest message doesn't follow a notice into the world,
-// while rules written for ambient traffic keep matching. Speech and acts
-// are people doing things and stay plain `chat:ambient`.
+// Kind facet (RFC-001 rev 3): notices nobody sent (weather, world change, arrive/leave, activity digest, catch-up
+// header) carry `chat:system` beside `chat:ambient`, so a host routing by the latest message doesn't follow a notice
+// into the world. Acts and unaddressed speech stay plain `chat:ambient`; a say that mentions this agent is
+// `chat:mention` + `chat:addressed` instead (declaration.ts speechTags).
 
 import { CHAT, EIDO, tags, speechTags } from "./declaration.ts";
 
 export type WireEventKind =
   | "say" | "act" | "activity" | "weather" | "world-change" | "arrive" | "leave";
 
-/** The tags a live world event is delivered with. `declares`: the speaker's own
- *  declared word (PROTOCOL §6a rule 3); only speech and acts carry a sender
- *  facet, through speechTags. Notices carry none: the world wrote them, and the
- *  declaration rides as metadata. `mention`: the speech named this agent. */
+/** The tags a live world event is delivered with. `declares`: the speaker's declared word (PROTOCOL §6a rule 3),
+ *  a sender facet on speech and acts only. `mention`: the speech named this agent. */
 export function eventTags(kind: WireEventKind, opts: { declares?: string | null; mention?: boolean } = {}): string[] {
   switch (kind) {
     case "say":
@@ -31,8 +20,7 @@ export function eventTags(kind: WireEventKind, opts: { declares?: string | null;
     case "act":
       return speechTags("act", opts.declares);
     case "activity":
-      // The door's own summary of what is happening nearby, written by the
-      // world, not said by anyone: a notice, and the most frequent one.
+      // the door's own summary of nearby activity: a notice
       return tags(CHAT.ambient, CHAT.system, EIDO.activityDigest);
     case "weather":
       return tags(CHAT.ambient, CHAT.system, EIDO.weather);
@@ -50,8 +38,7 @@ export function catchupHeaderTags(): string[] {
   return tags(CHAT.ambient, CHAT.system, EIDO.catchup);
 }
 
-/** A replayed mention: its ORIGINAL addressing plus the catch-up marker
- *  (issue #39), never a notice — someone did say it, to this agent. */
+/** A replayed mention: its ORIGINAL addressing plus the catch-up marker; never a notice. */
 export function catchupReplayTags(): string[] {
   return tags(CHAT.mention, EIDO.catchup);
 }

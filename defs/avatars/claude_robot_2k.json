@@ -15,6 +15,7 @@
       "applyLegClearance"
     ]
   },
+  "skipDoc": "The legs' steps are off here for now: proved on eidoverse's clips, they misread this instance's jump and its crossfades (a leg kicked out sideways at take-off, knees clamped straight). Without them the legs play as the file's own mechanism: the hip stages and calf actuators follow by the VRM's node constraints, the ragdoll included. The arms, hands, head and crown keep their limits.",
   "provenance": {
     "assetRepo": "SkyeShark/eidoverse-video",
     "assetCommit": "0e8716fd1ba15dbc23369dd7c84a2053754bb0e2",

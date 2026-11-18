@@ -1,7 +1,5 @@
-// Terrain material-layer compatibility. Persisted worlds may carry an old or
-// hand-authored numeric `layers` field; material layers are an ARRAY only.
-// One malformed optional decoration must never prevent the ground itself from
-// realizing. Noise complexity remains `octaves`, not this field.
+// Terrain material layers are an array only; a persisted numeric `layers` (old or hand-authored) reads as none,
+// so a malformed decoration never stops the ground realizing. Noise complexity is `octaves`, not this field.
 export function materialLayerSpecs(value) {
   return Array.isArray(value) ? value : [];
 }

@@ -1,13 +1,9 @@
-// server/mainknew.ts — which account the main-era server recorded for a NAME, outside the log being
-// translated: what lets a translation bind a name-only owner, and the boot a name-only server ban (moderation.ts), to an account.
-// What main recorded (upstream main ccd5c53f), and what this reads:
-//   - WORLDS_DIR/.principals.json {sub: {name, kind: human|agent, first, last}}: every account a verified door saw, under the
-//     credential's name at its last sighting (server/access.ts notePrincipal; since 10-17). Main's own grant looked a name up
-//     here, case-insensitively, and bound it only on ONE match (verbs.ts resolveName). Read, the same rule.
-//   - every other main-era log in WORLDS_DIR (log.jsonl, or log.original.jsonl once translated in place): the pairs main's
-//     server stamped itself (verbs.ts): a grant's or ban's {id, sub}, genesis roles' sub, a placer {id, sub}, a behaviour's bySub.
-// Not read: .sessions.json (bearer secrets; every verified session also wrote .principals.json), .bans.json (keyed by the
-// name the BANNER typed, its sub from the same lookup; a ban is no reason to bind anyone), .founding.json (timestamps only).
+// server/mainknew.ts — which account the main-era server recorded for a name, so a translation can bind a name-only
+// owner, and moderation.ts a name-only server ban, to an account. Read:
+//   - WORLDS_DIR/.principals.json {sub: {name, kind, first, last}}: every account a verified door saw, by case-insensitive name;
+//   - every other main-era log in WORLDS_DIR (log.jsonl, or log.original.jsonl once translated in place): the {id, sub} pairs
+//     main stamped on grants, bans, genesis roles, placers and behaviours.
+// Not read: .sessions.json (secrets), .bans.json (keyed by the typed name), .founding.json (timestamps only).
 import fs from "node:fs";
 import path from "node:path";
 

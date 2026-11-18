@@ -1,16 +1,12 @@
-// eidoverse-worlds sequencer — the HTTP surface (TEL0S_NOTES §15, step 7c).
+// eidoverse-worlds sequencer — the HTTP surface.
 //
-// The unsplit fetch()'s if-chain, as a route table: one row per endpoint,
-// first match wins, in EXACTLY the old chain's order (the /thumb/ prefix row
-// still shadows nothing, the catch-all still serves the browser client).
-// Handler bodies moved verbatim; server.ts's fetch() is a one-line delegate.
-// The static-file machinery (serveFrom/contentType/gzCache) and the avatar
-// roster live here with their only HTTP callers — the join snapshot imports
-// avatarRoster back, and the ws `capture-result` case imports pendingCaptures,
-// both one-way: this module never imports server.ts.
+// A route table: one row per endpoint, first match wins, so ORDER matters (the catch-all
+// last serves the browser client); server.ts's fetch() is a one-line delegate. Also home to
+// the static-file machinery (serveFrom/contentType/gzCache) and the avatar/animation rosters.
+// Imports are one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
-import { addressOf } from "./peer.ts";   // the client's address, from a trusted proxy only (security review 10-18 H2)
+import { addressOf } from "./peer.ts";   // the client's address, from a trusted proxy only
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize, dirname, basename, sep } from "node:path";
 import { hexOfLibRel } from "../shared/eido.js";
@@ -27,11 +23,11 @@ import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
-import { hnSessions, hnJti, sessionFromCookie, sessionOfRequest, crossSiteUpgrade, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
+import { hnSessions, hnJti, sessionFromCookie, sessionIdOf, sessionOfRequest, crossSiteUpgrade, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
-import { createNativeLogin } from "./native-login.ts";
+import { createNativeLogin, nativeOriginOf } from "./native-login.ts";
 const nativeLogin = createNativeLogin({
-  origin: process.env.HN_NATIVE_ORIGIN ?? "https://eidoverse.animalabs.ai",
+  origin: nativeOriginOf(),
   login: HN_LOGIN_URL, enabled: Boolean(HN_ISSUER_KEY), session: sessionFromCookie,
   issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
 });
@@ -47,9 +43,9 @@ import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
+const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 // client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
-const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
 /** Reads of a world's live state (/geom?world, /snap, /worlds): behind the same door as joining it. On a box with a
  *  JOIN_TOKEN they need the authority key as a Bearer header, or a caller the door takes (access.ts httpCaller: a scoped
@@ -77,11 +73,12 @@ import { interruptedVisitorText } from "./oldworlds.ts";
 import { setupPage, setupClaim } from "./setup.ts";
 import { setupOpen } from "./operators.ts";
 import { ClientLogRate, ClientLogStore, LIMITS as CLIENTLOG_LIMITS, scrub, holdsPrivateKey, boundLines } from "./clientlog.ts";
-import { readCapped } from "./reqbody.ts";
+import { readCapped, readCappedBytes } from "./request-body.ts";
 
 import { recordComponents } from "../shared/protocol/view.js";
-/** What the routes need from Bun's server object, structurally: the WS
- *  upgrade and the socket address (X-Real-IP's fallback). */
+import { WORLD_NAME_RE } from "./limits.ts";
+import { sha256 } from "../shared/protocol/hash.js";
+/** What the routes need from Bun's server object: the WS upgrade and the socket address (X-Real-IP's fallback). */
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
   requestIP(req: Request): { address: string } | null;
@@ -91,23 +88,14 @@ export type Srv = {
 
 // ---- screenshots: the world serves views of itself -------------------------
 // GET /snap?world=W&follow=ID[&view=first|third|selfie][&at=<thing>][&renderer=auto|unreal|browser][&budget=ms]
-// [&dist=&height=&pitch=] (optional framing, shared/snapframe.js) → the sequencer
-// asks a renderer client (an opt-in Unreal player or legacy browser spectator,
-// dialed OUT like any client) to jump its camera to ID's head (or frame the
-// placed thing `at`) and return one frame: a `capture` request answered by
-// `capture-result` (server/screenshots.ts, the broker; roaming renderers come to
-// a world none serves). Clients never know rendering exists as a separate
-// thing — it's just the world's API.
+// [&dist=&height=&pitch=] (framing: shared/snapframe.js) → a renderer client frames ID (or `at`) and returns one
+// frame via `capture` / `capture-result`; the broker is server/screenshots.ts.
 
 // ---- static serving ---------------------------------------------------------
 
-/** Roster = Skye's library vrms + our overlay (assets/opt/...) + patched forks — drop a
- *  .vrm into any and it's an avatar, live, no restart, no manifest.
- *  ?v=mtime makes each path content-versioned: clients cache it forever,
- *  and any re-export mints a new URL. Served by GET /avatars AND carried in
- *  the join snapshot, so a joiner needs no separate round-trip before it
- *  can resolve a body name (the /avatars top-level await used to gate the
- *  client's entire module graph). */
+/** Roster = the library's vrms + our overlay (assets/opt/...) + patched forks: drop a .vrm into any and it's an avatar.
+ *  ?v=mtime content-versions each path (a re-export mints a new URL). Served by GET /avatars AND carried in the join
+ *  snapshot, so a joiner can resolve a body name without a round-trip. */
 export type AvatarPerf = { tris: number; draws: number; mats: number; alpha: number; bones: number; texMB: number;
   rank: number; rankName: string; worst: string; v: string };
 /** POST /thumb's `perf` (JSON of the loupe's numbers) + `v` → a validated record with the rank recomputed here, or
@@ -131,18 +119,15 @@ export function avatarRoster(): { name: string; path: string; height: number | n
     const dir = join(base, "eidoverse/assets/vrms");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
-      // .ktx2.vrm files are §20c texture variants living beside overlay
-      // originals — negotiated serving artifacts, not bodies of their own
+      // .ktx2.vrm files are texture variants: serving artifacts, not bodies of their own
       if (f.endsWith(".vrm") && !f.endsWith(".ktx2.vrm")) {
         const v = String(Math.round(Bun.file(join(dir, f)).lastModified));
         seen.set(f.replace(".vrm", ""), { url: `eidoverse/assets/vrms/${f}?v=${v}`, file: join(dir, f), v });
       }
     }
   }
-  // The def overlay (§24, defs/avatars/): declared beats discovered. A def
-  // with `vrm` adds — or repoints — a named avatar at any /library path the
-  // scan wouldn't find; a path that doesn't resolve is refused loudly and
-  // the discovered roster stands (a typo'd def must not vanish a body).
+  // The def overlay (defs/avatars/): declared beats discovered. An unresolvable `vrm` is refused loudly and the
+  // discovered entry stands (a typo'd def must not vanish a body).
   const defs = avatarDefs();
   for (const [name, d] of Object.entries(defs)) {
     if (!d.vrm) continue;
@@ -158,19 +143,13 @@ export function avatarRoster(): { name: string; path: string; height: number | n
     const mp = join(OPT_DIR, "thumbs", "meta.json");
     if (existsSync(mp)) hmeta = JSON.parse(readFileSync(mp, "utf8"));
   } catch { /* roster works without heights */ }
-  // The seat verdict rides every roster entry, PRE-JUDGED against the bytes
-  // that will actually serve (#101: one judge, three readers — consumers
-  // never rehash a VRM and can never read a stale value as fresh). The sha
-  // work behind judge() is mtime-cached, so a roster read costs hashing only
-  // when a body's bytes actually changed.
+  // The seat verdict rides every entry, pre-judged against the bytes that will serve (one judge; consumers never
+  // rehash). judge() is mtime-cached, so a roster read hashes only changed bodies.
   return [...seen].map(([name, { url, file, v }]) => {
     const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
     return { name, path: url,
-      // A def's declared height, else the file's own stature (vrmheight.ts, a
-      // lookup but for once per version). A wearer's posted height is the
-      // portrait's framing height (avatar.js), raised toward the bounding box,
-      // so it stands in only when the file gives no stature: no humanoid head,
-      // a head out of range, or a file the server can't read.
+      // A def's declared height, else the file's own stature (vrmheight.ts); a wearer's posted framing height
+      // stands in only when the file gives none.
       height: defs[name]?.height ?? vrmHeightFor(file, v) ?? hmeta[safe]?.h ?? null,
       // the loupe's rank of THIS version only (the v its URL carries): a stamp from an older export is withheld until a wearer re-measures
       perf: ((p) => p && p.v === v ? p : null)(hmeta[safe]?.perf),
@@ -178,25 +157,11 @@ export function avatarRoster(): { name: string; path: string; height: number | n
   });
 }
 
-/** The animation clips, each at a path stamped with its mtime — the same
- *  ?v= trick avatarRoster mints above, for the same reason and one class of
- *  bug later. A .vrm URL has always carried a version; a .vrma URL carried
- *  none, so a changed clip had NO way to invalidate a stored copy, and
- *  `no-cache` does not save you: a response cached under the OLD headers
- *  (before .vrma joined the no-cache list) keeps the headers it was stored
- *  with, and `immutable` means the browser never asks again. Prod, 2026-08-19:
- *  a corrected sit clip was live and byte-verified on the wire while a user's
- *  Chrome kept animating from a copy it had never re-requested — days of it,
- *  no 304s, nothing to purge from this end. A version in the URL is the only
- *  invalidation that reaches a cache we do not control.
- *
- *  Precedence is /library's own ladder — PATCH_DIR wins over OPT_DIR wins over
- *  LIBRARY_DIR — because the mtime MUST describe the bytes a client will
- *  actually receive. Version the library's copy while serving a patched fork
- *  and the stamp is a lie that pins the wrong file forever. */
+/** The animation clips, each at a path stamped ?v=mtime as avatarRoster does: a version in the URL is the only
+ *  invalidation that reaches a cache we do not control. Precedence is /library's own ladder (PATCH_DIR > OPT_DIR >
+ *  LIBRARY_DIR) so the mtime describes the bytes a client actually receives. */
 export function animationRoster(): { name: string; path: string; size: number }[] {
   const seen = new Map<string, { path: string; size: number }>();
-  // later base wins, so this list runs lowest-precedence first
   for (const base of [...LADDER].reverse()) {   // lowest-precedence first: later wins the map
     const dir = join(base, "eidoverse/assets/animations");
     if (!existsSync(dir)) continue;
@@ -204,19 +169,13 @@ export function animationRoster(): { name: string; path: string; size: number }[
       if (!f.endsWith(".vrma")) continue;
       if (isReservedAnimName(f.replace(".vrma", ""))) { console.error(`[defs] animation "${f}": "live" is reserved (it names ad-libbed anims) — not served`); continue; }
       const file = Bun.file(join(dir, f));
-      // size rides along so the prefetcher's byte budget still sees these
-      // clips as it did when it read them from /library-list
+      // size rides along for the prefetcher's byte budget
       seen.set(f.replace(".vrma", ""),
         { path: `eidoverse/assets/animations/${f}?v=${Math.round(file.lastModified)}`, size: file.size });
     }
   }
-  // The def overlay (§24, defs/animations/): declared beats discovered —
-  // same contract as the avatar roster. A def's `vrma` adds or repoints a
-  // named clip; an unresolvable path is refused loudly and the discovered
-  // roster stands. Non-path metadata (tags, doc) rides /defs, not here —
-  // this roster stays the prefetcher's byte-budget shape. Resolution reads
-  // the path as /library serves it (server/libfile.ts libraryFile: the same
-  // ladder, a name decoded as the route decodes it), so a listed clip loads.
+  // The def overlay (defs/animations/): same contract as the avatar roster. Metadata (tags, doc) rides /defs.
+  // Resolution is /library's own (libfile.ts libraryFile), so a listed clip loads.
   const resolveClip = (lib: string): string | null => libraryFile(lib, /\.vrma$/i);
   const defs = animationDefs();
   for (const [name, d] of Object.entries(defs)) {
@@ -249,11 +208,8 @@ function contentType(path: string): string {
   return "application/octet-stream";
 }
 
-// Build identity, resolved once at boot (upstream #51, ported into the route
-// module). "What is production running?" must be a lookup, not an inference.
-// sha, commitTime and dirty are ONE provenance triple: if ANY comes from the
-// environment (image builds), the others are env-or-unknown — never filled
-// from the local git tree in any direction.
+// Build identity, resolved once at boot. sha, commitTime and dirty are ONE provenance triple: if ANY comes from the
+// environment (image builds), the others are env-or-unknown — never filled from the local git tree.
 const BUILD = (() => {
   const gitLine = (...args: string[]) => {
     try {
@@ -277,46 +233,22 @@ const BUILD = (() => {
   return { sha: sha || "unknown", commitTime: commitTime || "unknown",
     dirty: dirtyRaw === "true" ? true : dirtyRaw === "false" ? false : "unknown",
     startedAt: new Date().toISOString(),
-    // Per-run identity echo for owned test children (tools/probe-harness.mjs,
-    // the boot-check pattern): a probe that spawned this process with
-    // EIDO_BOOT_NONCE can prove the responder is ITS child rather than a stale
-    // listener or a concurrent run's — startedAt freshness alone cannot tell
-    // two just-started servers apart. Absent when unset, so production
-    // /version is unchanged.
+    // EIDO_BOOT_NONCE echo: lets a spawning probe (test/harness/probe-harness.mjs) prove the responder is its own child.
     ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}) };
 })();
 
 const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
 
-// What may cache for a day WITHOUT asking: heavy, rarely-edited art. What may
-// NOT: things we iterate on, where a silently stale copy costs a debugging
-// session — avatars (2026-07-22, "sydney's arms are swapped": three people on
-// three cached rigs) and, since upstream-patched/ (§22g), library CODE and
-// its data sidecars (2026-08-11: a 24h-cached vegetation.js served tel0s the
-// pre-§22l shader through a server restart and a whole branch A/B — mode
-// read 'cards-sss' while the wire had 'opaque'). no-cache still rides the
-// ETag: revalidation is a 304, not a re-download.
-// .vrma is in that list too, and was missing from it: ".vrma" does not match
-// endsWith(".vrm"), so ANIMATIONS cached hard for a day. Worse than a stale rig,
-// because a .vrm URL carries ?v=mtime and an animation URL carries no version at
-// all — a bad clip is sticky with no way to invalidate it. Measured 2026-08-12:
-// a placeholder dropped in during a bring-up stuck for every avatar on the
-// roster, and read as "animations are broken" rather than "your cache is holding
-// one wrong file".
+// What may cache for a day without asking: heavy, rarely-edited art. Not things we iterate on, where a stale copy
+// costs a debugging session: avatars and animations (.vrm/.vrma) and library code and data sidecars.
+// Those get no-cache, which still rides the ETag (a 304, not a re-download).
 const hardCacheable = (path: string) =>
   !/\.vrma?$/i.test(path) && !/\.(m?js|json)$/i.test(path);
 
-// `provisional`: this answer is not the final one for this URL (a flagged
-// fetch whose variant does not exist yet — see the /library route). It wins
-// over `immutable`: no-cache, riding the ETag, so the moment a different file
-// answers the same URL its bytes get through.
-// A built VARIANT (a KTX2 or LOD shadow) can be rebuilt IN PLACE (↻, the tf/cap purge, a host gaining sharp), so it
-// must never be pinned `immutable` like its content-addressed original: the recipe in its URL names how it SHOULD be
-// built, not the bytes. Short-lived + validator (the "same URL, may change" pattern): browsers reuse it for a minute,
-// then a 304; nginx still caches it for that minute, so proxy_cache_lock keeps collapsing a crowd into one upstream
-// fetch. A rebuild reaches a browser on its next load after the minute — up to ~6 min where stale-while-revalidate
-// hands out the old copy once while it revalidates in the background. The same tier answers a lod ask whose standing
-// verdict makes the plain ktx2 variant FINAL (#205): final for this recipe, but still those rebuildable bytes.
+// `provisional`: not this URL's final answer (a flagged fetch whose variant isn't built yet); no-cache beats `immutable`.
+// A built VARIANT (KTX2 or LOD shadow) can be rebuilt in place, so it is never `immutable`: short-lived + validator
+// (a minute, then a 304; nginx's proxy_cache_lock still collapses a crowd). A rebuild reaches browsers within ~6 min.
+// A lod ask whose standing verdict makes the plain ktx2 variant final shares this tier.
 const VARIANT_CC = "public, max-age=60, stale-while-revalidate=300";
 /** `opts.variant`: the file is a built variant (VARIANT_CC unless provisional). `opts.headers`: headers that NAME the
  *  answer (x-eidoverse-lod) — on the 304 too, so devtools reads the state without a body. */
@@ -325,60 +257,46 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   const variant = !!opts.variant;
   const path = normalize(join(base, rel));
   if (!path.startsWith(base)) return new Response("forbidden", { status: 403 });
-  // A missing file must be a 404, not a Bun.file stream blowing up into a 500 —
-  // prod 08-02: an asset absent from the VPS library (rsync gap) turned every
-  // spawn of it into "Internal Server Error" instead of an honest not-found.
+  // a missing file is a 404, not a Bun.file stream blowing up into a 500
   if (!existsSync(path)) return new Response("not found", { status: 404 });
   const f = Bun.file(path);
   const headers: Record<string, string> = { "content-type": contentType(path), ...(opts.headers ?? {}) };
-  // a page carries its Content-Security-Policy, its own inline scripts hashed in (server/csp.ts; security pass 3 N3)
+  // a page carries its Content-Security-Policy, its own inline scripts hashed in (server/csp.ts)
   if (headers["content-type"].startsWith("text/html")) headers["content-security-policy"] = cspForFile(path, f.lastModified, () => readFileSync(path, "utf8"));
-  // ETag from size+mtime: makes no-cache revalidation a 304, not a re-download
-  // (an 11MB avatar re-pulled per reload is invisible on localhost and rude
-  // over tailnet).
-  if (f.size > 0) {
-    const etag = `"${f.size}-${f.lastModified}"`;
-    headers["etag"] = etag;
-    if (req?.headers.get("if-none-match") === etag) {
-      // cache-control must ride along on the 304 (it refreshes the stored response's lifetime)
-      headers["cache-control"] = provisional ? "no-cache"
-        : variant ? VARIANT_CC
-        : immutable ? "public, max-age=31536000, immutable"
-        : cache && hardCacheable(path) ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
-      return new Response(null, { status: 304, headers });
-    }
-  }
-  // client code must never be heuristically cached (stale main.js = ghost bugs);
-  // library assets cache hard — EXCEPT avatars: .vrm files get iterated on
-  // (rig fixes, re-exports) and a 24h-stale avatar is a debugging nightmare
-  // (2026-07-22: "sydney's arms are swapped" was three of us looking at three
-  // different cached rigs). no-cache = revalidate each load, still cheap.
-  const hard = cache && hardCacheable(path);
+  // client code is never heuristically cached; library assets cache hard except hardCacheable's exclusions
   headers["cache-control"] = provisional ? "no-cache"
     : variant ? VARIANT_CC
     : immutable ? "public, max-age=31536000, immutable"
-    : hard ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
-  // gzip the JS modules: three.webgpu.js is 2.1MB raw / ~500KB gzipped, and
-  // over a DERP-relayed tailnet link that difference is seconds.
-  //
-  // .vrma and .vrm are here too, and the old comment claiming "binary assets
-  // are already compressed" was only half right. Measured 2026-07-26: GLB
-  // models compress to 0.99 (already Draco/webp packed inside — genuinely
-  // pointless), but VRM bodies hit 0.50 and the VRMA animation clips 0.44,
-  // because their float animation tracks and mesh data are stored raw. Seven
-  // clips at ~1.9MB each was the second-largest slice of a cold boot; half of
-  // it was air.
-  if (/\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && req?.headers.get("accept-encoding")?.includes("gzip") && f.size > 10_000) {
+    : cache && hardCacheable(path) ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
+  // ETag from size+mtime: no-cache revalidation is a 304, not a re-download (an 11MB avatar per reload); the 304 carries
+  // cache-control too (it refreshes the stored response's lifetime)
+  // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
+  // packed) are left out. Such a file varies by Accept-Encoding whichever it gets, and each encoding has its own ETag
+  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000, gz = gzippable && acceptsGzip(req);
+  if (gzippable) headers["vary"] = "accept-encoding";
+  if (f.size > 0) {
+    const etag = `"${f.size}-${f.lastModified}${gz ? "-gz" : ""}"`;
+    headers["etag"] = etag;
+    if (req?.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+  }
+  if (gz) {
     let entry = gzCache.get(path);
     if (!entry || entry.mtime !== f.lastModified) {
       entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
       gzCache.set(path, entry);
     }
     headers["content-encoding"] = "gzip";
-    headers["vary"] = "accept-encoding";
     return new Response(entry.gz, { headers });
   }
   return new Response(f, { headers });
+}
+
+/** Whether the request lists gzip with a q above 0 (RFC 9110 12.5.3: `gzip;q=0` refuses it). */
+function acceptsGzip(req?: Request): boolean {
+  const q = (name: string) => { for (const part of (req?.headers.get("accept-encoding") ?? "").toLowerCase().split(",")) {
+    const [coding, ...params] = part.split(";").map((x) => x.trim()); if (coding !== name) continue;
+    const qv = params.find((p) => p.startsWith("q=")); return qv ? Number(qv.slice(2)) || 0 : 1; } return null; };
+  return (q("gzip") ?? 0) > 0;
 }
 
 let clientVersionCache: { at: number; v: string } | null = null;
@@ -394,7 +312,7 @@ type Route = {
 /** Which file a KTX2-negotiating client (the norm) gets for a library/store model at full detail — the ORDER the
  *  /library/ handler below serves in: a deliberate upstream patch (PATCH_DIR wins over everything), the KTX2 variant,
  *  then (store) store-min, then the optimized mirror, then the original. The catalog ranks this file ("perf if you
- *  load it", owner 09-24); tools/library-status-probe fetches /library/<rel>?ktx2 and checks the bytes are this file's. */
+ *  load it"). */
 function servedGlbPath(rel: string): { path: string; as: "patched copy" | "KTX2 variant" | "compressed copy" | "optimized copy" | "original" } {
   const pt = normalize(join(PATCH_DIR, rel));
   if (pt.startsWith(PATCH_DIR) && existsSync(pt)) return { path: pt, as: "patched copy" };
@@ -441,19 +359,17 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/ws",
     handler: ({ req, srv }) => {
-      // Session rides the upgrade: browsers attach cookies to WS upgrades, so
-      // the join can carry a VERIFIED identity without the client ever
-      // seeing a token. (fkm web-ui precedent: "the WS is the authentication
-      // event" — here inverted, the cookie is, and the WS rides it.)
+      // Session rides the upgrade: browsers attach cookies to WS upgrades, so the join carries a verified identity
+      // without the client ever seeing a token.
       const session = sessionFromCookie(req.headers.get("cookie"));
-      if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH (review full-260 L7)
+      if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
       const addr = hashedAddress(req, srv);
       if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
       return new Response("expected websocket", { status: 400 });
     },
   },
-  // ---- archipelago-home doors (docs/home-node.md §7) ----
+  // ---- archipelago-home doors ----
   {
     match: (u) => u.pathname === "/authcfg",
     handler: () => new Response(
@@ -462,14 +378,14 @@ const ROUTES: Route[] = [
     ),
   },
   {
-    // client console tee: a visitor's errors and [xr] lines land in a file the operator tails on the box (a headset shows an
-    // error for three seconds). Any signed-in session or the door key may post, so a refused client can still say why; the
-    // budget that holds against a flood (rate, size, scrub, disk) is server/clientlog.ts. No address is written. An OPEN door
-    // (JOIN_TOKEN empty) takes these writes from anyone who can reach the port: do not run it open on a public box.
+    // client console tee: a visitor's errors and [xr] lines land in a file the operator can tail. Timestamp + text,
+    // no address. Bounded by the CLIENTLOG_* limits; door-keyed by `Authorization: Bearer` (never the URL), so an OPEN
+    // door accepts writes from anyone who can reach the port — do not run it open on a public box. A failed append
+    // answers 500. Lands in $CLIENTLOG_DIR (default WORLDS_DIR/.clientlogs).
     match: (u, req) => u.pathname === "/clientlog" && req.method === "POST",
     handler: async ({ req, url, srv }) => {
-      const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
-      // A key in the query is refused outright so the old client shape cannot ship by accident (review of #172).
+      const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (limits.ts WORLD_NAME_RE)
+      // The key rides the Authorization header, never the URL (query tokens leak into proxy logs); a query key is refused.
       if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
       const key = bearerOf(req);
       const session = sessionOfRequest(req);
@@ -511,8 +427,7 @@ const ROUTES: Route[] = [
   {
     match: (u, req) => u.pathname === "/auth" && req.method === "GET",
     handler: () =>
-      // The landing spot for the home node's redirect. The token is in the URL
-      // FRAGMENT (never reaches this server's logs); this page posts it back.
+      // AUTH_PAGE: the home node's redirect lands here (token in the fragment)
       new Response(AUTH_PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "content-security-policy": AUTH_PAGE_CSP } }),
   },
   {
@@ -520,7 +435,10 @@ const ROUTES: Route[] = [
     handler: async ({ req, url }) => {
       if (!HN_ISSUER_KEY) return new Response(JSON.stringify({ error: "identity door not configured" }), { status: 503, headers: { "content-type": "application/json" } });
       let tok = "";
-      try { tok = String(((await req.json()) as { token?: string }).token ?? ""); } catch { /* fall through */ }
+      let text: string | null = "";
+      try { text = await readCapped(req, 64 * 1024); } catch { /* a broken body reads as no token */ }   // an id token is ~1 KB
+      if (text === null) return new Response(JSON.stringify({ error: "too large" }), { status: 413, headers: { "content-type": "application/json" } });
+      try { tok = String((JSON.parse(text) as { token?: string }).token ?? ""); } catch { /* fall through */ }
       const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD });
       if (!v.ok) {
         console.log(`[auth] login token rejected: ${v.reason}`);
@@ -558,8 +476,8 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/logout",
     handler: ({ req }) => {
-      const m = /(?:^|;\s*)ew_sess=([a-f0-9]{64})/.exec(req.headers.get("cookie") ?? "");
-      if (m && hnSessions.delete(m[1]!)) saveSessions();
+      const sid = sessionIdOf(req.headers.get("cookie"));
+      if (sid && hnSessions.delete(sid)) saveSessions();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "set-cookie": "ew_sess=; Path=/; HttpOnly; Max-Age=0" },
       });
@@ -571,11 +489,8 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/check",
     handler: async ({ req, url, srv }) => {
-      // The build check (server/buildcheck.ts): what a model will be like to
-      // walk into — walk-in or solid, its floors and what's reachable, why
-      // anything isn't, suggested rooms/doors/stairs, the render budget.
-      // Advisory and public, like /geom. Computed once per model, in its own
-      // process (buildcheck-queue.ts); the first ask can take a few seconds.
+      // The build check (server/buildcheck.ts): what a model is like to walk into. Advisory and public, like /geom;
+      // computed once per model in its own process (buildcheck-queue.ts), so the first ask can take seconds.
       const j = (o: unknown, status = 200) =>
         new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
       const lib = url.searchParams.get("lib") ?? "";
@@ -583,7 +498,7 @@ const ROUTES: Route[] = [
       if (!file) return j({ error: `no such asset: ${lib}` }, 404);
       // ?scale= checks it as a thing placed at that scale (0.05–20, to 2 places)
       const scale = checkScale(url.searchParams.get("scale") ?? 1);
-      // public, so its new work is gated per address and its queue is capped (buildcheck-queue.ts; review r3 F1)
+      // public, so its new work is gated per address and its queue is capped (buildcheck-queue.ts)
       const ip = addressOf(req, srv);
       try { return j({ lib, ...(await checkFile(file, scale, undefined, { address: ip }) as object) }); }
       catch (err) {
@@ -599,12 +514,9 @@ const ROUTES: Route[] = [
       // Geometry as DATA, for beings who perceive by reading. Three tiers:
       //   /geom?lib=<path>           one asset: bbox, flat zones, named parts
       //   /geom?world=W&id=<entity>  that asset + the entity's world transform
-      //   /geom?world=W              the whole scene: every entity + transform
-      //                              (+local bbox; &boxes=0 to skip the parses)
-      // Raw bytes stay at GET /library/<lib> for local processing; this is
-      // the parsed tier. Same trust level as the world log: public reads.
+      //   /geom?world=W              every entity + transform (+local bbox; &boxes=0 skips the parses)
       const j = (o: unknown, status = 200) =>
-        new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+        new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
       const wname = url.searchParams.get("world");
       if (!wname) {
         const lib = url.searchParams.get("lib") ?? "";
@@ -614,11 +526,10 @@ const ROUTES: Route[] = [
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
       if (!mayRead(req)) return unauthorized();
-      // read-only: answer for LOADED or on-disk worlds, never create one —
-      // and only for worlds this caller may see. A world closed to them reads
-      // exactly like one that does not exist (access.ts).
+      // read-only, LOADED or on-disk worlds, never creates one; a world closed to this caller reads exactly like one that
+      // does not exist (access.ts)
       // (one question, the access index's, for every name: a missing world and a hidden one take the same path)
-      if (!/^[a-z0-9_-]{1,64}$/i.test(wname) || !visibleTo(doorFor(wname), httpVisitor(req, srv))) return j({ error: "no such world" }, 404);
+      if (!WORLD_NAME_RE.test(wname) || !visibleTo(doorFor(wname), httpVisitor(req, srv))) return j({ error: "no such world" }, 404);
       const w = getWorld(wname);
       // the view record (shared/protocol/view.js viewOf) verbatim — scale3, q, every component — never a projection of it
       const record = (eid: string, e: Record<string, unknown>) => ({ id: eid, ...e, model: e.model ?? null, parent: e.parent ?? null });
@@ -647,29 +558,20 @@ const ROUTES: Route[] = [
     handler: ({ req, url, srv }) => handleUpload(req, url, srv),
   },
   {
-    // POST /seat-profile — the live proposal door (#101 B4, ported §24r).
-    //
-    // Write authority: a NAMED actor only — a tokens.json bearer or a
-    // home-node-verified aid1 identity, the same two legs /upload trusts.
-    // The anonymous door token may NOT write here: a seat profile moves
-    // every wearer of an avatar, and "?by=" is self-asserted. This server
-    // writes PROPOSALS only (the store refuses accepted-shaped records with
-    // a 403 by construction); the countersign that makes a profile
-    // load-bearing has no HTTP path at all — tools/seat-accept.ts is an
-    // operator act on the box, and the 5s poll announces it. A proposal
-    // through THIS door is announced immediately (the store's own mtime
-    // bookkeeping keeps the poll from repeating it).
+    // POST /seat-profile — the live proposal door. A named actor only (a tokens.json key or aid1 identity, by
+    // Authorization: Bearer or, for older callers, ?token=); the anonymous door token may not write, since a seat
+    // profile moves every wearer. Writes proposals only; acceptance has no HTTP path (tools/operator/seat-accept.ts).
     match: (u, req) => u.pathname === "/seat-profile" && req.method === "POST",
     handler: async ({ req, url }) => {
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
         { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
-      const tok = url.searchParams.get("token") ?? "";
+      const tok = bearerOf(req) || (url.searchParams.get("token") ?? "");
       const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
       if (!actor) {
         return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the authority token may not write seat profiles" }, 401);
       }
-      const text = await req.text();
-      if (new TextEncoder().encode(text).length > MAX_PROPOSAL_BYTES) {
+      const text = await readCapped(req, MAX_PROPOSAL_BYTES);
+      if (text === null) {
         return j({ error: `proposal exceeds ${MAX_PROPOSAL_BYTES} bytes` }, 413);
       }
       let record: unknown;
@@ -685,14 +587,8 @@ const ROUTES: Route[] = [
     match: (u) => u.pathname === "/snap",
     handler: async ({ req, url, srv }) => {
       if (!mayRead(req)) return unauthorized();
-      // /snap sends nothing while it waits for the frame, so it is an idle
-      // connection to Bun: give this request its own timeout a little past the
-      // broker's longest wait (a roamer's journey plus its frame), so the wait
-      // doesn't rest on the server-wide idleTimeout that server.ts sets.
-      // Capped at 255s, Bun.serve's own ceiling for idleTimeout, which this
-      // keeps to although the per-request call accepts more; config.ts keeps
-      // SNAP_TIMEOUT_SEC low enough (225) that the cap never cuts the broker's
-      // longest wait.
+      // /snap is idle while it waits for the frame: its own timeout, a little past the broker's longest wait, capped at
+      // Bun's 255s idleTimeout ceiling (config.ts keeps SNAP_TIMEOUT_SEC under it).
       srv.timeout?.(req, Math.min(255, Math.ceil(screenshots.maxWaitMs / 1000) + 5));
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
@@ -723,7 +619,7 @@ const ROUTES: Route[] = [
     handler: ({ req, url, srv }) => {
       if (!mayRead(req)) return unauthorized();
       const name = url.searchParams.get("world") ?? "commons";
-      if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return new Response("bad world name", { status: 400 });
+      if (!WORLD_NAME_RE.test(name)) return new Response("bad world name", { status: 400 });
       // the access index's answer for every name: missing and hidden alike
       { const door = doorFor(name); if (!door || !visibleTo(door, httpVisitor(req, srv))) return new Response("no such world", { status: 404 }); }
       const t = getWorld(name).state.terrain;
@@ -742,22 +638,16 @@ const ROUTES: Route[] = [
     },
   },
   {
-    // Discovery for travel: which worlds this sequencer fronts, and who is
-    // embodied where. Union of LOADED worlds and on-disk worlds with a log —
-    // never creates one (getWorld is not called). Behind the same door as a
-    // join (mayRead). Presence names are the same ids every join snapshot
-    // already hands out; spectators and renderers appear as nothing here
-    // exactly as they do in-world. ONE list of people (R 10-17 14:41:
-    // "people" means everyone): each entry is {id, declares?}, the word a
-    // participant declared for themselves at the door (PROTOCOL §6a), if any,
-    // as a tag; `agents` is main's field, by declaration, carried beside it (decision table row 21).
+    // Discovery for travel: loaded + on-disk worlds and who is embodied where; never creates one. Behind the join door
+    // (mayRead). Spectators and renderers are absent, as in-world. ONE list of people, each {id, declares?} (the word
+    // they declared at the door, PROTOCOL §6a); `agents` repeats the declared agents' ids for main's readers.
     match: (u) => u.pathname === "/worlds",
     handler: ({ req, srv }) => {
       if (!mayRead(req)) return unauthorized();
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
-          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "world.jsonl"))) names.add(n);   // listed: its own case already
+          if (WORLD_NAME_RE.test(n) && existsSync(join(WORLDS_DIR, n, "world.jsonl"))) names.add(n);   // listed: its own case already
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
       // PER CALLER: a world closed to whoever is asking is not on their map at
@@ -786,11 +676,8 @@ const ROUTES: Route[] = [
     },
   },
   {
-    // "May I go there?" — asked BEFORE moving, so a refused trip never strands
-    // a body (the MCPL door's travel gate asks this as the agent). Answers for
-    // the CALLER only, and only for a signed-in caller (cookie session or
-    // Authorization bearer): an anonymous probe is 401. A world the caller may
-    // not discover answers exactly as a missing one: 404 world-unavailable.
+    // "May I go there?" — asked BEFORE moving, so a refused trip never strands a body. Signed-in callers only (else 401).
+    // A world the caller may not discover answers the same 404 as a missing one (access.ts toldOf: no existence oracle).
     //   { world, exists: true, you: "enter"|"watch"|"none", why? } | 404 {code: "world-unavailable", message}
     match: (u) => u.pathname === "/access",
     // An interrupted conversion or an old-format world is said only to the operator or its recognised owner (access.ts toldOf):
@@ -801,7 +688,7 @@ const ROUTES: Route[] = [
       const caller = httpCaller(req);
       if (!caller) return j({ error: "sign in (cookie) or send Authorization: Bearer <your credential>" }, 401);
       const name = url.searchParams.get("world") ?? "";
-      if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
+      if (!WORLD_NAME_RE.test(name)) return j({ error: `"${name}" is not a world name` }, 400);
       const told = await toldOf(name, caller, httpProven(req));
       if (told.kind === "unavailable") return j(unavailable(name), 404);
       if (told.kind === "interrupted") return j({ world: name, exists: true, you: "none", state: "interrupted", why: interruptedVisitorText(name) });
@@ -815,24 +702,17 @@ const ROUTES: Route[] = [
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
       { headers: { "content-type": "application/json", "cache-control": "no-store",
-        // the store revision the verdicts were judged at — the client cache's
-        // generation guard compares this against update events, so a slow
-        // response from before an acceptance can never roll it back
+        // the store revision the verdicts were judged at: the client's generation guard, so a slow response can't roll back
         "x-profiles-rev": String(seatStore.rev) } }),
   },
   {
-    // The heartbeat's gauges (charter §4): per-system runs / worst ms /
-    // errors. Public and cheap like /version — "is the tick healthy" must
-    // be a lookup, not an inference from symptoms.
+    // The heartbeat's gauges: per-system runs / worst ms / errors. Public and cheap like /version.
     match: (u) => u.pathname === "/tick",
     handler: () => new Response(JSON.stringify({ ...tickStats() }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
-    // The def registry (charter §3): instance content as data, one fetch per
-    // client boot. no-store for the same reason the rosters are — an edited
-    // def must reach the next boot, and the registry's own TTL already
-    // bounds the read cost.
+    // The def registry, one fetch per client boot; no-store so an edited def reaches the next boot.
     match: (u) => u.pathname === "/defs",
     handler: () => new Response(defsPayload(),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
@@ -845,34 +725,23 @@ const ROUTES: Route[] = [
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
-    // #104 diagnostics: the adapter's live SFU view — legs, gens, consent, incarnation.
+    // diagnostics: the adapter's live SFU view — legs, gens, consent, incarnation.
     match: (u) => u.pathname === "/relay-diag",
-    handler: ({ req, url, srv }) => new Response(
+    // who hears whom is the world's live state: behind the joining door, like /snap
+    handler: ({ req, url, srv }) => !mayRead(req) ? unauthorized() : new Response(
       JSON.stringify((() => {
         // a world the caller may not see answers like one with no voice at all
-        const name = url.searchParams.get("world") ?? "staging";
+        const name = url.searchParams.get("world") ?? "commons";   // the default world, as /snap and /heightmap
         const w = worlds.get(name);
         return w && !visibleTo(doorFor(name), httpVisitor(req, srv)) ? { transport: "sfu", active: false } : sfuDiag(name);
       })()),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
-    // upstream #51, ported to the route table: which build is this world
-    // running — public, cheap, cache-hostile; the whole point is NOW
-    //
-    // WORLD_INSTANCE_NONCE is an opt-in TEST affordance, mirroring the authority's
-    // MCPL_INSTANCE_NONCE: when set, /version carries `instance`, letting a
-    // harness prove the process answering is the one IT spawned rather than a
-    // stale listener squatting the port. Unset in production, where the body is
-    // byte-identical to before — the field is absent, not empty.
-    //
-    // Why an app endpoint at all when the OS can be asked: because `ss` and
-    // /proc are Linux-only, and this repository is reviewed on macOS. A
-    // challenge-response the SERVER answers is the portable proof; the OS check
-    // stays as a second, stricter opinion where the platform offers one.
+    // Which build is this world running — public, cheap, no-store. WORLD_INSTANCE_NONCE (test-only, like the authority's
+    // MCPL_INSTANCE_NONCE) adds `instance`, a portable proof that a harness's own child is answering.
     match: (u) => u.pathname === "/version",
-    // The representation key and both owned-process nonces come from this
-    // running process; clients never infer them from a newly served disk file.
+    // the key and nonces come from this running process, never from a newly served disk file
     handler: () => new Response(
       JSON.stringify({
         ...BUILD,
@@ -887,11 +756,7 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname.startsWith("/thumb/"),
     handler: async ({ url }) => {
-      // Avatar thumbnails. VRMs have no shipped previews, and a name-only
-      // roster where each choice costs a multi-megabyte download is a blind
-      // pick. So thumbnails are CONTRIBUTED: whoever wears a body renders one
-      // off its own loaded VRM and posts it back. The roster fills in as people
-      // use it — no build step, no manifest, no bulk render job.
+      // Avatar thumbnails, CONTRIBUTED: whoever wears a body renders one off its loaded VRM and posts it (POST /thumb).
       const name = decodeURIComponent(url.pathname.slice("/thumb/".length)).replace(/\.png$/, "");
       const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
       const f = Bun.file(join(OPT_DIR, "thumbs", `${safe}.png`));
@@ -904,20 +769,17 @@ const ROUTES: Route[] = [
   {
     match: (u, req) => u.pathname === "/perflog" && req.method === "POST",
     handler: async ({ req, srv }) => {
-      // Load-performance beacon (client/lib/loadwork.js): jank + load lines
-      // from real visits, because Safari's console is unreachable and most
-      // visitors never open one. Append-only JSONL beside the worlds, capped —
-      // diagnosis data, not surveillance; it holds only timing lines and a UA.
+      // Load-performance beacon (client/lib/render/loadwork.js): append-only capped JSONL of timing lines and a UA.
       try {
-        const body = await req.text();
-        if (body.length < 100_000) {
+        const body = await readCapped(req, 100_000);
+        if (body !== null) {
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
           const big = existsSync(dest) && Bun.file(dest).size > 5_000_000;
           if (!big) {
-            // the address HASHED, like everywhere else this server keeps one (security pass 3, M3): enough to tell one
+            // the address HASHED, like everywhere else this server keeps one: enough to tell one
             // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
             const ip = addressOf(req, srv);
-            const addr = new Bun.CryptoHasher("sha256").update(`eidoverse-perflog:${ip}`).digest("hex").slice(0, 24);
+            const addr = sha256(`eidoverse-perflog:${ip}`).slice(0, 24);
             const { ts: _t, ip: _i, addr: _a, ...line } = JSON.parse(body) ?? {};
             appendFileSync(dest, JSON.stringify({ ts: Date.now(), addr, ...line }) + "\n");
           }
@@ -932,13 +794,13 @@ const ROUTES: Route[] = [
     match: (u, req) => u.pathname === "/rebuild" && req.method === "POST",
     handler: ({ req, url, srv }) => {
       // Who may ask: the sign-ins /upload accepts (the authority key, an agent token, an aid1 credential) plus a signed-in
-      // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
-      // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
+      // session cookie — a person who came in through the home node carries no door key. The key rides
+      // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A ?token= is never read (not refused: it counts for nothing).
       if (JOIN_TOKEN) {
         const key = bearerOf(req);
         const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
           // a cookie rides requests from sibling subdomains (SameSite=Lax is per-SITE): never from another site's page.
-          // Embodied sign-ins only (worlds:join), as /upload asks: a spectate-only session can't rebuild (#260 bot 12's twin)
+          // Embodied sign-ins only (worlds:join), as /upload asks: a spectate-only session can't rebuild
           || !!sessionOfRequest(req)?.scopes.includes("worlds:join");
         if (!ok) return new Response("sign in or send the authority key as a Bearer header", { status: 401 });
       }
@@ -968,15 +830,11 @@ const ROUTES: Route[] = [
       const dir = join(OPT_DIR, "thumbs");
       mkdirSync(dir, { recursive: true });
       const dest = join(dir, `${safe}.png`);
-      // The portrait carries the body's measured stature (skeleton-derived,
-      // client-side) — kept beside the images so /avatars can hand catalogs a
-      // roster drawn to a common scale.
+      // the body's measured stature, kept beside the images for /avatars
       const height = Number(url.searchParams.get("height"));
       const hOk = Number.isFinite(height) && height > 0.2 && height < 20;
-      // …and the body's loupe numbers, measured by the wearer's client on the LOADED body (perfscope.statsOf — the
-      // runtime draws a GLB parse can't see: MToon outline groups). Tied to the body version `v` (the roster's ?v=
-      // mtime) so a re-export shows no stale rank. The rank is recomputed HERE from the numbers (shared/perfrank.js);
-      // a client-sent rank would be ignored.
+      // …and the loupe numbers measured on the LOADED body (perfscope.statsOf), tied to version `v`; the rank is
+      // recomputed here (shared/perfrank.js), never taken from the client.
       const perf = avatarPerfParam(url.searchParams.get("perf"), url.searchParams.get("v"));
       if (hOk || perf) {
         const metaPath = join(dir, "meta.json");
@@ -990,9 +848,9 @@ const ROUTES: Route[] = [
       const force = url.searchParams.get("force") === "1";
       if (existsSync(dest) && !force) return new Response(JSON.stringify({ ok: true, existed: true, perf: !!perf }),
         { headers: { "content-type": "application/json" } });
-      const body = new Uint8Array(await req.arrayBuffer());
+      const body = await readCappedBytes(req, 400_000);
+      if (body === null) return new Response("thumb too large", { status: 413 });
       if (body.length === 0 && perf) return new Response(JSON.stringify({ ok: true, meta: true, perf: true }), { headers: { "content-type": "application/json" } });
-      if (body.length > 400_000) return new Response("thumb too large", { status: 413 });
       if (body.length < 8 || body[0] !== 0x89 || body[1] !== 0x50) return new Response("not a PNG", { status: 415 });
       writeFileSync(dest, body);
       console.log(`[thumb] ${safe} (${(body.length / 1000).toFixed(0)}KB${force ? ", forced" : ""})`);
@@ -1002,11 +860,8 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/library-list",
     handler: ({ url }) => {
-      // Directory listing over the library. The browser host primes Skye's
-      // toolkit modules into a virtual filesystem before eval-loading them
-      // (they read assets synchronously, Deno-style), and it should DISCOVER
-      // what to prime rather than carry a hardcoded manifest — the no-manifest
-      // rule applies to the client too.
+      // Directory listing over the library: the browser host discovers which toolkit modules to prime into its
+      // virtual filesystem, rather than carrying a manifest.
       const rel = url.searchParams.get("dir") ?? "";
       const out: { path: string; size: number }[] = [];
       const walk = (base: string, sub: string, depth: number) => {
@@ -1016,18 +871,11 @@ const ROUTES: Route[] = [
         for (const e of readdirSync(abs, { withFileTypes: true })) {
           const childRel = sub ? `${sub}/${e.name}` : e.name;
           if (e.isDirectory()) walk(base, childRel, depth + 1);
-          // Serving artifacts are not entries: a KTX2 variant (<rel>.ktx2.glb /
-          // .ktx2.vrm / <img>.ktx2) is reached only as the path beside it +
-          // the negotiation, a .failed marker is the pump's verdict, a .tmp is
-          // a pass mid-write. Listed, the prefetcher fetches each one as an
-          // asset — a variant twice, a marker as a model (store-variants.ts).
+          // serving artifacts (variants, .failed markers, .tmp) are not entries (store-variants.ts)
           else if (!isServingArtifact(e.name)) out.push({ path: childRel, size: Bun.file(join(abs, e.name)).size });
         }
       };
-      // opt first: /library/ serving prefers the optimized mirror, so the
-      // listed size must describe the file a client will actually receive —
-      // the prefetcher sorts and budgets by these numbers, and the raw-library
-      // size of a draco+webp'd model is off by ~30x.
+      // opt first: the listed size must be the file /library/ actually serves (the prefetcher budgets by it)
       for (const base of [OPT_DIR, LIBRARY_DIR]) walk(base, rel, 0);
       // opt mirror shadows the library at the same path — dedupe, first wins
       const seen = new Set<string>();
@@ -1040,19 +888,14 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/library-models",
     handler: ({ url }) => {
-      // The catalog agents already had (mcpl `list_library`), served to humans.
-      // Filename token scoring — crude, but it is what ranks the agent-side
-      // search today and parity matters more than cleverness here.
+      // The catalog agents have (mcpl `list_library`), served to humans; filename token scoring, for parity with it.
       const q = (url.searchParams.get("q") ?? "").toLowerCase().split(/\s+/).filter(Boolean);
       const dirs = [join(LIBRARY_DIR, "eidoverse/assets/models"), join(OPT_DIR, "eidoverse/assets/models")];
       const files = new Map<string, number>();
       for (const d of dirs) {
         if (!existsSync(d)) continue;
         for (const f of readdirSync(d)) {
-          // variants live beside originals in OPT_DIR — ktx2 (§20c's ghost
-          // listing) and, since #156, .lod.<recipe>.glb — the same model, not
-          // a catalog entry; markers and .tmp likewise. One predicate, the one
-          // /library-list already walks with (store-variants.ts).
+          // variants, markers and .tmp beside originals are not catalog entries (store-variants.ts, as /library-list)
           if (!f.endsWith(".glb") || isServingArtifact(f)) continue;
           const low = f.toLowerCase();
           const score = q.length ? q.filter((t) => low.includes(t)).length : 1;
@@ -1063,9 +906,7 @@ const ROUTES: Route[] = [
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 60)
         .map(([f]) => {
-          // Skye ships a _preview.jpg beside every model. Picking from a list of
-          // `stylized_yucca_joshua_tree_desert_cactus_plant.glb` is not picking;
-          // with the previews it becomes an actual catalog.
+          // the library ships a _preview.jpg beside every model
           const prev = f.replace(/\.glb$/i, "_preview.jpg");
           const hasPrev = dirs.some((d) => existsSync(join(d, prev)));
           // every optimization's state, from the sweep's own markers (store-variants.ts variantStatus): the
@@ -1078,31 +919,25 @@ const ROUTES: Route[] = [
             // ↻ rebuilds from the LIBRARY source (upload.ts rebuildAsset); a model present only in the OPT overlay has
             // none, and the button would answer 400 — say so, and the card leaves it off
             rebuildable,
-            // no draco "min" pass exists for library models (only store/ has store-min) — omit it rather than
-            // report a pass that will never run as forever "pending". The library file is MUTABLE: a variant or a
-            // verdict about another version of it is stale — freshOver against variantSource, the rule the sweep
-            // rebuilds by and the route serves by (no library file: nothing is fresh, as at the route)
+            // no "min" pass for library models (store/ only), so it is omitted. Freshness is judged against
+            // variantSource, as the sweep and the route do.
             opt: (({ min: _none, ...rest }) => rest)(variantStatus(join(libOpt, f), libOpt, { source: libSrc })),
             // the loupe's rank of the SERVED file, and of the original beside it (glbperf.ts; mtime-cached; null = unreadable)
             ...perfPair(`eidoverse/assets/models/${f}`, join(LIBRARY_DIR, "eidoverse/assets/models", f)),
             // strip the SEO-soup filenames into something a person can read
             name: f.replace(/\.glb$/i, "").replace(/_/g, " ").slice(0, 48),
             preview: hasPrev ? `eidoverse/assets/models/${prev}` : null,
-            // batch 2: who made it and its licence (defs/library/credits.json; a gap says what isn't recorded)
+            // who made it and its licence (defs/library/credits.json; a gap says what isn't recorded)
             credits: creditsFor(libraryCredits(), `eidoverse/assets/models/${f}`),
           };
         });
-      // Conjured/delivered objects (the content-addressed store) are catalog
-      // too — an orrery send should land somewhere findable, not in a black
-      // hole only its hash can name. Newest first, names from the manifest.
+      // Conjured/delivered objects (the content-addressed store) are catalog too: newest first, names from the manifest.
       const storeDir = join(OPT_DIR, "store");
       if (existsSync(storeDir)) {
         let man: Record<string, { name?: string; by?: string; ts?: number }> = {};
         try { man = JSON.parse(readFileSync(join(storeDir, "manifest.json"), "utf8")); } catch { /* unnamed */ }
         const store = readdirSync(storeDir)
-          // a KTX2 variant (<hash>.glb.ktx2.glb) is the same model, not a
-          // catalog entry — the ghost-listing rule the library list already
-          // follows above (store-variants.ts)
+          // originals only, no variants (store-variants.ts)
           .filter(isStoreOriginal)
           .map((f) => {
             const hash = f.replace(/\.glb$/i, "");
@@ -1135,9 +970,9 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname.startsWith("/library/"),
     handler: ({ req, url }) => {
-      // /library/eido/sha256/<hex>.glb (shared/eido.js libRelOf): the client loading a model by its address gets this
-      // host's rendition of the file it names, through the same ladder as its path (review 10-07 H3)
-      const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);   // either spelling of an address stored before 10-17 (shared/eido.js)
+      // The ladder and its negotiation: docs/research/library-serving.md.
+      // /library/eido/sha256/<hex>.glb (shared/eido.js libRelOf): an address gets this host's rendition, same ladder
+      const rel0 = url.pathname.slice("/library/".length); const eh = hexOfLibRel(rel0);   // either spelling of an address (shared/eido.js)
       // url.pathname keeps percent-encoding; libraryRel() decodes it to the disk name (and refuses a decoded ".."), the
       // same function every resolver reads a lib through (server/libfile.ts), so they agree on every name
       const dec = eh ? rel0 : libraryRel(rel0);
@@ -1145,71 +980,33 @@ const ROUTES: Route[] = [
       const rel = eh ? eidoRel(eh) ?? rel0 : dec;
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
-      // Native importers do not necessarily ship the browser's Draco/WebP
-      // decoders. Explicit negotiation returns provenance bytes, never the
-      // optimized shadow. This changes neither the default browser response
-      // nor asset access rights; serveFrom still enforces path containment.
+      // ?native=1: provenance bytes, never the optimized shadow (native importers may lack Draco/WebP decoders)
       if (url.searchParams.get("native") === "1" && /\.(glb|vrm)$/i.test(rel)) {
         const patched = normalize(join(PATCH_DIR, rel));
-        if (patched.startsWith(PATCH_DIR + "/") && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
+        if (patched.startsWith(PATCH_DIR + sep) && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
         if (rel.startsWith("store/")) return serveFrom(OPT_DIR, rel, true, req, true);
         return serveFrom(LIBRARY_DIR, rel, true, req, versioned);
       }
-      // Deliberate upstream forks win over EVERYTHING (upstream-patched/
-      // README.md): same URL, versioned in this repo, delete-to-fall-back.
+      // deliberate upstream forks (PATCH_DIR) win over everything
       {
         const p = normalize(join(PATCH_DIR, rel));
         if (p.startsWith(PATCH_DIR) && existsSync(p)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
       }
-      // KTX2 is NEGOTIATED (§20), never the unflagged answer: the variant's
-      // KHR_texture_basisu sits in extensionsRequired, and parsers without a
-      // KTX2 decoder — agents, tools, old clients — THROW on required
-      // extensions (GLTFLoader.js:1476). Only a client that detected support
-      // asks with ?ktx2=<key>; everyone else gets exactly today's bytes. Same
-      // cache ladder as the base file (non-immutable, ETag revalidates), and
-      // the distinct URL is its own clean nginx/browser cache entry.
-      // VRMs (§20c) negotiate identically — avatar URLs carry ?v= minted from
-      // the ORIGINAL's mtime (the version identity is the original; ktx2=1 is
-      // its own cache key) — with one extra guard: bodies are the one asset
-      // class that mutates MID-SESSION (POST /upload?as=avatar broadcasts
-      // avatar-updated and every client refetches immediately), so a variant
-      // OLDER than the winning original is someone's stale body under a fresh
-      // ?v= — serve the original until the next boot sweep rebuilds it.
-      // Loose images (§20d) negotiate like GLBs: a flip-baked .ktx2 sibling
-      // (OPT_DIR/<rel>.ktx2, built only for the curated sweep dirs) answers a
-      // flagged fetch; contentType serves it as image/ktx2. The client's
-      // loadImageTexture sniffs the container magic, so the SAME path carries
-      // either byte shape.
+      // KTX2 is negotiated (GLBs, VRMs, loose images): parsers without a decoder throw on its required
+      // extension, so only ?ktx2=<key> gets it.
       const negotiable = rel.endsWith(".glb") || rel.endsWith(".vrm") || /\.(png|jpe?g)$/i.test(rel);
-      // The key is a generation (shared/ktx2.js): a retired one is an
-      // unflagged fetch — whatever that client pinned under it, it keeps.
+      // the key is a generation (shared/ktx2.js): a retired one is an unflagged fetch
       const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
-      // The LOD tier rides the ktx2 negotiation (a LOD variant carries KTX2
-      // textures) and the same split-brain rule twice over: a client only
-      // asks with the RECIPE /version published — the URL carries the
-      // generation, so a recipe change is a fresh URL and a fresh file, and
-      // yesterday's reduction can never sit pinned under today's address.
+      // the LOD tier rides the ktx2 negotiation, asked only with the recipe /version published
       const lodAsked = url.searchParams.get("lod");
       const wantLod = lodAsked === LOD_RECIPE && wantKtx2 && rel.endsWith(".glb");
-      // The tier's answer is NAMED on the wire (x-eidoverse-lod): `variant`
-      // (the reduced tier), `refused=<kind>` (a STANDING typed verdict — the
-      // original is the final answer for this recipe, store-variants.ts
-      // lodVerdictFinal), or `provisional` (not decided: not yet swept, a
-      // deferred pass, a verdict class that could change with the reducer, a
-      // marker older than a mutated source, an unrecognized generation).
+      // the tier's answer is NAMED on the wire, x-eidoverse-lod: `variant` | `refused=<kind>` (final) | `provisional`
       let lodFinal = false;
       let lodState: string | null = null;
       if (wantLod) {
         const lRel = lodVariantPath(rel);
         const l = normalize(join(OPT_DIR, lRel));
-        // library sources are MUTABLE: an updated model with a not-yet-
-        // rebuilt variant must fall through provisional, never serve the
-        // old body under the new ?v= (the §20c vrm freshness discipline) —
-        // and a VERDICT about an older version of its source is a question
-        // again, exactly like such a variant. Compared against the file the
-        // sweep BUILT from (variantSource: the library model — never the OPT
-        // mirror this route may serve at full detail) by recorded identity
-        // (store-variants.ts freshOver), the rule the sweep and the card use
+        // library sources are MUTABLE: a variant or verdict about an older source is stale (freshOver vs variantSource)
         const src = variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR });
         const freshOverSource = (p: string) => freshOver(p, src);
         if (l.startsWith(OPT_DIR) && existsSync(l) && freshOverSource(l)) return serveFrom(OPT_DIR, lRel, true, req, versioned, false, { variant: true, headers: { "x-eidoverse-lod": "variant" } });
@@ -1230,15 +1027,8 @@ const ROUTES: Route[] = [
         if (k.startsWith(OPT_DIR) && existsSync(k)) {
           let fresh = true;
           if (rel.endsWith(".vrm")) fresh = freshOver(k, variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR }));
-          // a lod-requesting fetch answered by the plain ktx2 variant is
-          // PROVISIONAL — the lod may land later under this same URL —
-          // UNLESS a typed verdict stands: then the plain variant IS this
-          // tier's answer, and it caches exactly as it does unflagged: the
-          // variant tier (VARIANT_CC), since these bytes rebuild in place.
-          // For a library GLB the unflagged answer tolerates a variant older
-          // than a re-exported source until the next boot rebuilds it (a
-          // short window, ETag-revalidated); a FINAL answer must not — the
-          // verdict may be fresh while the ktx2 bytes are yesterday's model
+          // a lod ask answered by the plain ktx2 variant is provisional unless a typed verdict stands — and a FINAL
+          // answer also needs fresh ktx2 bytes
           let ktx2Stale = false;
           if (lodFinal) ktx2Stale = !freshOver(k, variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR }));
           const finalHere = lodFinal && !ktx2Stale;
@@ -1246,27 +1036,11 @@ const ROUTES: Route[] = [
           if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, lodAsked != null && !finalHere, { variant: true, headers: header });
         }
       }
-      // A flagged fetch that falls through is PROVISIONAL for that URL, not
-      // final: the variant may still be encoding (a store upload's, seconds to
-      // minutes after landing; the library's, the boot sweep) — or the box has
-      // no encoder yet. Content-addressed does not make the fall-through final
-      // either: the ADDRESS is immutable, the flagged ANSWER is not, and a
-      // browser or nginx that pins the webp bytes under ?ktx2=1 for a year
-      // never sees the variant land (the show box, 2026-08-24: every store
-      // ?ktx2=1 answer immutable, every one webp). no-cache rides the ETag —
-      // a 304 while nothing changed, the variant's bytes the moment it exists;
-      // nginx honors it (nginx-show.conf) and simply does not cache these.
-      // an unrecognized lod value is a generation this process does not run
-      // (a pull mid-window, a buggy client): whatever answers must not be
-      // pinned under that URL — the NEXT process may negotiate it
-      // (a standing lod verdict does not make THIS answer final: the ktx2
-      // arm has not decided yet — no variant, or its own verdict — and the
-      // header says so)
+      // a flagged fetch that falls through is PROVISIONAL for that URL, even content-addressed (the variant may land
+      // later); so is any answer to an unrecognized lod generation
       const provisional = wantKtx2 || (lodAsked != null && !wantLod);
       const deepHeader = lodFinal ? { "x-eidoverse-lod": `${lodState}; ktx2=undecided` } : lodHeader;
-      // store uploads: prefer the store-min shadow — same address, the
-      // original stays as provenance and as the fallback while (or if) the
-      // optimize pass hasn't landed for this hash
+      // store uploads: prefer the store-min shadow; the original is provenance and the fallback
       if (rel.startsWith("store/")) {
         const minRel = `store-min/${rel.slice("store/".length)}`;
         const min = normalize(join(OPT_DIR, minRel));
@@ -1282,17 +1056,12 @@ const ROUTES: Route[] = [
     handler: ({ req, url }) => serveFrom(join(ROOT, "client"), url.pathname.slice(1), true, req),
   },
   {
-    // shared/ — modules every runtime folds with (see shared/README.md). Code,
-    // so it gets the client-code caching policy: no-store, never heuristically
-    // stale. Client files reach it as ../../shared/…, which clamps to /shared/
-    // in a browser and resolves to the repo root on disk.
+    // shared/ — modules every runtime folds with (shared/README.md); code, so no-store like the client
     match: (u) => u.pathname.startsWith("/shared/"),
     handler: ({ req, url }) => serveFrom(join(ROOT, "shared"), url.pathname.slice("/shared/".length), false, req),
   },
   {
-    // Liveness for benches: answers with the BENCH_NONCE this process was
-    // started with, so a scratch harness can prove the port it is about to
-    // drive is ITS child and not a stranger's sequencer (PR #160 review, B6).
+    // Liveness for benches: echoes BENCH_NONCE so a harness can prove the port is its own child
     match: (u) => u.pathname === "/health",
     handler: () => new Response(JSON.stringify({ ok: true, nonce: process.env.BENCH_NONCE ?? null, pid: process.pid }),
       { headers: { "content-type": "application/json" } }),
@@ -1300,9 +1069,7 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/client-version",
     handler: () => {
-      // A marker the renderer watchdog polls: the newest mtime across the
-      // client files. A deploy (or a dev edit) moves it, so a hung-uptime-free
-      // renderer still reloads for new code. Cheap, cached 5s.
+      // the renderer watchdog polls this: the newest mtime across client files, so a deploy triggers a reload; cached 5s
       const now = Date.now();
       if (!clientVersionCache || now - clientVersionCache.at > 5000) {
         let newest = 0;
@@ -1325,11 +1092,8 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/favicon.ico",
     handler: () =>
-      // Browsers ask for this unprompted; the static handler threw ENOENT and
-      // answered 500, so every page load logged a server error for a file
-      // nobody asked us to have.
       new Response(
-        // the mark's hand-set 32 px master — the same drawing as index.html's <link rel="icon">, for pages
+        // browsers ask unprompted: the mark's hand-set 32 px master — the same drawing as index.html's <link rel="icon">, for pages
         // (captions.html, AGENTS.md in a tab) that don't carry one
         `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
            <style>path{fill:#8fe8c8}@media (prefers-color-scheme:light){path{fill:#1d7a5f}}</style>
@@ -1343,71 +1107,30 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname.toLowerCase() === "/agents.md",
     handler: ({ req }) =>
-      // The closed-verb-set error says "see AGENTS.md" — so the file has to be
-      // reachable from the world itself, not just the repo. Any casing works
-      // (/AGENTS.md, /agents.md): agents type both, and a 404 on the spelling
-      // the error message taught you is a locked door with a sign on it.
+      // the closed-verb-set error says "see AGENTS.md", so it is served here, any casing
       agentGuideResponse(req),
   },
   {
     // the old-format splash links here (shared/oldformat.js OLD_FORMAT_DOC): the doc has to be reachable from the world itself
     match: (u) => u.pathname === "/docs/TRANSLATING-OLD-WORLDS.md",
-    handler: ({ req }) => serveFrom(ROOT, "docs/TRANSLATING-OLD-WORLDS.md", false, req),
+    handler: ({ req }) => serveFrom(ROOT, "docs/operator/TRANSLATING-OLD-WORLDS.md", false, req),
   },
   {
     match: (u) => u.pathname === "/" || u.pathname === "/index.html",
-    handler: () => serveFrom(join(ROOT, "client"), "index.html"),
+    handler: ({ req }) => serveFrom(join(ROOT, "client"), "index.html", false, req),
   },
   {
     // the catch-all: everything else is the browser client's static tree
     match: () => true,
-    handler: ({ url }) => serveFrom(join(ROOT, "client"), url.pathname.slice(1)),
+    handler: ({ req, url }) => serveFrom(join(ROOT, "client"), url.pathname.slice(1), false, req),
   },
 ];
 
-/** One pass over the table, first match wins — exactly the if-chain order the
- *  unsplit fetch() had. The catch-all last row means every request gets a
- *  Response… except a successful /ws upgrade, which (as before) returns none
- *  and lets Bun own the socket. */
-// 🔴 CROSS-ORIGIN ISOLATION — why local speech synthesis runs single-threaded.
-//
-// engine-piper.js reads `crossOriginIsolated && SharedArrayBuffer` and pins
-// ort.env.wasm.numThreads to 1 when either is missing. This server sent no COOP
-// or COEP headers, so both were false and ONNX inference ran single-threaded on
-// every machine that loaded the page, however many cores it has. The client's
-// own console said so on every load ("SINGLE-THREADED — isolation headers
-// missing"); the diagnostic was already printing the answer.
-//
-// COEP is `credentialless` rather than `require-corp`: require-corp blocks any
-// cross-origin subresource that does not opt in with CORP headers, which would
-// break third-party assets the moment someone adds one. credentialless buys the
-// same isolation by stripping credentials instead of refusing the request.
-// 🔴 THE CLIENT DOES LOAD CROSS-ORIGIN THINGS. This comment used to claim it
-// "loads nothing cross-origin" — false, asserted without checking, and it was
-// the justification for the whole choice. What it loads, and how each fares:
-//
-//   • DRACO decoder wasm from gstatic (assets.js) — fine either way; gstatic
-//     sends `cross-origin-resource-policy: cross-origin`.
-//   • Orrery API via fetch(credentials:'include') (generate.js) — UNAFFECTED.
-//     COEP governs no-cors SUBRESOURCES; a cors-mode fetch is not one
-//     ("requests made in cors mode won't be blocked by COEP" — MDN).
-//   • Orrery thumbnails via <img> — WAS affected: a bare <img> is no-cors, so
-//     credentialless would strip the session cookie. Fixed at the call site
-//     with crossorigin="use-credentials", moving it to cors mode.
-//
-// And COOP `same-origin` severs window.opener, which broke Orrery's OAuth
-// popup — it could not postMessage back and sign-in hung silently. generate.js
-// now polls /api/auth/me as the primary signal, needing no opener at all.
-//
-// The headers must ride on EVERY response, not just the document: a worker
-// script served without them is not isolated and the whole context degrades.
+/** COOP same-origin + COEP credentialless on EVERY response, so the page is cross-origin isolated (multi-threaded ORT
+ *  for local speech). Why credentialless, and what the client loads cross-origin: docs/research/library-serving.md. */
 function isolate(res: Response): Response {
-  // 🔴 A SUCCESSFUL /ws UPGRADE RETURNS NOTHING — the ws route hands back
-  // `undefined as unknown as Response` and lets Bun own the socket. Touching it
-  // here would throw on every websocket connection, i.e. this header change
-  // would break the world rather than speed it up. Checked before shipping.
+  // a successful /ws upgrade returns no Response (Bun owns the socket): never touch it
   if (!res) return res;
-  // A 101 upgrade owns its own handshake — do not touch it.
   if (res.status === 101) return res;
   res.headers.set("cross-origin-opener-policy", "same-origin");
   res.headers.set("cross-origin-embedder-policy", "credentialless");
@@ -1416,6 +1139,7 @@ function isolate(res: Response): Response {
   return res;
 }
 
+/** One pass over the table, first match wins; a successful /ws upgrade returns no Response. */
 export function route(req: Request, srv: Srv): Response | Promise<Response> {
   const url = new URL(req.url);
   for (const r of ROUTES) {
@@ -1423,7 +1147,6 @@ export function route(req: Request, srv: Srv): Response | Promise<Response> {
     const out = r.handler({ req, url, srv });
     return out instanceof Promise ? out.then(isolate) : isolate(out);
   }
-  // unreachable — the catch-all matches everything — but a table must not be
-  // able to strand a request even if a future edit breaks that property.
+  // unreachable (the catch-all matches everything), but a table must never strand a request
   return isolate(new Response("not found", { status: 404 }));
 }

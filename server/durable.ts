@@ -1,15 +1,13 @@
-// server/durable.ts — the disk practice a sequencer owes its readers (platforms review 10-06, #5):
-//  - a line is on disk (fsync) BEFORE anyone is told about it: otherwise a crash after a broadcast loses the tail, the
-//    restarted server re-issues the same seq with a different head, and every client holding (seq, head) holds "proof"
-//    the authority equivocated;
-//  - a torn last line (a crash mid-write) is cut off at open, not kept as a permanent malformed entry;
-//  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten, never kept.
+// server/durable.ts — the disk practice a sequencer owes its readers:
+//  - a line is fsynced before anyone is told about it (else a crash after a broadcast re-issues a seq under another head);
+//  - a torn last line (a crash mid-write) is cut off at open;
+//  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten.
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { sha256 } from "../shared/protocol/hash.js";
 
-/** Does the file at `p` hold `needle`'s bytes? Read in 1 MiB chunks, never whole (the boot sweep's peek, review L18). */
+/** Does the file at `p` hold `needle`'s bytes? Read in 1 MiB chunks, never whole (the boot sweep's peek). */
 export function fileIncludes(p: string, needle: string): boolean {
   const n = Buffer.from(needle), b = Buffer.allocUnsafe((1 << 20) + n.length), fd = fs.openSync(p, "r");
   try { for (let pos = 0, keep = 0; ;) { const got = fs.readSync(fd, b, keep, b.length - keep, pos); if (got <= 0) return false;
@@ -19,8 +17,8 @@ export function fileIncludes(p: string, needle: string): boolean {
 }
 
 /** The log's bytes, with a torn tail (no final newline) cut off the file first. `cut: false` is a reader's: it leaves the
- *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now (review
- *  of #260, server I127: a reader that cut it made the writer's line land broken). Only the log's writer cuts. */
+ *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now. Only
+ *  the log's writer cuts. */
 export function readLogBytes(logPath: string, { cut = true } = {}): Buffer {
   if (!fs.existsSync(logPath)) return Buffer.alloc(0);
   const b = fs.readFileSync(logPath);
@@ -49,7 +47,7 @@ export function appendDurable(logPath: string, line: string) {
   const fresh = !fs.existsSync(logPath);
   const fd = fs.openSync(logPath, "a");
   try { writeAll(fd, Buffer.from(line + "\n", "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  if (fresh) syncDir(path.dirname(logPath));   // a file's first line is durable only once its name is (review of #260, server I17)
+  if (fresh) syncDir(path.dirname(logPath));   // a file's first line is durable only once its name is
 }
 /** fsync a directory, so a file just created or renamed into it survives a crash (POSIX: the entry lives in the directory,
  *  not the file). Windows can't open a directory for this, and NTFS journals names itself: skipped there. */
@@ -97,7 +95,7 @@ export function replaceDurable(file: string, data: string | Uint8Array, mode = 0
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }
-// ---- the one cross-process file lock (was custody.ts's): pid + nonce written to a file of its own and synced, then linked to the
+// ---- the one cross-process file lock: pid + nonce written to a file of its own and synced, then linked to the
 // lock name, so the lock never exists without its holder; a dead holder (its pid exited) is removed, never one merely old ----
 /** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
 function holderOf(f: string): { pid: number; nonce: string } | null {
@@ -105,11 +103,8 @@ function holderOf(f: string): { pid: number; nonce: string } | null {
   const [p, nonce] = s.split(" "); const pid = Number(p);
   return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
 }
-/** Whether the holder `pid` named in a lock is gone: its process exited (same host: the file is local), or it is this
- *  process. A lock is held only inside one synchronous call, and only the main thread takes one, so a lock naming this
- *  process that the call doesn't hold was left by an earlier process with the same pid: a restart can get its old pid
- *  back. A worker thread that took one would share this pid and could clear a live sibling's lock: one that does needs the
- *  thread in the lock's holder. */
+/** Whether the holder `pid` named in a lock is gone: exited, or this very process (a lock is held only inside one synchronous
+ *  call on the main thread, so one naming our pid was left by an earlier process that had it). */
 function gone(pid: number): boolean {
   if (pid === process.pid) return true;
   try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
@@ -123,10 +118,8 @@ function take(name: string): string | null {
   catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") return null; throw e; }
   finally { fs.rmSync(tmp, { force: true }); }
 }
-/** Removes the lock file `f` if its holder is gone (above), as one step. Two waiters can both see the same dead holder, so the
- *  one that removes it first takes `<lock>.<its nonce>`, the right to remove that one lock, and removes `f` only if `f`
- *  still holds that nonce. A nonce is never reused, so a lock that has since replaced it is never removed. A right whose
- *  holder is gone before giving it back is removed the same way. Whether it removed `f`. */
+/** Removes the lock file `f` if its holder is gone, as one step: two waiters can see the same dead holder, so the remover
+ *  first links `<lock>.<nonce>` as its right, and removes `f` only if `f` still holds that nonce. Whether it removed `f`. */
 function clearIfGone(lock: string, f: string): boolean {
   const h = holderOf(f); if (!h || !gone(h.pid)) return false;
   const right = `${lock}.${h.nonce}`;
@@ -149,10 +142,5 @@ export function withFileLock<T>(lock: string, waitMs: number, f: () => T): T {
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
 export function putBlobFile(file: string, s: string, h: string) {
   if (fs.existsSync(file)) { try { if (`sha256:${sha256(fs.readFileSync(file, "utf8"))}` === h) return; } catch {} }
-  mkdirDurable(path.dirname(file));
-  const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, "w");
-  try { writeAll(fd, Buffer.from(s, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  fs.renameSync(tmp, file);
-  syncDir(path.dirname(file));
+  replaceDurable(file, s);
 }

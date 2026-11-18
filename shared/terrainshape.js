@@ -15,13 +15,9 @@
 //              square (image x → world +x, image down → world +z). Features
 //              still apply on top.
 //
-// ONE implementation, three consumers: the client's mesh and walking
-// heightAt, the agents' heightAt, and the deterministic sim (via
-// terrainmath.js). They must agree or bodies stand in the air or in the
-// ground. So this file holds to the sim's blessed exact-op set (Covenant I):
-// + - * /, Math.sqrt, Math.floor, comparisons — no pow, no hypot, nothing
-// transcendental. A world with neither key never reaches this code, so no
-// existing world's ground moves by a bit.
+// ONE implementation, three consumers: the client's mesh and heightAt, the agents' heightAt, and the deterministic sim
+// (via terrainmath.js); they must agree or bodies stand in the air. So this file uses only exact operations (+ - * /,
+// sqrt, floor, comparisons: no pow, no hypot). A world with neither key never reaches this code.
 
 import { MOVER, waterStance, waterCost } from './mover.js';   // the water law (below): one walker, one law
 
@@ -69,12 +65,9 @@ export function shapeParams(a) {
 // little-endian uint16s}, decoded once by the server at upload so every
 // consumer reads integers, never an image decoder's opinion of one.
 
-// Grids are cached by ref, newest-used last, and only the last GRID_CACHE are kept: a world that has been
-// re-imaged many times does not hold every old image. A ref the disk loader could not find is remembered
-// for MISS_RETRY_MS, so a missing file is not re-read on every height sample. A FETCH that failed backs
-// off — FETCH_RETRY_MS, doubling to MISS_RETRY_MS — so a passing network fault costs seconds, not half a
-// minute. Nothing commits ground for a heightmap until its grid is here (shapeReady): browser and agent
-// keep the last ground they had, and rebuild once the grid lands (client/lib/world.js, mcpl/agent.ts).
+// Grids are cached by ref, the last GRID_CACHE kept. A disk miss is remembered for MISS_RETRY_MS; a failed fetch backs
+// off from FETCH_RETRY_MS, doubling to MISS_RETRY_MS. Nothing commits ground for a heightmap until its grid is here
+// (shapeReady): browser and agent keep their last ground and rebuild when it lands (client/lib/world.js, mcpl/agent.ts).
 const GRID_CACHE = 8;
 const MISS_RETRY_MS = 30_000;
 const FETCH_RETRY_MS = 1_000;
@@ -106,7 +99,7 @@ export function gridFor(ref) {
   return g ?? null;
 }
 /** Fetch a grid through the fetcher, once at a time per ref: resolves to the grid, or null if it could not
- *  be had (and then not asked for again until MISS_RETRY_MS has passed). */
+ *  be had (and then not fetched again until its backoff has passed: gridRetryIn). */
 export function requestGrid(ref) {
   const have = gridFor(ref);
   if (have) return Promise.resolve(have);
@@ -209,20 +202,12 @@ export function shapeHeight(base, S, size) {
 }
 
 // ---- water ---------------------------------------------------------------------
-// One level per world: the `water` component on @world, {level, color?, opacity?} (the old world's terrain.water is moved there by
-// the translation). Every point of ground below `level` is under water unless a pocket zone keeps the water
-// out (shared/zone.js), so one number makes every low place a lake. It is presence-free world state like the ground itself:
-// rendered by every client, read by every agent, and (for now) ignored by the sim —
-// a thrown thing still lands on the lakebed.
+// One level per world: the `water` component on @world, {level, color?, opacity?}. Ground below `level` is under water
+// unless a pocket zone keeps it out (shared/zone.js). Rendered by every client, read by every agent, ignored by the sim
+// (a thrown thing lands on the lakebed).
 //
-// A body WADES until the water is at its chest, then SWIMS (waterStance): its feet leave the bed and it
-// floats with head and shoulders above the surface. Wading is slower the deeper it gets; swimming is
-// slower still. Nothing is walled off: the old 1 m wading wall is gone (wadeAllowed/waterBlocks now
-// always allow), and a planner prices water instead (waterCost). The client's controller and the agents'
-// walk both read these, from the body's own height.
-// THE LAW LIVES IN shared/mover.js (2026-10-15): the client's controller and the agents' walk step with the
-// one walker there, which reads the water through env.waterAt. These names are RE-EXPORTS of it, so a caller
-// that imported them from here reads the same numbers — never a second copy.
+// A body WADES until the water is at its chest, then SWIMS (waterStance). Nothing is walled off (wadeAllowed/waterBlocks
+// always allow); a planner prices water instead (waterCost). The law lives in shared/mover.js; these are re-exports.
 export { waterStance, waterCost };
 export const SWIM_AT = MOVER.swim.at;         // of body height: deeper than this at the feet, the body floats (the chest)
 export const SWIM_SPEED = MOVER.swim.speed;   // m/s, a steady stroke
@@ -231,8 +216,7 @@ export const WALK_SPEED = MOVER.walk.speed;   // the walking pace waterCost pric
 /** @deprecated wading has no depth limit now — kept so callers of the old rule still read one. */
 export const WADE_DEPTH = 1.0;
 const HEX = /^#[0-9a-fA-F]{6}$/;
-/** @world's water (shape audit 10-16: its own component, @world.water), or undefined. @param {Record<string, any>} c  @world's
- *  components (or a view: {water}) */
+/** @world's water component, or undefined. @param {Record<string, any>} c  @world's components (or a view: {water, terrain}) */
 export const worldWater = (c) => c?.water;
 /** A world's water, normalized — or null when it has none. Its colour is an int (0xRRGGBB) or an older '#rrggbb'.
  *  @param {Record<string, any>} a  terrain-verb args carrying `water` (the water component riding on them) */

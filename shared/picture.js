@@ -1,31 +1,14 @@
-// picture — what a `picture` component MEANS. Shared verbatim between the
-// browser host (client/lib/pictures.js) and the mcpl agent (text-tier
-// perception), so the two can never describe different pictures.
+// picture — what a `picture` component MEANS, shared by the browser host (client/lib/realize/pictures.js) and the mcpl agent.
 //
 //   picture {src, width?, description?, lit?}   (a quad of its own, facing +Z on the thing's origin)
-//   delete {id, component: "picture"}                # take it down
 //
-// A picture is a standalone image (Godot's Sprite3D, Unity's SpriteRenderer): it owns its quad, `width` metres wide,
-// its height from the image's aspect once the image loads. A texture on a NAMED node of a model is the `material`
-// component's (shared/material.js; R 10-27: two shapes, no overlap).
-
-// (Batch 2, R 10-07: an https link is a source too now; shared/mediasrc.js decides whose browser may fetch it,
-// and an untrusted host is fetched only for a viewer who opted in. What follows is the rule for the store paths.)
-// SOURCE ALLOW-LIST. `src` is a library-relative path under one of two roots,
-// both served by the sequencer's own /library/ route: `eidoverse/assets/`
-// (Skye's library plus the assets/opt overlay — what the operator placed) and
-// `store/images/` (what someone uploaded through `POST /upload?as=image`:
-// content-addressed, sniffed by bytes, token-gated and rate-limited like every
-// store upload). Never a URL: a picture is an authored asset that entered
-// through a door, not a fetch the world performs on someone's behalf. That is
-// the whole content story for this rung, and it is what keeps a picture inside
-// the world log's trust boundary instead of reaching out of it.
+// A standalone image: its own quad, `width` metres wide, height from the image's aspect. A texture on a NAMED node of a
+// model is the `material` component's (shared/material.js).
 //
-// THE DESCRIPTION. Text-tier residents perceive by reading. A picture with no
-// `description` reads as "a picture (<file>)", which is true and nearly useless; the
-// author can say what it shows in ≤200 chars and that sentence is what look()
-// carries. Nothing about pixels is ever claimed — the host renders, the line
-// describes, and the two are the author's responsibility to keep honest.
+// SOURCES: an https link (shared/mediasrc.js decides whose browser may fetch it), or a library-relative path under one
+// of PICTURE_DIRS, served by the server's /library/ route (`store/images/` holds uploads via `POST /upload?as=image`).
+//
+// DESCRIPTION: the author's ≤200-char `description` is what look() carries for text-tier readers. Nothing about pixels is claimed.
 
 import { mediaTier } from './mediasrc.js';
 import { graphemes, graphemeList, quoted } from './text.js';
@@ -37,19 +20,14 @@ const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 export const PICTURE_DESCRIPTION_MAX = 200;
 export const PICTURE_MAX_WIDTH = 20;
 export const PICTURE_DEFAULTS = Object.freeze({ lit: 'scene', width: 1 });
-/** The description field's tooltip, in plain words (R 10-07). */
+/** The description field's tooltip, in plain words. */
 export const DESCRIPTION_HINT = 'Describes this in words, for people who can\'t see it and for agents';
 export const PICTURE_LIT = Object.freeze({ scene: 'lit by the scene', self: 'self-lit (a screen)' });
 const KNOWN_KEYS = new Set(['src', 'width', 'description', 'lit']);
 
-/** Is `src` an allowed picture source? Library-relative, under one of PICTURE_DIRS,
- *  image extension, no scheme, no leading slash, no dot segments — and no
- *  percent-encoding at all. The rule is over the path the FETCH will
- *  canonicalize to, not the string as written: a URL parser reads `%2e%2e`
- *  as `..` (a dot segment by spec), and a server may decode `%41` to `A`
- *  after the check ran (Mica, #186 review). Library paths are plain; a `%`
- *  has no honest use in one, so its presence is a refusal, and the parsed
- *  pathname must come back byte-identical to the declared one. */
+/** Is `src` an allowed picture source? Library-relative, under one of PICTURE_DIRS, image extension, no scheme, no
+ *  leading slash, no dot segments, no `%` (a URL parser reads `%2e%2e` as `..`), and the parsed pathname comes back
+ *  byte-identical: the rule is over what the FETCH canonicalizes to. */
 export function allowedPictureSrc(src) {
   if (typeof src !== 'string' || !src) return false;
   if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.includes('\\')) return false;
@@ -57,18 +35,15 @@ export function allowedPictureSrc(src) {
   if (src.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) return false;
   if (!PICTURE_DIRS.some((d) => src.startsWith(d)) || !IMAGE_EXT.test(src)) return false;
   try {
-    // What the browser will actually ask the library route for. Any
-    // difference — a collapsed segment, a decoded byte — means the string
-    // and the fetch disagree, and the fetch is the one that matters.
+    // what the browser will actually ask the library route for; any difference means the string and the fetch disagree
     if (new URL(`/library/${src}`, 'http://library.invalid').pathname !== `/library/${src}`) return false;
   } catch { return false; }
   return true;
 }
 
-/** Validate an authored bag. `ok:false` carries WHY (legible, once per authoring);
- *  `ok:true` carries the normalized picture plus notes for anything coerced.
- *  `description` is the describing line (R 10-27); src may be an https link (shared/mediasrc.js says who may fetch it). */
-export function normalizePicture(data) {
+/** Validate an authored bag: {ok: false, why} or {ok: true, picture, tier, notes} (notes for anything coerced).
+ *  `clip`: a stored bag being read, so an over-long description is clipped with a note; a write refuses it. */
+export function normalizePicture(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'picture data must be an object {src, width?, description?, lit?}' };
   }
@@ -81,6 +56,7 @@ export function normalizePicture(data) {
   if (data.width !== undefined) { const w = Number(data.width); if (Number.isFinite(w) && w > 0) picture.width = Math.min(PICTURE_MAX_WIDTH, w); else notes.push('width is a number of metres above 0 — using 1'); }
   if (data.description != null) {
     const d = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); picture.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
     else if (d) picture.description = d;
   }
@@ -92,8 +68,7 @@ export function normalizePicture(data) {
   return { ok: true, picture, tier, notes };
 }
 
-/** The one line look() carries for a picture — the same string on the authority, in mcpl and in every client, from the
- *  same bag. Says what the author said it shows (quoted, as data); never claims anything about the pixels. */
+/** The one line look() carries for a picture: what the author said it shows (quoted, as data); never anything about pixels. */
 export function describePicture(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return 'a picture (malformed declaration)';
   const file = typeof data.src === 'string' ? (/^https:/i.test(data.src) ? (() => { try { return new URL(data.src).hostname; } catch { return 'a link'; } })() : data.src.split('/').pop()) : null;

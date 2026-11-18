@@ -9,7 +9,7 @@
 // Each entry says which bone the point belongs to and which way to approach
 // it, in BODY-FRAME coordinates [right, up, forward] — so "the top of the
 // head" is +up on every rig, whichever way it happens to be facing, and the
-// derivation (client/lib/landmarks.js) casts along that direction to find
+// derivation (client/lib/avatar/landmarks.js) casts along that direction to find
 // where the actual surface is. `toward` places the seed along a bone segment;
 // `extendFrom` estimates the palm center from the forearm when fingers are
 // absent. `radius` bounds surface searches as a fraction of hips-to-head size.
@@ -99,11 +99,10 @@ export function pointsUpTo(tier) {
  *  agent will actually type. Returns null rather than guessing wildly. */
 export function canonicalPoint(name) {
   if (typeof name !== 'string') return null;
-  let k = name.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  const k = name.trim().toLowerCase().replace(/[\s-]+/g, '_');
   if (['back_of_the_neck', 'back_of_neck', 'nape', 'back_neck'].includes(k)) return 'neck_back';
   if (Object.hasOwn(CONTACT_POINTS, k)) return k;
   // left/right written the long way round, or in front
-  k = k.replace(/^left_?/, '').replace(/^right_?/, (m) => '') ;
   const side = /left/.test(name.toLowerCase()) ? '_l' : /right/.test(name.toLowerCase()) ? '_r' : '';
   const base = name.trim().toLowerCase().replace(/[\s-]+/g, '_').replace(/left_?|right_?|_l$|_r$/g, '');
   for (const cand of [base + side, base, base + '_l']) if (Object.hasOwn(CONTACT_POINTS, cand)) return cand;

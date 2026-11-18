@@ -1,19 +1,18 @@
-// shared/protocol/view.js — the fold as the records the renderer, the panels and the agent's tools read (slice 3c).
+// shared/protocol/view.js — the fold as the records the renderer, the panels and the agent's tools read.
 // PROTOCOL.md §0: "the scene a client draws … is a view: derived, disposable, rebuildable from the log." This is that
 // view. A VIEW, not a protocol: no verbs, no second fold, nothing a reader can't rebuild from the fold itself. Pure;
 // browser, server and agent run the same code.
-//   viewOf(id, c)      one entity: its components, flat, in the protocol's own names — model, transform, sockets, label,
-//                      light, … — plus the DERIVED conveniences every reader wants: pos / q / yaw (q's heading) / scale
-//                      (one number) / scale3 (non-uniform, when it is) / parent {to, socket?, offset, q} (the local
+//   viewOf(id, c)      one entity: its components, flat, in the protocol's own names — model, label, light, … — with
+//                      transform and parent said as the conveniences every reader wants: pos / q / yaw (q's heading) /
+//                      scale (one number) / scale3 (non-uniform, when it is) / parent {to, offset, q} (the local
 //                      transform said as an offset). DERIVED names the derived set; recordComponents(rec) is the rest.
-//   tf(c) / parentOf(c) / compOf(c)  the accessors every reader of a fold record shares (C7): its transform, its parent, its bag
+//   tf(c) / parentOf(c) / compOf(c)  the accessors every reader of a fold record shares: its transform, its parent, its bag
 //   viewState(folded) the whole world: {entities, sky, terrain, grass, assets, roles, bans, …}
 //   - ids, roles and parent targets come back through names.dec (an imported world's x-- escapes undone);
 //   - imported:<field> (a field an imported world's translation carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, assets:<k> → assets,
-//     sky/terrain/grass → themselves, imported:<k> → st[k]. Not shown: physics-engine, about, bounds, spawn, imported-behavior:<k>.
-// Until 2026-10-14 this record spoke the old protocol's names (model as `lib`, every other component inside a `comp`
-// bag): one vocabulary on the wire and another in every reader. tools/protocol/vocab-check.ts keeps the old one out.
+//     sky/terrain/grass/water → themselves, imported:<k> → st[k] where nothing else fills it. Nothing else on @world is shown.
+// The old protocol's record names (model as `lib`, components in a `comp` bag) stay out: test/protocol/vocab-check.ts.
 import { dec } from "./names.js";
 import { qNorm, qHeading } from "../rot.js";
 
@@ -21,7 +20,7 @@ export const idOut = (id) => dec(id) ?? id;
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const HIDDEN_WORLD = new Set(["physics-engine", "about", "bounds", "spawn"]);
 const IMP = "imported:", IMP_BANS = "imported-bans:";
-/** The record's derived fields (and its stamps): not components. The authority refuses a component named like one. */
+/** The record's derived fields (and its stamps): not components. None is a registered name, so the authority refuses a component named like one. */
 export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "born", "actor", "ts", "placer"]);
 export const fillsFromImported = (n) => !DERIVED.has(n) && n !== "parent";
 /** The components on a record (its facts), without the derived fields. */
@@ -38,7 +37,7 @@ export function tf(c) {
   const uniform = s[0] === s[1] && s[1] === s[2];
   return { pos, q, yaw: qHeading(q), scale: uniform ? s[0] : s[1], ...(uniform ? {} : { scale3: s.slice() }) };
 }
-/** The fold record's parent as readers hold it: {to (names.dec'd), socket?}, or null when it stands on its own. */
+/** The fold record's parent as readers hold it: {to (names.dec'd)}, or null when it stands on its own. */
 export function parentOf(c) {
   const p = c?.parent;
   return p && typeof p.to === "string" ? { to: idOut(p.to) } : null;
@@ -59,17 +58,16 @@ export function compOf(c) {
   return comp;
 }
 
-/** The one-line adapter the editor's entry points stand behind (C7b): a fold record `c` ({transform?, model?, parent?,
+/** The one-line adapter the editor's entry points stand behind: a fold record `c` ({transform?, model?, parent?,
  *  …components}) reads as its view; a view record (the suites' fixtures, an agent's foldRecord) passes through. A view
  *  is told by ITS invariant — viewOf always writes `pos` — never by the fold's spelling: the authority accepts
- *  `delete {component: "transform"}`, so a record may be {label} alone (review S2-1). The limit: a world naming a
+ *  `delete {component: "transform"}`, so a record may be {label} alone. The limit: a world naming a
  *  component `pos` (the door refuses the bare name: DERIVED) would be misread. */
 export const isFoldRecord = (x) => !!x && typeof x === "object" && !Array.isArray(x) && x.pos === undefined;
 /** A record either way: a fold record (component keys flat on it) is projected through viewOf; anything else — the OLD test
- *  shape, {pos, yaw, lib, comp: {...}} — is returned as it is. This is a TEST-CORPUS adapter, not a protocol one: at 2026-10-14
- *  18 files under tools/ still build the old shape by hand, and this line is what keeps them loading (complexity sweep 10-14,
- *  "vocab-check skips tools/"). Retire it by flattening those fixtures, then deleting the fallback; nothing at runtime takes
- *  the old shape (vocab-check pins that for shared/ client/ server/ mcpl/). */
+ *  shape, {pos, yaw, lib, comp: {...}} — is returned as it is. Test fixtures still build the old shape; nothing at runtime
+ *  does (vocab-check pins that for shared/ client/ server/ mcpl/). An agent's foldRecord is a view (it has `pos`) and passes
+ *  through too, so the fallback can't simply be deleted once the fixtures are flat. */
 export const recordOf = (x, id = "") => (isFoldRecord(x) ? viewOf(id, x) : x);
 
 /** One entity's components as the record readers use. */
@@ -100,7 +98,7 @@ export function viewState(folded, { recentChat = [], chatTotal = 0 } = {}) {
     if (id === "@world") {
       for (const [k, v] of Object.entries(c)) {
         if (HIDDEN_WORLD.has(k) || k.startsWith("imported-behavior:")) continue;
-        if (k === "sky" || k === "terrain" || k === "grass" || k === "water") st[k] = clone(v);   // water: its own component (shape audit 10-16)
+        if (k === "sky" || k === "terrain" || k === "grass" || k === "water") st[k] = clone(v);   // water: its own component
         else if (k === "default-role") st.roles["*"] = clone(v);
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
         else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);

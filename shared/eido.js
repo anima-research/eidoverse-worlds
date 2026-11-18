@@ -1,4 +1,4 @@
-// shared/eido.js — content addresses for models (spec/EIDO-URIS.md; review 2026-10-07 H3). R 10-17: a model is stored as its
+// shared/eido.js — content addresses for models (spec/EIDO-URIS.md). A model is stored as its
 // LIBRARY PATH (the portable reference) with its bytes' hash beside it (model-hash sha256:<64 hex>); an `eido:sha256/<64 hex>`
 // value stored before (translate-v1@8–@11) is still read: these map it to /library and to a word. `model`'s media is fixed by
 // its role (a glTF binary), so the bare string is complete.
@@ -15,8 +15,8 @@ export const libRelOf = (model) => { const h = eidoHex(model); return h ? `eido/
 export const hexOfLibRel = (rel) => { const m = /^eido(?:\/|:|%3[Aa])sha256\/([0-9a-f]{64})(\.glb)?$/.exec(String(rel));
   return m && (m[2] ? /^eido\//.test(String(rel)) : !/^eido\//.test(String(rel))) ? m[1] : null; };
 
-// ---- a person's word for a model. A model is its library path (R 10-17), whose file name is the word; an address stored before
-// 10-17 has a hex for a file name, so it reads as the word a caller can give (the catalogue's label for the file its index
+// ---- a person's word for a model. A model is its library path, whose file name is the word; an older stored address
+// has a hex for a file name, so it reads as the word a caller can give (the catalogue's label for the file its index
 // names), else "thing", never its hex. Words only: nothing that must replay alike is decided by them.
 const HEXY = /^(?:eido:sha256\/)?[0-9a-f]{64}$/;
 const stemOf = (s) => String(s).split(/[?#]/, 1)[0].split("/").pop().replace(/\.(glb|vrm)$/i, "");

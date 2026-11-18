@@ -1,0 +1,667 @@
+/**
+ * SFU unit proof — the acceptance rows that are checkable without a browser.
+ * Loopback werift peers stand in for browsers: same RTP, same negotiation,
+ * no Chromium. The browser smoke is a separate (and mandatory) step; passing
+ * here proves the POLICY, not the interop.
+ */
+import { RTCPeerConnection, MediaStreamTrack, RTCRtpCodecParameters, RtpPacket, RtpHeader } from "werift";
+import { Sfu } from "../../server/sfu.ts";
+import { installSfuTransportGuard } from "../../server/sfuguard.ts";
+import { suite } from "../gate/suite.ts";
+import { until, tryUntil, pause } from "../gate/wait.ts";
+
+// Run the ENTIRE suite guarded (review 2026-08-18): the negotiation vectors
+// below are the receipt that the ownership patch is transparent under real
+// RTCPeerConnection gathering — a receipt that only exists if the guard is ON
+// in the main process, not just inside the child vectors.
+installSfuTransportGuard();
+
+const CODEC = new RTCRtpCodecParameters({ mimeType: "audio/opus", clockRate: 48000, channels: 2, payloadType: 111 });
+const S = suite("sfu");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
+
+/** A stand-in browser: publishes a mic, counts what it hears. */
+class FakePeer {
+  pc = new RTCPeerConnection({ codecs: { audio: [CODEC] } });
+  mic = new MediaStreamTrack({ kind: "audio" });
+  heard = 0;
+  seq = 0;
+  constructor(publish = true) {
+    if (publish) this.pc.addTransceiver(this.mic, { direction: "sendonly" });
+    this.pc.ontrack = (e) => e.track.onReceiveRtp.subscribe(() => { this.heard++; });
+  }
+  /** speak N packets of (fake) encoded Opus */
+  async speak(n: number) {
+    for (let i = 0; i < n; i++) {
+      this.mic.writeRtp(new RtpPacket(
+        new RtpHeader({ payloadType: 111, sequenceNumber: this.seq++, timestamp: this.seq * 960, ssrc: 42 }),
+        Buffer.from([0xf8, 0xff, 0xfe, i & 0xff]),
+      ));
+      await pause("pace the mic like a live stream: a burst overruns the loopback socket", 6);
+    }
+  }
+}
+
+/** Full offer/answer, BROWSER-OFFERS direction.
+ *
+ *  🔴 THIS IS THE OPPOSITE OF PRODUCTION: there THE SERVER MUST OFFER (sfu.ts
+ *  ensureRoute), because a browser's mic offer is `sendonly` and an answer
+ *  cannot add a receive direction the offer never proposed.
+ *
+ *  So this helper exercises a direction production never uses. It is fine for
+ *  the POLICY assertions it serves (consent, caps, leaks — none of which depend
+ *  on who offered), and the tests that care about direction drive
+ *  `room.negotiate(...)` themselves; this helper's rows say nothing about SDP
+ *  direction handling. */
+async function negotiate(browser: RTCPeerConnection, sfuPc: RTCPeerConnection) {
+  const offer = await browser.createOffer();
+  await browser.setLocalDescription(offer);
+  await sfuPc.setRemoteDescription(browser.localDescription);
+  const answer = await sfuPc.createAnswer();
+  await sfuPc.setLocalDescription(answer);
+  await browser.setRemoteDescription(sfuPc.localDescription);
+  await until("both ends connect", () => connected(browser, sfuPc));
+}
+
+/** Speak n packets and wait until the listener heard all of them (resolves either way: the row checks the count). */
+async function heardAll(speaker: FakePeer, listener: FakePeer, n: number) {
+  const before = listener.heard;
+  await speaker.speak(n);
+  await tryUntil(`the listener heard all ${n}`, () => listener.heard >= before + n);
+  return before;
+}
+/** Speak n packets, wait until the SFU has taken in all n, and return how many it forwarded: 0 = policy held. A tap
+ *  subscribed after fanout's runs after it, so once it counts n, fanout has decided every packet. */
+async function forwardedWhile(room: Sfu, legId: string, speaker: FakePeer, n: number) {
+  const ingress = await until(`${legId}'s mic reached the SFU`, () => room.getLeg(legId)?.ingress);
+  let got = 0;
+  const tap = ingress.onReceiveRtp.subscribe(() => { got++; });
+  const f0 = room.diag().forwarded;
+  await speaker.speak(n);
+  await tryUntil(`the SFU took in ${legId}'s ${n} packets`, () => got >= n);   // a lost loopback packet is a short count, not a throw
+  tap.unSubscribe();
+  return room.diag().forwarded - f0;
+}
+const connected = (...pcs: RTCPeerConnection[]) => pcs.every((pc) => pc.connectionState === "connected");
+
+console.log("\nSFU — policy proof (loopback peers)\n");
+const renegotiations: string[] = [];
+const sfu = new Sfu({ onNegotiationNeeded: (id) => renegotiations.push(id) });
+
+// ── two participants join ──────────────────────────────────────────────────
+const alice = new FakePeer(), bob = new FakePeer();
+const aLeg = sfu.createLeg("alice", 1), bLeg = sfu.createLeg("bob", 1);
+await negotiate(alice.pc, aLeg.pc);
+await negotiate(bob.pc, bLeg.pc);
+check("both legs negotiated", !!sfu.getLeg("alice") && !!sfu.getLeg("bob"));
+
+// ── FAIL-CLOSED: no consent means no audio, even with a live mic ───────────
+{
+  const fwd = await forwardedWhile(sfu, "alice", alice, 15);
+  check("fail-closed: 0 packets to bob before consent", fwd === 0 && bob.heard === 0, `forwarded=${fwd} heard=${bob.heard}`);
+}
+// 🔴 E1: the assertion above is satisfied by route ABSENCE, so it survives
+// deleting the consent check entirely (proven by mutation testing in review).
+// This one cannot: the route EXISTS and is negotiated, and only the consent
+// check stands between alice's mic and bob's ear.
+{
+  const armed = new Sfu();
+  const a2 = new FakePeer(), b2 = new FakePeer();
+  await negotiate(a2.pc, armed.createLeg("a", 1).pc);
+  await negotiate(b2.pc, armed.createLeg("b", 1).pc);
+  armed.setConsent("b", "a", true);                 // build + negotiate the route
+  await armed.negotiate("b", (pc) => negotiate(pc, b2.pc));
+  const live = await heardAll(a2, b2, 5);
+  check("…the armed route carries audio before the revoke (control)", b2.heard > live, `heard ${live}→${b2.heard}`);
+  armed.setConsent("b", "a", false);                // …then withdraw consent only
+  const heardAtRevoke = b2.heard;
+  const fwd = await forwardedWhile(armed, "a", a2, 15);
+  check("fail-closed HOLDS with a live negotiated route (kills the mutant)",
+    fwd === 0 && b2.heard === heardAtRevoke, `forwarded=${fwd} heard ${heardAtRevoke}→${b2.heard}`);
+  armed.closeAll();
+}
+check("…but the SFU DID receive alice's mic", (sfu.getLeg("alice")?.rxPackets ?? 0) > 0,
+  `rx=${sfu.getLeg("alice")?.rxPackets}`);
+
+// ── consent ON → route created, renegotiation requested, audio flows ───────
+sfu.setConsent("bob", "alice", true);
+check("consent created a route", (sfu.getLeg("bob")?.outbound.has("alice")) === true);
+// Coalesced: the ask lands on the next microtask, so N routes added in one
+// turn produce ONE renegotiation rather than N. (N exchanges also inflates the
+// SDP — werift adds a transceiver per exchange — and double-delivers.)
+await tryUntil("the coalesced ask lands", () => renegotiations.includes("bob"));
+check("consent asked the caller to renegotiate", renegotiations.includes("bob"));
+check("…exactly once, however many routes were added",
+  renegotiations.filter((r) => r === "bob").length === 1, `${renegotiations.filter(r=>r==="bob").length}×`);
+// The SFU OFFERS here, it does not answer: bob's browser offered sendonly (his
+// mic), and an answer cannot add a receive direction the offer never proposed.
+// Adding a track server-side therefore makes the SERVER the offerer — which is
+// why createLeg's caller gets onNegotiationNeeded rather than a re-answer.
+await negotiate(sfu.getLeg("bob")!.pc, bob.pc);
+const before = await heardAll(alice, bob, 20);
+check("consent ON → bob hears alice", bob.heard > before, `heard=${bob.heard}`);
+
+// ── consent OFF → audio stops, WITHOUT renegotiating ───────────────────────
+// NOTE: this shares the top-level `sfu`/`alice`/`bob` with earlier sections
+// (the same revoke runs in its own room in the E1 block above). What only this
+// section pins is that the revoke costs no renegotiation.
+const renegCount = renegotiations.length;
+sfu.setConsent("bob", "alice", false);
+const atRevoke = bob.heard;
+{
+  const fwd = await forwardedWhile(sfu, "alice", alice, 20);
+  check("consent OFF → audio stops", fwd === 0 && bob.heard === atRevoke, `forwarded=${fwd} heard ${atRevoke}→${bob.heard}`);
+}
+check("…and cost no renegotiation (SDP untouched)", renegotiations.length === renegCount);
+
+// ── moderator mute is enforced at INGRESS: nobody hears (the route stays) ──
+sfu.setConsent("bob", "alice", true);
+sfu.setMuted("alice", true);
+const atMute = bob.heard;
+{
+  const fwd = await forwardedWhile(sfu, "alice", alice, 20);
+  check("moderator mute silences alice for everyone", fwd === 0 && bob.heard === atMute, `forwarded=${fwd} heard ${atMute}→${bob.heard}`);
+}
+sfu.setMuted("alice", false);
+
+// ── a DEAFENED listener (a ghost, R 10-07: "no for a ghost hearing voice chat") hears nobody, whatever its consent ─
+// consent is the listener's own answer (it can turn it back on); deafness is the server's and overrides it
+sfu.setConsent("bob", "alice", true);
+(sfu as any).setDeafened?.("bob", true);
+const atDeaf = bob.heard;
+{
+  const fwd = await forwardedWhile(sfu, "alice", alice, 20);
+  check("a deafened listener hears nothing, consent ON", fwd === 0 && bob.heard === atDeaf, `forwarded=${fwd} heard ${atDeaf}→${bob.heard}`);
+}
+sfu.setConsent("bob", "alice", true);                  // the listener re-consents: still deaf
+const atDeaf2 = bob.heard;
+{
+  const fwd = await forwardedWhile(sfu, "alice", alice, 20);
+  check("…and re-consenting doesn't undo it", fwd === 0 && bob.heard === atDeaf2, `forwarded=${fwd} heard ${atDeaf2}→${bob.heard}`);
+}
+(sfu as any).setDeafened?.("bob", false);
+const atHear = await heardAll(alice, bob, 20);
+check("undeafened: hears again (the control)", bob.heard > atHear, `heard ${atHear}→${bob.heard}`);
+
+// ── revocation is LOCAL and immediate (no webhook, no TTL) ─────────────────
+const t0 = Date.now();
+sfu.closeLeg("alice");
+const revokeMs = Date.now() - t0;
+check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50, `${revokeMs}ms`);
+check("revoked leg is gone", sfu.getLeg("alice") === undefined);
+// 🔴 #130 item 3: routes SURVIVE speaker retirement (deleting them leaked the
+// transceiver — the only handle werift keeps — one per reconnect). The safety
+// property is not route absence but that nobody HEARS a corpse: the corpse's
+// fanout stops at from.closed, and consent for the retired id is wiped so a
+// same-id successor is starved until it is granted afresh. Pin THAT.
+check("…and consent to the corpse is wiped (retained route is starved)",
+  (sfu as any).allows("bob", "alice") === false);
+
+// ── takeover: same id re-joining retires the predecessor (#57 one body) ────
+const bob2 = new FakePeer();
+const bLeg2 = sfu.createLeg("bob", 2);
+await negotiate(bob2.pc, bLeg2.pc);
+check("takeover replaced the leg", sfu.getLeg("bob")?.gen === 2);
+check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bLeg.closed);
+
+// ── INCREMENTAL JOINS + GLARE: the case a batch-setup test never exercises ──
+// People arrive one at a time, and two can arrive at once. Concurrent offers on
+// one PC is SDP glare.
+{
+  const room = new Sfu({ onNegotiationNeeded: (id) => { pend.push(id); } });
+  const pend: string[] = [];
+  const members = new Map<string, FakePeer>();
+  for (let i = 0; i < 5; i++) {
+    const id = `j${i}`;
+    const p = new FakePeer();
+    members.set(id, p);
+    const leg = room.createLeg(id, 1);
+    await negotiate(p.pc, leg.pc);
+    for (const other of members.keys()) if (other !== id) {
+      room.setConsent(other, id, true); room.setConsent(id, other, true);
+    }
+    await until("the coalesced asks land", () => i === 0 || new Set(pend).size === i + 1);
+    const asks = [...new Set(pend)]; pend.length = 0;
+    // Drain CONCURRENTLY — this is the glare case, and negotiate() must serialize it.
+    const r = await Promise.allSettled(asks.map((legId) =>
+      room.negotiate(legId, (pc) => negotiate(pc, members.get(legId)!.pc))));
+    check(`join ${i + 1}/5: every renegotiation succeeded (no glare rejection)`,
+      r.every((x) => x.status === "fulfilled"), r.map((x) => x.status).join(","));
+  }
+  const routes = [...members.keys()].reduce((n, id) => n + (room.getLeg(id)?.outbound.size ?? 0), 0);
+  check("incremental joins converge to a full room", routes === 20, `${routes}/20 routes`);
+  for (let k = 0; k < 12; k++) { for (const p of members.values()) await p.speak(1); }
+  await tryUntil("everyone heard all 48", () => [...members.values()].every((p) => p.heard >= 12 * 4));
+  const under = [...members.values()].filter((p) => p.heard < 12 * 4 * 0.9).length;
+  check("…and everyone actually hears everyone", under === 0, `${under} peers under-hearing`);
+  room.closeAll();
+}
+
+// ── CRASH PATH: a listener dying mid-fanout must not take the process down ──
+// werift binds "message" on its UDP socket but never "error", so a dead peer's
+// ICMP port-unreachable surfaces as an unhandled ECONNREFUSED. Measured before
+// sfuguard: 8 uncaught exceptions from closing 6 listeners during fanout.
+{
+  const { transportErrorsSwallowed } = await import("../../server/sfuguard.ts");
+  const room = new Sfu();
+  const spk = new FakePeer();
+  await negotiate(spk.pc, room.createLeg("spk", 1).pc);
+  const ls: FakePeer[] = [];
+  for (let i = 0; i < 4; i++) {
+    const p = new FakePeer(); ls.push(p);
+    await negotiate(p.pc, room.createLeg(`L${i}`, 1).pc);
+    room.setConsent(`L${i}`, "spk", true);
+  }
+  for (let i = 0; i < 4; i++) await room.negotiate(`L${i}`, (pc) => negotiate(pc, ls[i].pc));
+  const before = transportErrorsSwallowed();
+  const pump = (async () => { for (let i = 0; i < 80; i++) { await spk.speak(1); } })();
+  await tryUntil("fanout reaches every listener", () => ls.every((p) => p.heard > 0));
+  for (let i = 0; i < 4; i++) {
+    room.closeLeg(`L${i}`);
+    const rx = room.getLeg("spk")!.rxPackets;
+    await tryUntil("fanout runs on after the close", () => room.getLeg("spk")!.rxPackets > rx + 2);
+  }
+  await pump;
+  await pause("the dead listeners' ICMP refusals surface asynchronously: the row is that none crashes us", 300);
+  check("a listener dying mid-fanout does not crash the process",
+    room.getLeg("spk") !== undefined, `process reached this line; swallowed ${transportErrorsSwallowed() - before}`);
+  // contained, not ignored globally: the guard rows below (a non-werift socket still dies; an owned one is counted)
+  room.closeAll();
+}
+
+// ── LEAK: werift's memleak harness (PR #665) warns that un-unsubscribed
+// Event.subscribe closures retain RTCPeerConnection. We never call the
+// unSubscribe that onReceiveRtp.subscribe returns, so pin that it's fine.
+{
+  const room = new Sfu();
+  const rss0 = process.memoryUsage().rss;
+  for (let c = 0; c < 6; c++) {
+    const ps: FakePeer[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = new FakePeer(); ps.push(p);
+      await negotiate(p.pc, room.createLeg(`c${c}p${i}`, 1).pc);
+    }
+    for (let i = 0; i < 3; i++) { room.closeLeg(`c${c}p${i}`); ps[i].pc.close(); }
+  }
+  const grewMB = (process.memoryUsage().rss - rss0) / 1048576;
+  check("18 legs created+destroyed leaks no legs", room.diag().legs.length === 0);
+  check("…and RSS growth stays bounded (<60MB)", grewMB < 60, `grew ${grewMB.toFixed(0)}MB`);
+  room.closeAll();
+}
+
+// ── REGRESSION B2: a route whose exchange FAILED must be re-asked ──────────
+// Old behaviour: outbound.has() → return false, so one failed exchange
+// silenced that pair forever while diag reported it healthy (forwarded=15,
+// heard=0, diag green).
+{
+  const asks: string[] = [];
+  const room = new Sfu({ onNegotiationNeeded: (id) => asks.push(id) });
+  const spk = new FakePeer(), lis = new FakePeer();
+  await negotiate(spk.pc, room.createLeg("S", 1).pc);
+  await negotiate(lis.pc, room.createLeg("L", 1).pc);
+  room.setConsent("L", "S", true);
+  await tryUntil("the first ask lands", () => asks.includes("L"));
+  const afterFirst = asks.filter((a) => a === "L").length;
+  // the exchange never happens (simulating a blip) — the route stays pending
+  room.setConsent("L", "S", false);
+  room.setConsent("L", "S", true);
+  await tryUntil("the re-ask lands", () => asks.filter((a) => a === "L").length > afterFirst);
+  check("an un-negotiated route is re-asked, not silenced forever",
+    asks.filter((a) => a === "L").length > afterFirst, `asks ${afterFirst}→${asks.filter(a=>a==="L").length}`);
+  check("…and diag does not claim the listener hears them yet",
+    room.diag().legs.find((l) => l.id === "L")?.hears.includes("S") === false,
+    JSON.stringify(room.diag().legs.find((l) => l.id === "L")));
+  // now actually negotiate: the route becomes real and stops being re-asked
+  await room.negotiate("L", (pc) => negotiate(pc, lis.pc));
+  check("…and once negotiated, diag reports it as heard",
+    room.diag().legs.find((l) => l.id === "L")?.hears.includes("S") === true);
+  room.closeAll();
+}
+
+// ── REGRESSION: a route added AFTER the offer was created (B2, one level in) ─
+// Marking every route negotiated on success looked right and resurrected the
+// bug: a latecomer cannot be in an SDP that already exists, but got marked as
+// if it were — silent forever, diag reporting it as heard.
+{
+  const asks: string[] = [];
+  const room = new Sfu({ onNegotiationNeeded: (id) => asks.push(id) });
+  const s1 = new FakePeer(), s2 = new FakePeer(), lis = new FakePeer();
+  await negotiate(s1.pc, room.createLeg("s1", 1).pc);
+  await negotiate(s2.pc, room.createLeg("s2", 1).pc);
+  await negotiate(lis.pc, room.createLeg("lis", 1).pc);
+  room.setConsent("lis", "s1", true);
+  await room.negotiate("lis", async (pc) => {
+    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+    room.setConsent("lis", "s2", true);                  // ← after the offer exists
+    await lis.pc.setRemoteDescription(pc.localDescription!);
+    const ans = await lis.pc.createAnswer(); await lis.pc.setLocalDescription(ans);
+    await pc.setRemoteDescription(lis.pc.localDescription!);
+  });
+  await tryUntil("the SFU asks for the latecomer's round", () => asks.filter((a) => a === "lis").length > 1);
+  const mid = room.diag().legs.find((l) => l.id === "lis") as any;
+  check("a route added mid-exchange is NOT claimed as negotiated",
+    mid?.hears.includes("s2") === false && mid?.pendingRoutes.includes("s2") === true,
+    JSON.stringify({ hears: mid?.hears, pending: mid?.pendingRoutes }));
+  check("…and the SFU asks for another round on its own", asks.filter((a) => a === "lis").length > 1);
+  await room.negotiate("lis", (pc) => negotiate(pc, lis.pc));
+  const before = await heardAll(s2, lis, 12);
+  check("…after which the latecomer is actually heard", lis.heard > before, `heard ${before}→${lis.heard}`);
+  room.closeAll();
+}
+
+// ── MUTATION-DERIVED TESTS ─────────────────────────────────────────────────
+// Mutants of fanout()'s four guards. M4 is the discriminating row: inverting
+// `!this.allows(...)` to a denylist turns this suite red.
+//
+// M1 (source-closed), M5 (route check) and M7 (self-echo) pin BEHAVIOUR but do
+// NOT kill their mutants: each guard is redundant with one that runs first. A
+// closed speaker's routes survive closeLeg, but its consent is wiped there and
+// an unconsented route is starved (M1); self-consent never builds a route
+// (M7); `route?.track` is semantically identical to the early-continue (M5).
+// Don't mistake them for coverage they are not.
+{
+  const room = new Sfu();
+  const a = new FakePeer(), b = new FakePeer(), c = new FakePeer();
+  await negotiate(a.pc, room.createLeg("a", 1).pc);
+  await negotiate(b.pc, room.createLeg("b", 1).pc);
+  await negotiate(c.pc, room.createLeg("c", 1).pc);
+  // Build a NEGOTIATED route, then remove the consent ENTRY entirely (not set
+  // false). This is the state after closeLeg cleanup, and for any pair policy
+  // never spoke about — the "absent" case the allowlist claims to deny.
+  room.setConsent("b", "a", true);
+  await room.negotiate("b", (pc) => negotiate(pc, b.pc));
+  // Remove the ENTIRE listener row — the true "absent" state. Deleting only the
+  // inner key leaves the row, and `=== false` vs `!== true` behave identically
+  // there.
+  (room as unknown as { consent: Map<string, Map<string, boolean>> }).consent.delete("b");
+  const atDelete = b.heard;
+  const fwd4 = await forwardedWhile(room, "a", a, 20);
+  check("M4: ABSENT consent denies (not merely explicit-false)",
+    fwd4 === 0 && b.heard === atDelete, `forwarded=${fwd4} heard ${atDelete}→${b.heard}`);
+
+  // M5: a listener with consent but NO route must hear nothing.
+  room.setConsent("c", "a", true);
+  (room.getLeg("c") as unknown as { outbound: Map<string, unknown> }).outbound.delete("a");
+  const cAt = c.heard;
+  const fwd5 = await forwardedWhile(room, "a", a, 15);
+  check("M5: consent without a route still delivers nothing", fwd5 === 0 && c.heard === cAt, `forwarded=${fwd5} heard ${cAt}→${c.heard}`);
+
+  // M1: a CLOSED speaker's in-flight packets reach nobody.
+  room.setConsent("b", "a", true);
+  await room.negotiate("b", (pc) => negotiate(pc, b.pc));
+  const beforeClose = b.heard, f1 = room.diag().forwarded;
+  room.closeLeg("a");
+  await a.speak(15);                                  // the corpse keeps talking
+  await pause("the corpse's leg is gone, so no arrival to wait on: the row is that nothing lands in this window", 300);
+  check("M1: a closed speaker's packets reach nobody", room.diag().forwarded === f1 && b.heard === beforeClose, `heard ${beforeClose}→${b.heard}`);
+
+  // M7: nobody hears their own voice echoed back.
+  const solo = new Sfu();
+  const s1 = new FakePeer();
+  await negotiate(s1.pc, solo.createLeg("s1", 1).pc);
+  solo.setConsent("s1", "s1", true);                  // even if policy says yes
+  const selfAt = s1.heard;
+  const fwd7 = await forwardedWhile(solo, "s1", s1, 15);
+  check("M7: no self-echo even with self-consent set", fwd7 === 0 && s1.heard === selfAt, `forwarded=${fwd7} heard ${selfAt}→${s1.heard}`);
+  solo.closeAll();
+  room.closeAll();
+}
+
+// ── PROXIMITY GATE (Basis BasisDistanceJob.cs:74-84) ───────────────────────
+// An efficiency hint applied AFTER consent, so it can only ever subtract.
+// Measured motivation: two conversation groups 40m apart waste 55% of fanout;
+// people scattered over 100m waste 100%; a huddle wastes 0% (gating costs
+// nothing exactly when it cannot help).
+// The mechanism is HYSTERESIS, not a fixed margin (Basis's shape): the exit
+// threshold is 10% further than enter, keyed on previous state. A margin does
+// not stop flapping; two thresholds with memory cannot flap.
+{
+  const room = new Sfu();
+  const s = room as unknown as { inEarshot(a: string, b: string): boolean };
+  room.createLeg("a", 1); room.createLeg("b", 1);
+
+
+
+check("no positions → forwards (fail-open)", s.inEarshot("a","b")===true);
+room.setPosition("a",0,0,0); room.setPosition("b",5,0,0);
+check("5m apart → in range", s.inEarshot("a","b")===true);
+room.setPosition("b",100,0,0);
+check("100m apart → gated", s.inEarshot("a","b")===false);
+// hysteresis: enter at 20, exit at 22
+room.setPosition("b",19,0,0); check("19m → enters range", s.inEarshot("a","b")===true);
+room.setPosition("b",21,0,0); check("21m → STAYS (was in, exit is 22)", s.inEarshot("a","b")===true);
+room.setPosition("b",23,0,0); check("23m → drops out", s.inEarshot("a","b")===false);
+room.setPosition("b",21,0,0); check("back to 21m → STAYS OUT (enter is 20)", s.inEarshot("a","b")===false);
+// the anti-flap property, stated directly
+let flips=0, prev=s.inEarshot("a","b");
+for(let i=0;i<40;i++){ room.setPosition("b",20+(i%2?0.2:-0.2),0,0); const v=s.inEarshot("a","b"); if(v!==prev)flips++; prev=v; }
+check(`jitter across the boundary 40× → ${flips} flips (fixed cutoff would give ~40)`, flips<=1);
+// stale
+room.setPosition("a",0,0,0,Date.now()-9999); room.setPosition("b",100,0,0);
+check("stale position → forwards (fail-open)", s.inEarshot("a","b")===true);
+
+  room.closeAll();
+}
+
+// ── SPEAKER CAP + STICKINESS (Basis BasisAudioCapJob) ──────────────────────
+// Distance gating alone is not enough: forty people in one plaza are all within
+// 20m of each other, so every pair passes the gate and we are back to N².
+// A per-listener cap bounds the worst case at N x MAX. Stickiness (an incumbent's
+// distance is discounted when competing for a slot) is what stops two speakers
+// at near-equal distance from swapping the last slot every tick and stuttering.
+{
+  const room = new Sfu(); const s = room as any;
+
+for (const id of ["L","a","b","c","d"]) room.createLeg(id,1);
+room.setPosition("L",0,0,0);
+room.setPosition("a",1,0,0); room.setPosition("b",2,0,0); room.setPosition("c",3,0,0); room.setPosition("d",4,0,0);
+
+check("cap disabled (0) → everyone admitted", ["a","b","c","d"].every(x=>s.withinCap("L",x)===true));
+
+const r2 = new Sfu(); const t:any = r2;
+for (const id of ["L","a","b","c","d"]) r2.createLeg(id,1);
+r2.setPosition("L",0,0,0);
+r2.setPosition("a",1,0,0); r2.setPosition("b",2,0,0); r2.setPosition("c",3,0,0); r2.setPosition("d",40,0,0);
+r2.maxAudiblePerListener = 2;
+check("first 2 get slots", t.withinCap("L","a")===true && t.withinCap("L","b")===true);
+check("3rd (further) is capped out", t.withinCap("L","c")===false);
+check("…and incumbents keep theirs", t.withinCap("L","a")===true && t.withinCap("L","b")===true);
+
+// c walks much closer than b → should displace despite stickiness
+r2.setPosition("c",0.2,0,0);
+check("much-closer newcomer DOES displace", t.withinCap("L","c")===true);
+check("…and the displaced one is now out", t.withinCap("L","b")===false);
+
+// STICKINESS: two at nearly equal distance must not swap every tick
+const r3 = new Sfu(); const u:any = r3;
+for (const id of ["L","x","y"]) r3.createLeg(id,1);
+r3.setPosition("L",0,0,0); r3.setPosition("x",10,0,0);
+r3.maxAudiblePerListener = 1;
+u.withinCap("L","x");                       // x holds the only slot
+let swaps=0, holder="x";
+for (let i=0;i<40;i++){
+  // y hovers at essentially the same distance as x, jittering either side
+  r3.setPosition("y", 10 + (i%2?0.05:-0.05), 0, 0);
+  if (u.withinCap("L","y")) { if(holder!=="y"){swaps++;holder="y";} }
+  else if (u.withinCap("L","x")) { if(holder!=="x"){swaps++;holder="x";} }
+}
+check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)`, swaps<=1);
+
+}
+
+// ── #130 item 6: STALE POSITIONS MUST NOT BE CAP-RANKED ────────────────────
+// inEarshot forwards on stale (fail-open); withinCap must not rank the same
+// stale coordinates and suppress. One staleness rule lives in d2(): a position
+// too old to gate on is too old to rank on.
+{
+  const room = new Sfu(); const s = room as any;
+  for (const id of ["L","a","b"]) room.createLeg(id, 1);
+  const old = Date.now() - 10_000;
+  room.setPosition("L", 0, 0, 0, old);
+  room.setPosition("a", 1, 0, 0, old);
+  room.setPosition("b", 2, 0, 0, old);
+  room.maxAudiblePerListener = 1;
+  check("stale challenger vs full cap → admitted (cannot rank what we cannot gate)",
+    s.withinCap("L","a") === true && s.withinCap("L","b") === true);
+  // and the mixed case: fresh holder, stale challenger — still admitted
+  const r2 = new Sfu(); const t = r2 as any;
+  for (const id of ["L","x","y"]) r2.createLeg(id, 1);
+  r2.setPosition("L", 0, 0, 0); r2.setPosition("x", 1, 0, 0);
+  r2.maxAudiblePerListener = 1;
+  t.withinCap("L","x");                              // x holds the slot, fresh
+  r2.setPosition("y", 2, 0, 0, Date.now() - 10_000); // y is stale
+  check("stale challenger admitted past a fresh incumbent (d2=null → fail-open)",
+    t.withinCap("L","y") === true);
+  room.closeAll(); r2.closeAll();
+}
+
+// ── #130 item 3: SAME-ID RECONNECT MUST NOT GROW TRANSCEIVERS ──────────────
+// Deleting the listener's route entry in closeLeg would drop the only
+// reference to a transceiver werift keeps forever, so every reconnect would
+// allocate another one. Routes survive speaker retirement and a same-id
+// successor reuses them.
+{
+  const room = new Sfu();
+  room.createLeg("listener", 1);
+  for (let cycle = 1; cycle <= 20; cycle++) {
+    room.createLeg("spk", cycle);
+    room.setConsent("listener", "spk", true);        // creates/reuses the route
+    room.closeLeg("spk");
+  }
+  const listener = room.getLeg("listener")!;
+  const tx = listener.pc.getTransceivers().length;
+  check(`20 same-id speaker reconnect cycles → ${tx} transceiver(s), bounded (was 20)`, tx === 1);
+  check("…and exactly one route entry (reused, not re-created)",
+    listener.outbound.size === 1);
+  // No stale audio: the retired speaker's consent is wiped, so a packet from a
+  // NEW same-id leg is starved until consent is granted afresh — and after a
+  // fresh grant, the reused route carries it again.
+  room.createLeg("spk", 21);
+  const spk = room.getLeg("spk")!;
+  const fakeRtp = { header: {}, payload: Buffer.from([0xf8]) } as any;
+  let wrote = 0;
+  const route = listener.outbound.get("spk")!;
+  const origWrite = route.track.writeRtp.bind(route.track);
+  (route.track as any).writeRtp = (p: unknown) => { wrote++; return origWrite(p); };
+  (room as any).fanout(spk, fakeRtp);
+  check("retired consent does NOT survive onto a same-id successor (no stale audio)", wrote === 0);
+  room.setConsent("listener", "spk", true);
+  (room as any).fanout(spk, fakeRtp);
+  check("fresh consent → the RETAINED route carries the successor's audio", wrote === 1);
+  room.closeAll();
+}
+
+// ── #130 item 1: CONTAINMENT IS BOUND TO OWNED WERIFT TRANSPORT ────────────
+// The guard must swallow only errors from werift-owned sockets, not any
+// process-global error that happens to look UDP-shaped.
+// Proven in child processes because the fatal contract IS process-level.
+{
+  const run = (code: string) => Bun.spawnSync(["bun", "-e", code], { cwd: import.meta.dir + "/../.." });
+  const unrelated = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    installSfuTransportGuard();
+    setTimeout(() => { throw new TypeError("unrelated world-state bug"); }, 10);
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
+  `);
+  check("guarded process still DIES on an unrelated uncaught exception",
+    unrelated.exitCode !== 0 && !unrelated.stdout.toString().includes("SURVIVED"));
+  check("…and the original crash site is on stderr, not this file's",
+    unrelated.stderr.toString().includes("unrelated world-state bug"));
+
+  // The discriminating sibling: the EXACT benign errno/syscall shape, thrown at
+  // process scope with no werift ownership, must die.
+  const shapedButUnowned = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    installSfuTransportGuard();
+    const e = new Error("recvmsg ECONNREFUSED"); e.code = "ECONNREFUSED"; e.syscall = "recvmsg";
+    setTimeout(() => { throw e; }, 10);
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
+  `);
+  check("an UNOWNED error with the exact benign errno/syscall shape DIES (shape is not ownership)",
+    shapedButUnowned.exitCode !== 0 && !shapedButUnowned.stdout.toString().includes("SURVIVED"));
+
+  // Same discriminator on a REAL non-werift dgram socket: an actual dgram
+  // emitter error, benign-shaped, no werift involved — ordinary fatal.
+  const unownedDgram = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    const dgram = await import("node:dgram");
+    installSfuTransportGuard();
+    const s = dgram.createSocket("udp4");
+    s.bind(0, "127.0.0.1", () => {
+      const e = new Error("send ECONNREFUSED 127.0.0.1"); e.code = "ECONNREFUSED"; e.syscall = "send";
+      s.emit("error", e);   // dgram's own contract: unhandled 'error' throws
+    });
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 400);
+  `);
+  check("a real NON-WERIFT dgram socket erroring with a benign shape DIES",
+    unownedDgram.exitCode !== 0 && !unownedDgram.stdout.toString().includes("SURVIVED"));
+
+  // OWNED positive: a socket created through werift's own UdpTransport.init —
+  // the one seam all its raw sockets flow through — survives the same benign
+  // error, counted; and a NON-benign error on the same owned socket is fatal.
+  const ownedBenign = run(`
+    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    const e = new Error("recvmsg ECONNREFUSED"); e.code = "ECONNREFUSED"; e.syscall = "recvmsg";
+    t.socket.emit("error", e);
+    setTimeout(async () => {
+      console.log("SWALLOWED=" + transportErrorsSwallowed());
+      await t.close(); process.exit(0);
+    }, 200);
+  `);
+  check("…while the same benign error on a WERIFT-OWNED socket is swallowed and counted",
+    ownedBenign.exitCode === 0 && ownedBenign.stdout.toString().includes("SWALLOWED=1"));
+  const ownedFatal = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    t.socket.emit("error", new TypeError("werift-adjacent real bug"));
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
+  `);
+  check("…and a NON-benign error on an owned socket is still fatal, with its site on stderr",
+    ownedFatal.exitCode !== 0 && ownedFatal.stderr.toString().includes("werift-adjacent real bug"));
+
+  // The callback-send rejection path is contained at the same seam: a send
+  // whose underlying socket errors with a benign code resolves (counted)
+  // instead of escaping as an unhandledRejection.
+  const ownedSend = run(`
+    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    const e = new Error("send EHOSTUNREACH"); e.code = "EHOSTUNREACH"; e.syscall = "send";
+    t.socket.send = (...a) => { const cb = a[a.length - 1]; if (typeof cb === "function") cb(e); };
+    // a NON-IP address selects werift's callback branch, the only one that
+    // rejects (send = async: isIP(addr[0]) ? fire-and-forget : promise+cb)
+    await t.send(new Uint8Array([1]), ["closed.invalid", 9]);
+    console.log("SWALLOWED=" + transportErrorsSwallowed());
+    await t.close(); process.exit(0);
+  `);
+  check("…and a benign callback-send rejection on an owned transport is contained and counted",
+    ownedSend.exitCode === 0 && ownedSend.stdout.toString().includes("SWALLOWED=1"));
+}
+
+// ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
+{
+  const { __isBenignTransportError: benign } = await import("../../server/sfuguard.ts");
+  const mk = (msg: string, code?: string, syscall?: string) => {
+    const e = new Error(msg) as NodeJS.ErrnoException;
+    if (code) e.code = code; if (syscall) e.syscall = syscall; return e;
+  };
+  check("guard swallows a real dgram ECONNREFUSED",
+    benign(mk("ECONNREFUSED: connection refused, recv", "ECONNREFUSED", "recv")) === true);
+  check("guard does NOT swallow a TypeError that merely mentions an errno",
+    benign(mk("Cannot read properties of undefined (reading 'ECONNRESET')")) === false);
+  check("guard does NOT swallow a non-transport errno", benign(mk("no such file", "ENOENT", "open")) === false);
+  check("guard does NOT swallow a benign code with no syscall", benign(mk("fetch failed", "ECONNREFUSED")) === false);
+  check("guard does NOT swallow a benign code from a non-recv/send syscall", benign(mk("connect refused", "ECONNREFUSED", "connect")) === false);
+}
+
+const d = sfu.diag();
+check("diag reports a legs list and a forwarded count", Array.isArray(d.legs) && typeof d.forwarded === "number");
+
+sfu.closeAll();
+S.done();

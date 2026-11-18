@@ -1,0 +1,19 @@
+{
+  "name": "eido-voicebot",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Show voice: world say verbs → ElevenLabs TTS → Discord voice channel",
+  "scripts": {
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0",
+    "@discordjs/voice": "^0.18.0",
+    "@discordjs/opus": "^0.10.0",
+    "libsodium-wrappers": "^0.7.15"
+  },
+  "overrides": {
+    "tar": "^7.5.21"
+  }
+}

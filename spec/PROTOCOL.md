@@ -11,7 +11,7 @@ Which files are the contract, and the status of each choice it makes (decided, t
 `spec/NORMATIVE.md`. Code this document names is informative: a place to look, never the contract.
 
 Status: normative for logs whose genesis says `dialect: "eidoverse-log", v: 4` (the version history is at the end;
-this vocabulary is `docs/DESIGN-log-vocabulary.md`'s).
+this vocabulary is `docs/decisions/LOG-VOCABULARY.md`'s).
 **Alpha.** This whole protocol is in a trial period of about a year from v1.
 There is **no guarantee** that a log folded today will fold the same way under
 a later version: not a component's shape, not a field or message name, and not
@@ -23,7 +23,8 @@ break stored logs we ship a **log translator** with it, so
 that existing worlds move forward rather than strand. Translators are the
 migration path for the trial period. Every registered component is `trial`
 until it is promised. Implementations SHOULD NOT add anything they are not
-reasonably sure will survive; adding later is cheap, removing is not. When the trial period ends is not set now: it is decided at the first
+reasonably sure will survive; adding later is cheap, removing is not. When
+the trial period ends is not set now: it is decided at the first
 production translation, and recorded in `spec/NORMATIVE.md` with its date
 and author (D1, tel0s 11-06).
 
@@ -102,7 +103,7 @@ redaction target's `seq`). An unknown field, a `seq` field, a missing or
 non-string `kind`/`actor`, an `op` or `verb` missing or on the wrong kind, a
 non-object `body`, a bad `cause`, or a missing, fractional or decreasing `ts`
 makes the entry malformed: it shapes nothing and the reader reports it in
-diagnostics, never in the world. Why each word: `docs/DESIGN-log-vocabulary.md`.
+diagnostics, never in the world. Why each word: `docs/decisions/LOG-VOCABULARY.md`.
 
 **The kinds.**
 
@@ -210,8 +211,7 @@ A `change` entry's `op` and `body` are one of:
   (a key written by anyone else in between is a new life, never merged with
   the old). A verifier re-running the gate re-runs it on the **unmarked ops
   only**. A tool that rewrites a batch's `ops` remaps `cascade` with
-  them. (Added to the batch body before release as `followUps`;
-  `cascade` since this vocabulary.)
+  them.
 - A shape or grammar error anywhere in an entry (an unknown field, a bad id
   or component name, a nested batch) makes the **whole entry** malformed. A
   semantic no-op (a missing entity, an absent component) skips only that
@@ -327,7 +327,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   solid. `enabled: false` with `physics.kind: dynamic` is refused (it would fall
   forever). shared/protocol/simlayer.js `solidOff` is the one reading.
 - **Collision layers are `collider {blocks: [...], layer?, mask?}`**. `blocks` names the kinds of
-  mover it stops, of `bodies` (people and agents walking or swimming: the walkers, the authority's track and index),
+  mover it stops, of `bodies` (anyone walking or swimming: the walkers, the authority's track and index),
   `hulls` (driven vehicles: the authority's hull sweep) and `things` (loose things: the engine). Absent, it stops all
   three, as before. `hidden` with `blocks: ['hulls']` is an invisible wall every vehicle meets. A dynamic thing must
   block `things`. `layer` and `mask` are Godot's (CollisionObject3D `collision_layer`, the layers it is in, and
@@ -338,9 +338,12 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `[1]` (eidosim carries no layers between things), so a collider whose layer leaves out 1 is met by hulls alone, and
   only by those that scan it; a dynamic thing must keep 1 in its layer. A still collider's mask is unread. Every
   stored world (no layer, no mask) collides as before. `solidOff(c, kind, mask)` is the one reading.
-- **A physics volume is `physics-volume {kind, factor?}`** on a thing with a box or global `zone` (Godot Area3D's
+- **A physics volume is `physics-volume {kind, factor?, modes?}`** on a thing with a box or global `zone` (Godot Area3D's
   overrides, Unreal's Physics Volume): with `kind: speed`, a body inside moves at `factor` × its own speed (walking,
-  running, wading, the stroke, the 3D swim; 0.05..10, absent 1). Where volumes overlap the zone's priority decides.
+  running, wading, the stroke, the 3D swim; 0.05..10, absent 1), in the movement modes it names (`modes`, a non-empty list of
+  walk | swim | fly | climb, e.g. `['swim']`; a bare string is refused; absent, every mode). Where volumes overlap, only those taking the body's current mode
+  count, and the highest zone priority among them decides. Today's readers (shared/mover.js, the browser's swim) ask
+  only for walk and swim: fly and climb are accepted names that nothing slows yet.
   The authority's track widens inside a boost and never narrows: a slow volume is the honest client's and agent's
   pace, not a rule the authority holds a modified client to (falls and jumps aren't slowed, so a narrower 3D
   track would refuse an honest landing in mud). shared/zone.js `physicsVolumesOf`/`speedFactorAt`
@@ -401,6 +404,10 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **A changed meaning is a new name**, `<name>@<n>` (e.g. a hypothetical
   `light@2`), registered before anyone writes it, whose definition says what it `supersedes`. Old
   names are read forever. No component may change how another is read.
+  A new version carries its predecessor forward: on a record that holds the
+  old name, the first write of `<name>@<n>` starts from the old name's
+  effective values, with the new fields at their defaults, so superseding
+  never silently resets what someone set.
 - **Every registered name has a status.** `trial`: admitted, but its shape
   may change during the alpha (above), with stored values translated where
   they can be; `reserved`: the name is held and every write
@@ -422,7 +429,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   change, not a part that cannot. Like trial they may still change during the
   alpha, but never by an acknowledgement alone. Their shapes are pinned in `spec/kernel-pin.json`
   (shared/protocol/kernelspec.js), and the gate's core lane
-  (tools/protocol/kernel-check.ts) is red the moment the code's kernel differs
+  (test/protocol/kernel-check.ts) is red the moment the code's kernel differs
   from the pin. A re-pin is refused unless the **same change** carries (a) a
   translator change (translate-v1's name moved, or a new translate step), (b) a
   `REGISTRY-CHANGELOG.md` line prefixed `kernel:`, and (c) vectors under
@@ -443,7 +450,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   entry, so nothing repairs it. One write does happen when a server OPENS a world, and it is not a shape rewrite:
   holds left from before a restart are set down (`return-held`, the system's request; `settleOrphans`), the same
   request a leave writes. A v1 world comes forward through the translator (`translate-v1@51`, §14), which writes today's spelling
-  (the shape audit's rules, `tools/protocol/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
+  (the shape audit's rules, `tools/import-v1/shapes.js`) and lifts v1's `sockets` maps into socket
   children with its own `lift-sockets {id, made, moved}` requests. The door takes a write in a spelling renamed
   before release (`grabbable.pose`/`station.pose` → `anim`, a grip's `fingers` → `grasp`, a motion's old type
   word → `oscillate`, a picture's or sound's `alt`/`look` → `description`: shared/protocol/names.js `renameFields`) and stores
@@ -496,9 +503,9 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   units, friction and restitution limits, the combine enums: spec/PHYSICS.md
   §3.2). `nestedEnums` closes a vocabulary inside a nested grammar, keyed by
   its path (`structure`'s `levels[].apertures[][3]`: door, window, arch; wall
-  axes 0..3; tile halves A, B). All three are pinned: a `nestedEnums` member
-  removed is a break like an enum's; `reservedKinds` and `reservedShape` are
-  recorded (a change shows in the pin's diff) but not yet judged by the
+  axes 0..3; tile halves A, B). `nestedEnums` and `reservedKinds` are pinned: a `nestedEnums` member
+  removed is a break like an enum's; `reservedKinds` is recorded (a change shows in the pin's diff) and the
+  reserved field names with it (`reservedFields`), but `reservedShape` is not in the pin yet (componentspec.js pinOf), and none is yet judged by the
   tripwire.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
@@ -643,10 +650,10 @@ copy that was updated and is published again keeps its parts' keys.
   (moving, jumping, one press of the get-up), but the escape stays on and
   no seat can remove it: every client offers a deliberate escape that
   always stands the occupant up (an agent's `detach {escape: true}`; the
-  reference client's binding is `docs/SEATS.md`). A
+  reference client's binding is `docs/reference/SEATS.md`). A
   yes to an ask is one touch: it ends when the hand lets go, when either
   body leaves, when the target closes that class, or after 10 minutes. The pose packet's fields, and how a
-  receiver renders them, are `docs/pose-wire.md`; what binds every
+  receiver renders them, are `docs/reference/POSE-WIRE.md`; what binds every
   implementation is this: a body's declared mode (`pose.bodyMode`) is a
   self-declared description, and the authority and every server MUST NOT
   grant or relax any rule, consent check or permission because of it (a
@@ -706,7 +713,7 @@ copy that was updated and is published again keeps its parts' keys.
   the haul-out line), and a ground ledge over a step is refused as solid
   (`blocker: "ground"`). `place {at}`, `create {at: [x, z]}` and the spawn
   alias seat a model's bottom on the support at that one point (x, z): a
-  top there, else the ground (not the whole footprint; docs/BUILDING.md). A
+  top there, else the ground (not the whole footprint; docs/guide/BUILDING.md). A
   world with no `terrain` is flat at y 0 and dry; `terrain {kind: 'flat',
   height}` is flat at its height. A heightmap world whose
   grid isn't on the server yet has no ground to judge on, and the authority
@@ -758,7 +765,7 @@ copy that was updated and is published again keeps its parts' keys.
   enforces one reads that first. The designs this replaced (the
   table of presets, tiers, pause and delegates; then one switch
   `accept|ask|refuse` with live asks) are kept as a record in
-  `docs/CONSENT-TABLE-RECORD.md`; a stored table or switch is read once as
+  `docs/decisions/CONSENT-TABLE-RECORD.md`; a stored table or switch is read once as
   gates and lists never wider than it was.
 
 ### Private attention metadata
@@ -1013,7 +1020,7 @@ lift it, re-set it, or send a request with `throughLock: true` (the log
 records only the edit); anyone lower is refused. A setter who is demoted takes
 their locks' strength down with them; a lock whose setter is unknown is
 builder strength. In a world with no owner every lock is member strength
-(nobody is above builder there, §2.3), so no lock outlasts the reach of anyone who may build. It is a soft barrier, not ownership: clients ask before
+(nobody is above builder there, §7 "Roles"), so no lock outlasts the reach of anyone who may build. It is a soft barrier, not ownership: clients ask before
 acting through one. A lock has no level of its own; a stored `{rank}` (an
 older log) reads as locked and its rank is ignored.
 
@@ -1053,7 +1060,7 @@ owed before this section is complete.
 *sequencer* is the chain-writer role whose key genesis names (§12, §13); the
 *operator* is the human in custody of the host (the operator key, repairs,
 the redaction decider); the *host* is the machine or service that runs them
-(`docs/DESIGN-log-vocabulary.md` §1.10). The *owner* (the role, §6: the world's). A *builder* (anyone whose
+(`docs/decisions/LOG-VOCABULARY.md` §1.10). The *owner* (the role, §7: the world's). A *builder* (anyone whose
 role holds `build`). The *invoker* (whoever's request this is). The
 *affected participant* (whoever's body a request touches). A *sponsor*
 (whoever's rights a script acts with, §8).
@@ -1125,7 +1132,7 @@ Your body is yours. Today a body is presence, never an entity, so no write
 reaches one. When body parts become entities, **every write to a body goes
 through the one request path, and the body's owner decides**. How that is
 built (who the owner is, the paths a write takes, co-editing, where body
-edits are stored) is direction, not protocol, in `docs/AVATAR-DIRECTION.md`
+edits are stored) is direction, not protocol, in `docs/design/AVATAR-DIRECTION.md`
 until avatars are shared. The names it uses are reserved now (`body-owner`,
 `edit-grant`, `avatar-deny` in the registry; the request `arrive`; the
 refusal code `body`).
@@ -1135,7 +1142,7 @@ refusal code `body`).
 A script is a `script:<name>` component: `{src, scope, on, every?,
 always?, knobs?, paused?}`, where `src` names a source blob. It acts with
 its **sponsor's** rights — whoever's rights admitted the latest write to
-that key — re-checked at every activation and never wider than the `scope`
+that key (a write that only pauses it adopts nothing; an owner's edit makes the owner its sponsor) — re-checked at every activation and never wider than the `scope`
 it declares. The visitor whose `use` triggers it adds no rights. A demoted
 sponsor's scripts go dormant; a banned sponsor's are suspended.
 
@@ -1155,8 +1162,8 @@ put the thing back (no engine, or no stored pose): that one has none and,
 like a departure, records no identity). What a script writes with the
 identities it receives live is its
 own request, signed with its sponsor's rights. An auditor's re-run of a script is a
-check, never the record; its procedure is `docs/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
-`docs/SCRIPTS.md`.
+check, never the record; its procedure is `docs/guide/SCRIPTS.md` ("Auditing a script"). A sponsor reader skips the authority's follow-ups (§3). The reference API, limits and determinism rules are
+`docs/guide/SCRIPTS.md`.
 
 ## 9. Conventions
 
@@ -1299,7 +1306,7 @@ the thing's (or part's) own frame before scale; `motion.center` and
   `test_reader.py` its tests. `chain.py` and `test_chain.py` — the chain,
   signatures and redaction (§12). `ed25519/` — the key vectors (§13).
 
-`bun tools/protocol/run.ts conformance` folds every log with the JavaScript fold
+`bun test/gate/run.ts conformance` folds every log with the JavaScript fold
 and the Python reader and fails on any difference in status, digest or
 diagnostics. **The prose wins; the vectors are its tests**: where they
 disagree, the vector has the bug, and it is fixed to match the prose. A
@@ -1371,7 +1378,7 @@ them, and the suite holds them to it), not part of conformance.
   `requires` is the sorted, unique list of feature ids (`namespace:name@major`, at most 64) a reader must implement to read
   the world; later ones are added only by a governance entry's `requiresAdd` (a monotonic union, never removed). A feature
   this reader doesn't implement, declared anywhere, means "unsupported feature" and no world (never a partial fold).
-  `provenance {registry, writer}` names the writer and its exact source tree (`docs/DESIGN-log-vocabulary.md` §F F-2):
+  `provenance {registry, writer}` names the writer and its exact source tree (`docs/decisions/LOG-VOCABULARY.md` §F F-2):
   the server's (`eidoverse-server`) at founding, the import tool's (`eidoverse-translate-v1`) at translation; it is the
   one carrier, and a translation's `translated` request and rollback manifest repeat it.
   Genesis seeds no state: the founding request then writes `@world` through the
@@ -1468,7 +1475,7 @@ this protocol. A translated log is an ordinary log of this protocol, and these h
   rules produced the log.
 
 The operator's procedure (the dry-run report and its hash, the in-place swap, rollback) is in
-`docs/TRANSLATING-OLD-WORLDS.md`.
+`docs/operator/TRANSLATING-OLD-WORLDS.md`.
 
 ## Version history
 
@@ -1479,7 +1486,7 @@ v}`. File names, wire fields and code don't carry the number.
 |---|---|---|
 | 1–2 | The first world log: an untyped verb log folded by its reader (`genesis {verb: "genesis", args: {v, dialect}}`); dialect 2 added `force` and `punt` | `history/PROTOCOL-v1.md` |
 | 3 | The deterministic-physics amendment: a sim fold over sim-scoped entries, sim epochs (`dialect 3`) | `history/PROTOCOL-v2-sim.md` |
-| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/DESIGN-log-vocabulary.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; no `minor` (Mica 11-04: dialect + v, then requires). Before release, minor 0 gained the batch body's `cascade` (as `followUps`) and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
+| 4 | This protocol: typed entries (`change`, `request`, `physics`, `say`, `redaction`, `governance`), the authority, opaque identities, the signed chain and governance keys. Its physics is `PHYSICS.md`. **Minor 1** (the current one) is the log vocabulary of `docs/decisions/LOG-VOCABULARY.md`: the kinds above, `op` on a change, `verb` on a request or physics entry, `cascade`, `commitment`, `rewindWindow`, no `verb` on genesis; no `minor` (Mica 11-04: dialect + v, then requires). Before release, minor 0 gained the batch body's `cascade` (as `followUps`) and §6a, and renamed a number of pre-release words; each rename and how an older spelling was read is `spec/history/PRE-RELEASE-RENAMES.md` (informative). | this document |
 
 Logs of `v` 1–3 are not read at runtime; §14 translates one, once, into a new
 world.

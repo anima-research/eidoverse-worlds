@@ -1,12 +1,12 @@
-// shared/protocol/refusalcodes.js — every code the authority refuses with, registered (engine-scars 3.1, R 10-17 02:45).
+// shared/protocol/refusalcodes.js — every code the authority refuses with, registered.
 // Pure data, no imports. A code is written into signed log entries (a refused write's act carries `refused: {code}`), so a
 // code is one-way: clients branch on it, old logs hold it forever. Like HTTP's status codes or gRPC's closed `Code` enum:
 // a fixed, registered set, with free-text `reason` and `fix` beside it. A new code is a new row here, with what it means
-// and when it is given; tools/protocol/scars-check.ts G1 fails if the authority can refuse with a code that has no row, if
+// and when it is given; test/protocol/scars-check.ts G1 fails if the authority can refuse with a code that has no row, if
 // a row names a code nothing gives (unless it is `reserved`), and if a request in that suite met an unregistered code.
 //
 // Each row: { meaning, when, reserved? }. `meaning` is what the asker should understand; `when` is what triggers it.
-// Synonyms merged 10-17: `no-such` (the caption request's not-found) is `not-found`. Kept apart on purpose: `gone` (a
+// Kept apart on purpose: `gone` (a
 // thing you were holding was deleted), `not-here` (a body isn't in the world), `not-a-thing` (a socket isn't a thing).
 export const REFUSAL_CODES = Object.freeze({
   // ---- who is asking (identity, membership, sanctions) ----
@@ -14,7 +14,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-world":       { meaning: "there is no such world", when: "any verb but create-world/help on a world that hasn't been founded" },
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
   "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version/unsupported-feature" },
-  "unsupported-feature": { meaning: "a feature this world or server can't use (docs/DESIGN-log-vocabulary.md §F F-1)", when: "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement" },
+  "unsupported-feature": { meaning: "a feature this world or server can't use (docs/decisions/LOG-VOCABULARY.md §F F-1)", when: "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement" },
   // ---- the transaction (PROTOCOL §7: every request ends committed, rolled-back or ambiguous) ----
   "ambiguous":      { meaning: "the request's result is unknown: some or all of it may be written; never ok, never a plain failure", when: "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)" },
   "server-error":   { meaning: "the server failed handling the request and nothing it asked for was written", when: "a throw before any line of the request reached the log, including a write refused because the log was already wedged (rolled back)" },
@@ -86,6 +86,7 @@ export const REFUSAL_CODES = Object.freeze({
   "disabled":       { meaning: "it's switched off", when: "handling, using or standing on a thing that is (or hangs under) disabled" },
   "in-flight":      { meaning: "the engine has it until it rests", when: "any write to a launched thing before its rest" },
   "not-at-rest":    { meaning: "the engine doesn't have it at rest", when: "a rest the engine doesn't agree with" },
+  "not-the-engine's": { meaning: "the rest isn't where the engine has it", when: "a rest whose pose differs from the engine's resting pos or q (checks.js restCheck)" },
   "implausible":    { meaning: "physics wouldn't leave it there", when: "a put or place whose result floats or interpenetrates" },
   "full":           { meaning: "this world is at its entity limit", when: "a write that adds entities past capacity" },
   "too-many":       { meaning: "too many of those", when: "more scripts than script-settings.max" },

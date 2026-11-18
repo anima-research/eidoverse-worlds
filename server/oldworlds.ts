@@ -1,13 +1,11 @@
-// server/oldworlds.ts — worlds saved in an old format, found and named (owner 10-15: "when someone tries to open a world
-// saved by the old protocol, ping them with 'use the translator'"). The server serves only worlds in this protocol; a
-// directory holding an old log is never opened. Before this file it was skipped in silence at boot (the operator was
-// never told) and a visitor was handed a command line they can't run. Now:
+// server/oldworlds.ts — worlds saved in an old format, found and named. The server serves only worlds in this protocol;
+// a directory holding an old log is never opened. Instead:
 //   - the OPERATOR is told at boot, one block per world, with the exact command (bootNotice);
 //   - a VISITOR is told in plain words that the world is safe and needs a one-time conversion (visitorText).
 // Two kinds, never confused:
-//   translatable  a log.jsonl of the first protocol's verbs: tools/protocol/world.ts translate <name> translates it in
+//   translatable  a log.jsonl of the first protocol's verbs: tools/world.ts translate <name> translates it in
 //                 place (the world keeps its name; the old log is renamed log.original.jsonl beside it, never written);
-//   pre-names     a log of this protocol's family saved before the 2026-10-07 names pass (livehost isPreNamesDir): it
+//   pre-names     a log of this protocol's family saved before the names pass (livehost isPreNamesDir): it
 //                 can't be translated as it stands; it's re-translated from its ORIGINAL old log, or refounded.
 // A world holding translation.lock (an in-place swap that stopped midway) is neither: never served, named at boot (interruptedSwapsIn).
 // Pure reads of the directory: nothing here writes, and nothing here loads the translator.
@@ -34,20 +32,18 @@ export type OldWorld = {
   visitor: string;
 };
 
-/** What a client that doesn't fold the log is told at join (server.ts, the 4005 refusal). A NATIVE session (the Unreal client,
- *  signed in through native-login: isNativeSession, native: true or an older nativeWorld) is told the truth about itself: this build can't fold the log
- *  (review of PR #260, Mica, item 7); a current build never sees it, since it rejoins through its bridge on this close. Anyone else
- *  (an old page, an old agent build) is told to reload or update. */
+/** What a client that doesn't fold the log is told at join (the 4005 refusal). A native session (isNativeSession) is told its
+ *  client hasn't been ported to this protocol yet; anyone else is told to reload or update. */
 export function noFoldRefusal(world: string, native: boolean): string {
   return native
     ? `"${world}" is a world of the current protocol, and this Unreal build can't fold its log. Nothing is wrong with your sign-in or with the world: update the Unreal client (current builds join through their local bridge), or join from a browser.`
     : `"${world}" needs a client that folds its log, and this one doesn't — reload the page for the current client, or update the agent`;
 }
 
-const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // a letter or digit first: "-x" would read as a flag to the CLI
-const TOOL = "bun tools/protocol/world.ts";
+const NAME = /^[a-z0-9][a-z0-9_-]{0,63}$/i;   // stricter than WORLD_NAME_RE: a letter or digit first ("-x" would read as a flag to the CLI)
+const TOOL = "bun tools/world.ts";
 export const HASH_PLACEHOLDER = "<the report hash the dry run printed>";
-/** Who claims a world with no owner (world.ts --claim): the operator running the commands, as the browser path's upgrader does. */
+/** Who claims a world with no owner (tools/world.ts --claim): the operator running the commands, as the browser path's upgrader does. */
 export const CLAIMER = "EIDO_UPGRADER_ACCOUNT=<your-account>";
 const CLAIMS = "<your-account> is your account as SERVER_OPERATORS lists it (e.g. human:<provider>:<id>): a world with no owner becomes yours, and everyone else keeps building there as in main; a world with owners keeps them.";
 const APPROVAL = "The dry run writes nothing: it prints what the translation would do (what is dropped by design, what it would refuse) and the report's hash. Read it; then translate it, bound to that hash:";
@@ -77,7 +73,7 @@ export function oldWorldAt(dir: string, name: string): OldWorld | null {
   if (!NAME.test(name)) return null;
   const d = path.join(dir, name);
   let st: fs.Stats; try { st = fs.lstatSync(d); } catch { return null; }
-  if (!st.isDirectory() || isWorldDir(d) || isSwapUnfinished(d)) return null;   // an unfinished swap is its own case (interruptedSwapsIn); lstat: a symlinked world dir is never followed (backup, translate)
+  if (!st.isDirectory() || isWorldDir(d) || isSwapUnfinished(d)) return null;   // an unfinished swap is its own case (interruptedSwapsIn); lstat: a symlinked world dir is never followed
   const suggestedName = freeName(dir, name);
   const head = `WORLDS_DIR=${shellWord(dir)} ${TOOL}`, claimHead = `${CLAIMER} ${head}`;
   if (isPreNamesDir(d)) {   // checked first: such a log may be named log.jsonl too (an older file name)
