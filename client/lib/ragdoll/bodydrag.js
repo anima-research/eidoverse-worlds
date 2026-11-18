@@ -279,20 +279,20 @@ bus.on('bodydrag', (msg) => {
     return;
   }
   if (msg.end != null) {
-    // my dragger let go (or a refused grabber acknowledging): resume myself. A release may carry a nail, which my sim
-    // enforces from here.
+    // my dragger let go, a refused grabber acknowledged, or the server ended it out of reach: resume myself. A release may
+    // carry a nail, which my sim enforces from here.
     if (draggedBy === by) {
       draggedBy = null;
       if (msg.pinAt?.joint && Array.isArray(msg.pinAt.at)) hooks.addPin?.(String(msg.pinAt.joint), msg.pinAt.at);
       hooks.endDragged(msg);
     }
     else if (drag && drag.id === by) {
-      // I was the dragger and the OWNER revoked (broke free, or refused)
+      // I was the dragger and the OWNER revoked (broke free, or refused), or the server ended it past the break distance
       drag.rd.setPin(null);
       drag.rd.dispose?.();
       draggedLocal.delete(drag.id);
       drag = null;
-      flashHint(`${by} broke free`);
+      flashHint(msg.reason === 'out-of-reach' ? `${by} slipped out of reach` : `${by} broke free`);
     }
     return;
   }

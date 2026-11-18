@@ -302,6 +302,7 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   const g = (m) => { const k = una.got.length; MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", grab: { joint: "hips" } }); return una.got.slice(k).filter((x) => x.type === "bodydrag").length; };
   const a = puppet({ ragdoll: true }), b = puppet({ pose: { head: [0, 0, 0, 1] } });
   ok(P.BODY_RANGE === null && a.got === 1 && b.got === 1 && g() === 1, "RR1 no range by default: Fen's knock-over, pose and grab reach Una from 30 m (her consent allows them)", { a, b, range: P.BODY_RANGE });
+  MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", end: true });   // Fen lets go: no drag under way below
   const set = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
   const c = puppet({ ragdoll: true }), d = puppet({ pose: { head: [0, 0, 0, 1] } });
   ok(set?.ok && c.got === 0 && /30\.0 m away/.test(c.err ?? "") && /5 m/.test(c.err ?? "") && d.got === 0 && g() === 0, "RR2 a world that sets range 5 refuses them from 30 m, saying how far and the world's range", { set, c, d });
@@ -336,6 +337,24 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
     ok(on.nail.got === 1 && !on.nail.err && on.hand.relayed && on.verb.ok, "RR9 within range, with her gates open, the nail, the hand and the body verb all go through", on);
     ok(off.nail.got === 0 && off.nail.err === refusalWords("Una", "displace") && !off.hand.relayed && off.hand.notes.length === 1 && !/get closer|away/.test(off.hand.notes[0])
       && off.verb.code === "consent", "RR9 …with them shut, all three get the consent words, so the shut arm of RR6–RR8 was really shut", off); }
+  // RR10–RR11: a drag starts in range, follows past it, and ends past the break distance (range × BODY_BREAK), told to both
+  { const nia = people.Nia, at = (c, x) => { pose(c, { p: [x, 0, 40], yaw: 0 }); return c.lastPose?.p?.[0] === x; };   // Una stands at x 40
+    const send = (from, tgt, m, now = Date.now()) => { const k = tgt.got.length, kf = from.got.length;
+      MESSAGES["bodydrag"]({ c: from, ws: from.ws, now, expel: () => {} }, { type: "bodydrag", target: tgt.id, ...m });
+      return { tgt: tgt.got.slice(k).filter((x) => x.type === "bodydrag"), from: from.got.slice(kf).filter((x) => x.type === "bodydrag" || x.type === "error") }; };
+    const sample = { pose: { hips: [0, 0, 0, 1] }, p: [40, 0.3, 40], yaw: 0 }, past = 5 * (P.BODY_BREAK ?? 1) + 1, band = 5.5;
+    const placed = [gates(true), at(nia, 43)], g0 = Date.now(); const grab = send(nia, una, { grab: { joint: "hips" } }, g0);
+    placed.push(at(nia, 40 + band)); const mid = send(nia, una, sample, g0 + 1000), late = send(nia, una, sample, g0 + 2000);   // each sample keeps it under way
+    ok(placed.every(Boolean) && grab.tgt.length === 1 && [mid, late].every((x) => x.tgt.length === 1 && x.tgt[0].pose && x.from.length === 0),
+      "RR10 a drag grabbed at 3 m still streams at 5.5 m, past range 5 but inside the break distance, for longer than 1.2 s while samples keep coming", { placed, grab, mid, late });
+    placed.push(at(nia, 40 + past)); const broke = send(nia, una, sample);
+    const told = (l, by) => l.length === 1 && l[0].end === true && l[0].reason === "out-of-reach" && l[0].by === by && !l[0].pose;
+    placed.push(at(nia, 40 + band)); const after = send(nia, una, sample);
+    placed.push(at(nia, 43)); const t0 = Date.now(), regrab = send(nia, una, { grab: { joint: "hips" } }, t0);
+    placed.push(at(nia, 40 + band)); const quiet = send(nia, una, sample, t0 + 1201);   // the owner's silence rule (1.2 s): no drag under way
+    send(nia, una, { end: true });
+    ok(placed.every(Boolean) && told(broke.tgt, "Nia") && told(broke.from, "Una") && after.tgt.length === 0 && regrab.tgt.length === 1 && quiet.tgt.length === 0,
+      "RR11 …past it the drag ends: both are told it was released out of reach; a sample back at 5.5 m is dropped (no drag left), as is one after 1.2 s of quiet", { placed, broke, after, regrab, quiet }); }
   w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
 let skipped = null; const SKIP = Symbol("skip");

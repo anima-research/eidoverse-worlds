@@ -860,7 +860,7 @@ export class WorldAgent {
                 if (pa?.joint && Array.isArray(pa.at) && pa.at.length === 3 && this.pins.size < 8) {
                   this.pins.set(String(pa.joint), pa.at.map(Number));
                 }
-                this.bodyNotice(msg.by, pa ? "nails part of you in place and steps back" : "lets go of you");
+                this.bodyNotice(msg.by, pa ? "nails part of you in place and steps back" : msg.reason === "out-of-reach" ? "loses hold of you: you're out of reach" : "lets go of you");
                 // then MY OWN sim takes the body back: it falls from where the hand let go and settles, or hangs if nails hold it
                 void this.settleFromDrag(releasePose, msg.sim ?? null);
               }

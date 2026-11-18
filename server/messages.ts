@@ -26,6 +26,8 @@ import { sha256 } from "../shared/protocol/hash.js";
  *  the people here. A display name can't be shaped like an actor id (refused at join). */
 const ACTOR_ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
 /** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy. */
+/** A grab with no forwarded sample for this long is no drag under way: the owner has taken its body back (client bodydrag.js SILENCE_MS). */
+const DRAG_SILENCE_MS = 1200;
 const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
 
 /** Body consent at the server (PROTOCOL §5): a presence act on someone else's body is checked against THEIR consent
@@ -175,10 +177,11 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
     const addressed = { type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}) };
-    // a grab takes someone's body (displace): their consent and reach, at the server; the owner decides whether to accept it
-    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
-    // a non-grab release ends the drag even after move consent closes; its final sample and nails need live displace consent,
-    // so a refused release carries only the end
+    // a grab takes someone's body (displace): their consent and range, at the server; the owner decides whether to accept it
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
+      if (tc.actorId && tc.actorId !== c.actorId) c.dragging = { to: tc.actorId, at: now }; }
+    // a non-grab release ends the drag even after move consent closes; its final sample and nails need range and live
+    // displace consent, so a refused release carries only the end
     else if (!(c.actorId && c.actorId === tc.actorId)) {
       const nail = msg.unpin != null || msg.pinAt != null || msg.pins != null;
       const endAlone = () => { if (msg.end != null) tc.ws.send(JSON.stringify({ ...addressed, end: true })); };
@@ -188,12 +191,19 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` }));
         endAlone(); return;
       }
-      const far = rangeRefusal(c, c.lastPose?.p, tc);   // range before consent, as bodyRefusal
+      const held = c.dragging?.to === tc.actorId && now - c.dragging.at <= DRAG_SILENCE_MS;
+      if (msg.end != null) { if (c.dragging?.to === tc.actorId) c.dragging = null; if (tc.dragging?.to === c.actorId) tc.dragging = null; }   // either side's end ends it
+      // range before consent, as bodyRefusal; a drag under way follows out to the break distance, and past it both are told it ended
+      const far = rangeRefusal(c, c.lastPose?.p, tc, held);
+      if (far && held) { c.dragging = null; const why = { end: true, reason: "out-of-reach" };
+        tc.ws.send(JSON.stringify({ ...addressed, ...why }));
+        ws.send(JSON.stringify({ type: "bodydrag", by: tc.id, byActor: tc.actorId, ...why })); return; }
       const d = far ? null : consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
       if (far || d?.mode === "deny") {
         if (nail) ws.send(JSON.stringify({ type: "error", error: far ?? refusalWords(tc.id, "displace") }));
         endAlone(); return;
       }
+      if (held && msg.end == null) c.dragging!.at = now;
     }
     tc.ws.send(JSON.stringify({
       ...addressed,
