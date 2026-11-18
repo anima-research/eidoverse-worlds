@@ -911,6 +911,7 @@ const LIFECYCLE_NOT_GRANTED = "your host hasn't granted this door channels.lifec
 /** "May this identity go to `name`?", asked of the sequencer's /access AS THE AGENT (server/access.ts: the world
  *  decides). Null when it couldn't be asked (bounded, fails fast): callers fail closed for a chosen destination. */
 type AccessAnswer = { exists: boolean; you: "enter" | "watch" | "none"; why?: string; found?: { ok: boolean; why?: string } };
+const ACCESS_PROBE_MS = Number(process.env.MCPL_ACCESS_PROBE_MS ?? 2_000);   // a setting: the admit test holds /access longer
 async function accessProbe(name: string, token: string): Promise<AccessAnswer | null> {
   // URL surgery, not string surgery: a WORLD_URL with a query string or mount path defeats a regex replace
   const u = new URL(process.env.WORLD_URL ?? DEFAULT_WORLD_URL);
@@ -918,7 +919,7 @@ async function accessProbe(name: string, token: string): Promise<AccessAnswer | 
   u.pathname = u.pathname.replace(/\/ws$/, "") + "/access";
   u.search = `?world=${encodeURIComponent(name)}`;
   try {
-    const r = await fetch(u, { signal: AbortSignal.timeout(2_000), headers: { authorization: `Bearer ${token}` } });
+    const r = await fetch(u, { signal: AbortSignal.timeout(ACCESS_PROBE_MS), headers: { authorization: `Bearer ${token}` } });
     const a = (await r.json().catch(() => null)) as any;
     if (r.status === 404 && a?.code === "world-unavailable") return { exists: false, you: "none" };   // missing, or not discoverable by this agent: one answer
     if (!r.ok) return null;
@@ -1083,7 +1084,7 @@ wss.on("connection", (ws, req) => {
       console.log(`[${ts()}] [mcpl] ${auth!.id}: connection closed during admission — dropped`);
       return;
     }
-    // the access probes above await (up to 2 s each): a credential revoked meanwhile admits nobody, and closes no one's session
+    // the access probes above await (up to ACCESS_PROBE_MS each): a credential revoked meanwhile admits nobody, and closes no one's session
     if (!stillProves()) {
       console.log(`[${ts()}] [audit] ${auth!.id}: credential no longer valid at admission — refusing connection`);
       refuse("token refused (it stopped being valid while the connection was admitted)");
