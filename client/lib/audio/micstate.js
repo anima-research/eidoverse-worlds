@@ -101,12 +101,15 @@ export function micAnalyserLevel() { return _meter(); }
 // ── the transport-facing seam ───────────────────────────────────────────────
 
 let _raw = null, _gated = null, _released = false;
+// _raw is the one reference to the device, so the device stops when _raw lets go of it (a synth source is the provider's)
+const stopDevice = (s) => { if (s && !s.synthetic) for (const t of s.getTracks()) { try { t.stop(); } catch { /* already dead */ } } };
 
 /** Gate a raw device stream and return what should go on the wire.
  *  A SYNTHETIC source bypasses the gate: no room noise to gate, and the WebAudio
  *  graph can't carry it on a stalled headless clock. The source's nature
  *  decides, never the transport. */
 export function gateFor(rawStream) {
+  if (_raw !== rawStream) stopDevice(_raw);
   if (!rawStream || rawStream.synthetic) { _raw = _gated = _lane = rawStream; return rawStream; }
   _raw = rawStream;
   // Reuse a standing lane: attachSource returns the same gated stream the
@@ -128,6 +131,8 @@ export function gateFor(rawStream) {
 export const gateIsUnavailable = () => gateUnavailable();
 export const ungatedAllowed = () => ungatedConsent();
 export const rawMicStream = () => _raw;
+/** The transport has let go of its stream: stop the device and say it is not capturing. */
+export function dropDevice() { stopDevice(_raw); _raw = null; setMicLive(false); }
 
 /** Stop the onset watcher and forget the lane (device release is the caller's). */
 export function gateRelease() {
