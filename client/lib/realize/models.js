@@ -57,13 +57,14 @@ export const modelArriving = (id) => {
 /** A placed model's footprint on the ground, from the geom the server sent for
  *  its model, at its world pose as the renderer places it (worldPose: a child's
  *  record is local to its carrier); unbounded until it has (arrivalnear.js
- *  footprintOf), and unbounded for a model with a whole-body motion, which may
- *  have carried it anywhere from its folded `pos`. Read from the fold, which
+ *  footprintOf), and unbounded for a model with a whole-body motion, or on a
+ *  carrier with one, which may have carried it anywhere from its folded pose. Read from the fold, which
  *  holds the motion before the model has loaded. */
 export const modelFootprint = (id, ent) => {
-  const m = ent?.motion;   // a component sits flat on the record (a node's motion is keyed motion:<slot>)
-  if (m && !m.part) return { x: NaN, z: NaN, r: Infinity };
-  return footprintOf(worldPose(state.st?.entities ?? {}, id), ent?.model ? libGeom.get(ent.model) : null);
+  const world = state.st?.entities ?? {};
+  // a component sits flat on the record (a node's motion is keyed motion:<slot>); a carrier's motion carries it too
+  if ([ent, ...ancestors(world, id).map((k) => world[k])].some((e) => e?.motion && !e.motion.part)) return { x: NaN, z: NaN, r: Infinity };
+  return footprintOf(worldPose(world, id), ent?.model ? libGeom.get(ent.model) : null);
 };
 
 // Orientation (spec/PROTOCOL.md §9): the fold's q when the thing is more than turned, else its yaw. base carries q

@@ -104,6 +104,20 @@ console.log('\narrival hold — a restored body at the origin, a building still 
   door('delete', { id: 'mast' });
 }
 
+// AH5: a carrier with a whole-body motion may have carried its building anywhere from where the fold folds it, as the
+// building's own motion may (modelFootprint): it can't be ruled out
+{
+  bus.emit('lib-geom', { [lib('hut')]: BLDG });
+  stub.camera.position.set(200, 0, 0);
+  door('create', { id: 'raft', components: { transform: { pos: [200, 0, 0] }, motion: { type: 'spin', degPerSec: 30 } } });
+  door('create', { id: 'hut', model: lib('hut'), components: { parent: { to: 'raft' }, transform: { pos: [0, 0, 0] } } });
+  await settle();
+  stub.camera.position.set(0, 0, 0);
+  ok(M.modelArriving('hut') && at('raft')?.motion?.type === 'spin' && !at('hut')?.motion, 'AH5 setup: the building is still loading, its carrier moving, itself not', said('hut'));
+  ok(H.solidArriving(0, 0), 'AH5 a building on a moving carrier holds the body wherever the carrier is folded', said('hut'));
+  door('delete', { id: 'hut' }); door('delete', { id: 'raft' });
+}
+
 stub.setHold(false);
 for (const h of stub.held.splice(0)) h.release();
 await settle();
