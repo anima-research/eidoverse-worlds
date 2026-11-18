@@ -1066,11 +1066,27 @@ wss.on("connection", (ws, req) => {
     held.length = 0;
   }
 
+  /** The dial's credential, resolved again as above: still the same identity's (a tokens.json entry, or an aid1 credential). */
+  function stillProves(): boolean {
+    if (!token) return false;
+    const legacy = lookupToken(readTokens(), token);
+    if (legacy) return legacy.id === auth!.id;
+    if (!token.startsWith("aid1.") || !HN_ISSUER_KEY) return false;
+    const v = verifyToken(token, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
+    return v.ok && aid1Slug(v.payload) === auth!.id;
+  }
+
   function admit() {
     // a socket that closed during the async access check must not be admitted (it would kill its replacement's
     // session). 1 = WebSocket.OPEN.
     if (ws.readyState !== 1) {
       console.log(`[${ts()}] [mcpl] ${auth!.id}: connection closed during admission — dropped`);
+      return;
+    }
+    // the access probes above await (up to 2 s each): a credential revoked meanwhile admits nobody, and closes no one's session
+    if (!stillProves()) {
+      console.log(`[${ts()}] [audit] ${auth!.id}: credential no longer valid at admission — refusing connection`);
+      refuse("token refused (it stopped being valid while the connection was admitted)");
       return;
     }
     // one body per identity: a half-open predecessor is killed cleanly instead of rubberbanding against its successor
