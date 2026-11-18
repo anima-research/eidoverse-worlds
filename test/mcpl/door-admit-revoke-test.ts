@@ -2,6 +2,7 @@
 // the identity's live session: a token revoked while the dial waits on the world's /access answer admits nobody and
 // closes nothing. The world is a stub whose /access answers `enter`, held while a flag the test sets is on (not by
 // request count: a resume probe would change the count). Control: the same takeover with the token kept closes A.
+// A token whose worlds narrow while its dial waits is refused too: admit() builds the session from the fresh grant.
 // The same for an aid1 credential, against a scratch issuer: a token that expires while the dial waits admits nobody.
 // The door's probe timeout is set past every hold, so admit() acts on the held answer, never on the timeout fallback.
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
@@ -17,7 +18,8 @@ const S = suite("door-admit-revoke");
 const check = (n: string, ok: unknown, d?: unknown) => S.check(n, ok, d);
 const root = mkdtempSync(join(tmpdir(), "admit-revoke-"));
 const tokensPath = join(root, "tokens.json");
-const TOKEN = "admit-revoke-token", ENROLLED = { [TOKEN]: { id: "admittee", world: "commons" } };
+const TOKEN = "admit-revoke-token", NARROW = "admit-narrow-token";
+const ENROLLED = { [TOKEN]: { id: "admittee", world: "commons" }, [NARROW]: { id: "narrowee", world: "commons" } };
 writeFileSync(tokensPath, JSON.stringify(ENROLLED));
 // a scratch aid1 issuer (auth-test.ts's mint), so the aid1 leg of admit()'s second look is under test too
 const issuer = generateKeyPairSync("ed25519");
@@ -54,8 +56,8 @@ const door = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
 
 type Dial = { ws: WebSocket; answer: Promise<{ ok: boolean; err: string }>; closed: boolean };
 /** Dial and send initialize (never `initialized`: an admitted session then waits in its handshake, with no body to join). */
-function dial(token = TOKEN): Dial {
-  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${encodeURIComponent(token)}`);
+function dial(token = TOKEN, world?: string): Dial {
+  const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${encodeURIComponent(token)}${world ? `&world=${world}` : ""}`);
   const d: Dial = { ws, closed: false, answer: null as any };
   d.answer = new Promise((resolve) => {
     ws.on("open", () => ws.send(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize",
@@ -90,7 +92,7 @@ try {
   writeFileSync(tokensPath, "{}");
   releaseAll();
   const bAns = await b.answer;
-  check("a token revoked while B waited on /access: B is refused (-32001)", !bAns.ok && /^-32001 .*stopped being valid/.test(bAns.err), JSON.stringify(bAns));
+  check("a token revoked while B waited on /access: B is refused (-32001), pointed at the operator, not at aid1", !bAns.ok && /^-32001 .*stopped being valid.*operator/.test(bAns.err) && !/aid1/.test(bAns.err), JSON.stringify(bAns));
   check("...and session A is still open (not taken over)", await alive(a), `A closed=${a.closed}`);
 
   // control: the same takeover with the token kept closes A, so the row above can see a takeover
@@ -125,7 +127,7 @@ try {
   check("setup: B2's token had expired before /access answered", expiredAt > short.exp * 1000, { expiredAt, exp: short.exp });
   check("setup: ...and the held /access was still open when it answered (the probe hadn't timed out)", heldOpen && expiredAt - heldAt < PROBE_MS, { heldOpen, heldMs: expiredAt - heldAt });
   const b2Ans = await b2!.answer;
-  check("an aid1 token that expired while B2 waited on /access: B2 is refused (-32001)", !b2Ans.ok && /^-32001 .*stopped being valid/.test(b2Ans.err), JSON.stringify(b2Ans));
+  check("an aid1 token that expired while B2 waited on /access: B2 is refused (-32001), pointed at aid1", !b2Ans.ok && /^-32001 .*stopped being valid.*aid1/.test(b2Ans.err), JSON.stringify(b2Ans));
   check("...and aid1 session A2 is still open (not taken over)", await alive(a2), `A2 closed=${a2.closed}`);
   // control: a live aid1 token of the same identity takes A2 over, so the rows above can see a takeover
   hold = true;
@@ -134,6 +136,22 @@ try {
   releaseAll();
   const c2Ans = await c2.answer;
   check("control: a live aid1 token is admitted (C2) and takes over A2's session", c2Ans.ok && !(await alive(a2)), `${JSON.stringify(c2Ans)} A2 closed=${a2.closed}`);
+
+  // narrowed, not revoked: the same token id, its worlds cut to its home while D waits to enter "elsewhere"
+  hold = true;
+  const d0 = dial(NARROW, "elsewhere"); open.push(d0);
+  await until("D0's dial is waiting on /access", () => waiting.length > 0, { ms: 10_000, step: 10 });
+  releaseAll();
+  const d0Ans = await d0.answer;
+  check("control: an unrestricted token dialing \"elsewhere\" is admitted (D0)", d0Ans.ok, JSON.stringify(d0Ans));
+  hold = true;
+  const d = dial(NARROW, "elsewhere"); open.push(d);
+  await until("D's dial is waiting on /access", () => waiting.length > 0, { ms: 10_000, step: 10 });
+  writeFileSync(tokensPath, JSON.stringify({ ...ENROLLED, [NARROW]: { ...ENROLLED[NARROW], worlds: ["commons"] } }));
+  releaseAll();
+  const dAns = await d.answer;
+  check("worlds narrowed to exclude \"elsewhere\" while D waited: D is refused (-32001)", !dAns.ok && /^-32001 .*outside the worlds/.test(dAns.err), JSON.stringify(dAns));
+  check("...and D0's session is still open (not taken over)", await alive(d0), `D0 closed=${d0.closed}`);
 } finally {
   for (const d of open) { try { d.ws.close(); } catch { /* gone */ } }
   door.kill(); await door.exited;
