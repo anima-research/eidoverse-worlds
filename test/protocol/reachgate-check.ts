@@ -396,10 +396,10 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
     // (e) the owner's reply in the band (its other nails, on accepting) reaches the dragger
     { const t = Date.now(); const g = grabbed(una, t); at(nia, 45.5); const r = send(una, nia, { pins: [{ j: "head", at: [40, 1.6, 40] }] }, t + 100); bye(t + 100);
       ok(g && r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err, "RR14 the owner's pins reply from the band reaches the dragger (the drag is consulted from either side)", { g, r }); }
-    // (f) the owner's reply is the owner's own session's: the dragger's move gate doesn't decide it
+    // (f) the owner's reply is the owner's own session's: the dragger's move gate doesn't decide it (targetActor as client/lib/net.js sends it)
     const niaMove = (on) => { req(nia, "consent", { move: on }); return req(nia, "consent", {})?.table?.move === on; };   // read back, as gates() does
     { const t = Date.now(); const shut = niaMove(false); const g = grabbed(una, t);
-      const pins = { pins: [{ j: "head", at: [40, 1.6, 40] }] }, near = send(una, nia, pins, t + 50); at(nia, 45.5); const band = send(una, nia, pins, t + 100);
+      const pins = { targetActor: nia.actorId, pins: [{ j: "head", at: [40, 1.6, 40] }] }, near = send(una, nia, pins, t + 50); at(nia, 45.5); const band = send(una, nia, pins, t + 100);
       bye(t + 100); niaMove(true);
       ok(shut && g && [near, band].every((r) => r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err), "RR14 with the dragger's own move gate shut, the owner's pins reply reaches it in range and in the band", { shut, g, near, band }); }
     // (g) …but only pins and end: anything else the owner sends acts on the dragger's body, and its gate decides
