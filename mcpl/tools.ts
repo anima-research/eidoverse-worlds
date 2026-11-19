@@ -177,7 +177,7 @@ import { bodyRangeWords } from "../shared/protocol/physconst.js";
 import { durationMs } from "../shared/protocol/access.js";
 import { isReservedAnimName } from "../shared/animdefs.js";
 // Local scan only when a checkout is named (EIDOVERSE_DIR); otherwise the sequencer's catalog is the one source, and
-// its unreachability is a soft miss.
+// a search it can't answer is said (library-fetch-test).
 const MODELS_DIR = process.env.EIDOVERSE_DIR
   ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/models`
   : null;
@@ -188,9 +188,13 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ hits: {
   let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`, READ());
-    if (r.ok) return { hits: ((await r.json()) as { path: string; name?: string }[]).slice(0, 24) };
-    failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429;
-  } catch (e) {   // unreachable, timed out, or a body that isn't JSON: scan what we can see, if anything, and say the search failed
+    if (!r.ok) { failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429; }
+    else {   // a body that isn't a list (an HTML login page, say) won't change on a retry; a body that stalls might
+      const body = await r.json().catch((e) => { if ((e as Error)?.name === "TimeoutError") throw e; return undefined; });
+      if (Array.isArray(body)) return { hits: (body as { path: string; name?: string }[]).slice(0, 24) };
+      failed = "it answered with something that isn't a list of models"; retry = false;
+    }
+  } catch (e) {   // unreachable or timed out: scan what we can see, if anything, and say the search failed
     failed = (e as Error)?.name === "TimeoutError" ? `no answer within ${HTTP_READ_MS / 1000} s` : `the request failed: ${(e as Error).message || "no reason given"}`;
   }
   if (!MODELS_DIR) return { hits: [], failed, retry };

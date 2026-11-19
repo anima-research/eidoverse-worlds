@@ -38,6 +38,11 @@ export function catchupHeaderTags(): string[] {
   return tags(CHAT.ambient, CHAT.system, EIDO.catchup);
 }
 
+/** The door's notice when the missed-mention read since `sinceSeq` got no answer, or null when it was answered. */
+export function missedReadNotice(failed: boolean | undefined, sinceSeq: number): string | null {
+  return failed ? `While you were away: the world didn't answer the read of what was said since seq ${sinceSeq}, so missed mentions weren't checked. Says from before this arrival read back only with readChat; with it, catch_up {since: ${sinceSeq}} reads them (every say, not only mentions).` : null;
+}
+
 /** A replayed mention: its ORIGINAL addressing plus the catch-up marker; never a notice. */
 export function catchupReplayTags(): string[] {
   return tags(CHAT.mention, EIDO.catchup);

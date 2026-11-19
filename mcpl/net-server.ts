@@ -30,7 +30,7 @@ import { WorldAgent, DEFAULT_WORLD_URL } from "./agent.ts";
 import { shown } from "../shared/shown.js";
 import { toolList, handleTool, cutSpeech, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
-import { eventTags, catchupHeaderTags, catchupReplayTags } from "./event-wire.ts";
+import { eventTags, catchupHeaderTags, catchupReplayTags, missedReadNotice } from "./event-wire.ts";
 import { TypingRelay } from "./typing-relay.ts";
 import { MANIFEST_WITH_REVISION } from "./manifest.ts";
 import { verifyToken, aid1Slug, type Aid1Payload } from "../server/aid1.ts";
@@ -571,9 +571,9 @@ class Session {
     if (sinceSeq != null) {
       // the live body's matcher: catch-up honours the same alias policy and degrades safely with no matchable name
       const { said, failed } = await this.agent.missedSince(sinceSeq);
-      // no answer is said, not read as nothing missed; the cursor moves on as before. catch_up reads every say, and before this arrival only with readChat
-      if (failed) this.deliver(`While you were away: the world didn't answer the read of what was said since seq ${sinceSeq}, so missed mentions weren't checked. Says from before this arrival read back only with readChat; with it, catch_up {since: ${sinceSeq}} reads them (every say, not only mentions).`,
-        { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
+      // no answer is said, not read as nothing missed; the cursor moves on as before
+      const notice = missedReadNotice(failed, sinceSeq);
+      if (notice) this.deliver(notice, { id: "world", name: this.agent.world }, { tags: catchupHeaderTags() });
       const missedSeq = said.filter((m) => m.who !== this.auth.id && this.agent.mentionsMe(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,

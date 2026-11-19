@@ -49,6 +49,15 @@ const closed = Bun.serve({ port: 0, fetch: () => new Response("") }); const dead
 r = await call({ query: "zebra" }, deadBase);
 check("query, nothing listening: an error saying the catalog search failed, not 'no matches'",
   r?.isError === true && /catalog/.test(said(r)) && !/no matches/.test(said(r)), said(r));
+models = () => new Response("<html>login</html>", { headers: { "content-type": "text/html" } });
+r = await call({ query: "zebra" });
+check("query, catalog 200 with a body that isn't a list: an error saying so, that doesn't promise a retry will work",
+  r?.isError === true && /isn't a list/.test(said(r)) && !/may work/.test(said(r)) && !/no matches/.test(said(r)), said(r));
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async () => { throw new DOMException("The operation timed out.", "TimeoutError"); }) as any;
+try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
+check("query, catalog read timed out: an error naming the bound, not the bare 'operation timed out', and that calling again may work",
+  r?.isError === true && /no answer within \d+ s/.test(said(r)) && !/operation timed out/i.test(said(r)) && /may work/.test(said(r)), said(r));
 models = () => Response.json([]);
 r = await call({ query: "zebra" });
 check("(control) query, catalog answers []: 'no matches', not an error", !r?.isError && said(r) === "no matches", said(r));

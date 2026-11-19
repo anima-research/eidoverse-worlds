@@ -5,7 +5,7 @@
 //
 // Run: bun test/mcpl/event-wire-test.ts
 
-const { eventTags, catchupHeaderTags, catchupReplayTags } = await import("../../mcpl/event-wire.ts");
+const { eventTags, catchupHeaderTags, catchupReplayTags, missedReadNotice } = await import("../../mcpl/event-wire.ts");
 const { CHAT, EIDO } = await import("../../mcpl/declaration.ts");
 
 let pass = 0, fail = 0;
@@ -65,6 +65,17 @@ check("an arrival is the world's notice, with no sender facet",
   check("net-server.ts takes every event's tags from event-wire.ts", /from "\.\/event-wire\.ts"/.test(door)
     && ["eventTags(", "catchupHeaderTags(", "catchupReplayTags("].every((f) => door.includes(f)));
   check("...and builds none inline", !/\btags\(CHAT\.|speechTags\(/.test(door));
+}
+
+// ---------------------------------------------------------------- #296: a missed-mention read with no answer is said
+{
+  const said = missedReadNotice(true, 5000) ?? "";
+  check("a missed-mention read with no answer: the door says mentions weren't checked, and how catch_up reads them",
+    /didn't answer/.test(said) && /weren't checked/.test(said) && /seq 5000/.test(said) && /catch_up \{since: 5000\}/.test(said) && /readChat/.test(said), said);
+  check("(control) an answered read, even an empty one, has no notice", missedReadNotice(false, 5000) === null && missedReadNotice(undefined, 5000) === null);
+  const door = await Bun.file(new URL("../../mcpl/net-server.ts", import.meta.url)).text();
+  check("...and the door delivers it on arrival, from missedSince's failed",
+    /const \{ said, failed \} = await this\.agent\.missedSince\(sinceSeq\);\s*\n(?:\s*\/\/.*\n)?\s*const notice = missedReadNotice\(failed, sinceSeq\);\s*\n\s*if \(notice\) this\.deliver\(notice,/.test(door));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
