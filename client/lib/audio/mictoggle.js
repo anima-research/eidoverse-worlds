@@ -125,7 +125,7 @@ function paint() {
     earBtn.title += SHARED;
   }
 }
-// hot = your voice is registering: an analyser polled at 8 Hz
+// hot = the room is getting your voice: polled at 8 Hz
 import { micAnalyserLevel as meshMicLevel, micGateInfo } from './micstate.js';
 // ask the live transport's level first (the SFU's), or the glyph can never go hot
 function micLevelNow() {
@@ -137,9 +137,9 @@ function micLevelNow() {
 
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
-  const lvl = micLevelNow();
-  // gold = the gate's own decision (threshold, hang, PTT via held(), mute), never a level of our own: a fixed 0.02 went gold under the line
-  const hot = lvl > 0 && !!micGateInfo().speaking;
+  // gold = the gate's own decision (threshold, hang, PTT via held(), mute, a consented raw lane), never a level of our own: a
+  // fixed 0.02 went gold under the line. A synth voice on the wire has no gate (micOn() is false), so it keeps the level rule.
+  const hot = micOn() ? !!micGateInfo().speaking : micLevelNow() > 0.02;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 

@@ -92,7 +92,10 @@ const stopOnsetWatch = () => _onset.stop();
 // applied here as in the drive closure, so the pill and the audio agree.
 export const micGateInfo = () => {
   const info = _onset.info();
-  return micOn() ? info : { ...info, speaking: false };
+  if (!micOn()) return { ...info, speaking: false };
+  // a consented raw lane under voice activation transmits whenever the mic is on (the drive closure above), threshold or not
+  if (gateUnavailable() && ungatedConsent() && !pttMode()) return { ...info, speaking: true };
+  return info;
 };
 
 /** Live mic level 0..1 for UI. */

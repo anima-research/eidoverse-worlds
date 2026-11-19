@@ -10,15 +10,6 @@ import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
-import { micAnalyserLevel as meshMicLevel } from './micstate.js';
-// ask the live transport first (the SFU's own reader); micstate's meter, fed by gateFor, is the fallback
-function micLevelNow() {
-  try {
-    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
-    return meshMicLevel?.() ?? 0;
-  } catch { return 0; }
-}
-
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
 import { why } from '../debuglog.js';
@@ -127,11 +118,11 @@ function micFloorRow() {
   const beat = () => {
     if (!row.isConnected) return;
     // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the gate's own RMS: the transport's
-    // peak (micLevelNow) crossed the marker with the gate shut
-    const level = micLevelNow() > 0 ? micGateInfo().level : 0;
-    lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
+    // peak crossed the marker with the gate shut
+    const gate = micGateInfo();   // level 0 and speaking false when muted or there's no lane
+    lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(gate.level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate)
-    const next = level > 0 && !!micGateInfo().speaking;
+    const next = !!gate.speaking;
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };

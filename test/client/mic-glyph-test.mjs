@@ -10,8 +10,11 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 let room = 0;   // the RMS the stub "microphone" hears right now
+let noGraph = false;   // true: this device can't build the gate graph
 mock.module(lib('audio/audioctx.js'), () => ({
-  audioContext: () => ({
+  audioContext: () => noGraph ? { currentTime: 0, sampleRate: 48000, state: 'running',
+    createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
+    createMediaStreamSource: () => ({ connect() {}, disconnect() {} }) } : ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
     createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
@@ -71,7 +74,7 @@ room = 0.08; await pause('a level above the old fixed 0.02 but under the 0.25 li
 t('glyph is NOT gold for a level under the sensitivity line', gold() === false && ms.micGateInfo().speaking === false);
 room = 0.5; await tryUntil('the gate opens for a loud room', () => gold() && ms.micGateInfo().speaking);
 t('glyph IS gold when the gate is open', gold() === true && ms.micGateInfo().speaking === true);
-room = 0.08; await pause('back under the line, still inside the 700ms hang', 300);
+room = 0.01; await pause('back under the line (and under the old 0.02), still inside the 700ms hang', 300);
 t('glyph stays gold through the hang (it follows the gate, not a level)', gold() === true);
 
 vc.setPttMode(true); room = 0.5; await pause('PTT key up: a loud room has had time to turn it gold', 400);
@@ -79,5 +82,16 @@ t('PTT, key up: loud input does not turn the glyph gold', gold() === false);
 ms.setPttHeld(true); await tryUntil('PTT key down turns it gold', () => gold());
 t('PTT, key down: gold', gold() === true);
 ms.setPttHeld(false); vc.setPttMode(false);
+
+// ── 3. a consented raw lane (no gate graph on this device) transmits under the line: the glyph must say so ──
+const mg = await import(lib('audio/micgate.js'));
+noGraph = true; mg.allowUngated(true);
+ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
+t('setup: the gate graph is unavailable and raw is consented', mg.gateUnavailable() === true && mg.ungatedConsent() === true);
+room = 0.01; await pause('under the line and past the 700ms hang, so a threshold gate would be shut by now', 1100);
+t('consented raw lane, voice activation: gold under the line (the room hears everything)', gold() === true && ms.micGateInfo().speaking === true);
+vc.setPttMode(true); await pause('PTT key up on a raw lane closes the wire', 300);
+t('consented raw lane, PTT key up: not gold', gold() === false);
+vc.setPttMode(false); mg.allowUngated(false);
 console.log(`${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
