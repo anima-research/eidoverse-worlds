@@ -33,7 +33,7 @@ import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { eventTags, catchupHeaderTags, catchupReplayTags } from "./event-wire.ts";
 import { TypingRelay } from "./typing-relay.ts";
 import { MANIFEST_WITH_REVISION } from "./manifest.ts";
-import { verifyToken, aid1Slug } from "../server/aid1.ts";
+import { verifyToken, aid1Slug, type Aid1Payload } from "../server/aid1.ts";
 // archipelago-home door (connectome/docs/home-node.md §7): a `?token=aid1.…` home-node token verified offline, no
 // tokens.json entry (`hn mint --aud eidoverse --scopes worlds:join`). tokens.json remains the legacy/fleet door.
 import { HN_ISSUER_KEY, HN_ISS, HN_AUD } from "../server/aid1-issuer.ts";
@@ -881,7 +881,7 @@ const wss = new WebSocketServer({ server: http });
 
 /** Accept the socket far enough to teach: a JSON-RPC error naming the fix reaches an MCP client's context, where a WS
  *  close reason often doesn't. */
-function refuseWithGuidance(ws: WebSocket, why: string) {
+function refuseWithGuidance(ws: WebSocket, why: string, fix = `This door needs an identity token (aid1) in the URL: wss://eidoverse.animalabs.ai/mcpl?token=... — how to get one: ${GUIDE_URL}`) {
   console.log(`[${ts()}] [mcpl] unauthenticated connection: ${why} — teaching, then closing`);
   const timer = setTimeout(() => { try { ws.close(4001, "unauthorized"); } catch { /* gone */ } }, 15_000);
   ws.on("message", (raw) => {
@@ -892,7 +892,7 @@ function refuseWithGuidance(ws: WebSocket, why: string) {
       if (id === null || id === undefined) continue; // notification: nothing to answer
       ws.send(JSON.stringify({
         jsonrpc: "2.0", id,
-        error: { code: -32001, message: `unauthorized: ${why}. This door needs an identity token (aid1) in the URL: wss://eidoverse.animalabs.ai/mcpl?token=... — how to get one: ${GUIDE_URL}` },
+        error: { code: -32001, message: `unauthorized: ${why}. ${fix}` },
       }) + "\n");
       // one taught answer is enough; close after it flushes
       clearTimeout(timer);
@@ -911,6 +911,7 @@ const LIFECYCLE_NOT_GRANTED = "your host hasn't granted this door channels.lifec
 /** "May this identity go to `name`?", asked of the sequencer's /access AS THE AGENT (server/access.ts: the world
  *  decides). Null when it couldn't be asked (bounded, fails fast): callers fail closed for a chosen destination. */
 type AccessAnswer = { exists: boolean; you: "enter" | "watch" | "none"; why?: string; found?: { ok: boolean; why?: string } };
+const ACCESS_PROBE_MS = Number(process.env.MCPL_ACCESS_PROBE_MS ?? 2_000);   // a setting: the admit test holds /access longer
 async function accessProbe(name: string, token: string): Promise<AccessAnswer | null> {
   // URL surgery, not string surgery: a WORLD_URL with a query string or mount path defeats a regex replace
   const u = new URL(process.env.WORLD_URL ?? DEFAULT_WORLD_URL);
@@ -918,7 +919,7 @@ async function accessProbe(name: string, token: string): Promise<AccessAnswer | 
   u.pathname = u.pathname.replace(/\/ws$/, "") + "/access";
   u.search = `?world=${encodeURIComponent(name)}`;
   try {
-    const r = await fetch(u, { signal: AbortSignal.timeout(2_000), headers: { authorization: `Bearer ${token}` } });
+    const r = await fetch(u, { signal: AbortSignal.timeout(ACCESS_PROBE_MS), headers: { authorization: `Bearer ${token}` } });
     const a = (await r.json().catch(() => null)) as any;
     if (r.status === 404 && a?.code === "world-unavailable") return { exists: false, you: "none" };   // missing, or not discoverable by this agent: one answer
     if (!r.ok) return null;
@@ -934,6 +935,23 @@ function joinAllowed(auth: Auth, world: string, home = auth.world ?? "commons"):
   if (!auth.worlds) return true;
   // the credential's HOME is always allowed (passed explicitly: a session's auth.world may be where it started)
   return world === home || auth.worlds.some((w) => w === "*" || w === world);
+}
+/** The Auth a verified aid1 payload grants. */
+function aid1Auth(p: Aid1Payload): Auth {
+  return {
+    // id = mention handle (world addressing is name-based); the home node enforced name uniqueness at enrollment
+    id: aid1Slug(p),
+    name: p.name,
+    // enrollment reserves only the whole name, never a shortened alias
+    dropMentionQualifiers: false,
+    world: typeof p.claims?.world === "string" ? (p.claims.world as string) : undefined,
+    avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
+    worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
+      ? (p.claims.worlds as string[]) : undefined,
+    // an explicit `create: false` narrows founding away; nothing founds through this door yet either way (a join never
+    // founds, and the access probe offers no founding: FOUNDING below)
+    create: p.claims?.create === false ? false : undefined,
+  };
 }
 /** Per-world watermark key for missed-mention replay (a seq is per world). Legacy bare-id entries are read as a
  *  fallback. */
@@ -955,20 +973,7 @@ wss.on("connection", (ws, req) => {
     const v = verifyToken(token, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
     if (v.ok) {
       const p = v.payload;
-      // id = mention handle (world addressing is name-based); the home node enforced name uniqueness at enrollment
-      auth = {
-        id: aid1Slug(p),
-        name: p.name,
-        // enrollment reserves only the whole name, never a shortened alias
-        dropMentionQualifiers: false,
-        world: typeof p.claims?.world === "string" ? (p.claims.world as string) : undefined,
-        avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
-        worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
-          ? (p.claims.worlds as string[]) : undefined,
-        // an explicit `create: false` narrows founding away; nothing founds through this door yet either way (a join never
-        // founds, and the access probe offers no founding: FOUNDING below)
-        create: p.claims?.create === false ? false : undefined,
-      };
+      auth = aid1Auth(p);
       console.log(`[${ts()}] aid1 agent: ${p.sub} ("${p.name}") exp ${new Date(p.exp * 1000).toISOString()}`);
     } else {
       console.error(`[${ts()}] aid1 token rejected: ${v.reason}`);
@@ -1018,6 +1023,8 @@ wss.on("connection", (ws, req) => {
         : "its credential no longer allows that world";
     console.log(`[${ts()}] [mcpl] ${auth.id}: not resuming in "${memo.world}" — ${why}; starting at home "${mintedWorld}"`);
   }
+  // a tokens.json credential is the operator's to restore or replace; an aid1 one is renewed at its home node
+  const renewHint = token?.startsWith("aid1.") ? undefined : "This token was issued by this door's operator: ask them to restore or replace it";
   let recordStart = true;   // false: started at home only because the memory could not be verified
   {
     void (async () => {
@@ -1059,11 +1066,21 @@ wss.on("connection", (ws, req) => {
 
   /** Refuse after the hold-buffer is installed: drop it and replay what the client already sent, so
    *  refuseWithGuidance can answer a fast client's `initialize`. */
-  function refuse(why: string) {
+  function refuse(why: string, fix?: string) {
     ws.off("message", hold);
-    refuseWithGuidance(ws, why);
+    refuseWithGuidance(ws, why, fix);
     for (const d of held) ws.emit("message", d);
     held.length = 0;
+  }
+
+  /** The dial's credential, resolved again as above (a tokens.json entry, or an aid1 credential); undefined if it no longer resolves. */
+  function resolveAgain(): Auth | undefined {
+    if (!token) return undefined;
+    const legacy = lookupToken(readTokens(), token);
+    if (legacy) return legacy;
+    if (!token.startsWith("aid1.") || !HN_ISSUER_KEY) return undefined;
+    const v = verifyToken(token, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
+    return v.ok ? aid1Auth(v.payload) : undefined;
   }
 
   function admit() {
@@ -1073,6 +1090,21 @@ wss.on("connection", (ws, req) => {
       console.log(`[${ts()}] [mcpl] ${auth!.id}: connection closed during admission — dropped`);
       return;
     }
+    // the access probes above await (up to ACCESS_PROBE_MS each): a credential revoked meanwhile admits nobody, and closes no one's session
+    const fresh = resolveAgain();
+    if (fresh?.id !== auth!.id) {
+      console.log(`[${ts()}] [audit] ${auth!.id}: credential no longer valid at admission — refusing connection`);
+      refuse("token refused (it stopped being valid while the dial waited on the world)", renewHint);
+      return;
+    }
+    // the session is built from the fresh grant, so worlds narrowed meanwhile hold for this world and every later travel
+    const world = auth!.world ?? "commons";
+    if (!joinAllowed(fresh, world, fresh.world ?? "commons")) {
+      console.log(`[${ts()}] [audit] ${auth!.id}: world "${world}" narrowed away during admission — refusing connection`);
+      refuse(`world "${world}" is outside the worlds this credential is limited to`, renewHint);
+      return;
+    }
+    auth = { ...fresh, world: auth!.world };
     // one body per identity: a half-open predecessor is killed cleanly instead of rubberbanding against its successor
     const prev = sessions.get(auth!.id);
     if (prev) { console.log(`[${ts()}] [mcpl] ${auth!.id} reconnected — taking over previous session`); prev.close(); }

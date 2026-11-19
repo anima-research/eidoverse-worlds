@@ -566,7 +566,9 @@ const ROUTES: Route[] = [
       const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
         { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
       const tok = bearerOf(req) || (url.searchParams.get("token") ?? "");
-      const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
+      // asked again after the body read: a credential revoked during the read writes nothing
+      const who = () => agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
+      const actor = who();
       if (!actor) {
         return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the authority token may not write seat profiles" }, 401);
       }
@@ -574,6 +576,7 @@ const ROUTES: Route[] = [
       if (text === null) {
         return j({ error: `proposal exceeds ${MAX_PROPOSAL_BYTES} bytes` }, 413);
       }
+      if (who() !== actor) return j({ error: "not stored: the bearer this proposal came with could not be confirmed after the read (revoked, expired, or the registry unreadable); renew it and resend" }, 401);
       let record: unknown;
       try { record = JSON.parse(text); } catch { return j({ error: "body must be JSON" }, 400); }
       const r = seatStore.propose(record as Record<string, unknown>, actor);
