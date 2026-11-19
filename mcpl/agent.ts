@@ -2706,6 +2706,7 @@ export class WorldAgent {
   /** Settle into a posture clip (sit/sitchair/lie/idle). Rides the presence
    *  stream like locomotion does; walking replaces it, restore re-applies it. */
   setPosture(clip: string) {
+    ++this.bodyEpoch;   // a posture takes authority over the body: a fall still loading abandons itself (#295)
     this.stop();
     this.speed = 0;
     // choosing a posture ends a tumble the same way walking does: a physics
