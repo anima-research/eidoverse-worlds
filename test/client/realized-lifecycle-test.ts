@@ -271,6 +271,7 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   await settle(); drain();
   check('a root crate at 0.25 is fit root-local at its promote tail', fitIsLocal('top12'), JSON.stringify(stub.colliders.get('top12')?.opts));
   door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
+  check('mounted on its carrier first (it rides, and owns no collider of its own)', stub.entities.get('top12')?.userData?.mountedTo === 'base12' && !stub.colliders.has('top12'), JSON.stringify(stub.entities.get('top12')?.userData?.mountedTo));
   door('delete', { id: 'top12', component: 'parent' }); await settle(); drain();
   const o = stub.entities.get('top12');
   check('taken off its carrier it stands in the scene again', !!o && o.parent === stub.scene, JSON.stringify({ parent: o?.parent?.userData }));

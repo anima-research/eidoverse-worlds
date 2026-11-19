@@ -580,8 +580,8 @@ function retire(id) {
       delete cobj.userData.mountedTo;
       delete cobj.userData.mountRel;
       const cst = state.st.entities[cid];
-      // its carrier is only being rebuilt (still in the fold, still its parent): its pos is carrier-local, so keep the world
-      // pose attach() gave it; reconcileId re-mounts it into the new placeholder at once
+      // its carrier stays in the fold (rebuilt, or switched off with it): its pos is carrier-local, so keep the world pose
+      // attach() gave it; the rebuild re-mounts it (reconcileId, reconcileModels' survivors) or it retires next
       if (cst?.parent?.to === id && state.st.entities[id]) continue;
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
