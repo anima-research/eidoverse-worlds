@@ -46,6 +46,7 @@ level = 0.0005; await pause('the gate settles on a quiet room', 600);
 const pct = (s) => parseFloat(/([\d.]+)%/.exec(s)?.[1] ?? 'NaN');
 const GOLD = /255, 214, 107|#ffd66b/i;
 const DARK = /107, 95, 66|#6b5f42/i;
+const WARM = /154, 138, 94|#9a8a5e/i;
 
 const g = vc.gateThreshold();
 t('setup: the default gate opens well under micFloor (the case the bot named)', g < vc.micFloor() * 0.7, `${g} vs ${vc.micFloor()}`);
@@ -61,7 +62,7 @@ t("through the gate's hang the bar stays live (gold), as the gate does", GOLD.te
 Date.now = realNow;
 await until('the hang ends once the clock runs again', () => !ms.micGateInfo().speaking);
 await pause('a few frames for the bar to repaint', 100);
-t('a level under the gate is not live', !GOLD.test(lvl.style.background), lvl.style.background);
+t('a level under the gate is not live: warm (live, but the room is not getting it)', WARM.test(lvl.style.background), lvl.style.background);
 t('...and its bar stops short of the marker', pct(lvl.style.width) < pct(thr.style.left), `${lvl.style.width} vs ${thr.style.left}`);
 
 
@@ -76,8 +77,12 @@ await tryUntil('unmuted, a loud level reads live again', () => GOLD.test(lvl.sty
 t('unmuted: live again', GOLD.test(lvl.style.background), lvl.style.background);
 
 // a synth voice has no gate: the bar goes gold when it plays, as the HUD glyph does (mictoggle-glyph-test.mjs)
+level = 0.0005;
+await tryUntil('the device goes quiet and the bar leaves gold, so the synth row starts from warm', () => WARM.test(lvl.style.background));
+t('setup: the bar is warm before the synth voice', WARM.test(lvl.style.background), lvl.style.background);
 ms.setMicLive(false);
-const synth = { synthetic: true, getTracks: () => [track], getAudioTracks: () => [track] };
+const synthTrack = { kind: 'audio', enabled: true, stop() {} };   // a fresh source: gateFor stops the device
+const synth = { synthetic: true, getTracks: () => [synthTrack], getAudioTracks: () => [synthTrack] };
 ms.gateFor(synth);
 level = 0.3;
 await tryUntil('a playing synth voice reads live', () => GOLD.test(lvl.style.background));

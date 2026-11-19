@@ -14,7 +14,8 @@
 //   bun test/labs/mic-meter-states.mjs [origin]
 //
 // STALE: it drives the bar through window.__sfuMyLevel, which the panel no longer reads (it reads micstate.js
-// micDeviceLevel and micGateInfo). test/client/mic-meter-gate-test.mjs covers the states and the latch (the gate's hang).
+// micDeviceLevel and micGateInfo). test/client/mic-meter-gate-test.mjs covers the three colours and the latch
+// through the gate's hang; the gate's post-hang hysteresis is micgate.js's, not the panel's.
 import { launchBrowser, ownedWorld } from '../harness/probe-harness.mjs';
 
 const world = await ownedWorld({ live: process.argv[2] || null });

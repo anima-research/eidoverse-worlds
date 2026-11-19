@@ -33,7 +33,8 @@ let _gateUnavailable = false;   // the graph could not be built on this device
 let _ungatedConsent = false;    // explicit "transmit raw anyway" choice
 export const gateUnavailable = () => _gateUnavailable;
 export const ungatedConsent = () => _ungatedConsent;
-export function allowUngated(on) { _ungatedConsent = !!on; }
+// revoking closes a live raw lane now: the consent is what keeps it open (micstate.js's drive closure re-checks it each tick)
+export function allowUngated(on) { _ungatedConsent = !!on; if (!on && _gateUnavailable) driveRawTracks(false); }
 
 /** Wrap a mic stream in the gate graph. Returns the gated stream for WebRTC, or
  *  null when the graph can't be built (the raw stream under allowUngated). */

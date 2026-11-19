@@ -87,9 +87,9 @@ const _onset = makeOnsetGate({
     driveGate(want);
     // No graph (gate unavailable, raw consented): the decision goes to the raw
     // tracks. PTT closes the wire; voice activation leaves the lane raw, but only
-    // while the mic is on. The transport writes the same answer, so a tick can
-    // never re-open what the microphone control closed.
-    if (gateUnavailable()) driveRawTracks(pttMode() ? want : micOn());
+    // while the mic is on, and only while the raw lane is consented. The transport writes the same answer, so a tick can
+    // never re-open what the microphone control (or a revoked consent) closed.
+    if (gateUnavailable()) driveRawTracks(ungatedConsent() && (pttMode() ? want : micOn()));
   },
   announce: () => sendTyping(null, 'mic'),
   // PTT hands the machine a held answer; null means "decide by level".
@@ -116,8 +116,9 @@ export const micGateInfo = () => {
     return { ...info, speaking: now <= _synthUntil };
   }
   if (!micOn()) return { ...info, speaking: false };
-  // a consented raw lane under voice activation transmits whenever the mic is on (the drive closure above), threshold or not
-  if (gateUnavailable() && ungatedConsent() && !pttMode()) return { ...info, speaking: true };
+  // a raw lane is the drive closure above: closed without consent, else open whenever the mic is on under voice activation
+  if (gateUnavailable() && !ungatedConsent()) return { ...info, speaking: false };
+  if (gateUnavailable() && !pttMode()) return { ...info, speaking: true };
   return info;
 };
 
@@ -192,11 +193,9 @@ export async function toggleMic() {
  *  liveness through setMicLive(); everything else in the client asks HERE. */
 let _deviceLive = false;
 export function setMicLive(on) {
-  const next = !!on;
-  if (next === _deviceLive) return;
-  _deviceLive = next;
-  // Liveness is part of the gate's authority, so re-apply now: on mic ON the
-  // transport re-enables an ungated raw track and PTT-with-key-up must close it.
+  _deviceLive = !!on;
+  // Liveness is part of the gate's authority, so re-apply now, changed or not: the transport re-enables a raw track
+  // before it calls this, and mute or PTT-with-key-up must close it at once.
   gateAudio(Date.now());
 }
 export const micOn = () => !!_lane && _deviceLive && !_muted;

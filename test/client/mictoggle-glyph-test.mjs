@@ -64,13 +64,25 @@ ms.setPttHeld(false); vc.setPttMode(false);
 // ── 2. a consented raw lane (no gate graph on this device) transmits under the line: the glyph must say so ──
 const mg = await import(lib('audio/micgate.js'));
 noGraph = true; mg.allowUngated(true);
-ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
+const rawTrack = { kind: 'audio', enabled: true, stop() {} };   // a fresh device: gateFor stops the previous one
+ms.gateFor({ getTracks: () => [rawTrack], getAudioTracks: () => [rawTrack] });
 t('setup: the gate graph is unavailable and raw is consented', mg.gateUnavailable() === true && mg.ungatedConsent() === true);
 room = 0.01; await pause('under the line and past the 700ms hang, so a threshold gate would be shut by now', 1100);
 t('consented raw lane, voice activation: gold under the line (the room hears everything)', gold() === true && ms.micGateInfo().speaking === true);
 vc.setPttMode(true); await pause('PTT key up on a raw lane closes the wire', 300);
-t('consented raw lane, PTT key up: not gold, and the raw track is off', gold() === false && track.enabled === false);
-vc.setPttMode(false); mg.allowUngated(false); noGraph = false;
+t('consented raw lane, PTT key up: not gold, and the raw track is off', gold() === false && rawTrack.enabled === false);
+vc.setPttMode(false);
+t('setup: back to voice activation, the raw track is on', !!(await tryUntil('the raw lane reopens', () => rawTrack.enabled)));
+ms.toggleMute(true);
+rawTrack.enabled = true; ms.setMicLive(true);   // what voicesfu.js sfuMic(true) does to a device it still holds
+t('muted raw lane: the transport re-enabling it and reporting live (unchanged) closes it at once', rawTrack.enabled === false);
+ms.toggleMute(false);
+await tryUntil('the raw lane reopens on unmute', () => rawTrack.enabled);
+mg.allowUngated(false);
+t('consent revoked on a live raw lane: the track is off at once, and micGateInfo says so', rawTrack.enabled === false && ms.micGateInfo().speaking === false);
+await pause('revoked: gate ticks and glyph polls have had time to reopen it', 300);
+t('consent revoked: ticks keep it off, and the glyph is not gold', rawTrack.enabled === false && gold() === false);
+noGraph = false;
 
 // ── 3. a synth voice has no gate (micstate.js gateFor passes it through): the room hears whatever it plays ──
 window.__sfuMicOn = () => true;   // the transport publishes the synth lane; micOn() is false for synth (no device)
@@ -99,6 +111,12 @@ await tryUntil('an unmuted playing synth voice is gold again', () => gold());
 t('synth voice unmuted: gold again', gold() === true);
 synthTrack.enabled = false; ms.toggleMute(true); ms.toggleMute(false);
 t('mute and unmute never re-enable a synth track the transport turned off', synthTrack.enabled === false);
+ms.toggleMute(true);
+const rebuilt = { kind: 'audio', enabled: true, stop() {} };   // the generator rebuilt while muted
+ms.gateFor({ synthetic: true, getTracks: () => [rebuilt], getAudioTracks: () => [rebuilt] });
+t('muted: a replacement synth track is off before any sender gets it', rebuilt.enabled === false);
+ms.toggleMute(false);
+t('...and on again at unmute', rebuilt.enabled === true);
 delete window.__sfuMicOn;
 console.log(`${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
