@@ -76,20 +76,23 @@ console.log('\n#293 the flare is flown through the integrator\'s input');
 }
 
 console.log('\n#295 a stand-up, a posture or a take_off takes the body from a knockdown still loading');
-for (const how of ['stand', 'posture', 'take_off'] as const) {
+for (const how of ['none', 'stand', 'posture', 'take_off'] as const) {
   const ag = bench();
-  let load: (b: any) => void = () => {}, began = false;
+  let load: (b: any) => void = () => {}, began = false, fall: Promise<void> | null = null;
   ag.ensureBody = () => new Promise((go) => { load = go; });
+  const tumble = ag.tumble.bind(ag); ag.tumble = (...a: any[]) => (fall = tumble(...a));   // knockDown voids it; the row awaits it
   if (how === 'posture') ag.setPose({ hips: { t: [0, -0.3, 0] } });   // knocked down holding an authored pose
   ag.knockDown('shover', null, '(knocked over)');
   if (how === 'stand') ag.setPose(null);
   if (how === 'posture') ag.setPosture('sit');
   if (how === 'take_off') await ag.takeOff();
   load({ begin() { began = true; }, stop() {}, step() { return null; } });
-  for (let i = 0; i < 10; i++) await turn();
+  await fall;
   const sim = !!ag.simTicker; ag.stopSim();
+  if (how === 'none') { check('control: a knockdown left alone begins its ragdoll once the skeleton arrives', fall != null && began && sim, `tumble ${fall != null}, began ${began}, sim ${sim}`); continue; }
+  const act = { stand: 'stand-up', posture: 'posture', take_off: 'take_off' }[how];
   const after = { stand: ag.clip === 'idle', posture: ag.clip === 'sit', take_off: ag.flight != null }[how];
-  check(`a ${how} during a knockdown's ragdoll loading leaves it unbegun`, !began && !sim && after, `began ${began}, sim ${sim}, clip ${ag.clip}, flight ${ag.flight?.phase}`);
+  check(`a ${act} during a knockdown's ragdoll loading leaves it unbegun`, !began && !sim && after, `began ${began}, sim ${sim}, clip ${ag.clip}, flight ${ag.flight?.phase}`);
   if (how === 'posture') check('...and the posture lets go of the pose it was knocked down in', ag.heldPose == null, JSON.stringify(ag.heldPose));
 }
 
