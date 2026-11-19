@@ -33,7 +33,8 @@ import { pushable, bodyTable, onConsentChange, noteHeld, forget, landed, useWorl
 import { makeConsentSync } from './consentsync.js';
 import { bodyActAsPuppet, refusedNotice } from './bodyact.js';
 import { clearMyReach } from './reachnet.js';
-import { getMe } from './mybody.js';
+import { getMe, myBodyPrefs } from './mybody.js';
+import { floorUnderLyingBody, standingYWithoutAvatar } from '../getup.js';
 
 let logChat = () => {};
 
@@ -66,6 +67,7 @@ export function goLimp(lean = null) {
   clearMyReach();   // a knocked-over body's reach is gone, descriptor and arm (as mcpl/agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
+  myState.floor = undefined;       // known once the body settles (stepRagdoll)
   flashHint('limp — move to get up');
 }
 export function getUp() {
@@ -77,9 +79,19 @@ export function getUp() {
   myState.pose = null; me?.clearPose();
   me?.setLimp(false);
   myState.clip = 'idle';
-  // resume from where the body ended up, in x/z: y goes to 0 (a body resting up on something drops to ground level)
-  myState.pos.copy(me.root.position);
-  myState.pos.y = 0;
+  // resume from where the body ended up, on the floor it lay on (getup.js) —
+  // not at height 0, which put the feet inside a stair landing or under an
+  // upper floor
+  if (me) {
+    myState.pos.copy(me.root.position);
+    myState.pos.y = floorUnderLyingBody(me);
+  } else {
+    // no avatar to measure (it went before the body got up): the floor it
+    // measured, if its streamed root is still where it lay, else that root
+    // raised by the reach for the size chosen for this body — never height 0
+    myState.pos.y = standingYWithoutAvatar(myState.floor, myState.pos, myBodyPrefs().scale);
+  }
+  myState.floor = undefined;
 }
 // ---------------------------------------------------------------- mounted
 // While I occupy a seat, my body is derived from the parent entity's live transform + socket (the same math remotes
@@ -326,7 +338,13 @@ export function stepRagdoll(dt) {
     const pose = ragdoll.step(dt);
     if (pose) myState.pose = pose;               // stream it through presence
     myState.pos.copy(me.root.position);          // streamed root tracks the sim
-    if (ragdoll.done) { myState.pose = ragdoll.finalPose; ragdoll = null; }
+    if (ragdoll.done) {
+      myState.pose = ragdoll.finalPose; ragdoll = null;
+      // where it lies, and where its root was when measured — rides presence
+      // (net.js) for a rejoin while the body is still there (getup.js
+      // floorStillUnder): a drag, a shove or an unpin moves it off that floor
+      myState.floor = { y: floorUnderLyingBody(me), root: me.root.position.toArray() };
+    }
   }
   // the camera lives in updateMe, which is skipped while limp: drive it here too
   if (me) updateFollowCamera(dt, me);

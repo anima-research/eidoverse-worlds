@@ -9,7 +9,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from '../ui/chat.js';   // a dead media path must be visible to the person, not only the console
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from '../debuglog.js';
-import { rawMicStream, setMicLive } from './micstate.js';
+import { rawMicStream, setMicLive, dropDevice, gateFor, gateIsUnavailable, ungatedAllowed } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 let _myAn = null, _myBuf = null, _myStream = null;   // my outbound analyser (sfuMyLevel); cleared by sfuConnect
@@ -41,9 +41,11 @@ export async function sfuConnect(credential, send) {
   cred = credential;
   // a mic track belongs to the pc that published it: stop the old stream (and its hardware light)
   // so the bridge's replay publishes afresh on the live pc. wantMic is kept: intent survives a reconnect.
+  // A gated stream is the gate's, so the device under it is dropped too (micstate dropDevice), or it keeps capturing.
   if (micStream) {
     for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* already dead */ } }
     micStream = null;
+    dropDevice();
   }
   // close the predecessor with its handlers nulled, or a ghost's 'failed' would diagnose the new pc
   if (pc) {
@@ -229,6 +231,13 @@ async function sfuPublish() {
     const { voiceSource } = await import('./voicesource.js');
     const asked = wantMic;
     const raw = await voiceSource({ micWanted: asked });
+    // superseded during acquisition: stop what we acquired and touch nothing shared (micstate, wantMic), which the live
+    // session owns; its replay publishes. First, and with no await before gateFor, so a stale answer never reaches them.
+    if (myPc !== pc) {
+      why('publish', 'pc superseded during acquisition — dropping this publish');
+      for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
+      return;
+    }
     // re-read intent after the await: a mic toggled during the prompt means this answer is stale
     if (wantMic !== asked) {
       why('publish', `intent changed during acquisition (asked mic=${asked}, now ${wantMic}) — dropping ${raw?.synthetic ? 'synth' : 'device'}`);
@@ -237,20 +246,13 @@ async function sfuPublish() {
       return 'intent-changed';
     }
     // gate it before the sender sees it (gateFor passes a synthetic source through untouched)
-    const { gateFor, gateIsUnavailable, ungatedAllowed, setMicLive } = await import('./micstate.js');
     const s = gateFor(raw);
     setMicLive(!raw?.synthetic && wantMic);   // micstate's "a device is capturing" state
     if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
       // refuse rather than publish ungated; the audio panel offers the explicit opt-in
       bus.emit('voice-gate-unavailable', {});
       wantMic = false;
-      return;
-    }
-    // superseded during acquisition: stop what we acquired and let the new session's replay publish
-    if (myPc !== pc) {
-      why('publish', 'pc superseded during acquisition — dropping this publish');
-      for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
-      try { setMicLive(false); } catch { /* probe env */ }
+      dropDevice();
       return;
     }
     why('publish', `published ${s?.synthetic ? 'SYNTH' : 'mic'}`

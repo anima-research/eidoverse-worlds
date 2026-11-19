@@ -1520,6 +1520,8 @@ export class WorldAgent {
         // clip-keyed sanitizer downstream can see it (see heldPoseAuthored).
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
+        // a canned slump's root is at its feet, so it lies on that floor; server.ts settledPose would raise any other root
+        ...(this.clip === "ragdoll" && this.rootCanned() ? { floor: this.pos.y } : {}),
         ...(this.pendingAnim ? { anim: this.pendingAnim } : {}),
         ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
         ...(this.myOccupancy ? { seat: this.myOccupancy } : {}),

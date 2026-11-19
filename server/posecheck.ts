@@ -51,6 +51,8 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   if ("seq" in p && !(Number.isInteger(p.seq) && (p.seq as number) >= 0 && (p.seq as number) <= Number.MAX_SAFE_INTEGER)) delete p.seq;
   if ("scale" in p) { if (fin(p.scale)) p.scale = clampBodyScale(p.scale); else delete p.scale; }
   if ("plateY" in p) { if (fin(p.plateY)) p.plateY = clampPlateY(p.plateY); else delete p.plateY; }
+  // while lying limp: the floor under the body (client/lib/getup.js) — settledPose stands it there
+  if ("floor" in p && !fin(p.floor)) delete p.floor;
   for (const [k, v] of Object.entries(p)) if (typeof v === "string" && v.length > STR_MAX) delete p[k];
   let size = Infinity; try { size = JSON.stringify(p).length; } catch { /* cyclic: impossible off the wire */ }
   return size <= POSE_MAX_BYTES ? p : null;

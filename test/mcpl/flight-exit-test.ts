@@ -523,6 +523,45 @@ console.log('\nreview 2026-11-10: a landing ended another way says how');
   check('...with the spoilers in: it touches down under 1 m/s, as main\'s flare did, not at the spoilers\' ~3', touchVy > -1, `vy ${touchVy.toFixed(2)} m/s at touchdown`);
 }
 
+console.log('\n#274: a canned slump sends the floor it lies on, however it went down');
+{
+  // The server remembers a ragdoll standing at its `floor`, else at its root raised by a lying root's reach (settledPose).
+  const { standingYFromLyingRoot } = await import('../../shared/presencewire.js');
+  const lying = (name: string) => {
+    const ag = bench(name), sent: any[] = [];
+    ag.ws = { readyState: 1, send: (s: string) => sent.push(JSON.parse(s)), close() {} };
+    const last = () => sent.filter((m) => m.type === 'pose').at(-1)?.pose;
+    const row = (what: string) => {
+      const p = last(), at = p ? standingYFromLyingRoot(p.p[1], { floor: p.floor, scale: p.scale }) : NaN;
+      check(`${what}: it sends its floor, so it is remembered standing there`, ag.clip === 'ragdoll' && !ag.simTicker && p?.floor === ag.pos.y && at === ag.pos.y,
+        `clip ${ag.clip}, sim ${!!ag.simTicker}; at y ${ag.pos.y.toFixed(2)} it sent floor ${p?.floor}, remembered at ${at.toFixed(2)}`);
+    };
+    return { ag, row, last };
+  };
+  {
+    const { ag, row, last } = lying('down-standing');
+    await tick(ag, 3); ag.knockDown('shover', null, '(knocked over)'); await tick(ag, 3);
+    row('knocked down standing');
+    ag.pos.y -= 1.06; await tick(ag, 2);   // as a sim step lowers the root to a doll's
+    check('...its root lowered to a doll\'s, it sends no floor: the server raises the root', last()?.floor === undefined, `y ${ag.pos.y.toFixed(2)}, floor ${last()?.floor}`);
+  }
+  {
+    const { ag, row } = lying('down-aloft');
+    await ag.takeOff(); toAir(ag, 45); await tick(ag, 3);
+    ag.knockDown('shover', null, '(knocked over)');
+    await fallOut(ag, 300); await tick(ag, 2);
+    row('knocked down in the air, fallen to the ground');
+  }
+  {
+    const { ag, row } = lying('down-limp');
+    await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+    ag.flightBodyDown('cut');
+    await fallOut(ag, 300); await tick(ag, 5);
+    ag.endFlight('link'); await tick(ag, 2);
+    row('a limp flight lying on the ground, ended');
+  }
+}
+
 console.log('\nreview 2026-11-10: with the colliders loaded (last: once loaded they stay loaded for this process)');
 {
   // A solid platform 3 m high under the flier: the fall ends on it, not on the terrain under it.

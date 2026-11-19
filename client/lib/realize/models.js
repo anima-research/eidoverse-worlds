@@ -31,10 +31,41 @@ import { schedule, cancelOwner } from '../render/scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../render/materials.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
+import { stillArriving, footprintOf } from '../arrivalnear.js';   // the arrival hold's rules (arrivalhold.js)
 
 import { recordComponents } from '../../../shared/protocol/view.js';
 import { R_BASE, residencyRadiusFor } from '../../../shared/lod-distance.js';   // shared with the server's LOD budget
 import { worldPose, ancestors } from '../../../shared/hierarchy.js';
+
+/** How long a failed load waits before the residency sweep tries it again (ms, on Date.now()). */
+const RETRY_AFTER_MS = 30_000;
+/** Is this entity's model still on its way here (arrivalnear.js stillArriving)?
+ *  arrivalhold.js holds a restored body's height while one near it is. A
+ *  stand-in counts only while the sweep will or may load it: within its
+ *  residency radius, or of a size the geom has yet to give, and not while a
+ *  failed load backs off (residencySweep). */
+export const modelArriving = (id) => {
+  const t = tracked.get(id), ent = state.st?.entities?.[id];
+  return stillArriving(t, entities.get(id), {
+    tailPending: promoteTail.has(id),
+    // until the geom side-channel lands, a size it may still give (and with it a
+    // wider radius) is unknown: such a stand-in may yet load
+    resident: !!ent && ((!geomLanded && !libGeom.get(ent.model)?.bbox) || entDist(ent) < residencyRadius(ent)),
+    backingOff: !!t?.failedAt && Date.now() - t.failedAt <= RETRY_AFTER_MS,
+  });
+};
+/** A placed model's footprint on the ground, from the geom the server sent for
+ *  its model, at its world pose as the renderer places it (worldPose: a child's
+ *  record is local to its carrier); unbounded until it has (arrivalnear.js
+ *  footprintOf), and unbounded for a model with a whole-body motion, or on a
+ *  carrier with one, which may have carried it anywhere from its folded pose. Read from the fold, which
+ *  holds the motion before the model has loaded. */
+export const modelFootprint = (id, ent) => {
+  const world = state.st?.entities ?? {};
+  // a component sits flat on the record (a node's motion is keyed motion:<slot>); a carrier's motion carries it too
+  if ([ent, ...ancestors(world, id).map((k) => world[k])].some((e) => e?.motion && !e.motion.part)) return { x: NaN, z: NaN, r: Infinity };
+  return footprintOf(worldPose(world, id), ent?.model ? libGeom.get(ent.model) : null);
+};
 
 // Orientation (spec/PROTOCOL.md §9): the fold's q when the thing is more than turned, else its yaw. base carries q
 // too, so motion composes on the real tilt instead of snapping a toppled thing upright.
@@ -72,6 +103,10 @@ export function boxOf(id) {
   return _bx.isEmpty() ? null : [_bx.min.toArray(), _bx.max.toArray()];
 }
 function libBox(lib) { const b = libGeom.get(lib)?.bbox; if (!b?.size) return null; const c = b.center ?? [0, b.size[1] / 2, 0]; return [[0, 1, 2].map((i) => c[i] - b.size[i] / 2), [0, 1, 2].map((i) => c[i] + b.size[i] / 2)]; }
+// has a geom message landed in this page? After one, a lib it didn't size won't
+// be sized (the server couldn't summarize it). Kept for the page's life: a world
+// switch without a reload starts with it set.
+let geomLanded = false;
 let _phGeo = null;
 let _phMat = null;
 
@@ -872,7 +907,7 @@ export function residencySweep() {
     // arrives would never load). Within its radius an entity eventually loads; beyond it, it isn't promoted (a load
     // already queued still runs).
     } else if ((obj === null || isPlaceholder(obj)) && d < R && !t.loading
-      && (!t.failedAt || now - t.failedAt > 30000)) {
+      && (!t.failedAt || now - t.failedAt > RETRY_AFTER_MS)) {
       resStats.promotes++;
       scheduleLoad(id, ent, regen(id));   // stale in-flight completions no-op
     }
@@ -979,6 +1014,7 @@ export function initModelsRealizer() {
   // the geom side-channel lands a beat after the snapshot: upgrade every still-bare reservation to a sized stand-in
   bus.on('lib-geom', (geom) => {
     for (const [lib, g] of Object.entries(geom ?? {})) libGeom.set(lib, g);
+    geomLanded = true;
     for (const id of tracked.keys()) maybePlaceholder(id);
   });
   // thingphysics: a launched body leaves its carrier (scene.attach keeps where it is); its rest's parent record re-mounts it

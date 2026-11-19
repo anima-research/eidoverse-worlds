@@ -59,9 +59,11 @@ ONCE for the module's lifetime (the bus has no `off`; a per-connect listener wou
 ## Reconnects
 
 A reconnect builds a new pc. The old mic stream belongs to the old pc, so it is stopped and dropped (intent, `wantMic`,
-is kept) and the bridge's replay takes the real `addTrack` path. The predecessor pc is closed with its handlers nulled
-first, and every handler, timer and async exchange snapshots the pc it was armed for and returns if superseded, or a
-ghost pc would diagnose (and burn the recovery budget on) its healthy successor.
+is kept) and the bridge's replay takes the real `addTrack` path. Under the gate that stream is the gate's destination,
+so the device feeding it is dropped too (micstate `dropDevice`): micstate stops a device whenever the transport lets go
+of it. The predecessor pc is closed with its handlers nulled first, and every handler, timer and async exchange
+snapshots the pc it was armed for and returns if superseded, or a ghost pc would diagnose (and burn the recovery budget
+on) its healthy successor.
 
 ## Mic acquisition
 

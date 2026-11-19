@@ -255,7 +255,7 @@ function mainOnRestore() {
   const make = new Function("deps", `with (deps) { return ${body}; }`);
   const { readBodyMode } = require("../../shared/bodymode.js");
   return (sample: any, setFolded: (v: boolean) => void) => {
-    const deps: any = { restoredPosition: false, myState: { pos: { y: 0, set() {} } }, setCamYaw() {}, setPosture() {}, readBodyMode, foldedIn, setFolded };
+    const deps: any = { restoredPosition: false, myState: { pos: { y: 0, set() {} } }, setCamYaw() {}, setPosture() {}, holdHeightUntilSolid() {}, readBodyMode, foldedIn, setFolded };
     make(deps)(sample);
   };
 }
@@ -300,6 +300,7 @@ async function browserOwnerPart() {
   mock.module(base + "terrain.js", () => ({ heightAt: () => 0, setWaterField() {}, rainSurfaceAt: () => 0 }));
   mock.module(base + "colliders.js", () => ({ resolveColliders: () => {}, lastBlockedTop: 0, findSeat: () => null, raySegment: () => null,
     frameOf: () => null, lastContacts: () => [], colliders: new Map() }));
+  mock.module(base + "arrivalhold.js", () => ({ heightHeld: () => false, holdHeightUntilSolid() {} }));   // the arrival hold reads the models realizer, which is not under test
   mock.module(base + "assets.js", () => ({ forgetBytes() {}, primeFiles: async () => {} }));
   mock.module(base + "world.js", () => ({ avatarMounts: new Map() }));
   mock.module(base + "state.js", () => ({ state: { st: { entities: {}, roles: {}, recentChat: [] }, lastSeq: -1, hydrated: false }, hydrate() {}, applyView() {}, reset() {}, onWorldChange: () => () => {} }));

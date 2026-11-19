@@ -85,13 +85,14 @@ export function mkdirDurable(dir: string) {
   for (let d = path.dirname(path.resolve(dir)); ; d = path.dirname(d)) { syncDir(d); if (d === top || d === path.dirname(d)) break; }
 }
 
-/** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode`, set before the data goes in)
- *  and synced, renamed over `file`, and the directory that holds the new name synced. */
+/** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode` less the umask, set before the
+ *  data goes in) and synced, renamed over `file`, and the directory that holds the new name synced. */
 export function replaceDurable(file: string, data: string | Uint8Array, mode = 0o644) {
   mkdirDurable(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, "w", mode);
-  try { fs.fchmodSync(fd, mode); writeAll(fd, typeof data === "string" ? Buffer.from(data, "utf8") : data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.unlinkSync(tmp); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }   // a stale temp, never recursively
+  const fd = fs.openSync(tmp, "wx", mode);   // umask applies at create ("wx"); fchmod would override it (txn-check T8j)
+  try { writeAll(fd, typeof data === "string" ? Buffer.from(data, "utf8") : data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }
