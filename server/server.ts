@@ -22,6 +22,7 @@ import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorld
 import { isOperator, mintSetupToken } from "./operators.ts";
 import { setupLine } from "./setup.ts";
 import { resolveLibFile } from "./libfile.ts";
+import { standingYFromLyingRoot } from "../shared/presencewire.js";
 import { summarizeGlb } from "./geometry.ts";
 // the world itself (a log + the embodied plane) and the registry; the boot sweep that wakes scripted worlds is here
 import { World, type Client, worlds, getWorld, wireSettledPose, wireRights, authorityNow } from "./world.ts";
@@ -34,7 +35,7 @@ import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
 import { requestHandler, actorOf as actorIdOf, gagged, guestSanctionByAddress, requestAs } from "./requestwire.ts";
 import { withoutOnceAnim } from "../shared/onceanim.js";
-import { directoryFor, foldName, accountTag } from "./directory.ts";
+import { directoryFor, foldName, accountTag, nameTagKey } from "./directory.ts";
 // the HTTP surface: one route table (routes.ts; /upload in upload.ts); avatarRoster rides back for the join snapshot
 import { route, avatarRoster } from "./routes.ts";
 import { joinBriefing } from "./briefing.ts";
@@ -95,7 +96,21 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
   // never had
   // t/seq: a sample's capture time and count (spec/PHYSICS.md §5.1) belong to that one sample, never to a remembered body
   const { mic: _mic, hear: _hear, t: _t, seq: _seq, ...still } = withoutOnceAnim(pose as Record<string, unknown>);
-  if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
+  if (still.clip === "ragdoll") {
+    still.clip = "idle"; delete still.pose;
+    // A lying body's root lies BELOW the floor it lies on (it follows the
+    // hips a hips-height lower). Remembered standing, it stands on that
+    // floor, not at its root inside a stair landing or under an upper floor:
+    // on the floor the client measured (presence `floor`, getup.js), or,
+    // from a body still tumbling, a client that sends none or an agent, at
+    // its root raised by how far a root lies below its floor at its scale
+    // (shared/presencewire.js standingYFromLyingRoot, which says where that
+    // reach falls short).
+    const p = still.p as number[] | undefined;
+    if (Array.isArray(p) && p.length === 3)
+      still.p = [p[0], standingYFromLyingRoot(p[1], { floor: still.floor, scale: still.scale }), p[2]];
+  }
+  delete still.floor;
   return still;
 }
 // the log's rememberPose settles through this same function; world.ts takes it by injection (settled-pose-test pins the definition here)
@@ -260,7 +275,6 @@ const presenceSession = (c: Client) => (c.presenceSession ??= crypto.randomUUID(
 function sendGeomFollowup(w: World, c: Client) {
   const libs = new Set<string>();
   for (const e of Object.values(w.state.entities)) if (e.model) libs.add(e.model);
-  if (!libs.size) return;
   (async () => {
     const geom: Record<string, { bbox: unknown }> = {};
     for (const lib of libs) {
@@ -270,7 +284,9 @@ function sendGeomFollowup(w: World, c: Client) {
         if (sum?.bbox) geom[lib] = { bbox: sum.bbox };
       } catch { /* a lib that won't parse simply has no placeholder */ }
     }
-    if (Object.keys(geom).length && c.ws.readyState === 1) {
+    // sent even empty, a world without models too: it tells the client that every
+    // size this join will get has come (the arrival hold stops waiting on unsized models then)
+    if (c.ws.readyState === 1) {
       c.ws.send(JSON.stringify({ type: "geom", geom }));
     }
   })().catch((err) => console.error(`[world:${w.name}] geom followup`, err));
@@ -430,7 +446,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         || (!!c.anonymous && dir.claimedName(n))
         || (!!c.account && dir.claimedByOther(n, c.account));   // H2: nor an account under another account's name, here or not
       if (taken(c.id)) {
-        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${accountTag(c.account ?? "")}`;
+        const base = c.anonymous ? `${c.id} (guest)` : `${c.id}-${accountTag(c.account ?? "", nameTagKey(WORLDS_DIR))}`;
         let n = base.slice(0, LIMITS.ID_LEN), k = 2;
         while (taken(n)) n = `${base.slice(0, LIMITS.ID_LEN - 3)} ${k++}`;
         c.id = n;

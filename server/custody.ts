@@ -16,6 +16,10 @@ const mk = (): Key => {
   return { pub: "ed25519:" + (publicKey.export({ format: "jwk" }) as { x: string }).x, priv: privateKey.export({ format: "der", type: "pkcs8" }).toString("base64") };
 };
 
+/** A host secret for `purpose` from a sequencer key's private bytes: what secret() below returns, from the stored key alone. */
+export const secretOf = (priv: string, purpose: string): Buffer =>
+  crypto.createHmac("sha256", Buffer.from(priv, "base64")).update(`eidoverse-secret:${purpose}`).digest();
+
 /** One custody per keys file per process: every world under a worlds root opens the same file, and separate handles
  *  (each caching, minting and writing its whole cache back) would overwrite one another's keys. */
 const byFile = new Map<string, ReturnType<typeof openCustody>>();
@@ -64,7 +68,7 @@ function openCustody(file: string) {
      *  the key itself, and nothing another host can derive (tools/import-v1/world.ts identitySalt). */
     secret(purpose: string): Buffer {
       minting(() => !c.sequencer, () => { c.sequencer = mk(); });
-      return crypto.createHmac("sha256", Buffer.from(c.sequencer!.priv, "base64")).update(`eidoverse-secret:${purpose}`).digest();
+      return secretOf(c.sequencer!.priv, purpose);
     },
     keyOf(who: string, make = false): string | null { if (make) minting(() => !c.holders[who], () => { c.holders[who] = mk(); }); return c.holders[who]?.pub ?? null; },
     /** §2.4 chain point: base64url Ed25519 over msg ("eidoverse-head:<world id>:<seq>:<head hex>") by the sequencer key. */
