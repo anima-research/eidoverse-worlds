@@ -533,7 +533,7 @@ time.
 | 352 | sfu-mic-gated | main | `test/client/sfu-mic-gated-test.mjs` | bun | 0.3 s | 180 s |
 | 353 | mic-ptt | main | `test/client/mic-ptt-test.mjs` | bun | 7.2 s | 180 s |
 | 354 | micgate-onset | main | `test/client/micgate-onset-test.mjs` | bun | 0.1 s | 180 s |
-| 355 | mictoggle-glyph | main | `test/client/mictoggle-glyph-test.mjs` | bun | 5.7 s | 180 s |
+| 355 | mictoggle-glyph | main | `test/client/mictoggle-glyph-test.mjs` | bun | 6.4 s | 180 s |
 | 356 | mic-meter-gate | main | `test/client/mic-meter-gate-test.mjs` | bun | 1.6 s | 180 s |
 | 357 | stt-ptt | main | `test/client/stt-ptt-test.mjs` | bun | ? | 300 s |
 | 358 | micstate | main | `test/client/micstate-test.mjs` | bun | 0.6 s | 180 s |
@@ -629,5 +629,5 @@ time.
 | 448 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
 | 449 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 410 (~2285 s), browser 21 (~1228 s); 449 suites in all.
+Lanes: core 18 suites (~79 s), main 410 (~2286 s), browser 21 (~1228 s); 449 suites in all.
 <!-- END GENERATED -->
