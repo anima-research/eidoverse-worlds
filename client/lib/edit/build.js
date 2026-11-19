@@ -352,7 +352,6 @@ export function updateBuild() {
       relayDrag();
     } else if (dragging.multi) {
       // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'
-      dragging.plane ??= planeGrab(dragging.startPos);   // a press whose ray missed the plane takes hold once it meets it
       raycaster.setFromCamera(mouse, camera);
       if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
         setWorldPosition(selected.obj, _w.copy(_hit).add(dragging.plane.grab).setY(dragging.startPos.y));
