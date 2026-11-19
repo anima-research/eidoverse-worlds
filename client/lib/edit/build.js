@@ -288,7 +288,7 @@ function ghostKey(e) {
 }
 
 /** Where the pointer is aiming: the nearest hit on a thing under it, else (none, or that face is steep) the ground. `onto`
- *  is the hit object's own entityId, which only an entity's root carries (realize/models.js), so a model's mesh gives null. */
+ *  is the hit object's own entityId, which a model's meshes don't carry (realize/models.js tags its root), so it is null. */
 function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
@@ -339,9 +339,10 @@ export function updateBuild() {
       const fov = camera.fov * Math.PI / 180;
       const pxToWorld = (2 * dragging.depth * Math.tan(fov / 2)) / innerHeight;
       const dy = (dragging.startY - dragging.clientY) * pxToWorld;   // up = raise
-      // no lower than any member's ground: the lead's, and each follower's from its start (one already below it stays
-      // no lower, without lifting the lot)
+      // no lower than any member's ground, each from its start; in a group, one already below it (the lead too) stays no
+      // lower without lifting the lot
       let least = heightAt(dragging.startPos.x, dragging.startPos.z) - dragging.startPos.y;
+      if (dragging.multi) least = Math.min(0, least);
       for (const f of dragging.multi?.followers ?? []) { _fp.setFromMatrixPosition(f.world); least = Math.max(least, Math.min(0, heightAt(_fp.x, _fp.z) - _fp.y)); }
       const y = dragging.startPos.y + Math.max(least, dy);
       if (dragging.world) setWorldPosition(selected.obj, _w.set(dragging.startPos.x, y, dragging.startPos.z));
@@ -351,6 +352,7 @@ export function updateBuild() {
       relayDrag();
     } else if (dragging.multi) {
       // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'
+      dragging.plane ??= planeGrab(dragging.startPos);   // a press whose ray missed the plane takes hold once it meets it
       raycaster.setFromCamera(mouse, camera);
       if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
         setWorldPosition(selected.obj, _w.copy(_hit).add(dragging.plane.grab).setY(dragging.startPos.y));
@@ -608,7 +610,7 @@ addEventListener('mousemove', (e) => {
   if (!dragging) return;
   dragging.clientY = e.clientY;                 // vertical drag reads this each frame
   dragging.clientX = e.clientX;                 // rotate/scale tools read this one
-  if (tool === 'select') return;                // select: a press picks, travel never moves
+  if (dragging.mode === 'select') return;       // a press under select picks, travel never moves
   if (!dragging.armed
       && Math.hypot(e.clientX - dragging.startX, e.clientY - dragging.startY) > DRAG_SLOP) {
     // the press selected it; travel is where a move begins

@@ -62,8 +62,8 @@ function ensure() {
 }
 
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
-/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged; a light has no orientation or
- *  scale to drag. A lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it. */
+/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged. A lock doesn't stop the drag: the
+ *  release asks the authority, which asks a person who may lift it. */
 const editable = MM.takes;   // the gesture test the followers share (edit/multimove.js)
 
 function sync() {
@@ -92,7 +92,7 @@ function beginDrag() {
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
   // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
-  // this gesture (a light has no turn; a part socket) stays put, and the hint says so
+  // this gesture (a part socket's rider) stays put, and the hint says so
   multi = null;
   if (start && getTool() !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));

@@ -10,9 +10,10 @@
 //       person's use runs it (bob, a builder here); the Inspector lists it
 //   MM  a mesh drag of one of several selected things moves them all as ONE act (one Ctrl+Z), planar: over a floor, a
 //       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
-//       a rider drawn off its carrier stays out of the batch; a tool key after the press doesn't change the drag; the
-//       pivot tool's drag moves only the one thing; a Shift drag stops at the first member's ground, and a member already
-//       below its ground doesn't lift the lot; a gizmo drag the pivot tool takes over puts the followers back
+//       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
+//       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
+//       ground, and a member already below its ground, leading or following, doesn't lift the lot; a press whose ray
+//       misses the lead's plane takes hold once it meets it; a gizmo drag the pivot tool takes over puts the followers back
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -28,7 +29,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter, tryUntil } from "../gate/wait.ts";
+import { pageWaiter, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -48,7 +49,7 @@ const MY = () => entries().find((e: any) => e?.kind === "request" && e.verb === 
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "request" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
-const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
+const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); ms *= WAIT_SCALE; while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
   return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
@@ -192,7 +193,7 @@ try {
   // ---- MM: the selection follows a mesh drag (edit/multimove.js) ----
   // a furnished corner off to the side of what the earlier sections built: a floor slab, a table on it with a box on the
   // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
-  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
+  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-pole", "mm-stool", "mm-cart", "mm-kid");
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     // the view holds still: five samples in a row, each two frames after the last, see the same camera (polls alone can
     // land between frames on a slow page and read one matrix twice)
@@ -213,8 +214,9 @@ try {
     const ty = await tryUntil("the table has its size", () => topOf("mm-tbl")), py = await tryUntil("the platform has its size", () => topOf("mm-plat"));
     ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
       && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
+      && await place("mm-pole", [sx - 4, 0, sz - 4.5], [0.3, 8, 0.3]) && await place("mm-stool", [sx - 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
       && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
-    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a cart with a kid further off", ok, { G, fy, ty, py });
+    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a tall pole and a stool; a cart with a kid further off", ok, { G, fy, ty, py });
     const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
       const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await frames(2); await settle(); };
     // a press pixel ON `lead` whose ray, past it, meets the top of `under` (any, with no `under`) (where an aim that doesn't skip `under` lands)
@@ -236,11 +238,11 @@ try {
     const dxz = (a: number[], b: number[]) => [a[0] - b[0], a[2] - b[2]];
     const sameMove = (a0: number[], a1: number[], b0: number[], b1: number[]) => { const [p, q] = [dxz(a1, a0), dxz(b1, b0)]; return Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.01 && Math.hypot(...p) > 0.05; };
     // press, travel past the slop, move to `to` (`mid` runs mid-drag), release; returns the drag as the page had it once armed
-    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>, opt: { shift?: boolean, preArm?: () => Promise<any> } = {}) => {
+    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>, opt: { shift?: boolean, preArm?: () => Promise<any>, arms?: boolean } = {}) => {
       await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, shiftKey: ${!!opt.shift}, clientX: ${at[0]}, clientY: ${at[1]} })), true))`);
       if (opt.preArm) await opt.preArm();
       await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at[0] + 6}, clientY: ${at[1]} })), true)`);
-      await waitFor(`globalThis.__buildDrag?.()?.armed === true`); await frames(3);
+      await waitFor(`globalThis.__buildDrag?.()?.armed === true`, opt.arms === false ? 1500 : undefined); await frames(3);
       const drag = await evalJson(`globalThis.__buildDrag?.()`);
       const half = [Math.round((at[0] + to[0]) / 2), Math.round((at[1] + to[1]) / 2)];
       await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${half[0]}, clientY: ${half[1]} })), true)`); await frames(3);
@@ -286,7 +288,7 @@ try {
       await gesture(at2, [at2[0] + 30, at2[1] + 10], () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`));
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
       const T2 = pose("mm-tbl"), B2 = pose("mm-box");
-      check("MM7 E mid-drag doesn't change the gesture: the table still moves with the box, as one act", myActs().length === n0 + 1 && sameMove(T0, T2, B0, B2), { T0, T2, B0, B2, acts: actsSince(n0) });
+      check("MM7 a switch to rotate mid-drag (setTool, what E calls) doesn't change the gesture: the table still moves with the box, as one act", myActs().length === n0 + 1 && sameMove(T0, T2, B0, B2), { T0, T2, B0, B2, acts: actsSince(n0) });
       await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
       await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
@@ -311,7 +313,7 @@ try {
       await gesture(at5, [at5[0] + 30, at5[1] + 10], undefined, { preArm: () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`) });
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
       const T5 = pose("mm-tbl"), B5 = pose("mm-box");
-      check("MM9 E between the press and the arm doesn't change the drag: the table still moves with the box", myActs().length === n0 + 1 && sameMove(T0, T5, B0, B5), { T0, T5, B0, B5, acts: actsSince(n0) });
+      check("MM9 a switch to rotate between the press and the arm (setTool) doesn't change the drag: the table still moves with the box", myActs().length === n0 + 1 && sameMove(T0, T5, B0, B5), { T0, T5, B0, B5, acts: actsSince(n0) });
       await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
       await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
@@ -352,12 +354,67 @@ try {
     check("MM (setup) a press point on the sign", !!at7, { at7 });
     if (at7) {
       await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
-      const S0 = pose("mm-sign"), P0 = pose("mm-post"); const n0 = myActs().length;
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); let n0 = myActs().length;
       await gesture(at7, [at7[0], at7[1] - 10], undefined, { shift: true });
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-post")) !== JSON.stringify(P0), 3000);
       const S1 = pose("mm-sign"), P1 = pose("mm-post");
       check("MM11 a Shift nudge up with a sunk post selected raises both by the nudge (well under the post's 0.3 m depth), not to the post's ground",
         myActs().length === n0 + 1 && !!S1 && !!P1 && S1[1] - S0[1] > 0.005 && S1[1] - S0[1] < 0.2 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+      await onRecord("mm-post"); await onRecord("mm-sign"); await frames(3);
+
+      // a press under the select tool picks: a switch to move before the travel doesn't make it a drag
+      n0 = myActs().length;
+      await page(`(await import('/lib/edit/build.js')).setTool('select'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      await gesture(at7, [at7[0] + 30, at7[1] + 10], undefined, { arms: false, preArm: () => page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`) });
+      await waitDisk(() => myActs().length > n0, 1500);
+      check("MM13 a press under select, then a switch to move before the travel: no drag, nothing written", myActs().length === n0 && JSON.stringify(pose("mm-sign")) === JSON.stringify(S0), { acts: actsSince(n0), S0, S: pose("mm-sign") });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length > n0) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-sign")) === JSON.stringify(S0)); }
+      await onRecord("mm-sign"); await frames(3);
+    }
+
+    // the sunk post LEADING a Shift drag: a nudge up raises both by the nudge, not by the post's depth
+    await frame("mm-post", 1.5);
+    const at8 = await evalJson(`__mmPress('mm-post', null)`);
+    check("MM (setup) a press point on the sunk post", !!at8, { at8 });
+    if (at8) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-post', 'mm-sign']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); const n0 = myActs().length;
+      const depth = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${P0[0]}, ${P0[2]}) - ${P0[1]})`);
+      await gesture(at8, [at8[0], at8[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-sign")) !== JSON.stringify(S0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM14 a Shift nudge up led by the sunk post raises both by the nudge (well under its depth), not to its ground",
+        myActs().length === n0 + 1 && depth > 0.25 && !!S1 && !!P1 && P1[1] - P0[1] > 0.005 && P1[1] - P0[1] < depth - 0.1 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { depth, S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+    }
+
+    // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold once the ray comes
+    // down to meet it
+    await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.3); return C.frameOn(b.getCenter(new THREE.Vector3()), 1.5);`);
+    await frames(2); await settle();
+    const up = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
+      const oy = P.getWorldPosition(new T.Vector3()).y, cy = c.camera.getWorldPosition(new T.Vector3()).y;
+      const dirY = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray.direction.y; };
+      const b = new T.Box3().setFromObject(P), top = new T.Vector3((b.min.x + b.max.x) / 2, b.max.y - 0.3, (b.min.z + b.max.z) / 2).project(c.camera);
+      const px = Math.round((top.x + 1) / 2 * innerWidth); let py = Math.round((1 - top.y) / 2 * innerHeight);
+      for (let k = 0; k < 60 && !(__mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05); k++) py += 4;
+      const at = __mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05 ? [px, py] : null;
+      let d1 = py; while (d1 < innerHeight - 4 && dirY(px, d1) > -0.15) d1 += 4;
+      let d2 = d1; while (d2 < innerHeight - 4 && dirY(px, d2) > -0.3) d2 += 4;
+      return { at, d1: dirY(px, d1) < -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], camAbove: cy > oy + 0.05, cy, oy }; })`);
+    check("MM (setup) a press point on the pole whose ray points up from above the pole's origin, and two points lower whose rays dip", !!up?.at && !!up?.d1 && up?.camAbove, up);
+    if (up?.at && up?.d1 && up?.camAbove) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
+      const L0 = pose("mm-pole"), F0 = pose("mm-stool"); const n0 = myActs().length;
+      await gesture(up.at, up.d2, () => evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${up.d1[0]}, clientY: ${up.d1[1]} })), true)`));
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      const L1 = pose("mm-pole"), F1 = pose("mm-stool");
+      check("MM12 a group drag pressed with the ray above the lead's plane moves once the ray meets it: one act, both slide level together",
+        myActs().length === n0 + 1 && !!L1 && !!F1 && Math.abs(L1[1] - L0[1]) < 0.01 && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1), { L0, L1, F0, F1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-pole")) === JSON.stringify(L0)); }
     }
 
     // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)
