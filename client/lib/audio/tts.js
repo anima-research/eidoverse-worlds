@@ -56,8 +56,8 @@ const CHUNK_MS = 20;
 
 const canSynthesize = () => typeof MediaStreamTrackGenerator !== 'undefined';
 
-/** The live generator track, rebuilt if it ended; a rebuild notifies voicesource's hooks so
- *  voicesfubridge re-binds the senders (replaceTrack, no renegotiation). */
+/** The live generator track, rebuilt if it ended; a rebuild notifies voicesource's hooks, and voicesfubridge's hook says
+ *  when it re-publishes. A new synth track reaches a sender only through micstate.js gateFor, which applies mute to it. */
 export function ensureGenerator() {
   if (genTrack && genTrack.readyState === 'live') return genTrack;
   const replacing = !!genTrack;

@@ -13,7 +13,7 @@ import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
          gateUnavailable, ungatedConsent,
-         makeOnsetGate, makeLevelMeter } from './micgate.js';
+         makeOnsetGate, makeLevelMeter, HANG_MS } from './micgate.js';
 // Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
 
@@ -25,8 +25,18 @@ export const isMuted = () => _muted;
 export function toggleMute(on) {
   _muted = on === undefined ? !_muted : !!on;
   gateAudio(Date.now());   // apply immediately — mute is authoritative
+  muteSynth();
   bus.emit('audio:mute', _muted);
   return _muted;
+}
+
+// A synth lane has no gate to close, so mute disables its tracks; unmute re-enables only those, never one already off when
+// mute began (one the transport turns off DURING a mute comes back on: harmless today, it carries silence).
+let _mutedSynth = [];
+function muteSynth() {
+  if (!_muted) { for (const t of _mutedSynth) t.enabled = true; _mutedSynth = []; return; }
+  if (!_lane?.synthetic) return;
+  for (const t of _lane.getTracks()) if (t.enabled) { t.enabled = false; _mutedSynth.push(t); }
 }
 
 // ── push-to-talk: the key IS the gate ───────────────────────────────────────
@@ -63,7 +73,9 @@ bus.on('audio:ptt', (on) => {
 
 // The onset watcher: micgate.js's makeOnsetGate/makeLevelMeter, instantiated
 // over this module's own lane and mute.
-const _meter = makeLevelMeter(() => (!_lane || _muted) ? null : (_raw || _lane));
+// One analyser on the device; the gate's meter is it with mute applied (a level of 0 is how the gate closes on mute).
+const _deviceMeter = makeLevelMeter(() => _lane ? (_raw || _lane) : null);
+const _meter = () => (_muted ? 0 : _deviceMeter());
 const _onset = makeOnsetGate({
   level: _meter,
   threshold: gateThreshold,
@@ -75,9 +87,10 @@ const _onset = makeOnsetGate({
     driveGate(want);
     // No graph (gate unavailable, raw consented): the decision goes to the raw
     // tracks. PTT closes the wire; voice activation leaves the lane raw, but only
-    // while the mic is on. The transport writes the same answer, so a tick can
-    // never re-open what the microphone control closed.
-    if (gateUnavailable()) driveRawTracks(pttMode() ? want : micOn());
+    // while the mic is on, and only while the raw lane is consented. The transport may write a raw track first
+    // (voicesfu.js sfuMic(true)); setMicLive and every tick re-apply this answer, so nothing stays open that the
+    // microphone control (or a revoked consent) closed.
+    if (gateUnavailable()) driveRawTracks(ungatedConsent() && (pttMode() ? want : micOn()));
   },
   announce: () => sendTyping(null, 'mic'),
   // PTT hands the machine a held answer; null means "decide by level".
@@ -87,16 +100,33 @@ const gateAudio = (now) => _onset.apply(now);
 const startOnsetWatch = () => _onset.start();
 const stopOnsetWatch = () => _onset.stop();
 
+// A synth voice has no gate (gateFor passes it through): audible is speaking, held through the gaps between words
+// for the onset gate's own hang (micgate.js HANG_MS).
+const SYNTH_AUDIBLE = 0.005;   // RMS ≈ -46 dBFS
+let _synthUntil = 0;
+
 /** What the gate is actually doing right now — for the meter and for tuning. */
 // `speaking` is what the room gets: the lane's authority (no lane, muted) is
-// applied here as in the drive closure, so the pill and the audio agree.
+// applied here as in the drive closure (for synth, as muteSynth), so the pill and the audio agree.
 export const micGateInfo = () => {
   const info = _onset.info();
-  return micOn() ? info : { ...info, speaking: false };
+  if (_lane?.synthetic) {
+    const now = Date.now();
+    if (_muted) _synthUntil = 0;
+    else if (info.level > SYNTH_AUDIBLE) _synthUntil = now + HANG_MS;
+    return { ...info, speaking: now <= _synthUntil };
+  }
+  if (!micOn()) return { ...info, speaking: false };
+  // a raw lane is the drive closure above: closed without consent, else open whenever the mic is on under voice activation
+  if (gateUnavailable() && !ungatedConsent()) return { ...info, speaking: false };
+  if (gateUnavailable() && !pttMode()) return { ...info, speaking: true };
+  return info;
 };
 
 /** Live mic level 0..1 for UI. */
 export function micAnalyserLevel() { return _meter(); }
+/** Live device level 0..1, muted or not: the sensitivity bar still moves while muted, so it can be tuned. */
+export const micDeviceLevel = () => _deviceMeter();
 
 // ── the transport-facing seam ───────────────────────────────────────────────
 
@@ -110,7 +140,7 @@ const stopDevice = (s) => { if (s && !s.synthetic) for (const t of s.getTracks()
  *  decides, never the transport. */
 export function gateFor(rawStream) {
   if (_raw !== rawStream) stopDevice(_raw);
-  if (!rawStream || rawStream.synthetic) { _raw = _gated = _lane = rawStream; return rawStream; }
+  if (!rawStream || rawStream.synthetic) { _raw = _gated = _lane = rawStream; _synthUntil = 0; muteSynth(); return rawStream; }
   _raw = rawStream;
   // Reuse a standing lane: attachSource returns the same gated stream the
   // senders already hold, so returning from a release costs zero renegotiation.
@@ -164,11 +194,9 @@ export async function toggleMic() {
  *  liveness through setMicLive(); everything else in the client asks HERE. */
 let _deviceLive = false;
 export function setMicLive(on) {
-  const next = !!on;
-  if (next === _deviceLive) return;
-  _deviceLive = next;
-  // Liveness is part of the gate's authority, so re-apply now: on mic ON the
-  // transport re-enables an ungated raw track and PTT-with-key-up must close it.
+  _deviceLive = !!on;
+  // Liveness is part of the gate's authority, so re-apply now, changed or not: the transport re-enables a raw track
+  // before it calls this, and mute or PTT-with-key-up must close it at once.
   gateAudio(Date.now());
 }
 export const micOn = () => !!_lane && _deviceLive && !_muted;

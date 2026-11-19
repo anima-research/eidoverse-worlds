@@ -9,16 +9,7 @@
 import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
-  micFloor, setMicFloor, pttMode, setPttMode, gateThreshold } from './voiceconsent.js';
-import { micAnalyserLevel as meshMicLevel } from './micstate.js';
-// ask the live transport first (the SFU's own reader); micstate's meter, fed by gateFor, is the fallback
-function micLevelNow() {
-  try {
-    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
-    return meshMicLevel?.() ?? 0;
-  } catch { return 0; }
-}
-
+  micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
 import { why } from '../debuglog.js';
@@ -29,7 +20,7 @@ const micLive = () => {
 };
 import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
-import { micOn, toggleMic } from './micstate.js';
+import { micOn, toggleMic, micGateInfo, micDeviceLevel, isMuted } from './micstate.js';
 // CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
 import { CONFIG } from '../base.js';
 
@@ -75,7 +66,8 @@ function checkRow(label, hint, checked, onChange) {
 }
 
 // mic sensitivity: a slider over a LIVE level bar (animates only while its row is in the DOM). The meter wears the mic
-// badge's palette (mictoggle.js INK.hot): gold = live, warm = heard but under the floor, dark = muted (still moves).
+// badge's palette (mictoggle.js INK.hot): gold = the room is getting your voice, warm = live but the room isn't
+// getting it (under the floor, or push-to-talk with the key up), dark = muted (still moves) or not publishing.
 const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';
@@ -101,16 +93,16 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // hysteresis: release at 85% of the floor, so it latches through the gaps inside a word and drops on a real pause
-  const REL = 0.85;
+  // gold is micstate.js micGateInfo().speaking, the HUD glyph's own answer, so the two agree with what the room gets
   let hot = false;
   const micIsLive = micLive;
   const paintLive = () => {
-    if (!micIsLive()) { hot = false; lvl.style.background = LVL_DARK; return; }
+    if (!micIsLive() || isMuted()) { hot = false; lvl.style.background = LVL_DARK; return; }
     lvl.style.background = hot ? LVL_LIVE : LVL_WARM;
   };
   paintLive();
   bus.on('audio:mic', paintLive);
+  bus.on('audio:mute', paintLive);
   // dragging the threshold repaints at once, not on the next level sample
   bus.on('audio:micfloor', () => paintLive());
   const paintThr = () => {
@@ -127,13 +119,12 @@ function micFloorRow() {
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
   const beat = () => {
     if (!row.isConnected) return;
-    const level = micLevelNow();
-    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb). Under the SFU it reads the
-    // transport's peak while the gate reads RMS (micgate.js), so a peaky sound can pass the marker with the gate shut
+    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
+    // transport's peak crossed the marker with the gate shut), muted or not
+    const level = micDeviceLevel();
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
-    // latch above the gate's threshold, release at REL× it; repaint only on a state change (this runs at frame rate)
-    const floor = gateThreshold();
-    const next = hot ? level > floor * REL : level > floor;
+    // repaint only on a state change (this runs at frame rate)
+    const next = !!micGateInfo().speaking;
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };

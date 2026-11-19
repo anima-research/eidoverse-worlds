@@ -33,7 +33,8 @@ let _gateUnavailable = false;   // the graph could not be built on this device
 let _ungatedConsent = false;    // explicit "transmit raw anyway" choice
 export const gateUnavailable = () => _gateUnavailable;
 export const ungatedConsent = () => _ungatedConsent;
-export function allowUngated(on) { _ungatedConsent = !!on; }
+// revoking closes a live raw lane now: the consent is what keeps it open (micstate.js's drive closure re-checks it each tick)
+export function allowUngated(on) { _ungatedConsent = !!on; if (!on && _gateUnavailable) driveRawTracks(false); }
 
 /** Wrap a mic stream in the gate graph. Returns the gated stream for WebRTC, or
  *  null when the graph can't be built (the raw stream under allowUngated). */
@@ -232,6 +233,9 @@ export function makeLevelMeter(getMeasured) {
   };
 }
 
+/** The gate's hang-time: it holds open this long after the last tick over the line. */
+export const HANG_MS = 700;
+
 /** The speech-onset gate: a block-minima noise floor, a fixed threshold with ~3 dB hysteresis and 700 ms hang-time,
  *  and the once-per-utterance 🎙 announcement. `drive(open)` is the transport's gain hand (it applies its own
  *  lane/mute authority first); `level()` returning 0 means muted: close, drop the speaking latch, learn nothing.
@@ -284,7 +288,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     const off = on * 0.7;                    // ~3 dB of hysteresis
     const now = Date.now();
     if (lv >= on) {
-      _openUntil = now + 700;                // hang-time
+      _openUntil = now + HANG_MS;            // hang-time
       if (!_above) { _above = true; _openedAt = now; _announced = false; }
       if (held() === null && !_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
         _announced = true; _lastOnset = now; announce();
@@ -297,7 +301,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     /** Re-measure the room on every start: a floor learned in a quiet session would gate you out of a loud one. */
     start() {
       if (_timer) return;
-      _above = false;
+      _above = false; _openUntil = 0;   // a reacquired lane starts closed, not inside the old hang
       _noise = 0.01; _settle = 0;
       _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
       _blockMin = Infinity; _blockStart = Date.now();
@@ -305,7 +309,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     },
     stop() {
       if (_timer) { clearInterval(_timer); _timer = null; }
-      _above = false;
+      _above = false; _openUntil = 0;
     },
     /** Apply the current latch through the transport's authority (mute toggles call it directly). */
     apply,

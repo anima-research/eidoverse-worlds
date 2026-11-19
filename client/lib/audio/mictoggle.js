@@ -1,7 +1,7 @@
 // mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
-import { micOn, toggleMic, setPttHeld, pttHeld } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld, micGateInfo } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -10,7 +10,7 @@ import { bus } from '../base.js';
 import { register as registerAction } from '../ui/actions.js';
 import { pathData } from '../ui/icons.js';
 
-// Three states: off = dim + slash · live = brand · hot (your voice registering) = attention gold with a glow.
+// Three states: off = dim + slash · live = brand · hot (the room is getting your voice) = attention gold with a glow.
 // ONE palette for both glyphs: they read as a pair, so any divergence reads as a state difference. The headphone's
 // stroke is thinner (its filled cups carry more ink than the mic's thin strokes) so the two weigh the same to the eye.
 // Inks come from the token sheet, read off the BUTTON on each paint so live token edits and build mode's re-pointed
@@ -125,21 +125,11 @@ function paint() {
     earBtn.title += SHARED;
   }
 }
-// hot = your voice is registering: an analyser polled at 8 Hz
-import { micAnalyserLevel as meshMicLevel } from './micstate.js';
-// ask the live transport's level first (the SFU's), or the glyph can never go hot
-function micLevelNow() {
-  try {
-    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
-    return meshMicLevel?.() ?? 0;
-  } catch { return 0; }
-}
-
+// hot = the room is getting your voice: polled at 8 Hz
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
-  const lvl = micLevelNow();
-  // the analyser reads the RAW side, so under PTT the glow also needs the key: gold means the mic is on and loud (under voice activation the gate may still be shut)
-  const hot = lvl > 0.02 && (!pttMode() || pttHeld());
+  // gold = the gate's own decision (micstate.js micGateInfo: threshold, hang, PTT, mute, a raw lane, a synth voice), never a level of our own
+  const hot = !!micGateInfo().speaking;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 
