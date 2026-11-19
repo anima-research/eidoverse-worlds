@@ -2707,7 +2707,7 @@ export class WorldAgent {
    *  stream like locomotion does; walking replaces it, restore re-applies it. */
   setPosture(clip: string) {
     ++this.bodyEpoch;   // a posture takes authority over the body: a fall still loading abandons itself (#295)
-    const down = this.clip === "ragdoll";   // read before stop() sets "idle"
+    const down = this.clip === "ragdoll" && !this.flight;   // read before stop() sets "idle"; a limp flight's "ragdoll" is the flight's fall
     this.stop();
     this.speed = 0;
     // choosing a posture ends a tumble the same way walking does: a physics

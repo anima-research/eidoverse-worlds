@@ -95,6 +95,17 @@ for (const how of ['none', 'stand', 'posture', 'take_off'] as const) {
   check(`a ${act} during a knockdown's ragdoll loading leaves it unbegun`, !began && !sim && after, `began ${began}, sim ${sim}, clip ${ag.clip}, flight ${ag.flight?.phase}`);
   if (how === 'posture') check('...and the posture lets go of the pose it was knocked down in', ag.heldPose == null, JSON.stringify(ag.heldPose));
 }
+{
+  // a limp flight reads as "ragdoll" too (flightTick), but it is the flight's fall, not a knockdown's
+  const ag = bench();
+  ag.ensureBody = () => new Promise(() => {});
+  await ag.takeOff(); toAir(ag, 20); await tick(ag, 3);
+  ag.flightBodyDown('cut'); await tick(ag);
+  const setup = ag.flight != null && ag.clip === 'ragdoll' && ag.flight.pos.y > 10;
+  ag.setPosture('sit');
+  check('a posture chosen in a limp flight leaves the body on the flight, not snapped to the ground',
+    setup && Math.abs(ag.pos.y - ag.flight.pos.y) < 1e-6, `setup ${setup}, pos.y ${ag.pos.y.toFixed(2)}, flight.y ${ag.flight?.pos.y.toFixed(2)}`);
+}
 
 console.log('\n#298 every way down ends the flight');
 {
