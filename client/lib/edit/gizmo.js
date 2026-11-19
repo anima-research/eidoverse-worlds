@@ -92,7 +92,7 @@ function beginDrag() {
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
   // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
-  // this gesture (a part socket's rider) stays put, and the hint says so
+  // this gesture (a part socket's occupant) stays put, and the hint says so
   multi = null;
   if (start && getTool() !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
