@@ -14,7 +14,7 @@ import { reindexCollider } from '../colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from '../realize/models.js';
 import { foldRecord } from './inspect.js';
-import { editOps, inspectSchema, fieldAt, poseEdits } from '../../../shared/editschema.js';
+import { editOps, poseEdits } from '../../../shared/editschema.js';
 import * as OP from '../../../shared/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { gripEditing } from './gripedit.js';
@@ -64,17 +64,7 @@ function ensure() {
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
 /** Can this thing take THIS gesture? A thing riding a part socket can't be dragged; a light has no orientation or
  *  scale to drag. A lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it. */
-function editable(id, mode) {
-  const rec = foldRecord(id); const obj = entities.get(id);
-  // A parented thing: three parents it (realize/models.js), so its position IS the local transform pos.* edits; a
-  // thing riding a part socket (a moving node) stays out.
-  const rides = !!rec?.parent;
-  if (!rec || !obj || (rides && obj.parent !== entities.get(rec.parent.to ?? rec.parent))) return false;
-  const sc = inspectSchema(rec, id);
-  const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
-  const f = fieldAt(sc, key);
-  return !!f && !f.disabled;
-}
+const editable = MM.takes;   // the gesture test the followers share (edit/multimove.js)
 
 function sync() {
   // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority
@@ -107,7 +97,7 @@ function beginDrag() {
   if (start && getTool() !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
     multi = MM.begin(attachedId, f.ids);
-    if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(`${f.skipped.length} selected ${f.skipped.length === 1 ? "thing can't" : "things can't"} ${controls.mode === 'rotate' ? 'turn' : controls.mode === 'scale' ? 'size' : 'move'} this way — left where ${f.skipped.length === 1 ? 'it is' : 'they are'}`, 3500));
+    if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));
   }
 }
 const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale' }[controls?.mode] ?? 'move');

@@ -347,7 +347,7 @@ export function updateBuild() {
       refreshOutline();
       relayDrag();
     } else {
-      const aim = aimPoint(selected.id, dragging.multi?.followers.map((f) => f.id));   // never onto the things moving with it
+      const aim = aimPoint(selected.id, dragging.follow);   // never onto the things moving with it
       if (aim) {
         // keep the grab offset (you grabbed a crate by its corner, not its pivot); a drop onto a surface still rests ON it
         if (dragging.world) {
@@ -545,8 +545,12 @@ canvas.addEventListener('mousedown', (e) => {
   const keepMany = !shiftPick && s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id);
   if (keepMany) { Sel.set([id, ...s0.ids.filter((x) => x !== id)], 'things', Sel.active()); showInspector(id); }
   else if (!shiftPick) select(id);
+  // the things that will move with it (none under the pivot tool: it moves one thing's pivot, never a group's); the grab
+  // aims past them as the drag will, or a lead resting on one would lose its surface at arm
+  const many = s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id) ? s0.ids : null;
+  const fol = many && tool !== 'pivot' ? MM.followersOf(id, (x) => MM.takes(x, tool)) : { ids: [], skipped: [] };
   // a press is a SELECT; it becomes a drag once the pointer travels (DRAG_SLOP)
-  const aim = aimPoint(id);
+  const aim = aimPoint(id, fol.ids);
   // the drag reckons in WORLD space (a mounted child's object position is in its parent's frame)
   const world = true;
   const at = root.getWorldPosition(new THREE.Vector3());
@@ -565,8 +569,9 @@ canvas.addEventListener('mousedown', (e) => {
     shiftPick,
     keepMany,
     // a Shift-travel on one of several selected things is a vertical drag of the lot, led by it (a Shift click still toggles it)
-    many: s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id) ? s0.ids : null,
-    multi: null,   // edit/multimove.js: the other selected things, once it arms
+    many,
+    follow: fol.ids, skipped: fol.skipped.length,
+    multi: null,   // edit/multimove.js: the followers' start, once it arms
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
@@ -594,7 +599,8 @@ addEventListener('mousemove', (e) => {
       else select(dragging.id);
       dragging.shiftPick = false;
     }
-    if (tool !== 'select') dragging.multi = MM.begin(dragging.id, MM.followersOf(dragging.id).ids);
+    dragging.multi = MM.begin(dragging.id, dragging.follow);
+    if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, tool), 3500);
     engage('meshMove');
   }
 });

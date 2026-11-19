@@ -9,7 +9,7 @@ import { suite } from "../gate/suite.ts";
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({ name: "multimove-test-stubs", setup(b) {
   stubResolve(b, /^\.\.\/(world|net|colliders|core)\.js$/, () => ({ path: here("../stubs/multimove-test-stub.mjs") }));
-  stubResolve(b, /^\.\/writes\.js$/, () => ({ path: here("../stubs/multimove-test-stub.mjs") }));
+  stubResolve(b, /^\.\/(writes|inspect)\.js$/, () => ({ path: here("../stubs/multimove-test-stub.mjs") }));
 } });
 
 const stub: any = await import("../stubs/multimove-test-stub.mjs");
@@ -43,8 +43,31 @@ let st = MM.begin("a", MM.followersOf("a").ids);
 a.position.set(1, 2, 3); a.updateMatrixWorld(true);
 MM.apply(st, "move");
 check("move: each follower moves by the lead's world delta", near(b.position.toArray(), [6, 2, 3]) && near(c.position.toArray(), [1, 2, 8]), JSON.stringify([b.position, c.position]));
-check("...and the rider rides along in its carrier's frame", near(rider.position.toArray(), [0, 1, 0]));
 check("...and each moved follower's collider is re-indexed", stub.reindexed.includes("b") && stub.reindexed.includes("c"), JSON.stringify(stub.reindexed));
+
+// the rider selected too (ahead of its carrier, so a rider moved on its own would then be carried: twice)
+a.position.set(0, 0, 0); b.position.set(5, 0, 0); [a, b].forEach((o) => o.updateMatrixWorld(true));
+Sel.set(["a", "rider", "b"]);
+const rw0 = rider.getWorldPosition(new THREE.Vector3());
+st = MM.begin("a", MM.followersOf("a").ids);
+a.position.set(1, 2, 3); a.updateMatrixWorld(true);
+MM.apply(st, "move");
+const rw1 = rider.getWorldPosition(new THREE.Vector3());
+check("...and a selected rider rides its carrier: its world moves by the delta once, its local is unchanged",
+  near(rw1.toArray(), rw0.clone().add(new THREE.Vector3(1, 2, 3)).toArray()) && near(rider.position.toArray(), [0, 1, 0]), JSON.stringify({ rw0, rw1, local: rider.position }));
+
+// a follower under an UNSELECTED carrier (moved and turned): the world delta enters its parent's frame
+const carrier = thing("carrier", [10, 0, 0]); carrier.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); carrier.updateMatrixWorld(true);
+const kid = thing("kid", [1, 0, 0], carrier);
+a.position.set(0, 0, 0); a.updateMatrixWorld(true);
+Sel.set(["a", "kid"]);
+const kw0 = kid.getWorldPosition(new THREE.Vector3());
+st = MM.begin("a", MM.followersOf("a").ids);
+a.position.set(1, 2, 3); a.updateMatrixWorld(true);
+MM.apply(st, "move");
+const kw1 = kid.getWorldPosition(new THREE.Vector3());
+check("move: a follower under a turned, unselected carrier moves by the world delta (its local position in the carrier's frame)",
+  near(kw1.toArray(), kw0.clone().add(new THREE.Vector3(1, 2, 3)).toArray()), JSON.stringify({ kw0, kw1, local: kid.position }));
 
 // rotate about each follower's OWN origin (no pivot comp): it turns in place
 a.position.set(0, 0, 0); b.position.set(5, 0, 0); c.position.set(0, 0, 5); [a, b, c].forEach((o) => { o.quaternion.identity(); o.updateMatrixWorld(true); });
@@ -60,6 +83,32 @@ st = MM.begin("a", ["b"]);
 a.scale.set(2, 2, 2); a.updateMatrixWorld(true);
 MM.apply(st, "scale");
 check("scale: a follower scales by the lead's ratio in place", near(b.scale.toArray(), [2, 2, 2]) && near(b.position.toArray(), [5, 0, 0]), JSON.stringify({ s: b.scale, p: b.position }));
+
+// a `pivot` comp: a turn and a size go about the follower's pivot, not its origin
+const pv = thing("pv", [5, 0, 0]); stub.bags.set("pv", { pivot: { pos: [1, 0, 0] } });
+[a].forEach((o) => { o.position.set(0, 0, 0); o.quaternion.identity(); o.scale.set(1, 1, 1); o.updateMatrixWorld(true); });
+let sp = MM.begin("a", ["pv"]);
+a.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2); a.updateMatrixWorld(true);
+MM.apply(sp, "rotate", "world");
+check("rotate: a follower with a pivot swings about it (pivot at +1 x: origin 5,0,0 → 6,0,1)", near(pv.position.toArray(), [6, 0, 1]), JSON.stringify(pv.position));
+pv.position.set(5, 0, 0); pv.quaternion.identity(); pv.updateMatrixWorld(true); a.quaternion.identity(); a.updateMatrixWorld(true);
+sp = MM.begin("a", ["pv"]);
+a.scale.set(2, 2, 2); a.updateMatrixWorld(true);
+MM.apply(sp, "scale");
+check("scale: a follower with a pivot grows about it (pivot at +1 x, ×2: origin 5,0,0 → 4,0,0)", near(pv.position.toArray(), [4, 0, 0]) && near(pv.scale.toArray(), [2, 2, 2]), JSON.stringify({ p: pv.position, s: pv.scale }));
+a.scale.set(1, 1, 1); a.updateMatrixWorld(true); stub.bags.delete("pv");
+
+// rotate in own axes: each follower turns by the lead's LOCAL turn about its OWN axes (q·Δl), not the world turn (Δw·q)
+const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2), roll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2);
+const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
+pv.position.set(5, 0, 0); pv.quaternion.copy(tilt); pv.scale.set(1, 1, 1); pv.updateMatrixWorld(true);
+a.quaternion.copy(roll); a.updateMatrixWorld(true);
+sp = MM.begin("a", ["pv"]);
+a.quaternion.copy(roll).multiply(turn); a.updateMatrixWorld(true);   // the lead turns 90° about its own up
+MM.apply(sp, "rotate", "local");
+const want = tilt.clone().multiply(turn);
+check("rotate, own axes: a follower turns about its own up by the lead's local turn", pv.quaternion.angleTo(want) < 1e-6 && near(pv.position.toArray(), [5, 0, 0]), JSON.stringify({ q: pv.quaternion.toArray(), want: want.toArray() }));
+a.quaternion.identity(); a.updateMatrixWorld(true);
 
 // release: the followers' writes come back for one batch, each with its start components as the expect base
 const out = MM.ops(st, (id: string) => ({ ops: [{ op: "set", id }] }));

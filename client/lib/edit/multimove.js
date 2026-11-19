@@ -20,6 +20,8 @@ import { sendDrag } from '../net.js';
 import { reindexCollider } from '../colliders.js';
 import * as Sel from './selection.js';
 import * as Edits from './writes.js';
+import { foldRecord } from './inspect.js';
+import { inspectSchema, fieldAt } from '../../../shared/editschema.js';
 
 const idOf = (o) => o?.userData?.entityId ?? null;
 /** Is any of `obj`'s ancestors one of `set`'s things? */
@@ -45,6 +47,22 @@ export function followersOf(leadId, ok = () => true) {
     ids.push(id);
   }
   return { ids, skipped };
+}
+
+/** Can `id` take this gesture (mode: 'move' | 'translate' | 'rotate' | 'scale')? The gizmo's attach test and both
+ *  surfaces' follower filter. A parented thing: three parents it (realize/models.js), so its position IS the local
+ *  transform pos.* edits; a thing riding a part socket (a moving node) stays out. */
+export function takes(id, mode) {
+  const rec = foldRecord(id); const obj = entities.get(id);
+  const rides = !!rec?.parent;
+  if (!rec || !obj || (rides && obj.parent !== entities.get(rec.parent.to ?? rec.parent))) return false;
+  const f = fieldAt(inspectSchema(rec, id), mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x');
+  return !!f && !f.disabled;
+}
+/** The hint for followers `takes` left out. */
+export function skippedHint(n, mode) {
+  const verb = mode === 'rotate' ? 'turn' : mode === 'scale' ? 'size' : 'move';
+  return `${n} selected ${n === 1 ? "thing can't" : "things can't"} ${verb} this way — left where ${n === 1 ? 'it is' : 'they are'}`;
 }
 
 export const RELAY_PER_TICK = 1, END_BUDGET = 8;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
@@ -76,7 +94,7 @@ export function apply(st, mode, space = 'world') {
   const ratio = new THREE.Vector3(lead.scale.x / (st.leadScale.x || 1), lead.scale.y / (st.leadScale.y || 1), lead.scale.z / (st.leadScale.z || 1));
   const now = performance.now(); const relay = now - st.lastSent >= 66; if (relay) st.lastSent = now;
   // followers share a relay budget: the server allows ~60 messages/s per connection, and a refused release snaps the
-  // whole move back, so a few followers' samples per tick, round-robin (the lead and the pose take the rest)
+  // whole move back, so RELAY_PER_TICK followers' samples a tick (one), round-robin (the lead and the pose take the rest)
   const sendNow = new Set();
   if (relay) for (let k = 0; k < Math.min(RELAY_PER_TICK, st.followers.length); k++) sendNow.add((st.cursor++) % st.followers.length);
   for (const [i, f] of st.followers.entries()) {
