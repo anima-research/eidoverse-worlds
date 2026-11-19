@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { suite } from '../gate/suite.ts';
 const { check, done } = suite('scenegraph-scripts');
 const noop = () => {};
+const removed: string[] = [];   // what each remove sent
 let debugAnswer: (opts: any) => Promise<any> = async () => ({ events: [] });
 const sections = new Map<string, (body: HTMLElement) => Promise<void>>();
 class V3 { x = 0; y = 0; z = 0; set() { return this; } copy() { return this; } }
@@ -19,7 +20,7 @@ const modules: any = {
   'world.js': { entities: new Map(), metaOf: () => null, bagOf: () => null, avatarMounts: new Map() },
   'edit/inspect.js': { editorsFor: () => [], commitEdit: () => ({}) },
   'net.js': { requestDebug: (o: any) => debugAnswer(o), replica: { active: false } },
-  'edit/writes.js': { sendOps: noop, del: noop, revertPose: noop },
+  'edit/writes.js': { sendOps: (_ops: any, o: any) => removed.push(o?.what), del: noop, revertPose: noop },
   'state.js': { state: {} },
   'realize/models_field.js': { offIn: () => null },
   'ui/ui.js': { makeSection: (title: string, onOpen: any) => { sections.set(title, onOpen); return { isOpen: true, remove: noop }; }, flashHint: noop, html: String },
@@ -109,5 +110,30 @@ await tick(); await tick();
 held.answer(logLine('active', 'blink late'));
 await blinkPaint;
 check("after a switch to lamp/glow, lamp/blink's late log answer isn't painted over glow's", /glow line/.test(text()) && !/blink late/.test(text()), text());
+
+// the reverse order: lamp/blink's read lands while lamp/glow's, asked after it, is still out
+const header = () => body.querySelector('div[style*="border-top"] b')?.textContent ?? null;
+let blinkRead = deferred(), glowRead = deferred();
+debugAnswer = async (o) => (o.scripts ? { events: roster } : o.script === 'lamp/blink' ? blinkRead.p : glowRead.p);
+(body.querySelector('.sg-script[data-id="lamp/blink"]') as HTMLElement).click();
+await tick();
+(body.querySelector('.sg-script[data-id="lamp/glow"]') as HTMLElement).click();
+await tick();
+blinkRead.answer(logLine('active', 'blink first'));
+await tick(); await tick();
+check("lamp/blink's read landing before lamp/glow's (asked after it) isn't painted: glow is what is watched", !/blink first/.test(text()) && header() !== 'lamp/blink', JSON.stringify({ header: header(), text: text() }));
+glowRead.answer(logLine('active', 'glow slow'));
+await tick(); await tick();
+check("(control) …and glow's read, when it lands, is", header() === 'lamp/glow' && /glow slow/.test(text()), JSON.stringify({ header: header(), text: text() }));
+// remove removes the script the section shows, even while the paint for a newly watched one is out
+blinkRead = deferred(); blinkRead.answer(logLine('active', 'blink shown')); glowRead = deferred();
+(body.querySelector('.sg-script[data-id="lamp/blink"]') as HTMLElement).click();
+await tick(); await tick();
+(body.querySelector('.sg-script[data-id="lamp/glow"]') as HTMLElement).click();   // its read is held: the section still shows blink
+await tick();
+const shown = header();
+removed.length = 0;
+(body.querySelector('[data-act="unbind"]') as HTMLElement).click();
+check("remove, clicked under a header, removes that header's script", shown === 'lamp/blink' && removed.length === 1 && removed[0] === `remove ${shown}`, JSON.stringify({ shown, removed }));
 
 done();

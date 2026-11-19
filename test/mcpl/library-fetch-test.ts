@@ -24,6 +24,7 @@ const server = Bun.serve({ port: 0, fetch(req) {
   if (u.pathname === "/avatars") return avatars();
   if (u.pathname === "/library/broken_preview.jpg") return new Response("boom", { status: 500 });
   if (u.pathname === "/library/html_preview.jpg" || u.pathname === "/thumb/htmlbody.png") return new Response("<html>login</html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+  if (u.pathname === "/library/shouty_preview.jpg") return new Response(PNG_1PX, { headers: { "content-type": "Image/PNG" } });
   if (u.pathname === "/thumb/shouty.png") return new Response(PNG_1PX, { headers: { "content-type": "Image/PNG" } });
   if (u.pathname === "/thumb/fine.png") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   if (u.pathname === "/library/fine_preview.jpg") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
@@ -47,6 +48,10 @@ r = await call({ query: "chair" });
 check("query, catalog 503, a local match: the local hit, and beside it that the catalog search failed",
   !r?.isError && /eidoverse\/assets\/models\/chair-oak\.glb/.test(said(r)) && /catalog/.test(said(r)) && /503/.test(said(r)), said(r));
 check("…and, a 503 being passing, says calling again may find the catalog's hits", /calling again may find/.test(said(r)), said(r));
+models = () => new Response("gone", { status: 404 });
+r = await call({ query: "chair" });
+check("query, catalog 404, a local match: the local hit and the failure, without promising a retry will find more",
+  !r?.isError && /chair-oak\.glb/.test(said(r)) && /404/.test(said(r)) && !/calling again/.test(said(r)), said(r));
 const closed = Bun.serve({ port: 0, fetch: () => new Response("") }); const deadBase = `http://127.0.0.1:${closed.port}`; closed.stop(true);
 r = await call({ query: "zebra" }, deadBase);
 check("query, nothing listening: an error saying the catalog search failed, not 'no matches'",
@@ -65,7 +70,8 @@ try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFet
 check("query, catalog read timed out: an error naming the bound, not the bare 'operation timed out', and that calling again may work",
   r?.isError === true && /no answer within \d+ s/.test(said(r)) && !/operation timed out/i.test(said(r)) && /may work/.test(said(r)), said(r));
 // a 200 whose body fails mid-read: a stall past the read bound is a timeout, a reset a failed request; both may pass.
-// The stall is a body that rejects with the TimeoutError AbortSignal.timeout raises (door-unit-test waits out a real one)
+// The stall is a body that rejects with the TimeoutError AbortSignal.timeout raises; door-unit-test waits out a real body stall
+// (on measure) under the same READ() bound, none on this path
 const stalledBody = (async () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("[")); c.error(new DOMException("The operation timed out.", "TimeoutError")); } }),
   { headers: { "content-type": "application/json" } })) as any;
 globalThis.fetch = stalledBody;
@@ -118,6 +124,9 @@ r = await call({ preview: "shouty" });
 check("preview, a 200 Image/PNG (media types are case-insensitive): the image", !r?.isError && r?.content?.[0]?.type === "image", JSON.stringify(r).slice(0, 200));
 r = await call({ preview: "fine" });
 check("(control) preview, a 200 image/png: the image", !r?.isError && r?.content?.[0]?.type === "image" && r.content[0].mimeType === "image/png", JSON.stringify(r).slice(0, 200));
+models = () => Response.json([{ path: "library/shouty.glb", name: "shouty", preview: "shouty_preview.jpg" }]);
+r = await call({ kind: "models" });
+check("sheet: a tile whose preview answered 200 Image/PNG is drawn, not a failed preview", !r?.isError && said(r) === "models — page 1/1: shouty", said(r));
 models = () => Response.json([{ path: "library/html.glb", name: "html", preview: "html_preview.jpg" }]);
 r = await call({ kind: "models" });
 check("sheet: a tile whose preview answered 200 text/html is said as a preview that couldn't be fetched", !r?.isError && /couldn't be fetched/.test(said(r)) && /text\/html/.test(said(r)), said(r));

@@ -325,7 +325,7 @@ async function paintScripts() {
         <button data-act="unbind">remove</button>
       </div></div>`;
   }
-  if (n < paintShown) return;
+  if (n < paintShown || id !== watching) return;   // older than what is shown, or painted for a script no longer watched
   paintShown = n;
   const rows = behaviorRows.map((b) => {
     const ok = b.status === 'active' || b.status === 'asleep';
@@ -342,7 +342,7 @@ async function paintScripts() {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
-    const w = String(watching); const i = w.indexOf('/');
+    const w = String(id); const i = w.indexOf('/');   // the script this paint shows, whatever is watched since
     sendOps(w.startsWith('imported-behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);

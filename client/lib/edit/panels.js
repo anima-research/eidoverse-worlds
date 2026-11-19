@@ -945,7 +945,8 @@ function consoleFields() {
       active: b.id === watching,
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) });
   if (watching) {
-    const log = watchLog;   // a failure leads: the VR painter ellipsizes a long header
+    const log = watchLog;
+    // a failure leads: the VR painter ellipsizes a long header
     f.push({ t: 'group', k: 'clog', label: log?.unread ? `${log.status} — ${watching}` : `${watching} — ${log?.status ?? '…'}`, open: true });
     f.push({ t: 'log', k: 'clines', lines: log?.lines ?? [], empty: !log ? '(waiting for the log)' : log.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
   }
