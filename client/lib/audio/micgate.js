@@ -297,7 +297,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     /** Re-measure the room on every start: a floor learned in a quiet session would gate you out of a loud one. */
     start() {
       if (_timer) return;
-      _above = false;
+      _above = false; _openUntil = 0;   // a reacquired lane starts closed, not inside the old hang
       _noise = 0.01; _settle = 0;
       _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
       _blockMin = Infinity; _blockStart = Date.now();
@@ -305,7 +305,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     },
     stop() {
       if (_timer) { clearInterval(_timer); _timer = null; }
-      _above = false;
+      _above = false; _openUntil = 0;
     },
     /** Apply the current latch through the transport's authority (mute toggles call it directly). */
     apply,

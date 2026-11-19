@@ -126,7 +126,7 @@ function paint() {
   }
 }
 // hot = your voice is registering: an analyser polled at 8 Hz
-import { micAnalyserLevel as meshMicLevel } from './micstate.js';
+import { micAnalyserLevel as meshMicLevel, micGateInfo } from './micstate.js';
 // ask the live transport's level first (the SFU's), or the glyph can never go hot
 function micLevelNow() {
   try {
@@ -138,8 +138,8 @@ function micLevelNow() {
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
   const lvl = micLevelNow();
-  // the analyser reads the RAW side, so under PTT the glow also needs the key: gold means the mic is on and loud (under voice activation the gate may still be shut)
-  const hot = lvl > 0.02 && (!pttMode() || pttHeld());
+  // gold = the gate's own decision (threshold, hang, PTT via held(), mute), never a level of our own: a fixed 0.02 went gold under the line
+  const hot = lvl > 0 && !!micGateInfo().speaking;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 

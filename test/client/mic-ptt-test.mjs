@@ -172,7 +172,8 @@ const heldAgain = ms.pttHeld() === true;
 window.dispatchEvent(new Event('blur'));
 t('mictoggle: window blur releases the hold', heldAgain && ms.pttHeld() === false && gate(0));
 vc.setPttMode(false);
-t('mictoggle: badge gold is gated on the key under PTT', /!pttMode\(\) \|\| pttHeld\(\)/.test(mt));
+// executed in mic-glyph-test.mjs (PTT key up/down); the badge asks the gate, whose held() is the key
+t('mictoggle: badge gold is the gate decision (PTT-aware via held())', /micGateInfo\(\)\.speaking/.test(mt));
 // A focused CHECKBOX is not typing. The panel's push-to-talk box keeps focus
 // after the click, so a guard that skips V for any INPUT eats the first press
 // of the mode you just enabled (found by ear 2026-09-10). The guard must be

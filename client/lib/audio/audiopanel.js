@@ -9,7 +9,7 @@
 import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
-  micFloor, setMicFloor, pttMode, setPttMode, gateThreshold } from './voiceconsent.js';
+  micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
 import { micAnalyserLevel as meshMicLevel } from './micstate.js';
 // ask the live transport first (the SFU's own reader); micstate's meter, fed by gateFor, is the fallback
 function micLevelNow() {
@@ -29,7 +29,7 @@ const micLive = () => {
 };
 import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
-import { micOn, toggleMic } from './micstate.js';
+import { micOn, toggleMic, micGateInfo } from './micstate.js';
 // CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
 import { CONFIG } from '../base.js';
 
@@ -101,8 +101,7 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // hysteresis: release at 85% of the floor, so it latches through the gaps inside a word and drops on a real pause
-  const REL = 0.85;
+  // gold is the gate's own decision (micgate.js makeOnsetGate: hysteresis + hang), so this bar and the HUD glyph agree with what the room gets
   let hot = false;
   const micIsLive = micLive;
   const paintLive = () => {
@@ -127,13 +126,12 @@ function micFloorRow() {
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
   const beat = () => {
     if (!row.isConnected) return;
-    const level = micLevelNow();
-    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb). Under the SFU it reads the
-    // transport's peak while the gate reads RMS (micgate.js), so a peaky sound can pass the marker with the gate shut
+    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the gate's own RMS: the transport's
+    // peak (micLevelNow) crossed the marker with the gate shut
+    const level = micLevelNow() > 0 ? micGateInfo().level : 0;
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
-    // latch above the gate's threshold, release at REL× it; repaint only on a state change (this runs at frame rate)
-    const floor = gateThreshold();
-    const next = hot ? level > floor * REL : level > floor;
+    // repaint only on a state change (this runs at frame rate)
+    const next = level > 0 && !!micGateInfo().speaking;
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };
