@@ -66,7 +66,8 @@ const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
 // a thing as the page's scene holds it (realize/models.js): absent, reserved (null: its model still loading), placeholder
 // (a sized stand-in) or realized. The fold having it is not the scene holding it: selection and seats take any object
-// (a stand-in too), a ray at a model's face needs the model. The waits below ask for realized, which covers both.
+// (a stand-in too), a ray at a model's face needs the model. ST and HP wait for the seat point as trySitOn reads it (a stand-in
+// counts); the selection and ray rows ask for realized.
 const realizedHost = (ids: string[]) => `import('/lib/world.js').then((w) => [${ids.map((id) => `'${id}'`).join(", ")}].map((id) =>
   !w.entities.has(id) ? 'absent' : !w.entities.get(id) ? 'reserved' : w.entities.get(id).userData?.placeholder ? 'placeholder' : 'realized'))`;
 const allRealized = (ids: string[]) => waitFor(`${realizedHost(ids)}.then((h) => h.every((s) => s === 'realized'))`);
@@ -868,7 +869,7 @@ try {
       return JSON.stringify([a.ok, b.ok]);`);
     const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
     const stSeat = seatAt('ststool-seat', 'ststool');
-    check("ST setup: the seat is on my client where I could sit on it (its socket folded, its host drawn)", await waitFor(`${stSeat}.then((s) => !!s.at)`), await evalJson(stSeat));
+    check("ST setup: the seat is on my client where I could sit on it (its socket folded, its host in my scene)", await waitFor(`${stSeat}.then((s) => !!s.at)`), await evalJson(stSeat));
     const tried = await page(`return (await import('/lib/player/localbody.js')).trySitOn('ststool');`);   // false: no seat found
     const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
     // a refused `use` only reaches chat (localbody.js trySitOn), so an unseated row carries the chat's tail
@@ -966,7 +967,7 @@ try {
       await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
       check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, onFoot, offAgain, now: await evalJson(photo) });
       const hpSeat = seatAt('hphull-helm', 'hphull');
-      check("HP setup: the helm is on my client where I could take it (its socket folded, its hull drawn)", await waitFor(`${hpSeat}.then((s) => !!s.at)`), await evalJson(hpSeat));
+      check("HP setup: the helm is on my client where I could take it (its socket folded, its hull in my scene)", await waitFor(`${hpSeat}.then((s) => !!s.at)`), await evalJson(hpSeat));
       await page(`(await import('/lib/player/localbody.js')).trySitOn('hphull'); return true;`);
       const atHelm = await waitFor(`import('/lib/player/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
       // read in the same tick as the press: the next frame's guard (HP2) would hide a P that got through
