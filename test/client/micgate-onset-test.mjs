@@ -34,4 +34,3 @@ t('a restarted gate starts closed, not inside the old hang', g.info().speaking =
 Date.now = realNow; globalThis.setInterval = realSI; g.stop();
 console.log(`${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
-
