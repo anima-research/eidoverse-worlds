@@ -393,18 +393,18 @@ try {
     // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold once the ray comes
     // down to meet it
     await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
-      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.3); return C.frameOn(b.getCenter(new THREE.Vector3()), 1.5);`);
+      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.5); return C.frameOn(b.getCenter(new THREE.Vector3()), 4);`);
     await frames(2); await settle();
     const up = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
       const oy = P.getWorldPosition(new T.Vector3()).y, cy = c.camera.getWorldPosition(new T.Vector3()).y;
       const dirY = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray.direction.y; };
-      const b = new T.Box3().setFromObject(P), top = new T.Vector3((b.min.x + b.max.x) / 2, b.max.y - 0.3, (b.min.z + b.max.z) / 2).project(c.camera);
-      const px = Math.round((top.x + 1) / 2 * innerWidth); let py = Math.round((1 - top.y) / 2 * innerHeight);
-      for (let k = 0; k < 60 && !(__mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05); k++) py += 4;
-      const at = __mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05 ? [px, py] : null;
+      const b = new T.Box3().setFromObject(P), mid = new T.Vector3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2).project(c.camera);
+      const px = Math.round((mid.x + 1) / 2 * innerWidth); let py = 10;   // on screen: a press a person could make
+      while (py < innerHeight - 10 && !(__mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05)) py += 4;
+      const at = py < innerHeight - 10 ? [px, py] : null;
       let d1 = py; while (d1 < innerHeight - 4 && dirY(px, d1) > -0.15) d1 += 4;
       let d2 = d1; while (d2 < innerHeight - 4 && dirY(px, d2) > -0.3) d2 += 4;
-      return { at, d1: dirY(px, d1) < -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], camAbove: cy > oy + 0.05, cy, oy }; })`);
+      return { at, d1: dirY(px, d1) < -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], camAbove: cy > oy + 0.05, cy, oy, top: b.max.y }; })`);
     check("MM (setup) a press point on the pole whose ray points up from above the pole's origin, and two points lower whose rays dip", !!up?.at && !!up?.d1 && up?.camAbove, up);
     if (up?.at && up?.d1 && up?.camAbove) {
       await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
