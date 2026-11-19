@@ -127,11 +127,11 @@ check("revert puts each follower back where the log has it", stub.reverted.join(
 // relay budget: ten followers share RELAY_PER_TICK samples a tick, round-robin, so a drag stays under the server's cap
 const many = Array.from({ length: 10 }, (_, i) => thing(`m${i}`, [i, 0, 10]).userData.entityId);
 st = MM.begin("a", many);
-stub.drags.length = 0;
+stub.drags.length = 0; const perTick: number[] = [];
 for (let t = 0; t < 10; t++) { st.lastSent = -Infinity;   // every apply is a relay tick (performance.now() can be < 66 ms in a fresh process)
-  a.position.x += 0.1; a.updateMatrixWorld(true); MM.apply(st, "move"); }
-const per = stub.drags.length / 10, covered = new Set(stub.drags.map((d: any[]) => d[0]));
-check("relay: ten followers send at most RELAY_PER_TICK samples a tick", per <= MM.RELAY_PER_TICK, `${stub.drags.length} in 10 ticks`);
+  const n = stub.drags.length; a.position.x += 0.1; a.updateMatrixWorld(true); MM.apply(st, "move"); perTick.push(stub.drags.length - n); }
+const covered = new Set(stub.drags.map((d: any[]) => d[0]));
+check("relay: ten followers send RELAY_PER_TICK samples every tick", perTick.every((n) => n === MM.RELAY_PER_TICK), JSON.stringify(perTick));
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
 stub.drags.length = 0; MM.end(st);
 check("end: at most END_BUDGET last samples (the rest expire on the claim timeout)", stub.drags.length === MM.END_BUDGET && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
