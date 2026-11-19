@@ -24,6 +24,7 @@ const server = Bun.serve({ port: 0, fetch(req) {
   if (u.pathname === "/avatars") return avatars();
   if (u.pathname === "/library/broken_preview.jpg") return new Response("boom", { status: 500 });
   if (u.pathname === "/library/html_preview.jpg" || u.pathname === "/thumb/htmlbody.png") return new Response("<html>login</html>", { headers: { "content-type": "text/html; charset=utf-8" } });
+  if (u.pathname === "/thumb/shouty.png") return new Response(PNG_1PX, { headers: { "content-type": "Image/PNG" } });
   if (u.pathname === "/thumb/fine.png") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   if (u.pathname === "/library/fine_preview.jpg") return new Response(PNG_1PX, { headers: { "content-type": "image/png" } });
   return new Response("not found", { status: 404 });
@@ -45,6 +46,7 @@ models = () => new Response("down", { status: 503 });
 r = await call({ query: "chair" });
 check("query, catalog 503, a local match: the local hit, and beside it that the catalog search failed",
   !r?.isError && /eidoverse\/assets\/models\/chair-oak\.glb/.test(said(r)) && /catalog/.test(said(r)) && /503/.test(said(r)), said(r));
+check("…and, a 503 being passing, says calling again may find the catalog's hits", /calling again may find/.test(said(r)), said(r));
 const closed = Bun.serve({ port: 0, fetch: () => new Response("") }); const deadBase = `http://127.0.0.1:${closed.port}`; closed.stop(true);
 r = await call({ query: "zebra" }, deadBase);
 check("query, nothing listening: an error saying the catalog search failed, not 'no matches'",
@@ -53,22 +55,31 @@ models = () => new Response("<html>login</html>", { headers: { "content-type": "
 r = await call({ query: "zebra" });
 check("query, catalog 200 with a body that isn't a list: an error saying so, that doesn't promise a retry will work",
   r?.isError === true && /isn't a list/.test(said(r)) && !/may work/.test(said(r)) && !/no matches/.test(said(r)), said(r));
+models = () => Response.json([null]);
+r = await call({ query: "zebra" });
+check("query, catalog 200 with a list that isn't of models ([null]): the same error, not a thrown one",
+  r?.isError === true && /isn't a list of models/.test(said(r)) && !/may work/.test(said(r)), said(r));
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async () => { throw new DOMException("The operation timed out.", "TimeoutError"); }) as any;
 try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
 check("query, catalog read timed out: an error naming the bound, not the bare 'operation timed out', and that calling again may work",
   r?.isError === true && /no answer within \d+ s/.test(said(r)) && !/operation timed out/i.test(said(r)) && /may work/.test(said(r)), said(r));
-// a 200 whose body fails mid-read: a stall past the read bound is a timeout, a reset a failed request; both may pass
-const brokenBody = (err: Error) => (async () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("[")); c.error(err); } }),
+// a 200 whose body fails mid-read: a stall past the read bound is a timeout, a reset a failed request; both may pass.
+// The stall is a body that rejects with the TimeoutError AbortSignal.timeout raises (door-unit-test waits out a real one)
+const stalledBody = (async () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("[")); c.error(new DOMException("The operation timed out.", "TimeoutError")); } }),
   { headers: { "content-type": "application/json" } })) as any;
-globalThis.fetch = brokenBody(new DOMException("The operation timed out.", "TimeoutError"));
+globalThis.fetch = stalledBody;
 try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
-check("query, a 200 body that stalls past the read bound: a timeout that may work on a retry, not a body that isn't a list",
+check("query, a 200 body whose read rejects with a TimeoutError: a timeout that may work on a retry, not a body that isn't a list",
   r?.isError === true && /no answer within \d+ s/.test(said(r)) && /may work/.test(said(r)) && !/isn't a list/.test(said(r)), said(r));
-globalThis.fetch = brokenBody(new Error("connection reset"));
-try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
-check("query, a 200 body that resets mid-read: a failed request that may work on a retry, not a body that isn't a list",
-  r?.isError === true && /connection reset/.test(said(r)) && /may work/.test(said(r)) && !/isn't a list/.test(said(r)), said(r));
+// the reset is real: a server that promises 100 bytes, sends part of a list and closes the socket
+const { createServer } = await import("node:net");
+const cut = createServer((sock) => sock.once("data", () => { sock.write('HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 100\r\n\r\n[{"path"'); setTimeout(() => sock.destroy(), 50); })).listen(0);
+await new Promise((ok) => cut.once("listening", ok));
+r = await call({ query: "zebra" }, `http://127.0.0.1:${(cut.address() as any).port}`);
+cut.close();
+check("query, a 200 body the server cuts off mid-read: a failed request that may work on a retry, not a body that isn't a list",
+  r?.isError === true && /request failed/.test(said(r)) && /may work/.test(said(r)) && !/isn't a list/.test(said(r)), said(r));
 models = () => Response.json([]);
 r = await call({ query: "zebra" });
 check("(control) query, catalog answers []: 'no matches', not an error", !r?.isError && said(r) === "no matches", said(r));
@@ -103,6 +114,8 @@ check("(control) sheet: a tile whose preview came back is said plainly", !r?.isE
 // a 200 that isn't an image is no preview
 r = await call({ preview: "htmlbody" });
 check("preview, a 200 text/html body: an error naming what came back, not an image", r?.isError === true && !r.content.some((c: any) => c.type === "image") && /text\/html/.test(said(r)), JSON.stringify(r));
+r = await call({ preview: "shouty" });
+check("preview, a 200 Image/PNG (media types are case-insensitive): the image", !r?.isError && r?.content?.[0]?.type === "image", JSON.stringify(r).slice(0, 200));
 r = await call({ preview: "fine" });
 check("(control) preview, a 200 image/png: the image", !r?.isError && r?.content?.[0]?.type === "image" && r.content[0].mimeType === "image/png", JSON.stringify(r).slice(0, 200));
 models = () => Response.json([{ path: "library/html.glb", name: "html", preview: "html_preview.jpg" }]);

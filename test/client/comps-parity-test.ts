@@ -30,7 +30,7 @@ try {
   if (secs < 4) {   // what the page was doing when it didn't boot: a red carries its own evidence
     const page = await evalJson(`import('/lib/net.js').then(() => 'imported', (e) => 'failed: ' + e.message).then((net) => ({ href: location.href, ready: document.readyState, net, errs: (window.__errs ?? []).slice(0, 10), body: document.body?.innerText?.slice(0, 300) ?? null }))`).catch((e) => ({ evalFailed: String(e) }));
     const shot = await cdp.send('Page.captureScreenshot', { format: 'png' }).catch(() => null);
-    if (shot?.data) { const f = `${process.env.RUNNER_TEMP ?? '/tmp'}/comps-parity-boot.png`; await Bun.write(f, Buffer.from(shot.data, 'base64')); console.log(`  screenshot: ${f}`); }
+    if (shot?.data) { const f = `${process.env.RUNNER_TEMP ?? '/tmp'}/comps-parity-boot.png`; await Bun.write(f, Buffer.from(shot.data, 'base64')).then(() => console.log(`  screenshot: ${f}`), (e) => console.log(`  screenshot not saved: ${e.message}`)); }   // the evidence below prints either way
     await die(1, `the client did not boot: ${JSON.stringify(page)}`);
   }
   check('the fold is live and frozen (a dev host)', await becomes(`import('/lib/net.js').then((m) => m.replica.active && m.replica.frozen === true)`));

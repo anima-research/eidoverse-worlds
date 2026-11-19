@@ -191,8 +191,8 @@ async function searchLibrary(httpBase: string, query: string): Promise<{ hits: {
     if (!r.ok) { failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429; }
     else {   // a body that isn't a list (an HTML login page, say) won't change on a retry; one that stalls or resets might
       const body = await r.json().catch((e) => { if (!(e instanceof SyntaxError)) throw e; return undefined; });
-      if (Array.isArray(body)) return { hits: (body as { path: string; name?: string }[]).slice(0, 24) };
-      failed = "it answered with something that isn't a list of models"; retry = false;
+      if (Array.isArray(body) && body.every((h) => typeof h?.path === "string")) return { hits: (body as { path: string; name?: string }[]).slice(0, 24) };
+      failed = "it answered with something that isn't a list of models"; retry = false;   // valid JSON or not
     }
   } catch (e) {   // unreachable or timed out: scan what we can see, if anything, and say the search failed
     failed = (e as Error)?.name === "TimeoutError" ? `no answer within ${HTTP_READ_MS / 1000} s` : `the request failed: ${(e as Error).message || "no reason given"}`;
@@ -612,7 +612,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const why = failed && `the world's catalog couldn't be searched (${failed})`;
         if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; ${retry ? "calling again may work" : "calling again won't change that"}`) : text("no matches");
         return text(hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
-          + (failed ? `\n(${why}: these are from this door's local checkout only)` : ""));
+          + (failed ? `\n(${why}: these are from this door's local checkout only${retry ? "; calling again may find the catalog's" : ""})` : ""));
       }
       if (typeof a.preview === "string" && a.preview.trim()) {
         const want = String(a.preview).trim();
@@ -630,7 +630,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           try { r = await fetch(url, READ()); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
           if (r.status === 404) continue;
           if (!r.ok) { miss(`it answered ${r.status}`, r.status >= 500 || r.status === 408 || r.status === 429); continue; }
-          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          const type = r.headers.get("content-type")?.split(";")[0].trim().toLowerCase();   // media types are case-insensitive
           if (type && !type.startsWith("image/")) { miss(`it sent ${type}, not an image`, false); continue; }   // an HTML error page, say
           let data: string;
           try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
@@ -670,7 +670,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           const r = await fetch(it.url, READ());
           if (r.status === 404) return { name: it.name, data: null, mime: "", h: it.h };
           if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h, failed: `answered ${r.status}` };
-          const type = r.headers.get("content-type")?.split(";")[0].trim();
+          const type = r.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
           if (type && !type.startsWith("image/")) return { name: it.name, data: null, mime: "", h: it.h, failed: `sent ${type}, not an image` };
           return { name: it.name, data: await r.arrayBuffer(), mime: type ?? "image/png", h: it.h };
         } catch (e) { return { name: it.name, data: null, mime: "", h: it.h, failed: (e as Error).message || "the request failed" }; }
