@@ -74,4 +74,40 @@ await poll!();
 check("a watched script's log read with no answer says so, not that the console is empty",
   /couldn't be read/.test(text()) && !/console empty/.test(text()), text());
 
+// overlapping paints: each waits on its own log read, so they can land out of order
+const glow = { kind: 'script', id: 'lamp/glow', attach: 'lamp', status: 'active' };
+const deferred = () => { let answer: (v: any) => void = noop; const p = new Promise((r) => { answer = r; }); return { p, answer }; };
+const logLine = (status: string, line: string) => ({ status, events: [{ ts: 0, kind: 'script-log', line }] });
+const tick = async () => { for (let i = 0; i < 20; i++) await null; };   // the stand-ins answer as promises: microtasks are enough
+// the roster changes while a paint waits: when it lands it shows the roster as it is then, not as it was when it began
+let roster = [script], held = deferred(), heldAsked = false;
+debugAnswer = async (o) => (o.scripts ? { events: roster } : (heldAsked ? new Promise(noop) : (heldAsked = true, held.p)));
+const first = poll!();
+await tick(); await tick();
+roster = [script, glow];
+poll!();   // a newer paint, its log read never answered
+await tick(); await tick();
+held.answer(logLine('active', 'first paint'));
+await first;
+check("a paint that lands while a newer one waits shows the roster as it is now, not as it was when it began",
+  /first paint/.test(text()) && /lamp\/glow/.test(text()), text());
+// an older paint, landing after a newer one, changes nothing: the same script, then after a switch to another
+let calls = 0; held = deferred();
+debugAnswer = async (o) => (o.scripts ? { events: roster } : ++calls === 1 ? held.p : logLine('active', 'newer paint'));
+const olderPaint = poll!();
+await tick(); await tick();
+await poll!();
+held.answer(logLine('asleep', 'older paint'));
+await olderPaint;
+check("an older paint's log answer, landing after a newer paint's, changes nothing", /newer paint/.test(text()) && !/older paint/.test(text()), text());
+calls = 0; held = deferred();
+debugAnswer = async (o) => (o.scripts ? { events: roster } : ++calls === 1 ? held.p : logLine('active', 'glow line'));
+const blinkPaint = poll!();
+await tick(); await tick();
+(body.querySelector('.sg-script[data-id="lamp/glow"]') as HTMLElement).click();   // repaints at once, watching lamp/glow
+await tick(); await tick();
+held.answer(logLine('active', 'blink late'));
+await blinkPaint;
+check("after a switch to lamp/glow, lamp/blink's late log answer isn't painted over glow's", /glow line/.test(text()) && !/blink late/.test(text()), text());
+
 done();

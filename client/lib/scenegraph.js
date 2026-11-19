@@ -309,8 +309,24 @@ async function refreshRoster() {
   if (r) behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
 }
 
+let paintAsked = 0, paintShown = 0;   // paints overlap on their log read: an older one landing after a newer changes nothing
 async function paintScripts() {
   if (!scriptsBody) return;
+  const n = ++paintAsked, id = watching;
+  let consoleHtml = '';
+  if (id) {
+    const d = await requestDebug({ script: id, limit: 40 }).catch((e) => ({ status: `the log couldn't be read (${e.message})`, events: [], unread: true }));
+    const lines = (d.events ?? []).map((e) =>
+      `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
+    consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
+      <div><b>${esc(id)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
+      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || (d.unread ? '(the log wasn\'t read)' : '(console empty — console.log() writes here)')}</pre>
+      <div style="display:flex;gap:6px">
+        <button data-act="unbind">remove</button>
+      </div></div>`;
+  }
+  if (n < paintShown) return;
+  paintShown = n;
   const rows = behaviorRows.map((b) => {
     const ok = b.status === 'active' || b.status === 'asleep';
     return `<div class="who-row sg-script" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
@@ -318,18 +334,6 @@ async function paintScripts() {
       <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : esc(b.status ?? 'paused')}</span></div>`;
   });
 
-  let consoleHtml = '';
-  if (watching) {
-    const d = await requestDebug({ script: watching, limit: 40 }).catch((e) => ({ status: `the log couldn't be read (${e.message})`, events: [], unread: true }));
-    const lines = (d.events ?? []).map((e) =>
-      `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
-    consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
-      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || (d.unread ? '(the log wasn\'t read)' : '(console empty — console.log() writes here)')}</pre>
-      <div style="display:flex;gap:6px">
-        <button data-act="unbind">remove</button>
-      </div></div>`;
-  }
   const miss = rosterMiss ? `<div style="color:var(--warn, #ea5)">the scripts couldn't be read (${esc(rosterMiss)})${rows.length ? ' — these are from the last answer' : ''}</div>` : '';
   scriptsBody.innerHTML = `<div class="stack">${miss}${rows.join('') || (miss ? '' : '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/guide/SCRIPTS.md)</div>')}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;

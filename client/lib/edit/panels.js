@@ -922,12 +922,14 @@ function inspectorDispatch(action, payload, field, opts = {}) {
 let watching = null;           // behavior id whose log is open
 let watchLog = null;           // { id, status, lines, unread? } from the last poll
 let watchAsked = 0, watchShown = 0;   // as the rosters': a log read older than the one shown lands as nothing
+/** Watch another script (or none): what was read for the one before isn't this one's log. */
+const setWatching = (id) => { if (id !== watching) watchLog = null; watching = id; };
 async function refreshWatch() {
   if (!watching) { watchLog = null; return; }
   const id = watching, n = ++watchAsked;
   let d = null, miss = null;
   try { d = await requestDebug({ script: id, limit: 40 }); } catch (e) { miss = e.message; }
-  if (n < watchShown) return;
+  if (n < watchShown || id !== watching) return;   // older than what is shown, or read for a script no longer watched
   watchShown = n;
   watchLog = miss == null
     ? { id, status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) }
@@ -943,23 +945,23 @@ function consoleFields() {
       active: b.id === watching,
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) });
   if (watching) {
-    const log = watchLog?.id === watching ? watchLog : null;   // a read for the script watched before isn't this one's log
-    f.push({ t: 'group', k: 'clog', label: `${watching} — ${log?.status ?? '…'}`, open: true });
-    f.push({ t: 'log', k: 'clines', lines: log?.lines ?? [], empty: log?.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
+    const log = watchLog;   // a failure leads: the VR painter ellipsizes a long header
+    f.push({ t: 'group', k: 'clog', label: log?.unread ? `${log.status} — ${watching}` : `${watching} — ${log?.status ?? '…'}`, open: true });
+    f.push({ t: 'log', k: 'clines', lines: log?.lines ?? [], empty: !log ? '(waiting for the log)' : log.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
   }
   f.push({ t: 'info', label: '', value: 'click a script to watch its log · /debug = flight recorder' });
   return f;
 }
 async function watchScript(id) {
-  watching = id; await refreshWatch();
+  setWatching(id); await refreshWatch();
   const c = frames.get('console'); if (c && !c.frame.visible) c.frame.show();
   repaintAll();
 }
 function consoleDispatch(action, payload) {
   switch (action) {
-    case 'cwatch': watching = payload === watching ? null : payload; refreshWatch().then(repaintAll); break;
+    case 'cwatch': setWatching(payload === watching ? null : payload); refreshWatch().then(repaintAll); break;
     case 'cgoto': { const b = behaviors.find((x) => x.id === payload); if (b?.attach && entities.has(b.attach)) sceneSelect(b.attach); break; }
-    case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); if (watching === payload) watching = null; setTimeout(refreshBehaviors, 400); break;
+    case 'unbind': Edits.sendOps(unbindOps(payload), { what: `remove ${payload}`, expect: false }); if (watching === payload) setWatching(null); setTimeout(refreshBehaviors, 400); break;
     case 'fold': break;   // the log header is not a fold
   }
   repaintAll();
@@ -1367,7 +1369,7 @@ export function initEditPanels() {
 
 /** harness window */
 export const editPanelsDebug = () => ({
-  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), consoleFields: () => consoleFields(), watch: (id) => watchScript(id), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
+  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), consoleFields: () => consoleFields(), consoleEmpty: () => frames.get('console')?.frame.body.querySelector('.sp-empty')?.textContent ?? null, watch: (id) => watchScript(id), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
   inspDo: (a, v) => inspectorDispatch(a, v), hierDo: (a, v) => hierarchyDispatch(a, v),
   build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), buildVRDo: (a, v) => buildVRDispatch(a, v), worldSel: worldSel(), selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
