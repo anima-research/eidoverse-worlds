@@ -921,15 +921,18 @@ function inspectorDispatch(action, payload, field, opts = {}) {
 // Every script bound in this world and one's live console.log() ring, polled while open (agents: world_debug).
 let watching = null;           // behavior id whose log is open
 let watchLog = null;           // { id, status, lines, unread? } from the last poll
+let watchAsked = 0, watchShown = 0;   // as the rosters': a log read older than the one shown lands as nothing
 async function refreshWatch() {
   if (!watching) { watchLog = null; return; }
-  const id = watching;
-  try {
-    const d = await requestDebug({ script: id, limit: 40 });
-    watchLog = { id, status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) };
-  } catch (e) {   // a poll that fails keeps this script's last good tail, under a status that says so
-    watchLog = { id, status: `the log couldn't be read (${e.message})`, lines: watchLog?.id === id ? watchLog.lines : [], unread: true };
-  }
+  const id = watching, n = ++watchAsked;
+  let d = null, miss = null;
+  try { d = await requestDebug({ script: id, limit: 40 }); } catch (e) { miss = e.message; }
+  if (n < watchShown) return;
+  watchShown = n;
+  watchLog = miss == null
+    ? { id, status: d?.status ?? '?', lines: (d?.events ?? []).map((e) => `${new Date(e.ts).toTimeString().slice(0, 8)}  ${e.line}`) }
+    // a poll that fails keeps this script's last good tail, under a status that says so
+    : { id, status: `the log couldn't be read (${miss})`, lines: watchLog?.id === id ? watchLog.lines : [], unread: true };
 }
 function consoleFields() {
   const miss = behaviorsMiss && `the scripts couldn't be read (${behaviorsMiss})`;
@@ -940,8 +943,9 @@ function consoleFields() {
       active: b.id === watching,
       actions: [...(b.attach ? [{ k: 'cgoto', label: 'select' }] : []), { k: 'unbind', label: 'remove', danger: true }] })) });
   if (watching) {
-    f.push({ t: 'group', k: 'clog', label: `${watching} — ${watchLog?.status ?? '…'}`, open: true });
-    f.push({ t: 'log', k: 'clines', lines: watchLog?.lines ?? [], empty: watchLog?.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
+    const log = watchLog?.id === watching ? watchLog : null;   // a read for the script watched before isn't this one's log
+    f.push({ t: 'group', k: 'clog', label: `${watching} — ${log?.status ?? '…'}`, open: true });
+    f.push({ t: 'log', k: 'clines', lines: log?.lines ?? [], empty: log?.unread ? "(the log wasn't read)" : '(console empty — console.log() writes here)' });
   }
   f.push({ t: 'info', label: '', value: 'click a script to watch its log · /debug = flight recorder' });
   return f;

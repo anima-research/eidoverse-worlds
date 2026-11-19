@@ -58,10 +58,12 @@ try {
   await evalJson(`import('/lib/edit/build.js').then((b) => { b.setBuildMode(true); return true; })`);   // the panels poll the roster while build mode is on
   const cwatch = `import('/lib/edit/panels.js').then((E) => E.editPanelsDebug().consoleFields().find((f) => f.k === 'cwatch')?.empty ?? null)`;
   check('(control) LS4 the answered roster of a world with no scripts says so', await waitFor(`${cwatch}.then((e) => /^no scripts in this world/.test(e ?? ''))`), JSON.stringify(await evalJson(cwatch)));
-  // the page's debug reads: 'pass' to the world, 'drop' (counted), or 'fake': answered here with one script and its log
+  // the page's debug reads: 'pass' to the world, 'drop' (counted), 'fake': answered here with one script and its log, or
+  // 'hold': a log read is kept in __held for the test to answer (the roster is answered as 'fake')
   await evalJson(`import('/lib/net.js').then((m) => { const real = m.net.ws.send.bind(m.net.ws); window.__debugMode = 'drop'; window.__dropped = 0;
     m.net.ws.send = (x) => { const q = JSON.parse(x); if (q.type !== 'debug' || window.__debugMode === 'pass') return real(x);
       if (window.__debugMode === 'drop') { window.__dropped++; return; }
+      if (window.__debugMode === 'hold' && !q.scripts) { window.__held.push(q); return; }   // a log read answered later, by the test
       setTimeout(() => m._dispatch(q.scripts ? { type: 'debug', reqId: q.reqId, events: [{ ts: 0, kind: 'script', id: 'chest/blink', attach: 'chest', status: 'active' }] }
         : { type: 'debug', reqId: q.reqId, status: 'active', events: [{ ts: Date.now(), kind: 'script-log', line: 'blink says hi' }] }), 0); };
     return m.net.ws; }).then((s) => (window.__debugWs = s, true))`);
@@ -84,6 +86,23 @@ try {
   const logMiss = await pageWaiter(evalJson, 30000)(`${consoleNow}.then((c) => /couldn't be read/.test(c.log ?? ''))`);
   c5 = await evalJson(consoleNow);
   check("LS5 …and the log's line is kept under a status saying it couldn't be read", logMiss && c5.lines?.some((l: string) => /blink says hi/.test(l)) && !/active/.test(c5.log ?? ''), JSON.stringify(c5));
+  // LS6 two log reads in flight (the Console polls every 2.5 s, a read waits 8 s): the older answer, landing last, changes nothing
+  const heldFor = (id: string) => `window.__held.filter((q) => q.script === '${id}')`;
+  await evalJson(`(window.__held = [], window.__debugMode = 'hold', true)`);
+  check('(setup) LS6 two log reads of the watched script are in flight at once', await pageWaiter(evalJson, 15000)(`${heldFor('chest/blink')}.length >= 2`), JSON.stringify(await evalJson(`window.__held`)));
+  const answerLog = (pick: string, status: string, line: string) => evalJson(`import('/lib/net.js').then(async (m) => { const q = ${pick};
+    await m._dispatch({ type: 'debug', reqId: q.reqId, status: '${status}', events: [{ ts: Date.now(), kind: 'script-log', line: '${line}' }] }); return q.reqId; })`);   // one evaluate each: the newer lands first
+  await answerLog(`${heldFor('chest/blink')}.at(-1)`, 'active', 'the newer read');
+  await answerLog(`${heldFor('chest/blink')}[0]`, 'asleep', 'the older read');
+  const c6 = await evalJson(consoleNow);
+  check('LS6 …the newer answer stands: its status and line, not the older one\'s', /active/.test(c6.log ?? '') && c6.lines?.some((l: string) => /the newer read/.test(l)) && !c6.lines?.some((l: string) => /the older read/.test(l)), JSON.stringify(c6));
+  // LS7 the script watched before: its read, landing after a switch to another script, isn't shown as that one's log
+  const before = await evalJson(`${heldFor('chest/blink')}.length`);
+  check('(setup) LS7 a fresh log read of chest/blink is in flight', await pageWaiter(evalJson, 15000)(`${heldFor('chest/blink')}.length > ${before}`));
+  await evalJson(`import('/lib/edit/panels.js').then((E) => { E.editPanelsDebug().watch('crate/glow'); return true; })`);   // not awaited: its own read is held
+  await answerLog(`${heldFor('chest/blink')}.at(-1)`, 'active', 'blink after the switch');
+  const c7 = await evalJson(consoleNow);
+  check("LS7 …watching crate/glow, chest/blink's late answer isn't shown under crate/glow's name", /^crate\/glow — …$/.test(c7.log ?? '') && !c7.lines?.some((l: string) => /blink after the switch/.test(l)), JSON.stringify(c7));
   await evalJson(`import('/lib/edit/panels.js').then((E) => E.editPanelsDebug().watch(null)).then(() => (window.__debugMode = 'pass', true))`);
   check('no page errors', (await evalJson(`window.__errs`))?.length === 0, JSON.stringify(await evalJson(`window.__errs`)));
 } catch (e: any) { check('the test ran to the end', false, String(e?.stack ?? e).slice(0, 500)); }
