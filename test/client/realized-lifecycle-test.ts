@@ -259,8 +259,8 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   noErrors('directional light');
 }
 
-// ---- 12. a thing taken off its carrier is fit root-local, as the promote tail fits it (R 10-17: tower-4 at 0.25 held a
-// metre off her hands; BUG-HUNT "Held crate drawn far from the hand").
+// ---- 12. a thing that steps off its carrier (its dismount, or its carrier retiring) is fit root-local, as the promote
+// tail fits it, and a re-modelled carrier's cargo keeps its world pose (R 10-17).
 {
   const T = stub.THREE;
   const fitIsLocal = (id: string) => { const c = stub.colliders.get(id); if (!c) return false; if (c.opts?.localFrame) return true;
@@ -273,20 +273,31 @@ console.log('\nrealized lifecycle — four registries, one id, every seam\n');
   door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
   door('delete', { id: 'top12', component: 'parent' }); await settle(); drain();
   const o = stub.entities.get('top12');
-  check('taken off its carrier it stands in the scene again', !!o && (o.parent === null || o.parent?.isScene || !o.parent?.userData?.entityId), JSON.stringify({ parent: o?.parent?.userData }));
+  check('taken off its carrier it stands in the scene again', !!o && o.parent === stub.scene, JSON.stringify({ parent: o?.parent?.userData }));
   check('…and its collider is fit root-local again (not its world box read as its own)', fitIsLocal('top12'), JSON.stringify({ opts: stub.colliders.get('top12')?.opts, pos: o?.position.toArray(), scale: o?.scale.toArray() }));
-  // a re-modelled carrier retires and drops its cargo before the new model re-mounts it (models.js retire)
+  // a re-modelled carrier retires; reconcileId re-mounts its cargo into the placeholder at once (models.js retire skip)
   door('set', { id: 'top12', component: 'parent', value: { to: 'base12' } }); await settle(); drain();
   bus.emit('lib-geom', { [lib('crate2')]: GEOM });
   const w12 = () => { const o = stub.entities.get('top12'); stub.scene.updateMatrixWorld(true); return new stub.THREE.Vector3().setFromMatrixPosition(o.matrixWorld).toArray(); };
   const before12 = w12();
+  const mark12 = stub.colliderLog.length;
   door('set', { id: 'base12', component: 'model', value: lib('crate2') });
   const after12 = w12();
-  check('…and the cargo a re-modelled carrier drops stays where it stood in the world (its pos is carrier-local)', after12.every((v: number, i: number) => Math.abs(v - before12[i]) < 1e-6), JSON.stringify({ before12, after12 }));
+  const fits12 = stub.colliderLog.slice(mark12).filter((e: any) => e[0] === 'fit' && e[1] === 'top12');
+  check('…and its carrier-local pos is never fit as a world pose on the way (the retire skip)', fits12.length === 0, JSON.stringify(stub.colliderLog.slice(mark12)));
+  check('…and a re-modelled carrier\'s cargo stays where it stood in the world (its pos is carrier-local)', after12.every((v: number, i: number) => Math.abs(v - before12[i]) < 1e-6), JSON.stringify({ before12, after12 }));
   check('…riding the rebuilt carrier at once, with no collider of its own', stub.entities.get('top12')?.userData?.mountedTo === 'base12' && !stub.colliders.has('top12'), JSON.stringify({ m: stub.entities.get('top12')?.userData?.mountedTo, c: stub.colliders.get('top12')?.opts }));
   await settle(); drain();
   check('…and the rebuilt carrier does re-mount it', stub.entities.get('top12')?.parent === stub.entities.get('base12'), JSON.stringify(stub.entities.get('top12')?.parent?.userData));
-  door('delete', { id: 'top12' }); door('delete', { id: 'base12' });
+  // one batch (a catch-up) folds the cargo's parent away and deletes its carrier: 'gone' runs first, so retire() steps it off
+  const nx12: any = structuredClone(W.view());
+  const wp12 = w12();
+  delete nx12.entities.base12; delete nx12.entities.top12.parent; nx12.entities.top12.pos = wp12;
+  S.applyView(nx12);
+  const o12 = stub.entities.get('top12');
+  check('…and cargo stepping off a retiring carrier stands at the fold\'s pose', !!o12 && o12.parent === stub.scene && o12.position.toArray().every((v: number, i: number) => Math.abs(v - wp12[i]) < 1e-6), JSON.stringify({ pos: o12?.position.toArray(), wp12 }));
+  check('…fit root-local too (models.js retire)', fitIsLocal('top12'), JSON.stringify({ opts: stub.colliders.get('top12')?.opts, scale: o12?.scale.toArray() }));
+  door('delete', { id: 'base12' });   // the fold still parents top12 here: the delete cascades
   noErrors('dismount');
 }
 
