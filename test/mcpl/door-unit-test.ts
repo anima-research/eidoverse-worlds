@@ -264,27 +264,4 @@ for (const [status, err] of [["ran", false], ["nothing", false], ["would-run", f
   ok(said(m) && slowHits >= 1 && /^measure: nothing was measured/.test(m.content[0].text), "…and measure, whose answer's body stalls after the headers (the server sent them), says the server didn't send it in time (not 'isn't geometry')", m?.content?.[0]?.text ?? m);
   hung.stop(true); slow.stop(true); }
 
-// #295: standing up out of a slump abandons a fall still loading (setPose bumps bodyEpoch, like a walk, grab or close)
-{ const { WorldAgent } = await import("../../mcpl/agent.ts"); const ag: any = Object.create(WorldAgent.prototype);
-  let release: (b: unknown) => void = () => {}; let proceeded = false;
-  Object.assign(ag, { bodyEpoch: 0, clip: "ragdoll", heldPose: null, draggedBy: null, pos: { x: 0, y: 0, z: 0 },
-    ensureBody: () => new Promise((r) => { release = r; }), stopSim() {}, feetGround: () => 0, body: null,
-    ground: { supportReady: async () => {} }, heightAt: () => 0, waterFieldNow: () => { proceeded = true; return null; } });
-  const falling = ag.tumble([1, 0, 0]);
-  ag.setPose(null);                                  // stand up while the skeleton loads
-  release({ stop() {}, begin() { proceeded = true; } });
-  await falling.catch(() => {});
-  ok(!proceeded && ag.clip === "idle", "#295: a stand-up abandons a fall still loading (no knock-down after you stood)", { proceeded, clip: ag.clip }); }
-// ...and so does choosing a posture (setPosture), the same class
-{ const { WorldAgent } = await import("../../mcpl/agent.ts"); const ag: any = Object.create(WorldAgent.prototype);
-  let release: (b: unknown) => void = () => {}; let proceeded = false;
-  Object.assign(ag, { bodyEpoch: 0, clip: "ragdoll", heldPose: null, draggedBy: null, pos: { x: 0, y: 0, z: 0 }, speed: 0,
-    ensureBody: () => new Promise((r) => { release = r; }), stopSim() {}, feetGround: () => 0, body: null, stop() { this.clip = "idle"; },
-    ground: { supportReady: async () => {} }, heightAt: () => 0, waterFieldNow: () => { proceeded = true; return null; } });
-  const falling = ag.tumble([1, 0, 0]);
-  try { ag.setPosture("sit"); } catch { /* the rest of setPosture reaches seats this stub doesn't have; the bump comes first */ }
-  release({ stop() {}, begin() { proceeded = true; } });
-  await falling.catch(() => {});
-  ok(!proceeded, "#295: choosing a posture abandons a fall still loading too", { proceeded }); }
-
 console.log(`door-unit-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

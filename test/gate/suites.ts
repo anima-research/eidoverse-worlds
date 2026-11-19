@@ -324,7 +324,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["buildcheck", "server/buildcheck-test.ts", 1], // #241: the build check against the walking body's rules
   ["buildcheck-queue", "server/buildcheck-queue-test.ts", 1], // #241: checks are queued, cached, and answer for the bytes hashed
   ["buildcheck-route", "mcpl/buildcheck-route-test.ts", 1], // #241: GET /check and measure {check: true} (check_model)
-  ["flight-exit", "mcpl/flight-exit-test.ts", 1], // #287 #290 #293 #298 #300: an agent's flight has one way out (endFlight) and one current course (setCourse)
+  ["flight-exit", "mcpl/flight-exit-test.ts", 1], // #287 #290 #293 #295 #298 #300: an agent's flight has one way out (endFlight) and one current course (setCourse)
   ["door-is-error", "mcpl/door-is-error-test.ts", 1], // #269 (main, merged into #260 10-20): a door call that didn't do what it asked answers isError; flight acts answer {ok, text}
   ["door-wording", "shared/door-wording-test.ts", 1],   // #270 (main, merged into #260 10-21): the door's refusals say what wasn't done and why; deleted here once by mistake (3440e655), restored
   ["stdio-door", "mcpl/stdio-door-test.ts", 1], // the plain-MCP stdio door over its wire: the shared tool table, anim, a lamp made through create, inspect/edit/hierarchy on the folded record

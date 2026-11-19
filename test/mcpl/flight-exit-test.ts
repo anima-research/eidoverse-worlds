@@ -2,9 +2,10 @@
 //
 //   bun test/mcpl/flight-exit-test.ts
 //
-// A section per issue: #287 take_off aloft, #290 an older glide steering, #293 the flare's pitch, #298 a landed or
-// knocked-down flight still owning the body, #300 close or a dropped link leaving a wait to its timer; then the
-// 2026-11-10 review's rows. A bare agent, no world server: its tick is called by hand, 0.1 s a tick.
+// A section per issue: #287 take_off aloft, #290 an older glide steering, #293 the flare's pitch, #295 a knockdown
+// still loading outliving a stand-up, a posture or a take_off, #298 a landed or knocked-down flight still owning the
+// body, #300 close or a dropped link leaving a wait to its timer; then the 2026-11-10 review's rows. A bare agent, no
+// world server: its tick is called by hand, 0.1 s a tick.
 import { tryUntil } from '../gate/wait.ts';
 import { suite } from '../gate/suite.ts';
 const { WorldAgent } = await import('../../mcpl/agent.ts');
@@ -72,6 +73,24 @@ console.log('\n#293 the flare is flown through the integrator\'s input');
   let ticks = 0;
   for (; ticks < 2000 && land.r == null; ticks++) await tick(ag);
   check('a landing from 20 m comes down in under 15 s of flight', land.r?.ok && ticks * 0.1 < 15, `${(ticks * 0.1).toFixed(1)} s; ${land.r?.text}`);
+}
+
+console.log('\n#295 a stand-up, a posture or a take_off takes the body from a knockdown still loading');
+for (const how of ['stand', 'posture', 'take_off'] as const) {
+  const ag = bench();
+  let load: (b: any) => void = () => {}, began = false;
+  ag.ensureBody = () => new Promise((go) => { load = go; });
+  if (how === 'posture') ag.setPose({ hips: { t: [0, -0.3, 0] } });   // knocked down holding an authored pose
+  ag.knockDown('shover', null, '(knocked over)');
+  if (how === 'stand') ag.setPose(null);
+  if (how === 'posture') ag.setPosture('sit');
+  if (how === 'take_off') await ag.takeOff();
+  load({ begin() { began = true; }, stop() {}, step() { return null; } });
+  for (let i = 0; i < 10; i++) await turn();
+  const sim = !!ag.simTicker; ag.stopSim();
+  const after = { stand: ag.clip === 'idle', posture: ag.clip === 'sit', take_off: ag.flight != null }[how];
+  check(`a ${how} during a knockdown's ragdoll loading leaves it unbegun`, !began && !sim && after, `began ${began}, sim ${sim}, clip ${ag.clip}, flight ${ag.flight?.phase}`);
+  if (how === 'posture') check('...and the posture lets go of the pose it was knocked down in', ag.heldPose == null, JSON.stringify(ag.heldPose));
 }
 
 console.log('\n#298 every way down ends the flight');
