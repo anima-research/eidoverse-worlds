@@ -27,7 +27,19 @@ const settled = async () => {
 const { check, done } = suite("agent-ground-anchor");
 
 const ag: any = new WorldAgent({ url: noWorldUrl(), name: "anchor-bot", world: "anchor" });
-ag.ground.geomFor = async () => ({ bbox: { min: [-1.25, 0, -0.75], max: [1.25, 2, 0.75], size: [2.5, 2, 1.5] }, topSurfaces: [] });
+const crateGeom = { bbox: { min: [-1.25, 0, -0.75], max: [1.25, 2, 0.75], size: [2.5, 2, 1.5] }, topSurfaces: [] };
+// rug.glb: floor-shaped with a lying box top, so it takes the grid path; `onFit` runs when the fit reads the grid (in flight)
+let onFit: (() => void) | null = null;
+const rugTop = new Proxy({ version: 1, n: 24, minXZ: [-1.25, -0.75], sizeXZ: [2.5, 1.5], lie: 0.2, certSpread: 0.02, cells: Array(24 * 24).fill(0.3) },
+  { get(t: any, k) { if (k === "version" && onFit) { const f = onFit; onFit = null; f(); } return t[k]; } });
+const rugGeom = { bbox: { min: [-1.25, 0, -0.75], max: [1.25, 0.3, 0.75], size: [2.5, 0.3, 1.5] }, topSurfaces: [], lie: 0.2, topGrid: rugTop };
+// held.glb: its geometry answers only when the row releases it
+let release = null as (() => void) | null;
+ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : crateGeom;
+const becomeAnchor = (id: string) => {
+  ag.entities.get(id).structure = { levels: [{ y: 0, tiles: [[0, 0]] }] };
+  ag.onThingChange({ id, what: "comp", comp: "structure" }, null, true, "x", Date.now());
+};
 console.log("an agent's support for a structure's anchor:");
 
 // a plain crate is a 2 m deck (the control: the stub and the registry work)
@@ -60,5 +72,20 @@ check("a structure comp event drops the anchor's support", evtHad && await settl
 delete ag.entities.get("evt").structure;
 ag.onThingChange({ id: "evt", what: "comp", comp: "structure" }, null, true, "x", Date.now());
 check("...and removing the structure makes it an ordinary crate again", await registered("anchor/evt"), JSON.stringify(Object.keys(supportHolders())));
+
+// becoming an anchor while its geometry is in flight: the re-check after the fetch refuses it
+ag.entities.set("pend", { id: "pend", model: "held.glb", pos: [130, 0, 0], yaw: 0, actor: "x" });
+const pending = ag.ground.syncSupport("pend");
+const held = !!release; becomeAnchor("pend"); release?.(); await pending;
+check("a thing that becomes an anchor while its geometry is in flight registers none", held && await settled() && !supportHolders()["anchor/pend"], JSON.stringify(Object.keys(supportHolders())));
+
+// ...and while its grid fit is in flight: the fit that lands is taken back out
+ag.entities.set("rug", { id: "rug", model: "rug.glb", pos: [150, 0, 0], yaw: 0, actor: "x" });
+await ag.ground.syncSupport("rug");
+check("(control) a rug with a lying top registers grid support", await registered("anchor/rug"), JSON.stringify(Object.keys(supportHolders())));
+ag.entities.set("rug2", { id: "rug2", model: "rug.glb", pos: [170, 0, 0], yaw: 0, actor: "x" });
+let fired = false; onFit = () => { fired = true; becomeAnchor("rug2"); };
+await ag.ground.syncSupport("rug2");
+check("a rug that becomes an anchor while its grid fit is in flight keeps none", fired && await settled() && !supportHolders()["anchor/rug2"], JSON.stringify(Object.keys(supportHolders())));
 
 done();

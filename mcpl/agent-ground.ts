@@ -436,13 +436,7 @@ export class AgentGround {
       // the wait has something to drop, and a fit landing afterwards is taken back out.
       this.supportIds.set(id, [bid]);
       const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
-      const now = this.a.entities.get(id);
-      const superseded = !this.supportIds.get(id)?.includes(bid);
-      if (superseded || this.a.closed || !now || now.model !== e.model || this.a.mounts.has(id) || this.hasActiveMotion(now)) {
-        if (ok && (superseded || this.a.closed)) void removeSupport(this.supportHolder, bid);
-        else if (ok) this.dropSupport(id);
-        return;
-      }
+      if (this.overtaken(id, bid, e.model, ok)) return;
       if (ok) return;
       this.supportIds.delete(id);
     }
@@ -474,7 +468,10 @@ export class AgentGround {
         // the certification is a MODEL-frame bound; this spawn's scale must not stretch it past the world bound
         // (a grid certified to 3cm serves a ×1.25 spawn but not a ×2)
         const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
+        this.supportIds.set(id, [bid]);   // reserved across the await, as the mesh fit is
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
+        if (this.overtaken(id, bid, e.model, fit)) return;
+        this.supportIds.delete(id);
         if (fit) ids.push(bid);
         // refused grid: a DECLARED abstention (the body finds terrain), never a floating false floor
         else this.a.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
@@ -484,6 +481,17 @@ export class AgentGround {
       }
     }                                                   // room-scale with no readable decks: browser-only, declared
     if (ids.length) this.supportIds.set(id, ids);
+  }
+
+  /** After an awaited fit reserved as `bid`: did a close, a remove, a mount, a motion or a later sync (which drops the
+   *  reservation: a structure comp is one) overtake it? Then a fit that landed is taken back out. */
+  private overtaken(id: string, bid: string, model: string, landed: boolean): boolean {
+    const now = this.a.entities.get(id);
+    const superseded = !this.supportIds.get(id)?.includes(bid);
+    if (!superseded && !this.a.closed && now && now.model === model && !this.a.mounts.has(id) && !this.hasActiveMotion(now)) return false;
+    if (landed && (superseded || this.a.closed)) void removeSupport(this.supportHolder, bid);
+    else if (landed) this.dropSupport(id);
+    return true;
   }
 
   dropSupport(id: string) {
