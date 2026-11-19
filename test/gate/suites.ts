@@ -330,6 +330,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["stdio-door", "mcpl/stdio-door-test.ts", 1], // the plain-MCP stdio door over its wire: the shared tool table, anim, a lamp made through create, inspect/edit/hierarchy on the folded record
   ["consent-replay", "mcpl/consent-replay-test.ts", 0.1],   // an agent's gates and lists, replayed on arrival, are what it holds when the read returns (house 6340433633; R 10-28)
   ["history-request", "client/history-request-test.ts", 1], // #267 (main): a history request with no answer rejects, so scrolling up can reach what a long disconnect missed
+  ["command-replies", "client/command-replies-test.ts", 1], // #291 #285: /debug says the recorder couldn't be read, not that nothing bounced; /rename and /name point at ?door
+  ["scenegraph-scripts", "client/scenegraph-scripts-test.ts", 1], // #291: the scene graph's scripts section tells no answer from no scripts
+  ["library-fetch", "mcpl/library-fetch-test.ts", 1], // #292: the library tool tells a catalog it couldn't read from an empty one
   ["named-pose", "client/named-pose-test.ts", 1], // #159: every named pose rides the presence wire (absence is not release; survives late join, reconnect, swap)
   ["presence-session", "server/presence-session-test.ts", 1], // the presence session on arrive and snapshot.present over raw sockets: a page's id outlives a reconnect
   ["other-body-pose", "mcpl/other-body-pose-test.ts", 1], // posing someone else and letting them go, from an agent's tools and the console's EW.pose/clearPose, on the other body's path
