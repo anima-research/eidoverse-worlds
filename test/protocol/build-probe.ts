@@ -194,9 +194,10 @@ try {
   // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
   { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
-    // the view holds still: five samples in a row (200 ms apart) see the same camera
+    // the view holds still: five samples in a row, each two frames after the last, see the same camera (polls alone can
+    // land between frames on a slow page and read one matrix twice)
     const settle = async () => { let last = await camNow(), same = 0;
-      return !!(await tryUntil("the view holds still", async () => { const now = await camNow(); same = now === last ? same + 1 : 0; last = now; return same >= 5 || null; }, { ms: 12000, step: 200 })); };
+      return !!(await tryUntil("the view holds still", async () => { await frames(2); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; return same >= 5 || null; }, { ms: 12000, step: 200 })); };
     const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
     await settle();
     const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE, f = c.camera.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize(); const o = c.camera.getWorldPosition(new T.Vector3());
