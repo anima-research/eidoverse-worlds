@@ -146,8 +146,8 @@ function endPivotDrag() {
 }
 function endDrag() {
   release();
-  if (getTool() === 'pivot') { endPivotDrag(); return; }
   const m = multi; multi = null;
+  if (getTool() === 'pivot') { MM.revert(m); MM.end(m); endPivotDrag(); return; }   // the pivot tool took over: the followers go back
   if (cancelled) { cancelled = false; start = null; MM.end(m); return; }
   const id = attachedId; const obj = id && entities.get(id);
   if (!obj || !start?.rec) { start = null; MM.revert(m); MM.end(m); return; }

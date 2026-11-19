@@ -289,15 +289,14 @@ function ghostKey(e) {
 
 /** Where the pointer is aiming, snapped onto whatever surface is under it (entities first, so a thing lands ON the
  *  table), else the ground. */
-function aimPoint(skipId = null, alsoSkip = null) {
+function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
-  const skip = new Set([skipId, ...(alsoSkip ?? [])].filter((x) => x != null));
   const targets = [];
-  for (const [id, o] of entities) if (o && !skip.has(id)) targets.push(o);
+  for (const [id, o] of entities) if (o && id !== skipId) targets.push(o);
   let hits = raycaster.intersectObjects(targets, true);
   // a mounted child is drawn INSIDE its parent's object: skip the dragged thing's whole subtree, or it climbs toward the camera
-  const skipObjs = [...skip].map((x) => entities.get(x)).filter(Boolean);
-  if (skipObjs.length) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (skipObjs.includes(o)) return false; return true; });
+  const skipObj = skipId != null ? entities.get(skipId) : null;
+  if (skipObj) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (o === skipObj) return false; return true; });
   // a thing hidden in MY view still catches what I place: my private view must never shape a shared write
   if (hits.length) {
     const h = hits[0];
@@ -326,12 +325,13 @@ export function updateBuild() {
     }
   }
   if (dragging?.armed && selected) {
-    if (tool === 'rotate') {
+    const gesture = dragging.mode;   // latched at arm: a tool key mid-drag doesn't change what this drag does
+    if (gesture === 'rotate') {
       // ~0.7° per px, drag right = clockwise from above: a turn about world UP composed on the full orientation
       _turn.setFromAxisAngle(_up, -(dragging.clientX - dragging.startX) * 0.012);
       selected.obj.quaternion.copy(_turn).multiply(dragging.startQuat);
       reindexCollider(selected.id); refreshOutline(); relayDrag();
-    } else if (tool === 'scale') {
+    } else if (gesture === 'scale') {
       { const k = Math.exp((dragging.clientX - dragging.startX) * 0.006); const sc = selected.obj.scale.copy(dragging.startScale).multiplyScalar(k); sc.set(...sc.toArray().map((v) => THREE.MathUtils.clamp(v, 0.1, 12))); }   // keeps a stretched thing's proportions
       reindexCollider(selected.id); refreshOutline();
     } else if (dragging.vertical) {
@@ -346,8 +346,15 @@ export function updateBuild() {
       reindexCollider(selected.id);
       refreshOutline();
       relayDrag();
+    } else if (dragging.multi) {
+      // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'
+      raycaster.setFromCamera(mouse, camera);
+      if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
+        setWorldPosition(selected.obj, _w.copy(_hit).add(dragging.plane.grab).setY(dragging.startPos.y));
+        reindexCollider(selected.id); refreshOutline(); relayDrag();
+      }
     } else {
-      const aim = aimPoint(selected.id, dragging.follow);   // never onto the things moving with it
+      const aim = aimPoint(selected.id);
       if (aim) {
         // keep the grab offset (you grabbed a crate by its corner, not its pivot); a drop onto a surface still rests ON it
         if (dragging.world) {
@@ -364,12 +371,12 @@ export function updateBuild() {
         relayDrag();
       }
     }
-    if (dragging.multi) MM.apply(dragging.multi, tool === 'rotate' ? 'rotate' : tool === 'scale' ? 'scale' : 'move');
+    if (dragging.multi) MM.apply(dragging.multi, gesture === 'rotate' ? 'rotate' : gesture === 'scale' ? 'scale' : 'move');
   }
 }
 
 const _w = new THREE.Vector3();
-globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool } : null);   // harness window (test/protocol/client-check.ts F)
+globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool, follow: dragging.follow, skipped: dragging.skipped } : null);   // harness window (test/protocol/client-check.ts F, build-probe.ts MM)
 /** Put an object at a WORLD position, whatever frame it is drawn in (a mounted child sits in its parent's). */
 function setWorldPosition(obj, w) {
   const p = obj.parent;
@@ -545,12 +552,11 @@ canvas.addEventListener('mousedown', (e) => {
   const keepMany = !shiftPick && s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id);
   if (keepMany) { Sel.set([id, ...s0.ids.filter((x) => x !== id)], 'things', Sel.active()); showInspector(id); }
   else if (!shiftPick) select(id);
-  // the things that will move with it (none under the pivot tool: it moves one thing's pivot, never a group's); the grab
-  // aims past them as the drag will, or a lead resting on one would lose its surface at arm
+  // the things that will move with it (none under the pivot tool: it moves one thing's pivot, never a group's)
   const many = s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id) ? s0.ids : null;
   const fol = many && tool !== 'pivot' ? MM.followersOf(id, (x) => MM.takes(x, tool)) : { ids: [], skipped: [] };
   // a press is a SELECT; it becomes a drag once the pointer travels (DRAG_SLOP)
-  const aim = aimPoint(id, fol.ids);
+  const aim = aimPoint(id);
   // the drag reckons in WORLD space (a mounted child's object position is in its parent's frame)
   const world = true;
   const at = root.getWorldPosition(new THREE.Vector3());
@@ -579,9 +585,17 @@ canvas.addEventListener('mousedown', (e) => {
     startPos: at,
     depth: camera.position.distanceTo(at),
     grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
+    plane: fol.ids.length ? planeGrab(at) : null,   // a group's drag is planar (updateBuild)
   };
   e.preventDefault();
 });
+
+/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it). */
+function planeGrab(at) {
+  raycaster.setFromCamera(mouse, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
+  return raycaster.ray.intersectPlane(plane, _hit) ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
+}
 
 // arm the drag only after a few pixels of travel (click vs drag)
 const DRAG_SLOP = 4;
@@ -594,6 +608,7 @@ addEventListener('mousemove', (e) => {
       && Math.hypot(e.clientX - dragging.startX, e.clientY - dragging.startY) > DRAG_SLOP) {
     // the press selected it; travel is where a move begins
     dragging.armed = true;
+    dragging.mode = tool;
     if (dragging.shiftPick) {
       if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }
       else select(dragging.id);
