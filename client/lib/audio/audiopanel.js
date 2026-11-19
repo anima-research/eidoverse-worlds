@@ -66,7 +66,8 @@ function checkRow(label, hint, checked, onChange) {
 }
 
 // mic sensitivity: a slider over a LIVE level bar (animates only while its row is in the DOM). The meter wears the mic
-// badge's palette (mictoggle.js INK.hot): gold = live, warm = heard but under the floor, dark = muted (still moves).
+// badge's palette (mictoggle.js INK.hot): gold = the room is getting your voice, warm = live but the room isn't
+// getting it (under the floor, or push-to-talk with the key up), dark = muted (still moves) or not publishing.
 const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';
