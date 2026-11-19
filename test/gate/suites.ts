@@ -381,6 +381,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["voicesfu-devtrack", "client/voicesfu-devtrack-test.mjs", 1], // the mic device stops whenever voicesfu lets go of it: a reconnect, a swap to synth, a gate-unavailable refusal, a superseded acquisition (which touches nothing the live session owns)
   ["sfu-mic-gated", "client/sfu-mic-gated-test.mjs", 1], // the SFU transport publishes the gated stream, never the raw device: each sender path executed on the gated lane
   ["mic-ptt", "client/mic-ptt-test.mjs", 1], // push-to-talk: the gate decision executed under both regimes, the hang time and the rate limit
+  ["mic-glyph", "client/mic-glyph-test.mjs", 3], // the HUD glyph and the panel bar are gold on the gate's decision; a restarted gate starts closed
   ["mic-meter-gate", "client/mic-meter-gate-test.mjs", 1], // the sensitivity meter reads live exactly when the gate opens (gateThreshold, one dB track)
   ["stt-ptt", "client/stt-ptt-test.mjs", 1], // captions under push-to-talk: nothing posts with the key up; a release still flushes what was heard while held
   ["micstate", "client/micstate-test.mjs", 1], // every micstate export executed; releaseMicrophone keeps its lanes; the SFU hook is the one mic transport
