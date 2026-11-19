@@ -185,12 +185,12 @@ const MODELS_DIR = process.env.EIDOVERSE_DIR
  *  the content-addressed store, so conjured/orrery-delivered objects are
  *  findable), falling back to a local dir scan only when a checkout exists. */
 async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string; retry?: boolean }> {
-  let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429
+  let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429, nor after a 200 body that isn't a list
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`, READ());
     if (!r.ok) { failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429; }
-    else {   // a body that isn't a list (an HTML login page, say) won't change on a retry; a body that stalls might
-      const body = await r.json().catch((e) => { if ((e as Error)?.name === "TimeoutError") throw e; return undefined; });
+    else {   // a body that isn't a list (an HTML login page, say) won't change on a retry; one that stalls or resets might
+      const body = await r.json().catch((e) => { if (!(e instanceof SyntaxError)) throw e; return undefined; });
       if (Array.isArray(body)) return { hits: (body as { path: string; name?: string }[]).slice(0, 24) };
       failed = "it answered with something that isn't a list of models"; retry = false;
     }

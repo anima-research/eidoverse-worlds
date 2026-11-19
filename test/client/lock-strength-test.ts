@@ -93,7 +93,7 @@ try {
   const answerLog = (pick: string, status: string, line: string) => evalJson(`import('/lib/net.js').then(async (m) => { const q = ${pick};
     await m._dispatch({ type: 'debug', reqId: q.reqId, status: '${status}', events: [{ ts: Date.now(), kind: 'script-log', line: '${line}' }] }); return q.reqId; })`);   // one evaluate each: the newer lands first
   await answerLog(`${heldFor('chest/blink')}.at(-1)`, 'active', 'the newer read');
-  await answerLog(`${heldFor('chest/blink')}[0]`, 'asleep', 'the older read');
+  await answerLog(`${heldFor('chest/blink')}.at(-2)`, 'asleep', 'the older read');   // the read just before: one poll (2.5 s) old, inside its 8 s, so it is still waiting
   const c6 = await evalJson(consoleNow);
   check('LS6 …the newer answer stands: its status and line, not the older one\'s', /active/.test(c6.log ?? '') && c6.lines?.some((l: string) => /the newer read/.test(l)) && !c6.lines?.some((l: string) => /the older read/.test(l)), JSON.stringify(c6));
   // LS7 the script watched before: its read, landing after a switch to another script, isn't shown as that one's log

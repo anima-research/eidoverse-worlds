@@ -74,7 +74,7 @@ check("an arrival is the world's notice, with no sender facet",
     /didn't answer/.test(said) && /weren't checked/.test(said) && /seq 5000/.test(said) && /catch_up \{since: 5000\}/.test(said) && /readChat/.test(said), said);
   check("(control) an answered read, even an empty one, has no notice", missedReadNotice(false, 5000) === null && missedReadNotice(undefined, 5000) === null);
   const door = await Bun.file(new URL("../../mcpl/net-server.ts", import.meta.url)).text();
-  check("...and the door delivers it on arrival, from missedSince's failed",
+  check("(source) ...and net-server.ts hands missedSince's failed to it and delivers what it returns",
     /const \{ said, failed \} = await this\.agent\.missedSince\(sinceSeq\);\s*\n(?:\s*\/\/.*\n)?\s*const notice = missedReadNotice\(failed, sinceSeq\);\s*\n\s*if \(notice\) this\.deliver\(notice,/.test(door));
 }
 

@@ -58,6 +58,17 @@ globalThis.fetch = (async () => { throw new DOMException("The operation timed ou
 try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
 check("query, catalog read timed out: an error naming the bound, not the bare 'operation timed out', and that calling again may work",
   r?.isError === true && /no answer within \d+ s/.test(said(r)) && !/operation timed out/i.test(said(r)) && /may work/.test(said(r)), said(r));
+// a 200 whose body fails mid-read: a stall past the read bound is a timeout, a reset a failed request; both may pass
+const brokenBody = (err: Error) => (async () => new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("[")); c.error(err); } }),
+  { headers: { "content-type": "application/json" } })) as any;
+globalThis.fetch = brokenBody(new DOMException("The operation timed out.", "TimeoutError"));
+try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
+check("query, a 200 body that stalls past the read bound: a timeout that may work on a retry, not a body that isn't a list",
+  r?.isError === true && /no answer within \d+ s/.test(said(r)) && /may work/.test(said(r)) && !/isn't a list/.test(said(r)), said(r));
+globalThis.fetch = brokenBody(new Error("connection reset"));
+try { r = await call({ query: "zebra" }); } finally { globalThis.fetch = realFetch; }
+check("query, a 200 body that resets mid-read: a failed request that may work on a retry, not a body that isn't a list",
+  r?.isError === true && /connection reset/.test(said(r)) && /may work/.test(said(r)) && !/isn't a list/.test(said(r)), said(r));
 models = () => Response.json([]);
 r = await call({ query: "zebra" });
 check("(control) query, catalog answers []: 'no matches', not an error", !r?.isError && said(r) === "no matches", said(r));
