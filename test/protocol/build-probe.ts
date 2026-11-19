@@ -10,8 +10,9 @@
 //       person's use runs it (bob, a builder here); the Inspector lists it
 //   MM  a mesh drag of one of several selected things moves them all as ONE act (one Ctrl+Z), planar: over a floor, a
 //       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
-//       a rider drawn off its carrier stays out of the batch; a tool key mid-drag doesn't change the gesture; the pivot
-//       tool's drag moves only the one thing; a gizmo drag the pivot tool takes over puts the followers back
+//       a rider drawn off its carrier stays out of the batch; a tool key after the press doesn't change the drag; the
+//       pivot tool's drag moves only the one thing; a Shift drag stops at the first member's ground; a gizmo drag the
+//       pivot tool takes over puts the followers back
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -232,8 +233,9 @@ try {
     const dxz = (a: number[], b: number[]) => [a[0] - b[0], a[2] - b[2]];
     const sameMove = (a0: number[], a1: number[], b0: number[], b1: number[]) => { const [p, q] = [dxz(a1, a0), dxz(b1, b0)]; return Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.01 && Math.hypot(...p) > 0.05; };
     // press, travel past the slop, move to `to` (`mid` runs mid-drag), release; returns the drag as the page had it once armed
-    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>) => {
-      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at[0]}, clientY: ${at[1]} })), true))`);
+    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>, opt: { shift?: boolean, preArm?: () => Promise<any> } = {}) => {
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, shiftKey: ${!!opt.shift}, clientX: ${at[0]}, clientY: ${at[1]} })), true))`);
+      if (opt.preArm) await opt.preArm();
       await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at[0] + 6}, clientY: ${at[1]} })), true)`);
       await waitFor(`globalThis.__buildDrag?.()?.armed === true`); await frames(3);
       const drag = await evalJson(`globalThis.__buildDrag?.()`);
@@ -266,6 +268,7 @@ try {
         { acts: actsSince(n0), refused: await evalJson(`__refused.map((r) => r.text)`) });
       await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0));
       const T1 = pose("mm-tbl"), B1 = pose("mm-box");
+      check("MM2 (precondition) …the box ended over the floor", !!B1 && Math.abs(B1[0] - sx) < 5 && Math.abs(B1[2] - sz) < 3, { B1, floor: [sx, sz] });
       check("MM2 …over a floor, the drag is planar: the box keeps its height and the table slides level with it (neither drops to the floor nor sinks)",
         !!T1 && !!B1 && Math.abs(T1[1] - T0[1]) < 0.01 && Math.abs(B1[1] - B0[1]) < 0.01 && sameMove(T0, T1, B0, B1), { T0, T1, B0, B1, floorTop: fy });
       check("MM3 …the kid drawn off its carrier stayed out (not in the batch, not moved)", !ids.includes(NODE.get("mm-kid")) && JSON.stringify(pose("mm-kid")) === JSON.stringify(K0), { ids, K0, K1: pose("mm-kid") });
@@ -295,6 +298,33 @@ try {
       check("MM5 the pivot tool's mesh drag moves the pressed box alone: one set on it, the table where it is",
         JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0) && pa.length === 1 && pa[0].verb === "set" && pa[0].body?.args?.id === NODE.get("mm-box"), { acts: actsSince(n0), T: pose("mm-tbl") });
       await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (pa.length === 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // a tool key between the press and the arm: the press's tool decides both the gesture and who follows
+      const at5 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at5, [at5[0] + 30, at5[1] + 10], undefined, { preArm: () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`) });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
+      const T5 = pose("mm-tbl"), B5 = pose("mm-box");
+      check("MM9 E between the press and the arm doesn't change the drag: the table still moves with the box", myActs().length === n0 + 1 && sameMove(T0, T5, B0, B5), { T0, T5, B0, B5, acts: actsSince(n0) });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // Shift: the vertical drag of the lot stops at the first member to reach its ground (the table's feet, not the box's)
+      const at6 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at6, [at6[0], at6[1] + 300], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-box")) !== JSON.stringify(B0), 3000);
+      const T6 = pose("mm-tbl"), B6 = pose("mm-box");
+      const g6 = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${T0[0]}, ${T0[2]}))`);
+      check("MM10 a Shift drag down of the box keeps the selected table at or above its ground (the box goes down, the table no lower than the terrain)",
+        myActs().length === n0 + 1 && !!T6 && !!B6 && B6[1] < B0[1] - 0.05 && T6[1] >= g6 - 0.01 && Math.abs((T6[1] - T0[1]) - (B6[1] - B0[1])) < 0.01, { T0, T6, B0, B6, ground: g6, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3);
     }
 
     // the lead steps off an UNSELECTED platform onto the floor: its surface change is not the followers' (no chair underground)

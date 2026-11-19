@@ -287,8 +287,8 @@ function ghostKey(e) {
   return true;
 }
 
-/** Where the pointer is aiming, snapped onto whatever surface is under it (entities first, so a thing lands ON the
- *  table), else the ground. */
+/** Where the pointer is aiming: the first near-horizontal face of a thing under it, else the ground. `onto` is the
+ *  hit object's own entityId, which only an entity's root carries (realize/models.js), so a model's mesh gives null. */
 function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
@@ -325,7 +325,7 @@ export function updateBuild() {
     }
   }
   if (dragging?.armed && selected) {
-    const gesture = dragging.mode;   // latched at arm: a tool key mid-drag doesn't change what this drag does
+    const gesture = dragging.mode;   // the tool at the press: a tool key during the drag changes the next one, not this
     if (gesture === 'rotate') {
       // ~0.7° per px, drag right = clockwise from above: a turn about world UP composed on the full orientation
       _turn.setFromAxisAngle(_up, -(dragging.clientX - dragging.startX) * 0.012);
@@ -339,8 +339,10 @@ export function updateBuild() {
       const fov = camera.fov * Math.PI / 180;
       const pxToWorld = (2 * dragging.depth * Math.tan(fov / 2)) / innerHeight;
       const dy = (dragging.startY - dragging.clientY) * pxToWorld;   // up = raise
-      const floor = heightAt(dragging.startPos.x, dragging.startPos.z);
-      const y = Math.max(floor, dragging.startPos.y + dy);
+      // no lower than any member's ground: the lead's, and each follower's from its start
+      let least = heightAt(dragging.startPos.x, dragging.startPos.z) - dragging.startPos.y;
+      for (const f of dragging.multi?.followers ?? []) { _fp.setFromMatrixPosition(f.world); least = Math.max(least, heightAt(_fp.x, _fp.z) - _fp.y); }
+      const y = dragging.startPos.y + Math.max(least, dy);
       if (dragging.world) setWorldPosition(selected.obj, _w.set(dragging.startPos.x, y, dragging.startPos.z));
       else selected.obj.position.set(dragging.startPos.x, y, dragging.startPos.z);
       reindexCollider(selected.id);
@@ -356,7 +358,7 @@ export function updateBuild() {
     } else {
       const aim = aimPoint(selected.id);
       if (aim) {
-        // keep the grab offset (you grabbed a crate by its corner, not its pivot); a drop onto a surface still rests ON it
+        // keep the grab offset (you grabbed a crate by its corner, not its pivot); `onto` (rarely set: aimPoint) rests it ON the face
         if (dragging.world) {
           // WORLD points; a mounted child's position is local to its parent, so the target enters that frame last
           _w.copy(aim.point).add(dragging.grab);
@@ -375,7 +377,7 @@ export function updateBuild() {
   }
 }
 
-const _w = new THREE.Vector3();
+const _w = new THREE.Vector3(), _fp = new THREE.Vector3();
 globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool, follow: dragging.follow, skipped: dragging.skipped } : null);   // harness window (test/protocol/client-check.ts F, build-probe.ts MM)
 /** Put an object at a WORLD position, whatever frame it is drawn in (a mounted child sits in its parent's). */
 function setWorldPosition(obj, w) {
@@ -552,7 +554,7 @@ canvas.addEventListener('mousedown', (e) => {
   const keepMany = !shiftPick && s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id);
   if (keepMany) { Sel.set([id, ...s0.ids.filter((x) => x !== id)], 'things', Sel.active()); showInspector(id); }
   else if (!shiftPick) select(id);
-  // the things that will move with it (none under the pivot tool: it moves one thing's pivot, never a group's)
+  // the things that will move with it (none under the pivot tool, whose mesh drag drags one thing, never a group)
   const many = s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id) ? s0.ids : null;
   const fol = many && tool !== 'pivot' ? MM.followersOf(id, (x) => MM.takes(x, tool)) : { ids: [], skipped: [] };
   // a press is a SELECT; it becomes a drag once the pointer travels (DRAG_SLOP)
@@ -586,11 +588,13 @@ canvas.addEventListener('mousedown', (e) => {
     depth: camera.position.distanceTo(at),
     grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
     plane: fol.ids.length ? planeGrab(at) : null,   // a group's drag is planar (updateBuild)
+    mode: tool,     // the gesture, fixed here with the followers it picked
   };
   e.preventDefault();
 });
 
-/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it). */
+/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it or
+ *  pointing away from it). */
 function planeGrab(at) {
   raycaster.setFromCamera(mouse, camera);
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
@@ -608,14 +612,13 @@ addEventListener('mousemove', (e) => {
       && Math.hypot(e.clientX - dragging.startX, e.clientY - dragging.startY) > DRAG_SLOP) {
     // the press selected it; travel is where a move begins
     dragging.armed = true;
-    dragging.mode = tool;
     if (dragging.shiftPick) {
       if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }
       else select(dragging.id);
       dragging.shiftPick = false;
     }
     dragging.multi = MM.begin(dragging.id, dragging.follow);
-    if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, tool), 3500);
+    if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, dragging.mode), 3500);
     engage('meshMove');
   }
 });
