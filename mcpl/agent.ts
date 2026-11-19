@@ -2707,11 +2707,12 @@ export class WorldAgent {
    *  stream like locomotion does; walking replaces it, restore re-applies it. */
   setPosture(clip: string) {
     ++this.bodyEpoch;   // a posture takes authority over the body: a fall still loading abandons itself (#295)
+    const down = this.clip === "ragdoll";   // read before stop() sets "idle"
     this.stop();
     this.speed = 0;
     // choosing a posture ends a tumble the same way walking does: a physics
     // frame must not survive under the new label.
-    if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
+    if (down || (this.heldPose && !this.heldPoseAuthored)) {
       this.body?.stop(); this.stopSim();
       this.heldPose = null; this.heldPoseAuthored = false;
       this.pos.y = this.feetGround(true);
