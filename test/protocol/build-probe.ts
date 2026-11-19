@@ -28,7 +28,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter } from "../gate/wait.ts";
+import { pageWaiter, tryUntil } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -194,7 +194,9 @@ try {
   // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
   { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
-    const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
+    // the view holds still: five samples in a row (200 ms apart) see the same camera
+    const settle = async () => { let last = await camNow(), same = 0;
+      return !!(await tryUntil("the view holds still", async () => { const now = await camNow(); same = now === last ? same + 1 : 0; last = now; return same >= 5 || null; }, { ms: 12000, step: 200 })); };
     const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
     await settle();
     const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE, f = c.camera.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize(); const o = c.camera.getWorldPosition(new T.Vector3());
@@ -204,17 +206,16 @@ try {
     const topOf = (id: string) => evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const b = new c.THREE.Box3().setFromObject(w.entities.get('${id}')); return b.isEmpty() ? null : b.max.y; })`);
     const place = async (id: string, p: number[], sc: number[], extra: any = {}) => { const ok = await mk(id, p, sc, extra); NODE.set(id, await evalJson(`'${id}'`)); return ok && await drawn(id); };
     const [sx, sz] = G;
-    let ok = await place("mm-floor", [sx, 0, sz], [4, 0.04, 4]); await sleep(300);
-    const fy = await topOf("mm-floor");
+    let ok = await place("mm-floor", [sx, 0, sz], [4, 0.04, 4]);
+    const fy = await tryUntil("the floor has its size", () => topOf("mm-floor"));
     ok = ok && !!fy && await place("mm-tbl", [sx - 2.5, fy, sz], [1, 0.5, 1]) && await place("mm-plat", [sx + 2, fy, sz], [0.6, 0.3, 0.6]) && await place("mm-chair", [sx, fy, sz + 1.8], [0.3, 0.3, 0.3]);
-    await sleep(300);
-    const ty = await topOf("mm-tbl"), py = await topOf("mm-plat");
+    const ty = await tryUntil("the table has its size", () => topOf("mm-tbl")), py = await tryUntil("the platform has its size", () => topOf("mm-plat"));
     ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
       && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
       && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
     check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a cart with a kid further off", ok, { G, fy, ty, py });
     const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
-      const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await sleep(600); await settle(); };
+      const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await frames(2); await settle(); };
     // a press pixel ON `lead` whose ray, past it, meets the top of `under` (any, with no `under`) (where an aim that doesn't skip `under` lands)
     await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
       const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
