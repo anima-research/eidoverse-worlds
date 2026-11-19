@@ -2684,6 +2684,7 @@ export class WorldAgent {
     // clearing a slump IS standing up — don't leave the clip lying, don't
     // leave a sim tumbling a body that has decided to stand
     if (bones == null && this.clip === "ragdoll") {
+      ++this.bodyEpoch;   // a fall still loading abandons itself, as for a walk, a grab or close (#295)
       this.body?.stop(); this.stopSim();
       this.clip = "idle";
       this.pos.y = this.feetGround(true);
