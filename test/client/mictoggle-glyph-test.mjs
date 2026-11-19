@@ -90,7 +90,7 @@ t('synth voice quiet (-40 dBFS): gold, the room hears it', gold() === true && ms
   t('synth voice, a gap between words: stays gold through the hang', gold() === true && ms.micGateInfo().speaking === true);
   Date.now = realNow;
 }
-await tryUntil('the synth hang ends once the clock runs again', () => !gold());
+t('the synth hang ends once the clock runs again', !!(await tryUntil('the synth hang ends once the clock runs again', () => !gold())));
 ms.toggleMute(true); room = 0.3; await pause('muted synth: a playing voice has had time to turn it gold', 400);
 t('synth voice muted: its track is off (the room hears nothing), and not gold', synthTrack.enabled === false && gold() === false && ms.micGateInfo().speaking === false);
 ms.toggleMute(false);

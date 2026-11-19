@@ -13,7 +13,7 @@ import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
          gateUnavailable, ungatedConsent,
-         makeOnsetGate, makeLevelMeter } from './micgate.js';
+         makeOnsetGate, makeLevelMeter, HANG_MS } from './micgate.js';
 // Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
 
@@ -30,7 +30,8 @@ export function toggleMute(on) {
   return _muted;
 }
 
-// A synth lane has no gate to close, so mute disables its tracks; unmute re-enables only those, never one the transport turned off.
+// A synth lane has no gate to close, so mute disables its tracks; unmute re-enables only those, never one already off when
+// mute began (one the transport turns off DURING a mute comes back on: harmless today, it carries silence).
 let _mutedSynth = [];
 function muteSynth() {
   if (!_muted) { for (const t of _mutedSynth) t.enabled = true; _mutedSynth = []; return; }
@@ -99,8 +100,8 @@ const startOnsetWatch = () => _onset.start();
 const stopOnsetWatch = () => _onset.stop();
 
 // A synth voice has no gate (gateFor passes it through): audible is speaking, held through the gaps between words
-// for the onset gate's own 700 ms hang (micgate.js makeOnsetGate).
-const SYNTH_AUDIBLE = 0.005, SYNTH_HANG = 700;   // RMS ≈ -46 dBFS
+// for the onset gate's own hang (micgate.js HANG_MS).
+const SYNTH_AUDIBLE = 0.005;   // RMS ≈ -46 dBFS
 let _synthUntil = 0;
 
 /** What the gate is actually doing right now — for the meter and for tuning. */
@@ -111,7 +112,7 @@ export const micGateInfo = () => {
   if (_lane?.synthetic) {
     const now = Date.now();
     if (_muted) _synthUntil = 0;
-    else if (info.level > SYNTH_AUDIBLE) _synthUntil = now + SYNTH_HANG;
+    else if (info.level > SYNTH_AUDIBLE) _synthUntil = now + HANG_MS;
     return { ...info, speaking: now <= _synthUntil };
   }
   if (!micOn()) return { ...info, speaking: false };

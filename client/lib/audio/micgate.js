@@ -232,6 +232,9 @@ export function makeLevelMeter(getMeasured) {
   };
 }
 
+/** The gate's hang-time: it holds open this long after the last tick over the line. */
+export const HANG_MS = 700;
+
 /** The speech-onset gate: a block-minima noise floor, a fixed threshold with ~3 dB hysteresis and 700 ms hang-time,
  *  and the once-per-utterance 🎙 announcement. `drive(open)` is the transport's gain hand (it applies its own
  *  lane/mute authority first); `level()` returning 0 means muted: close, drop the speaking latch, learn nothing.
@@ -284,7 +287,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     const off = on * 0.7;                    // ~3 dB of hysteresis
     const now = Date.now();
     if (lv >= on) {
-      _openUntil = now + 700;                // hang-time
+      _openUntil = now + HANG_MS;            // hang-time
       if (!_above) { _above = true; _openedAt = now; _announced = false; }
       if (held() === null && !_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
         _announced = true; _lastOnset = now; announce();
