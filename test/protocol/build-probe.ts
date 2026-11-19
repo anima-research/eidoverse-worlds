@@ -214,7 +214,7 @@ try {
     const ty = await tryUntil("the table has its size", () => topOf("mm-tbl")), py = await tryUntil("the platform has its size", () => topOf("mm-plat"));
     ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
       && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
-      && await place("mm-pole", [sx - 4, 0, sz - 4.5], [0.3, 8, 0.3]) && await place("mm-stool", [sx - 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
+      && await place("mm-pole", [sx - 4, 0, sz - 4.5], [0.3, 3, 0.3]) && await place("mm-stool", [sx - 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
       && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
     check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a tall pole and a stool; a cart with a kid further off", ok, { G, fy, ty, py });
     const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
@@ -393,7 +393,7 @@ try {
     // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold once the ray comes
     // down to meet it
     await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
-      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.5); return C.frameOn(b.getCenter(new THREE.Vector3()), 4);`);
+      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.3); return C.frameOn(b.getCenter(new THREE.Vector3()), 2);`);
     await frames(2); await settle();
     const up = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
       const oy = P.getWorldPosition(new T.Vector3()).y, cy = c.camera.getWorldPosition(new T.Vector3()).y;
@@ -402,9 +402,9 @@ try {
       const px = Math.round((mid.x + 1) / 2 * innerWidth); let py = 10;   // on screen: a press a person could make
       while (py < innerHeight - 10 && !(__mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05)) py += 4;
       const at = py < innerHeight - 10 ? [px, py] : null;
-      let d1 = py; while (d1 < innerHeight - 4 && dirY(px, d1) > -0.15) d1 += 4;
-      let d2 = d1; while (d2 < innerHeight - 4 && dirY(px, d2) > -0.3) d2 += 4;
-      return { at, d1: dirY(px, d1) < -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], camAbove: cy > oy + 0.05, cy, oy, top: b.max.y }; })`);
+      let d1 = py; while (d1 < innerHeight - 4 && dirY(px, d1) > -0.1) d1 += 4;
+      let d2 = d1 + 30; while (d2 < innerHeight - 4 && dirY(px, d2) > -0.3) d2 += 4;
+      return { at, d1: dirY(px, d1) <= -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], camAbove: cy > oy + 0.05, cy, oy, top: b.max.y }; })`);
     check("MM (setup) a press point on the pole whose ray points up from above the pole's origin, and two points lower whose rays dip", !!up?.at && !!up?.d1 && up?.camAbove, up);
     if (up?.at && up?.d1 && up?.camAbove) {
       await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
