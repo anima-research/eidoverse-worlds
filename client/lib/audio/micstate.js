@@ -63,7 +63,9 @@ bus.on('audio:ptt', (on) => {
 
 // The onset watcher: micgate.js's makeOnsetGate/makeLevelMeter, instantiated
 // over this module's own lane and mute.
-const _meter = makeLevelMeter(() => (!_lane || _muted) ? null : (_raw || _lane));
+// One analyser on the device; the gate's meter is it with mute applied (a level of 0 is how the gate closes on mute).
+const _deviceMeter = makeLevelMeter(() => _lane ? (_raw || _lane) : null);
+const _meter = () => (_muted ? 0 : _deviceMeter());
 const _onset = makeOnsetGate({
   level: _meter,
   threshold: gateThreshold,
@@ -92,6 +94,8 @@ const stopOnsetWatch = () => _onset.stop();
 // applied here as in the drive closure, so the pill and the audio agree.
 export const micGateInfo = () => {
   const info = _onset.info();
+  // a synth voice has no gate (gateFor passes it through), so the room hears whatever it plays: audible is speaking
+  if (_lane?.synthetic && !_muted) return { ...info, speaking: info.level > 0.02 };
   if (!micOn()) return { ...info, speaking: false };
   // a consented raw lane under voice activation transmits whenever the mic is on (the drive closure above), threshold or not
   if (gateUnavailable() && ungatedConsent() && !pttMode()) return { ...info, speaking: true };
@@ -100,6 +104,8 @@ export const micGateInfo = () => {
 
 /** Live mic level 0..1 for UI. */
 export function micAnalyserLevel() { return _meter(); }
+/** Live device level 0..1, muted or not: the sensitivity bar still moves while muted, so it can be tuned. */
+export const micDeviceLevel = () => _deviceMeter();
 
 // ── the transport-facing seam ───────────────────────────────────────────────
 

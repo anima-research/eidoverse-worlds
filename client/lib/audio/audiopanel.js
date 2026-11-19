@@ -20,7 +20,7 @@ const micLive = () => {
 };
 import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
-import { micOn, toggleMic, micGateInfo } from './micstate.js';
+import { micOn, toggleMic, micGateInfo, micDeviceLevel, isMuted } from './micstate.js';
 // CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
 import { CONFIG } from '../base.js';
 
@@ -92,15 +92,16 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // gold is the gate's own decision (micgate.js makeOnsetGate: hysteresis + hang), so this bar and the HUD glyph agree with what the room gets
+  // gold is micstate.js micGateInfo().speaking, the HUD glyph's own answer, so the two agree with what the room gets
   let hot = false;
   const micIsLive = micLive;
   const paintLive = () => {
-    if (!micIsLive()) { hot = false; lvl.style.background = LVL_DARK; return; }
+    if (!micIsLive() || isMuted()) { hot = false; lvl.style.background = LVL_DARK; return; }
     lvl.style.background = hot ? LVL_LIVE : LVL_WARM;
   };
   paintLive();
   bus.on('audio:mic', paintLive);
+  bus.on('audio:mute', paintLive);
   // dragging the threshold repaints at once, not on the next level sample
   bus.on('audio:micfloor', () => paintLive());
   const paintThr = () => {
@@ -117,12 +118,12 @@ function micFloorRow() {
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
   const beat = () => {
     if (!row.isConnected) return;
-    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the gate's own RMS: the transport's
-    // peak crossed the marker with the gate shut
-    const gate = micGateInfo();   // level 0 and speaking false when muted or there's no lane
-    lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(gate.level, 1e-6)) + 60) / 60 * 100))}%`;
+    // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
+    // transport's peak crossed the marker with the gate shut), muted or not
+    const level = micDeviceLevel();
+    lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate)
-    const next = !!gate.speaking;
+    const next = !!micGateInfo().speaking;
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };

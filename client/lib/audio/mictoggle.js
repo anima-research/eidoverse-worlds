@@ -1,7 +1,7 @@
 // mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
-import { micOn, toggleMic, setPttHeld, pttHeld, isMuted } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld, micGateInfo } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -10,7 +10,7 @@ import { bus } from '../base.js';
 import { register as registerAction } from '../ui/actions.js';
 import { pathData } from '../ui/icons.js';
 
-// Three states: off = dim + slash · live = brand · hot (your voice registering) = attention gold with a glow.
+// Three states: off = dim + slash · live = brand · hot (the room is getting your voice) = attention gold with a glow.
 // ONE palette for both glyphs: they read as a pair, so any divergence reads as a state difference. The headphone's
 // stroke is thinner (its filled cups carry more ink than the mic's thin strokes) so the two weigh the same to the eye.
 // Inks come from the token sheet, read off the BUTTON on each paint so live token edits and build mode's re-pointed
@@ -126,20 +126,10 @@ function paint() {
   }
 }
 // hot = the room is getting your voice: polled at 8 Hz
-import { micAnalyserLevel as meshMicLevel, micGateInfo } from './micstate.js';
-// ask the live transport's level first (the SFU's), or the glyph can never go hot
-function micLevelNow() {
-  try {
-    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
-    return meshMicLevel?.() ?? 0;
-  } catch { return 0; }
-}
-
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
-  // gold = the gate's own decision (threshold, hang, PTT via held(), mute, a consented raw lane), never a level of our own: a
-  // fixed 0.02 went gold under the line. A synth voice on the wire has no gate (micOn() false, not muted), so it keeps the level rule.
-  const hot = micOn() || isMuted() ? !!micGateInfo().speaking : micLevelNow() > 0.02;
+  // gold = the gate's own decision (micstate.js micGateInfo: threshold, hang, PTT, mute, a raw lane, a synth voice), never a level of our own
+  const hot = !!micGateInfo().speaking;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 

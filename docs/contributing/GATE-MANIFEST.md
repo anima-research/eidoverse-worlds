@@ -532,7 +532,7 @@ time.
 | 351 | voicesfu-devtrack | main | `test/client/voicesfu-devtrack-test.mjs` | bun | 0.3 s | 180 s |
 | 352 | sfu-mic-gated | main | `test/client/sfu-mic-gated-test.mjs` | bun | 0.3 s | 180 s |
 | 353 | mic-ptt | main | `test/client/mic-ptt-test.mjs` | bun | 7.2 s | 180 s |
-| 354 | mic-glyph | main | `test/client/mic-glyph-test.mjs` | bun | ? | 300 s |
+| 354 | mic-glyph | main | `test/client/mictoggle-glyph-test.mjs` | bun | ? | 300 s |
 | 355 | mic-meter-gate | main | `test/client/mic-meter-gate-test.mjs` | bun | ? | 300 s |
 | 356 | stt-ptt | main | `test/client/stt-ptt-test.mjs` | bun | ? | 300 s |
 | 357 | micstate | main | `test/client/micstate-test.mjs` | bun | 0.6 s | 180 s |

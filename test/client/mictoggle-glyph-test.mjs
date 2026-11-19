@@ -1,11 +1,10 @@
-// The onset gate driven one 20ms tick at a time, and the HUD glyph's gold as the gate's decision rather than a level of
-// its own (R 10-17 gym: gold under the sensitivity line). One tick over the line opens the gate: that's deliberate.
-// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/mic-glyph-test.mjs
+// mictoggle.js: the HUD glyph is gold on the gate's own decision (micstate.js micGateInfo), never a level of its own.
+// Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/mictoggle-glyph-test.mjs
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { pause, tryUntil } from '../gate/wait.ts';
+import { pause, until, tryUntil } from '../gate/wait.ts';
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
@@ -34,32 +33,7 @@ mock.module(lib('audio/stt.js'), () => ({ setSTT() {}, sttAvailable: () => false
 let ok = 0, bad = 0;
 const t = (n, cond) => { cond ? ok++ : bad++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${n}`); };
 
-// ── 1. the machine itself, on a clock we hold ────────────────────────────────
-const { makeOnsetGate } = await import(lib('audio/micgate.js'));
-let clock = 1_000_000, tick = null, lv = 0.001;
-const realNow = Date.now, realSI = globalThis.setInterval;
-Date.now = () => clock;
-globalThis.setInterval = (fn) => { tick = fn; return 1; };
-const g = makeOnsetGate({ level: () => lv, threshold: () => 0.25, drive() {}, announce() {} });
-g.start();
-t('setup: start() handed us its tick', typeof tick === 'function');
-const step = (level, n = 1) => { for (let i = 0; i < n; i++) { lv = level; clock += 20; tick(); } };
-step(0.001, 40);                                   // settle + learn a quiet room (800ms)
-t('setup: a quiet room is closed', g.info().speaking === false);
-step(0.4, 1);
-t('one tick over the line opens it (the deliberate one-tick open)', g.info().speaking === true);
-step(0.001, 20);                                   // 400ms of quiet: inside the 700ms hang
-t('the hang still holds through a pause', g.info().speaking === true);
-step(0.001, 30);
-t('and it closes after the hang', g.info().speaking === false);
-step(0.001, 40);
-step(0.4, 2);
-t('setup: open before the restart', g.info().speaking === true);
-g.stop(); g.start();                               // release + reacquire inside the 700ms hang
-t('a restarted gate starts closed, not inside the old hang', g.info().speaking === false);
-Date.now = realNow; globalThis.setInterval = realSI; g.stop();
-
-// ── 2. the HUD glyph: gold under the line was the bug ────────────────────────
+// ── 1. the HUD glyph: gold under the line was the bug ────────────────────────
 document.body.innerHTML = '<div id="hud"></div>';
 const vc = await import(lib('audio/voiceconsent.js'));
 const ms = await import(lib('audio/micstate.js'));
@@ -68,14 +42,18 @@ const track = { kind: 'audio', enabled: true, stop() {} };
 ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
 await import(lib('audio/mictoggle.js'));
 const gold = () => (document.querySelector('#micbtn')?.innerHTML || '').includes('drop-shadow');
-room = 0.001; await pause('the real gate settles and learns a quiet room', 1200);
+room = 0.001; await until('the real gate is ticking on the lane and has learned a quiet room', () => ms.micGateInfo().noise < 0.002);
 t('setup: the glyph exists', !!document.querySelector('#micbtn'));
 room = 0.08; await pause('a level above the old fixed 0.02 but under the 0.25 line has had time to turn it gold', 400);
 t('glyph is NOT gold for a level under the sensitivity line', gold() === false && ms.micGateInfo().speaking === false);
 room = 0.5; await tryUntil('the gate opens for a loud room', () => gold() && ms.micGateInfo().speaking);
 t('glyph IS gold when the gate is open', gold() === true && ms.micGateInfo().speaking === true);
-room = 0.01; await pause('back under the line (and under the old 0.02), still inside the 700ms hang', 300);
-t('glyph stays gold through the hang (it follows the gate, not a level)', gold() === true);
+// hold the clock inside the 700ms hang, so a loaded host can't run the row past it
+const realNow = Date.now, held = Date.now(); Date.now = () => held;
+room = 0.01; await pause('back under the line (and under the old 0.02), the clock held inside the hang: three glyph polls', 400);
+t('glyph stays gold through the hang (it follows the gate, not a level)', gold() === true && ms.micGateInfo().speaking === true);
+Date.now = realNow;
+await until('the hang ends once the clock runs again', () => !ms.micGateInfo().speaking);
 
 vc.setPttMode(true); room = 0.5; await pause('PTT key up: a loud room has had time to turn it gold', 400);
 t('PTT, key up: loud input does not turn the glyph gold', gold() === false);
@@ -83,7 +61,7 @@ ms.setPttHeld(true); await tryUntil('PTT key down turns it gold', () => gold());
 t('PTT, key down: gold', gold() === true);
 ms.setPttHeld(false); vc.setPttMode(false);
 
-// ── 3. a consented raw lane (no gate graph on this device) transmits under the line: the glyph must say so ──
+// ── 2. a consented raw lane (no gate graph on this device) transmits under the line: the glyph must say so ──
 const mg = await import(lib('audio/micgate.js'));
 noGraph = true; mg.allowUngated(true);
 ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
@@ -92,6 +70,19 @@ room = 0.01; await pause('under the line and past the 700ms hang, so a threshold
 t('consented raw lane, voice activation: gold under the line (the room hears everything)', gold() === true && ms.micGateInfo().speaking === true);
 vc.setPttMode(true); await pause('PTT key up on a raw lane closes the wire', 300);
 t('consented raw lane, PTT key up: not gold', gold() === false);
-vc.setPttMode(false); mg.allowUngated(false);
+vc.setPttMode(false); mg.allowUngated(false); noGraph = false;
+
+// ── 3. a synth voice has no gate (micstate.js gateFor passes it through): the room hears whatever it plays ──
+window.__sfuMicOn = () => true;   // the transport publishes the synth lane; micOn() is false for synth (no device)
+ms.setMicLive(false);
+const synth = { synthetic: true, getTracks: () => [track], getAudioTracks: () => [track] };
+ms.gateFor(synth);
+room = 0.3; await tryUntil('a playing synth voice turns the glyph gold', () => gold());
+t('synth voice playing: gold, and micGateInfo says the room hears it', gold() === true && ms.micGateInfo().speaking === true);
+room = 0.001; await tryUntil('a silent synth voice stops being gold', () => !gold());
+t('synth voice silent: not gold', gold() === false && ms.micGateInfo().speaking === false);
+ms.toggleMute(true); room = 0.3; await pause('muted synth: a playing voice has had time to turn it gold', 400);
+t('synth voice muted: not gold', gold() === false && ms.micGateInfo().speaking === false);
+ms.toggleMute(false); delete window.__sfuMicOn;
 console.log(`${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
