@@ -14,6 +14,8 @@ import { lyingFrame } from "../shared/rot.js";
 import { isFiniteVec3 } from "../shared/protocol/is.js";
 import { cellKey, halfFloored, localizePoint, nodeAtPoint, planStructure, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { recordComponents } from "../shared/protocol/view.js";
+// collision off, or a structure's anchor (its planner owns the walls): client/lib/realize/models_field.js collisionOwnedElsewhere, minus mounts
+const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordComponents(e).structure;
 
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
 /** Collision triangles per (sequencer, lib), shared by every agent in this
@@ -277,7 +279,8 @@ export class AgentGround {
   }
 
   // ---- support surfaces -----------------------------------------------------
-  // Each entity this agent knows contributes support to the sim's collider map:
+  // Each entity this agent knows contributes support to the sim's collider map
+  // (except one whose collision is off or lives elsewhere: collisionElsewhere):
   // the browser's own collider fitted from the model's triangles when they can
   // be fetched (meshFor → registerMeshSupport), so walls, furniture and stairs
   // are as solid here as in a browser. Fallback, from GET /geom's summary:
@@ -382,7 +385,7 @@ export class AgentGround {
   async syncSupport(id: string) {
     const before = this.a.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
-    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
+    if (collisionElsewhere(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled), or a structure's anchor: nothing to stand on
     // A moving thing supports nothing here (drop path as well as skip path); so
     // does mounted cargo, whose parent's transform this code doesn't track.
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
@@ -392,9 +395,9 @@ export class AgentGround {
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
     if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
-    // started moving, or got mounted, while its geometry was in flight —
+    // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
-    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || solidOffRecord(e)) { this.dropSupport(id); return; }
+    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
     // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
     const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];
@@ -433,13 +436,7 @@ export class AgentGround {
       // the wait has something to drop, and a fit landing afterwards is taken back out.
       this.supportIds.set(id, [bid]);
       const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
-      const now = this.a.entities.get(id);
-      const superseded = !this.supportIds.get(id)?.includes(bid);
-      if (superseded || this.a.closed || !now || now.model !== e.model || this.a.mounts.has(id) || this.hasActiveMotion(now)) {
-        if (ok && (superseded || this.a.closed)) void removeSupport(this.supportHolder, bid);
-        else if (ok) this.dropSupport(id);
-        return;
-      }
+      if (this.overtaken(id, bid, e.model, ok)) return;
       if (ok) return;
       this.supportIds.delete(id);
     }
@@ -471,7 +468,10 @@ export class AgentGround {
         // the certification is a MODEL-frame bound; this spawn's scale must not stretch it past the world bound
         // (a grid certified to 3cm serves a ×1.25 spawn but not a ×2)
         const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
+        this.supportIds.set(id, [bid]);   // reserved across the await, as the mesh fit is
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
+        if (this.overtaken(id, bid, e.model, fit)) return;
+        this.supportIds.delete(id);
         if (fit) ids.push(bid);
         // refused grid: a DECLARED abstention (the body finds terrain), never a floating false floor
         else this.a.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
@@ -481,6 +481,17 @@ export class AgentGround {
       }
     }                                                   // room-scale with no readable decks: browser-only, declared
     if (ids.length) this.supportIds.set(id, ids);
+  }
+
+  /** After an awaited fit reserved as `bid`: did a close, a remove, a mount, a motion or a later sync (which drops the
+   *  reservation: a structure comp is one) overtake it? Then a fit that landed is taken back out. */
+  private overtaken(id: string, bid: string, model: string, landed: boolean): boolean {
+    const now = this.a.entities.get(id);
+    const superseded = !this.supportIds.get(id)?.includes(bid);
+    if (!superseded && !this.a.closed && now && now.model === model && !this.a.mounts.has(id) && !this.hasActiveMotion(now)) return false;
+    if (landed && (superseded || this.a.closed)) void removeSupport(this.supportHolder, bid);
+    else if (landed) this.dropSupport(id);
+    return true;
   }
 
   dropSupport(id: string) {

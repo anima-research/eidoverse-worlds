@@ -657,7 +657,8 @@ export class AgentSenses {
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it
-      else if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
+      // a structure's model is only its anchor: no collider of its own (agent-ground.ts collisionElsewhere)
+      else if (!c.structure && (col === "mesh" || col === "exact" || col === "box")) aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.a.socketsOf(e.id);
       if (socks.length) {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;

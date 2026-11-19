@@ -21,6 +21,12 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const L = ag.look(0).split("\n"), off = L.find((l: string) => l.includes("[off]")) ?? "", on = L.find((l: string) => l.includes("[on]")) ?? "";
   ok(/walk-through/.test(off) && !/collides as/.test(off) && /collides as a box/.test(on), "62 look: a collider with enabled: false reads walk-through; an enabled one collides", { off, on }); }
 
+// #347 bot 4: a structure's anchor has no collider of its own, so look doesn't say it collides as a box
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  ag.entities.set("hut", { id: "hut", model: "zz/crate.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  const hut = ag.look(0).split("\n").find((l: string) => l.includes("[hut]")) ?? "";
+  ok(hut !== "" && !/collides as/.test(hut), "347/4 look: a structure's anchor doesn't claim its box collides", hut); }
+
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };
   await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "Moss", days: 2, global: true } });
