@@ -1,7 +1,7 @@
 // mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
-import { micOn, toggleMic, setPttHeld, pttHeld } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld, isMuted } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -138,8 +138,8 @@ function micLevelNow() {
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
   // gold = the gate's own decision (threshold, hang, PTT via held(), mute, a consented raw lane), never a level of our own: a
-  // fixed 0.02 went gold under the line. A synth voice on the wire has no gate (micOn() is false), so it keeps the level rule.
-  const hot = micOn() ? !!micGateInfo().speaking : micLevelNow() > 0.02;
+  // fixed 0.02 went gold under the line. A synth voice on the wire has no gate (micOn() false, not muted), so it keeps the level rule.
+  const hot = micOn() || isMuted() ? !!micGateInfo().speaking : micLevelNow() > 0.02;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 
