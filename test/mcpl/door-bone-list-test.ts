@@ -19,9 +19,9 @@ const S = suite("door-bone-list");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
 const text = (r: unknown) => (typeof r === 'string' ? r : String((r as any)?.text ?? ''));
 
-/** A GLB whose JSON chunk names these nodes: all loadBodyBones reads. */
-function glb(names: string[]): ArrayBuffer {
-  const json = new TextEncoder().encode(JSON.stringify({ nodes: names.map((name) => ({ name })) }));
+/** A GLB whose JSON chunk names these nodes (and carries these extensions, e.g. a VRM humanoid map). */
+function glb(names: string[], extensions?: object): ArrayBuffer {
+  const json = new TextEncoder().encode(JSON.stringify({ nodes: names.map((name) => ({ name })), extensions }));
   const out = new Uint8Array(20 + json.length);
   const dv = new DataView(out.buffer);
   dv.setUint32(0, 0x46546c67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
@@ -72,6 +72,31 @@ check('an empty list read from the model is kept, and still refused for its skel
   Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /hip|spine|head/i.test(text(r)), text(r));
 r = await bare.foldWings(true);
 check('fold_wings on a body read as empty says it has no wings', text(r) === 'this body has no animatable wings to fold', text(r));
+
+console.log('\nA VRM NAMES ITS CORE IN ITS HUMANOID MAP');
+// a VRoid export: core joints named J_Bip_C_*, found by the humanoid map (VRM1 and VRM0 shapes); the Tripo spelling
+// with no map is the WINGED row above
+const WINGS = WINGED.slice(3);
+const VROID = ['J_Bip_C_Hips', 'J_Bip_C_Spine', 'J_Bip_C_Neck', 'J_Bip_C_Head', ...WINGS];
+const vrm1 = (bones: Record<string, number>) => ({ VRMC_vrm: { specVersion: '1.0', humanoid: { humanBones:
+  Object.fromEntries(Object.entries(bones).map(([b, node]) => [b, { node }])) } } });
+const vrm0 = (bones: Record<string, number>) => ({ VRM: { humanoid: { humanBones:
+  Object.entries(bones).map(([bone, node]) => ({ bone, node })) } } });
+for (const [shape, ext] of [['VRM1', vrm1], ['VRM0', vrm0]] as const) {
+  const vroid: any = new WorldAgent({ url: noWorldUrl(), name: 'gloss', world: 'bone-bench' });
+  vroid.avatar = `vroid-${shape}.vrm`;
+  vroid.myRights = { role: 'builder', fly: true };
+  serve = async () => new Response(glb(VROID, ext({ hips: 0, spine: 1, neck: 2, head: 3 })));
+  r = await vroid.takeOff();
+  check(`a VRoid-named body (${shape}) whose humanoid map has hips, spine and head takes off`, /took off/.test(text(r)), text(r));
+}
+const headless: any = new WorldAgent({ url: noWorldUrl(), name: 'gloss', world: 'bone-bench' });
+headless.avatar = 'vroid-headless.vrm';
+headless.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(VROID.filter((b) => b !== 'J_Bip_C_Head'), vrm1({ hips: 0, spine: 1, neck: 2 })));
+r = await headless.takeOff();
+check('a VRM whose map and nodes have no head is still refused, naming the head',
+  !/took off/.test(text(r)) && /missing: head\)/.test(text(r)), text(r));
 
 console.log('\nA FOLDED BODY CAN ALWAYS UNFOLD');
 const vigil: any = new WorldAgent({ url: noWorldUrl(), name: 'vigil', world: 'bone-bench' });

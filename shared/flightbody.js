@@ -35,8 +35,8 @@ export function inspectBody(boneNames) {
   }
   const wingCount = Object.values(chains).reduce((n, c) => n + c.length, 0);
   // CORE BONES BY ANY SPELLING: each entry is the set of acceptable names for one joint, matched case-insensitively.
-  // Three vocabularies reach here: the Tripo rig's `Hip`/`Spine02`, three-vrm's normalised `hips`/`chest`, and a
-  // Mixamo-derived body's `Hips`/`Spine`.
+  // Three vocabularies reach here: the Tripo rig's `Hip`/`Spine02`, a VRM humanoid map's `hips`/`chest` (which the
+  // readers add to a VRM's node names), and a Mixamo-derived body's `Hips`/`Spine`.
   const CORE = [
     ['hip', 'hips'],
     ['spine02', 'spine01', 'spine', 'chest', 'upperchest'],
