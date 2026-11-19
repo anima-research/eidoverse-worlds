@@ -752,8 +752,30 @@ copy that was updated and is published again keeps its parts' keys.
   per asker per minute whatever the asker tries meanwhile. Distance is no
   part of consent: the relay forwards a knock-over, pose or grab of another
   body from any distance unless the world sets `@world.body-default.range`
-  (m). Only
-  the owner changes their own answers. The gates and lists are the one part of
+  (m). Where it does, every act on another body (a puppet, a drag, a reach
+  descriptor, the `body` and `reach` verbs, each body a `force` blast
+  reaches, a script's body act) is refused out of range before consent is
+  asked, with the same answer whatever that body's gates and lists. A reach
+  descriptor's limb is dropped without a note; a blast counts such a body as
+  refused and says so in a note; a script's act is measured from the scripted
+  thing, and one with no place (a script on `@world`) is out of range. A drag
+  must start within the range; once under way it follows out to 1.5 × the
+  range, and past that the server ends it, sending each side a `bodydrag {end:
+  true, reason: "out-of-reach"}` from the other. A drag under way is one
+  pair of sessions: it begins at a forwarded grab, is kept by forwarded pose
+  samples, and ends at either side's end, at the break, after 1.2 s without a
+  sample, or with either session. The owner's replies to it count under the
+  same break distance, and those that carry only `pins` and/or `end` are not
+  held to the dragger's own gates; anything else the owner sends acts on the
+  dragger and is. An end alone is forwarded at any distance, so a release is
+  never lost. This is the one exception to "the same answer": between 1 ×
+  and 1.5 × the range, a drag under way still answers from consent, so its
+  dragger, who was in range when it began, learns the target's gates there
+  (a nail gets the consent words, and once a closed gate has stopped the
+  samples for 1.2 s, passing 1.5 × brings no released event). A range
+  refusal and a drag's break log nothing (a blast still appends its one
+  `force` act, and a script that runs its act). Only the owner changes
+  their own answers. The gates and lists are the one part of
   the presence plane a host keeps across a restart (a block is a safety tool:
   one that lapsed with the process would leave its person unguarded while their
   panel says it stands); the reference keeps each world's in `consent.json`

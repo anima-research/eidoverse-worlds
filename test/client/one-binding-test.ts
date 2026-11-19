@@ -29,10 +29,12 @@ type Row = { name: string; owner: string[]; forbidden: Pat[]; scope?: string[]; 
 const PHYS = "shared/protocol/physconst.js", ROUND = "shared/protocol/round.js";
 const ROWS: Row[] = [
   { name: "a reach or hand number is physconst.js's", owner: [PHYS], forbidden: [/\bREACH\s*=\s*[\d.]/, /\bHAND_Y\s*=\s*[\d.]/, /\bMAX_HELD\s*=\s*\d/, /\bKICK\s*=\s*\{/,
-    /\bUSE_REACH\s*=\s*[\d.]/, /\bBODY_RANGE[^=\n]*=\s*\{/, /\bHAND_REACH\s*=\s*[\d.]/],
+    /\bUSE_REACH\s*=\s*[\d.]/, /\bBODY_RANGE[^=\n]*=\s*\{/, /\bHAND_REACH\s*=\s*[\d.]/, /\bSILENCE_MS\s*=\s*\d/],
     requires: [["shared/protocol/authority.js", /from "\.\/physconst\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
       ["client/lib/ui/useprompt.js", /from '\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/], ["client/lib/ui/commands/handlers.js", /from '\.\.\/\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
-      ["server/messages.ts", /from "\.\.\/shared\/protocol\/physconst\.js"/], ["shared/grab.js", /from '\.\/protocol\/physconst\.js'/]] },
+      ["server/reachgate.ts", /from "\.\.\/shared\/protocol\/physconst\.js"/], ["shared/grab.js", /from '\.\/protocol\/physconst\.js'/],
+      ["server/messages.ts", /DRAG_SILENCE_MS \} from "\.\.\/shared\/protocol\/physconst\.js"/], ["client/lib/ragdoll/bodydrag.js", /DRAG_SILENCE_MS \} from '\.\.\/\.\.\/\.\.\/shared\/protocol\/physconst\.js'/],
+      ["mcpl/agent.ts", /DRAG_SILENCE_MS \} from "\.\.\/shared\/protocol\/physconst\.js"/]] },
   { name: "a 3-place rounding or −0 scrub is round.js's", owner: [ROUND], forbidden: [/\bconst r3\s*=/, /\bnoNeg0\s*=\s*\(/, /\bunNegZero\s*=\s*\(/, /\bconst r9\s*=/],
     requires: [["shared/protocol/authority.js", /from "\.\/round\.js"/], ["client/lib/thingphysics.js", /from '\.\.\/\.\.\/shared\/protocol\/round\.js'/],
       ["shared/protocol/launchplan.js", /from "\.\/round\.js"/], ["shared/protocol/simlayer.js", /from "\.\/round\.js"/], ["shared/hierarchy.js", /from '\.\/protocol\/round\.js'/],

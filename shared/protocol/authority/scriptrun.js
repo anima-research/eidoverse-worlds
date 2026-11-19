@@ -15,7 +15,7 @@ import { readback, purgedSeqs, delOp, holdsCustody, isE, opsQuiet, setOp, versio
 import { worldT } from "./math.js";
 import { r3 } from "../round.js";
 import { isBanned, isScriptActor, lastSetterOf, may, muteOf, roleOf } from "./rights.js";
-import { bodyGate } from "./bodyconsent.js";
+import { bodyGate, farFrom } from "./bodyconsent.js";
 import { scriptUse } from "./use.js";
 import { DRY, DUTY, allScripts, budgetOf, dutyLeft, dutyLog, limitWhose, logRt, overCpu, pausedBy, presentOf, rtKey, rtOf, sampleOf, scopeIds, scriptDepth, scriptsCfg, sponsorOf, uploadEffect } from "./scripts.js";
 // the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
@@ -109,6 +109,8 @@ function activate(w, id, name, ev) {
   { const why = overBudget(st, B, cfg, key, sp.sponsor, 1 + (ops.length ? 1 : 0) + res.says.length + uses.length); if (why) return mark("budget", why); } // what it would actually write
   let plan = null;
   if (ops.length) try { plan = admit(w, st, { actor: `script:${id}`, cap }, ops); } catch (e) { if (!(e instanceof Refusal)) throw e; return mark(e.code, e.reason); }
+  // range from the scripted thing (@world has no place), before consent and before a dry run answers: it asks no one
+  for (const b of res.bodies) { const far = farFrom(w, `script:${id}`, id === "@world" ? null : worldT(st, id)?.pos, b.to); if (far) return mark(far.code, `${far.reason}: ${id === "@world" ? "put the script on a placed thing" : "bring the thing and its target closer"}`); }
   if (dry) return { script: key, id, status: "would-run", would: plan?.ops ?? [], says: res.says, bodies: res.bodies, ...(uses.length ? { uses } : {}), sponsor: sp.sponsor, fuel: res.fuel, note: "dry: nothing was written; body effects still meet each body's consent when it runs", ...logs };
   const gates = [];
   for (const b of res.bodies) { const g = bodyGate(w, `script:${id}`, b.to, b.kind, { spec: b.spec, script: key, sponsor: sp.sponsor }); if (!g.ok) return mark(g.code, g.reason); gates.push({ ...b, consent: g.consent, deliver: g.deliver }); }

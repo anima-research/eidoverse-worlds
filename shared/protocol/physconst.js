@@ -13,13 +13,19 @@ export const KICK = Object.freeze({ reach: 2.5, below: -0.5, above: 2.0, lift: 0
 // `mu`: the slide's friction (shared/sim.js FRICTION).
 export const SHOVE = Object.freeze({ reach: 0.9, beneath: 0.1, above: 2.0, maxV: 3, lift: 0.3, run: 4.0, mu: 0.6 });
 // a shove or drag at another body: the authority admits it within BODY_REACH; a client offers it within SHOVE_REACH.
-// The server forwards a presence act on another body within BODY_RANGE (null = any distance; consent still decides),
-// or the world's @world.body-default.range (m).
+// Every act on another body (presence, the body verbs, a blast, a script's) is refused past BODY_RANGE (null = any
+// distance) or the world's @world.body-default.range (m), before consent is asked (PROTOCOL §5).
 export const BODY_REACH = REACH + 0.5;
 export const SHOVE_REACH = 2.5;
 export const BODY_RANGE = null;
-/** a world's @world.body-default value → the range (m) the server forwards a presence act on another body within, or null */
+// a drag starts within the range and ends past range × BODY_BREAK: the band between lets the body lag the hand without flickering at the edge
+export const BODY_BREAK = 1.5;
+// a drag's owner takes its body back after this much dragger silence, and the server then counts no drag under way
+export const DRAG_SILENCE_MS = 1200;
+/** a world's @world.body-default value → the range (m) an act on another body must come from within, or null */
 export const bodyRangeOf = (bd) => (bd && typeof bd === "object" && typeof bd.range === "number" && bd.range > 0 ? bd.range : BODY_RANGE);
+/** …→ the distance (m) past which a drag under way ends, or null */
+export const bodyBreakOf = (bd) => { const r = bodyRangeOf(bd); return r == null ? null : r * BODY_BREAK; };
 /** the range in words, for help text: the one place it is said */
 export const bodyRangeWords = (r = BODY_RANGE) => (r == null ? "from any distance unless the world sets a range (@world.body-default.range)" : `within ${r} m`);
 // a blast (force {at, radius, power}): radius m and power m/s at ground zero, falling off linearly to the rim; below

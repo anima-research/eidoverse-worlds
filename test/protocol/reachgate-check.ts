@@ -34,9 +34,9 @@ const { ok, done } = suite("reachgate-check", { cap: 500 });
 const OWNER = foundWorld(path.join(process.env.WORLDS_DIR, "touch"), "touch", "olive").owner;
 const w = new World("touch");
 const A = (k) => "u-" + k.repeat(20);   // actor ids in the directory's shape
-const people = {};
+const people = {}; let GEN = 0;   // each leg's session generation, as the join issues one (server.ts c.gen)
 function person(id, key, at) {
-  const c = { id, actorId: A(key), world: w, ws: null, lastPose: null, spectator: false, surface: "world", avatar: "", got: [] };
+  const c = { id, actorId: A(key), world: w, ws: null, lastPose: null, spectator: false, surface: "world", avatar: "", got: [], gen: ++GEN };
   c.ws = { send: (d) => c.got.push(JSON.parse(d)) };
   w.clients.add(c); people[id] = c;
   w.log.requestSync(c.actorId, "consent", { touch: false });   // the gate's mechanics run against touch off, set explicitly (never by leaning on the default)
@@ -302,6 +302,7 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   const g = (m) => { const k = una.got.length; MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", grab: { joint: "hips" } }); return una.got.slice(k).filter((x) => x.type === "bodydrag").length; };
   const a = puppet({ ragdoll: true }), b = puppet({ pose: { head: [0, 0, 0, 1] } });
   ok(P.BODY_RANGE === null && a.got === 1 && b.got === 1 && g() === 1, "RR1 no range by default: Fen's knock-over, pose and grab reach Una from 30 m (her consent allows them)", { a, b, range: P.BODY_RANGE });
+  MESSAGES["bodydrag"]({ c: far, ws: far.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: "Una", end: true });   // Fen lets go: no drag under way below
   const set = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
   const c = puppet({ ragdoll: true }), d = puppet({ pose: { head: [0, 0, 0, 1] } });
   ok(set?.ok && c.got === 0 && /30\.0 m away/.test(c.err ?? "") && /5 m/.test(c.err ?? "") && d.got === 0 && g() === 0, "RR2 a world that sets range 5 refuses them from 30 m, saying how far and the world's range", { set, c, d });
@@ -311,6 +312,101 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
   pose(far, { p: [70, 0, 40], yaw: 0 }); const shut = puppet({ ragdoll: true });
   req(una, "consent", { move: true }); const open = puppet({ ragdoll: true });
   ok(shut.got === 0 && open.got === 0 && /get closer/.test(shut.err ?? "") && shut.err === open.err, "RR5 …and out of range the answer is the same whatever her gates, so distance can't read them", { shut, open });
+  // RR6–RR9: the same rule at the other three sites. Each act runs once with Una's gates open and once shut (the arms);
+  // RR9 runs them within range, where the arms must differ, so the shut arm really was shut
+  const gates = (on) => { req(una, "consent", { move: on, touch: on }); const t = req(una, "consent", {})?.table; return t?.move === on && t?.touch === on; };
+  const nail = (from, tgt) => { const k = tgt.got.length, kf = from.got.length;
+    MESSAGES["bodydrag"]({ c: from, ws: from.ws, now: Date.now(), expel: () => {} }, { type: "bodydrag", target: tgt.id, pinAt: { joint: "hips", at: [40, 1, 40] } });
+    return { got: tgt.got.slice(k).filter((x) => x.type === "bodydrag").length, err: from.got.slice(kf).find((x) => x.type === "error")?.error ?? null }; };
+  const hand = (from, tgt) => { const k = from.got.length, out = reachTo(from, { who: tgt.id, point: "shoulder_l" });
+    return { relayed: !!out?.reach, notes: refusals(from, k).map((r) => r.why) }; };
+  const verb = (from, tgt) => { const r = req(from, "body", { to: tgt.actorId, kind: "pose" }), x = rf(r); return { ok: r?.ok === true, code: x?.code ?? null, reason: x?.reason ?? null }; };
+  const fresh = () => { live.presence.reachNotes = {}; };   // the once-per-cooldown note forgotten, so a consent answer would be said (live.now's skew ended at RG14)
+  const arms = (f) => { const on = gates(true) ? f() : "setup: gates didn't open"; const off = gates(false) ? f() : "setup: gates didn't shut"; return { on, off }; };
+  { const { on, off } = arms(() => nail(far, una));
+    ok(on.got === 0 && off.got === 0 && /get closer/.test(on.err ?? "") && on.err === off.err, "RR6 a non-grab bodydrag nail from 30 m forwards nothing and says the range, the same whatever her move gate", { on, off }); }
+  { fresh(); const { on, off } = arms(() => hand(far, una));
+    ok(!on.relayed && !off.relayed && on.notes.length === 0 && off.notes.length === 0, "RR7 a reach descriptor on Una's shoulder from 30 m is stripped and says nothing, the same whatever her touch gate", { on, off }); }
+  // the authority keeps its own bodies, inside this world's bounds (x, z ±20): the same 30 m pair there
+  const placed = [[una, [-15, 0, 15]], [far, [15, 0, 15]]].every(([c, p]) => req(c, "move", { to: p })?.ok === true);
+  { const { on, off } = placed ? arms(() => verb(far, una)) : { on: "setup: bodies not placed", off: null };
+    ok(!on.ok && !off.ok && on.code === "out-of-reach" && off.code === "out-of-reach" && on.reason === off.reason, "RR8 the authority's body {kind: pose} from 30 m is refused out-of-reach, the same whatever her touch gate", { on, off }); }
+  { const nia = person("Nia", "ni", [43, 0, 40]);   // 3 m from Una, inside range 5, at the relay and the authority
+    ok(req(nia, "move", { to: [-12, 0, 15] })?.ok === true, "(RR9 setup) Nia's authority body stands 3 m from Una's");
+    fresh(); gates(true); const on = { nail: nail(nia, una), hand: hand(nia, una), verb: verb(nia, una) };
+    fresh(); gates(false); const off = { nail: nail(nia, una), hand: hand(nia, una), verb: verb(nia, una) };
+    ok(on.nail.got === 1 && !on.nail.err && on.hand.relayed && on.verb.ok, "RR9 within range, with her gates open, the nail, the hand and the body verb all go through", on);
+    ok(off.nail.got === 0 && off.nail.err === refusalWords("Una", "displace") && !off.hand.relayed && off.hand.notes.length === 1 && !/get closer|away/.test(off.hand.notes[0])
+      && off.verb.code === "consent", "RR9 …with them shut, all three get the consent words, so the shut arm of RR6–RR8 was really shut", off); }
+  // RR10–RR11: a drag starts in range, follows past it, and ends past the break distance (range × BODY_BREAK), told to both
+  { const nia = people.Nia, at = (c, x) => { pose(c, { p: [x, 0, 40], yaw: 0 }); return c.lastPose?.p?.[0] === x; };   // Una stands at x 40
+    const send = (from, tgt, m, now = Date.now()) => { const k = tgt.got.length, kf = from.got.length;
+      MESSAGES["bodydrag"]({ c: from, ws: from.ws, now, expel: () => {} }, { type: "bodydrag", target: tgt.id, ...m });
+      return { tgt: tgt.got.slice(k).filter((x) => x.type === "bodydrag"), from: from.got.slice(kf).filter((x) => x.type === "bodydrag" || x.type === "error") }; };
+    const sample = { pose: { hips: [0, 0, 0, 1] }, p: [40, 0.3, 40], yaw: 0 }, past = 5 * (P.BODY_BREAK ?? 1) + 1, band = 5.5;
+    const placed = [gates(true), at(nia, 43)], g0 = Date.now(); const grab = send(nia, una, { grab: { joint: "hips" } }, g0);
+    placed.push(at(nia, 40 + band)); const mid = send(nia, una, sample, g0 + 1000), late = send(nia, una, sample, g0 + 2000);   // each sample keeps it under way
+    ok(placed.every(Boolean) && grab.tgt.length === 1 && [mid, late].every((x) => x.tgt.length === 1 && x.tgt[0].pose && x.from.length === 0),
+      "RR10 a drag grabbed at 3 m still streams at 5.5 m, past range 5 but inside the break distance, for longer than 1.2 s while samples keep coming", { placed, grab, mid, late });
+    placed.push(at(nia, 40 + past)); const broke = send(nia, una, sample, g0 + 2100);
+    const told = (l, by) => l.length === 1 && l[0].end === true && l[0].reason === "out-of-reach" && l[0].by === by && !l[0].pose;
+    placed.push(at(nia, 40 + band)); const after = send(nia, una, sample, g0 + 2200);
+    placed.push(at(nia, 43)); const t0 = g0 + 3000, regrab = send(nia, una, { grab: { joint: "hips" } }, t0);
+    placed.push(at(nia, 40 + band)); const quiet = send(nia, una, sample, t0 + P.DRAG_SILENCE_MS + 1);   // the owner's silence rule: no drag under way
+    send(nia, una, { end: true }, t0 + P.DRAG_SILENCE_MS + 1);
+    ok(placed.every(Boolean) && told(broke.tgt, "Nia") && told(broke.from, "Una") && after.tgt.length === 0 && regrab.tgt.length === 1 && quiet.tgt.length === 0,
+      "RR11 …past it the drag ends: both are told it was released out of reach; a sample back at 5.5 m is dropped (no drag left), as is one after 1.2 s of quiet", { placed, broke, after, regrab, quiet }); }
+  // RR12: the reach verb at a range under BODY_REACH (range 1, bodies 1.2 m apart), both shapes; RR13: no pose to measure from fails closed
+  { const ola = person("Ola", "ol", [10, 0, -10]), pim = person("Pim", "pm", [11.2, 0, -10]);
+    const one = w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 1 } });
+    const pimGates = (on) => { req(pim, "consent", { move: on, touch: on }); return req(pim, "consent", {})?.table?.touch === on; };
+    const both = () => [req(ola, "reach", { who: pim.actorId, point: "shoulder_l" }), req(ola, "reach", { at: [10.95, 1.6, -10] })].map((r) => (r?.ok ? "ok" : `${rf(r)?.code}|${rf(r)?.reason}`));
+    const open = pimGates(true) ? both() : "setup", shut = pimGates(false) ? both() : "setup";
+    ok(one?.ok && JSON.stringify(open) === JSON.stringify(shut) && open.every((x) => /^out-of-reach\|\S+ is 1\.2 m away/.test(x)), "RR12 at range 1, reach {who, point} and reach {at} on Pim 1.2 m away are refused out-of-reach, the same whatever his touch gate", { one, open, shut });
+    w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: { range: 5 } });
+    const ghost = person("Gus", "gu", [41, 0, 40]); ghost.lastPose = null;   // 1 m from Una, but no pose at the relay
+    const shove = () => { const k = una.got.length, kg = ghost.got.length; MESSAGES["puppet"]({ c: ghost, ws: ghost.ws, now: Date.now(), expel: () => {} }, { type: "puppet", target: "Una", ragdoll: true });
+      return { got: una.got.slice(k).filter((x) => x.type === "puppet").length, err: ghost.got.slice(kg).find((x) => x.type === "error")?.error ?? null }; };
+    const on = gates(true) ? shove() : "setup", off = gates(false) ? shove() : "setup";
+    ok(on.got === 0 && off.got === 0 && /can't tell where/.test(on.err ?? "") && on.err === off.err, "RR13 a knock-over from someone with no pose yet is refused the same whatever her move gate (nothing to measure from)", { on, off }); }
+  // RR14: a drag under way is one (dragger session, target session) pair: refreshed only by a pose sample, one per target,
+  // gone with either session, and the owner's side of it answers under the same break distance. Range 5, Una at x 40.
+  { const nia = people.Nia, at = (c, x, z = 40) => { pose(c, { p: [x, 0, z], yaw: 0 }); return c.lastPose?.p?.[0] === x; };
+    const send = (from, tgt, m, now) => { const k = tgt.got.length, kf = from.got.length;
+      MESSAGES["bodydrag"]({ c: from, ws: from.ws, now, expel: () => {} }, { type: "bodydrag", target: tgt.id, ...m });
+      return { tgt: tgt.got.slice(k).filter((x) => x.type === "bodydrag"), err: from.got.slice(kf).find((x) => x.type === "error")?.error ?? null }; };
+    const sample = { pose: { hips: [0, 0, 0, 1] }, p: [40, 0.3, 40], yaw: 0 }, nailAt = { pinAt: { joint: "hips", at: [40, 1, 40] } };
+    const grabbed = (tgt, t) => { const placed = gates(true) && at(nia, 43); return placed && send(nia, tgt, { grab: { joint: "hips" } }, t).tgt.length === 1; };
+    const far = (e) => /get closer/.test(e ?? ""), bye = (t) => send(nia, una, { end: true }, t);
+    // (a) a message without a pose doesn't keep it under way: 2 s after the grab, past the silence rule, a nail in the band gets the range words
+    { const t = Date.now(); const g = grabbed(una, t); at(nia, 45.5); send(nia, una, {}, t + 1000); gates(false); const r = send(nia, una, nailAt, t + 2000); bye(t + 2000);
+      ok(g && r.tgt.length === 0 && far(r.err), "RR14 a bodydrag with no pose doesn't refresh a drag: once its samples stop for 1.2 s, a nail in the band gets the range words", { g, r }); }
+    // (b) a second grab doesn't end the first
+    { const vex = person("Vex", "vx", [43, 0, 43]); const t = Date.now(); const g1 = grabbed(una, t), g2 = send(nia, vex, { grab: { joint: "hips" } }, t).tgt.length === 1;
+      at(nia, 45.5); const s = send(nia, una, sample, t + 100); bye(t + 100); send(nia, vex, { end: true }, t + 100);
+      ok(g1 && g2 && s.tgt.length === 1 && s.tgt[0].pose, "RR14 grabbing a second body leaves the first drag under way: its sample in the band still streams", { g1, g2, s }); }
+    // (c) the target's new session (a takeover, a rejoin) was never grabbed
+    { const t = Date.now(); const g = grabbed(una, t); const una2 = { ...una, ws: null, got: [], gen: ++GEN }; una2.ws = { send: (d) => una2.got.push(JSON.parse(d)) };
+      w.clients.delete(una); w.clients.add(una2); at(nia, 45.5); gates(false); const r = send(nia, una2, nailAt, t + 100);
+      w.clients.delete(una2); w.clients.add(una); bye(t + 100);
+      ok(g && r.tgt.length === 0 && far(r.err), "RR14 after the target's session is taken over, a nail in the band gets the range words (the drag was the old session's)", { g, r }); }
+    // (d) the dragger's own new session (travel and rejoin issue a new gen, server.ts) holds no drag
+    { const t = Date.now(); const g = grabbed(una, t), was = nia.gen; nia.gen = ++GEN; at(nia, 45.5); gates(false); const r = send(nia, una, nailAt, t + 100); nia.gen = was; bye(t + 100);
+      ok(g && r.tgt.length === 0 && far(r.err), "RR14 after the dragger's session changes (travel, rejoin), a nail in the band gets the range words", { g, r }); }
+    // (e) the owner's reply in the band (its other nails, on accepting) reaches the dragger
+    { const t = Date.now(); const g = grabbed(una, t); at(nia, 45.5); const r = send(una, nia, { pins: [{ j: "head", at: [40, 1.6, 40] }] }, t + 100); bye(t + 100);
+      ok(g && r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err, "RR14 the owner's pins reply from the band reaches the dragger (the drag is consulted from either side)", { g, r }); }
+    // (f) the owner's reply is the owner's own session's: the dragger's move gate doesn't decide it (targetActor as client/lib/net.js sends it)
+    const niaMove = (on) => { req(nia, "consent", { move: on }); return req(nia, "consent", {})?.table?.move === on; };   // read back, as gates() does
+    { const t = Date.now(); const shut = niaMove(false); const g = grabbed(una, t);
+      const pins = { targetActor: nia.actorId, pins: [{ j: "head", at: [40, 1.6, 40] }] }, near = send(una, nia, pins, t + 50); at(nia, 45.5); const band = send(una, nia, pins, t + 100);
+      bye(t + 100); niaMove(true);
+      ok(shut && g && [near, band].every((r) => r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err), "RR14 with the dragger's own move gate shut, the owner's pins reply reaches it in range and in the band", { shut, g, near, band }); }
+    // (g) …but only pins and end: anything else the owner sends acts on the dragger's body, and its gate decides
+    { const t = Date.now(); const shut = niaMove(false); const g = grabbed(una, t); const r = send(una, nia, { unpin: { joint: "hand_l" } }, t + 50);
+      bye(t + 50); niaMove(true);
+      ok(shut && g && r.tgt.length === 0 && r.err === refusalWords("Nia", "displace"), "RR14 with the dragger's move gate shut, the owner's unpin (an act on the dragger's body) is refused with the consent words", { shut, g, r }); }
+    at(nia, 43); }
   w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
 let skipped = null; const SKIP = Symbol("skip");

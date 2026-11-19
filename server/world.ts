@@ -33,6 +33,7 @@ export type Client = {
   /** latest pose, forwarded to late joiners. `.p` (world.near, held-thing reach), and `.q`, scale and `.reach`
    *  (reachgate.ts) are read; the rest rides opaque. */
   lastPose: ({ p?: [number, number, number] } & Record<string, unknown>) | null | undefined;
+  drags?: Map<number, { by: number; at: number }>;   // drags this leg holds, by the target leg's gen: when its last sample went (messages.ts dragOf)
   avatar: string;      // VRM library path chosen at join
   spectator: boolean;  // retina/observer connections: receive everything, appear as nothing
   declares?: string;   // a status the participant declared at join (PROTOCOL §6a: its own word, e.g. "agent" or "ai"); absent = undeclared. Never inferred

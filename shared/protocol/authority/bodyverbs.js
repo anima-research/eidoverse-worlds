@@ -6,7 +6,7 @@ import { VOLUME_MODES, physicsVolumesOf, speedFactorAt } from "../../zone.js";
 import { atASpawn, spawnsOf, fallBackOf, FELL } from "../../spawn.js";
 import { DEFAULT_WHO, grabOf, offsetOk } from "../../grab.js";
 import { livePoses, ENGINES, carried } from "../simlayer.js";
-import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN } from "../physconst.js";
+import { REACH, HAND_Y, MAX_HELD, KICK, BLAST, KILL_MARGIN, bodyRangeOf } from "../physconst.js";
 import { blastArgs, falloff } from "../../blast.js";
 import { r3, noNeg0 } from "../round.js";
 import { unitTransform } from "../componentspec.js";
@@ -18,7 +18,7 @@ import { aabb, ancestors, descendants, localFrom, qYaw, worldT } from "./math.js
 import { familyOf, groundOf, groundReady, hitsIx, near, spatial, supportBelow, supportUnder } from "./spatial.js";
 import { admits, lastSetterOf, lockStrength, may, roleOf } from "./rights.js";
 import { whoWords } from "../roles.js";
-import { BODY_VERBS, bodyGate, forgetReaches, noteBlastRefusals } from "./bodyconsent.js";
+import { BODY_VERBS, bodyGate, farFrom, forgetReaches, noteBlastRefusals } from "./bodyconsent.js";
 import { thingSaid } from "./blueprints.js";
 import { heldEvent } from "./scriptrun.js";
 import { clearOccupant, leftOccupied, occupiedRefuse, occupantOf, vacateAt } from "./occupants.js";
@@ -356,7 +356,7 @@ const EMBODIED_VERBS = {
   },
   // a blast (/boom): each body whose falloff reaches BLAST.min is shoved through its own consent (bodyGate, as the body
   // verb); the nearest BLAST.things loose things above it get the punt's radial launch from the centre (its own gates); one act. Builders and up. Falloff: shared/blast.js
-  // No reach from the caster to `at`, on purpose: consent decides
+  // No reach from the caster to `at` for things; a body past the world's range from the caster is refused before consent (farFrom)
   force(w, actor, a) {
     if (!Array.isArray(a.at) || a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "force needs at: [x, y, z]", `force {at: [x, y, z], radius?: ${BLAST.radius.min}–${BLAST.radius.max} m (${BLAST.radius.dflt}), power?: ${BLAST.power.min}–${BLAST.power.max} m/s (${BLAST.power.dflt})}`);
     const st = w.state();
@@ -379,13 +379,15 @@ const EMBODIED_VERBS = {
         catch (x) { if (!(x instanceof Refusal)) throw x; skipped.push({ id, code: x.code }); } }
     } else notes.push({ why: "this world runs no physics: things stay put" });
     // bodies: presence, so only counted (who was shoved is theirs, never the log's)
-    const bodies = { shoved: 0, refused: 0 }, denied = [];
+    const bodies = { shoved: 0, refused: 0 }, denied = [], from = w.presence.bodies[actor]?.at; let nFar = 0;
     for (const [who, b] of Object.entries(w.presence.bodies)) {
       const f = falloff(a.at, b.at, radius, power); if (!f || f.mag < BLAST.min) continue;
+      const out = farFrom(w, actor, from, who); if (out) { bodies.refused++; nFar++; continue; }   // range before consent: the same count whatever their gates
       const m = Math.min(BLAST.body, f.mag);
       const g = bodyGate(w, actor, who, "shove", { uncounted: true, spec: f.n ? { lean: [noNeg0(r3(f.n[0] * m)), 0, noNeg0(r3(f.n[1] * m))] } : {} });
       if (!g.ok) { bodies.refused++; if (g.code === "consent") denied.push(who); } else { g.deliver(); bodies.shoved++; } }
     if (denied.length) noteBlastRefusals(w, actor, denied, "shove");   // one attempt toward the cool-down, however many refused
+    if (nFar) notes.push({ why: `${nFar} ${nFar === 1 ? "body" : "bodies"} left be: ${from ? "out of this world's range" : "you have no body here to measure this world's range"} (${bodyRangeOf(w.presence.bodyDefault)} m) from${from ? " you" : "; move first"}` });
     actOnce();
     return { ok: true, act, at: a.at, radius, power, bodies, punted, ...(skipped.length ? { skipped } : {}), ...(notes.length ? { notes } : {}) };
   },

@@ -29,10 +29,10 @@ import { makeRagdoll } from './bodysim.js';
 import { sendBodyDrag } from '../net.js';
 import { flashHint, toast } from '../ui/ui.js';
 import { isBuilding } from '../edit/build.js';
+import { DRAG_SILENCE_MS } from '../../../shared/protocol/physconst.js';   // owner resumes itself after this much quiet
 
 const GRAB_RANGE = 5;        // how far a body may be from ME to grab (m)
 const STREAM_MS = 66;        // sim → owner cadence, matches presence
-const SILENCE_MS = 1200;     // owner resumes itself after this much quiet
 
 let hooks = null;            // localbody.js: my own body's state and effects
 export function initBodyDrag(h) { hooks = h; }
@@ -279,20 +279,21 @@ bus.on('bodydrag', (msg) => {
     return;
   }
   if (msg.end != null) {
-    // my dragger let go (or a refused grabber acknowledging): resume myself. A release may carry a nail, which my sim
-    // enforces from here.
+    // my dragger let go, a refused grabber acknowledged, or the server ended it out of reach: resume myself. A release may
+    // carry a nail, which my sim enforces from here.
     if (draggedBy === by) {
       draggedBy = null;
       if (msg.pinAt?.joint && Array.isArray(msg.pinAt.at)) hooks.addPin?.(String(msg.pinAt.joint), msg.pinAt.at);
       hooks.endDragged(msg);
+      if (msg.reason === 'out-of-reach') flashHint(`${by} lost hold of you: out of reach`);
     }
     else if (drag && drag.id === by) {
-      // I was the dragger and the OWNER revoked (broke free, or refused)
+      // I was the dragger and the OWNER revoked (broke free, or refused), or the server ended it past the break distance
       drag.rd.setPin(null);
       drag.rd.dispose?.();
       draggedLocal.delete(drag.id);
       drag = null;
-      flashHint(`${by} broke free`);
+      flashHint(msg.reason === 'out-of-reach' ? `${by} slipped out of reach` : `${by} broke free`);
     }
     return;
   }
@@ -342,7 +343,7 @@ export function updateBodyDrag(dt, now = performance.now()) {
     }
   }
   // dragged: a silent dragger loses the body — nobody stays possessed
-  if (draggedBy && now - lastSampleAt > SILENCE_MS) {
+  if (draggedBy && now - lastSampleAt > DRAG_SILENCE_MS) {
     draggedBy = null;
     hooks?.endDragged({});
   }

@@ -1,8 +1,10 @@
 // server/reachgate.ts — touch consent at the relay. A reach rides the presence packet (shared/reachwire.js) and every receiver
 // draws it, so the gate is here, on the one path every pose takes: each limb aimed at another body is held to that body's
-// consent table through the authority (WorldLog.reachAdmits), and a refused limb is taken out of the packet. Nothing is logged.
+// consent table through the authority (WorldLog.reachAdmits), after the world's range (rangeRefusal, also the puppet's and
+// drag's in messages.ts), and a refused limb is taken out of the packet. Nothing is logged.
 import { namedPointClass, pointClass } from "../shared/protocol/consent.js";
 import { normalizeReachTarget, REACH_LIMBS } from "../shared/reachwire.js";
+import { bodyBreakOf, bodyRangeOf } from "../shared/protocol/physconst.js";
 import type { Client } from "./world.ts";
 
 type Cls = "touch" | "intimate";
@@ -48,6 +50,18 @@ function bodiesAt(c: Client, pt: number[]): Hit[] {
   }
   return out;
 }
+/** The world's range (@world.body-default.range), asked before consent so an answer out of range reads the same whatever
+ *  `tc`'s gates. `from` is the asker's position (the caller says which pose); m between the two bodies' roots. `held`: a drag
+ *  under way, measured against the break distance instead (physconst.js BODY_BREAK). Null = in range. */
+export function rangeRefusal(c: Client, from: unknown, tc: Client, held = false): string | null {
+  const bd = c.world?.log?.live?.state?.()?.entities?.["@world"]?.c?.["body-default"];
+  const r = held ? bodyBreakOf(bd) : bodyRangeOf(bd);
+  if (r == null) return null;
+  const b = tc.lastPose?.p;
+  if (!Array.isArray(from) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
+  const m = Math.hypot(from[0] - b[0], from[1] - b[1], from[2] - b[2]);
+  return m <= r ? null : `${tc.id} is ${m.toFixed(1)} m away (this world's range is ${r} m) — get closer`;
+}
 const legNamed = (c: Client, name: string) => [...(c.world?.clients ?? [])].find((o) => o.id === name && bodyLeg(o)) ?? null;
 
 /** The bodies one limb's target lands on: [] for open air or your own body, null for a body that isn't here. */
@@ -71,7 +85,7 @@ function touched(c: Client, pose: any, t: any): Hit[] | null {
   return at ? [...own, ...bodiesAt(c, at).filter((h) => h.tc !== tc && !sameBody(tc, h.tc))] : own;
 }
 
-/** Takes out of `pose.reach` (in place) every limb aimed at a body that hasn't consented to it. Then tells the authority
+/** Takes out of `pose.reach` (in place) every limb aimed at a body out of range or that hasn't consented to it. Then tells the authority
  *  which bodies a relayed limb rests on: a touch on record ends on the first packet without its hand (an absent reach is
  *  "nobody is reaching", reachwire.js).
  *
@@ -91,6 +105,7 @@ export function gateReach(c: Client, pose: Record<string, unknown>, { quiet = fa
     if (!hits) { delete bag[limb]; continue; }
     let admitted = true;
     for (const h of hits) {
+      if (rangeRefusal(c, pose.p, h.tc)) { delete bag[limb]; admitted = false; break; }   // out of range: dropped unsaid, before consent
       const v = log && c.actorId && h.tc.actorId ? log.reachAdmits(c.actorId, h.tc.actorId, h.cls, { point: h.point, limb, quiet }) : { ok: false };
       if (!v.ok) { delete bag[limb]; admitted = false; break; }
     }

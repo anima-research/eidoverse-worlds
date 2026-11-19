@@ -58,7 +58,7 @@ import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../shared/seatcore.js";
 import { redialer, REDIAL } from "../shared/redial.js";
 import { createShover, shoveable, footprint, obbOf, aabbOfObb, contactOf, massOf, budges, SHOVE_FEEL } from "../shared/shove.js";
-import { SHOVE } from "../shared/protocol/physconst.js";
+import { SHOVE, DRAG_SILENCE_MS } from "../shared/protocol/physconst.js";
 import { worldPose } from "../shared/protocol/simlayer.js";
 import { physicsVolumesOf, speedFactorAt, foldOfView, zonesOf, waterVolumes, worldLevelAt } from "../shared/zone.js";
 import { fallBackOf, belowWorld, FELL } from "../shared/spawn.js";
@@ -860,7 +860,7 @@ export class WorldAgent {
                 if (pa?.joint && Array.isArray(pa.at) && pa.at.length === 3 && this.pins.size < 8) {
                   this.pins.set(String(pa.joint), pa.at.map(Number));
                 }
-                this.bodyNotice(msg.by, pa ? "nails part of you in place and steps back" : "lets go of you");
+                this.bodyNotice(msg.by, pa ? "nails part of you in place and steps back" : msg.reason === "out-of-reach" ? "loses hold of you: you're out of reach" : "lets go of you");
                 // then MY OWN sim takes the body back: it falls from where the hand let go and settles, or hangs if nails hold it
                 void this.settleFromDrag(releasePose, msg.sim ?? null);
               }
@@ -1377,7 +1377,7 @@ export class WorldAgent {
     // Being dragged: the dragger's stream owns pos/pose/yaw (no walking, no
     // terrain clamp). A silent dragger loses the body, which my own sim settles from its last pose (settleFromDrag;
     // with no sim it holds that pose).
-    if (this.draggedBy && Date.now() - this.dragAt > 1200) {
+    if (this.draggedBy && Date.now() - this.dragAt > DRAG_SILENCE_MS) {
       this.draggedBy = null;                 // a silent dragger loses the body
       void this.settleFromDrag(null);        // — and my own sim settles it
     }

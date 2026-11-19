@@ -3,7 +3,7 @@
 // auto-cooldown goes in the moderator log, noteRefusal). The body's own track (body, dist, gripPoint) is physics.js's,
 // above it, reached through UP.
 import * as C from "../consent.js";
-import { REACH, BODY_REACH } from "../physconst.js";
+import { REACH, BODY_REACH, bodyRangeOf } from "../physconst.js";
 import { r3 } from "../round.js";
 import { UP } from "./ctx.js";
 import { refuse } from "./refuse.js";
@@ -105,7 +105,7 @@ function deliver(w, from, to, kind, cls, extra) {
   if (cls === "touch" || cls === "intimate") (P.reaches ??= {})[from] = { to, cls, point: extra.spec?.point ?? null, ...sponsor };
   inboxPush(P, to, { type: "body", from, kind, cls, consent: from === to ? "self" : "allowed", ...(extra.spec ? { spec: extra.spec } : {}) }); w.presenceDirty = true;
 }
-// The world's body-default (@world.body-default: {move?, touch?}), read where a decision is made: absent = DEFAULT_GATES.
+// The world's body-default (@world.body-default: {move?, touch?, range?}), read where a decision is made: absent = DEFAULT_GATES, no range.
 function syncDefault(w) { const v = w.state?.()?.entities?.["@world"]?.c?.["body-default"]; if (v !== undefined) w.presence.bodyDefault = v; else delete w.presence.bodyDefault; }
 // After any change to `to`'s table: whatever someone is doing to them that the table now refuses ends NOW, and the actor
 // hears body-revoked once: a gate closed on it, or its actor blocked.
@@ -118,6 +118,13 @@ function revokeAfter(w, to) { syncDefault(w); const P = w.presence, b = P.bodies
 /** what my own snapshot says I chose (look's `shield`): each gate as chosen, null = the world's default stands */
 const shieldOf = (P, who) => { const t = C.tableOf(P, who); return { move: t.move ?? null, touch: t.touch ?? null }; };
 const readTable = (P, who) => { const t = C.tableOf(P, who); return { move: t.move ?? null, touch: t.touch ?? null, allow: t.allow, block: t.block }; };
+// the world's range (@world.body-default.range) before consent: out of range reads the same whatever `to`'s gates.
+// `at` is where the act comes from (the asker's body, a scripted thing); none, in a ranged world, is out of range. Null = in range
+function farFrom(w, actor, at, to) { syncDefault(w); to = bodyRef(to); const r = bodyRangeOf(w.presence.bodyDefault), t = w.presence.bodies[to];
+  if (r == null || !t || to === actor) return null;
+  if (!Array.isArray(at)) return { code: "out-of-reach", reason: `this world's range is ${r} m, and this act has no place here to measure ${to}'s distance from`, fix: "act from a body or a placed thing" };
+  const m = dist(at, t.at); return m > r ? { code: "out-of-reach", reason: `${to} is ${r3(m)} m away (this world's range is ${r} m)`, fix: "get closer" } : null; }
+function outOfRange(w, actor, me, to) { const f = farFrom(w, actor, me.at, to); if (f) refuse("out-of-reach", f.reason, f.fix); }
 const BODY_VERBS = {
   // my body's two gates and my two lists; only I change them
   consent(w, actor, a) { const P = w.presence;
@@ -130,6 +137,7 @@ const BODY_VERBS = {
   // one shape for every act on a body: pose, anim, shove, drag, occupy, carry. Says what happened.
   body(w, actor, a) { const me = body(w, actor); const to = bodyRef(a.to);
     if (!["pose", "anim", "shove", "drag", "occupy", "carry"].includes(a.kind)) refuse("shape", `no body kind '${a.kind}'`, "body {to, kind: pose|anim|shove|drag|occupy|carry}");
+    outOfRange(w, actor, me, to);
     const t = w.presence.bodies[to]; if (t && ["shove", "drag", "carry"].includes(a.kind) && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "get closer");
     const g = bodyGate(w, actor, to, a.kind, { spec: a.spec });
     if (!g.ok) refuse(g.code, g.reason, g.fix, { class: g.class });
@@ -139,10 +147,11 @@ const BODY_VERBS = {
     if (Array.isArray(a.at)) { if (a.at.length !== 3 || a.at.some((n) => !Number.isFinite(n))) refuse("shape", "at: [x, y, z]", "");
       for (const [k, b] of Object.entries(P.bodies)) { if (k === actor) continue; const c = C.pointClass(b.at, a.at); if (c) { to = k; cls = c; break; } }
       if (dist(gripPoint(me), a.at) > REACH) refuse("out-of-reach", `that point is ${r3(dist(gripPoint(me), a.at))} m from your hand`, "get closer");
+      if (to) outOfRange(w, actor, me, to);   // the hand's cap doesn't bound body-to-body distance below a small range
       if (!to) { (P.reaches ??= {})[actor] = { at: a.at.slice() }; w.presenceDirty = true; return { ok: true, touching: null, recorded: false }; } }
     else { to = bodyRef(a.who); if (!to || !point) refuse("shape", "reach {who, point} or {at: [x, y, z]}", "points: " + C.REACH_POINTS.join(", "));
       const np = C.namedPointClass(point); if (!np) refuse("shape", `no point '${point}'`, C.REACH_POINTS.join(", "));   // the relay's own classifier
-      point = np.point; cls = np.cls;
+      point = np.point; cls = np.cls; outOfRange(w, actor, me, to);
       const t = P.bodies[to]; if (t && dist(me.at, t.at) > BODY_REACH) refuse("out-of-reach", `${to} is ${r3(dist(me.at, t.at))} m away`, "get closer"); }
     delete P.reaches?.[actor];
     const g = bodyGate(w, actor, to, "touch", { cls, spec: { point, ...(a.at ? { at: a.at } : {}) } });
@@ -150,4 +159,4 @@ const BODY_VERBS = {
     g.deliver(); return { ok: true, outcome: "allowed", touching: to, class: cls, recorded: false }; },
   inbox(w, actor) { const P = w.presence; const m = P.inbox?.[actor] ?? []; if (P.inbox) delete P.inbox[actor]; w.presenceDirty = true; return { ok: true, messages: m }; },
 };
-export { BODY_VERBS, bodyGate, forgetReaches, inboxPush, shieldOf };
+export { BODY_VERBS, bodyGate, farFrom, forgetReaches, inboxPush, shieldOf };
