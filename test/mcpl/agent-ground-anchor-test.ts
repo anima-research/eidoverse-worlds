@@ -8,7 +8,7 @@
 
 import { noWorldUrl } from "../harness/no-world.ts";
 import { WorldAgent } from "../../mcpl/agent.ts";
-import { supportHolders } from "../../mcpl/physics.ts";
+import { supportHolders, supportShape } from "../../mcpl/physics.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 // registration is detached and waits for the sim to load (seconds, the first time): wait for the box itself
@@ -82,10 +82,10 @@ check("a thing that becomes an anchor while its geometry is in flight registers 
 // ...and while its grid fit is in flight: the fit that lands is taken back out
 ag.entities.set("rug", { id: "rug", model: "rug.glb", pos: [150, 0, 0], yaw: 0, actor: "x" });
 await ag.ground.syncSupport("rug");
-check("(control) a rug with a lying top registers grid support", await registered("anchor/rug"), JSON.stringify(Object.keys(supportHolders())));
+check("(control) a rug with a lying top registers grid support", await registered("anchor/rug") && supportShape("anchor/rug") === "grid", JSON.stringify(Object.keys(supportHolders())));
 ag.entities.set("rug2", { id: "rug2", model: "rug.glb", pos: [170, 0, 0], yaw: 0, actor: "x" });
 let fired = false; onFit = () => { fired = true; becomeAnchor("rug2"); };
 await ag.ground.syncSupport("rug2");
-check("a rug that becomes an anchor while its grid fit is in flight keeps none", fired && await settled() && !supportHolders()["anchor/rug2"], JSON.stringify(Object.keys(supportHolders())));
+check("a rug that becomes an anchor while its grid fit is in flight keeps none", fired && await settled() && !supportHolders()["anchor/rug2"] && !ag.ground.supportIds.has("rug2"), JSON.stringify(Object.keys(supportHolders())));
 
 done();
