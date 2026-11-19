@@ -36,6 +36,14 @@ Sel.set(["a", "b", "c"]);
 f = MM.followersOf("a", (id) => id !== "c");
 check("a follower the gesture can't take is skipped and named", f.ids.join() === "b" && f.skipped.join() === "c", JSON.stringify(f));
 check("the lead's own ancestor is not its follower", (Sel.set(["rider", "b"]), MM.followersOf("rider").ids.length === 0));
+const rider2 = thing("rider2", [0, 2, 0], b);
+Sel.set(["b", "rider", "rider2"]);
+f = MM.followersOf("rider");
+check("...and a sibling under that ancestor (which stays put) follows on its own", f.ids.join() === "rider2", JSON.stringify(f));
+Sel.set(["a", "b", "rider"]);
+f = MM.followersOf("a", (id) => id !== "b");
+check("a thing under a selected carrier the gesture can't take follows on its own", f.ids.join() === "rider" && f.skipped.join() === "b", JSON.stringify(f));
+b.remove(rider2); stub.entities.delete("rider2");
 
 // move: every follower moves by the lead's world delta
 Sel.set(["a", "b", "c"]);

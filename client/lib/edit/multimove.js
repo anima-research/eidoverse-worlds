@@ -11,7 +11,7 @@
 //   rotate, world axes: each follower turns by the lead's world turn Δ about its own pivot point
 //   rotate, own axes:   each turns by the lead's LOCAL turn, about its own axes
 //   scale:              each follower's scale × the lead's per-axis ratio, in its own axes, about its own pivot
-// A follower whose parent (anywhere up its chain) is also selected rides that parent and is left out: never moved twice.
+// A follower whose parent (anywhere up its chain) also moves rides that parent and is left out: never moved twice.
 // So is an ancestor of the lead (the lead moves as dragged). Things are drawn in three's tree as they ride (realize/
 // models.js), so ancestry is read off the objects.
 import { THREE } from '../core.js';
@@ -28,23 +28,24 @@ const idOf = (o) => o?.userData?.entityId ?? null;
 function underAny(obj, set) { for (let o = obj?.parent; o; o = o.parent) { const id = idOf(o); if (id != null && set.has(id)) return true; } return false; }
 const pivotOf = (id) => { const p = bagOf(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : [0, 0, 0]; };
 
-/** The selected things that follow `leadId`: every other live selected thing, minus those riding a selected thing, minus
- *  the lead's own ancestors. `ok(id)` may refuse one (a gesture it can't take): it is skipped, and named in `.skipped`. */
+/** The selected things that follow `leadId`: every other live selected thing, minus those riding a thing that moves (the
+ *  lead or a follower), minus the lead's own ancestors. `ok(id)` may refuse one (a gesture it can't take): it is skipped,
+ *  and named in `.skipped`. Ancestors are decided first, so a thing under one that stays put follows on its own. */
 export function followersOf(leadId, ok = () => true) {
   const s = Sel.selection();
   if (s.kind !== 'things' || !s.ids.includes(leadId) || s.ids.length < 2) return { ids: [], skipped: [] };
-  const live = s.ids.filter((id) => entities.get(id));
-  const set = new Set(live);
+  const depth = (o) => { let d = 0; for (let p = o?.parent; p; p = p.parent) d++; return d; };
+  const live = s.ids.filter((id) => id !== leadId && entities.get(id)).sort((x, y) => depth(entities.get(x)) - depth(entities.get(y)));
+  const moves = new Set([leadId]);
   const lead = entities.get(leadId);
   const ids = [], skipped = [];
   for (const id of live) {
-    if (id === leadId) continue;
     const o = entities.get(id);
-    if (underAny(o, set)) continue;                                   // it rides a selected thing: that one carries it
+    if (underAny(o, moves)) continue;                                 // it rides a thing that moves: that one carries it
     let anc = false; for (let p = lead?.parent; p; p = p.parent) if (p === o) anc = true;
     if (anc) continue;                                                // the lead rides IT
     if (!ok(id)) { skipped.push(id); continue; }
-    ids.push(id);
+    ids.push(id); moves.add(id);
   }
   return { ids, skipped };
 }
