@@ -198,14 +198,16 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         endAlone(); return;
       }
       const mine = dragOf(c, tc, now), theirs = mine ? null : dragOf(tc, c, now), held = !!(mine ?? theirs);   // the dragger's messages or the owner's replies
+      const reply = !!theirs && Object.keys(msg).every((k) => ["type", "target", "targetActor", "pins", "end"].includes(k));   // pins and/or end only
       if (msg.end != null) dragEnd(c, tc);   // either side's end ends it
       // range before consent, as bodyRefusal; a drag under way follows out to the break distance, and past it both are told it ended
       const far = rangeRefusal(c, c.lastPose?.p, tc, held);
       if (far && held) { dragEnd(c, tc); const why = { end: true, reason: "out-of-reach" };
         tc.ws.send(JSON.stringify({ ...addressed, ...why }));
         ws.send(JSON.stringify({ type: "bodydrag", by: tc.id, byActor: tc.actorId, ...why })); return; }
-      // the owner's reply belongs to its own dragged-body session: the dragger's gate isn't asked (it would answer for the wrong body)
-      const d = far || theirs ? null : consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
+      // the owner's pins/end belong to its own dragged-body session: the dragger's gate isn't asked (it would answer for the wrong body);
+      // anything else the owner sends acts on the dragger's body, and that gate decides
+      const d = far || reply ? null : consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
       if (far || d?.mode === "deny") {
         if (nail) ws.send(JSON.stringify({ type: "error", error: far ?? refusalWords(tc.id, "displace") }));
         endAlone(); return;

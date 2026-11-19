@@ -765,8 +765,10 @@ copy that was updated and is published again keeps its parts' keys.
   pair of sessions: it begins at a forwarded grab, is kept by forwarded pose
   samples, and ends at either side's end, at the break, after 1.2 s without a
   sample, or with either session; the owner's replies to it count under the
-  same break distance and are not held to the dragger's own gates. An end alone is forwarded at any distance, so a
-  release is never lost. This is the one exception to "the same answer":
+  same break distance, and its `pins` and `end` are not held to the
+  dragger's own gates (anything else the owner sends acts on the dragger and
+  is). An end alone is forwarded at any distance, so a release is never
+  lost. This is the one exception to "the same answer":
   between 1 × and 1.5 × the range, a drag under way still answers from
   consent, so its dragger, who was in range when it began, learns the
   target's gates there (a nail gets the consent words, and once a closed gate

@@ -397,10 +397,15 @@ let tierNobody, perPerson;   // the two ways to be refused: a gate off, and a bl
     { const t = Date.now(); const g = grabbed(una, t); at(nia, 45.5); const r = send(una, nia, { pins: [{ j: "head", at: [40, 1.6, 40] }] }, t + 100); bye(t + 100);
       ok(g && r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err, "RR14 the owner's pins reply from the band reaches the dragger (the drag is consulted from either side)", { g, r }); }
     // (f) the owner's reply is the owner's own session's: the dragger's move gate doesn't decide it
-    { const t = Date.now(); const shut = req(nia, "consent", { move: false })?.ok === true; const g = grabbed(una, t);
+    const niaMove = (on) => { req(nia, "consent", { move: on }); return req(nia, "consent", {})?.table?.move === on; };   // read back, as gates() does
+    { const t = Date.now(); const shut = niaMove(false); const g = grabbed(una, t);
       const pins = { pins: [{ j: "head", at: [40, 1.6, 40] }] }, near = send(una, nia, pins, t + 50); at(nia, 45.5); const band = send(una, nia, pins, t + 100);
-      bye(t + 100); req(nia, "consent", { move: true });
+      bye(t + 100); niaMove(true);
       ok(shut && g && [near, band].every((r) => r.tgt.length === 1 && Array.isArray(r.tgt[0].pins) && !r.err), "RR14 with the dragger's own move gate shut, the owner's pins reply reaches it in range and in the band", { shut, g, near, band }); }
+    // (g) …but only pins and end: anything else the owner sends acts on the dragger's body, and its gate decides
+    { const t = Date.now(); const shut = niaMove(false); const g = grabbed(una, t); const r = send(una, nia, { unpin: { joint: "hand_l" } }, t + 50);
+      bye(t + 50); niaMove(true);
+      ok(shut && g && r.tgt.length === 0 && r.err === refusalWords("Nia", "displace"), "RR14 with the dragger's move gate shut, the owner's unpin (an act on the dragger's body) is refused with the consent words", { shut, g, r }); }
     at(nia, 43); }
   w.log.requestSync(OWNER, "set", { id: "@world", component: "body-default", value: {} }); }
 
