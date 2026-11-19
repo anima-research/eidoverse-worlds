@@ -272,7 +272,7 @@ time.
 | 91 | structure-edit | main | `test/shared/structure-edit-test.ts` | bun | 0.2 s | 180 s |
 | 92 | structure-collider | main | `test/client/structure-collider-test.ts` | bun | 0.2 s | 180 s |
 | 93 | collider-off-bodies | main | `test/client/collider-off-bodies-test.ts` | bun | 2 s | 180 s |
-| 94 | anchor-support | main | `test/mcpl/anchor-support-test.ts` | bun | ? | 300 s |
+| 94 | agent-ground-anchor | main | `test/mcpl/agent-ground-anchor-test.ts` | bun | ? | 300 s |
 | 95 | support-swap | main | `test/mcpl/support-swap-test.ts` | bun | ? | 300 s |
 | 96 | knockdown | main | `test/server/knockdown-test.ts` | bun | ? | 300 s |
 | 97 | sockets | main | `test/shared/sockets-test.ts` | bun | ? | 300 s |

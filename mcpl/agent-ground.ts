@@ -14,7 +14,7 @@ import { lyingFrame } from "../shared/rot.js";
 import { isFiniteVec3 } from "../shared/protocol/is.js";
 import { cellKey, halfFloored, localizePoint, nodeAtPoint, planStructure, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { recordComponents } from "../shared/protocol/view.js";
-// a structure's model is only its anchor: the structure planner owns its walls and floors (the browser fits it no collider)
+// collision off, or a structure's anchor (its planner owns the walls): client/lib/realize/models_field.js collisionOwnedElsewhere, minus mounts
 const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordComponents(e).structure;
 
 type CollisionMesh = { positions: Float32Array; indices: Uint32Array; building?: unknown };
@@ -279,7 +279,8 @@ export class AgentGround {
   }
 
   // ---- support surfaces -----------------------------------------------------
-  // Each entity this agent knows contributes support to the sim's collider map:
+  // Each entity this agent knows contributes support to the sim's collider map
+  // (except one whose collision is off or lives elsewhere: collisionElsewhere):
   // the browser's own collider fitted from the model's triangles when they can
   // be fetched (meshFor → registerMeshSupport), so walls, furniture and stairs
   // are as solid here as in a browser. Fallback, from GET /geom's summary:
@@ -394,7 +395,7 @@ export class AgentGround {
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
     if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
-    // started moving, or got mounted, while its geometry was in flight —
+    // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;

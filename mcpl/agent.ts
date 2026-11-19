@@ -1172,7 +1172,7 @@ export class WorldAgent {
           if (fx.ok) this.senses.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
           else this.noteEffGap(id, fx.why);
         }
-        // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
+        // a motion moves its support, a collider override changes its policy, and a structure set or removed decides whether it is only an anchor
         if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider" || comp === "structure") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
