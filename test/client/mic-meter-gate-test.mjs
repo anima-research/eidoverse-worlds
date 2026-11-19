@@ -61,7 +61,7 @@ await pause('under the gate, the clock held inside its hang: many frames', 300);
 t("through the gate's hang the bar stays live (gold), as the gate does", GOLD.test(lvl.style.background) && ms.micGateInfo().speaking === true, lvl.style.background);
 Date.now = realNow;
 await until('the hang ends once the clock runs again', () => !ms.micGateInfo().speaking);
-await pause('a few frames for the bar to repaint', 100);
+await tryUntil('the bar repaints off gold', () => !GOLD.test(lvl.style.background));
 t('a level under the gate is not live: warm (live, but the room is not getting it)', WARM.test(lvl.style.background), lvl.style.background);
 t('...and its bar stops short of the marker', pct(lvl.style.width) < pct(thr.style.left), `${lvl.style.width} vs ${thr.style.left}`);
 

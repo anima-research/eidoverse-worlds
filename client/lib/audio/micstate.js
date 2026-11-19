@@ -87,8 +87,9 @@ const _onset = makeOnsetGate({
     driveGate(want);
     // No graph (gate unavailable, raw consented): the decision goes to the raw
     // tracks. PTT closes the wire; voice activation leaves the lane raw, but only
-    // while the mic is on, and only while the raw lane is consented. The transport writes the same answer, so a tick can
-    // never re-open what the microphone control (or a revoked consent) closed.
+    // while the mic is on, and only while the raw lane is consented. The transport may write a raw track first
+    // (voicesfu.js sfuMic(true)); setMicLive and every tick re-apply this answer, so nothing stays open that the
+    // microphone control (or a revoked consent) closed.
     if (gateUnavailable()) driveRawTracks(ungatedConsent() && (pttMode() ? want : micOn()));
   },
   announce: () => sendTyping(null, 'mic'),

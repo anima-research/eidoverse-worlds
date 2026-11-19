@@ -77,11 +77,14 @@ ms.toggleMute(true);
 rawTrack.enabled = true; ms.setMicLive(true);   // what voicesfu.js sfuMic(true) does to a device it still holds
 t('muted raw lane: the transport re-enabling it and reporting live (unchanged) closes it at once', rawTrack.enabled === false);
 ms.toggleMute(false);
-await tryUntil('the raw lane reopens on unmute', () => rawTrack.enabled);
+t('setup: unmute reopens the raw lane', !!(await tryUntil('the raw lane reopens on unmute', () => rawTrack.enabled)));
 mg.allowUngated(false);
 t('consent revoked on a live raw lane: the track is off at once, and micGateInfo says so', rawTrack.enabled === false && ms.micGateInfo().speaking === false);
 await pause('revoked: gate ticks and glyph polls have had time to reopen it', 300);
 t('consent revoked: ticks keep it off, and the glyph is not gold', rawTrack.enabled === false && gold() === false);
+mg.allowUngated(true);
+t('re-consented: the lane opens again and the glyph is gold', !!(await tryUntil('the re-consented raw lane reopens', () => rawTrack.enabled && gold())));
+mg.allowUngated(false);
 noGraph = false;
 
 // ── 3. a synth voice has no gate (micstate.js gateFor passes it through): the room hears whatever it plays ──
