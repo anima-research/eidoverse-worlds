@@ -11,8 +11,8 @@
 //   MM  a mesh drag of one of several selected things moves them all as ONE act (one Ctrl+Z), planar: over a floor, a
 //       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
 //       a rider drawn off its carrier stays out of the batch; a tool key after the press doesn't change the drag; the
-//       pivot tool's drag moves only the one thing; a Shift drag stops at the first member's ground; a gizmo drag the
-//       pivot tool takes over puts the followers back
+//       pivot tool's drag moves only the one thing; a Shift drag stops at the first member's ground, and a member already
+//       below its ground doesn't lift the lot; a gizmo drag the pivot tool takes over puts the followers back
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -192,7 +192,7 @@ try {
   // ---- MM: the selection follows a mesh drag (edit/multimove.js) ----
   // a furnished corner off to the side of what the earlier sections built: a floor slab, a table on it with a box on the
   // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
-  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-cart", "mm-kid");
+  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
     const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
     const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
     const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
@@ -210,17 +210,18 @@ try {
     await sleep(300);
     const ty = await topOf("mm-tbl"), py = await topOf("mm-plat");
     ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
+      && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
       && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
-    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a cart with a kid further off", ok, { G, fy, ty, py });
+    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a cart with a kid further off", ok, { G, fy, ty, py });
     const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
       const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await sleep(600); await settle(); };
-    // a press pixel ON `lead` whose ray, past it, meets the top of `under` (where an aim that doesn't skip `under` lands)
+    // a press pixel ON `lead` whose ray, past it, meets the top of `under` (any, with no `under`) (where an aim that doesn't skip `under` lands)
     await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
       const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
       globalThis.__mmHit = (x, y, lead, under) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
         const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true), L = w.entities.get(lead), U = w.entities.get(under);
         const past = hs.find((h) => !inside(h.object, L)), up = !!past?.face && past.face.normal.clone().transformDirection(past.object.matrixWorld).y > 0.6;
-        return { onLead: !!hs[0] && inside(hs[0].object, L), onTop: !!past && inside(past.object, U) && up }; };
+        return { onLead: !!hs[0] && inside(hs[0].object, L), onTop: !U || (!!past && inside(past.object, U) && up) }; };
       globalThis.__mmPress = (lead, under) => { const b = new T.Box3().setFromObject(w.entities.get(lead)), xs = [], ys = [];
         for (const cx of [b.min.x, b.max.x]) for (const cy of [b.min.y, b.max.y]) for (const cz of [b.min.z, b.max.z]) { const s = new T.Vector3(cx, cy, cz).project(c.camera); xs.push((s.x + 1) / 2 * innerWidth); ys.push((1 - s.y) / 2 * innerHeight); }
         const mx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2), my = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
@@ -321,8 +322,8 @@ try {
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-box")) !== JSON.stringify(B0), 3000);
       const T6 = pose("mm-tbl"), B6 = pose("mm-box");
       const g6 = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${T0[0]}, ${T0[2]}))`);
-      check("MM10 a Shift drag down of the box keeps the selected table at or above its ground (the box goes down, the table no lower than the terrain)",
-        myActs().length === n0 + 1 && !!T6 && !!B6 && B6[1] < B0[1] - 0.05 && T6[1] >= g6 - 0.01 && Math.abs((T6[1] - T0[1]) - (B6[1] - B0[1])) < 0.01, { T0, T6, B0, B6, ground: g6, acts: actsSince(n0) });
+      check("MM10 a Shift drag down of the box stops when the selected table reaches its ground: both drop by the table's clearance",
+        myActs().length === n0 + 1 && !!T6 && !!B6 && Math.abs((B0[1] - B6[1]) - (T0[1] - g6)) < 0.01 && Math.abs((T6[1] - T0[1]) - (B6[1] - B0[1])) < 0.01, { T0, T6, B0, B6, ground: g6, acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
       await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3);
     }
@@ -340,6 +341,21 @@ try {
       const C1 = pose("mm-crate"), H1 = pose("mm-chair");
       check("MM6 dragging the crate off the platform keeps the chair on the floor: the crate keeps its height, the chair slides level with it",
         !!C1 && !!H1 && Math.abs(H1[1] - H0[1]) < 0.01 && Math.abs(C1[1] - C0[1]) < 0.01 && sameMove(H0, H1, C0, C1), { C0, C1, H0, H1, floorTop: fy, acts: actsSince(n0) });
+    }
+
+    // a follower already below its ground (a sunk post) goes no lower, but doesn't lift the lot: a small Shift nudge up raises
+    // the sign and the post by the nudge alone
+    await frame("mm-sign", 1.5);
+    const at7 = await evalJson(`__mmPress('mm-sign', null)`);
+    check("MM (setup) a press point on the sign", !!at7, { at7 });
+    if (at7) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); const n0 = myActs().length;
+      await gesture(at7, [at7[0], at7[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-post")) !== JSON.stringify(P0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM11 a Shift nudge up with a sunk post selected raises both by the nudge (well under the post's 0.3 m depth), not to the post's ground",
+        myActs().length === n0 + 1 && !!S1 && !!P1 && S1[1] - S0[1] > 0.005 && S1[1] - S0[1] < 0.2 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { S0, S1, P0, P1, acts: actsSince(n0) });
     }
 
     // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)

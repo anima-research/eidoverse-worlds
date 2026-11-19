@@ -287,8 +287,8 @@ function ghostKey(e) {
   return true;
 }
 
-/** Where the pointer is aiming: the first near-horizontal face of a thing under it, else the ground. `onto` is the
- *  hit object's own entityId, which only an entity's root carries (realize/models.js), so a model's mesh gives null. */
+/** Where the pointer is aiming: the nearest hit on a thing under it, else (none, or that face is steep) the ground. `onto`
+ *  is the hit object's own entityId, which only an entity's root carries (realize/models.js), so a model's mesh gives null. */
 function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
@@ -339,9 +339,10 @@ export function updateBuild() {
       const fov = camera.fov * Math.PI / 180;
       const pxToWorld = (2 * dragging.depth * Math.tan(fov / 2)) / innerHeight;
       const dy = (dragging.startY - dragging.clientY) * pxToWorld;   // up = raise
-      // no lower than any member's ground: the lead's, and each follower's from its start
+      // no lower than any member's ground: the lead's, and each follower's from its start (one already below it stays
+      // no lower, without lifting the lot)
       let least = heightAt(dragging.startPos.x, dragging.startPos.z) - dragging.startPos.y;
-      for (const f of dragging.multi?.followers ?? []) { _fp.setFromMatrixPosition(f.world); least = Math.max(least, heightAt(_fp.x, _fp.z) - _fp.y); }
+      for (const f of dragging.multi?.followers ?? []) { _fp.setFromMatrixPosition(f.world); least = Math.max(least, Math.min(0, heightAt(_fp.x, _fp.z) - _fp.y)); }
       const y = dragging.startPos.y + Math.max(least, dy);
       if (dragging.world) setWorldPosition(selected.obj, _w.set(dragging.startPos.x, y, dragging.startPos.z));
       else selected.obj.position.set(dragging.startPos.x, y, dragging.startPos.z);
