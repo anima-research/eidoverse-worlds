@@ -24,16 +24,18 @@ export function isVrm0(g) {
   return !g.extensions?.VRMC_vrm && !!g.extensions?.VRM;
 }
 
+/** The humanoid map as bone name -> node index; an entry with no integer node (null, malformed) is skipped. */
 export function humanBones(g) {
   const v1 = g.extensions?.VRMC_vrm?.humanoid?.humanBones;
-  if (v1) return Object.fromEntries(Object.entries(v1).map(([b, v]) => [b, v.node]));
+  if (v1) return Object.fromEntries(Object.entries(v1).filter(([, v]) => Number.isInteger(v?.node)).map(([b, v]) => [b, v.node]));
   const v0 = g.extensions?.VRM?.humanoid?.humanBones;
   if (v0) {
     // Match three-vrm's VRM0 -> normalized VRM1 humanoid vocabulary. Keeping
     // the old thumb names shifts every thumb rotation onto the wrong joint.
     const rename = { leftThumbProximal: 'leftThumbMetacarpal', leftThumbIntermediate: 'leftThumbProximal',
       rightThumbProximal: 'rightThumbMetacarpal', rightThumbIntermediate: 'rightThumbProximal' };
-    return Object.fromEntries(v0.map((h) => [rename[h.bone] ?? h.bone, h.node]));
+    return Object.fromEntries((Array.isArray(v0) ? v0 : []).filter((h) => typeof h?.bone === 'string' && Number.isInteger(h.node))
+      .map((h) => [rename[h.bone] ?? h.bone, h.node]));
   }
   return null;
 }

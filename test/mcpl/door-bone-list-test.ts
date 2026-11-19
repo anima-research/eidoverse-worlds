@@ -90,6 +90,17 @@ for (const [shape, ext] of [['VRM1', vrm1], ['VRM0', vrm0]] as const) {
   r = await vroid.takeOff();
   check(`a VRoid-named body (${shape}) whose humanoid map has hips, spine and head takes off`, /took off/.test(text(r)), text(r));
 }
+// a null entry in either map shape is skipped, not a reason to read the file as unknown
+for (const [shape, ext] of [['VRM1', { VRMC_vrm: { humanoid: { humanBones: { hips: { node: 0 }, spine: { node: 1 }, head: { node: 3 }, leftEye: null } } } }],
+                            ['VRM0', { VRM: { humanoid: { humanBones: [{ bone: 'hips', node: 0 }, null, { bone: 'spine', node: 1 }, { bone: 'head', node: 3 }] } } }]] as const) {
+  const holey: any = new WorldAgent({ url: noWorldUrl(), name: 'gloss', world: 'bone-bench' });
+  holey.avatar = `vroid-null-${shape}.vrm`;
+  holey.myRights = { role: 'builder', fly: true };
+  serve = async () => new Response(glb(VROID, ext));
+  r = await holey.takeOff();
+  check(`a ${shape} map with a null entry still yields the node names and flies`,
+    holey.bodyBoneNames?.includes('J_Bip_C_Hips') && /took off/.test(text(r)), text(r));
+}
 const headless: any = new WorldAgent({ url: noWorldUrl(), name: 'gloss', world: 'bone-bench' });
 headless.avatar = 'vroid-headless.vrm';
 headless.myRights = { role: 'builder', fly: true };
