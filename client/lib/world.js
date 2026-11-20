@@ -16,7 +16,7 @@ import { beginWork } from './render/loadwork.js';
 import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt, setFlatGround } from './terrain.js';
 import { flatHeightOf } from '../../shared/terrainmath.js';
-import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady } from '../../shared/terrainshape.js';
+import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady, shapingOf, tileIndex, SCULPT } from '../../shared/terrainshape.js';
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
 setGridFetcher(async (ref) => { const r = await fetch(`/library/${ref}`); if (!r.ok) throw new Error(`${r.status}`); return r.json(); });
 import { applyWater } from './water.js';
@@ -127,8 +127,19 @@ export const anyBuildsPending = () => buildDepth + skyGate;
 
 // dedupe keys: a re-join that replays the log must not regenerate an identical world
 let lastTerrainArgs = null;
+let lastShaping = '';    // the named features and the sculpted layer the ground was last asked to carry (shapingKey)
+let lastSegs = 0;        // the mesh resolution it was last built at, when this client chose one (segmentsFor)
+let built = null;        // the terrain standing: makeTerrain's {mesh, heightAt}, with base (its unshaped law) and shaping
 let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
+
+// The ground's args are the bag with its shaping riding beside it (shared/terrainshape.js SHAPING): the bag's JSON says
+// whether the mesh must be built again, this says whether the one standing must be re-heighted.
+const shapingKey = (args) => { const s = shapingOf(args); return s ? `${JSON.stringify(s.named)}|${shapeParams(args)?.sculpt ?? ''}` : ''; };
+/** A sculpted ground whose author set no mesh resolution is drawn fine enough to show the sculpting: a vertex each
+ *  sculpted sample (0.5 m) where 512 a side reaches, the toolkit's own 128 at least. 0: the bag's, or the toolkit's. */
+const segmentsFor = (args) => (Number.isFinite(args.segments) || !shapingOf(args)?.tiles ? 0
+  : Math.min(512, Math.max(128, Math.ceil((Number.isFinite(args.size) ? args.size : 80) / SCULPT.spacing))));
 
 // ---- world-scope state application ------------------------------------------
 // Driven by the environment/social realizers (realize/environment.js, realize/social.js).
@@ -141,13 +152,18 @@ export function applyTerrainState(args) {
   const key = args ? JSON.stringify(args) : null;
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed (a flat one too)
   if (!args || args.stageFloor === true || flat !== null) {
-    if (lastTerrainArgs !== key) { lastTerrainArgs = key; if (!stageFloor) { stageFloor = true; setTerrain(null); } setFlatGround(flat ?? 0);
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; lastShaping = ''; lastSegs = 0; if (!stageFloor) { stageFloor = true; setTerrain(null); built = null; } setFlatGround(flat ?? 0);
       try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
     return;
   }
   stageFloor = false; setFlatGround(0);
-  if (lastTerrainArgs === key) return;
-  lastTerrainArgs = key;
+  const segs = segmentsFor(args), shaping = shapingKey(args);
+  if (lastTerrainArgs === key && lastSegs === segs) {
+    // the same ground, shaped differently (a named feature, a brush stroke): the mesh standing is re-heighted, not rebuilt
+    if (lastShaping !== shaping) { lastShaping = shaping; queueReshape(args); }
+    return;
+  }
+  lastTerrainArgs = key; lastShaping = shaping; lastSegs = segs;
   enqueueWorldBuild('terrain', async () => {
     await loadEidoModule('terrain.js');
     // a heightmap's grid is fetched before the build, so the ground arrives shaped; no grid, no build: the ground
@@ -163,7 +179,7 @@ export function applyTerrainState(args) {
     const layers = materialLayerSpecs(args.layers).map((l) => ({
       map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
     }));
-    const t = globalThis.makeTerrain({ ...args, layers });
+    const t = globalThis.makeTerrain({ ...args, layers, ...(segs ? { segments: segs } : {}) });
     if (t && shape) reshapeTerrain(t, args);
     // the layer textures ride the colorNode, unreachable from material properties: carry them so terrain.js can free them
     if (t) t.layerTextures = layers.map((l) => l.map);
@@ -174,7 +190,7 @@ export function applyTerrainState(args) {
     if (t?.mesh) {
       await warm('compile terrain', () => renderer.compileAsync(t.mesh, camera, scene).catch(() => {}), { p: P_GATE });
     }
-    setTerrain(t);
+    setTerrain(t); built = t ?? null;
     // the water reads the ground it fills (per-vertex depth), so it is built on this terrain
     try { applyWater(args, heightAt); } catch (e) { report('water', e); }
     // re-seat only ground-level entities; anything with a meaningful y keeps its logged height
@@ -219,17 +235,56 @@ export function terrainEditBase() {
 /** Record a terrain bag as sent, so the next edit composes with it. Returns the bag. */
 export function noteTerrainSent(args) { pendingTerrain = { args, at: Date.now() }; return args; }
 
-/** Placed features and heightmaps (shared/terrainshape.js) over the toolkit's noise mesh, the same law the agents
- *  ground bodies on: every vertex re-heighted, normals redone, and the walking heightAt swapped for the shaped one. */
-function reshapeTerrain(t, args) {
-  const hf = shapedHeightAt(t.heightAt, args);
+/** Placed features, heightmaps and sculpting (shared/terrainshape.js) over the toolkit's noise mesh, the same law the
+ *  agents ground bodies on: every vertex re-heighted (inside `box` [x0, z0, x1, z1] when one is given), normals redone,
+ *  and the walking heightAt swapped for the shaped one. */
+function reshapeTerrain(t, args, box = null) {
+  t.base ??= t.heightAt;   // the toolkit's own law, under whatever shapes it
+  const hf = shapedHeightAt(t.base, args);
+  t.shaping = shapingOf(args);
   const pos = t.mesh.geometry.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setY(i, hf(pos.getX(i), pos.getZ(i)));
+  for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), z = pos.getZ(i);
+    if (box && (x < box[0] || x > box[2] || z < box[1] || z > box[3])) continue;
+    pos.setY(i, hf(x, z)); }
   pos.needsUpdate = true;
   t.mesh.geometry.computeVertexNormals();
   t.mesh.geometry.computeBoundingBox();
   t.mesh.geometry.computeBoundingSphere();
   t.heightAt = hf;
+}
+
+// where two shapings of one ground differ: the square round every sculpted tile that changed, or null (the whole
+// ground) when a named feature did, since a feature reaches as far as its radius says
+function changedBox(a, b) {
+  if (JSON.stringify(a?.named ?? []) !== JSON.stringify(b?.named ?? [])) return null;
+  const A = a?.tiles ?? {}, B = b?.tiles ?? {}, n = SCULPT.spacing * SCULPT.tile; let box = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const k of new Set([...Object.keys(A), ...Object.keys(B)])) { if (A[k] === B[k]) continue;
+    // a tile's samples shape the ground from one sample before its first to one after its last
+    const [i, j] = tileIndex(k), x0 = SCULPT.origin + i * n - SCULPT.spacing, z0 = SCULPT.origin + j * n - SCULPT.spacing;
+    box = [Math.min(box[0], x0), Math.min(box[1], z0), Math.max(box[2], x0 + n + SCULPT.spacing), Math.max(box[3], z0 + n + SCULPT.spacing)]; }
+  return box;
+}
+// strokes can land faster than the ground is re-heighted: the newest args win, one pass each. On the build chain, so a
+// reshape asked for while the mesh is still being built waits for it.
+let reshapeArgs = null;
+function queueReshape(args) {
+  const waiting = reshapeArgs !== null; reshapeArgs = args; if (waiting) return;
+  worldBuild = worldBuild.then(() => {
+    const a = reshapeArgs; reshapeArgs = null;
+    if (!built?.mesh || !a) return;
+    reshapeTerrain(built, a, changedBox(built.shaping, shapingOf(a)));
+    bus.emit('ground-changed');
+    settleGround(a);
+  }).catch((e) => report('world build (reshape)', e));
+}
+// what stands on the ground follows it once the shaping pauses: the water (its depth is the ground's), then the grass,
+// which is planted at the ground's height and takes seconds to grow again
+let waterTimer = null, grassTimer = null;
+function settleGround(args) {
+  clearTimeout(waterTimer); clearTimeout(grassTimer);
+  waterTimer = setTimeout(() => { try { applyWater(args, heightAt); } catch (e) { report('water', e); } }, 300);
+  grassTimer = setTimeout(() => { const g = lastGrassArgs ? JSON.parse(lastGrassArgs) : null; if (!g || g.clear) return;   // nothing growing
+    lastGrassArgs = null; applyGrassState(g); }, 2500);   // (the dedupe key is cleared so the regrow counts as new work)
 }
 
 // def hot-reload: on `defs-updated`, re-hydrate the flora registry and regrow the meadow from the same authored args

@@ -301,6 +301,18 @@ register('boom', async (arg) => {
   if (r?.ok) logChat('*', `boom — ${r.punted?.length ?? 0} thing${r.punted?.length === 1 ? '' : 's'} sent flying, ${r.bodies?.shoved ?? 0} ${r.bodies?.shoved === 1 ? 'body' : 'bodies'} knocked over (${r.radius} m, ${r.power} m/s)`);
 });
 
+// /sculpt <brush> [radius] [strength] — one brush stroke on the ground at my feet. The authority works the stroke out
+// (shared/protocol/sculpt.js) and every client re-heights its ground from the tiles it wrote; builders and up
+const BRUSHES = ['raise', 'lower', 'flatten', 'smooth'];
+register('sculpt', async (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean), brush = parts[0];
+  const nums = parts.slice(1).map(Number).filter(Number.isFinite);
+  if (!BRUSHES.includes(brush)) return logChat('*', `/sculpt ${BRUSHES.join('|')} [radius] [strength] — for one, /sculpt lower 3 0.4 takes 0.4 m off the ground within 3 m of you`);
+  const adds = brush === 'raise' || brush === 'lower';
+  const r = await send({ verb: 'sculpt', args: { brush, path: [[+myState.pos.x.toFixed(2), +myState.pos.z.toFixed(2)]], radius: nums[0] ?? 3, ...(nums[1] !== undefined ? { strength: nums[1] } : adds ? { strength: 0.25 } : {}) } }, { what: `sculpting (${brush})` });
+  if (r?.ok && r.sculpted) logChat('*', `${brush}: the ground here went from ${r.sculpted.was.toFixed(2)} m to ${r.sculpted.now.toFixed(2)} m (Ctrl+Z takes it back)`);
+});
+
 register('push', (arg) => {
   // /push [name] [power] — a REQUEST to the target's client, which owns the body; the server refuses it first on consent
   // and range (server/messages.ts bodyRefusal), the receiver caps magnitude. No name = the nearest person within reach.

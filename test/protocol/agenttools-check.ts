@@ -28,6 +28,8 @@
 //   AT16 upload {data} puts a file's bytes in the world's store and create {model: <its path>} places it; a call that isn't
 //        one of data, text or effect, or whose data isn't base64, is refused before any request; the store's own refusal
 //        comes back in its words; upload {text} and {effect} are the authority's upload verb, as act sends it
+//   AT17 the ground is a builder's from the tool surface: act set terrain, a named feature, act sculpt under the agent's
+//        own body (its feet read the new ground), and undo
 // @ts-nocheck
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -533,6 +535,28 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const bad = await call("upload", { effect: { kind: "not-an-effect" } });
   ok(bad.isError && J(bad).ok === false && typeof J(bad).refused?.code === "string", "AT16g …and the authority's refusal of one comes back as it gave it (code, reason, fix), an error", T(bad).slice(0, 300));
   globalThis.fetch = realFetch; }
+
+// ---- AT17: the ground is a builder's from the tool surface (11-20): act set terrain, a named feature, and act sculpt ----
+// The toolkit's noise is stubbed level (the server here serves no terrain.js), so every height read is the shaping's own.
+{ const J = (r) => { try { return JSON.parse(T(r)); } catch { return null; } };
+  const realMk = (globalThis as any).makeTerrain; ag.ground.terrainSrc = "stub"; (globalThis as any).makeTerrain = () => ({ heightAt: () => 0 });
+  const set = await call("act", { verb: "set", args: { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0, size: 80 } } });
+  await tryUntil("the agent's ground is built", () => ag.ground.terrain, { ms: 4000, step: 50 });
+  ok(!set.isError && J(set)?.ok && !!ag.ground.terrain, "AT17a a builder's agent writes the world's terrain through act (the ground takes build), and stands on it", T(set).slice(0, 200));
+  const feat = await call("act", { verb: "set", args: { id: "@world", component: "terrain-feature:mound", value: { type: "hill", x: 30, z: 30, radius: 5, height: 2 } } });
+  await tryUntil("the mound is under the agent's feet", () => ag.heightAt(30, 30) === 2, { ms: 4000, step: 50 });
+  ok(!feat.isError && ag.heightAt(30, 30) === 2 && ag.heightAt(36, 30) === 0, "AT17b a named feature set through act raises the ground the agent's feet read", [T(feat).slice(0, 160), ag.heightAt(30, 30)]);
+  // no path: the brush works where the authority tracks this body; the reply says where, and what the ground did there
+  const rev = ag.ground.navTerrainRev;
+  const st = await call("act", { verb: "sculpt", args: { brush: "raise", radius: 2, strength: 0.5 } }); const sc = J(st)?.sculpted;
+  await tryUntil("the stroke is under the agent's feet", () => sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.now) < 0.001, { ms: 4000, step: 50 });
+  // (between the layer's samples, half a metre apart, a stroke's top is a little under its strength: the reply says what the ground did)
+  ok(!st.isError && sc?.tiles >= 1 && sc.now - sc.was > 0.4 && sc.now - sc.was <= 0.5 && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.now) < 0.001 && ag.ground.navTerrainRev > rev && T(st).length < 2500,
+    "AT17c act sculpt with no path raises the ground under the agent's own body: the reply says where and by how much in a few lines, the agent's feet read the new height there, and its routes are planned anew", { sc, feet: sc && ag.heightAt(sc.at[0], sc.at[1]), rev: [rev, ag.ground.navTerrainRev], chars: T(st).length, err: st.isError });
+  const un = await call("act", { verb: "undo", args: {} });
+  await tryUntil("the stroke is gone from under the agent's feet", () => sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.was) < 0.001, { ms: 4000, step: 50 });
+  ok(!un.isError && sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.was) < 0.001, "AT17d undo takes the stroke back, and the agent's feet read the ground as it was", T(un).slice(0, 200));
+  (globalThis as any).makeTerrain = realMk; }
 
 ag.close(); ann.close();
 done();

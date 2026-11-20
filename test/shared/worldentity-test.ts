@@ -217,13 +217,21 @@ console.log('\n3. the cards: their fields commit as door requests and read back 
     const r = worldEditOps(st(), { 'sky.nope': 1, 'sky.clouds': 'fluffy', 'terrain.color': 'red', 'weather.state': 'rain' }, { now: now() });
     return r.errors.length === 3 && r.ops.length === 1 && r.ops[0].verb === 'weather';
   })());
-  const ro = worldSchema(st(), { now: now(), mayShape: false });
-  check('the owner gate: for a known non-owner every field is read-only, saying so, and an edit or a pick sends nothing',
-    ro.groups.every((g: any) => g.fields.filter((f: any) => f.k != null).every((f: any) => f.disabled && /owner/.test(f.hint)))
-    && worldEditOps(st(), { 'sky.hours': 3 }, { mayShape: false }).ops.length === 0 && worldPick(st(), 'sky', 'golden', { presets: PRESETS, mayShape: false }).ops.length === 0);
+  const ro = worldSchema(st(), { now: now(), mayShape: false, mayGround: false });
+  check('the gates: for someone known to hold neither editWorld nor build every field is read-only, saying which it takes, and an edit or a pick sends nothing',
+    ro.groups.every((g: any) => g.fields.filter((f: any) => f.k != null).every((f: any) => f.disabled && (g.group === 'terrain' ? /build/ : /owner/).test(f.hint)))
+    && worldEditOps(st(), { 'sky.hours': 3 }, { mayShape: false }).ops.length === 0 && worldPick(st(), 'sky', 'golden', { presets: PRESETS, mayShape: false }).ops.length === 0
+    && worldEditOps(st(), { 'terrain.amplitude': 3 }, { mayGround: false }).ops.length === 0 && worldPick(st(), 'shape', 'hills', { pal: PAL, mayGround: false }).ops.length === 0);
+  const rb = worldSchema(st(), { now: now(), mayShape: false, mayGround: true });
+  check('…the ground is a builder\'s: with build and no editWorld the Terrain card is open, a terrain edit and a shape pick go, and the sky, weather and grass stay read-only',
+    rb.groups.every((g: any) => g.fields.filter((f: any) => f.k != null).every((f: any) => (g.group === 'terrain' ? !f.disabled : f.disabled)))
+    && worldEditOps(st(), { 'terrain.amplitude': 3 }, { mayShape: false, mayGround: true }).ops.length === 1 && worldPick(st(), 'shape', 'hills', { pal: PAL, mayShape: false, mayGround: true }).ops.length === 1
+    && worldEditOps(st(), { 'grass.density': 1 }, { mayShape: false, mayGround: true }).ops.length === 0);
   W.call('set', { id: WORLD_ID, component: 'roles:bob', value: { role: 'builder' } });
   const asBob = W.send(worldEditOps(st(), { 'sky.hours': 3 }, { now: now() }).ops[0], {}, 'bob');
   check('…and the door is the gate: a builder\'s sky request is refused (rights)', asBob.ok === false && asBob.refused?.code === 'rights', JSON.stringify(asBob));
+  const bobGround = W.send(worldEditOps(st(), { 'terrain.amplitude': '+=1' }, { now: now() }).ops[0], {}, 'bob');
+  check('…while a builder\'s terrain request is written', bobGround.ok === true, JSON.stringify(bobGround.refused ?? null));
   check('unknown rights disable nothing (the door decides, as for things)', worldSchema(st(), { now: now() }).groups.every((g: any) => g.fields.every((f: any) => !f.disabled || /clock is real/.test(f.hint ?? ''))));
   const txt = describeSchema(sc, { verbsHint: false });
   check('describeSchema reads it (what an agent\'s inspect prints)', /sky\.hours = /.test(txt) && /weather\.state = /.test(txt) && /terrain\.amplitude = /.test(txt) && /grass\.mow: action/.test(txt), txt.slice(0, 200));

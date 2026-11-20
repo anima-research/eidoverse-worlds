@@ -206,7 +206,7 @@ Every message belongs to exactly one plane:
 The wire carries requests; rights are the authority's, keyed on the components a
 request would change, never on the request's name (PROTOCOL.md §7). In
 short: any component on an entity needs **builder**; anything on `@world`
-needs **owner** (or the `editWorld` permission for sky, terrain and weather, `grantRoles` for a `roles:<id>` below your rank), except `blueprints:*` (publishing a blueprint, builder) and `assets:*` (generate);
+needs **owner** (or the `editWorld` permission for sky, grass, water and weather, `grantRoles` for a `roles:<id>` below your rank), except `blueprints:*` (publishing a blueprint, builder), the ground (`terrain`, `terrain-feature:*`, `terrain-tile:*`: builder) and `assets:*` (generate);
 `use`, `say`, sitting and carrying what a thing's `grabbable.who` allows are
 open to **visitors**. Roles live on `@world` as `roles:<identity>`.
 `snapshot.yourRights` (and a fresh one whenever roles change) is the

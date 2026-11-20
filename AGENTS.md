@@ -147,12 +147,13 @@ A world with no owner caps everyone at member: nobody could have granted more.
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
   entity except `@world`; an existing keyed instance such as `script:<name>` or
-  `blueprints:<hash>` only by its creator or an owner), publish blueprints, install scripts (the role's
+  `blueprints:<hash>` only by its creator or an owner), shape the ground (the
+  world's terrain, its named features and `sculpt`: see Terrain, below), publish blueprints, install scripts (the role's
   `scripts` permission, on by default for builders; the owner sets it per role
   in `@world.role-defs`), lift locks.
 - **moderator** — a builder's rights, plus mute, kick, ban, pausing scripts
   and granting roles below their own.
-- **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
+- **owner** — everything else on `@world`: roles, sky, weather, grass, water, physics,
   bounds, spawn point, script limits; kick and ban.
 
 These are the built-in defaults: an owner may switch any permission of member, builder or moderator off or on
@@ -162,8 +163,9 @@ The rule is keyed on *what changes*, not on which request carried it
 (the rights table in `shared/protocol/authority/gate.js`), and what a write
 needs is a permission, not a rank (rank still gates grants and locks: lifting
 one takes its setter's rank, §5): a thing needs `build` (or `editOthers`
-if someone else made it); `@world.blueprints:*` needs `build`, `assets:*`
-needs `generate`, the world's look (sky, terrain, grass, water, bounds,
+if someone else made it); `@world.blueprints:*` needs `build`, and so does
+the ground (`terrain`, `terrain-feature:*`, `terrain-tile:*`); `assets:*`
+needs `generate`, the world's look (sky, grass, water, bounds,
 spawn, about) needs `editWorld`; `roles:*` follows the grant rule (an owner,
 or `grantRoles` below your rank); the rest of `@world` is owner-only.
 Server operators (`SERVER_OPERATORS`) sit outside the roles ladder: they get
@@ -204,6 +206,7 @@ undo    {act? | label?}                           # your own acts (rank decides 
 publish {from, name}                              # save a thing and its children as a blueprint
 update  {copy, to}                                # move a copy to a newer blueprint version
 sky {…} · weather {…}                            # the world's sky and weather (the `editWorld` permission)
+sculpt {brush, path?, radius, strength?, height?} # one brush stroke on the ground: raise, lower, flatten, smooth (builders; Terrain, below)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
 force {at, radius?, power?}                       # a blast: bodies fall by their own consent, loose things fly (builders)
@@ -263,7 +266,7 @@ request also takes:
 
 and the building writes (`create`, `set`, `delete`, `place`, `turn`,
 `batch`, `use`, `undo`, `publish`, `update`, `upload`, `adopt`,
-`sky`, `weather`, `caption`, `create-world`) take `dry: true`: the authority
+`sky`, `weather`, `sculpt`, `caption`, `create-world`) take `dry: true`: the authority
 checks it and says what it would write; nothing is logged. The other verbs
 (among them `grab`, `put`, `throw`, `drop`, `punt`, `say`, `consent`,
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
@@ -365,7 +368,7 @@ for any component no group speaks for; `comp.+` adds one) · `parent.to` /
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
 Weather, Terrain and Grass, and `edit` writes `sky.tz sky.hours sky.clouds
-weather.state terrain.amplitude grass.density …` (the `editWorld` permission). A locked thing's
+weather.state terrain.amplitude grass.density …` (the `editWorld` permission; `terrain.*` takes `build`). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
 
@@ -881,7 +884,7 @@ ripple every resident's reconnect.
   back out: the world's current ground as a 16-bit PNG, its height range in the
   `x-terrain-min/max/size` headers (`&format=json` for the range alone).
 
-## Terrain — shaped, not just rolled (`editWorld`)
+## Terrain — shaped, not just rolled (builders)
 
 The ground is `@world`'s `terrain` component: `set {id: "@world", component:
 "terrain", value: {seed, size, segments, amplitude, frequency, octaves,
@@ -922,7 +925,66 @@ world's water. Override the guess with `water.kind: "still"|"river"|"ocean"|"lak
 a river's direction with `water.flow: [x, z]`.
 
 A `set` replaces the whole terrain component, so send every key you mean to
-keep (`merge: true` patches only the fields you name).
+keep (`merge: true` patches only the fields you name; the `features` list is
+one field, replaced whole).
+
+**One shape at a time: named features.** A shape you mean to change on its own
+is a component of its own on `@world`, `terrain-feature:<name>`, written as a
+list feature is:
+
+```
+act {verb: "set", args: {id: "@world", component: "terrain-feature:cove", value: {type: "hill", x: 12, z: -4, radius: 6, height: -1.5}}}   # add it, or replace it
+act {verb: "set", args: {id: "@world", component: "terrain-feature:cove", value: {height: -2}, merge: true}}                                # change one number
+act {verb: "delete", args: {id: "@world", component: "terrain-feature:cove"}}                                                               # take it away
+```
+
+Named features apply after the bag's list, by their `order` (absent: 0; lower
+first) and then by name. A `flatten` levels whatever came before it, so give a
+pad a lower `order` than a hill that should stand on it. At most 64; `undo`
+takes any of these back like any write.
+
+**Clay: `sculpt`.** A brush stroke on the ground itself:
+
+```
+act {verb: "sculpt", args: {brush: "lower", radius: 3, strength: 0.4}}                          # where you stand: 0.4 m off the ground, fading out 3 m away
+act {verb: "sculpt", args: {brush: "raise", path: [[10, 2], [18, 6]], radius: 2, strength: 1}}  # a bank along a line
+act {verb: "sculpt", args: {brush: "flatten", path: [[12, -4]], radius: 5, height: 1.2}}        # level a pad to 1.2 m
+act {verb: "sculpt", args: {brush: "smooth", path: [[12, -4]], radius: 4}}                      # ease the ground toward what surrounds it
+```
+
+`path` is `[[x, z], …]` in world metres (1–256 points: one is a dab, more are a
+line the brush follows); leave it out and the brush works where your body
+stands. `radius` is how far it reaches (0.25–64 m). `strength` is metres for
+`raise` and `lower` (up to 100), and how far to go, 0–1, for `flatten` and
+`smooth` (all the way when you leave it out). `flatten` takes the `height` to
+bring the ground to (absent: the ground's own at the path's first point). The
+reply's `sculpted` says what the ground did where the stroke began: `{tiles,
+at: [x, z], was, now}`, in metres. In a browser the same stroke is `/sculpt
+raise|lower|flatten|smooth [radius] [strength]`, where you stand.
+
+A stroke is worked out once, by the authority, on the ground as it stands, and
+written as the tiles it changed of the ground's sculpted layer:
+`terrain-tile:<i>-<j>` on `@world`, each 32 × 32 samples half a metre apart, in
+whole millimetres, added on top of the terrain and every feature. So a stroke
+shows wherever it was made (a `flatten` feature under it never levels it
+away), and your feet, a browser's mesh and the sim all read the same numbers.
+Between samples the ground is interpolated, so a stroke's top can stand a
+little under its `strength` where it falls between them. `undo` takes a
+`raise` or a `lower` back out from under the raises and lowers made since.
+A `flatten` or a `smooth`, or a raise that one of those has since been made
+over, is undone by putting its tiles back as they were, which is refused
+where someone else has sculpted them since. `delete {id: "@world", component: "terrain-tile:<i>-<j>"}`
+levels one tile's sculpting (tile `<i>-<j>` starts at x = -2048 + 16 i, z =
+-2048 + 16 j). `inspect {id: "@world"}` says which named features a ground
+has and how many tiles of it are sculpted; `act {verb: "inspect", args: {id:
+"@world"}}` lists every one, a tile in a line.
+
+Two things sculpting doesn't do. Things already placed keep the height they
+were given: a bench on a bank you lower is left in the air until you `place`
+it again. And a world whose ground is level (no `terrain`, or `kind: "flat"`)
+takes no feature or stroke (refused `level-ground`) until it has a terrain
+that isn't: `set {id: "@world", component: "terrain", value: {kind: "noise",
+amplitude: 0}}` is flat ground you can shape.
 
 ## Geometry — shape as data
 

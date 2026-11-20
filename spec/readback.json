@@ -2,9 +2,10 @@
  "request:undo": {
   "fields": [
    "undoes",
-   "rollback.acts"
+   "rollback.acts",
+   "inverse"
   ],
-  "unknown": "undoes nothing we can name: the chain ends there and its target isn't counted undone"
+  "unknown": "undoes nothing we can name: the chain ends there and its target isn't counted undone; a stroke under it is no longer undone by its own amount"
  },
  "request:use": {
   "fields": [
@@ -19,6 +20,13 @@
    "sponsor"
   ],
   "unknown": "no sponsor: nothing runs on nobody's rights"
+ },
+ "request:sculpt": {
+  "fields": [
+   "args.brush",
+   "clamped"
+  ],
+  "unknown": "not exact: restore-before (refused if changed since)"
  },
  "request:*": {
   "fields": [

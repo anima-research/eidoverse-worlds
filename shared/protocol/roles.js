@@ -21,7 +21,8 @@ export const CAPTION_ON_SCREENS = true;
 export const OWNERS_FLY = true;
 /** Q3: people without an account (guests) can't be set above the world's default role. */
 export const GUESTS_AT_MOST_DEFAULT = true;
-/** Q4: editWorld (sky, weather, ground, the card, spawn, bounds, fall) is a permission; false = those stay owner-only. */
+/** Q4: editWorld (sky, weather, grass, water, the card, spawn, bounds, fall) is a permission; false = those stay owner-only.
+ *  The ground (the terrain, its named features, its sculpting) isn't among them: it takes build (antra 11-20; gate.js GROUND). */
 export const EDIT_WORLD_PERMISSION = true;
 
 // ---------------- the other caps ----------------
@@ -46,9 +47,9 @@ export const renamedRole = (wc, id) => (typeof id === "string" && Object.hasOwn(
 // ---------------- the closed permission list ----------------
 // [name, plain words (UI and help), needs]. The order is the order the grid shows.
 const LIST = [
-  ["build", "make things, and change or delete what you made; publish the world's blueprints", []],
+  ["build", "make things, and change or delete what you made; shape the ground; publish the world's blueprints", []],
   ["editOthers", "change or delete things other people made (undo still goes only along rank)", ["build"]],
-  ...(EDIT_WORLD_PERMISSION ? [["editWorld", "change the world's look and layout: sky, weather, ground, the card, spawn points, bounds", ["build"]]] : []),
+  ...(EDIT_WORLD_PERMISSION ? [["editWorld", "change the world's look and layout: sky, weather, grass, water, the card, spawn points, bounds", ["build"]]] : []),
   ["generate", "add new models or pictures to the world's assets (the world's generation credit)", ["build"]],
   ["fly", "fly in this world", []],
   ["scripts", "install and edit scripts (they act with your rights)", ["build"]],

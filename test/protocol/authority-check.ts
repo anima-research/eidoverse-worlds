@@ -1712,13 +1712,103 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const kin = call("olive", "set", { id: "ball", component: "physics", value: { kind: "kinematic" } }); const look2 = call("olive", "set", { id: "ball", component: "look-at", value: { target: "@viewer" } });
   ok(look?.refused?.code === "conflict" && !/on a part/.test(look.refused.fix) && /kinematic/.test(look.refused.fix) && kin.ok && look2.ok,
     "RX1 the dynamic look-at refusal names static or kinematic, and a kinematic one may look", { look: look?.refused, kin: kin.ok, look2: look2.ok ? "ok" : look2.refused }); }
-// RX2: there is no sculpt (it could only refuse: terrain-grid is reserved); terrain-grid stays reserved
-{ const name = "rx2";
-  const call = callAt(name);
-  call("olive", "create-world", { title: "rx2" }); call("olive", "create", { id: "hill", model: "crate", place: { at: [1, 1] } });
-  const sc = call("olive", "sculpt", { on: "hill", brush: "raise", path: [[1, 1]], radius: 1, strength: 10 });
-  const grid = call("olive", "set", { id: "hill", component: "terrain-grid", value: { spacing: 0.5, tile: 32, origin: [0, 0], extent: [1, 1], limits: { raise: 100, lower: 100 } } });
-  ok(sc?.refused?.code === "unknown-verb" && grid?.refused?.code === "reserved", "RX2 sculpt is no verb (unknown-verb), and terrain-grid stays reserved", { sc: sc?.refused, grid: grid?.refused }); }
+// TC: the ground is clay, and a builder's. Named features (terrain-feature:<name>) change one at a time; sculpt is one
+// brush stroke the authority works out and writes as whole tiles (terrain-tile:<i>-<j>); the terrain itself needs build.
+{ const { groundArgs, SCULPT } = await import("../../shared/terrainshape.js"); const { terrainParams, makeHeightField } = await import("../../shared/terrainmath.js");
+  const name = "tc"; const call = callAt(name);
+  const wc = () => openWorld(root, name).state().entities["@world"].c;
+  const H = () => makeHeightField(terrainParams(groundArgs(wc()) ?? { amplitude: 0 }));
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  call("olive", "create-world", { title: "tc" });
+  call("olive", "set", { id: "@world", component: "roles:bea", value: { role: "builder" } }); call("olive", "set", { id: "@world", component: "roles:cy", value: { role: "builder" } });
+  call("olive", "set", { id: "@world", component: "roles:mem", value: { role: "member" } });
+  // level ground: nothing shapes the floor a world is founded on, nor a flat terrain; the refusal says how to get ground that can be
+  const lv = [call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 }), call("bea", "set", { id: "@world", component: "terrain-feature:cove", value: { type: "hill", x: 5, z: 5, radius: 4, height: 2 } }),
+    call("bea", "set", { id: "@world", component: "terrain-tile:128-128", value: { mm: new Array(1024).fill(0) } })];
+  call("olive", "set", { id: "@world", component: "terrain", value: { kind: "flat", height: 1 } });
+  const lvFlat = call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 });
+  ok([...lv, lvFlat].every((r) => code(r) === "level-ground" && /kind: 'noise', amplitude: 0/.test(r.refused.fix)), "TC1 a level ground (no terrain, or kind flat) takes no feature, tile or stroke: level-ground, with the terrain that can be shaped", [...lv, lvFlat].map((r) => r.refused?.code ?? r.ok));
+  // rights: the ground takes build; the rest of the world's look still takes editWorld
+  const t1 = call("bea", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0, size: 80 } });
+  const t2 = call("mem", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 1 } });
+  const sky = call("bea", "sky", { hours: 3 }), water = call("bea", "set", { id: "@world", component: "water", value: { level: -2 } });
+  ok(t1.ok && code(t2) === "rights" && t2.refused.needs === "build" && code(sky) === "rights" && sky.refused.needs === "editWorld" && code(water) === "rights" && water.refused.needs === "editWorld",
+    "TC2 a builder writes the terrain; a member is refused (needs build); a builder's sky and water are still refused (needs editWorld)", { t1: t1.ok, t2: t2.refused, sky: sky.refused?.needs, water: water.refused?.needs });
+  // named features: one at a time, by name; another builder's is anyone's who may shape the ground (a piece of one shared ground)
+  const f1 = call("bea", "set", { id: "@world", component: "terrain-feature:cove", value: { type: "hill", x: 5, z: 5, radius: 4, height: 2 } }); const h1 = H()(5, 5);
+  const f2 = call("cy", "set", { id: "@world", component: "terrain-feature:pad", value: { type: "flatten", x: 5, z: 5, radius: 2, height: 0.5, order: 1 } }); const h2 = H()(5, 5);
+  const f3 = call("cy", "set", { id: "@world", component: "terrain-feature:cove", value: { height: 3 }, merge: true }); const f4 = call("bea", "delete", { id: "@world", component: "terrain-feature:pad" }); const h3 = H()(5, 5);
+  const fm = call("mem", "set", { id: "@world", component: "terrain-feature:mine", value: { type: "hill", x: 0, z: 0, radius: 2, height: 1 } });
+  ok(f1.ok && h1 === 2 && f2.ok && h2 === 0.5 && f3.ok && f4.ok && h3 === 3 && code(fm) === "rights" && Object.keys(wc()).filter((k) => k.startsWith("terrain-feature:")).join() === "terrain-feature:cove" && !("features" in wc().terrain),
+    "TC3 a named feature is set, patched and deleted on its own, by any builder (the bag's list is never resent); it applies by order; a member's is refused", { h1, h2, h3, f3: f3.refused, f4: f4.refused, fm: fm.refused?.code });
+  const bad = [["a ridge without its ends", { type: "ridge", x: 1, z: 1, radius: 4, height: 2 }, "schema"], ["an unknown type", { type: "dome", x: 1, z: 1, radius: 4, height: 2 }, "shape"], ["a hill with a ridge's ends", { type: "hill", x: 1, z: 1, x1: 0, z1: 0, radius: 4, height: 2 }, "shape"],
+    ["an edge on a hill", { type: "hill", x: 1, z: 1, radius: 4, height: 2, edge: 1 }, "shape"], ["a radius the ground wouldn't read", { type: "hill", x: 1, z: 1, radius: 0.01, height: 2 }, "bounds"], ["a height past ±500", { type: "hill", x: 1, z: 1, radius: 4, height: 900 }, "bounds"], ["no radius", { type: "hill", x: 1, z: 1, height: 2 }, "schema"]]
+    .map(([what, value, want]) => [what, code(call("bea", "set", { id: "@world", component: "terrain-feature:bad", value })), want]);
+  ok(bad.every(([, got, want]) => got === want) && !("terrain-feature:bad" in wc()), "TC4 a feature the ground wouldn't read is refused at the door, each in its own words (the readers drop what is malformed)", bad.filter(([, g, w]) => g !== w));
+  { const full = callAt("tc-full"); full("olive", "create-world", { title: "f" }); full("olive", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0 } });
+    const rs = full("olive", "batch", { requests: Array.from({ length: 64 }, (_, i) => ({ verb: "set", args: { id: "@world", component: `terrain-feature:f${i}`, value: { type: "hill", x: i, z: 0, radius: 1, height: 0.1 } } })) });
+    const over = full("olive", "set", { id: "@world", component: "terrain-feature:one-more", value: { type: "hill", x: 0, z: 9, radius: 1, height: 0.1 } });
+    ok(rs.ok && code(over) === "full", "TC5 a world holds 64 named features; one more is refused full", { rs: rs.refused, over: over.refused?.code }); }
+  // a stroke
+  const s1 = call("bea", "sculpt", { brush: "raise", path: [[-10, -10]], radius: 3, strength: 0.5 });
+  const log = openWorld(root, name).entries; const act = log[s1.act], res = log[s1.seq];
+  ok(s1.ok && near(H()(-10, -10), 0.5) && H()(-7, -10) === 0 && JSON.stringify(s1.sculpted) === JSON.stringify({ tiles: 1, at: [-10, -10], was: 0, now: 0.5 })
+    && JSON.stringify(s1.after["@world"]["terrain-tile:127-127"]) === JSON.stringify({ samples: 1024, min: 0, max: 500 }) && JSON.stringify(s1).length < 2000,
+    "TC6 sculpt raises the ground along its path and fades out at the radius; the reply says what it did where it began, and a tile in a line (never 1024 samples)", { s1: JSON.stringify(s1).slice(0, 300), h: H()(-10, -10) });
+  ok(act.verb === "sculpt" && act.body.tiles === 1 && act.body.clamped === undefined && act.body.args.brush === "raise" && res.op === "set" && res.body.comp === "terrain-tile:127-127" && res.body.value.mm.length === 1024 && res.body.value.mm.every(Number.isInteger),
+    "TC7 one act per stroke; the change it caused holds the whole tile in whole millimetres (every reader reads the numbers, none runs a brush)", { act: act.body, op: res.op });
+  // undo: a raise comes back out from under someone else's later stroke
+  const s2 = call("cy", "sculpt", { brush: "lower", path: [[-10, -10], [-6, -10]], radius: 2, strength: 0.2 }); const mid = H()(-10, -10);
+  const u1 = call("bea", "undo", { act: s1.act });
+  ok(s2.ok && near(mid, 0.3) && u1.ok && near(H()(-10, -10), -0.2) && near(H()(-6, -10), -0.2) && openWorld(root, name).entries[u1.act].body.inverse === true,
+    "TC8 undo of a raise takes exactly that stroke back from under a later one by someone else (no conflict, the later stroke stands)", { mid, after: H()(-10, -10), u1: u1.refused });
+  { const a1 = call("bea", "sculpt", { brush: "raise", path: [[-30, -30]], radius: 2, strength: 0.4 }), b1 = call("cy", "sculpt", { brush: "raise", path: [[-30, -30]], radius: 2, strength: 0.3 });
+    const ub = call("cy", "undo", { act: b1.act }), ua = call("bea", "undo", { act: a1.act });
+    ok(a1.ok && b1.ok && ub.ok && ua.ok && H()(-30, -30) === 0 && !("terrain-tile:126-126" in wc()), "TC8b …and from under the undo of one too: two raises on one tile, each undone by its own maker in the other order, leave the ground level and no tile behind", { ub: ub.refused, ua: ua.refused, h: H()(-30, -30) }); }
+  const s3 = call("bea", "sculpt", { brush: "flatten", path: [[20, 20]], radius: 4, height: 1 }); const fl = [H()(20, 20), H()(22, 20)];
+  const s4 = call("bea", "sculpt", { brush: "smooth", path: [[20, 20]], radius: 6 }); const sm = H()(20, 20); const u2 = call("bea", "undo", {});
+  ok(s3.ok && fl[0] === 1 && fl[1] > 0 && fl[1] < 1 && s4.ok && sm < 1 && sm > 0 && u2.ok && H()(20, 20) === 1 && H()(22, 20) === fl[1], "TC9 flatten brings the ground to a height, smooth relaxes it, and a bare undo puts the tiles back as they were", { fl, sm, u2: u2.refused });
+  const s5 = call("cy", "sculpt", { brush: "raise", path: [[20, 20]], radius: 1, strength: 0.1 }); const u3 = call("bea", "undo", { act: s3.act });
+  ok(s5.ok && code(u3) === "conflict", "TC10 a flatten isn't an add: once someone else has sculpted its tiles, undoing it is refused (their work stands)", u3.refused ?? u3.ok);
+  { const r1 = call("bea", "sculpt", { brush: "raise", path: [[-30, 30]], radius: 3, strength: 1 }), r2 = call("cy", "sculpt", { brush: "flatten", path: [[-30, 30]], radius: 3, height: 0.25 }); const u4 = call("bea", "undo", { act: r1.act });
+    ok(r1.ok && r2.ok && code(u4) === "conflict" && near(H()(-30, 30), 0.25), "TC10b …nor is a raise taken out from under someone else's later flatten, which read the ground it had raised (that would dent what they levelled): refused, their ground stands", { u4: u4.refused ?? u4.ok, h: H()(-30, 30) }); }
+  // refusals a stroke meets
+  const rf = [["a member", call("mem", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 }), "rights"], ["an unknown brush", call("bea", "sculpt", { brush: "dig", path: [[0, 0]], radius: 2, strength: 1 }), "shape"],
+    ["a raise with no strength", call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2 }), "missing-arg"], ["a height on a raise", call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1, height: 3 }), "doesnt-apply"],
+    ["a radius past 64 m", call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 90, strength: 1 }), "bounds"], ["a path that is no path", call("bea", "sculpt", { brush: "raise", path: [[0, 0, 0]], radius: 2, strength: 1 }), "shape"],
+    ["a stroke wider than one change may be", call("bea", "sculpt", { brush: "raise", path: [[-900, 0], [900, 0]], radius: 64, strength: 1 }), "too-big"], ["a stroke off the lattice", call("bea", "sculpt", { brush: "raise", path: [[5000, 5000]], radius: 2, strength: 1 }), "nothing"],
+    ["the old `on`", call("bea", "sculpt", { on: "@world", brush: "raise", path: [[0, 0]], radius: 2, strength: 1 }), "unknown-arg"], ["no path and no body", call("bea", "sculpt", { brush: "raise", radius: 2, strength: 1 }), "missing-arg"]].map(([what, r, want]) => [what, code(r), want]);
+  ok(rf.every(([, got, want]) => got === want), "TC11 a stroke is refused in its own words: rights, an unknown brush, a missing or stray argument, bounds, too wide, nothing to change, no body to work under", rf.filter(([, g, w]) => g !== w));
+  const before = openWorld(root, name).entries.length; const dry = call("bea", "sculpt", { brush: "lower", path: [[3, 3]], radius: 2, strength: 0.25, dry: true });
+  ok(dry.ok && dry.dry === true && dry.sculpted?.tiles === 1 && typeof dry.would[0].value.samples === "number" && openWorld(root, name).entries.length === before, "TC12 a dry stroke says what it would do and writes nothing", JSON.stringify(dry).slice(0, 300));
+  // with no path, the brush works where the asker's body stands
+  call("bea", "move", { to: [8, 0, -8] }); const here = call("bea", "sculpt", { brush: "raise", radius: 2, strength: 0.3 });
+  ok(here.ok && JSON.stringify(here.sculpted.at) === "[8,-8]" && near(H()(8, -8), 0.3) && !("path" in openWorld(root, name).entries[here.act].body.args), "TC13 a stroke with no path works under the asker's body, and the act records no position", here.refused ?? here.sculpted);
+  // a tile by hand: the same checks as a stroke's
+  const tl = [["too few samples", { mm: [1, 2, 3] }, "128-128", "shape"], ["a fraction", { mm: new Array(1024).fill(0.5) }, "128-128", "shape"], ["past the limit", { mm: new Array(1024).fill(SCULPT.limit + 1) }, "128-128", "shape"],
+    ["a key off the lattice", { mm: new Array(1024).fill(0) }, "300-1", "shape"], ["a key written another way", { mm: new Array(1024).fill(0) }, "07-1", "shape"]].map(([what, value, key, want]) => [what, code(call("bea", "set", { id: "@world", component: `terrain-tile:${key}`, value })), want]);
+  const th = call("bea", "set", { id: "@world", component: "terrain-tile:130-130", value: { mm: new Array(1024).fill(250) } }); const hh = H()(40, 40); const td = call("cy", "delete", { id: "@world", component: "terrain-tile:130-130" });
+  ok(tl.every(([, g, w]) => g === w) && th.ok && hh === 0.25 && td.ok && H()(40, 40) === 0, "TC14 a tile written whole by hand is checked as a stroke's is (1024 whole millimetres, a key of the lattice); a delete levels it", { tl: tl.filter(([, g, w]) => g !== w), th: th.refused, hh });
+  // the authority stands things on the sculpted ground, and reads @world without its samples
+  call("bea", "sculpt", { brush: "raise", path: [[30, -30]], radius: 4, strength: 2 });
+  const crate = call("bea", "create", { id: "tc-crate", model: "crate", place: { at: [30, -30] } }); const y = openWorld(root, name).state().entities["tc-crate"]?.c.transform.pos[1];
+  const insp = call("bea", "inspect", { id: "@world" });
+  ok(crate.ok && near(y, H()(30, -30)) && near(y, 2) && insp.ok && insp.components["terrain-tile:127-127"]?.samples === 1024 && !("terrain-tile:127-127" in insp.versions) && "terrain" in insp.versions && JSON.stringify(insp).length < 20000,
+    "TC15 a thing placed on sculpted ground stands at its height; inspect @world says each tile in a line", { y, want: H()(30, -30), insp: insp.ok ? Object.keys(insp.components).filter((k) => k.startsWith("terrain")).length : insp.refused });
+  const grid = call("olive", "set", { id: "@world", component: "terrain-grid", value: { spacing: 1 } }), help = call("bea", "help", { verb: "sculpt" });
+  ok(code(grid) === "reserved" && help.ok, "TC16 terrain-grid stays reserved (the lattice is the law's); help knows sculpt", { grid: grid.refused?.code, help: help.ok });
+  // the sim reads the same ground: its params name the sculpted layer, never carry it, and a copy of its state still stands on it
+  call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" } });
+  const st0 = openWorld(root, name).sim(); call("bea", "sculpt", { brush: "raise", path: [[30, -30]], radius: 4, strength: 0.5 }); const sf = openWorld(root, name).sim();
+  const tp = sf.sim?.terrain, tpCopy = JSON.parse(JSON.stringify(tp ?? null));
+  ok(!!tp?.shape?.sculpt && st0.sim?.terrain?.shape?.sculpt !== tp.shape.sculpt && JSON.stringify(tp).length < 2000 && near(makeHeightField(tpCopy)(30, -30), H()(30, -30)) && near(H()(30, -30), 2.5) && tp.shape.features.length === 1,
+    "TC17 the sim re-grounds on every stroke: its terrain names the layer (a short name, digested whole) and reads the same height the authority stands things on, named feature and sculpting both", { sculpt: tp?.shape?.sculpt, bytes: JSON.stringify(tp ?? null).length, sim: tpCopy ? makeHeightField(tpCopy)(30, -30) : null, auth: H()(30, -30) });
+  // a client's own fold: the view carries the pieces, and the diff names the tile a stroke changed
+  { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/viewdiff.js"); const { withShaping } = await import("../../shared/terrainshape.js");
+    const v0 = viewState(openWorld(root, name).state()); const s9 = call("cy", "sculpt", { brush: "lower", path: [[30, -30]], radius: 1, strength: 0.1 }); const v1 = viewState(openWorld(root, name).state()); const d = diffView(v0, v1);
+    const fromView = makeHeightField(terrainParams(withShaping(v1.terrain, v1.terrainFeatures, v1.terrainTiles)));
+    ok(s9.ok && JSON.stringify(d.world) === '["terrainTiles"]' && JSON.stringify(d.ids.terrainTiles) === '["129-126"]' && v1.terrainFeatures.cove?.height === 3 && Array.isArray(v1.terrainTiles["129-126"]) && near(fromView(30, -30), H()(30, -30)) && !diffView(v1, viewState(openWorld(root, name).state())).world.length,
+      "TC18 the view carries the ground's named features and tiles; a stroke shows as the one tile it changed; the ground built from the view is the authority's", { world: d.world, ids: d.ids, h: fromView(30, -30), want: H()(30, -30) }); } }
 // CAR: a captioner's lines are its own requests, charged to it like any write: past the entries cap in the window, refused rate
 { const name = "car";
   const cw = callAt(name);

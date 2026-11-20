@@ -23,7 +23,7 @@ import { AgentPlaces } from "./agent-places.ts";
 export type { ActResult } from "./agent-result.ts";
 import { mergePose } from "../shared/humanoid.js";
 import { resolveBriefing } from "../shared/briefing.js";
-import { requestGrid, shapeReady } from "../shared/terrainshape.js";
+import { requestGrid, shapeReady, withShaping } from "../shared/terrainshape.js";
 import { foldOffset } from "../shared/clockoffset.js";
 import { bodyHeightFor, forgetReadings } from "./rigbones.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
@@ -1131,8 +1131,10 @@ export class WorldAgent {
     // the world's own keys: the ground this body walks on, the sky, the grass
     const W = this.st as any;
     try {
-      // the world's water is its own component: it rides on the terrain args the ground is built from
-      if ((d.world.includes("terrain") || d.world.includes("water")) && W.terrain) await this.ground.buildTerrain(W.water ? { ...W.terrain, water: W.water } : W.terrain);
+      // the world's water is its own component: it rides on the terrain args the ground is built from, and so do the
+      // ground's named features and sculpted tiles (shared/terrainshape.js withShaping)
+      if (["terrain", "water", "terrainFeatures", "terrainTiles"].some((k) => d.world.includes(k)) && W.terrain) { const g = withShaping(W.terrain, W.terrainFeatures, W.terrainTiles);
+        await this.ground.buildTerrain(W.water ? { ...g, water: W.water } : g); }
       if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
       if (d.world.includes("sky")) this.senses.skyState = W.sky as typeof this.senses.skyState;
       if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }
@@ -1350,7 +1352,7 @@ export class WorldAgent {
     // a heightmap world's engine waits for its grid (as the browser's does, thingphysics.js): noise ground would diverge
     const simShape = this.replica?.sim?.sim?.terrain?.shape;
     const simReady = shapeReady(simShape);
-    if (!simReady) void requestGrid(simShape.heightmap.grid);
+    if (!simReady && simShape.heightmap) void requestGrid(simShape.heightmap.grid);   // (a sculpted layer not held yet is named when this body's own ground is built)
     // The world's physics (@world.physics-engine): stamp where each flying thing IS into the entity view (replica.js
     // simAt, the state every renderer draws), so look() sees a punted crate where it is. Support rebuilds at rest.
     const sim = simReady ? this.replica?.simAt?.(this.serverNow()) : null;

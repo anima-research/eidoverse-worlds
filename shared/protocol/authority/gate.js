@@ -206,16 +206,18 @@ function shapeOneOrRefuse(verb, op, i) {
 // L7 keys rights on the component, not on the word that carried it. What a write needs is a SWITCH (roles.js), never a rank:
 //   a thing              build when you make it or made it; editOthers when someone else made it
 //   @world.blueprints:*  build (publish);  @world.assets:*  generate
-//   the world's look     editWorld (WORLD_LOOK, terrain-tile:* and terrain-paint:*)
+//   the ground           build (GROUND: the terrain, its named features, its sculpted tiles): shaping it is building
+//   the world's look     editWorld (WORLD_LOOK and terrain-paint:*)
 //   @world.roles:*       the grant rule (grantCheck): an owner, or grantRoles below your rank with only permissions you hold
 //   the rest of @world   owner, never a permission
-const WORLD_LOOK = new Set(["about", "sky", "terrain", "terrain-grid", "grass", "water", "bounds", "spawn"]);
+const WORLD_LOOK = new Set(["about", "sky", "terrain-grid", "grass", "water", "bounds", "spawn"]);
+const GROUND = new Set(["terrain", "terrain-feature", "terrain-tile"]);
 const needOf = (op) => {
   if (op.id !== "@world") return "thing";
   const base = String(op.comp ?? "").split(":")[0];
-  if (base === "blueprints") return "build";
+  if (base === "blueprints" || GROUND.has(base)) return "build";
   if (base === "assets") return "generate";
-  if (R.EDIT_WORLD_PERMISSION && (WORLD_LOOK.has(base) || base === "terrain-tile" || base === "terrain-paint")) return "editWorld";
+  if (R.EDIT_WORLD_PERMISSION && (WORLD_LOOK.has(base) || base === "terrain-paint")) return "editWorld";
   if (base === "roles") return "grant";
   return "owner";
 };
@@ -280,7 +282,7 @@ function rights(w, st, s, who, role, op, at, made, pause) {
 // whose rights first made this life of the key) or an owner; roles:<id> follows the grant rule instead (keyRights). Making a new key needs only the component's ordinary rank. A
 // whole-entity delete is gated per key at the call site (§3d H7).
 const isKeyed = (comp) => typeof comp === "string" && comp.includes(":");
-// §5: INSTANCE keys (script:, blueprints:; roles: is one, but under the grant rule) carry the creator rule; PARTITION keys (terrain-tile:, terrain-paint:)
+// §5: INSTANCE keys (script:, blueprints:; roles: is one, but under the grant rule) carry the creator rule; PARTITION keys (terrain-feature:, terrain-tile:, terrain-paint:)
 // are pieces of one shared surface, ordinary rank rules only. No schema: instance, the safe side.
 export const keyKind = (comp) => COMPONENTS[comp.slice(0, comp.indexOf(":"))]?.key ?? "instance";
 // Owners are protected from each other by SENIORITY (as Matrix room v12 protects creators): an owner can't change the role

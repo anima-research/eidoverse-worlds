@@ -98,7 +98,9 @@ export const mayTrust = () => (net.myRights?.role === undefined ? undefined : is
 // `weather` verbs and set/delete of @world's `terrain` and `grass`. mayShape: the editWorld permission (the owner's, on
 // an older server); false = known not allowed, undefined = rights not known yet.
 export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : isOwner(r); };
-export const worldLive = () => ({ now: serverNow(), mayShape: mayShape(), trusted: trustedHere(), mayTrust: mayTrust() });
+/** The ground (the terrain, its named features, its sculpting) takes build, not editWorld: false = known not allowed. */
+export const mayGround = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('build'); return r?.role === undefined ? undefined : isOwner(r); };
+export const worldLive = () => ({ now: serverNow(), mayShape: mayShape(), mayGround: mayGround(), trusted: trustedHere(), mayTrust: mayTrust() });
 export function schemaFor(id) {
   if (id === WORLD_ID) return worldSchema(state.st, worldLive());
   const rec = recordFor(id); if (!rec) return { id, groups: [] };

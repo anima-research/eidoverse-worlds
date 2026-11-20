@@ -12,6 +12,7 @@
 
 const EPS = 1e-9;
 export function near(a, b) {
+  if (a === b) return true;   // the same value (a sculpted tile's samples are handed from view to view as they are)
   // integers (counts, seqs, timestamps) compare exactly; the tolerance is for float noise in poses and scales
   if (typeof a === "number" && typeof b === "number") return a === b || (!(Number.isInteger(a) && Number.isInteger(b)) && Math.abs(a - b) <= EPS * Math.max(1, Math.abs(a), Math.abs(b)));
   if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => near(x, b[i]));
@@ -28,7 +29,7 @@ const OWN = new Set([...POSE, "model", "yaw", "parent", "born", "actor", "ts", "
 // the one component only a rebuild can show: a changed model is another object (a mesh, a light, a socket change in place)
 const REBUILDS = new Set(["model"]);
 const NOT_WORLD = new Set(["entities", "recentChat", "chatTotal"]);
-const MAPS = new Set(["roles", "bans", "behaviors"]);
+const MAPS = new Set(["roles", "bans", "behaviors", "terrainFeatures", "terrainTiles"]);
 
 /** One thing's change from `p` to `n` (either may be undefined), appended to `out`. */
 export function diffThing(id, p, n, out) {

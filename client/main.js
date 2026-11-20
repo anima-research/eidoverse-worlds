@@ -733,6 +733,11 @@ const EW = globalThis.EW = {
     return next;
   },
   get terrainArgs() { return currentTerrainArgs(); },
+  // EW.sculpt({brush: 'lower', path: [[x, z], …], radius: 3, strength: 0.4}) is one brush stroke on the ground (the
+  // authority's sculpt; no path: where your body stands). EW.feature('cove', {type: 'hill', x, z, radius, height}) sets
+  // one named shape of the ground, EW.feature('cove', null) removes it (@world's terrain-feature:<name>).
+  sculpt: (args = {}) => sendRequest('sculpt', args),
+  feature: (name, value) => (value == null ? sendRequest('delete', { id: '@world', component: `terrain-feature:${name}` }) : sendRequest('set', { id: '@world', component: `terrain-feature:${name}`, value })),
   // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
   groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
   get terrainPending() { return terrainPending(); },
