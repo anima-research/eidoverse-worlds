@@ -269,7 +269,7 @@ checks it and says what it would write; nothing is logged. The other verbs
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
 lists what a verb takes.
 
-**Limits.** By default (a server may change them, `server/config.ts`), per identity, per 10 s: 60 entries and 20 says, 256 KiB written (32 KiB for
+**Limits.** By default (a server may change them, `server/config.ts`), per identity, per 10 s: 600 entries and 20 says, 2048 KiB written (32 KiB for
 guests); past that a write is refused `rate` (a batch counts as one entry). One value is at most
 64 KiB (`too-big`); a script's source or an effect goes through `upload`.
 
@@ -850,11 +850,11 @@ ripple every resident's reconnect.
   `retry-after`) and queued (past 16 waiting: 503, ask again in a minute),
   each refusal in words saying when to ask again.
   It is advice, never a refusal (docs/guide/BUILDING.md).
-- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB by default, `IMAGE_CAP_MB`, within `UPLOAD_CAP_MB`) →
+- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤32MB by default, `IMAGE_CAP_MB`, within `UPLOAD_CAP_MB`) →
   `store/images/<hash>.<ext>`, a picture source. The kind is read from the
   bytes, not the name; the store is inert — what hangs in a world is the
   `picture` component, gated by builder rank and locks.
-- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤ `UPLOAD_CAP_MB`, default 20 MB) →
+- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤ `UPLOAD_CAP_MB`, default 100 MB) →
   `store/audio/<hash>.<ext>`, a sound source for a `sound` component.
 - Scripts don't go through HTTP: `act {verb: "upload", args: {text}}`
   stores the source as a blob and returns its `src`.

@@ -399,8 +399,17 @@ export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old pro
 
 // ?token= is deprecated (tokens in URLs land in access logs; RFC 9745 Deprecation header). Removal waits on Orrery moving to the header
 const warnedQuery = new Set<string>();
+// A body is read whole into memory (about three times its size at peak: the chunks, their concatenation, the copy
+// handed on), so what is being read AT ONCE is bounded too: two caps' worth. Past that an upload is asked to come back;
+// one alone always proceeds. A body that states no length counts as a whole cap.
+let inFlight = 0;
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
-  const r = await uploadBy(req, url, srv);
+  const stated = Number(req.headers.get("content-length")), holds = stated > 0 ? Math.min(stated, UPLOAD_CAP) : UPLOAD_CAP;
+  if (inFlight > 0 && inFlight + holds > 2 * UPLOAD_CAP)
+    return new Response("busy: other uploads are being read; try again in a few seconds", { status: 503, headers: { "retry-after": "5" } });
+  inFlight += holds;
+  let r: Response;
+  try { r = await uploadBy(req, url, srv); } finally { inFlight -= holds; }
   if (url.searchParams.has("token") && !bearerOf(req)) {
     const ip = addressOf(req, srv);
     if (!warnedQuery.has(ip) && warnedQuery.size < 1024) { warnedQuery.add(ip); console.warn(`[upload] ?token= is deprecated; send Authorization: Bearer (from ${ip})`); }

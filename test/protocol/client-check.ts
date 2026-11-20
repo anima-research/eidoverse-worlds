@@ -743,7 +743,7 @@ try {
   const hrows = async () => evalJson(`[...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent)`);
   check("HT3 it lists this thing's acts, newest first, with who and what (pt's motion set and deleted above)", await waitFor(`(() => { const t = [...document.querySelectorAll('[data-frame="history"] .sp-info')].map((x) => x.textContent); const i = t.findIndex((x) => /delete.*motion/.test(x)), j = t.findIndex((x) => /set.*motion/.test(x)); return i >= 0 && j > i; })()`, 5000), await hrows());
   // enough acts to page: 25 label sets on pt, then Older… must reach back to the motion set
-  // each set must land: the authority's rate (60 entries per actor per 10 s, gate.js RATE_DEFAULT) refuses a burst with code
+  // each set must land: the authority's rate (600 entries per actor per 10 s, gate.js RATE_DEFAULT) refuses a burst with code
   // 'rate' and no trace, which would leave a hole in the history; a refused set waits and is sent again, as the refusal says
   const landed = await page(`const n = await import('/lib/net.js'); let ok = 0, waited = 0;
     for (let k = 0; k < 25; k++) for (let t = 0; t < 15; t++) { const r = await n.sendRequest('set', { id: 'pt', component: 'label', value: 'pt ' + k });

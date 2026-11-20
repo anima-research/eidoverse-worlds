@@ -51,7 +51,7 @@ function spokenOf(a, now) {
 // acts so neither starves the other's count) and in BYTES (one budget for both). An identity with no account (io.kindOf → "anon") gets less. Refused requests are
 // logged inside the same byte budget.
 // the defaults; a server injects its own policy (io.rate, server/config.ts RATE_POLICY): never process.env here (browsers run this)
-export const RATE_DEFAULT = Object.freeze({ n: 60, says: 20, ms: 10000, bytes: 256 * 1024, anonBytes: 32 * 1024 });
+export const RATE_DEFAULT = Object.freeze({ n: 600, says: 20, ms: 10000, bytes: 2048 * 1024, anonBytes: 32 * 1024 });
 const SAY_MAX = 8192;
 const bytesOf = (e) => e.bytes ?? utf8Len(JSON.stringify(e));   // UTF-8 bytes, as the log stores it (storage: bytes)
 // FOLLOW_UP / followUp (the authority's own follow-up ops inside a person's write): authority/storage.js
