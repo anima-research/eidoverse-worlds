@@ -15,48 +15,188 @@
 //              square (image x → world +x, image down → world +z). Features
 //              still apply on top.
 //
+// Both of those live in the bag, and a write of the bag replaces them whole. Two more shape the ground from components of
+// their own on @world, so one piece changes without the rest being sent again:
+//
+//   terrain-feature:<name>   one placed shape, written as a list feature is, with `order?`. Named features apply after
+//                            the bag's list, by order (absent: 0) and then by name.
+//   terrain-tile:<i>-<j>     {mm: [...]}: one tile of the SCULPTED layer, whole millimetres added after every feature,
+//                            so a stroke always shows where it was made. Written by the authority's `sculpt`
+//                            (shared/protocol/sculpt.js works a brush out once; every reader reads its result).
+//
+// The sculpted layer is a lattice fixed in world space (SCULPT): a sample every 0.5 m, in tiles of 32 × 32. Tile
+// <i>-<j> holds columns 32i… along x and rows 32j… along z, counted from −2048 m, row-major (rows run along z, as a
+// heightmap image's do). Between samples the layer is bilinear; a tile that isn't there is level.
+//
+// A reader gathers all of it into the ground's ARGS (groundArgs from @world's components, withShaping from a view) and
+// hands them on as it always handed the bag. The extras ride under a symbol (SHAPING), so no stored bag can carry them
+// and JSON.stringify(args) is still the bag alone. A level ground (no terrain, or kind flat) is never shaped.
+//
 // ONE implementation, three consumers: the client's mesh and heightAt, the agents' heightAt, and the deterministic sim
 // (via terrainmath.js); they must agree or bodies stand in the air. So this file uses only exact operations (+ - * /,
-// sqrt, floor, comparisons: no pow, no hypot). A world with neither key never reaches this code.
+// sqrt, floor, comparisons: no pow, no hypot). A world that shapes nothing never reaches this code.
 
 import { MOVER, waterStance, waterCost } from './mover.js';   // the water law (below): one walker, one law
+import { sha256hex } from './sha256.js';
 
-export const MAX_FEATURES = 64;
+export const MAX_FEATURES = 64;        // in the bag's list
+export const MAX_NAMED = 64;           // terrain-feature:<name> components
+export const MAX_TILES = 1024;         // terrain-tile:<i>-<j> components (a quarter of a square kilometre, every sample moved)
 export const MAX_GRID = 1025;          // per side; a 1025² map is ~2 MB of samples
+/** The sculpted layer's lattice. spacing: metres between samples. tile: samples per tile side. span: tiles per side.
+ *  origin: the world x and z of sample 0. limit: how far a sample may stand from the ground under it, mm. */
+export const SCULPT = Object.freeze({ spacing: 0.5, tile: 32, span: 256, origin: -2048, limit: 500000 });
+export const SHAPING = Symbol('terrain shaping');
 const TYPES = new Set(['hill', 'ridge', 'flatten']);
 
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 const GRID_REF = /^store\/heightmaps\/[0-9a-f]{16}\.json$/;
 
-/** The shaping part of terrain-verb args, normalized — or null when the
+/** One placed shape as the height law reads it, or null when it is malformed (a reader drops it; the authority
+ *  refuses to store it). @param {any} f */
+export function featureOf(f) {
+  if (!f || !TYPES.has(f.type)) return null;
+  const radius = clamp(num(f.radius, 0), 0, 2000);
+  const height = clamp(num(f.height, 0), -500, 500);
+  if (!(radius > 0.05)) return null;
+  if (f.type === 'ridge') {
+    if (![f.x1, f.z1, f.x2, f.z2].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+    return { type: 'ridge', x1: f.x1, z1: f.z1, x2: f.x2, z2: f.z2, radius, height };
+  }
+  if (![f.x, f.z].every((v) => typeof v === 'number' && Number.isFinite(v))) return null;
+  const g = { type: f.type, x: f.x, z: f.z, radius, height };
+  if (f.type === 'flatten') g.edge = clamp(num(f.edge, radius * 0.5), 0.01, 2000);
+  return g;
+}
+
+/** The shaping part of the ground's args, normalized — or null when the
  *  world uses none (the caller then keeps its plain noise law, untouched).
  *  Malformed features are dropped, not guessed at.
- *  @param {Record<string, any>} a */
+ *  @param {Record<string | symbol, any>} a */
 export function shapeParams(a) {
   const features = [];
-  for (const f of Array.isArray(a?.features) ? a.features.slice(0, MAX_FEATURES) : []) {
-    if (!f || !TYPES.has(f.type)) continue;
-    const radius = clamp(num(f.radius, 0), 0, 2000);
-    const height = clamp(num(f.height, 0), -500, 500);
-    if (!(radius > 0.05)) continue;
-    if (f.type === 'ridge') {
-      if (![f.x1, f.z1, f.x2, f.z2].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
-      features.push({ type: 'ridge', x1: f.x1, z1: f.z1, x2: f.x2, z2: f.z2, radius, height });
-    } else {
-      if (![f.x, f.z].every((v) => typeof v === 'number' && Number.isFinite(v))) continue;
-      const g = { type: f.type, x: f.x, z: f.z, radius, height };
-      if (f.type === 'flatten') g.edge = clamp(num(f.edge, radius * 0.5), 0.01, 2000);
-      features.push(g);
-    }
-  }
+  const read = (list) => { for (const f of list) { const g = featureOf(f); if (g) features.push(g); } };
+  read(Array.isArray(a?.features) ? a.features.slice(0, MAX_FEATURES) : []);
+  const over = a?.[SHAPING];
+  if (over?.named) read(over.named);
   let heightmap = null;
   const h = a?.heightmap;
   if (h && typeof h.grid === 'string' && GRID_REF.test(h.grid)) {
     const min = num(h.min, 0), max = num(h.max, 10);
     heightmap = { grid: h.grid, min, max };
   }
-  return features.length || heightmap ? { features, heightmap } : null;
+  // the sculpted layer is named, never carried: the sim's state holds these params (and hashes them), so the tiles stay out
+  const sculpt = over?.tiles ? layerRef(over.tiles) : null;
+  return features.length || heightmap || sculpt ? { features, heightmap, ...(sculpt ? { sculpt } : {}) } : null;
+}
+
+// ---- the ground's args: the bag, the named features, the sculpted tiles ---------------
+
+/** Can this ground be shaped? A terrain that isn't level: no terrain at all and kind flat are the level floor. */
+export const shapeable = (t) => !!t && typeof t === 'object' && !Array.isArray(t) && t.kind !== 'flat';
+const TILE_KEY = /^(0|[1-9][0-9]{0,2})-(0|[1-9][0-9]{0,2})$/;
+/** A tile's [i, j] from its key `<i>-<j>`, or null when it names no tile of the lattice. */
+export function tileIndex(key) { const m = TILE_KEY.exec(String(key)); if (!m) return null; const i = Number(m[1]), j = Number(m[2]); return i < SCULPT.span && j < SCULPT.span ? [i, j] : null; }
+export const tileKey = (i, j) => `${i}-${j}`;
+/** The tile a world point falls in, as its key, or null outside the lattice. */
+export function tileAt(x, z) { const n = SCULPT.spacing * SCULPT.tile, i = Math.floor((x - SCULPT.origin) / n), j = Math.floor((z - SCULPT.origin) / n);
+  return i >= 0 && j >= 0 && i < SCULPT.span && j < SCULPT.span ? tileKey(i, j) : null; }
+/** A tile's samples, or null when the value isn't one: `mm` is tile² whole numbers within the limit. */
+export function tileOf(v) { const mm = Array.isArray(v) ? v : v?.mm, n = SCULPT.tile * SCULPT.tile;
+  if (!Array.isArray(mm) || mm.length !== n) return null;
+  for (let k = 0; k < n; k++) { const x = mm[k]; if (!Number.isInteger(x) || x > SCULPT.limit || x < -SCULPT.limit) return null; }
+  return mm; }
+
+/** A tile as a reply or a reading says it: how many samples, and how far they stand from the ground under them (mm). A
+ *  tile is 1024 numbers, which nobody reads; anything else comes back as it is. */
+export const tileSaid = (comp, v) => (typeof comp === 'string' && comp.startsWith('terrain-tile:') && Array.isArray(v?.mm) ? { samples: v.mm.length, min: Math.min(...v.mm), max: Math.max(...v.mm) } : v);
+
+/** The ground's args: the terrain bag with the world's named features and sculpted tiles riding on it (SHAPING).
+ *  `features` is {<name>: value}, `tiles` {<i>-<j>: {mm} | mm}. With neither, or on a level ground, the bag itself, so
+ *  a world that shapes nothing reads exactly as it did. */
+export function withShaping(terrain, features, tiles) {
+  if (!shapeable(terrain)) return terrain ?? null;
+  const names = Object.keys(features ?? {}).filter((n) => features[n] && typeof features[n] === 'object').sort();
+  const ord = (n) => num(features[n].order, 0);
+  names.sort((a, b) => ord(a) - ord(b));   // a stable sort: equal orders keep their name order
+  const named = names.slice(0, MAX_NAMED).map((n) => features[n]);
+  // (in key order, so two readers handed more tiles than a ground carries keep the same ones)
+  const T = {}; let count = 0;
+  for (const k of Object.keys(tiles ?? {}).sort()) { if (count >= MAX_TILES) break; const mm = tileIndex(k) && tileOf(tiles[k]); if (mm) { T[k] = mm; count++; } }
+  if (!named.length && !count) return terrain;
+  return { ...terrain, [SHAPING]: { named, tiles: count ? T : null } };
+}
+
+// one composition per terrain value: the same pieces give back the same args, so a cache keyed on the args (the
+// authority's ground, the sim's field) holds until the ground really changes. Keyed on values, never on @world's bag: a
+// fold may change that in place.
+const composed = new WeakMap();   // terrain value -> { parts, args }
+/** The ground's args from @world's components (a fold's record of it). */
+export function groundArgs(wc) {
+  const t = wc?.terrain;
+  if (!shapeable(t)) return t ?? null;
+  let features = null, tiles = null; const parts = [];
+  for (const k in wc) {   // every key of @world (its roles and assets too): one cheap test turns most away
+    if (k.charCodeAt(7) !== 45 || k.charCodeAt(0) !== 116) continue;   // 'terrain-…'
+    if (k.startsWith('terrain-feature:')) { (features ??= {})[k.slice(16)] = wc[k]; parts.push(k, wc[k]); }
+    else if (k.startsWith('terrain-tile:')) { (tiles ??= {})[k.slice(13)] = wc[k]; parts.push(k, wc[k]); }
+  }
+  if (!features && !tiles) return t;
+  const last = composed.get(t);
+  if (last && last.parts.length === parts.length && last.parts.every((p, i) => p === parts[i])) return last.args;
+  const args = withShaping(t, features, tiles);
+  composed.set(t, { parts, args });
+  return args;
+}
+/** The named features and the tiles a ground's args carry: {named, tiles} (either may be empty), for a reader that
+ *  tells what changed between two grounds. */
+export const shapingOf = (args) => args?.[SHAPING] ?? null;
+
+// ---- the sculpted layer --------------------------------------------------------
+// A layer is every tile a ground carries, held by a name made from what the tiles hold, so the same sculpting has the
+// same name on every machine. The LAYER_CACHE named or read last are kept; a height function holds its own from the
+// moment it finds it, and the sim builds its height function the moment it is handed a ground (shared/sim.js), so a
+// layer in use is never looked up twice. A name that isn't here (a sim's state adopted before its world's ground was
+// read) is not ready, as a heightmap's missing grid isn't (shapeReady): reading the ground's args names it again, which
+// the replica does before it feeds a sim (protocol/siminputs.js).
+const LAYER_CACHE = 256;
+const layers = new Map();          // name -> Map(tile number -> mm)
+const tileNames = new WeakMap();   // mm -> the hash of its samples
+const layerNames = new WeakMap();  // a ground's tiles -> their layer's name
+function layerRef(tiles) {
+  let ref = layerNames.get(tiles);
+  if (!ref) {
+    ref = sha256hex(Object.keys(tiles).sort().map((k) => { const mm = tiles[k]; let h = tileNames.get(mm);
+      if (!h) { h = sha256hex(mm.join(',')); tileNames.set(mm, h); } return `${k}:${h}`; }).join('\n')).slice(0, 32);
+    layerNames.set(tiles, ref);
+  }
+  let L = layers.get(ref);
+  if (L) layers.delete(ref);
+  else { L = new Map(); for (const k of Object.keys(tiles)) { const [i, j] = tileIndex(k); L.set(i * SCULPT.span + j, tiles[k]); } }
+  layers.set(ref, L);
+  while (layers.size > LAYER_CACHE) layers.delete(layers.keys().next().value);
+  return ref;
+}
+/** A layer by its name, or null when this machine doesn't hold it. (A layer read is a layer kept.) */
+export function layerFor(ref) { const L = layers.get(ref); if (!L) return null; layers.delete(ref); layers.set(ref, L); return L; }
+/** The layer's height at a point, metres: bilinear between the four samples round it. */
+function sculptSampler(L) {
+  const { spacing, tile, span, origin } = SCULPT, N = tile * span;
+  let lastK = -1, lastT;   // a walk and a mesh build read neighbours: the last tile is usually the next one too
+  const at = (gx, gz) => {
+    if (!(gx >= 0 && gz >= 0 && gx < N && gz < N)) return 0;
+    const ti = Math.floor(gx / tile), tj = Math.floor(gz / tile), k = ti * span + tj;
+    if (k !== lastK) { lastK = k; lastT = L.get(k); }
+    return lastT ? lastT[(gz - tj * tile) * tile + (gx - ti * tile)] : 0;
+  };
+  return (x, z) => {
+    const u = (x - origin) / spacing, v = (z - origin) / spacing, i = Math.floor(u), j = Math.floor(v);
+    const d00 = at(i, j), d10 = at(i + 1, j), d01 = at(i, j + 1), d11 = at(i + 1, j + 1);
+    if (d00 === 0 && d10 === 0 && d01 === 0 && d11 === 0) return 0;
+    const fu = u - i, fv = v - j, a = d00 + (d10 - d00) * fu, b = d01 + (d11 - d01) * fu;
+    return (a + (b - a) * fv) / 1000;
+  };
 }
 
 // ---- heightmap grids ---------------------------------------------------------
@@ -122,8 +262,8 @@ export function requestGrid(ref) {
 /** Milliseconds until a failed grid may be fetched again (0: now). */
 export function gridRetryIn(ref) { const m = fetchMisses.get(ref); return m ? Math.max(0, m.until - Date.now()) : 0; }
 /** Whether a terrain's shaping can be computed as written — false while its heightmap grid is still
- *  missing (the height law would fall back to noise, which nothing should commit to). */
-export function shapeReady(shape) { return !shape?.heightmap || !!gridFor(shape.heightmap.grid); }
+ *  missing (the height law would fall back to noise, which nothing should commit to), or its sculpted layer isn't held. */
+export function shapeReady(shape) { return (!shape?.heightmap || !!gridFor(shape.heightmap.grid)) && (!shape?.sculpt || layers.has(shape.sculpt)); }
 
 /** Wire/disk form → grid. Integer byte assembly, so it is exact everywhere. */
 export function decodeGrid(obj) {
@@ -173,6 +313,10 @@ export function shapeHeight(base, S, size) {
   // The grid is HELD from the moment it is first found: a built terrain keeps its own image however the
   // cache turns over. Until then it is looked up per call (a sim's field made before the grid landed).
   let held = hm ? gridFor(hm.grid) : null;
+  // the sculpted layer likewise: found once, then this height function's own
+  let sculpted = null;
+  const layer = () => { const L = layerFor(S.sculpt); return L ? (sculpted = sculptSampler(L)) : null; };
+  if (S.sculpt) layer();
   return (x, z) => {
     let h;
     if (hm) {
@@ -197,6 +341,7 @@ export function shapeHeight(base, S, size) {
         h += (f.height - h) * w;
       }
     }
+    if (S.sculpt) { const sc = sculpted ?? layer(); if (sc) h += sc(x, z); }
     return h;
   };
 }

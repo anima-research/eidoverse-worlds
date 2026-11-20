@@ -527,12 +527,12 @@ class Session {
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
           { tags: eventTags("weather"), metadata: { weather: true } });
       } else if (ev.kind === "world-change") {
-        // a visible change nearby (an emitter starting/changing/ending): ambient, held for pull-only hosts like weather
+        // a visible change nearby (an emitter starting/changing/ending, the ground reshaped): ambient, held for pull-only hosts like weather
         if (!this.granted(CAP.channelsIncoming)) {
           this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
-          { tags: eventTags("world-change"), metadata: { worldChange: true, ...(declares ? { declares } : {}) } });
+          { tags: eventTags("world-change", { part: ev.part }), metadata: { worldChange: true, ...(declares ? { declares } : {}) } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
           { id: "world", name: this.agent.world }, { tags: eventTags(ev.kind), ...md });

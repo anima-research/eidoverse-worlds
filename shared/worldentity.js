@@ -165,13 +165,15 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
  *  ({ id, groups, sections }), so edit/panels.js' cards, the VR quad, describeSchema
  *  and fieldAt all read it unchanged. Addresses: sky.* weather.state terrain.*
  *  grass.* (grass.mow mows).
- *  @param live { now?: number, mayShape?: boolean } — mayShape false = this viewer
+ *  @param live { now?: number, mayShape?: boolean, mayGround?: boolean } — mayShape false = this viewer
  *  is known not to hold editWorld (an owner's always; an owner may grant it to a role: client/lib/edit/inspect.js mayShape);
+ *  mayGround false = known not to hold build, which is what the ground takes (the terrain is a builder's to shape);
  *  undefined = unknown: nothing is disabled on its account and the authority decides. */
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
-  const ro = live.mayShape === false ? { disabled: true, hint: 'shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank' } : {};
+  const ro = live.mayShape === false ? { disabled: true, hint: 'the world\'s look is the owner\'s: sky, weather and grass take the editWorld permission' } : {};
+  const rg = live.mayGround === false ? { disabled: true, hint: 'shaping the ground takes the build permission' } : {};   // the terrain card's
   const groups = [];
 
   // Sky
@@ -213,14 +215,14 @@ export function worldSchema(st, live = {}) {
   const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k), TD = materialize('terrain', { kind: 'noise' }).value;
   const terrainFields = t?.kind === 'flat' ? [{ t: 'info', label: 'flat ground', value: `level at ${t.height ?? 0} m` }] : t ? [
     // an absent number is the sim's (componentspec terrain defaults = shared/terrainmath.js), never this card's own
-    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
-    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'size', label: 'size', value: t.size ?? TD.size, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...ro },
-    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? TD.flatRadius, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...ro },
-    ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
+    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...rg },
+    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...rg },
+    { t: 'num', k: 'size', label: 'size', value: t.size ?? TD.size, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...rg },
+    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...rg },
+    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? TD.flatRadius, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...rg },
+    ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...rg }] : []),
   ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
-  if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...ro });
+  if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...rg });
   groups.push({ group: 'terrain', label: 'Terrain', fields: terrainFields });
 
   // Grass
@@ -336,10 +338,11 @@ export function worldEditOps(st, edits, live = {}) {
  *    kind 'shape' | 'tint'  v = a ground-palette name (ctx.pal)                  → terrain (only that dial changes)
  *    kind 'plant'   v = a planting name                                           → grass (height/density/tint kept)
  *    kind 'mow'                                                                   → delete @world's grass
- *  ctx: { pal, presets, now, mayShape } */
+ *  ctx: { pal, presets, now, mayShape, mayGround } */
 export function worldPick(st, kind, v, ctx = {}) {
   const { sky, terrain, grass } = worldState(st);
-  if (ctx.mayShape === false) return { ops: [], errors: ['shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank'] };
+  if (kind === 'shape' || kind === 'tint') { if (ctx.mayGround === false) return { ops: [], errors: ['shaping the ground takes the build permission'] }; }
+  else if (ctx.mayShape === false) return { ops: [], errors: ['the world\'s look is the owner\'s: sky, weather and grass take the editWorld permission'] };
   const pal = ctx.pal; const def = paletteDefaults(pal);
   let op = null;
   switch (kind) {

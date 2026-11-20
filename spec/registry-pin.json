@@ -2651,13 +2651,128 @@
   },
   "on": "thing"
  },
- "terrain-grid": {
-  "status": "reserved",
+ "terrain-feature": {
+  "status": "trial",
+  "fields": {
+   "type": "string",
+   "x": "number",
+   "z": "number",
+   "x1": "number",
+   "z1": "number",
+   "x2": "number",
+   "z2": "number",
+   "radius": "number",
+   "height": "number",
+   "edge": "number",
+   "order": "number"
+  },
+  "enums": {
+   "type": [
+    "hill",
+    "ridge",
+    "flatten"
+   ]
+  },
+  "ranges": {
+   "radius": {
+    "gt": 0.05,
+    "max": 2000
+   },
+   "height": {
+    "min": -500,
+    "max": 500
+   },
+   "edge": {
+    "min": 0.01,
+    "max": 2000
+   },
+   "order": {
+    "min": -1000000,
+    "max": 1000000
+   },
+   "x": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x2": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z2": {
+    "min": -100000,
+    "max": 100000
+   }
+  },
+  "required": [
+   "type",
+   "radius",
+   "height"
+  ],
+  "absentMeans": {
+   "edge": "half the radius (a flatten's soft rim)",
+   "order": "0: among named shapes, by order and then by name"
+  },
+  "docs": {
+   "type": "hill (a round bump; a negative height is a pit) | ridge (a raised line; negative, a valley) | flatten (levels a circle to an absolute height)",
+   "x": "its centre (hill, flatten)",
+   "z": "its centre (hill, flatten)",
+   "x1": "a ridge's first end",
+   "z1": "a ridge's first end",
+   "x2": "a ridge's other end",
+   "z2": "a ridge's other end",
+   "radius": "how far it reaches",
+   "height": "how high it rises (hill, ridge), or the height it levels to (flatten)",
+   "edge": "a flatten's soft rim, beyond its radius",
+   "order": "where it applies among the named shapes: lower first (a flatten levels whatever came before it)"
+  },
+  "units": {
+   "x": "m",
+   "z": "m",
+   "x1": "m",
+   "z1": "m",
+   "x2": "m",
+   "z2": "m",
+   "radius": "m",
+   "height": "m",
+   "edge": "m"
+  },
+  "keyed": true,
   "on": "world"
  },
  "terrain-tile": {
-  "status": "reserved",
+  "status": "trial",
+  "fields": {
+   "mm": "array"
+  },
+  "required": [
+   "mm"
+  ],
+  "absentMeans": {
+   "mm": "never absent: a tile is its samples (a tile that isn't there at all is level)"
+  },
+  "docs": {
+   "mm": "the tile's 1024 samples, whole millimetres over the terrain and its features, row-major: 32 rows along z, each 32 samples along x"
+  },
+  "units": {
+   "mm": "mm"
+  },
   "keyed": true,
+  "on": "world"
+ },
+ "terrain-grid": {
+  "status": "reserved",
   "on": "world"
  },
  "script": {

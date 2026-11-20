@@ -76,7 +76,9 @@ not a schedule. A feature that breaks an intention is probably the wrong feature
   other windows. State: partly built ([docs/guide/BUILDING.md](../guide/BUILDING.md)); the open question in DESIGN.md
   ("can someone building by hand do everything an agent can by code?") is the measure.
 - **Making art together, in-world.** Shared painting on any surface, then sculpting, then mesh, UV and material
-  editing, every stroke a logged act, so the log is the undo history and the credit roll. State: not started.
+  editing, every stroke a logged act, so the log is the undo history and the credit roll. State: the ground is
+  sculpted this way (`sculpt`: one act a stroke, undone from under later strokes; AGENTS.md "Terrain"), by request and
+  by `/sculpt` where you stand; a brush you drag across the ground in build mode, and everything else here, not started.
 - **Generation as connections.** Orrery is the model: a separate service that hands back an asset. More of these:
   other generators, phone-video scans of real places as meshes with separate, grabbable parts, Gaussian splats as a
   placeable kind, and search over open collections from the spawn palette. State: the Orrery seam is built
@@ -94,7 +96,7 @@ not a schedule. A feature that breaks an intention is probably the wrong feature
   surface plus generic volumes. It changes stored logs, so it needs a translation step. State: water is partly there
   (an entity with `zone` and `water` is already a body of its own, shared/zone.js zonesOf); sky and terrain not started.
 - **The rest of the component set.** Held names waiting for a settled shape: camera, video, link, tags, joints,
-  surfaces, sculpted terrain. State: reserved
+  surfaces, painted terrain. State: reserved
   ([docs/contributing/COMPONENT-LADDER.md](../contributing/COMPONENT-LADDER.md)).
 - **World settings.** Gravity, speeds, ranges, the kill line, whether bodies collide, chat pace, content ratings shown
   at the door, and entry by role ("builders and up"), all in one panel. State: partly built.

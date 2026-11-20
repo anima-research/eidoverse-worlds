@@ -944,6 +944,61 @@ try {
   const reshaped = await waitFor(`${shape}.then((x) => x.type === 'SphereGeometry' && x.same && x.count === 5)`, 20000);
   check("IN5 a mesh thing reshaped from a box to a sphere: its copies are spheres too, sharing the new geometry", reshaped, await evalJson(shape));
   });
+  // ---- TC: the ground is clay (11-20). A named feature and a brush stroke re-height the mesh that stands (no rebuild),
+  // the walking ground is the same law, and the body under a stroke rides it ----
+  await stage("TC", async () => {
+  const send = (verb: string, args: any) => page(`const n = await import('/lib/net.js'); return await n.sendRequest(${JSON.stringify(verb)}, ${JSON.stringify(args)});`);
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const [px, pz] = [Math.round(me[0]) + 6, Math.round(me[1]) + 6];   // a lattice point a few metres off
+  const t = await send("set", { id: "@world", component: "terrain", value: { kind: "noise", seed: 1, size: 80, amplitude: 0 } });
+  if (!t?.ok) throw new Error("setup: the terrain wasn't written: " + JSON.stringify(t?.refused));
+  if (!(await waitFor(`import('/lib/terrain.js').then((m) => m.hasTerrain())`, 45000))) throw new Error("setup: the terrain mesh never stood");
+  // the ground as it is drawn and as it is walked: the mesh's vertex nearest a point, and heightAt there
+  const ground = (x: number, z: number) => evalJson(`import('/lib/terrain.js').then((m) => { const mesh = m.getTerrainMesh(), pos = mesh.geometry.attributes.position; let best = -1, d = Infinity;
+    for (let i = 0; i < pos.count; i++) { const e = (pos.getX(i) - ${x}) ** 2 + (pos.getZ(i) - ${z}) ** 2; if (e < d) { d = e; best = i; } }
+    return { walked: m.heightAt(${x}, ${z}), drawn: pos.getY(best), at: [pos.getX(best), pos.getZ(best)], lawThere: m.heightAt(pos.getX(best), pos.getZ(best)), mesh: mesh.uuid, geometry: mesh.geometry.uuid, verts: pos.count }; })`);
+  const g0 = await ground(px, pz);
+  // the first stroke: a sculpted ground with no authored resolution is drawn a vertex a sample (0.5 m), so this one builds the mesh again
+  const s1 = await send("sculpt", { brush: "raise", path: [[px, pz]], radius: 3, strength: 1 });
+  await waitFor(`import('/lib/terrain.js').then((m) => Math.abs(m.heightAt(${px}, ${pz}) - 1) < 1e-6 && m.getTerrainMesh().geometry.attributes.position.count > ${g0.verts})`, 45000);
+  const g1 = await ground(px, pz);
+  check("TC1 a stroke raises the ground that is walked and the ground that is drawn alike: 1 m at the path, and the mesh's vertex there stands at the law's height (a vertex each 0.5 m once a world is sculpted)",
+    s1?.ok && g0.walked === 0 && Math.abs(g1.walked - 1) < 1e-6 && Math.abs(g1.drawn - g1.lawThere) < 1e-6 && g1.drawn > 0.9 && g1.verts === 161 * 161, { s1: s1?.ok ?? s1?.refused, g0, g1 });
+  // the next strokes re-height the mesh standing: the same mesh and geometry, and far ground untouched
+  const far0 = await ground(px - 30, pz - 30);
+  const s2 = await send("sculpt", { brush: "lower", path: [[px, pz]], radius: 3, strength: 0.4 });
+  await waitFor(`import('/lib/terrain.js').then((m) => Math.abs(m.heightAt(${px}, ${pz}) - 0.6) < 1e-6)`, 20000);
+  const g2 = await ground(px, pz), far1 = await ground(px - 30, pz - 30);
+  check("TC2 the next stroke re-heights the mesh that stands (the same mesh, the same geometry, no rebuild), and ground far from it doesn't move",
+    s2?.ok && Math.abs(g2.walked - 0.6) < 1e-6 && Math.abs(g2.drawn - g2.lawThere) < 1e-6 && g2.mesh === g1.mesh && g2.geometry === g1.geometry && far1.drawn === far0.drawn && far1.mesh === g1.mesh, { g2, far0, far1 });
+  // a named feature, set and then removed on its own
+  const f1 = await send("set", { id: "@world", component: "terrain-feature:mound", value: { type: "hill", x: px - 12, z: pz, radius: 5, height: 2 } });
+  await waitFor(`import('/lib/terrain.js').then((m) => Math.abs(m.heightAt(${px - 12}, ${pz}) - 2) < 1e-6)`, 20000);
+  const g3 = await ground(px - 12, pz), still = await ground(px, pz);
+  const f2 = await send("delete", { id: "@world", component: "terrain-feature:mound" });
+  await waitFor(`import('/lib/terrain.js').then((m) => m.heightAt(${px - 12}, ${pz}) === 0)`, 20000);
+  const g4 = await ground(px - 12, pz);
+  check("TC3 a named feature raises its hill on the same mesh, the stroke beside it stands, and deleting the feature levels the hill alone",
+    f1?.ok && f2?.ok && Math.abs(g3.drawn - 2) < 1e-6 && g3.mesh === g1.mesh && Math.abs(still.walked - 0.6) < 1e-6 && g4.drawn === 0 && Math.abs((await ground(px, pz)).walked - 0.6) < 1e-6, { g3, still, g4 });
+  // /sculpt works where I stand, and my body rides the ground up
+  // (where I stand is seldom one of the layer's samples, half a metre apart: between them a stroke's top is a little
+  // under its strength, so the ground under me rises by most of the half metre, and I stand exactly on it)
+  const y0 = await evalJson(`import('/lib/player/controller.js').then((c) => c.myState.pos.y)`);
+  await page(`const r = await import('/lib/ui/commands/registry.js'); r.dispatch('sculpt', 'raise 2 0.5'); return true;`);
+  const stand = `Promise.all([import('/lib/player/controller.js'), import('/lib/terrain.js')]).then(([c, t]) => ({ y: c.myState.pos.y, ground: t.heightAt(c.myState.pos.x, c.myState.pos.z) }))`;
+  const rose = await waitFor(`${stand}.then((s) => s.ground - ${y0} > 0.4 && s.ground - ${y0} <= 0.5 + 1e-6 && Math.abs(s.y - s.ground) < 0.02)`, 20000);
+  const chat = `[...document.querySelectorAll('#chatlog *, .chat-line, .chatline')].map((e) => e.textContent).filter((t) => /raise: the ground here went from/.test(t)).length`;
+  const said = await waitFor(`${chat} > 0`, 10000);
+  check("TC4 /sculpt raise 2 0.5 raises the ground under me by most of half a metre (all of it at a sample) and my body stands on it; the chat says what it did", rose && said, { y0, now: await evalJson(stand), said });
+  // undo walks back through all five acts (the /sculpt, the feature's delete and its set, the lower, the raise) until the
+  // ground is level and its tiles are gone
+  for (let i = 0; i < 5; i++) await send("undo", {});
+  await waitFor(`import('/lib/terrain.js').then((m) => m.heightAt(${px}, ${pz}) === 0)`, 20000);
+  const g5 = await ground(px, pz); const tiles = Object.keys(disk().entities["@world"].c).filter((k) => k.startsWith("terrain-tile:") || k.startsWith("terrain-feature:"));
+  check("TC5 undoing every act of the stage levels the ground again, walked and drawn, and leaves no tile or feature in the world", g5.walked === 0 && g5.drawn === 0 && tiles.length === 0, { g5, tiles });
+  const errs = await evalJson(`(window.__errs ?? []).filter((e) => /terrain|reshape|sculpt/i.test(e))`);
+  check("TC6 no page error named the terrain while it was shaped", errs.length === 0, errs);
+  });
   // ---- EC: the camera in build mode (R, 10-10: "we need camera moving controls in build mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {

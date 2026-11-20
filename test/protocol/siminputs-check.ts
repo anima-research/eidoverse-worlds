@@ -123,5 +123,44 @@ function run(late) {
   ok(jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "G4 …and the flight rests where the authority's does", [jl?.p, rest?.at]);
 }
 
+// ---- G5: a sculpted ground (no heightmap). Its tiles are in the log, so nothing is fetched: a replica names the layer
+// from its own state before it feeds its sim, and a copy of a sim (the authority's rest forecast, a client's screen) keeps
+// the ground its source stands on however many other layers this machine has named since
+{
+  const { withShaping, layerFor, groundArgs } = await import("../../shared/terrainshape.js"); const { terrainParams, makeHeightField } = await import("../../shared/terrainmath.js");
+  const others = () => { for (let i = 0; i < 300; i++) { const mm = new Array(1024).fill(0); mm[0] = i + 1; shapeParams(withShaping({ kind: "noise" }, null, { "9-9": { mm } })); } };   // more than the cache holds
+  const dir = `${root}g5/`; fs.mkdirSync(dir, { recursive: true }); let now = 1800000000000;
+  const w = openLive(dir, "g5", { now: () => ++now, custodyFile: `${root}custody.json`, nameOf: () => null, kindOf: () => "human" });
+  const call = (actor, verb, args = {}, step = 100) => { now += step; return request(w, actor, verb, args); };
+  const L = () => readLog(fs.readFileSync(dir + "world.jsonl"));
+  call("rowan", "create-world", { title: "g5" });
+  call("rowan", "set", { id: "@world", component: "physics-engine", value: { engine: process.env.PHYS_ENGINE ?? "eidosim@1.0.0" } });
+  call("rowan", "set", { id: "@world", component: "terrain", value: { kind: "noise", seed: 1, size: 40, amplitude: 0 } });
+  const sc = call("rowan", "sculpt", { brush: "raise", path: [[0, 2]], radius: 6, strength: 3 });   // a mound where the ball will land
+  call("rowan", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
+  const stand = makeHeightField(terrainParams(groundArgs(w.state().entities["@world"].c)))(0, -0.5);   // the mound's flank, where rowan stands
+  const mv = call("rowan", "move", { to: [0, stand, -0.5] }); const g = call("rowan", "grab", { id: "ball" });
+  const name = w.sim()?.sim?.terrain?.shape?.sculpt, cut = JSON.parse(JSON.stringify({ ...clientSnapshotOf(w), you: "vic" }));
+  ok(sc.ok && mv.ok && stand > 1.5 && g.ok && typeof name === "string" && !cut.state?.terrainTiles && JSON.stringify(cut.physics ?? {}).includes(name), "(setup) a sculpted world with physics on: the sim's cut carries the layer's name", { sc: sc.refused, mv: mv.refused, stand, g: g.refused, name });
+  others();
+  ok(layerFor(name) === null, "(setup) …which this machine no longer holds, 300 other layers later");
+  const c = makeReplica(); c.adopt(cut);
+  ok(layerFor(name) !== null && shapeReady(c.sim?.sim?.terrain?.shape), "G5 a replica that adopts a sculpted world's cut names the layer from the tiles in its own state: no heightmap, nothing to fetch, ready before it feeds its sim", { held: layerFor(name) !== null });
+  let from = L().length;
+  const th = call("rowan", "throw", { id: "ball", v: [0, 1, 2] }, 100); ok(th.ok, "(setup) throw", th.refused);
+  for (let i = 0; i < 5; i++) call("rowan", "say", { text: `tick ${i}` }, 30);
+  c.ingest(L().slice(from), from); from = L().length;
+  others();   // while the ball flies: the authority's forecast and the client's screen copy their sims after this
+  const t0 = now; let jl = null; for (let t = 0; t < 200; t++) { const b = c.simAt(t0 + t * 33)?.bodies?.ball; if (b) jl = b; }
+  call("rowan", "wait", {}, 6000);
+  c.ingest(L().slice(from), from);
+  const rest = restsOf(L()).at(-1);
+  // thrown up the mound (toward +z), the ball rolls back down its flank and stops near its foot: on level ground it would
+  // have gone on the way it was thrown. Where it stops, it sits on the sculpted ground
+  const under = rest ? makeHeightField(terrainParams(groundArgs(w.state().entities["@world"].c)))(rest.at[0], rest.at[2]) : NaN;
+  ok(rest && rest.at[2] < -1 && rest.at[1] - under > 0 && rest.at[1] - under < 0.4, "G5b the thrown ball rolls back down the mound and rests on it: the authority's forecast copied its sim after the cache had turned over, and stood on the same sculpted ground", { rest: rest?.at, under });
+  ok(c.sim?.checks?.agree >= 1 && !c.sim.checks.disagree.length && jl?.resting && JSON.stringify(jl.p) === JSON.stringify(rest?.at), "G5c …and the client's copy rests bit for bit where the authority's does", { checks: c.sim?.checks, jl: jl?.p, rest: rest?.at });
+}
+
 console.log(`\n${fail ? `FAIL ${fail}` : "ok"}: ${pass} passed${fail ? `, ${fail} failed` : ""}`);
 process.exit(fail ? 1 : 0);

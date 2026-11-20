@@ -20,9 +20,10 @@ export const PERSON_ACTS = new Set(["warn", "mute", "unmute", "kick", "ban", "un
 // null is UNKNOWN: the right-hand side says what each reader does with unknown. A new readback is a new row here (and a
 // reader that handles null), never a bare `entries[seq].body` read. Keys are `<kind>:<verb>` (`act:*` = any person's act).
 export const READBACK = Object.freeze({
-  "request:undo":    { fields: ["undoes", "rollback.acts"], where: "buildUndo depthOf/undoneBy, the act index, history rows", unknown: "undoes nothing we can name: the chain ends there and its target isn't counted undone" },
+  "request:undo":    { fields: ["undoes", "rollback.acts", "inverse"], where: "buildUndo depthOf/undoneBy, the act index, history rows; sculptInverse (inverse: this undo took a raise or a lower back by its own amount)", unknown: "undoes nothing we can name: the chain ends there and its target isn't counted undone; a stroke under it is no longer undone by its own amount" },
   "request:use":     { fields: ["capability.author", "capability.reaction", "args.id"], where: "rights.js entryBy (creatorOf, lastSetterOf), undo of your own use", unknown: "rights null (matches nobody); undo falls back to your own rights" },
   "request:script":  { fields: ["sponsor"], where: "rights.js entryBy (sponsorOf), the sponsor budget", unknown: "no sponsor: nothing runs on nobody's rights" },
+  "request:sculpt":  { fields: ["args.brush", "clamped"], where: "buildUndo sculptInverse", unknown: "not exact: restore-before (refused if changed since)" },
   "request:*":       { fields: ["args.label", "args.id", "args.component", "args (a physics-engine version it typed)"], where: "undo {label}, undo's reply, restampEngine's chose()", unknown: "no label match; an unknown chooser of an engine version is the owner's: never restamped" },
   "request:system":  { fields: ["rest", "id", "onto", "home"], where: "the act index (restAfter, per rest and body), recentRests and wait's lost notice", unknown: "no rest link; no `onto` in the view; a lost body whose return names no home reads as back where it was picked up" },
   "physics:launch":  { fields: ["id", "handled"], where: "restampEngine's in-flight walk, recentRests", unknown: "maybe in flight: no restamp; handled falls back to the launch's actor" },

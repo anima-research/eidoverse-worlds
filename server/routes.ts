@@ -78,6 +78,7 @@ import { readCapped, readCappedBytes } from "./request-body.ts";
 import { recordComponents } from "../shared/protocol/view.js";
 import { WORLD_NAME_RE } from "./limits.ts";
 import { sha256 } from "../shared/protocol/hash.js";
+import { withShaping } from "../shared/terrainshape.js";
 /** What the routes need from Bun's server object: the WS upgrade and the socket address (X-Real-IP's fallback). */
 export type Srv = {
   upgrade(req: Request, opts?: { data?: unknown }): boolean;
@@ -625,7 +626,8 @@ const ROUTES: Route[] = [
       if (!WORLD_NAME_RE.test(name)) return new Response("bad world name", { status: 400 });
       // the access index's answer for every name: missing and hidden alike
       { const door = doorFor(name); if (!door || !visibleTo(door, httpVisitor(req, srv))) return new Response("no such world", { status: 404 }); }
-      const t = getWorld(name).state.terrain;
+      const st = getWorld(name).state;
+      const t = withShaping(st.terrain, st.terrainFeatures, st.terrainTiles);   // the ground as it stands: named features and sculpting too
       if (!t) return new Response("this world has no terrain (it is flat)", { status: 404 });
       if (url.searchParams.get("format") === "json") return Response.json({ ...heightRange(t as Record<string, unknown>), world: name });
       // bounded work on the serving thread, gated BEFORE the work (server/heightmap.ts serveHeightmapExport)

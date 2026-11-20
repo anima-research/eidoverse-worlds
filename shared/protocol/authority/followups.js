@@ -14,6 +14,7 @@ import { CTX, UP } from "./ctx.js";
 import { Refusal, said } from "./refuse.js";
 import { geomOf, boxOfM, geomE, meshShape } from "./catalogue.js";
 import { delOp, followUp, cascadeOf, isE, lockedC, opsQuiet, qr3, scratch, setOp } from "./storage.js";
+import { tileSaid } from "../../terrainshape.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, satCost, satDepth, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
 import { backward, entryBy } from "./rights.js";
@@ -193,12 +194,14 @@ function stampModelHash(ctx, ops) {
   }
   return out;
 }
+// a sculpted tile is 1024 numbers: a reply says how far the tile stands from the ground under it (terrainshape's tileSaid), never every sample
+const opsSaid = (ops) => ops.map((o) => (o.op === "set" && tileSaid(o.comp, o.value) !== o.value ? { ...o, value: tileSaid(o.comp, o.value) } : o));
 function touched(ops, st) {
   const out = {};
   for (const o of ops) { const e = st.entities[o.id]; out[o.id] ??= {};
     if (!e) { out[o.id] = null; continue; }
     if (o.op === "create") Object.assign(out[o.id], e.c);
-    else if (o.comp !== undefined) out[o.id][o.comp] = e.c[o.comp] ?? null; else out[o.id] = null; }
+    else if (o.comp !== undefined) out[o.id][o.comp] = tileSaid(o.comp, e.c[o.comp]) ?? null; else out[o.id] = null; }
   return out;
 }
 const stripDry = ({ dry, ...rest }) => rest;
@@ -334,4 +337,4 @@ function warnings(st, ids, strict = false) {
   } finally { CTX.work.what = was; }
   return out;
 }
-export { applyResettle, clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };
+export { applyResettle, clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsSaid, opsTouching, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };

@@ -28,6 +28,10 @@
 //   AT16 upload {data} puts a file's bytes in the world's store and create {model: <its path>} places it; a call that isn't
 //        one of data, text or effect, or whose data isn't base64, is refused before any request; the store's own refusal
 //        comes back in its words; upload {text} and {effect} are the authority's upload verb, as act sends it
+//   AT17 the ground is a builder's from the tool surface: act set terrain, a named feature, act sculpt under the agent's
+//        own body (its feet read the new ground), and undo
+//   AT18 the agent is told when someone else reshapes the ground near it (one ambient line a quiet window; its own
+//        strokes say nothing)
 // @ts-nocheck
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -533,6 +537,46 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const bad = await call("upload", { effect: { kind: "not-an-effect" } });
   ok(bad.isError && J(bad).ok === false && typeof J(bad).refused?.code === "string", "AT16g …and the authority's refusal of one comes back as it gave it (code, reason, fix), an error", T(bad).slice(0, 300));
   globalThis.fetch = realFetch; }
+
+// ---- AT17: the ground is a builder's from the tool surface (11-20): act set terrain, a named feature, and act sculpt ----
+// The toolkit's noise is stubbed level (the server here serves no terrain.js), so every height read is the shaping's own.
+{ const J = (r) => { try { return JSON.parse(T(r)); } catch { return null; } };
+  // AT6 made the agent an owner: back to builder, so these rows hold for the role they name (an owner may write anything)
+  const demoted = await ann.req("set", { id: "@world", component: `roles:${HEP}`, value: { role: "builder" } });
+  const sky = await call("act", { verb: "sky", args: { hours: 3 } });
+  ok(demoted.ok && J(await call("act", { verb: "help", args: {} }))?.you?.role === "builder" && sky.isError && J(sky)?.refused?.needs === "editWorld", "(AT17 setup) the agent is a builder again: its sky request is refused (needs editWorld)", [demoted.refused ?? demoted.ok, T(sky).slice(0, 160)]);
+  const realMk = (globalThis as any).makeTerrain; ag.ground.terrainSrc = "stub"; (globalThis as any).makeTerrain = () => ({ heightAt: () => 0 });
+  const set = await call("act", { verb: "set", args: { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0, size: 80 } } });
+  await tryUntil("the agent's ground is built", () => ag.ground.terrain, { ms: 4000, step: 50 });
+  ok(!set.isError && J(set)?.ok && !!ag.ground.terrain, "AT17a a builder's agent writes the world's terrain through act (the ground takes build), and stands on it", T(set).slice(0, 200));
+  const feat = await call("act", { verb: "set", args: { id: "@world", component: "terrain-feature:mound", value: { type: "hill", x: 30, z: 30, radius: 5, height: 2 } } });
+  await tryUntil("the mound is under the agent's feet", () => ag.heightAt(30, 30) === 2, { ms: 4000, step: 50 });
+  ok(!feat.isError && ag.heightAt(30, 30) === 2 && ag.heightAt(36, 30) === 0, "AT17b a named feature set through act raises the ground the agent's feet read", [T(feat).slice(0, 160), ag.heightAt(30, 30)]);
+  // no path: the brush works where the authority tracks this body; the reply says where, and what the ground did there
+  const rev = ag.ground.navTerrainRev;
+  const st = await call("act", { verb: "sculpt", args: { brush: "raise", radius: 2, strength: 0.5 } }); const sc = J(st)?.sculpted;
+  await tryUntil("the stroke is under the agent's feet", () => sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.now) < 0.001, { ms: 4000, step: 50 });
+  // (between the layer's samples, half a metre apart, a stroke's top is a little under its strength: the reply says what the ground did)
+  ok(!st.isError && sc?.tiles >= 1 && sc.now - sc.was > 0.4 && sc.now - sc.was <= 0.5 && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.now) < 0.001 && ag.ground.navTerrainRev > rev && T(st).length < 2500,
+    "AT17c act sculpt with no path raises the ground under the agent's own body: the reply says where and by how much in a few lines, the agent's feet read the new height there, and its routes are planned anew", { sc, feet: sc && ag.heightAt(sc.at[0], sc.at[1]), rev: [rev, ag.ground.navTerrainRev], chars: T(st).length, err: st.isError });
+  const un = await call("act", { verb: "undo", args: {} });
+  await tryUntil("the stroke is gone from under the agent's feet", () => sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.was) < 0.001, { ms: 4000, step: 50 });
+  ok(!un.isError && sc && Math.abs(ag.heightAt(sc.at[0], sc.at[1]) - sc.was) < 0.001, "AT17d undo takes the stroke back, and the agent's feet read the ground as it was", T(un).slice(0, 200));
+  // ---- AT18: the agent is told when someone ELSE reshapes the ground near it; its own strokes say nothing ----
+  const heard: any[] = []; const realOn = ag.onEvent; ag.onEvent = (ev: any) => { if (ev.kind === "world-change") heard.push(ev); };
+  await call("act", { verb: "sculpt", args: { brush: "raise", radius: 2, strength: 0.2 } });   // its own
+  const [mx, mz] = [ag.pos.x, ag.pos.z];
+  const far = await ann.req("sculpt", { brush: "lower", path: [[mx + 6, mz]], radius: 2, strength: 0.5 });
+  await tryUntil("the agent hears the ground move beside it", () => heard.length >= 1, { ms: 4000, step: 50 });
+  ok(far.ok && heard.length === 1 && heard[0].part === "ground" && /^Ann lowered the ground \d+ m east of you by up to 0\.(4\d|50) m, across about \d+ m\.$/.test(heard[0].text ?? ""),
+    "AT18a someone else's stroke near the agent arrives as one ambient line, tagged as the ground: who, where from the agent, how much; the agent's own stroke said nothing", heard.map((e) => e.text));
+  // a run of strokes inside the quiet window folds into one line of what it came to, and says how far the agent's own ground moved
+  const under = await ann.req("sculpt", { brush: "raise", path: [[mx, mz]], radius: 3, strength: 0.6 }), again = await ann.req("sculpt", { brush: "raise", path: [[mx, mz]], radius: 3, strength: 0.4 });
+  await tryUntil("the folded line arrives when the window closes", () => heard.length >= 2, { ms: 9000, step: 100 });
+  ok(under.ok && again.ok && heard.length === 2 && /^Ann raised the ground under you by up to (0\.9\d|1\.00) m, across about \d+ m; where you stand it is (0\.9\d|1\.00) m higher now\.$/.test(heard[1]?.text ?? ""),
+    "AT18b two more strokes under the agent inside the quiet window are one line of their sum, saying the ground under its own feet rose", heard.map((e) => e.text));
+  ag.onEvent = realOn;
+  (globalThis as any).makeTerrain = realMk; }
 
 ag.close(); ann.close();
 done();

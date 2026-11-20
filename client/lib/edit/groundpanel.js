@@ -159,8 +159,10 @@ export function paintGround(body) {
   };
 
   // heightmap: the ground as an image, out and back (server/heightmap.ts). Export samples the current ground into a
-  // 16-bit PNG carrying its height range; import makes one the ground and replaces the features (no hill counted
-  // twice). The low/high fields cover an image without a range chunk; they start at the current range.
+  // 16-bit PNG carrying its height range: all of it, the bag's features, the named ones and the sculpting. Import makes
+  // one the ground and takes away everything that shaped the old one (the features list, each terrain-feature, each
+  // sculpted tile) in the same request, so no hill is counted twice. The low/high fields cover an image without a
+  // range chunk; they start at the current range.
   function heightmapRow() {
     const wrap = document.createElement('div');
     wrap.style.cssText = 'display:flex;flex-direction:column;gap:3px;padding:2px 0';
@@ -197,12 +199,17 @@ export function paintGround(body) {
         }
         lo.value = (+min).toFixed(1); hi.value = (+max).toFixed(1);
         const cur = terrainEditBase() ?? { seed: st.seed, segments: 200, layers: terrainArgs(pal(), { tint: st.tint }).layers };
-        ground('terrain', noteTerrainSent({
+        const next = noteTerrainSent({
           ...cur, size: up.meta?.size ?? cur.size ?? 160,
           // enough mesh to show the image's detail along its longer side
           segments: Math.max(cur.segments ?? 200, Math.min(512, Math.max(up.w, up.h) - 1)),
           heightmap: { grid: up.grid, min, max }, features: [],
-        }));
+        });
+        // what shapes the ground from beside the bag goes with the features list: the image already holds it
+        const beside = [...Object.keys(state.st?.terrainFeatures ?? {}).map((k) => `terrain-feature:${k}`), ...Object.keys(state.st?.terrainTiles ?? {}).map((k) => `terrain-tile:${k}`)];
+        if (!beside.length) ground('terrain', next);
+        else sendRequest({ verb: 'batch', args: { requests: [{ verb: 'set', args: { id: '@world', component: 'terrain', value: next } },
+          ...beside.map((component) => ({ verb: 'delete', args: { id: '@world', component } }))] } }, { what: 'terrain' });
         flashHint(`heightmap ${up.w}×${up.h} (${up.bits}-bit): ${(+min).toFixed(1)} to ${(+max).toFixed(1)} m`);
       } catch (e) { report('heightmap import', e); flashHint(`heightmap import failed: ${e.message ?? e}`); }
     };
