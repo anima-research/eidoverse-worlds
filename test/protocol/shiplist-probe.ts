@@ -858,10 +858,17 @@ try {
   // minutes over these: the frames go by and the meshes are not drawn yet, so "no errors" there says nothing about the
   // graphics card. Such a host is named and the verdict on the card is left to the hosts that have one (a Mac, a
   // runner with a GPU); on a graphics card every sweep mesh must be drawn.
-  const software = await evalJson(`import('/lib/core.js').then((core) => { if (core.renderer?.backend?.isWebGPUBackend) return null; const gl = core.renderer?.getContext?.(); const ext = gl?.getExtension?.('WEBGL_debug_renderer_info'); const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : ''); return /swiftshader|llvmpipe|software/i.test(name) ? name : null; })`);
+  // What the browser itself says it draws with, asked both ways whatever backend the client chose: a scratch WebGL
+  // context's renderer name, and the WebGPU adapter (a fallback adapter is a software one).
+  const drawsWith = await evalJson(`(async () => { const gl = document.createElement('canvas').getContext('webgl2') ?? document.createElement('canvas').getContext('webgl'); const ext = gl?.getExtension?.('WEBGL_debug_renderer_info');
+    const glName = String((ext && gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)) || (gl && gl.getParameter(gl.RENDERER)) || '');
+    const a = await navigator.gpu?.requestAdapter?.().catch(() => null); const i = a?.info ?? {};
+    return { gl: glName, gpu: a ? [i.vendor, i.architecture, i.device, i.description].filter(Boolean).join(' ') : null, fallback: !!a && (i.isFallbackAdapter === true || a.isFallbackAdapter === true), backend: (await import('/lib/core.js')).renderer?.backend?.isWebGPUBackend ? 'webgpu' : 'webgl' }; })()`);
+  const SOFT = /swiftshader|llvmpipe|lavapipe|software|basic render|warp/i;
+  const software = drawsWith && (drawsWith.fallback || SOFT.test(drawsWith.gl) || SOFT.test(drawsWith.gpu ?? "")) ? `${drawsWith.backend}: ${drawsWith.gl || drawsWith.gpu || "a fallback adapter"}` : null;
   if (software && !allDrawn) console.log(`OPTIONAL SH1-on-a-graphics-card: this host draws with a software renderer (${String(software).slice(0, 80)}), which had drawn ${draws.filter((n: number) => n > 0).length} of ${draws.length} sweep meshes in 60 s; the row below holds only that nothing it built was refused`);
   check(`SH1 every function in every argument form (${sweep?.calls} calls in ${sweep?.shaders} shaders, pixel and vertex code) builds a shader the graphics card accepts: every sweep mesh drawn ten times and more, and zero shader errors`,
-    sweep?.calls > 150 && sweep.bad.length === 0 && sweep.made === sweep.shaders && allDressed && (allDrawn || !!software) && gfx.length === 0, { sweep, allDressed, allDrawn, software, draws, gfx: gfx.slice(0, 3) });
+    sweep?.calls > 150 && sweep.bad.length === 0 && sweep.made === sweep.shaders && allDressed && (allDrawn || !!software) && gfx.length === 0, { sweep, allDressed, allDrawn, software, drawsWith, draws, gfx: gfx.slice(0, 3) });
   // SH2..SH5 on a library model (a classic material: the copy is its node twin) beside an untouched one
   const made = await page(`const m = await import('/lib/net.js'); const out = []; for (const dx of [2, 3.2]) out.push((await m.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 4], scale: 0.3 } } })).refs?.[0]?.id ?? null); return out;`);
   const [SA, SB] = made ?? []; if (!SA || !SB) throw new Error(`setup: the two crates weren't created: ${JSON.stringify(made)}`);
