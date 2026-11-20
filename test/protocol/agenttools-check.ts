@@ -463,6 +463,15 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const cid = (T(made).match(/ id ([a-z2-7]{26})/) ?? [])[1];
   await tryUntil("the uploaded crate is in the agent's fold", () => cid && ag.foldRecord(cid), { ms: 3000, step: 50 });
   ok(!made.isError && !!stored && !!cid && ag.foldRecord(cid)?.model === stored, "AT16b create {model: <the path upload returned>} places it: the world has a thing with that model", [T(made), cid && ag.foldRecord(cid)?.model]);
+  // a model is a one-off unless its maker says it is for reuse: stored and placed all the same, and not in the catalog
+  const hashOf = String(stored).slice(6, 22), manifest = () => JSON.parse(fs.readFileSync(path.join(OPT, "store", "manifest.json"), "utf8"));
+  const inCatalog = async () => ((await (await realFetch(`${ag.httpBase}/library-models?q=crate`)).json()) as { path: string }[]).some((m) => m.path === stored);
+  ok(/a one-off kept out of the catalog/.test(T(up)) && man[hashOf]?.catalog === false && !(await inCatalog()), "AT16i an uploaded model is a one-off by default: its reply says so, and the catalog (library) doesn't list it", [T(up).slice(0, 200), man[hashOf]]);
+  const listed = await call("upload", { data: b64, name: "test crate", catalog: true });
+  ok(!listed.isError && T(listed).includes(`stored as ${stored}, in the catalog`) && manifest()[hashOf]?.catalog === undefined && (await inCatalog()), "AT16i upload {catalog: true} lists the same file in the catalog, at the same address", [T(listed).slice(0, 200), manifest()[hashOf]]);
+  const again = await call("upload", { data: b64 });
+  ok(!again.isError && T(again).includes(`stored as ${stored}, in the catalog`) && (await inCatalog()) && manifest()[hashOf]?.name === "test crate", "AT16i listing wins: a later one-off upload of a listed file leaves it listed, under its name, and says so", [T(again).slice(0, 200), manifest()[hashOf]]);
+  posts = 0;
   // a call that isn't one of data, text or effect, or whose data isn't base64, or whose kind the store doesn't have: refused before any request
   const n0 = storeFiles(); posts = 0;
   for (const [what, a] of [["nothing", {}], ["data that isn't base64", { data: "not base64!" }], ["data that isn't a string", { data: 7 }], ["empty data", { data: "" }],

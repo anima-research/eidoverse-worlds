@@ -586,16 +586,24 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   queueOptimize(join(OPT_DIR, rel)); // draco+webp shadow, built off the request path
   // content-addressed: the human name arrives ONLY here, so record it (or the catalog lists a hash)
   const upName = (url.searchParams.get("name") ?? "").replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+  // ?catalog=0: a one-off, made for one place and not meant to be reused. It is stored, served, optimized and checked like
+  // any model, and placed by its path; the catalog (/library-models) leaves it out. Listing wins: the same bytes uploaded
+  // for the catalog are listed from then on, and a one-off upload of bytes already listed leaves them listed.
+  const forCatalog = !/^(0|false|no)$/i.test(url.searchParams.get("catalog") ?? "");
+  let listed = forCatalog;
   {
     const mp = join(dir, "manifest.json");
-    let man: Record<string, { name?: string; by: string; ts: number }> = {};
+    let man: Record<string, { name?: string; by: string; ts: number; catalog?: false }> = {};
     try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
-    man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now() };
+    const prev = man[hash];
+    if (forCatalog) man[hash] = { ...(upName ? { name: upName } : prev?.name ? { name: prev.name } : {}), by: upBy, ts: Date.now() };   // an unnamed re-upload keeps the name it had
+    else if (!prev) man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now(), catalog: false };
+    else listed = prev.catalog !== false;
     atomicWrite(mp, JSON.stringify(man));
   }
-  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""}${listed ? "" : " (a one-off: not in the catalog)"} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
   // the build check starts now and never holds the upload up or refuses it:
   // its report is advice, waiting at `check` (server/buildcheck.ts)
   void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
-  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}`, catalog: listed }), { headers: { "content-type": "application/json" } });
 }
