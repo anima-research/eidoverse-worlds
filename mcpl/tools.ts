@@ -730,7 +730,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : `upload: the world's server couldn't be reached (${(e as Error)?.message || "no reason given"}), so nothing is known to be stored; calling again may work`); }
       // the store's refusal, in the store's words (401, 409, 413, 415, 422, 429…): this tool adds no reason of its own
       // …except that a 5xx may come after the file was written: then what is known is only that the store failed
-      if (!r.ok) return fail(r.status >= 500 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
+      // (a 503 is the door saying it is busy, before it reads anything: not stored)
+      if (!r.ok) return fail(r.status >= 500 && r.status !== 503 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
         : `upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
       let j: any = null;
       try { j = JSON.parse(said); } catch { /* not JSON: passed on as it came, below */ }
