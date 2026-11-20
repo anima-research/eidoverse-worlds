@@ -587,48 +587,49 @@ time.
 | 406 | door-frame | main | `test/mcpl/door-frame-test.ts` | bun | ? | 300 s |
 | 407 | auth | main | `test/server/auth-test.ts` | bun | 4 s | 180 s |
 | 408 | door-reresolve | main | `test/server/door-reresolve-test.ts` | bun | ? | 300 s |
-| 409 | door-admit-revoke | main | `test/mcpl/door-admit-revoke-test.ts` | bun | ? | 300 s |
-| 410 | mutant-anchors | main | `test/gate/mutant-anchors-check.ts` | bun | ? | 300 s |
-| 411 | wp5-verdict | main | `test/water/wp5-verdict-test.ts` | bun | ? | 300 s |
-| 412 | actionbar | main | `test/client/actionbar-test.ts` | bun | ? | 300 s |
-| 413 | aux-binding | main | `test/server/aux-binding-test.ts` | bun | ? | 300 s |
-| 414 | keepalive | main | `test/server/keepalive-test.ts` | bun | 15 s | 180 s |
-| 415 | chatbridge | main | `test/services/chatbridge-test.ts` | bun | 15 s | 180 s |
-| 416 | spoken-say-door | main | `test/server/spoken-say-door-test.ts` | bun | ? | 300 s |
-| 417 | sfu | main | `test/server/sfu-test.ts` | bun | 22 s | 180 s |
-| 418 | sfu-verb-gate | main | `test/server/sfu-verb-gate-test.mjs` | bun | 14 s | 180 s |
-| 419 | tts | main | `test/client/tts-test.ts` | bun | ? | 300 s |
-| 420 | heightmap-readiness | main | `test/mcpl/heightmap-readiness-test.ts` | bun | 6 s | 180 s |
-| 421 | emitter-percept | main | `test/mcpl/emitter-percept-test.ts` | bun | ? | 300 s |
-| 422 | typing-relay | main | `test/mcpl/typing-relay-test.ts` | bun | 42 s | 210 s |
-| 423 | door-cap-gate-live | main | `test/mcpl/door-cap-gate-live-test.mjs` | bun | 13 s | 180 s |
-| 424 | mention-delivery | main | `test/server/mention-delivery-test.ts` | bun | ? | 300 s |
-| 425 | one-libvips | main | `test/server/one-libvips-test.ts` | bun | 22 s | 180 s |
-| 426 | ragdoll-floor | main | `test/client/ragdoll-floor-test.ts` | bun | 33 s | 180 s |
-| 427 | snap-settle | main | `test/client/snap-settle-test.ts` | bun | 5 s | 180 s |
-| 428 | lod-normals | main | `test/server/lod-normals-test.ts` | bun | ? | 300 s |
-| 429 | help-words | main | `test/shared/help-words-test.ts` | bun | ? | 300 s |
-| 430 | level-dive | browser | `test/water/level-dive-check.ts` | Chromium | ? | 300 s |
-| 431 | water-cross | browser | `test/water/crossing-pipelines-check.ts` | Chromium | 60 s | 300 s |
-| 432 | toast-group | browser | `test/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
-| 433 | browser | browser | `test/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
-| 434 | client | browser | `test/protocol/client-check.ts` | Chromium | 60 s | 300 s |
-| 435 | refusedjoin | browser | `test/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
-| 436 | harness | browser | `test/client/harness-test.ts` | Chromium | ? | 300 s |
-| 437 | client-b2 | browser | `test/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
-| 438 | access-panel | browser | `test/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
-| 439 | lock-strength | browser | `test/client/lock-strength-test.ts` | Chromium | 10 s | 180 s |
-| 440 | swim-lists | browser | `test/client/swim-lists-test.ts` | Chromium | 10 s | 180 s |
-| 441 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
-| 442 | comps-parity | browser | `test/client/comps-parity-test.ts` | Chromium | ? | 300 s |
-| 443 | world-card | browser | `test/client/world-card-probe.ts` | Chromium | ? | 300 s |
-| 444 | shiplist-probe | browser | `test/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
-| 445 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
-| 446 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
-| 447 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
-| 448 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
-| 449 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
-| 450 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
+| 409 | upload-rate | main | `test/server/upload-rate-test.ts` | bun | ? | 300 s |
+| 410 | door-admit-revoke | main | `test/mcpl/door-admit-revoke-test.ts` | bun | ? | 300 s |
+| 411 | mutant-anchors | main | `test/gate/mutant-anchors-check.ts` | bun | ? | 300 s |
+| 412 | wp5-verdict | main | `test/water/wp5-verdict-test.ts` | bun | ? | 300 s |
+| 413 | actionbar | main | `test/client/actionbar-test.ts` | bun | ? | 300 s |
+| 414 | aux-binding | main | `test/server/aux-binding-test.ts` | bun | ? | 300 s |
+| 415 | keepalive | main | `test/server/keepalive-test.ts` | bun | 15 s | 180 s |
+| 416 | chatbridge | main | `test/services/chatbridge-test.ts` | bun | 15 s | 180 s |
+| 417 | spoken-say-door | main | `test/server/spoken-say-door-test.ts` | bun | ? | 300 s |
+| 418 | sfu | main | `test/server/sfu-test.ts` | bun | 22 s | 180 s |
+| 419 | sfu-verb-gate | main | `test/server/sfu-verb-gate-test.mjs` | bun | 14 s | 180 s |
+| 420 | tts | main | `test/client/tts-test.ts` | bun | ? | 300 s |
+| 421 | heightmap-readiness | main | `test/mcpl/heightmap-readiness-test.ts` | bun | 6 s | 180 s |
+| 422 | emitter-percept | main | `test/mcpl/emitter-percept-test.ts` | bun | ? | 300 s |
+| 423 | typing-relay | main | `test/mcpl/typing-relay-test.ts` | bun | 42 s | 210 s |
+| 424 | door-cap-gate-live | main | `test/mcpl/door-cap-gate-live-test.mjs` | bun | 13 s | 180 s |
+| 425 | mention-delivery | main | `test/server/mention-delivery-test.ts` | bun | ? | 300 s |
+| 426 | one-libvips | main | `test/server/one-libvips-test.ts` | bun | 22 s | 180 s |
+| 427 | ragdoll-floor | main | `test/client/ragdoll-floor-test.ts` | bun | 33 s | 180 s |
+| 428 | snap-settle | main | `test/client/snap-settle-test.ts` | bun | 5 s | 180 s |
+| 429 | lod-normals | main | `test/server/lod-normals-test.ts` | bun | ? | 300 s |
+| 430 | help-words | main | `test/shared/help-words-test.ts` | bun | ? | 300 s |
+| 431 | level-dive | browser | `test/water/level-dive-check.ts` | Chromium | ? | 300 s |
+| 432 | water-cross | browser | `test/water/crossing-pipelines-check.ts` | Chromium | 60 s | 300 s |
+| 433 | toast-group | browser | `test/protocol/toast-group-check.ts` | Chromium | ? | 300 s |
+| 434 | browser | browser | `test/protocol/browser-check.ts` | Chromium | 1.5 s | 180 s |
+| 435 | client | browser | `test/protocol/client-check.ts` | Chromium | 60 s | 300 s |
+| 436 | refusedjoin | browser | `test/protocol/refusedjoin-check.ts` | Chromium | 150 s | 750 s |
+| 437 | harness | browser | `test/client/harness-test.ts` | Chromium | ? | 300 s |
+| 438 | client-b2 | browser | `test/protocol/batch2-probe.ts` | Chromium | 19 s | 180 s |
+| 439 | access-panel | browser | `test/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
+| 440 | lock-strength | browser | `test/client/lock-strength-test.ts` | Chromium | 10 s | 180 s |
+| 441 | swim-lists | browser | `test/client/swim-lists-test.ts` | Chromium | 10 s | 180 s |
+| 442 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 443 | comps-parity | browser | `test/client/comps-parity-test.ts` | Chromium | ? | 300 s |
+| 444 | world-card | browser | `test/client/world-card-probe.ts` | Chromium | ? | 300 s |
+| 445 | shiplist-probe | browser | `test/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
+| 446 | xss-probe | browser | `test/protocol/xss-probe.ts` | Chromium | 15 s | 180 s |
+| 447 | party-probe | browser | `test/protocol/party-probe.ts` | Chromium | 486 s | 2430 s |
+| 448 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
+| 449 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
+| 450 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
+| 451 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 411 (~2279 s), browser 21 (~1228 s); 450 suites in all.
+Lanes: core 18 suites (~79 s), main 412 (~2279 s), browser 21 (~1228 s); 451 suites in all.
 <!-- END GENERATED -->

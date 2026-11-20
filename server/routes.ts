@@ -43,7 +43,7 @@ import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
-const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
+const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min)
 // client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
@@ -937,11 +937,11 @@ const ROUTES: Route[] = [
       // Conjured/delivered objects (the content-addressed store) are catalog too: newest first, names from the manifest.
       const storeDir = join(OPT_DIR, "store");
       if (existsSync(storeDir)) {
-        let man: Record<string, { name?: string; by?: string; ts?: number }> = {};
+        let man: Record<string, { name?: string; by?: string; ts?: number; catalog?: false }> = {};
         try { man = JSON.parse(readFileSync(join(storeDir, "manifest.json"), "utf8")); } catch { /* unnamed */ }
         const store = readdirSync(storeDir)
-          // originals only, no variants (store-variants.ts)
-          .filter(isStoreOriginal)
+          // originals only, no variants (store-variants.ts); and never a one-off (uploaded with ?catalog=0: upload.ts)
+          .filter((f) => isStoreOriginal(f) && man[f.replace(/\.glb$/i, "")]?.catalog !== false)
           .map((f) => {
             const hash = f.replace(/\.glb$/i, "");
             const m = man[hash];

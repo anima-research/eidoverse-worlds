@@ -79,6 +79,16 @@ export type ToolCtx = {
   worldPolicy?: { canJoin: (world: string) => boolean; canFound: boolean };
 };
 
+/** The longest message a tool call may be, at either door. The websocket door (net-server.ts) takes a message of at most
+ *  16 MiB: Bun's own cap, since the `ws` it gives a server has no maxPayload. The stdio door (server.ts) is given the same
+ *  (the sdk's own default is 10 MiB a line). Past it either door closes the connection, so the call is never answered. */
+export const TOOL_MESSAGE_BYTES = 16 * 1024 * 1024;
+/** The largest file upload {data} carries: its base64 rides one tool call. 64 KiB of the message is kept for everything
+ *  but the data, as the screenshot path keeps it (server/screenshots.ts MAX_PNG). The world server's own caps
+ *  (UPLOAD_CAP_MB, IMAGE_CAP_MB) are its to say: its refusal is relayed. */
+export const UPLOAD_DATA_BYTES = Math.floor((TOOL_MESSAGE_BYTES - 64 * 1024) / 4) * 3;
+const UPLOAD_DATA_MB = Math.floor(UPLOAD_DATA_BYTES / 1e6);
+
 // ---- tools (one schema for both servers) --
 
 // THE SURFACE: a tool's name must be intuitive to anyone who'd use the action AND the action generally useful, else it
@@ -105,6 +115,7 @@ const TOOL_ROWS = [
   { name: "detach", description: "Get off the thing you're attached to (the reverse of attach). A socket may hold you until the world lets you go (its leaveBy); the reply says so. escape: true gets you off any seat whatever it says (the one exit no seat can take away, like a person holding X).", inputSchema: { type: "object", properties: { escape: { type: "boolean" } } } },
   { name: "set_avatar", description: "Change your body. Pass `avatar` as a roster name (see it with no arguments) or a full vrm path. Takes effect immediately — everyone sees you change; your position and held pose carry over. library {kind: \"avatars\"} shows the roster as a contact sheet.", inputSchema: { type: "object", properties: { avatar: { type: "string" } } } },
   { name: "library", description: "The catalog: models to place and bodies to wear. query searches the model library by keywords and returns library paths for create {model}. kind ('models' | 'avatars') with page is a contact sheet — one grid image with names under each tile, 12 per page: the placeable object library, or the wearable roster (portraits exist once a body has been worn; set_avatar puts one on). preview is one item at full size: an avatar's portrait (roster name) or a model's preview render (library filename or path). Pass one of the three.", inputSchema: { type: "object", properties: { query: { type: "string", description: "search the model library" }, kind: { type: "string", enum: ["avatars", "models"], description: "a contact sheet of this catalog" }, page: { type: "number" }, preview: { type: "string", description: "one item at full size: a roster name or a model path" } } } },
+  { name: "upload", description: `Put something in the world's store and get its address back. A file: upload {data, as?, name?, catalog?}, where data is the file's bytes as base64 (a host that can pass files substitutes one into this argument, so its bytes never pass through your context) and as says what it is: "model" (default; a .glb: the reply's store/<hash>.glb is a library path, so create {model: "store/<hash>.glb"} places it, and the reply carries its build check, as measure {lib, check: true} gives it. A model is a one-off unless you say otherwise: it is stored and placed by its path, and kept out of the catalog; catalog: true lists it there for reuse, where library finds it) | "avatar" (a .vrm body, kept on the roster under name: set_avatar {avatar: name} wears it; a body already there under that name is replaced) | "image" (a PNG, JPEG or WebP: a picture component's src, or a material component's texture) | "audio" (an MP3, Ogg, WAV, WebM or M4A: a sound component's src) | "heightmap" (a grayscale PNG: the terrain component's heightmap.grid). name is the name the store keeps for it. Every kind but an avatar is stored by its content: the same bytes get the same address. A file of up to ${UPLOAD_DATA_MB} MB fits in one call; a larger one goes to the world server's POST /upload. Text: upload {text} stores a script's source and upload {effect} a particle effect document, both as act {verb: "upload"} does, with the authority's own answer (its src goes in a script:<name> component, its effect in a particles component). A refusal from the store comes back in the store's own words.`, inputSchema: { type: "object", properties: { data: { type: "string", description: "the file's bytes as base64" }, as: { type: "string", enum: ["model", "avatar", "image", "audio", "heightmap"], description: "what the file is (default model: a .glb)" }, name: { type: "string", description: "the name the store keeps for the file (an avatar's roster name)" }, catalog: { type: "boolean", description: "a model only: true lists it in the catalog for reuse (default false: a one-off, placed by its path)" }, text: { type: "string", description: "instead of data: a script's JavaScript source" }, effect: { type: "object", description: "instead of data: a particle effect document" } } } },
   { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}, yaw in radians: 0 faces +Z, Math.PI/2 = 1.5708 a quarter turn). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity?, range?, important?: true}}} (left out, each takes the registry's default: intensity 25.93, range 10) — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. Leave id out: the authority mints every id (opaque, never renamed; the reply gives its short handle, which every tool takes, as it takes a thing's label or any unique id prefix of 4+ characters). An id you choose is refused; a placeholder '$name' is accepted (refs to it in the same request resolve; act {verb: 'batch', args: {requests: [{verb, args}…]}} makes several things that refer to each other). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q} (yaw in radians)" }, place: { type: "object" }, dry: { type: "boolean" } } } },
   { name: "place", description: "Put a thing somewhere by saying where it goes: the authority's place, with its exact args. One of on (a thing's surface), beside (next to a thing on the same support), hang (below a frame or beam; height), against (back to a wall; height, along, side), near (on the floor near a thing), at ([x, z]); then facing (a thing or [x, z]; away: true turns its back), level (which surface of an `on` target), offset ([dx, dz] on the surface), side, gap, height, along, lying (rest it on its largest face), attach (ride what it's placed on). The authority solves the numbers and says where it went. dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, on: { type: "string" }, beside: { type: "string" }, hang: { type: "string" }, against: { type: "string" }, near: { type: "string" }, at: { type: "array", items: { type: "number" } }, facing: {}, away: { type: "boolean" }, level: { type: "integer" }, offset: { type: "array", items: { type: "number" } }, side: {}, gap: { type: "number" }, height: { type: "number" }, along: { type: "number" }, lying: { type: "boolean" }, attach: { type: "boolean" }, dry: { type: "boolean" } }, required: ["id"] } },
   { name: "act", description: `One request, by verb — the escape hatch for verbs that have no tool of their own; answered by the world's authority itself: {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, fix}}. A few verbs are answered by YOUR BODY (same reply shape, {ok, text}) before anything reaches the authority: land {to: [x, z]} descends, flares and lands there — everyone sees you come down, and afterwards your body is walking again (a fly-mode move gets you up); shove {target, strength?} knocks another body over — a physics ragdoll, directed from where YOU stand through them (walk to the right side of someone before pushing; strength 0.5–4 m/s, default 2.2), simulated by THEM on their own body and settled into a held pose everyone sees; whether a body can be knocked over is ITS owner's call (their move gate, or their allow/block list naming you), the same for every body, and the server forwards it ${bodyRangeWords()} — a refusal comes back as an error saying why. MODERATION rides here too, by NAME: kick {who, reason?} removes someone now (who is their name or identity u-…; they may come straight back — a kick interrupts, a ban {days} excludes; needs the kick permission and a rank above theirs; an owner can't be kicked); ban {who, days?, reason?, global?} disconnects them and refuses their joins (including spectating) until unban or for days — someone absent is found among the people this world has seen (whois); global: true bans them from every world on this server (server operators only); give a reason, it is shown to them and kept in the moderator's record; unban {who, global?} lifts a ban; bans {global?} lists what is in force now — bans and mutes (people who hold a moderation power may ask; the whole server's with global: true, operator only). The authority's own verbs: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} (a timed grant: {id: "@world", component: "roles:<id>", value: {role, for: "2h"}}; for is "30m", "2h", "1d" or "1w", up to a year) | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the authority solves where it goes) | turn {id, axis, deg, space?, about?} | batch {requests: [{verb, args}…], label?} | use {id, action?} | say {text} | caption {id, session, n, t0, t1, text, speaker?, title?} (one line of a screen's captions, if its captioners {ids} name you) | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (send a loose thing beside your body into flight) | force {at: [x, y, z], radius?, power?} (a blast, builders and up, cast from anywhere: each body in radius 0.5–30 m, default 4, is knocked over by its own consent, each loose thing punted outward; power 0.2–12 m/s, default 3, falling off to the rim) | wait (your tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.physics-engine runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | lint {id?} | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {verb?} | consent (your body's consent: bare reads it; move: true|false is your Allow being moved gate — being shoved, dragged, carried, seated; touch: true|false is your Allow being posed and touched gate — being touched or posed; allow|block|unlist: <who> puts one person on your always-yes or never list, or takes them off; a list beats the gates, block beats allow) | body {to, kind: pose|anim|shove|drag|occupy|carry, spec?} (act on another body: their consent decides) | reach {who, point} (touch, if their consent allows) | inbox. A write whose verb takes dry (help {verb} lists each verb's arguments) may add dry: true to preview it; every write may add expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and throughLock: true. undo {act: <your undo>} is redo. create/place/edit are tools of their own, and wait for the authority's answer too; delete {id} removes a thing (with its children). whois {name} finds a person's identity (u-…) here, present or not.`, inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb"] } },
@@ -146,6 +157,9 @@ const ANNOTATIONS: Record<string, Ann> = {
   detach: ["Get off", false, false, true, false],
   set_avatar: ["Change your body", false, false, true, false],
   library: ["The catalog: search, contact sheet, preview", true, false, true, false],
+  // destructive and open-world for one of its kinds: an avatar is stored by name, so it replaces the roster body of that
+  // name, on everyone wearing it; every other kind only adds (the store is keyed by content)
+  upload: ["Put a file, a script's source or an effect in the world's store", false, true, true, true],
   create: ["Make a thing", false, false, false, false],
   place: ["Place a thing", false, false, true, false],
   act: ["Any verb (escape hatch; land, shove, moderation)", false, true, false, true],
@@ -418,7 +432,7 @@ function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what:
 }
 
 /** measure {check: true}: the build check (server/buildcheck.ts), a mode of measure since it reads a model's geometry as data. */
-const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
+const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP_READ_MS) => {
   const e = a.id ? ag.entities.get(String(a.id)) : null;
   if (a.id && !e) return fail(`no thing called "${a.id}" here`);
   const lib = String(e?.model ?? a.lib ?? "");
@@ -426,8 +440,8 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   let r: any;
   // a placed thing is checked as placed: at its scale (the body is not scaled)
   const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
-  try { r = await okJson(await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(3 * HTTP_READ_MS) })); }
-  catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${3 * HTTP_READ_MS / 1000} s; calling again may work`
+  try { r = await okJson(await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(ms) })); }
+  catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${ms / 1000} s; calling again may work`
     : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
@@ -435,6 +449,32 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
+
+// ---- upload ----------------------------------------------------------------
+/** How long upload waits on the world server's POST /upload: with the build check's wait after it (HTTP_READ_MS), the
+ *  call answers inside a host's 60 s. */
+const UPLOAD_MS = 45_000;
+const UPLOAD_SHAPE = `upload {data: "<a file's bytes as base64>", as?: "model" | "avatar" | "image" | "audio" | "heightmap", name?, catalog?}, or upload {text: "<a script's source>"}, or upload {effect: {<a particle effect document>}}`;
+/** The bytes a base64 string names (either alphabet, padded or not, with the line breaks an encoder may write), or null
+ *  when it isn't base64: Buffer.from skips what it can't read and answers with whatever is left. */
+function fromBase64(s: unknown): Buffer | null {
+  if (typeof s !== "string") return null;
+  const t = /\s/.test(s) ? s.replace(/\s+/g, "") : s;
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(t) || t.replace(/=+$/, "").length % 4 === 1) return null;
+  return Buffer.from(t, "base64");
+}
+/** upload {data}'s kinds, which are the world server's (server/upload.ts: POST /upload?as=, a model with none), each with
+ *  the words for its answer: where the file went and the call that uses it. null: an answer this tool can't read. */
+const UPLOAD_KINDS: Record<string, (j: any) => string | null> = {
+  model: (j) => typeof j.path === "string" ? `stored as ${j.path}${j.catalog === false ? ", a one-off kept out of the catalog (upload it again with catalog: true to list it)" : j.catalog === true ? ", in the catalog" : ""}; create {model: "${j.path}"} places it` : null,
+  avatar: (j) => typeof j.path === "string" && typeof j.name === "string" ? `stored as ${j.path}; set_avatar {avatar: "${j.name}"} wears it` : null,
+  image: (j) => typeof j.path === "string" ? `stored as ${j.path}; it is a picture's src: act {verb: "set", args: {id: "<a thing>", component: "picture", value: {src: "${j.path}"}}} hangs it there (a material component's texture takes it too)` : null,
+  audio: (j) => typeof j.path === "string" ? `stored as ${j.path}; it is a sound's src: act {verb: "set", args: {id: "<a thing>", component: "sound", value: {src: "${j.path}"}}} plays it there` : null,
+  heightmap: (j) => { if (typeof j.grid !== "string") return null;
+    // the range the image carries, when it is one this world exported (GET /heightmap); else the caller's to say
+    const m = Number.isFinite(j.meta?.min) && Number.isFinite(j.meta?.max) ? j.meta : null;
+    return `stored as ${j.grid} (${j.w}×${j.h} px, ${j.bits}-bit); it is the terrain's heightmap.grid: act {verb: "set", args: {id: "@world", component: "terrain", merge: true, value: {heightmap: {grid: "${j.grid}", min: ${m ? m.min : "<metres at black>"}, max: ${m ? m.max : "<metres at white>"}}}}} shapes the ground from it`; },
+};
 
 // ---- act's body verbs ------------------------------------------------------
 // Verbs `act` answers before the authority: the body's own (land, shove — presence, like a person's /push) and
@@ -666,6 +706,41 @@ export const HANDLERS: Record<string, ToolHandler> = {
         { type: "image", data: png.toString("base64"), mimeType: "image/png" },
       ] };
 
+  },
+  upload: async (ag, a, ctx) => {
+      // one word for "put it in the world's store and get its address back": text and effect are the authority's upload
+      // verb, sent as act sends it; a file goes to the world server's POST /upload as this body (its key), and the answer
+      // says where it went and the call that uses it
+      const forms = ["data", "text", "effect"].filter((k) => a[k] !== undefined);
+      if (forms.length !== 1) return fail(`upload takes one of data, text or effect${forms.length ? ` (got ${forms.join(" and ")})` : ""}, so nothing was sent: ${UPLOAD_SHAPE}`);
+      if (a.data === undefined) return HANDLERS.act(ag, { verb: "upload", args: a }, ctx, "act");
+      const as = a.as == null ? "model" : String(a.as);
+      if (!Object.hasOwn(UPLOAD_KINDS, as)) return fail(`upload: as is one of ${Object.keys(UPLOAD_KINDS).join(", ")} (got ${JSON.stringify(a.as)}), so nothing was sent: ${UPLOAD_SHAPE}`);
+      const bytes = fromBase64(a.data);
+      if (!bytes) return fail(`upload: data isn't base64, so nothing was sent: ${UPLOAD_SHAPE}`);
+      const q = new URLSearchParams();
+      if (as !== "model") q.set("as", as);
+      else if (a.catalog !== true) q.set("catalog", "0");   // a model is a one-off unless its maker says it is for reuse
+      if (a.name != null) q.set("name", String(a.name));
+      let r: Response, said: string;
+      try { r = await fetch(`${ag.httpBase}/upload${q.size ? `?${q}` : ""}`, { method: "POST", headers: ag.readHeaders, body: bytes, signal: AbortSignal.timeout(UPLOAD_MS) });
+        said = (await r.text()).trim(); }
+      catch (e) { return fail((e as Error)?.name === "TimeoutError"
+        ? `upload: the world's server didn't answer within ${UPLOAD_MS / 1000} s, so whether the file was stored isn't known; ${as === "avatar" ? "sending it again stores it under that name again, replacing whatever body holds the name by then" : "sending the same bytes again is safe (they get the same address)"}`
+        : `upload: the world's server couldn't be reached (${(e as Error)?.message || "no reason given"}), so nothing is known to be stored; calling again may work`); }
+      // the store's refusal, in the store's words (401, 409, 413, 415, 422, 429…): this tool adds no reason of its own
+      // …except that a 5xx may come after the file was written: then what is known is only that the store failed
+      // (a 503 is the door saying it is busy, before it reads anything: not stored)
+      if (!r.ok) return fail(r.status >= 500 && r.status !== 503 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
+        : `upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
+      let j: any = null;
+      try { j = JSON.parse(said); } catch { /* not JSON: passed on as it came, below */ }
+      const where = j && typeof j === "object" ? UPLOAD_KINDS[as](j) : null;
+      if (!where) return text(`stored; the world's store answered: ${said.slice(0, 400)}`);
+      if (as !== "model" || typeof j.check !== "string") return text(where);
+      // a model's build check started with the upload and waits at the address the store gave: asked for briefly here
+      const c: any = await CHECK_MODEL(ag, { lib: j.path }, HTTP_READ_MS);
+      return text(`${where}\n${c.isError ? `its build check isn't in yet (${c.content[0].text}): measure {lib: "${j.path}", check: true} asks for it` : c.content[0].text}`);
   },
   move: async (ag, a, ctx, name) => {
       // to: "?" is a listing, no move: it answers from a seat that holds you too

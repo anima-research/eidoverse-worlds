@@ -25,7 +25,11 @@
 //        every angle in a tool schema, verb arg or component doc labelled, and PROTOCOL §9's rule covering verbs, notes and presence
 //   AT14 look points at a real tool where one exists (lock and hidden are edit fields), not at the act hatch
 //   AT15 a dropped agent dials again on shared/redial.js's schedule (reset by the join), not a fixed 1.5 s (review r5 F4)
+//   AT16 upload {data} puts a file's bytes in the world's store and create {model: <its path>} places it; a call that isn't
+//        one of data, text or effect, or whose data isn't base64, is refused before any request; the store's own refusal
+//        comes back in its words; upload {text} and {effect} are the authority's upload verb, as act sends it
 // @ts-nocheck
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "../gate/common.ts";
@@ -63,7 +67,7 @@ const { HANDLERS, TOOLS, toolList, handleTool: handleToolDoor } = await import("
   const by = Object.fromEntries(TOOLS.map((t) => [t.name, t.annotations ?? {}]));
   const reads = ["look", "inspect", "measure", "world_history", "world_debug", "hierarchy", "blueprints", "whois", "body_state", "screenshot", "library", "worlds", "catch_up"];
   ok(reads.every((n) => by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false), "AT4 the reads are read-only and not destructive", reads.filter((n) => !(by[n]?.readOnlyHint === true && by[n]?.destructiveHint === false)));
-  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "set_avatar", "anim", "reach"];
+  const writes = ["move", "create", "place", "edit", "act", "say", "attach", "travel", "set_avatar", "anim", "reach", "upload"];
   ok(writes.every((n) => by[n]?.readOnlyHint === false), "AT4 everything that changes the world or a body is not read-only", writes.filter((n) => by[n]?.readOnlyHint !== false));
   ok(["act", "edit"].every((n) => by[n]?.destructiveHint === true) && ["create", "say", "move"].every((n) => by[n]?.destructiveHint === false), "AT4 act (delete, kick, ban…) and editing in place are destructive; making, saying and walking are not",
     Object.fromEntries(["act", "edit", "create", "say", "move"].map((n) => [n, by[n]?.destructiveHint])));
@@ -441,6 +445,94 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
   ok(rid.joined && rid.redial?.tries === 0, "AT15 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
   rid.close(); }
+
+// ---- AT16: upload puts a file in the world's store, and create places it ----
+{ const file = path.join(root, "crate.glb"); await writeBoxGlb(file, [0.6, 0.4, 0.6]);
+  const bytes = fs.readFileSync(file), b64 = bytes.toString("base64");
+  // what uploads put in the store: files named by their hash. The optimizer adds variants and markers beside an accepted
+  // model later, in the background; those aren't uploads, so they aren't counted
+  const storeFiles = () => { try { return (fs.readdirSync(path.join(OPT, "store"), { recursive: true }) as string[]).filter((f) => /^[0-9a-f]{16}\.[a-z0-9]+$/.test(path.basename(String(f)))).length; } catch { return 0; } };
+  // every POST /upload the tool makes, counted: a call refused for its shape makes none
+  const realFetch = globalThis.fetch; let posts = 0;
+  globalThis.fetch = ((u, o) => { if (/\/upload(\?|$)/.test(String(u))) posts++; return realFetch(u, o); }) as any;
+  const up = await call("upload", { data: b64, name: "test crate" });
+  const stored = (T(up).match(/stored as (store\/[0-9a-f]{16}\.glb)/) ?? [])[1];
+  const onDisk = stored && fs.existsSync(path.join(OPT, stored)) ? fs.readFileSync(path.join(OPT, stored)) : null;
+  ok(!up.isError && posts === 1 && !!onDisk && onDisk.equals(bytes), "AT16a upload {data} puts the file's bytes in the world's store, at the address its reply gives", [T(up), posts]);
+  const man = (() => { try { return JSON.parse(fs.readFileSync(path.join(OPT, "store", "manifest.json"), "utf8")); } catch { return {}; } })();
+  ok(man[String(stored).slice(6, 22)]?.name === "test crate", "AT16a …under the name it was given", man);
+  ok(T(up).includes(`create {model: "${stored}"} places it`) && /SOLID|walk-in/.test(T(up)), "AT16a …and the reply names the call that places it, with the build check's summary", T(up));
+  const made = await call("create", { model: stored, at: [14, 2] });
+  const cid = (T(made).match(/ id ([a-z2-7]{26})/) ?? [])[1];
+  await tryUntil("the uploaded crate is in the agent's fold", () => cid && ag.foldRecord(cid), { ms: 3000, step: 50 });
+  ok(!made.isError && !!stored && !!cid && ag.foldRecord(cid)?.model === stored, "AT16b create {model: <the path upload returned>} places it: the world has a thing with that model", [T(made), cid && ag.foldRecord(cid)?.model]);
+  // a model is a one-off unless its maker says it is for reuse: stored and placed all the same, and not in the catalog
+  const hashOf = String(stored).slice(6, 22), manifest = () => JSON.parse(fs.readFileSync(path.join(OPT, "store", "manifest.json"), "utf8"));
+  const inCatalog = async () => ((await (await realFetch(`${ag.httpBase}/library-models?q=crate`)).json()) as { path: string }[]).some((m) => m.path === stored);
+  ok(/a one-off kept out of the catalog/.test(T(up)) && man[hashOf]?.catalog === false && !(await inCatalog()), "AT16i an uploaded model is a one-off by default: its reply says so, and the catalog (library) doesn't list it", [T(up).slice(0, 200), man[hashOf]]);
+  // the authority's own find is a catalogue too (server/modelcatalogue.ts)
+  const found = async () => { const r = await call("act", { verb: "find", args: { kind: "model", query: hashOf } }); let j: any = {}; try { j = JSON.parse(T(r)); } catch { /* not JSON: nothing found */ } return (j.models ?? []).some((m: any) => m.model === stored); };
+  ok(!(await found()), "AT16i …and neither does the authority's find {kind: \"model\"}", hashOf);
+  const listed = await call("upload", { data: b64, catalog: true });
+  ok(!listed.isError && T(listed).includes(`stored as ${stored}, in the catalog`) && manifest()[hashOf]?.catalog === undefined && (await inCatalog()) && (await found()), "AT16i upload {catalog: true} lists the same file in the catalog, at the same address: library and find both have it", [T(listed).slice(0, 200), manifest()[hashOf]]);
+  ok(manifest()[hashOf]?.name === "test crate", "AT16i …and an unnamed upload for the catalog keeps the name the file had", manifest()[hashOf]);
+  const again = await call("upload", { data: b64 });
+  ok(!again.isError && T(again).includes(`stored as ${stored}, in the catalog`) && (await inCatalog()) && manifest()[hashOf]?.name === "test crate", "AT16i listing wins: a later one-off upload of a listed file leaves it listed, under its name, and says so", [T(again).slice(0, 200), manifest()[hashOf]]);
+  // a model stored before one-offs existed has no manifest entry, and is listed: a one-off upload of it leaves it listed
+  { const old = path.join(root, "old.glb"); await writeBoxGlb(old, [0.3, 0.9, 0.3]); const ob = fs.readFileSync(old);
+    const oh = createHash("sha256").update(ob).digest("hex").slice(0, 16), op = `store/${oh}.glb`;
+    fs.writeFileSync(path.join(OPT, op), ob);
+    const listedNow = async () => ((await (await realFetch(`${ag.httpBase}/library-models`)).json()) as { path: string }[]).some((m) => m.path === op);
+    const before = await listedNow();
+    const up2 = await call("upload", { data: ob.toString("base64") });
+    ok(before && !up2.isError && T(up2).includes(`stored as ${op}, in the catalog`) && manifest()[oh]?.catalog !== false && (await listedNow()), "AT16i a file already in the store and listed, with no manifest entry, stays listed after a one-off upload of it", [before, T(up2).slice(0, 160), manifest()[oh] ?? null]); }
+  posts = 0;
+  // a call that isn't one of data, text or effect, or whose data isn't base64, or whose kind the store doesn't have: refused before any request
+  const n0 = storeFiles(); posts = 0;
+  for (const [what, a] of [["nothing", {}], ["data that isn't base64", { data: "not base64!" }], ["data that isn't a string", { data: 7 }], ["empty data", { data: "" }],
+    ["data and text together", { data: b64, text: "world.say('hi')" }], ["a kind the store doesn't have", { data: b64, as: "movie" }]] as const) {
+    const r = await call("upload", a);
+    ok(r.isError && /upload \{data/.test(T(r)) && /text/.test(T(r)) && /effect/.test(T(r)), `AT16c upload with ${what} is refused, saying what the call looks like`, T(r));
+  }
+  ok(posts === 0 && storeFiles() === n0, "AT16c …and none of them sent a request or stored anything", [posts, storeFiles() - n0]);
+  // the store's own refusal, in its words
+  const junk = await call("upload", { data: Buffer.from("this is not a model, just forty bytes of text.").toString("base64") });
+  ok(junk.isError && posts === 1 && T(junk).includes("not a GLB container (glb/vrm)") && /415/.test(T(junk)) && storeFiles() === n0, "AT16d bytes the store refuses: its own words come back (415, not a GLB container), and nothing is stored", T(junk));
+  // another kind: an image lands under store/images/, and the reply says what takes it
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+  const img = await call("upload", { data: PNG.toString("base64"), as: "image", name: "one pixel" });
+  const ipath = (T(img).match(/stored as (store\/images\/[0-9a-f]{16}\.png)/) ?? [])[1];
+  ok(!img.isError && !!ipath && fs.readFileSync(path.join(OPT, ipath)).equals(PNG) && /picture/.test(T(img)) && T(img).includes(`src: "${ipath}"`), "AT16e upload {data, as: \"image\"} stores a picture source and says where it goes (a picture's src)", T(img));
+  const hung = await call("act", { verb: "set", args: { id: cid, component: "picture", value: { src: ipath, width: 0.5 } } });
+  await tryUntil("the crate shows the picture in the agent's fold", () => ag.foldRecord(cid)?.picture?.src === ipath, { ms: 3000, step: 50 });
+  ok(!hung.isError && ag.foldRecord(cid)?.picture?.src === ipath, "AT16e …and the world takes that path as a picture's src", T(hung).slice(0, 200));
+  // the other kinds: each lands where the store keeps that kind, and its reply names what takes it
+  { const { wavBytes } = await import("../fixtures/wav-fixture.ts"); const { PNG: PngJs } = await import("pngjs");
+    const wav = Buffer.from(wavBytes());
+    const snd = await call("upload", { data: wav.toString("base64"), as: "audio", name: "quiet tone" });
+    const apath = (T(snd).match(/stored as (store\/audio\/[0-9a-f]{16}\.wav)/) ?? [])[1];
+    const gray = new PngJs({ width: 2, height: 2, colorType: 0, inputColorType: 0, inputHasAlpha: false }); gray.data = Buffer.from([0, 85, 170, 255]);
+    const hm = await call("upload", { data: PngJs.sync.write(gray, { colorType: 0, inputColorType: 0, inputHasAlpha: false }).toString("base64"), as: "heightmap" });
+    const gpath = (T(hm).match(/stored as (store\/heightmaps\/[0-9a-f]{16}\.json)/) ?? [])[1];
+    const body = await call("upload", { data: b64, as: "avatar", name: "at16 body" });
+    ok(!snd.isError && !!apath && fs.readFileSync(path.join(OPT, apath)).equals(wav) && T(snd).includes(`component: "sound", value: {src: "${apath}"}`), "AT16h upload {as: \"audio\"} stores a sound source and names the sound component's src", T(snd));
+    ok(!hm.isError && !!gpath && fs.existsSync(path.join(OPT, gpath)) && T(hm).includes(`heightmap: {grid: "${gpath}"`) && /2×2 px/.test(T(hm)), "AT16h upload {as: \"heightmap\"} stores the decoded grid and names the terrain's heightmap.grid", T(hm));
+    ok(!body.isError && fs.existsSync(path.join(OPT, "eidoverse/assets/vrms/at16_body.vrm")) && T(body).includes(`set_avatar {avatar: "at16_body"} wears it`), "AT16h upload {as: \"avatar\"} stores a body on the roster under its name (as the store spells it) and names set_avatar", T(body)); }
+  // text and effect are the authority's upload verb, answered as act answers it
+  posts = 0;
+  const src = "world.on('use', () => world.say('rung'));";
+  const viaTool = await call("upload", { text: src }), viaAct = await call("act", { verb: "upload", args: { text: src } });
+  const J = (r) => { try { return JSON.parse(T(r)); } catch { return {}; } };
+  const jt = J(viaTool), ja = J(viaAct);
+  ok(!viaTool.isError && jt.ok && /^sha256:[0-9a-f]{64}$/.test(jt.src ?? "") && jt.src === ja.src && posts === 0, "AT16f upload {text} stores a script's source through the authority: its answer, the src act {verb: \"upload\"} gives for the same text", [T(viaTool).slice(0, 200), T(viaAct).slice(0, 200), posts]);
+  const fx = { kind: "particle-effect", v: 1, name: "lantern glow", reads: "a warm glow", emitters: [{ spawn: { amount: 40, lifetime: 2 }, shape: { type: "sphere", radius: 0.1 }, velocity: { direction: [0, 1, 0], spread: 0.349, speed: [0.1, 0.3] }, forces: { gravity: [0, 0.2, 0] }, size: { base: 0.08 }, color: { base: 0xffcc66, ramp: [[0, 0xffffff, 0], [0.2, 0xffffff, 1], [1, 0xffffff, 0]] }, render: { blend: "add" } }] };
+  const eff = await call("upload", { effect: fx }), je = J(eff);
+  const lit = await call("act", { verb: "set", args: { id: cid, component: "particles", value: { effect: je.effect } } });
+  await tryUntil("the crate emits the uploaded effect in the agent's fold", () => ag.foldRecord(cid)?.particles?.effect === je.effect, { ms: 3000, step: 50 });
+  ok(!eff.isError && /^sha256:[0-9a-f]{64}$/.test(je.effect ?? "") && !lit.isError && ag.foldRecord(cid)?.particles?.effect === je.effect, "AT16g upload {effect} stores a particle effect document, and the world takes its address as a particles effect", [T(eff).slice(0, 200), T(lit).slice(0, 200)]);
+  const bad = await call("upload", { effect: { kind: "not-an-effect" } });
+  ok(bad.isError && J(bad).ok === false && typeof J(bad).refused?.code === "string", "AT16g …and the authority's refusal of one comes back as it gave it (code, reason, fix), an error", T(bad).slice(0, 300));
+  globalThis.fetch = realFetch; }
 
 ag.close(); ann.close();
 done();

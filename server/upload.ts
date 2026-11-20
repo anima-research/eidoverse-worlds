@@ -1,6 +1,6 @@
 // Live asset ingestion: POST /upload (models, avatars, pictures, heightmaps, sound), with the machinery only it feeds: the
-// per-IP upload rate windows, the store-optimization queue (a subprocess builds each variant off the request path), and the
-// deferred boot sweeps. routes.ts delegates the endpoint here.
+// upload rate windows (one per uploader), the store-optimization queue (a subprocess builds each variant off the request
+// path), and the deferred boot sweeps. routes.ts delegates the endpoint here.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { addressOf } from "./peer.ts";
@@ -22,7 +22,10 @@ import { resolveLibFile } from "./libfile.ts";
 /** What the handler needs from Bun's server object, structurally: the socket address behind the proxy. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
-const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
+/** Uploads a minute for one uploader: the identity an upload stands on (a person's sign-in, an agent's bearer), or, when
+ *  it proves none (an open server's anonymous upload, the door key everyone shares), the address it comes from. */
+export const UPLOADS_PER_MINUTE = 30;
+const uploadWin = new Map<string, { t: number; n: number }>(); // upload rate windows, by uploader (identity, else address)
 let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-seconds
 
 // ---- store optimization -----------------------------------------------------
@@ -437,12 +440,18 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts)
-  const ip = addressOf(req, srv);
-  const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
-  if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
-  u.n++; uploadWin.set(ip, u);
-  if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
+  // The window is the uploader's. An identity when the upload proves one: the agent tool server posts every agent's
+  // upload from its own address, so a window per address would be one window for all of them. Else the client's address
+  // (X-Real-IP only from a trusted proxy: server/peer.ts).
+  // …and the door key is nobody's identity even when it is also enrolled as an agent's bearer: everyone holds it
+  const uploader = stoodOn && stoodOn !== "key" && !(JOIN_TOKEN && upTok === JOIN_TOKEN) ? stoodOn : `address:${addressOf(req, srv)}`;
+  const u = uploadWin.get(uploader) ?? { t: 0, n: 0 };
+  if (Date.now() - u.t >= 60_000) { u.t = Date.now(); u.n = 0; }
+  u.n++; uploadWin.set(uploader, u);
+  if (u.n > UPLOADS_PER_MINUTE) {
+    const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
+    return new Response(`upload rate limit (${UPLOADS_PER_MINUTE} uploads a minute); try again in ${wait}s`, { status: 429, headers: { "retry-after": String(wait) } });
+  }
   const body = await readCappedBytes(req, UPLOAD_CAP);
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
   if (JOIN_TOKEN && !who().ids.includes(stoodOn!))
@@ -583,20 +592,30 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   const dir = join(OPT_DIR, "store");
   mkdirSync(dir, { recursive: true });
   const rel = `store/${hash}.glb`;
-  if (!existsSync(join(OPT_DIR, rel))) writeFileSync(join(OPT_DIR, rel), body);
+  const fresh = !existsSync(join(OPT_DIR, rel));   // new to the store: only then can this upload decide it is a one-off
+  if (fresh) writeFileSync(join(OPT_DIR, rel), body);
   queueOptimize(join(OPT_DIR, rel)); // draco+webp shadow, built off the request path
   // content-addressed: the human name arrives ONLY here, so record it (or the catalog lists a hash)
   const upName = (url.searchParams.get("name") ?? "").replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+  // ?catalog=0: a one-off, made for one place and not meant to be reused. It is stored, served, optimized and checked like
+  // any model, and placed by its path; the catalog (/library-models, the authority's find) leaves it out. Listing wins:
+  // the same bytes uploaded for the catalog are listed from then on, and a one-off upload of bytes already in the store
+  // and listed leaves them listed (a file with no manifest entry is listed: every model stored before this was).
+  const forCatalog = !/^(0|false|no)$/i.test(url.searchParams.get("catalog") ?? "");
+  let listed = forCatalog;
   {
     const mp = join(dir, "manifest.json");
-    let man: Record<string, { name?: string; by: string; ts: number }> = {};
+    let man: Record<string, { name?: string; by: string; ts: number; catalog?: false }> = {};
     try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
-    man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now() };
+    const prev = man[hash];
+    if (forCatalog) man[hash] = { ...(upName ? { name: upName } : prev?.name ? { name: prev.name } : {}), by: upBy, ts: Date.now() };   // an unnamed re-upload keeps the name it had
+    else if (fresh) man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now(), catalog: false };
+    else { listed = prev?.catalog !== false; if (prev && !prev.name && upName) prev.name = upName; }   // as it was; a name it lacked is taken
     atomicWrite(mp, JSON.stringify(man));
   }
-  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""}${listed ? "" : " (a one-off: not in the catalog)"} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
   // the build check starts now and never holds the upload up or refuses it:
   // its report is advice, waiting at `check` (server/buildcheck.ts)
   void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
-  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}`, catalog: listed }), { headers: { "content-type": "application/json" } });
 }
