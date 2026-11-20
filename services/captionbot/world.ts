@@ -13,7 +13,7 @@
 // replayed after a later one), which is counted acked though it isn't history.
 //
 // ORDER. One line in flight at a time, FIFO, paced under the door's rate
-// (60 entries per 10 s; a caption is two). The server stamps the captioner's
+// (600 entries per 10 s; a caption is two). The server stamps the captioner's
 // leg generation on every line; a restart's old-session tail drains first.
 //
 // BACKPRESSURE. The queue is bounded (`maxPending`, default 600 lines). Past
@@ -54,7 +54,7 @@ export interface WorldOptions {
   spoolBestEffort?: boolean;
   /** Queue bound, in lines (default 600). */
   maxPending?: number;
-  /** Minimum ms between sends (default 500: 2/s, under the door's 60 entries per 10 s). */
+  /** Minimum ms between sends (default 500: 2/s, under the door's 600 entries per 10 s). */
   paceMs?: number;
   /** Ms to wait for a receipt before resending (default 5000). */
   ackTimeoutMs?: number;

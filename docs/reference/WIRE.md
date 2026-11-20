@@ -43,7 +43,7 @@ client); a page from another build isn't a supported pair.
   dropped; past `MSG_RATE` over-limit messages in a second, requests are
   dropped too. The authority's
   own rate per identity over everything it makes the log hold (requests and says: entries and bytes per window: server policy,
-  `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 60, 20, 10 s, 256, 32), refused with code `rate`.
+  `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 600, 20, 10 s, 2048, 32), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.
 

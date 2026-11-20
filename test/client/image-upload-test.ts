@@ -10,7 +10,7 @@
 //
 // To point it at a door you run yourself instead (identity unchecked; it must have JOIN_TOKEN set, or the 401 row fails):
 //   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun test/client/image-upload-test.ts
-// (the byte-cap row assumes the default IMAGE_CAP_MB=8)
+// (the byte-cap row assumes the default IMAGE_CAP_MB=32)
 //
 // What must hold: the kind is judged by BYTES (a GLB named .png is refused,
 // a PNG named .glb is a .png in the store), the path is content-addressed and
@@ -137,7 +137,7 @@ if (MANIFEST_DIR) {
 // side, which is no size at all
 console.log("  (resting out the 4/min upload window…)");
 await new Promise((res) => setTimeout(res, 61_000));
-const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
+const big = new Uint8Array(32 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /^image too large/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
 r = await post(pngSized(1, 8193), { as: "image", name: "tall.png" });

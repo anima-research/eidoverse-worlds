@@ -228,7 +228,7 @@ install a script is each role's `scripts` permission (`role-defs`). Everything e
 | fuel | 60 interrupt ticks per activation, about 18–40 ms of dense work (deterministic for one QuickJS build) |
 | wall-clock backstop | 300 ms per activation, host calls included; at 500 ms the authority kills the activation's sandbox process (where scripts run isolated: not on Windows, see Isolation) |
 | memory / native stack | 24 MB / 256 KB per activation |
-| reads per activation | 64; writes 32; says 4; body effects 4; uses 4 |
+| reads per activation | 256; writes 256; says 4; body effects 4; uses 4 |
 | logged activations | 6 per minute per script (server) |
 | process script time | 500 ms per rolling second across every world on the authority (host-settable); past it, `busy` |
 | waiting for a sandbox process | at most 300 ms (after kills), then `unavailable` |
