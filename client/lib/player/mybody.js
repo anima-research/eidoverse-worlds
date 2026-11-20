@@ -136,6 +136,7 @@ function armFlightFor(av) {
     if (!av?.vrm?.scene) return;
     const bones = [];
     av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); });
+    bones.push(...Object.keys(av.vrm.humanoid?.humanBones ?? {}));   // the humanoid map's names too, as mcpl/agent.ts loadBodyBones adds them
     const ok = armFlight(bones, 'me');
     if (ok) toast?.('flight available on this body — press F');
   } catch { /* a body that cannot be inspected simply cannot fly */ }

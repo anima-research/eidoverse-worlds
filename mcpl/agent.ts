@@ -26,6 +26,7 @@ import { resolveBriefing } from "../shared/briefing.js";
 import { requestGrid, shapeReady } from "../shared/terrainshape.js";
 import { foldOffset } from "../shared/clockoffset.js";
 import { bodyHeightFor, forgetReadings } from "./rigbones.ts";
+import { humanBones } from "./rig.ts";
 import { surfaceOffset, waveClock } from "../shared/waves.js";
 import { floatStep, footprintSurface } from "../shared/buoyancy.js";
 import { analyzeWater } from "../shared/waterkind.js";
@@ -1710,7 +1711,8 @@ export class WorldAgent {
       const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
       const jlen = dv.getUint32(12, true);
       const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
-      const names = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
+      // The humanoid map's bone names too: a VRM's core joints are named whatever its file calls them (VRoid: J_Bip_C_Hips).
+      const names = [...(g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name), ...Object.keys(humanBones(g) ?? {})];
       if (this.avatar === avatar) {
         this.bodyBoneNames = names;
         this.bodyBonesFor = avatar;
