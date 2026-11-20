@@ -86,6 +86,9 @@ console.log("\nwhat a program means (run and held to the answer):");
   check("S22 uniforms are declared, typed and read", JSON.stringify(uni.uniforms) === JSON.stringify([{ name: "speed", type: "float" }, { name: "tint", type: "vec3" }]) && near(run(uni, {}, { speed: 2, tint: [1, 2, 3] }).color, [2, 4, 6]));
   check("S23 a top-level const is seen inside functions", near(run(ok("const float K = 3; float f(float x) { return x * K; } roughness = f(2.0);")).roughness, 6));
   check("S24 an output reads the thing's own value until assigned (roughness *= 0.5)", near(run(ok("roughness *= 0.5;"), BASE).roughness, 0.25));
+  check("S24b a function reads the inputs and the uniforms; its parameters may shadow one; it never sees the main code's variables", near(run(ok("uniform float k; float f(float a) { return a + position.y + time + k; } roughness = f(1.0);"), BASE, { k: 100 }).roughness, 113)
+    && near(run(ok("float f(float time) { return time * 2.0; } roughness = f(4.0);"), BASE).roughness, 8) && /no 'mine' here/.test(shaderProblem("float mine = 1.0; float f(float a) { return a + mine; } roughness = f(1.0);") ?? "")
+    && /per pixel/.test(shaderProblem("float f(float a) { return a + baseColor.r; } position.y += f(1.0);") ?? ""));
   check("S25 comments, both kinds", near(run(ok("// one\n/* two\n lines */ roughness = 0.5; // three")).roughness, 0.5));
 }
 

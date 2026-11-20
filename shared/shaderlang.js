@@ -391,7 +391,9 @@ function lower(prog) {
       if (calling.includes(e.name)) fail(`${e.name} calls itself: functions are inlined, so there is no recursion (use a for loop)`, e.at);
       if (depth >= SHADER_LIMITS.depth) fail(`functions nest more than ${SHADER_LIMITS.depth} deep`, e.at);
       if (args.length !== f.params.length) fail(`${e.name} takes ${f.params.length} argument${f.params.length === 1 ? '' : 's'}, not ${args.length}`, e.at);
-      const inner = new Map(globals);
+      // a function sees the inputs, the uniforms and the top-level consts, then its own parameters (which may shadow them)
+      const inner = new Map(globals); for (const [n, b] of inputsEnv()) inner.set(n, b);
+      for (const q of f.params) if (!isType(q.type)) fail(`${e.name}'s parameter ${q.name} needs a type`, f.at);
       f.params.forEach((q, i) => inner.set(q.name, { type: q.type, node: as(args[i], q.type, e.args[i].at, `${e.name}'s ${q.name}`) }));
       inner.set('$ret', { type: f.ret, node: zero(f.ret) }); inner.set('$returned', { type: 'bool', node: lit('bool', false) });
       calling.push(e.name);
@@ -559,9 +561,10 @@ function lower(prog) {
     }
   }
 
+  function inputsEnv() { return Object.entries(SHADER_INPUTS).map(([n, d]) => [n, { type: d.type, node: mk('input', d.type, [], { name: n, ...(d.frag ? { frag: true } : {}) }), fixed: true }]); }
   const base = () => {
     const env = new Map(globals);
-    for (const [n, d] of Object.entries(SHADER_INPUTS)) env.set(n, { type: d.type, node: mk('input', d.type, [], { name: n, ...(d.frag ? { frag: true } : {}) }), fixed: true });
+    for (const [n, b] of inputsEnv()) env.set(n, b);
     for (const [n, d] of Object.entries(SHADER_OUTPUTS)) env.set(n, { type: d.type, node: env.get(d.from).node, out: n });
     env.set('$discard', { type: 'bool', node: lit('bool', false), out: '$discard' });
     return env;
