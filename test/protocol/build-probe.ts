@@ -8,6 +8,12 @@
 //       places it turned and sized, as ONE create (Q and , aren't driven)
 //   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); another
 //       person's use runs it (bob, a builder here); the Inspector lists it
+//   MM  a mesh drag of one of several selected things moves them all as ONE act (one Ctrl+Z), planar: over a floor, a
+//       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
+//       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
+//       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
+//       ground, and a member already below its ground, leading or following, doesn't lift the lot; a gizmo drag the pivot
+//       tool takes over puts the followers back
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -23,7 +29,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter } from "../gate/wait.ts";
+import { pageWaiter, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -43,7 +49,7 @@ const MY = () => entries().find((e: any) => e?.kind === "request" && e.verb === 
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "request" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
-const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
+const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); ms *= WAIT_SCALE; while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
   return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
@@ -183,6 +189,220 @@ try {
     const used = await bobReq("use", { id: thing });
     check("SC5 another builder's use runs it (Bob's): the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c["local/counter"]?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c["local/counter"]]);
     check("SC6 the Inspector lists it under Scripts", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"]')].some((f) => /greeter/.test(f.textContent))`, 6000));
+  }
+  // ---- MM: the selection follows a mesh drag (edit/multimove.js) ----
+  // a furnished corner off to the side of what the earlier sections built: a floor slab, a table on it with a box on the
+  // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
+  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
+    const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
+    // the view holds still: five samples in a row, each two frames after the last, see the same camera (polls alone can
+    // land between frames on a slow page and read one matrix twice)
+    const settle = async () => { let last = await camNow(), same = 0;
+      return !!(await tryUntil("the view holds still", async () => { await frames(2); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; return same >= 5 || null; }, { ms: 12000, step: 200 })); };
+    const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
+    await settle();
+    const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE, f = c.camera.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize(); const o = c.camera.getWorldPosition(new T.Vector3());
+      return [o.x + f.x * 8 - f.z * 12, o.z + f.z * 8 + f.x * 12]; })`);   // 8 m ahead, 12 m to the right
+    const mk = (id: string, p: number[], sc: number[], extra: any = {}) => page(`const m = await import('/lib/net.js'); return (await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { transform: { pos: ${JSON.stringify(p)}, q: [0, 0, 0, 1], scale: ${JSON.stringify(sc)} }, ...${JSON.stringify(extra)} } })).ok;`);
+    const drawn = (id: string) => waitFor(`import('/lib/world.js').then((m) => { const o = m.entities.get('${id}'); return !!o && o.children.length > 0; })`, 12000);
+    const topOf = (id: string) => evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const b = new c.THREE.Box3().setFromObject(w.entities.get('${id}')); return b.isEmpty() ? null : b.max.y; })`);
+    const place = async (id: string, p: number[], sc: number[], extra: any = {}) => { const ok = await mk(id, p, sc, extra); NODE.set(id, await evalJson(`'${id}'`)); return ok && await drawn(id); };
+    const [sx, sz] = G;
+    let ok = await place("mm-floor", [sx, 0, sz], [4, 0.04, 4]);
+    const fy = await tryUntil("the floor has its size", () => topOf("mm-floor"));
+    ok = ok && !!fy && await place("mm-tbl", [sx - 2.5, fy, sz], [1, 0.5, 1]) && await place("mm-plat", [sx + 2, fy, sz], [0.6, 0.3, 0.6]) && await place("mm-chair", [sx, fy, sz + 1.8], [0.3, 0.3, 0.3]);
+    const ty = await tryUntil("the table has its size", () => topOf("mm-tbl")), py = await tryUntil("the platform has its size", () => topOf("mm-plat"));
+    ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
+      && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
+      && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
+    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a cart with a kid further off", ok, { G, fy, ty, py });
+    const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await frames(2); await settle(); };
+    // a press pixel ON `lead` whose ray, past it, meets the top of `under` (any, with no `under`) (where an aim that doesn't skip `under` lands)
+    await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
+      const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
+      globalThis.__mmHit = (x, y, lead, under) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+        const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true), L = w.entities.get(lead), U = w.entities.get(under);
+        const past = hs.find((h) => !inside(h.object, L)), up = !!past?.face && past.face.normal.clone().transformDirection(past.object.matrixWorld).y > 0.6;
+        return { onLead: !!hs[0] && inside(hs[0].object, L), onTop: !U || (!!past && inside(past.object, U) && up) }; };
+      globalThis.__mmPress = (lead, under) => { const b = new T.Box3().setFromObject(w.entities.get(lead)), xs = [], ys = [];
+        for (const cx of [b.min.x, b.max.x]) for (const cy of [b.min.y, b.max.y]) for (const cz of [b.min.z, b.max.z]) { const s = new T.Vector3(cx, cy, cz).project(c.camera); xs.push((s.x + 1) / 2 * innerWidth); ys.push((1 - s.y) / 2 * innerHeight); }
+        const mx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2), my = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
+        for (let r = 0; r < 40; r += 2) for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const h = __mmHit(mx + dx, my + dy, lead, under); if (h.onLead && h.onTop) return [mx + dx, my + dy]; }
+        return null; };
+      globalThis.__mmPx = (p) => { const s = new T.Vector3(...p).project(c.camera); return [Math.round((s.x + 1) / 2 * innerWidth), Math.round((1 - s.y) / 2 * innerHeight)]; };
+      return true; })`);
+    const pose = (n: string) => disk().entities[NODE.get(n)]?.c.transform?.pos;
+    const near = (a: any, b: any, e = 0.01) => !!a && !!b && a.every((v: number, i: number) => Math.abs(v - b[i]) < e);
+    const dxz = (a: number[], b: number[]) => [a[0] - b[0], a[2] - b[2]];
+    const sameMove = (a0: number[], a1: number[], b0: number[], b1: number[]) => { const [p, q] = [dxz(a1, a0), dxz(b1, b0)]; return Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.01 && Math.hypot(...p) > 0.05; };
+    // press, travel past the slop, move to `to` (`mid` runs mid-drag), release; returns the drag as the page had it once armed
+    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>, opt: { shift?: boolean, preArm?: () => Promise<any>, arms?: boolean } = {}) => {
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, shiftKey: ${!!opt.shift}, clientX: ${at[0]}, clientY: ${at[1]} })), true))`);
+      if (opt.preArm) await opt.preArm();
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at[0] + 6}, clientY: ${at[1]} })), true)`);
+      await waitFor(`globalThis.__buildDrag?.()?.armed === true`, opt.arms === false ? 1500 : undefined); await frames(3);
+      const drag = await evalJson(`globalThis.__buildDrag?.()`);
+      const half = [Math.round((at[0] + to[0]) / 2), Math.round((at[1] + to[1]) / 2)];
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${half[0]}, clientY: ${half[1]} })), true)`); await frames(3);
+      if (mid) { await mid(); await frames(3); }
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${to[0]}, clientY: ${to[1]} })), true)`); await frames(3);
+      await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${to[0]}, clientY: ${to[1]} })), true)`);
+      return drag; };
+    const actsSince = (n0: number) => myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.args?.id ?? x.e.body?.args?.requests?.map((r: any) => r.args?.id)]);
+    const undo = async () => { await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`); await key("KeyZ", { ctrlKey: true }); };
+    const onRecord = (n: string) => waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['${n}']?.c?.transform?.pos ?? null) === ${JSON.stringify(JSON.stringify(pose(n) ?? null))})`);
+
+    await frame("mm-tbl", 1.5);
+    const at = await evalJson(`__mmPress('mm-box', 'mm-tbl')`), to = at ? [at[0] + 30, at[1] + 10] : null;
+    check("MM (setup) a press point on the box whose ray past it meets the table's top", !!at, { at });
+    if (at && to) {
+      // the cart's kid is drawn off its carrier (as a part socket's occupant is, under the part's node): it can't take a move
+      await page(`const { scene } = await import('/lib/core.js'); const w = await import('/lib/world.js'); scene.attach(w.entities.get('mm-kid')); return true;`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-tbl', 'mm-box', 'mm-kid']); return true;`);
+      const T0 = pose("mm-tbl"), B0 = pose("mm-box"), K0 = pose("mm-kid"); let n0 = myActs().length;
+      const sel0 = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      const drag = await gesture(at, to);
+      check("MM0 (precondition) the kid is in the selection, and the drag considered it and left it out", sel0?.includes(NODE.get("mm-kid")) && drag?.skipped === 1 && !drag?.follow?.includes(NODE.get("mm-kid")) && drag?.follow?.includes(NODE.get("mm-tbl")), { sel0, drag });
+      const one = await waitDisk(() => myActs().length === n0 + 1);
+      const act = myActs().at(-1)?.e; const reqs = act?.verb === "batch" ? act.body.args.requests : [];
+      const ids = reqs.map((r: any) => r.args?.id);
+      check("MM1 a mesh drag of one of several selected things is ONE act: a batch setting the box's and the table's transforms",
+        one && act?.verb === "batch" && reqs.length === 2 && ids.includes(NODE.get("mm-box")) && ids.includes(NODE.get("mm-tbl")) && reqs.every((r: any) => r.verb === "set" && r.args.component === "transform"),
+        { acts: actsSince(n0), refused: await evalJson(`__refused.map((r) => r.text)`) });
+      await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0));
+      const T1 = pose("mm-tbl"), B1 = pose("mm-box");
+      check("MM2 (precondition) …the box ended over the floor", !!B1 && Math.abs(B1[0] - sx) < 5 && Math.abs(B1[2] - sz) < 3, { B1, floor: [sx, sz] });
+      check("MM2 …over a floor, the drag is planar: the box keeps its height and the table slides level with it (neither drops to the floor nor sinks)",
+        !!T1 && !!B1 && Math.abs(T1[1] - T0[1]) < 0.01 && Math.abs(B1[1] - B0[1]) < 0.01 && sameMove(T0, T1, B0, B1), { T0, T1, B0, B1, floorTop: fy });
+      check("MM3 …the kid drawn off its carrier stayed out (not in the batch, not moved)", !ids.includes(NODE.get("mm-kid")) && JSON.stringify(pose("mm-kid")) === JSON.stringify(K0), { ids, K0, K1: pose("mm-kid") });
+      await undo();
+      check("MM4 one Ctrl+Z puts the box and the table back", await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0) && JSON.stringify(pose("mm-box")) === JSON.stringify(B0)), { T: pose("mm-tbl"), B: pose("mm-box") });
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // a tool key mid-drag: the gesture stays the one the drag armed with (E would rebuild the followers as a turn from their start)
+      const at2 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at2, [at2[0] + 30, at2[1] + 10], () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`));
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
+      const T2 = pose("mm-tbl"), B2 = pose("mm-box");
+      check("MM7 a switch to rotate mid-drag (setTool, what E calls) doesn't change the gesture: the table still moves with the box, as one act", myActs().length === n0 + 1 && sameMove(T0, T2, B0, B2), { T0, T2, B0, B2, acts: actsSince(n0) });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // the pivot tool moves one thing's pivot, never a group's: its mesh drag moves the pressed thing alone
+      const at3 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/build.js')).setTool('pivot'); (await import('/lib/edit/selection.js')).set(['mm-tbl', 'mm-box']); return true;`);
+      n0 = myActs().length;
+      await gesture(at3, [at3[0] + 30, at3[1] + 10]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000);
+      const pa = myActs().slice(n0).map((x) => x.e);
+      check("MM5 the pivot tool's mesh drag moves the pressed box alone: one set on it, the table where it is",
+        JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0) && pa.length === 1 && pa[0].verb === "set" && pa[0].body?.args?.id === NODE.get("mm-box"), { acts: actsSince(n0), T: pose("mm-tbl") });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (pa.length === 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // a tool key between the press and the arm: the press's tool decides both the gesture and who follows
+      const at5 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at5, [at5[0] + 30, at5[1] + 10], undefined, { preArm: () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`) });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
+      const T5 = pose("mm-tbl"), B5 = pose("mm-box");
+      check("MM9 a switch to rotate between the press and the arm (setTool) doesn't change the drag: the table still moves with the box", myActs().length === n0 + 1 && sameMove(T0, T5, B0, B5), { T0, T5, B0, B5, acts: actsSince(n0) });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // Shift: the vertical drag of the lot stops at the first member to reach its ground (the table's feet, not the box's)
+      const at6 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at6, [at6[0], at6[1] + 300], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-box")) !== JSON.stringify(B0), 3000);
+      const T6 = pose("mm-tbl"), B6 = pose("mm-box");
+      const g6 = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${T0[0]}, ${T0[2]}))`);
+      check("MM10 a Shift drag down of the box stops when the selected table reaches its ground: both drop by the table's clearance",
+        myActs().length === n0 + 1 && !!T6 && !!B6 && Math.abs((B0[1] - B6[1]) - (T0[1] - g6)) < 0.01 && Math.abs((T6[1] - T0[1]) - (B6[1] - B0[1])) < 0.01, { T0, T6, B0, B6, ground: g6, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3);
+    }
+
+    // the lead steps off an UNSELECTED platform onto the floor: its surface change is not the followers' (no chair underground)
+    await frame("mm-plat", 2.5);
+    const at4 = await evalJson(`__mmPress('mm-crate', 'mm-plat')`);
+    const to4 = at4 ? await evalJson(`__mmPx([${sx + 2}, ${fy}, ${sz + 2.2}])`) : null;
+    check("MM (setup) a press point on the crate over the platform's top, and a floor point off the platform", !!at4 && !!to4, { at4, to4 });
+    if (at4 && to4) {
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-crate', 'mm-chair']); return true;`);
+      const C0 = pose("mm-crate"), H0 = pose("mm-chair"); const n0 = myActs().length;
+      await gesture(at4, to4);
+      await waitDisk(() => myActs().length === n0 + 1); await waitDisk(() => JSON.stringify(pose("mm-chair")) !== JSON.stringify(H0), 3000);
+      const C1 = pose("mm-crate"), H1 = pose("mm-chair");
+      check("MM6 dragging the crate off the platform keeps the chair on the floor: the crate keeps its height, the chair slides level with it",
+        !!C1 && !!H1 && Math.abs(H1[1] - H0[1]) < 0.01 && Math.abs(C1[1] - C0[1]) < 0.01 && sameMove(H0, H1, C0, C1), { C0, C1, H0, H1, floorTop: fy, acts: actsSince(n0) });
+    }
+
+    // a follower already below its ground (a sunk post) goes no lower, but doesn't lift the lot: a small Shift nudge up raises
+    // the sign and the post by the nudge alone
+    await frame("mm-sign", 1.5);
+    const at7 = await evalJson(`__mmPress('mm-sign', null)`);
+    check("MM (setup) a press point on the sign", !!at7, { at7 });
+    if (at7) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); let n0 = myActs().length;
+      await gesture(at7, [at7[0], at7[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-post")) !== JSON.stringify(P0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM11 a Shift nudge up with a sunk post selected raises both by the nudge (well under the post's 0.3 m depth), not to the post's ground",
+        myActs().length === n0 + 1 && !!S1 && !!P1 && S1[1] - S0[1] > 0.005 && S1[1] - S0[1] < 0.2 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+      await onRecord("mm-post"); await onRecord("mm-sign"); await frames(3);
+
+      // a press under the select tool picks: a switch to move before the travel doesn't make it a drag
+      n0 = myActs().length;
+      await page(`(await import('/lib/edit/build.js')).setTool('select'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      await gesture(at7, [at7[0] + 30, at7[1] + 10], undefined, { arms: false, preArm: () => page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`) });
+      await waitDisk(() => myActs().length > n0, 1500);
+      check("MM13 a press under select, then a switch to move before the travel: no drag, nothing written", myActs().length === n0 && JSON.stringify(pose("mm-sign")) === JSON.stringify(S0), { acts: actsSince(n0), S0, S: pose("mm-sign") });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length > n0) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-sign")) === JSON.stringify(S0)); }
+      await onRecord("mm-sign"); await frames(3);
+    }
+
+    // the sunk post LEADING a Shift drag: a nudge up raises both by the nudge, not by the post's depth
+    await frame("mm-post", 1.5);
+    const at8 = await evalJson(`__mmPress('mm-post', null)`);
+    check("MM (setup) a press point on the sunk post", !!at8, { at8 });
+    if (at8) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-post', 'mm-sign']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); const n0 = myActs().length;
+      const depth = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${P0[0]}, ${P0[2]}) - ${P0[1]})`);
+      await gesture(at8, [at8[0], at8[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-sign")) !== JSON.stringify(S0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM14 a Shift nudge up led by the sunk post raises both by the nudge (well under its depth), not to its ground",
+        myActs().length === n0 + 1 && depth > 0.25 && !!S1 && !!P1 && P1[1] - P0[1] > 0.005 && P1[1] - P0[1] < depth - 0.1 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { depth, S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+    }
+
+    // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)
+    await frame("mm-tbl", 1.5);
+    await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+    check("MM (setup) the gizmo is on the box", await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
+    const tLocal = () => evalJson(`import('/lib/world.js').then((m) => m.entities.get('mm-tbl').position.toArray())`);
+    const g0 = await tLocal();
+    await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+      return import('/lib/world.js').then((m) => { m.entities.get('mm-box').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
+    const g1 = await tLocal();
+    await page(`(await import('/lib/edit/build.js')).setTool('pivot'); globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); return true;`);
+    await frames(3);
+    const g2 = await tLocal();
+    check("MM8 a gizmo drag ended under the pivot tool puts the followers back (the table moved mid-drag, then returned)", Math.abs(g1[0] - g0[0] - 1) < 0.01 && near(g2, g0), { g0, g1, g2 });
+    await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();

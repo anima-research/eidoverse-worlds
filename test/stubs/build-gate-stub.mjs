@@ -105,3 +105,4 @@ export const toast = (t) => { hints.push(String(t)); };
 export const claimStatus = (id, { content = null } = {}) => { if (content != null) hints.push(String(content)); };
 export const releaseStatus = () => {};
 export { html } from '../../client/lib/ui/markup.js';
+export const foldRecord = () => null;   // edit/inspect.js, for multimove.js takes()
