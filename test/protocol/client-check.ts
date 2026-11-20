@@ -64,6 +64,16 @@ const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e
 const myRefused = () => entries().filter((e) => e?.kind === "request" && e.actor === MY() && e.body?.refused).length;
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
+// a thing as the page's scene holds it (realize/models.js): absent, reserved (null: its model still loading), placeholder
+// (a sized stand-in) or realized. The fold having it is not the scene holding it: selection and seats take any object
+// (a stand-in too), a ray at a model's face needs the model. ST and HP wait for the seat point as trySitOn reads it (a stand-in
+// counts); the selection and ray rows ask for realized.
+const realizedHost = (ids: string[]) => `import('/lib/world.js').then((w) => [${ids.map((id) => `'${id}'`).join(", ")}].map((id) =>
+  !w.entities.has(id) ? 'absent' : !w.entities.get(id) ? 'reserved' : w.entities.get(id).userData?.placeholder ? 'placeholder' : 'realized'))`;
+const allRealized = (ids: string[]) => waitFor(`${realizedHost(ids)}.then((h) => h.every((s) => s === 'realized'))`);
+const hostsOf = async (ids: string[]) => { const h = await evalJson(realizedHost(ids)); return Object.fromEntries(ids.map((id, i) => [id, h?.[i] ?? null])); };   // for a row's detail
+// a seat as trySitOn finds it (localbody.js nearestSeat): its world point, null until the socket is folded and its host has an object (world.js socketWorldPos)
+const seatAt = (sock: string, host: string) => `Promise.all([import('/lib/world.js'), import('three'), ${realizedHost([host])}]).then(([w, T, h]) => ({ host: h[0], sock: !!w.seatSocket('${sock}'), at: w.socketWorldPos('${sock}', new T.Vector3())?.toArray() ?? null }))`;
 const waitDisk = async (pred: () => boolean, ms = 8000) => (await tryUntil("the log on disk", pred, { ms })) !== undefined;
 // a press is a keydown AND a keyup: a held D (Alt+D) or Delete would otherwise walk the body on, and the view with it
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
@@ -246,7 +256,7 @@ try {
   const dupOf = (st) => Object.keys(st.entities).find((k) => k !== crate && k !== IDS.of("cup") && st.entities[k].c.model === st.entities[crate].c.model);
   await waitDisk(() => !!dupOf(disk()));   // the request entry lands before the change that makes the copy (slow CI, 10-29)
   const st1 = disk(); const dup = dupOf(st1);   // the stored model: the door keeps CRATE as its content address
-  check("D2 …a copy 0.5 m along x, drawn in the page", !!dup && Math.abs(st1.entities[dup].c.transform.pos[0] - st1.entities[crate].c.transform.pos[0] - 0.5) < 1e-6 && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${dup}'))`), dup);
+  check("D2 …a copy 0.5 m along x, drawn in the page", !!dup && Math.abs(st1.entities[dup].c.transform.pos[0] - st1.entities[crate].c.transform.pos[0] - 0.5) < 1e-6 && await allRealized([dup]), { dup, host: dup ? await hostsOf([dup]) : null });
 
   // ---- D3: a late reply doesn't undo a newer pick. The copy is selected 400 ms after its reply; a person who has picked
   // something else by then keeps it ----
@@ -265,6 +275,8 @@ try {
 
   // ---- M: multi-delete is one batch ----
   n0 = myActs().length;
+  // the selection takes only a thing with an object (edit/panels.js extendSelection; a stand-in counts): realized covers it
+  check("M setup: both things are realized on my page before I select them", await allRealized([crate, dup]), await hostsOf([crate, dup]));
   await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); (await import('/lib/base.js')).bus.emit('edit-extend', '${dup}'); return true;`);
   check("M0 two things selected", await waitFor(`import('/lib/edit/panels.js').then((m) => m.selection().length === 2)`), await evalJson(`import('/lib/edit/panels.js').then((m) => m.selection())`));
   await key("Delete");
@@ -386,6 +398,8 @@ try {
     check("(setup) bob builds a low plinth (turned 90°, scaled 0.6×) with a pebble on it", (await bobReq("create", { id: "plinth", model: CRATE, components: { transform: { pos: [px, 0, pz], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [0.6, 0.6, 0.6] } } })).ok
       && (await bobReq("create", { id: "pebble", model: CRATE, components: { transform: { pos: [0.25, 1.9, 0.25], scale: [0.4, 0.4, 0.4] }, parent: { to: "plinth", order: "a0" } } })).ok);
     check("F0 the page has the pebble on the plinth", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pebble')?.userData?.mountedTo === 'plinth')`, 12000));
+    // the rays below aim at the drawn models: a reserved plinth has nothing to hit, and a stand-in's box is swapped out mid-drag
+    check("(setup) the plinth and the pebble are realized on my page", await allRealized(["plinth", "pebble"]), await hostsOf(["plinth", "pebble"]));
     await sleep(600);
     // the test's own ray, as build.js aims: the first thing under a screen point that isn't the pebble, if it's the
     // plinth's top (a face pointing up). P = the pebble's world position. press: a point ON the pebble whose ray, past
@@ -414,7 +428,7 @@ try {
     for (const [dx, dy] of [[0, 6], [6, 0], [-6, 0], [0, -6], [5, 5], [-5, 5], [5, -5], [-5, -5]]) { if (!at || m0) break; const c = [at[0] + dx, at[1] + dy]; const a = (await geo(c[0], c[1])).A; if (a) { m0 = c; A0 = a; } }
     for (const [dx, dy] of [[10, 4], [-10, 4], [10, -4], [-10, -4], [4, 10], [-4, 10], [4, -10], [-4, -10]]) { if (!m0 || m1) break; const c = [m0[0] + dx, m0[1] + dy]; const a = (await geo(c[0], c[1])).A; if (a && Math.hypot(a[0] - A0[0], a[2] - A0[2]) > 0.03) { m1 = c; A1 = a; } }
     const fOk = !!at && !!A0 && !!A1;
-    check("(setup) a press point on the pebble, and two pointer points over the plinth's top", fOk, { press, at, m0, m1, A0, A1 });
+    check("(setup) a press point on the pebble, and two pointer points over the plinth's top", fOk, { press, at, m0, m1, A0, A1, host: await hostsOf(["plinth", "pebble"]) });
     if (fOk) {
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at?.[0]}, clientY: ${at?.[1]} })), true))`);
@@ -854,7 +868,8 @@ try {
       const b = await n.sendRequest('create', { id: 'ststool-seat', components: { parent: { to: 'ststool' }, transform: { pos: [0, 0.5, 0] }, socket: { name: 'seat' }, station: { action: 'sit' } } });
       return JSON.stringify([a.ok, b.ok]);`);
     const mine = `Promise.all([import('/lib/world.js'), import('/lib/base.js')]).then(([w, b]) => w.avatarMounts.get(b.CONFIG.name)?.to ?? null)`;
-    check("ST setup: the seat socket is on my client before I sit", await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('ststool-seat'))`), "");
+    const stSeat = seatAt('ststool-seat', 'ststool');
+    check("ST setup: the seat is on my client where I could sit on it (its socket folded, its host in my scene)", await waitFor(`${stSeat}.then((s) => !!s.at)`), await evalJson(stSeat));
     const tried = await page(`return (await import('/lib/player/localbody.js')).trySitOn('ststool');`);   // false: no seat found
     const sat = await waitFor(`${mine}.then((t) => t === 'ststool-seat')`);
     // a refused `use` only reaches chat (localbody.js trySitOn), so an unseated row carries the chat's tail
@@ -951,7 +966,8 @@ try {
       const photo = `import('/lib/player/controller.js').then((c) => c.photoMode)`;
       await key("KeyP"); const onFoot = await waitFor(photo, 2000); await key("KeyP"); const offAgain = await waitFor(`${photo}.then((p) => !p)`, 2000);
       check("HP0 (control) off the helm, P starts photo mode and P again ends it", made === "[true,true]" && onFoot && offAgain, { made, footFree, onFoot, offAgain, now: await evalJson(photo) });
-      await waitFor(`import('/lib/world.js').then((w) => !!w.seatSocket('hphull-helm'))`);
+      const hpSeat = seatAt('hphull-helm', 'hphull');
+      check("HP setup: the helm is on my client where I could take it (its socket folded, its hull in my scene)", await waitFor(`${hpSeat}.then((s) => !!s.at)`), await evalJson(hpSeat));
       await page(`(await import('/lib/player/localbody.js')).trySitOn('hphull'); return true;`);
       const atHelm = await waitFor(`import('/lib/player/vehicles.js').then((v) => v.helmHull() === 'hphull')`);
       // read in the same tick as the press: the next frame's guard (HP2) would hide a P that got through
