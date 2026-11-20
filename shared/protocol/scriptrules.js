@@ -26,8 +26,8 @@ export const LIMITS = Object.freeze({
                         // purpose: a loaded host can stall an innocent run
   memory: 24 << 20,     // bytes per activation's runtime
   stack: 256 << 10,     // bytes of native stack
-  calls: 64,            // host calls (reads) per activation (Decentraland's 40 in flight)
-  ops: 32,              // writes in one activation's batch
+  calls: 256,           // host calls (reads) per activation (Decentraland's 40 in flight)
+  ops: 256,             // writes in one activation's batch
   says: 4,              // say entries per activation
   bodies: 4,            // body effects per activation
   uses: 4,              // world.use calls per activation (each another thing's reaction)

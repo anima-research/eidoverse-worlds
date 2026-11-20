@@ -15,7 +15,7 @@ import { checkHello, missingFeatures, versionLine } from "../shared/protocol/hel
 import { featureDecision, KNOWN_FEATURES } from "../shared/protocol/features.js";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
 const RENAME_COOLDOWN_MS = envNumber("RENAME_COOLDOWN_DAYS", 7) * 86400000;
-import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS } from "./config.ts";
+import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS, UPLOAD_CAP } from "./config.ts";
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions, notPersisted } from "./moderation.ts";
 import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, unavailable, unavailableClose, toldOf, type Told, type Expel } from "./access.ts";
@@ -692,6 +692,10 @@ const server = Bun.serve({
   // Bun's default idleTimeout (10 s with no bytes moving, mid-response too) truncates a big download over a slow link;
   // 255 s is its maximum. The WebSocket has its own idle timer (left at Bun's default, 120 s).
   idleTimeout: 255,
+  // Bun answers a body past this itself, with a bare 413, before any route runs (its default is 128 MiB): kept at twice
+  // the largest cap a route reads to (/upload's UPLOAD_CAP), so a body up to twice that cap is refused by the route, in
+  // its words; one larger still gets Bun's bare 413.
+  maxRequestBodySize: Math.max(128 * 1024 * 1024, 2 * UPLOAD_CAP),
   async fetch(req, srv) {
     // the whole HTTP surface is routes.ts's table (one row per endpoint, first match wins); /ws upgrades inside its row
     return route(req, srv);

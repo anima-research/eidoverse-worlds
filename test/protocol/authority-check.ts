@@ -1725,8 +1725,10 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   cw("ann", "create-world", { title: "car" }); cw("ann", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
   cw("ann", "set", { id: "screen", component: "captioners", value: { ids: ["vic"] } });
   const sess = "2026-10-07T00:00:00.000Z-abc123"; let first = null, n = 0;
-  for (n = 1; n <= 70 && !first; n++) { const r = cw("vic", "caption", { id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}` }); if (!r.ok) first = { n, code: r.refused?.code }; }
-  ok(first?.code === "rate" && first.n <= 61, "CAR a captioner past the entries cap in the window is refused rate", first); }
+  // 600 lines inside one window: 10 ms apart, on one world object (callAt steps 100 ms and reopens the log for every call)
+  const w = openWorld(root, name);
+  for (n = 1; n <= 610 && !first; n++) { clock.advance(10); const r = request(w, "vic", "caption", { id: "screen", session: sess, n, t0: n, t1: n + 1, text: `line ${n}` }); if (!r.ok) first = { n, code: r.refused?.code }; }
+  ok(first?.code === "rate" && first.n <= 601, "CAR a captioner past the entries cap in the window is refused rate", first); }
 // SP1: a thing so far out that its cells aren't safe integers goes on the big list, not into a loop that can't advance
 // (x++ at 2^53 stays put), nor under a key that collides (cellKey covers ±1e6 cells)
 { const { cellsOf } = await import("../../shared/protocol/authority/spatial.js");
