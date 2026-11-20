@@ -726,10 +726,12 @@ export const HANDLERS: Record<string, ToolHandler> = {
       try { r = await fetch(`${ag.httpBase}/upload${q.size ? `?${q}` : ""}`, { method: "POST", headers: ag.readHeaders, body: bytes, signal: AbortSignal.timeout(UPLOAD_MS) });
         said = (await r.text()).trim(); }
       catch (e) { return fail((e as Error)?.name === "TimeoutError"
-        ? `upload: the world's server didn't answer within ${UPLOAD_MS / 1000} s, so whether the file was stored isn't known; sending the same bytes again is safe (they get the same address)`
+        ? `upload: the world's server didn't answer within ${UPLOAD_MS / 1000} s, so whether the file was stored isn't known; ${as === "avatar" ? "sending it again stores it under that name again, replacing whatever body holds the name by then" : "sending the same bytes again is safe (they get the same address)"}`
         : `upload: the world's server couldn't be reached (${(e as Error)?.message || "no reason given"}), so nothing is known to be stored; calling again may work`); }
       // the store's refusal, in the store's words (401, 409, 413, 415, 422, 429…): this tool adds no reason of its own
-      if (!r.ok) return fail(`upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
+      // …except that a 5xx may come after the file was written: then what is known is only that the store failed
+      if (!r.ok) return fail(r.status >= 500 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
+        : `upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
       let j: any = null;
       try { j = JSON.parse(said); } catch { /* not JSON: passed on as it came, below */ }
       const where = j && typeof j === "object" ? UPLOAD_KINDS[as](j) : null;

@@ -434,9 +434,10 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   // The window is the uploader's. An identity when the upload proves one: the agent tool server posts every agent's
   // upload from its own address, so a window per address would be one window for all of them. Else the client's address
   // (X-Real-IP only from a trusted proxy: server/peer.ts).
-  const uploader = stoodOn && stoodOn !== "key" ? stoodOn : `address:${addressOf(req, srv)}`;
+  // …and the door key is nobody's identity even when it is also enrolled as an agent's bearer: everyone holds it
+  const uploader = stoodOn && stoodOn !== "key" && !(JOIN_TOKEN && upTok === JOIN_TOKEN) ? stoodOn : `address:${addressOf(req, srv)}`;
   const u = uploadWin.get(uploader) ?? { t: 0, n: 0 };
-  if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
+  if (Date.now() - u.t >= 60_000) { u.t = Date.now(); u.n = 0; }
   u.n++; uploadWin.set(uploader, u);
   if (u.n > UPLOADS_PER_MINUTE) {
     const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
@@ -582,13 +583,15 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   const dir = join(OPT_DIR, "store");
   mkdirSync(dir, { recursive: true });
   const rel = `store/${hash}.glb`;
-  if (!existsSync(join(OPT_DIR, rel))) writeFileSync(join(OPT_DIR, rel), body);
+  const fresh = !existsSync(join(OPT_DIR, rel));   // new to the store: only then can this upload decide it is a one-off
+  if (fresh) writeFileSync(join(OPT_DIR, rel), body);
   queueOptimize(join(OPT_DIR, rel)); // draco+webp shadow, built off the request path
   // content-addressed: the human name arrives ONLY here, so record it (or the catalog lists a hash)
   const upName = (url.searchParams.get("name") ?? "").replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
   // ?catalog=0: a one-off, made for one place and not meant to be reused. It is stored, served, optimized and checked like
-  // any model, and placed by its path; the catalog (/library-models) leaves it out. Listing wins: the same bytes uploaded
-  // for the catalog are listed from then on, and a one-off upload of bytes already listed leaves them listed.
+  // any model, and placed by its path; the catalog (/library-models, the authority's find) leaves it out. Listing wins:
+  // the same bytes uploaded for the catalog are listed from then on, and a one-off upload of bytes already in the store
+  // and listed leaves them listed (a file with no manifest entry is listed: every model stored before this was).
   const forCatalog = !/^(0|false|no)$/i.test(url.searchParams.get("catalog") ?? "");
   let listed = forCatalog;
   {
@@ -597,8 +600,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
     const prev = man[hash];
     if (forCatalog) man[hash] = { ...(upName ? { name: upName } : prev?.name ? { name: prev.name } : {}), by: upBy, ts: Date.now() };   // an unnamed re-upload keeps the name it had
-    else if (!prev) man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now(), catalog: false };
-    else listed = prev.catalog !== false;
+    else if (fresh) man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now(), catalog: false };
+    else { listed = prev?.catalog !== false; if (prev && !prev.name && upName) prev.name = upName; }   // as it was; a name it lacked is taken
     atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""}${listed ? "" : " (a one-off: not in the catalog)"} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);

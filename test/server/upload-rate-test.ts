@@ -12,7 +12,8 @@ const root = mkdtempSync(join(tmpdir(), "uploadrate-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const tokensPath = join(root, "tokens.json"), OPT = join(root, "opt");
 mkdirSync(OPT);
-writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" } }));
+// the door key is ALSO enrolled as an agent's bearer here (a host may do that): it is still everyone's key, so it still proves no one
+writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "door-key": { id: "keeper" } }));
 Object.assign(process.env, {
   SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: OPT, EIDOVERSE_DIR: join(root, "lib"), JOIN_TOKEN: "door-key",
   AGENT_TOKENS_PATH: tokensPath, SESSIONS_PATH: join(root, "sessions.json"), KTX2_TOKTX: "",
@@ -61,7 +62,7 @@ const person = await upload({ cookie: `ew_sess=${sid}`, "sec-fetch-site": "same-
 check("a signed-in person, from that same address, is taken: their own window", person.status === 200, `${person.status} ${person.text}`);
 // ---- no identity: the address ----
 const shared = await burst(UPLOADS_PER_MINUTE + 1, key, () => "198.51.100.8");
-check("the door key proves no identity: its uploads count against their address, 30 taken and the 31st refused", shared[200] === UPLOADS_PER_MINUTE && shared[429] === 1, shared);
+check("the door key proves no identity, enrolled or not: its uploads count against their address, 30 taken and the 31st refused", shared[200] === UPLOADS_PER_MINUTE && shared[429] === 1, shared);
 const keyElsewhere = await upload(key, "198.51.100.9");
 check("...and the same key from another address is taken (that address's own window)", keyElsewhere.status === 200, `${keyElsewhere.status} ${keyElsewhere.text}`);
 check("every upload stored the one file its bytes name (content-addressed)", stored() === 1, stored());

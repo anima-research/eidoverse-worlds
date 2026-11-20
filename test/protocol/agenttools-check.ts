@@ -29,6 +29,7 @@
 //        one of data, text or effect, or whose data isn't base64, is refused before any request; the store's own refusal
 //        comes back in its words; upload {text} and {effect} are the authority's upload verb, as act sends it
 // @ts-nocheck
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch } from "../gate/common.ts";
@@ -448,7 +449,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 // ---- AT16: upload puts a file in the world's store, and create places it ----
 { const file = path.join(root, "crate.glb"); await writeBoxGlb(file, [0.6, 0.4, 0.6]);
   const bytes = fs.readFileSync(file), b64 = bytes.toString("base64");
-  const storeFiles = () => { try { return fs.readdirSync(path.join(OPT, "store"), { recursive: true }).length; } catch { return 0; } };
+  // what uploads put in the store: files named by their hash. The optimizer adds variants and markers beside an accepted
+  // model later, in the background; those aren't uploads, so they aren't counted
+  const storeFiles = () => { try { return (fs.readdirSync(path.join(OPT, "store"), { recursive: true }) as string[]).filter((f) => /^[0-9a-f]{16}\.[a-z0-9]+$/.test(path.basename(String(f)))).length; } catch { return 0; } };
   // every POST /upload the tool makes, counted: a call refused for its shape makes none
   const realFetch = globalThis.fetch; let posts = 0;
   globalThis.fetch = ((u, o) => { if (/\/upload(\?|$)/.test(String(u))) posts++; return realFetch(u, o); }) as any;
@@ -467,10 +470,22 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const hashOf = String(stored).slice(6, 22), manifest = () => JSON.parse(fs.readFileSync(path.join(OPT, "store", "manifest.json"), "utf8"));
   const inCatalog = async () => ((await (await realFetch(`${ag.httpBase}/library-models?q=crate`)).json()) as { path: string }[]).some((m) => m.path === stored);
   ok(/a one-off kept out of the catalog/.test(T(up)) && man[hashOf]?.catalog === false && !(await inCatalog()), "AT16i an uploaded model is a one-off by default: its reply says so, and the catalog (library) doesn't list it", [T(up).slice(0, 200), man[hashOf]]);
-  const listed = await call("upload", { data: b64, name: "test crate", catalog: true });
-  ok(!listed.isError && T(listed).includes(`stored as ${stored}, in the catalog`) && manifest()[hashOf]?.catalog === undefined && (await inCatalog()), "AT16i upload {catalog: true} lists the same file in the catalog, at the same address", [T(listed).slice(0, 200), manifest()[hashOf]]);
+  // the authority's own find is a catalogue too (server/modelcatalogue.ts)
+  const found = async () => { const r = await call("act", { verb: "find", args: { kind: "model", query: hashOf } }); let j: any = {}; try { j = JSON.parse(T(r)); } catch { /* not JSON: nothing found */ } return (j.models ?? []).some((m: any) => m.model === stored); };
+  ok(!(await found()), "AT16i …and neither does the authority's find {kind: \"model\"}", hashOf);
+  const listed = await call("upload", { data: b64, catalog: true });
+  ok(!listed.isError && T(listed).includes(`stored as ${stored}, in the catalog`) && manifest()[hashOf]?.catalog === undefined && (await inCatalog()) && (await found()), "AT16i upload {catalog: true} lists the same file in the catalog, at the same address: library and find both have it", [T(listed).slice(0, 200), manifest()[hashOf]]);
+  ok(manifest()[hashOf]?.name === "test crate", "AT16i …and an unnamed upload for the catalog keeps the name the file had", manifest()[hashOf]);
   const again = await call("upload", { data: b64 });
   ok(!again.isError && T(again).includes(`stored as ${stored}, in the catalog`) && (await inCatalog()) && manifest()[hashOf]?.name === "test crate", "AT16i listing wins: a later one-off upload of a listed file leaves it listed, under its name, and says so", [T(again).slice(0, 200), manifest()[hashOf]]);
+  // a model stored before one-offs existed has no manifest entry, and is listed: a one-off upload of it leaves it listed
+  { const old = path.join(root, "old.glb"); await writeBoxGlb(old, [0.3, 0.9, 0.3]); const ob = fs.readFileSync(old);
+    const oh = createHash("sha256").update(ob).digest("hex").slice(0, 16), op = `store/${oh}.glb`;
+    fs.writeFileSync(path.join(OPT, op), ob);
+    const listedNow = async () => ((await (await realFetch(`${ag.httpBase}/library-models`)).json()) as { path: string }[]).some((m) => m.path === op);
+    const before = await listedNow();
+    const up2 = await call("upload", { data: ob.toString("base64") });
+    ok(before && !up2.isError && T(up2).includes(`stored as ${op}, in the catalog`) && manifest()[oh]?.catalog !== false && (await listedNow()), "AT16i a file already in the store and listed, with no manifest entry, stays listed after a one-off upload of it", [before, T(up2).slice(0, 160), manifest()[oh] ?? null]); }
   posts = 0;
   // a call that isn't one of data, text or effect, or whose data isn't base64, or whose kind the store doesn't have: refused before any request
   const n0 = storeFiles(); posts = 0;
