@@ -12,7 +12,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { WorldAgent } from "./agent.ts";
 import { pingLine } from "./ping-wire.ts";
-import { toolList, handleTool, type ToolCtx } from "./tools.ts";
+import { toolList, handleTool, TOOL_MESSAGE_BYTES, type ToolCtx } from "./tools.ts";
 
 const agent = new WorldAgent();
 await agent.connect();
@@ -66,5 +66,7 @@ agent.onPing = (p) => {
   }).catch(() => {});
 };
 
-await server.connect(new StdioServerTransport());
+// One line of stdin is one message. The sdk closes the transport for good on a line longer than its cap (10 MiB unless
+// told), so the cap here is the websocket door's: a tool call that fits one door fits the other (upload {data}'s ceiling).
+await server.connect(new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: TOOL_MESSAGE_BYTES }));
 console.error(`[mcpl] ${agent.name} embodied in "${agent.world}" via ${agent.url} — ${toolList({ travel: false }).length + 1} tools (shared table)`);

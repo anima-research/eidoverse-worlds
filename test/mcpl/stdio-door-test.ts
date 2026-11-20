@@ -129,6 +129,18 @@ try {
   const lk = await rpc('tools/call', { name: 'look', arguments: {} });
   check('look() carries the label too', /"the porch lamp"/.test(toolText(lk)), toolText(lk).slice(0, 200));
 
+  // one line of stdin is one message: a call as long as upload's largest file is read and answered (the sdk's own cap,
+  // 10 MiB a line, closes the transport for good on a longer one). These bytes are no model, so the world's store
+  // refuses them in its own words and keeps nothing
+  const { UPLOAD_DATA_BYTES } = await import('../../mcpl/tools.ts');
+  const long = rpc('tools/call', { name: 'upload', arguments: { data: Buffer.alloc(UPLOAD_DATA_BYTES, 0x61).toString('base64') } }, 60000);
+  await child.stdin.flush();
+  const big = await long.catch((e) => ({ error: String(e) }));
+  check(`a tool call as long as upload's largest file (${(UPLOAD_DATA_BYTES / 1e6).toFixed(1)} MB, base64 in one line) is read and answered, in the store's words`,
+    big.result?.isError === true && /not a GLB container/.test(toolText(big)), JSON.stringify(big).slice(0, 200));
+  const still = await rpc('tools/call', { name: 'look', arguments: {} }).catch((e) => ({ error: String(e) }));
+  check('…and the door answers the call after it', /stdiobot|stdiodoor/.test(toolText(still)), JSON.stringify(still).slice(0, 120));
+
   const unknown = await rpc('tools/call', { name: 'no_such_tool', arguments: {} });
   check('an unknown tool is a marked error', unknown.result?.isError === true || !!unknown.error,
     JSON.stringify(unknown).slice(0, 120));

@@ -43,7 +43,7 @@ import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { cspFor, cspForFile } from "./csp.ts";
-const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
+const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min)
 // client console tee (the /clientlog route): one file per KNOWN world (loaded in memory, or with a data dir on disk) and
 // sender under $CLIENTLOG_DIR; any other label shares the '~unknown' directory, so a made-up label buys no file of its own.
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir

@@ -1,6 +1,6 @@
 // Live asset ingestion: POST /upload (models, avatars, pictures, heightmaps, sound), with the machinery only it feeds: the
-// per-IP upload rate windows, the store-optimization queue (a subprocess builds each variant off the request path), and the
-// deferred boot sweeps. routes.ts delegates the endpoint here.
+// upload rate windows (one per uploader), the store-optimization queue (a subprocess builds each variant off the request
+// path), and the deferred boot sweeps. routes.ts delegates the endpoint here.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { addressOf } from "./peer.ts";
@@ -22,7 +22,10 @@ import { resolveLibFile } from "./libfile.ts";
 /** What the handler needs from Bun's server object, structurally: the socket address behind the proxy. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
-const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
+/** Uploads a minute for one uploader: the identity an upload stands on (a person's sign-in, an agent's bearer), or, when
+ *  it proves none (an open server's anonymous upload, the door key everyone shares), the address it comes from. */
+export const UPLOADS_PER_MINUTE = 30;
+const uploadWin = new Map<string, { t: number; n: number }>(); // upload rate windows, by uploader (identity, else address)
 let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-seconds
 
 // ---- store optimization -----------------------------------------------------
@@ -428,12 +431,17 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts)
-  const ip = addressOf(req, srv);
-  const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
+  // The window is the uploader's. An identity when the upload proves one: the agent tool server posts every agent's
+  // upload from its own address, so a window per address would be one window for all of them. Else the client's address
+  // (X-Real-IP only from a trusted proxy: server/peer.ts).
+  const uploader = stoodOn && stoodOn !== "key" ? stoodOn : `address:${addressOf(req, srv)}`;
+  const u = uploadWin.get(uploader) ?? { t: 0, n: 0 };
   if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
-  u.n++; uploadWin.set(ip, u);
-  if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
+  u.n++; uploadWin.set(uploader, u);
+  if (u.n > UPLOADS_PER_MINUTE) {
+    const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
+    return new Response(`upload rate limit (${UPLOADS_PER_MINUTE} uploads a minute); try again in ${wait}s`, { status: 429, headers: { "retry-after": String(wait) } });
+  }
   const body = await readCappedBytes(req, UPLOAD_CAP);
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
   if (JOIN_TOKEN && !who().ids.includes(stoodOn!))

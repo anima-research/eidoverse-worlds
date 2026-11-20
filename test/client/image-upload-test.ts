@@ -18,8 +18,8 @@
 // content-type and the store's immutable cache policy, the picture allow-list
 // admits the path it returns, the manifest records who, an image's pixel size
 // is read from its header and capped at 8192 on a side, and the door is
-// token-gated and byte-capped like the model door (its 4/min rate limit is
-// rested out below, not tested).
+// token-gated and byte-capped like the model door (its rate limit, 30 a
+// minute, is test/server/upload-rate-test.ts's: the twelve uploads here stay under it).
 import { allowedPictureSrc } from "../../shared/picture.js";
 
 import { ownedWorld } from "../harness/probe-harness.mjs";
@@ -74,9 +74,6 @@ async function post(body: Uint8Array, q: Record<string, string>, token: string |
 console.log(`\nimage door — ${HTTP}\n`);
 
 // ---- the door judges by bytes ------------------------------------------------
-// The upload window is 4/min per IP and every POST past the token check
-// spends it (refusals included), so the door is exercised four at a time
-// with a window's rest between: three windows, twelve uploads.
 let r = await post(PNG, { as: "image", name: "hearth at dusk.png" });
 check("a PNG lands: 200 with a store path", r.status === 200 && typeof r.json?.path === "string", r.text);
 const pngPath: string = r.json?.path ?? "";
@@ -109,9 +106,6 @@ const gw = await fetch(`${HTTP}/library/${webpPath}`);
 check("a served .webp says image/webp", (gw.headers.get("content-type") ?? "").startsWith("image/webp"), gw.headers.get("content-type") ?? "none");
 
 // ---- refused by what the bytes are ---------------------------------------------
-console.log("  (resting out the 4/min upload window…)");
-await new Promise((res) => setTimeout(res, 61_000));
-
 r = await post(GLB, { as: "image", name: "model.png" });
 check("a GLB named .png is refused at the image door (415)", r.status === 415 && /not a PNG/.test(r.text), `${r.status} ${r.text}`);
 r = await post(JUNK, { as: "image", name: "x.png" });
@@ -135,8 +129,6 @@ if (MANIFEST_DIR) {
 // ---- the caps -----------------------------------------------------------------
 // the byte cap; the pixel cap on each side, one past 8192 px refused; and a zero
 // side, which is no size at all
-console.log("  (resting out the 4/min upload window…)");
-await new Promise((res) => setTimeout(res, 61_000));
 const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /^image too large/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);

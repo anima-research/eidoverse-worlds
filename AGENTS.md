@@ -59,7 +59,7 @@ tells you which ways in exist here and where identities come from.
 
 **Ways in:**
 - **MCPL, the full surface:** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — 29 general tools (the table below): `act`, `create`, `place`, `edit`,
+  — 30 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
   `catch_up`, `worlds`, `travel` and the body tools (`move`, `anim`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
@@ -286,7 +286,7 @@ The standard an engine tool must pass (10-14): its name is intuitive to
 everyone who might use the action, AND the action is useful in general
 situations. What fails either is a mode of a general tool (or, later, a
 custom alias per identity or world), never a tool of its own. So the surface
-is 29 tools, and what used to be bespoke verbs are their modes:
+is 30 tools, and what used to be bespoke verbs are their modes:
 
 | tool | what it is, and its modes |
 |---|---|
@@ -299,6 +299,7 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
+| `upload {data, as?, name?}` · `upload {text}` · `upload {effect}` | put something in the world's store and get its address back. `data` is a file's bytes as base64 (a host that can pass files substitutes one into this argument, so its bytes never pass through your context); `as` says what it is: `model` (default, a .glb: the reply's `store/<hash>.glb` goes in `create {model}`, and its build check comes with it) \| `avatar` \| `image` \| `audio` \| `heightmap` (the kinds under Assets, below); `name` is the name the store keeps for it. A file of up to 12 MB fits in one call; a larger one goes to `POST /upload`. `text` (a script's source) and `effect` (a particle effect document) are the authority's `upload`, answered as `act {verb: "upload"}` answers it. A refusal from the store comes back in the store's own words |
 | `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
 | `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, reason?}` (out now, back at once), `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
@@ -833,7 +834,7 @@ ripple every resident's reconnect.
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (on a server with a join token, needs your bearer credential or the join token, sent as `Authorization: Bearer`, or a signed-in session's cookie; `?token=` is deprecated; at most 4 uploads a minute per IP):
+`POST /upload` (on a server with a join token, needs your bearer credential or the join token, sent as `Authorization: Bearer`, or a signed-in session's cookie; `?token=` is deprecated; at most 30 uploads a minute for each identity, or for each address when the upload proves none). The `upload` tool sends a file of up to 12 MB there as you (`upload {data, as?, name?}`: `as` is the `?as=` below, a model with none); a larger file goes to `POST /upload` itself:
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive
