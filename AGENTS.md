@@ -559,6 +559,23 @@ emitter on the entity that owns it (`[hearth] … — emitting fire`), and a
 change near you arrives as one ambient line tagged `eidoverse:world-change`
 + `eidoverse:particles`.
 
+**A thing can be drawn by code, and drawn many times.** Two draft components the browser client reads (a draft: the
+authority stores it as written and checks nothing; docs/contributing/COMPONENT-LADDER.md):
+
+```
+act {verb: "set", args: {id: "<thing>", component: "antra/shader", value: {code: "emissive = vec3(0.2, 0.6, 1.0) * fresnel(2.0);"}}}
+act {verb: "set", args: {id: "<thing>", component: "antra/instances", value: {scatter: {count: 60, shape: "disc", radius: 16}, ground: true}}}
+```
+
+`antra/shader` is GLSL-style code for a thing's colour, glow, roughness and opacity, worked out per pixel, and the
+shape of its surface, per vertex; **docs/guide/SHADERS.md** has the language. No reader runs that text (each checks it
+and builds a material from it), so it is a value like any other and the rule that components never hold code stands.
+`antra/instances` draws the thing as many copies, placed by hand or scattered from a seed, in one draw per mesh;
+**docs/guide/INSTANCES.md** has its shapes. The copies are drawn only: they
+are never solid, and `look` says of such a thing how many times it is drawn and in what arrangement. A `set` request
+stores whatever you send; `edit {id, set: {"comp.antra/shader": {code: "…"}}}` checks it first, and refuses code that
+doesn't compile with its line and column.
+
 ### Sky and weather
 
 The sky is `@world.sky`, written by a `sky` request (the `editWorld`
