@@ -196,6 +196,7 @@ const TREE = path.resolve(opt("tree") ?? ENGINE) + "/";
 const tryImport = async (p: string) => { try { return await import(p); } catch (e) { if (!argv.includes("--expect-absent")) throw e; return null; } };
 const D = await import(TREE + "shared/protocol/authority.js");
 const SD = await import(TREE + "shared/protocol/authority/scripts.js");   // the duty log and constants (I7 calibrates from them)
+const SR = await import(TREE + "shared/protocol/scriptrules.js");   // the caps an activation runs under (R5b stands at their edge)
 D.fixtureIds?.(true);   // the fixtures below seed the ids they read (a writer never chooses one; ids-check covers the refusal)
 const F = await import(TREE + "shared/protocol/fold.js");
 const STOR = await import(TREE + "shared/protocol/authority/storage.js");   // B25 stores an old spelling as an old log holds it
@@ -757,6 +758,17 @@ console.log(JSON.stringify(r.ops?.[0]?.value ?? r)); process.exit(0);\n`);   // 
       const next = s.call("vic", "use", { id: "box", action: "go", args: { ok: true } });
       return { inst: show(inst), r: st(s, r), scripted, next: st(s, next) }; },
     good: (o: any) => (want === "syntax" ? o.inst.startsWith("refused syntax") : o.r === `failed ${want}` && o.scripted === 0 && o.next === "ran") })),
+  // the caps themselves, at their edge (R4 and R5 above run far past them, so they would pass at any smaller cap too)
+  { id: "R5b", what: `41 #9 the caps are ${SR.LIMITS.ops} writes and ${SR.LIMITS.calls} reads an activation: exactly that many run and land; one more fails (too-big, calls) and writes nothing`, run(s: any) { cast(s);
+      s.call("bob", "create", { id: "box", model: "crate", place: { at: [0, 0] } });
+      const src = s.w().putBlob({ lang: "js", api: 1, text: `world.on("use", (e) => { for (let i = 0; i < (e.args.reads ?? 0); i++) world.get("self"); for (let i = 0; i < (e.args.writes ?? 0); i++) world.set("self", "t/n", i); });\n` });
+      s.call("bob", "set", { id: "box", component: "script:x", value: { src, scope: { ids: "self", comps: ["t/n"] }, on: ["use"] } });
+      s.call("bob", "set", { id: "box", component: "reactions", value: { go: { kind: "script", script: "x" } } });
+      const use = (args: any) => st(s, s.call("vic", "use", { id: "box", action: "go", args }));
+      const atW = use({ writes: SR.LIMITS.ops }), n = comp(s, "box", "t/n"), overW = use({ writes: SR.LIMITS.ops + 1 }), after = comp(s, "box", "t/n");
+      const atR = use({ reads: SR.LIMITS.calls, writes: 1 }), overR = use({ reads: SR.LIMITS.calls + 1, writes: 1 });
+      return { atW, n, overW, after, atR, overR, ops: SR.LIMITS.ops, calls: SR.LIMITS.calls }; },
+    good: (o: any) => o.ops === 256 && o.calls === 256 && o.atW === "ran" && o.n === 255 && o.overW === "failed too-big" && o.after === 255 && o.atR === "ran" && o.overR === "failed calls" },
   // ---------------- I: isolation (a killable sandbox process per activation's VM side) ----------------
   { id: "I1", what: "isolation: a script stuck in a slow native builtin (indexOf on crafted text, a huge BigInt power, out of memory inside Array.fill) is stopped at its deadline and its process killed; the authority is back within it, another world answers at once, and the run is counted against its sponsor",
     run(s) { cast(s); const s2 = session(); cast(s2); s2.call("olive", "create", { id: "cup", model: "crate", place: { at: [0, 0] } });

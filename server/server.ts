@@ -692,8 +692,9 @@ const server = Bun.serve({
   // Bun's default idleTimeout (10 s with no bytes moving, mid-response too) truncates a big download over a slow link;
   // 255 s is its maximum. The WebSocket has its own idle timer (left at Bun's default, 120 s).
   idleTimeout: 255,
-  // Bun answers a body past this itself, with a bare 413, before any route runs (its default is 128 MiB): kept past the
-  // largest cap a route reads to (/upload's UPLOAD_CAP), so that cap is the one met and the refusal is in its words.
+  // Bun answers a body past this itself, with a bare 413, before any route runs (its default is 128 MiB): kept at twice
+  // the largest cap a route reads to (/upload's UPLOAD_CAP), so a body up to twice that cap is refused by the route, in
+  // its words; one larger still gets Bun's bare 413.
   maxRequestBodySize: Math.max(128 * 1024 * 1024, 2 * UPLOAD_CAP),
   async fetch(req, srv) {
     // the whole HTTP surface is routes.ts's table (one row per endpoint, first match wins); /ws upgrades inside its row
