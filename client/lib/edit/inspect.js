@@ -96,7 +96,8 @@ const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);
 export const mayTrust = () => (net.myRights?.role === undefined ? undefined : isOwner(net.myRights));
 // The world entity `@world` (shared/worldentity.js): state.sky/terrain/grass as one entity, edited through the `sky` and
 // `weather` verbs and set/delete of @world's `terrain` and `grass`. mayShape: the editWorld permission (the owner's, on
-// an older server); false = known not allowed, undefined = rights not known yet.
+// an older server), which the sky, weather and grass take; false = known not allowed, undefined = rights not known yet.
+// The terrain takes build instead: mayGround, below.
 export const mayShape = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('editWorld'); return r?.role === undefined ? undefined : isOwner(r); };
 /** The ground (the terrain, its named features, its sculpting) takes build, not editWorld: false = known not allowed. */
 export const mayGround = () => { const r = net.myRights; if (Array.isArray(r?.permissions)) return r.permissions.includes('build'); return r?.role === undefined ? undefined : isOwner(r); };

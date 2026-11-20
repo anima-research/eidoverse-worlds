@@ -373,7 +373,7 @@ export class WorldAgent {
   pings: { ts: number; kind: "mention" | "approach" | "depart" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say, act, arrive, leave, activity, weather, world-change) — the channel fan-out hook */
-  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean; part?: "ground" }) => void) | null = null;
   /** MEDIA seam. The SFU's publish path is gated to the embodied primary, which
    *  for an agent is this server, so the door relays the media-signalling frames
    *  between the world and a local voice sidecar. The door never synthesizes,
@@ -524,6 +524,7 @@ export class WorldAgent {
     this.gate.dispose(); // held narration dies with the session
     for (const s of this.senses.emitterNarration.values()) clearTimeout(s.timer);
     this.senses.emitterNarration.clear();
+    this.senses.forgetGround();
     // Take this world's floors out with us: the collider map is process state
     // (physics.ts), so a successor agent elsewhere would otherwise stand on them.
     for (const id of [...this.ground.supportIds.keys()]) this.ground.dropSupport(id);
@@ -1133,8 +1134,13 @@ export class WorldAgent {
     try {
       // the world's water is its own component: it rides on the terrain args the ground is built from, and so do the
       // ground's named features and sculpted tiles (shared/terrainshape.js withShaping)
-      if (["terrain", "water", "terrainFeatures", "terrainTiles"].some((k) => d.world.includes(k)) && W.terrain) { const g = withShaping(W.terrain, W.terrainFeatures, W.terrainTiles);
+      const reground = ["terrain", "water", "terrainFeatures", "terrainTiles"].some((k) => d.world.includes(k));
+      const feet = reground ? this.ground.heightAt(this.pos.x, this.pos.z) : 0;
+      if (reground && W.terrain) { const g = withShaping(W.terrain, W.terrainFeatures, W.terrainTiles);
         await this.ground.buildTerrain(W.water ? { ...g, water: W.water } : g); }
+      else if (d.world.includes("terrain")) this.ground.dropTerrain();   // the terrain is gone: the level floor, as the authority and a browser stand on it
+      // someone else reshaped the ground: this body is told (its feet follow the ground without a word otherwise)
+      if (live && reground) this.senses.noteGround(actor ?? "world", prev, W, this.ground.heightAt(this.pos.x, this.pos.z) - feet, ts ?? this.serverNow());
       if (d.world.includes("terrain")) { if (W.terrain) this.worldInfo.terrain = { seed: W.terrain.seed, size: W.terrain.size, amplitude: W.terrain.amplitude, flatRadius: W.terrain.flatRadius }; else delete this.worldInfo.terrain; }
       if (d.world.includes("sky")) this.senses.skyState = W.sky as typeof this.senses.skyState;
       if (d.world.includes("grass")) { if (W.grass) this.worldInfo.grass = this.grassInfo(W.grass); else delete this.worldInfo.grass; }

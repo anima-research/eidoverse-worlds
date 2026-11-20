@@ -1726,8 +1726,9 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   const lv = [call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 }), call("bea", "set", { id: "@world", component: "terrain-feature:cove", value: { type: "hill", x: 5, z: 5, radius: 4, height: 2 } }),
     call("bea", "set", { id: "@world", component: "terrain-tile:128-128", value: { mm: new Array(1024).fill(0) } })];
   call("olive", "set", { id: "@world", component: "terrain", value: { kind: "flat", height: 1 } });
-  const lvFlat = call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 });
-  ok([...lv, lvFlat].every((r) => code(r) === "level-ground" && /kind: 'noise', amplitude: 0/.test(r.refused.fix)), "TC1 a level ground (no terrain, or kind flat) takes no feature, tile or stroke: level-ground, with the terrain that can be shaped", [...lv, lvFlat].map((r) => r.refused?.code ?? r.ok));
+  const lvFlat = [call("bea", "sculpt", { brush: "raise", path: [[0, 0]], radius: 2, strength: 1 }), call("bea", "set", { id: "@world", component: "terrain-feature:cove", value: { type: "hill", x: 5, z: 5, radius: 4, height: 2 } }),
+    call("bea", "set", { id: "@world", component: "terrain-tile:128-128", value: { mm: new Array(1024).fill(0) } })];
+  ok([...lv, ...lvFlat].every((r) => code(r) === "level-ground" && /kind: 'noise', amplitude: 0/.test(r.refused.fix)), "TC1 a level ground (no terrain, or kind flat) takes no feature, tile or stroke, each asked of both: level-ground, with the terrain that can be shaped", [...lv, ...lvFlat].map((r) => r.refused?.code ?? r.ok));
   // rights: the ground takes build; the rest of the world's look still takes editWorld
   const t1 = call("bea", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0, size: 80 } });
   const t2 = call("mem", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 1 } });
@@ -1748,7 +1749,25 @@ ok(call("olive", "set", { id: "@world", component: "bounds", value: { min: [-50,
   { const full = callAt("tc-full"); full("olive", "create-world", { title: "f" }); full("olive", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0 } });
     const rs = full("olive", "batch", { requests: Array.from({ length: 64 }, (_, i) => ({ verb: "set", args: { id: "@world", component: `terrain-feature:f${i}`, value: { type: "hill", x: i, z: 0, radius: 1, height: 0.1 } } })) });
     const over = full("olive", "set", { id: "@world", component: "terrain-feature:one-more", value: { type: "hill", x: 0, z: 9, radius: 1, height: 0.1 } });
-    ok(rs.ok && code(over) === "full", "TC5 a world holds 64 named features; one more is refused full", { rs: rs.refused, over: over.refused?.code }); }
+    ok(rs.ok && code(over) === "full", "TC5 a world holds 64 named features; one more is refused full", { rs: rs.refused, over: over.refused?.code });
+    // a stroke is priced before it is worked out, and its asker's rights come before either: a smooth reads the ground ten
+    // times a sample, and on this ground every read weighs 64 features
+    full("olive", "set", { id: "@world", component: "roles:mem", value: { role: "member" } });
+    const wide = { brush: "smooth", path: [[-300, 0], [300, 0], [300, 300]], radius: 64 };
+    const t0 = performance.now(); const mem = full("mem", "sculpt", wide), own = full("olive", "sculpt", wide); const ms = performance.now() - t0;
+    const small = full("olive", "sculpt", { brush: "smooth", path: [[0, 0]], radius: 2 }), raise = full("olive", "sculpt", { brush: "raise", path: [[-300, 0], [300, 0]], radius: 8, strength: 0.1, dry: true });
+    ok(code(mem) === "rights" && mem.refused.needs === "build" && code(own) === "too-costly" && /smooth/.test(own.refused.reason) && ms < 1000 && (small.ok || code(small) === "nothing") && raise.ok,
+      "TC19 a stroke's rights and its price come before its work: a member's near-limit smooth is refused rights, an owner's too-costly, neither after working it out; a small smooth and a long raise (which reads no ground) go", { mem: mem.refused?.code, own: own.refused, ms: Math.round(ms), small: small.refused ?? small.ok, raise: raise.refused ?? raise.ok }); }
+  // a purged tile is unknown, never level: undoing a raise made over a tile whose earlier value was purged is refused, and
+  // the tile stays as the stroke left it
+  { const dir = root + "tc-purge/"; let now = clock.t + 9000; const w = openLive(dir, "tc-purge", { kindOf: LABKIND, now: () => now });
+    const pc = (actor, verb, args = {}) => { now += 100; return request(w, actor, verb, args); };
+    pc("olive", "create-world", { title: "p" }); pc("olive", "set", { id: "@world", component: "terrain", value: { kind: "noise", amplitude: 0 } });
+    const hand = pc("olive", "set", { id: "@world", component: "terrain-tile:128-128", value: { mm: new Array(1024).fill(1000) } }), up = pc("olive", "sculpt", { brush: "raise", path: [[8, 8]], radius: 3, strength: 1 });
+    now += 100; w.append({ kind: "redaction", actor: "system", body: { values: [{ seq: hand.seq }] } });
+    const un = pc("olive", "undo", { act: up.act }); const left = w.state().entities["@world"].c["terrain-tile:128-128"]?.mm;
+    ok(hand.ok && up.ok && !un.ok && Array.isArray(left) && Math.max(...left) === 2000 && Math.min(...left) === 1000,
+      "TC20 undoing a raise made over a tile whose earlier value was purged is refused (what it was is unknown, never level), and the tile stays as the stroke left it", { un: un.refused ?? un.ok, left: left ? [Math.min(...left), Math.max(...left)] : left }); }
   // a stroke
   const s1 = call("bea", "sculpt", { brush: "raise", path: [[-10, -10]], radius: 3, strength: 0.5 });
   const log = openWorld(root, name).entries; const act = log[s1.act], res = log[s1.seq];

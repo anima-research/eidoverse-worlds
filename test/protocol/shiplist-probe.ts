@@ -981,11 +981,15 @@ try {
   check("TC3 a named feature raises its hill on the same mesh, the stroke beside it stands, and deleting the feature levels the hill alone",
     f1?.ok && f2?.ok && Math.abs(g3.drawn - 2) < 1e-6 && g3.mesh === g1.mesh && Math.abs(still.walked - 0.6) < 1e-6 && g4.drawn === 0 && Math.abs((await ground(px, pz)).walked - 0.6) < 1e-6, { g3, still, g4 });
   // /sculpt works where I stand, and my body rides the ground up
+  // (where I stand is seldom one of the layer's samples, half a metre apart: between them a stroke's top is a little
+  // under its strength, so the ground under me rises by most of the half metre, and I stand exactly on it)
   const y0 = await evalJson(`import('/lib/player/controller.js').then((c) => c.myState.pos.y)`);
   await page(`const r = await import('/lib/ui/commands/registry.js'); r.dispatch('sculpt', 'raise 2 0.5'); return true;`);
-  const rose = await waitFor(`import('/lib/player/controller.js').then((c) => Math.abs(c.myState.pos.y - ${y0} - 0.5) < 0.02)`, 20000);
-  const said = await evalJson(`[...document.querySelectorAll('#chatlog *, .chat-line, .chatline')].map((e) => e.textContent).filter((t) => /the ground here went from/.test(t)).length`).catch(() => null);
-  check("TC4 /sculpt raise 2 0.5 raises the ground under me by half a metre and my body stands on it; the chat says what it did", rose, { y0, y: await evalJson(`import('/lib/player/controller.js').then((c) => c.myState.pos.y)`), said });
+  const stand = `Promise.all([import('/lib/player/controller.js'), import('/lib/terrain.js')]).then(([c, t]) => ({ y: c.myState.pos.y, ground: t.heightAt(c.myState.pos.x, c.myState.pos.z) }))`;
+  const rose = await waitFor(`${stand}.then((s) => s.ground - ${y0} > 0.4 && s.ground - ${y0} <= 0.5 + 1e-6 && Math.abs(s.y - s.ground) < 0.02)`, 20000);
+  const chat = `[...document.querySelectorAll('#chatlog *, .chat-line, .chatline')].map((e) => e.textContent).filter((t) => /raise: the ground here went from/.test(t)).length`;
+  const said = await waitFor(`${chat} > 0`, 10000);
+  check("TC4 /sculpt raise 2 0.5 raises the ground under me by most of half a metre (all of it at a sample) and my body stands on it; the chat says what it did", rose && said, { y0, now: await evalJson(stand), said });
   // undo walks back through all five acts (the /sculpt, the feature's delete and its set, the lower, the raise) until the
   // ground is level and its tiles are gone
   for (let i = 0; i < 5; i++) await send("undo", {});

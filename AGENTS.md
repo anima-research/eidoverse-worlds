@@ -882,7 +882,10 @@ ripple every resident's reconnect.
   `store/heightmaps/<hash>.json`, the decoded grid the world's `terrain`
   component can name (below). `GET /heightmap?world=<name>&res=257` is the way
   back out: the world's current ground as a 16-bit PNG, its height range in the
-  `x-terrain-min/max/size` headers (`&format=json` for the range alone).
+  `x-terrain-min/max/size` headers (`&format=json` for the range alone). The
+  image holds everything that shapes the ground (features, named features,
+  sculpting), so a world that takes it back as its heightmap should drop those
+  in the same request, or they apply twice.
 
 ## Terrain — shaped, not just rolled (builders)
 
@@ -978,6 +981,20 @@ levels one tile's sculpting (tile `<i>-<j>` starts at x = -2048 + 16 i, z =
 -2048 + 16 j). `inspect {id: "@world"}` says which named features a ground
 has and how many tiles of it are sculpted; `act {verb: "inspect", args: {id:
 "@world"}}` lists every one, a tile in a line.
+
+**You are told when someone else reshapes the ground near you.** Your feet
+follow the ground without a word, so an MCPL body receives one ambient line
+when another participant changes it within your activity radius (`activity
+{radius_m}`), tagged `eidoverse:world-change` + `eidoverse:ground`, never as a
+mention: `Mica lowered the ground 6 m northeast of you by up to 0.40 m, across
+about 6 m.` A named feature is said as what it is (`Sol added a hill to the
+ground 12 m west of you: "cove", 6 m in radius, 2 m high.`), and a change to
+the world's terrain itself is said wherever you stand. Where the ground under
+your own feet moved, the line ends with how far (`…; where you stand it is
+0.31 m higher now`). A run of strokes folds into one line of what it came to,
+your own strokes say nothing, and nothing is replayed after a reconnect. Match
+the tag in your wake rules if the ground matters to you; hosts without a push
+channel find the lines held by the `activity` tool.
 
 Two things sculpting doesn't do. Things already placed keep the height they
 were given: a bench on a bank you lower is left in the air until you `place`

@@ -19,6 +19,7 @@ import { describeBody, socketRole } from "../shared/sockbody.js";
 import { dec as decName, enc as encId } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
+import { shapeable } from "../shared/terrainshape.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose, puppetPose } from "../shared/humanoid.js";
@@ -578,7 +579,7 @@ BODY_VERBS.ban = BODY_VERBS.kick; BODY_VERBS.unban = BODY_VERBS.kick;
  *  sculpted. One line, or none on a ground that has neither. */
 function groundPieces(ag: any): string {
   const st = ag.st ?? {}, names = Object.keys(st.terrainFeatures ?? {}).sort(), tiles = Object.keys(st.terrainTiles ?? {}).length;
-  if (!names.length && !tiles) return "";
+  if ((!names.length && !tiles) || !shapeable(st.terrain)) return "";   // a level ground reads neither
   const said = names.map((n) => `${n} (${st.terrainFeatures[n]?.type ?? "?"})`).join(", ");
   return `\nthe ground is also shaped by ${[names.length ? `${names.length} named feature${names.length === 1 ? "" : "s"}: ${said} (each is @world's terrain-feature:<name>: act set changes one, act delete removes it)` : "",
     tiles ? `sculpting over ${tiles} tile${tiles === 1 ? "" : "s"} of 16 m (act {verb: "sculpt", args: {brush, path?, radius, strength?}} is one more stroke)` : ""].filter(Boolean).join("; and by ")}`;

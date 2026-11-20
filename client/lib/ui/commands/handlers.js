@@ -307,7 +307,7 @@ const BRUSHES = ['raise', 'lower', 'flatten', 'smooth'];
 register('sculpt', async (arg) => {
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean), brush = parts[0];
   const nums = parts.slice(1).map(Number).filter(Number.isFinite);
-  if (!BRUSHES.includes(brush)) return logChat('*', `/sculpt ${BRUSHES.join('|')} [radius] [strength] — for one, /sculpt lower 3 0.4 takes 0.4 m off the ground within 3 m of you`);
+  if (!BRUSHES.includes(brush)) return logChat('*', `/sculpt ${BRUSHES.join('|')} [radius] [strength] — for one, /sculpt lower 3 0.4 takes 0.4 m off the ground where you stand, fading to nothing 3 m away`);
   const adds = brush === 'raise' || brush === 'lower';
   const r = await send({ verb: 'sculpt', args: { brush, path: [[+myState.pos.x.toFixed(2), +myState.pos.z.toFixed(2)]], radius: nums[0] ?? 3, ...(nums[1] !== undefined ? { strength: nums[1] } : adds ? { strength: 0.25 } : {}) } }, { what: `sculpting (${brush})` });
   if (r?.ok && r.sculpted) logChat('*', `${brush}: the ground here went from ${r.sculpted.was.toFixed(2)} m to ${r.sculpted.now.toFixed(2)} m (Ctrl+Z takes it back)`);

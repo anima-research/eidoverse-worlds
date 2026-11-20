@@ -28,6 +28,8 @@ export const DEFAULT_ENGINE = eidosim.SIM_ID;
 export const TICK_MS = eidosim.TICK_MS;
 // a sim state advanced by its engine (readers that hold a clone: the replica, the client's flights)
 export const advanceSim = (sim, tick) => eidosim.advanceSim(sim, tick);
+/** A copy of a sim to step on its own, standing on the ground its source stands on (shared/sim.js simCopy). */
+export const simCopy = (sim) => eidosim.simCopy(sim);
 export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
 export const carried = (spec) => !!spec && typeof spec.engine === "string" && Object.hasOwn(ENGINES, spec.engine);   // a version this server reproduces
 /** "eidosim@1.0.0" → "eidosim" */
@@ -382,7 +384,7 @@ export const snapshotOf = (sim) => JSON.parse(JSON.stringify(eidosim.simSnapshot
 // Predict when everything now in flight will be at rest (a carrier can look ahead; a barrier waits for it).
 export function restEta(sf) {
   if (!sf.sim) return null;
-  const s = JSON.parse(JSON.stringify(sf.sim)); const live = () => Object.values(s.bodies).filter((b) => !b.resting).length;
+  const s = eidosim.simCopy(sf.sim); const live = () => Object.values(s.bodies).filter((b) => !b.resting).length;
   if (!live()) return 0;
   const t0 = s.tick; let k = t0;
   while (live() && k < t0 + 20000) { k++; eidosim.advanceSim(s, k); }

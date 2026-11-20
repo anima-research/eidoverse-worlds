@@ -7,6 +7,7 @@
 // LWV holds the same against git (pinhistory.ts).
 //   bun test/protocol/laws-check.ts [--write]
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { makeHeightField, terrainParams } from "../../shared/terrainmath.js";
 import { MAX_FEATURES, MAX_NAMED, SCULPT, withShaping } from "../../shared/terrainshape.js";
 import { normalizePolicy, segmentAt } from "../../shared/forecast.js";
@@ -17,6 +18,8 @@ import { suite } from "../gate/suite.ts";
 // @world: named features (terrain-feature:<name>) and the sculpted layer (terrain-tile:<i>-<j>). Every ground@1 row pins
 // the height it pinned (they are the first rows, unchanged); the rows after them carry `named` and `tiles`.
 export const LAWS = { ground: { version: "ground@2", data: "terrain" }, sky: { version: "forecast@1", data: "sky" } } as const;
+// sha256 of ground@1's rows as JSON (args and heights), taken from the laws.json that carried that version: LW5
+const GROUND1 = "bc95d2a31c30a142d34eb2c8268bdd75aae77cd1e27126a863fde56fd7e92cc1";
 const FILE = new URL("../../spec/conformance/laws.json", import.meta.url);
 const bits = (x: number) => { const b = new DataView(new ArrayBuffer(8)); b.setFloat64(0, x); return b.getBigUint64(0).toString(16).padStart(16, "0"); };
 const TERRAINS = [{}, { seed: 7, amplitude: 4 }, { seed: 123456, amplitude: 1.5, scale: 40 }, { seed: 3, features: [{ type: "hill", x: 10, z: 10, radius: 20, height: 6 }, { type: "ridge", x1: -50, z1: 0, x2: 50, z2: 5, radius: 8, height: -3 }] }, { seed: 9, features: [{ type: "flatten", x: 64, z: -64, radius: 15, height: 2, edge: 4 }] }];
@@ -60,7 +63,10 @@ if (want) {
   // a shaped row must be moved by what shapes it, or it pins nothing: each differs from its own args' bare ground at some point
   const moved = SHAPED.map((r: any, i) => { const bare = makeHeightField(terrainParams({ kind: "noise", ...r.args })) as any; return now.terrain[TERRAINS.length + i].heights.filter(([x, z, b]: any) => b !== bits(bare(x, z))).length; });
   check("LW4 every row shaped from beside the bag stands apart from its own unshaped ground at the pinned points (named features and sculpted tiles are read)", moved.every((n) => n >= 2), moved);
-  check("LW5 every ground@1 row is still pinned as it was: the first rows, args alone", want.terrain.slice(0, TERRAINS.length).every((t: any, i: number) => !t.named && !t.tiles && JSON.stringify(t.args) === JSON.stringify(TERRAINS[i])));
+  // the ground@1 rows are held by what they were when ground@1 was the version (their args and every height, as that file
+  // pinned them), so a height changed under ground@2 can't pass for the old law
+  const g1 = createHash("sha256").update(JSON.stringify(want.terrain.slice(0, TERRAINS.length))).digest("hex");
+  check("LW5 every ground@1 row is still pinned as it was, args and heights (its rows' digest, taken at ground@1): the first rows", g1 === GROUND1 && want.terrain.slice(0, TERRAINS.length).every((t: any) => !t.named && !t.tiles), g1);
 }
 check("LWC the rows are labelled (columns: each row's arity is its header's) and the contract says how terrain args are normalised before the height law (defaults, clamps), as the code states them now",
   JSON.stringify(want?.columns) === JSON.stringify(COLUMNS) && want?.contract === CONTRACT && now.terrain.every((t) => t.heights.every((h) => h.length === COLUMNS["terrain[].heights[]"].length)) && now.sky.every((g) => (g.segments as any[]).every((r) => r.length === COLUMNS["sky[].segments[]"].length)),

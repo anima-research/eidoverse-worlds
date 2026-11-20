@@ -274,7 +274,7 @@ console.log("\nnamed features and sculpted tiles ride beside the bag");
     && shapeParams(withShaping(bag, null, { "128-129": { mm } }))!.sculpt !== shapeParams(sc)!.sculpt);
   check("params that crossed a wire (a sim's snapshot) find the layer by its name and stand on the same ground", makeHeightField(JSON.parse(JSON.stringify(terrainParams(sc))))(0.25, 0) === h(0.25, 0) && shapeReady(JSON.parse(JSON.stringify(shapeParams(sc)))));
   check("a layer this machine doesn't hold is not ready, as a heightmap's missing grid isn't", shapeReady({ features: [], heightmap: null, sculpt: "0".repeat(32) }) === false && layerFor("0".repeat(32)) === null);
-  { const kept = shapeParams(sc)!.sculpt!; for (let i = 0; i < 70; i++) { const t = level(); t[0] = i + 1; shapeParams(withShaping(bag, null, { "1-1": { mm: t } })); }
+  { const kept = shapeParams(sc)!.sculpt!; for (let i = 0; i < 300; i++) { const t = level(); t[0] = i + 1; shapeParams(withShaping(bag, null, { "1-1": { mm: t } })); }
     check("…and reading the ground's args again names a layer that had gone", layerFor(kept) === null && shapeParams(sc)!.sculpt === kept && layerFor(kept) !== null); }
 
   // from a fold's record of @world
@@ -282,6 +282,13 @@ console.log("\nnamed features and sculpted tiles ride beside the bag");
   const g1 = groundArgs(wc), g2 = groundArgs({ ...wc, sky: { hours: 4 } }), g3 = groundArgs({ ...wc, "terrain-feature:cove": { ...hill } });
   check("groundArgs gathers @world's pieces: the same pieces give the same args (a cache keyed on them holds), a changed piece new ones", H(g1)(10, 0) === 2 && H(g1)(0, 0) === 1 && g1 === g2 && g3 !== g1);
   check("…and a world whose ground is level reads its terrain as it is, pieces or not", groundArgs({ ...wc, terrain: { kind: "flat", height: 1 } }).kind === "flat" && shapingOf(groundArgs({ ...wc, terrain: { kind: "flat", height: 1 } })) === null && groundArgs({ sky: {} }) === null);
+  { resetExportBudget(); const base = { kind: "noise", seed: 3, size: 40, amplitude: 1 }, raised = level(); raised.fill(5000);
+    const plain = serveHeightmapExport(base, 33, "clay", "10.0.0.1") as any, withHill = withShaping(base, { m: { type: "hill", x: 0, z: 0, radius: 15, height: 9 } }, null), withTile = withShaping(base, null, { "128-128": { mm: raised } });
+    const cachedBefore = [exportIsCached(base, 33, "clay"), exportIsCached(withHill, 33, "clay"), exportIsCached(withTile, 33, "clay")];
+    const a = serveHeightmapExport(withHill, 33, "clay", "10.0.0.1") as any, b = serveHeightmapExport(withTile, 33, "clay", "10.0.0.1") as any;
+    check("the heightmap export is cached by the whole ground: a named feature or a stroke on the same bag is a new export, never the image from before it",
+      plain.ok && JSON.stringify(cachedBefore) === "[true,false,false]" && a.ok && !a.cached && b.ok && !b.cached && a.meta.max > plain.meta.max + 5 && b.meta.max > plain.meta.max + 3 && exportIsCached(withHill, 33, "clay"),
+      JSON.stringify({ cachedBefore, plain: plain.meta, a: a.meta, b: b.meta })); }
   check("a reply says a tile in a line, never its samples", JSON.stringify(tileSaid("terrain-tile:128-128", { mm })) === JSON.stringify({ samples: 1024, min: -250, max: 1000 }) && tileSaid("terrain", bag) === bag);
 
   // the brush (shared/protocol/sculpt.js): worked out once, on whole millimetres

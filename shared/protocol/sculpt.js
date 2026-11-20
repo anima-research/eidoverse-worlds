@@ -19,19 +19,28 @@ export const MAX_POINTS = 256;     // in a path
 export const MAX_STRENGTH = 100;   // metres, a raise or a lower
 // samples one stroke may weigh: a stroke is priced by the ground it covers before any of it is worked out
 const VISITS = 1_000_000;
+/** How many times a stroke reads the ground: nothing for a raise or a lower (they add to the layer), once a sample for a
+ *  flatten, ten for a smooth. `visits`: the samples its path covers (strokeVisits). The authority prices a stroke by this
+ *  times what one read of this ground costs, before it works any of it out. */
+export const strokeReads = (brush, visits) => (ADDITIVE.has(brush) ? 0 : brush === "smooth" ? 10 * visits : visits);
 
 const { spacing: SP, tile: T, span: SPAN, origin: O, limit: LIM } = SCULPT, N = T * SPAN;
 // round-topped, as a hill feature is: 1 on the path, 0 at the radius, flat at both
 const bell = (d2, r) => { const t2 = d2 / (r * r); if (t2 >= 1) return 0; const k = 1 - t2; return k * k; };
 
+const segsOf = (path) => (path.length === 1 ? [[path[0], path[0]]] : path.slice(1).map((p, i) => [path[i], p]));
+const spanOf = (radius) => (a, b) => [Math.max(0, Math.ceil((Math.min(a, b) - radius - O) / SP)), Math.min(N - 1, Math.floor((Math.max(a, b) + radius - O) / SP))];
+/** The samples a stroke's path covers, counted from its segments' boxes alone (nothing is weighed): what it will cost. */
+export function strokeVisits(path, radius) {
+  const span = spanOf(radius); let visits = 0;
+  for (const [a, b] of segsOf(path)) { const [x0, x1] = span(a[0], b[0]), [z0, z1] = span(a[1], b[1]); if (x1 >= x0 && z1 >= z0) visits += (x1 - x0 + 1) * (z1 - z0 + 1); }
+  return visits;
+}
 /** Every sample within `radius` of the path, with its weight: Map(sample number -> 0..1], or null when the stroke
  *  covers more ground than one stroke may. A sample's weight is by its distance to the nearest part of the path. */
 function footprint(path, radius) {
-  const segs = path.length === 1 ? [[path[0], path[0]]] : path.slice(1).map((p, i) => [path[i], p]);
-  const span = (a, b) => [Math.max(0, Math.ceil((Math.min(a, b) - radius - O) / SP)), Math.min(N - 1, Math.floor((Math.max(a, b) + radius - O) / SP))];
-  let visits = 0;
-  for (const [a, b] of segs) { const [x0, x1] = span(a[0], b[0]), [z0, z1] = span(a[1], b[1]); if (x1 >= x0 && z1 >= z0) visits += (x1 - x0 + 1) * (z1 - z0 + 1); }
-  if (visits > VISITS) return null;
+  const segs = segsOf(path), span = spanOf(radius);
+  if (strokeVisits(path, radius) > VISITS) return null;
   const out = new Map();
   for (const [a, b] of segs) {
     const [x0, x1] = span(a[0], b[0]), [z0, z1] = span(a[1], b[1]);
@@ -48,8 +57,8 @@ function footprint(path, radius) {
 
 /** One stroke. `tiles`: Map(tile key -> mm) at head (a tile that isn't there is level). `heightAt`: the ground at head,
  *  sculpting included (flatten and smooth read it). Returns {writes: Map(tile key -> mm | null), clamped}: every tile the
- *  stroke changes, whole, null where it leaves the tile level; clamped when a sample met the layer's limit. Or
- *  {tooBig: true}. */
+ *  stroke changes, whole, null where it leaves the tile level; clamped when a sample met the layer's limit; reached, the
+ *  samples the brush touched (a stroke may reach ground and change none of it). Or {tooBig: true}. */
 export function applyStroke(tiles, { brush, path, radius, strength, height }, heightAt) {
   const fp = footprint(path, radius);
   if (!fp) return { tooBig: true };
@@ -76,5 +85,5 @@ export function applyStroke(tiles, { brush, path, radius, strength, height }, he
     mm[(gz % T) * T + (gx % T)] = v;
   }
   for (const [key, mm] of writes) if (mm.every((n) => n === 0)) writes.set(key, null);
-  return { writes, clamped };
+  return { writes, clamped, reached: fp.size };
 }

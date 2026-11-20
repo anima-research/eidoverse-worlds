@@ -176,16 +176,26 @@ function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]);
 // features and sculpted tiles (terrainshape's groundArgs), through shared/terrainmath.js (terrainParams → makeHeightField,
 // the same law as the sim, client and agent) and its water (terrainshape's waterParams). No terrain component: y 0, and
 // @world.water's level if it has one. Built once per ground (groundArgs gives the same args until a piece of it changes;
-// values are replaced, never mutated). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
+// values are replaced, never mutated), and found once per STATE: gathering the pieces reads every key of @world, and a
+// request reads the ground once per thing it weighs (a state is replaced by the next, never changed in place, but for a
+// batch's working copy: VOLATILE, as the index above treats it). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
 // fallback, it is never cached, and any read of its height refuses with words; readers that only advise (warnings,
 // the settle's rest-attach) ask groundReady first and skip.
-const GROUND = new WeakMap();
+const GROUND = new WeakMap();      // the ground's args → the ground
+const GROUND_AT = new WeakMap();   // a state → its ground
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
 // the water level is @world.water's (an older terrain.water is not read: the maintenance command moves it),
 // so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
+  const vol = VOLATILE.has(st.entities);
+  if (!vol) { const g = GROUND_AT.get(st); if (g) return g; }
+  const g = groundNow(st);
+  if (!vol && g.ready) GROUND_AT.set(st, g);   // a ground still loading is asked again: its grid may land under the same state
+  return g;
+}
+function groundNow(st) {
   const wc = st.entities["@world"]?.c; const t = groundArgs(wc); const w = worldWater(wc);
   const level = waterParams({ water: w })?.level ?? null;
   if (!t || typeof t !== "object") return level === null ? FLAT : { ...FLAT, level };

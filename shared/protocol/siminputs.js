@@ -7,8 +7,10 @@ export const SIM_INPUTS = {
   // a heightmap's grid: the authority reads its disk, a client fetches store/heightmaps/<hash>.json
   heightmap: {
     module: "shared/terrainshape.js",
-    // read through the ground's args, which name the sculpted layer here as they go: what can still be missing is the grid
-    missing: (st) => { const t = groundArgs(st?.entities?.["@world"]?.c); return t && typeof t === "object" && t.heightmap && !shapeReady(shapeParams(t)) ? [t.heightmap.grid] : []; },
+    // read through the ground's args whatever the terrain is: shapeParams names the sculpted layer on this machine as it
+    // goes (the tiles are in the log, so the state holds them), and what can still be missing is the grid
+    missing: (st) => { const t = groundArgs(st?.entities?.["@world"]?.c); const shape = t && typeof t === "object" ? shapeParams(t) : null;
+      return shape?.heightmap && !shapeReady(shape) ? [shape.heightmap.grid] : []; },
     request: (ref) => requestGrid(ref),
   },
 };

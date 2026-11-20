@@ -14,7 +14,7 @@ import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './
 import { prepareObject } from './render/materials.js';
 import { beginWork } from './render/loadwork.js';
 import { reindexCollider } from './colliders.js';
-import { setTerrain, setGrass, clearGrass, heightAt, setFlatGround } from './terrain.js';
+import { setTerrain, setGrass, clearGrass, hasGrass, heightAt, setFlatGround } from './terrain.js';
 import { flatHeightOf } from '../../shared/terrainmath.js';
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, gridRetryIn, shapeReady, shapingOf, tileIndex, SCULPT } from '../../shared/terrainshape.js';
 import { materialLayerSpecs } from '../../shared/terrainlayers.js';
@@ -130,6 +130,10 @@ let lastTerrainArgs = null;
 let lastShaping = '';    // the named features and the sculpted layer the ground was last asked to carry (shapingKey)
 let lastSegs = 0;        // the mesh resolution it was last built at, when this client chose one (segmentsFor)
 let built = null;        // the terrain standing: makeTerrain's {mesh, heightAt}, with base (its unshaped law) and shaping
+let builtFor = null;     // …and the ground it was built for (`full`: its bag and resolution)
+// The ground asked for last: {key (its bag), full (bag and resolution), args}. A queued build, a reshape and a waiting
+// heightmap's retry read it WHEN THEY RUN, so a feature or a stroke that lands while one of them waits is built in, not lost.
+let wanted = null;
 let stageFloor = true;   // no terrain built: the stage floor stands (with the world's water, if any)
 let lastGrassArgs = null;
 
@@ -152,35 +156,40 @@ export function applyTerrainState(args) {
   const key = args ? JSON.stringify(args) : null;
   if (pendingTerrain && JSON.stringify(pendingTerrain.args) === key) pendingTerrain = null;   // our edit, echoed (a flat one too)
   if (!args || args.stageFloor === true || flat !== null) {
-    if (lastTerrainArgs !== key) { lastTerrainArgs = key; lastShaping = ''; lastSegs = 0; if (!stageFloor) { stageFloor = true; setTerrain(null); built = null; } setFlatGround(flat ?? 0);
+    wanted = null;
+    if (lastTerrainArgs !== key) { lastTerrainArgs = key; lastShaping = ''; lastSegs = 0; if (!stageFloor) { stageFloor = true; setTerrain(null); built = null; builtFor = null; } setFlatGround(flat ?? 0);
       try { applyWater(args, heightAt); } catch (e) { report('water', e); } }
     return;
   }
   stageFloor = false; setFlatGround(0);
-  const segs = segmentsFor(args), shaping = shapingKey(args);
+  const segs = segmentsFor(args), shaping = shapingKey(args), full = `${key}#${segs}`;
+  wanted = { key, full, args };
   if (lastTerrainArgs === key && lastSegs === segs) {
     // the same ground, shaped differently (a named feature, a brush stroke): the mesh standing is re-heighted, not rebuilt
-    if (lastShaping !== shaping) { lastShaping = shaping; queueReshape(args); }
+    if (lastShaping !== shaping) { lastShaping = shaping; queueReshape(); }
     return;
   }
   lastTerrainArgs = key; lastShaping = shaping; lastSegs = segs;
   enqueueWorldBuild('terrain', async () => {
     await loadEidoModule('terrain.js');
+    // this ground as it is wanted now (its shaping may have changed while the build waited its turn, or waits on its grid)
+    const latest = () => (wanted?.full === full ? wanted.args : args);
     // a heightmap's grid is fetched before the build, so the ground arrives shaped; no grid, no build: the ground
     // already standing stays and the build runs once the grid lands
-    const shape = shapeParams(args);
-    if (shape?.heightmap && !(await requestGrid(shape.heightmap.grid))) {
+    const hm = shapeParams(args)?.heightmap;
+    if (hm && !(await requestGrid(hm.grid))) {
       if (lastTerrainArgs !== key) return;
-      report(`heightmap ${shape.heightmap.grid} has not loaded — keeping the ground already here, retrying`, new Error('grid unavailable'));
-      retryTerrainWhenGridLands(args, key, shape.heightmap.grid);
+      report(`heightmap ${hm.grid} has not loaded — keeping the ground already here, retrying`, new Error('grid unavailable'));
+      retryTerrainWhenGridLands(args, key, hm.grid);
       return;
     }
     if (lastTerrainArgs !== key) return;   // a newer terrain arrived while the grid was in flight
-    const layers = materialLayerSpecs(args.layers).map((l) => ({
+    const a = latest();
+    const layers = materialLayerSpecs(a.layers).map((l) => ({
       map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
     }));
-    const t = globalThis.makeTerrain({ ...args, layers, ...(segs ? { segments: segs } : {}) });
-    if (t && shape) reshapeTerrain(t, args);
+    const t = globalThis.makeTerrain({ ...a, layers, ...(segs ? { segments: segs } : {}) });
+    if (t && shapeParams(a)) reshapeTerrain(t, a);
     // the layer textures ride the colorNode, unreachable from material properties: carry them so terrain.js can free them
     if (t) t.layerTextures = layers.map((l) => l.map);
     // dress the ground (wetness, cloud shade, receiveShadow) before its compile
@@ -190,11 +199,15 @@ export function applyTerrainState(args) {
     if (t?.mesh) {
       await warm('compile terrain', () => renderer.compileAsync(t.mesh, camera, scene).catch(() => {}), { p: P_GATE });
     }
-    setTerrain(t); built = t ?? null;
+    // the same bag as the ground standing, drawn at another resolution (a first stroke, a last tile levelled): the ground
+    // didn't move, so nothing on it is re-seated
+    const redrawn = builtFor !== null && builtFor.startsWith(`${key}#`);
+    setTerrain(t); built = t ?? null; builtFor = t ? full : null;
     // the water reads the ground it fills (per-vertex depth), so it is built on this terrain
-    try { applyWater(args, heightAt); } catch (e) { report('water', e); }
+    try { applyWater(a, heightAt); } catch (e) { report('water', e); }
+    if (hasGrass()) regrowGrassSoon();   // grass already standing was planted on the ground before this one
     // re-seat only ground-level entities; anything with a meaningful y keeps its logged height
-    for (const [id, obj] of entities) {
+    if (!redrawn) for (const [id, obj] of entities) {
       if (obj && !obj.userData.mountedTo && Math.abs(obj.position.y) < 0.02) {   // a parented thing's y is in its parent's frame
         obj.position.y = heightAt(obj.position.x, obj.position.z);
         if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
@@ -214,7 +227,7 @@ function retryTerrainWhenGridLands(args, key, ref) {
     if (!(await requestGrid(ref))) { if (lastTerrainArgs === key) retryTerrainWhenGridLands(args, key, ref); return; }
     if (lastTerrainArgs !== key) return;
     lastTerrainArgs = null;   // let the same bag through the dedupe, this once
-    applyTerrainState(args);
+    applyTerrainState(wanted?.key === key ? wanted.args : args);   // with whatever has shaped it while its grid was on the way
   }, Math.max(250, gridRetryIn(ref)));
 }
 /** Whether the world's terrain is waiting on its heightmap's grid (the ground shown is the last one built). */
@@ -264,25 +277,32 @@ function changedBox(a, b) {
     box = [Math.min(box[0], x0), Math.min(box[1], z0), Math.max(box[2], x0 + n + SCULPT.spacing), Math.max(box[3], z0 + n + SCULPT.spacing)]; }
   return box;
 }
-// strokes can land faster than the ground is re-heighted: the newest args win, one pass each. On the build chain, so a
-// reshape asked for while the mesh is still being built waits for it.
-let reshapeArgs = null;
-function queueReshape(args) {
-  const waiting = reshapeArgs !== null; reshapeArgs = args; if (waiting) return;
+// Strokes can land faster than the ground is re-heighted: one pass is queued, and it reads the ground wanted when it
+// runs. On the build chain, so a reshape asked for while a mesh is being built waits for it.
+let reshapeQueued = false;
+function queueReshape() {
+  if (reshapeQueued) return; reshapeQueued = true;
   worldBuild = worldBuild.then(() => {
-    const a = reshapeArgs; reshapeArgs = null;
-    if (!built?.mesh || !a) return;
-    reshapeTerrain(built, a, changedBox(built.shaping, shapingOf(a)));
+    reshapeQueued = false; const w = wanted;
+    // the mesh standing may be another ground's (this one's build is queued behind us, or waits on its heightmap): that
+    // build reads the newest args itself
+    if (!built?.mesh || !w || builtFor !== w.full) return;
+    reshapeTerrain(built, w.args, changedBox(built.shaping, shapingOf(w.args)));
     bus.emit('ground-changed');
-    settleGround(a);
+    settleGround();
   }).catch((e) => report('world build (reshape)', e));
 }
 // what stands on the ground follows it once the shaping pauses: the water (its depth is the ground's), then the grass,
 // which is planted at the ground's height and takes seconds to grow again
 let waterTimer = null, grassTimer = null;
-function settleGround(args) {
-  clearTimeout(waterTimer); clearTimeout(grassTimer);
-  waterTimer = setTimeout(() => { try { applyWater(args, heightAt); } catch (e) { report('water', e); } }, 300);
+function settleGround() {
+  clearTimeout(waterTimer);
+  waterTimer = setTimeout(() => { const w = wanted; if (!w || builtFor !== w.full) return;   // another ground is on its way: its own build fills its water
+    try { applyWater(w.args, heightAt); } catch (e) { report('water', e); } }, 300);
+  regrowGrassSoon();
+}
+function regrowGrassSoon() {
+  clearTimeout(grassTimer);
   grassTimer = setTimeout(() => { const g = lastGrassArgs ? JSON.parse(lastGrassArgs) : null; if (!g || g.clear) return;   // nothing growing
     lastGrassArgs = null; applyGrassState(g); }, 2500);   // (the dedupe key is cleared so the regrow counts as new work)
 }

@@ -13,8 +13,8 @@ import { RESERVED, admits, may, rankOf, roleOf } from "./rights.js";
 import { reactionCap } from "./use.js";
 import { idOut } from "../view.js";
 import * as TR from "../sculpt.js";
-import { SCULPT, shapeable } from "../../terrainshape.js";
-import { groundOf } from "./spatial.js";
+import { SCULPT, shapeable, shapeParams, groundArgs } from "../../terrainshape.js";
+import { groundOf, spend } from "./spatial.js";
 // the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 const holdsRefs = (...a) => UP.holdsRefs(...a);
@@ -305,10 +305,17 @@ function buildSculpt(ctx, a) {
   if (TR.ADDITIVE.has(a.brush) ? !(a.strength > 0 && a.strength <= TR.MAX_STRENGTH) : !(a.strength === undefined || (a.strength > 0 && a.strength <= 1)))
     refuse(a.strength === undefined ? "missing-arg" : "bounds", TR.ADDITIVE.has(a.brush) ? `a ${a.brush} needs strength: how many metres at the path, more than 0 and at most ${TR.MAX_STRENGTH}` : `a ${a.brush}'s strength is how far to go, more than 0 and at most 1 (absent: all the way)`, "e.g. strength: 0.4");
   if (a.height !== undefined && (a.brush !== "flatten" || Math.abs(a.height) > 500)) refuse(a.brush !== "flatten" ? "doesnt-apply" : "bounds", a.brush !== "flatten" ? `height is a flatten's (the height it brings the ground to); a ${a.brush} takes strength` : `height is ${a.height}; it must be within ±500 (m)`, "");
+  // Rights and the work's price come BEFORE the work: a stroke is the one write whose building is costly (admit would
+  // refuse the tiles it wrote anyway, after the brush had run). What a stroke costs is the samples its path covers, and for
+  // a flatten or a smooth each of those reads the ground, feature by feature (a smooth ten times a sample).
+  if (!ctx.cap && !may(ctx.st, ctx.actor, "build")) refuse("rights", `sculpting the ground needs builder; you are ${roleOf(ctx.st, ctx.actor)}`, "ask a moderator or an owner for build; help shows your role and permissions", { needs: "build" });
   const g = groundOf(ctx.st);
-  const { writes, clamped, tooBig } = TR.applyStroke(tilesAt(ctx.st), a, (x, z) => g.height(x, z));
+  { const visits = TR.strokeVisits(a.path, a.radius), reads = TR.strokeReads(a.brush, visits), per = 2 + (shapeParams(groundArgs(ctx.st.entities["@world"]?.c))?.features.length ?? 0);
+    spend((visits + reads * per) / 64, `a ${a.brush} over that much ground`, "a shorter path or a smaller radius (a smooth reads the ground ten times a sample; every feature of the ground makes each read dearer)"); }
+  const { writes, clamped, tooBig, reached } = TR.applyStroke(tilesAt(ctx.st), a, (x, z) => g.height(x, z));
   if (tooBig) refuse("too-big", "that stroke covers more ground than one stroke may", "a shorter path or a smaller radius; a change that wide is the terrain's own (a terrain-feature, or its heightmap)");
-  if (!writes.size) refuse("nothing", TR.ADDITIVE.has(a.brush) ? "the brush reaches no part of the ground there" : `the ground there is already as a ${a.brush} would leave it`, "the ground's sculpted layer runs ±2048 m from the world's centre");
+  if (!writes.size) refuse("nothing", !reached ? "the brush reaches no part of the ground there" : TR.ADDITIVE.has(a.brush) ? `the ${a.brush} changes nothing there: every sample it reaches is at the sculpted layer's limit already, or the strength is under a millimetre` : `the ground there is already as a ${a.brush} would leave it`,
+    !reached ? "the ground's sculpted layer runs ±2048 m from the world's centre" : "");
   const bytes = [...writes.values()].reduce((n, mm) => n + (mm ? jcs(mm).length + 60 : 60), 0);
   if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles of the ground (about ${bytes.toLocaleString("en")} bytes); one change is at most 1 MiB`, "a shorter path or a smaller radius; a change that wide is the terrain's own (a terrain-feature, or its heightmap)");
   ctx.actExtra = { tiles: writes.size, ...(clamped ? { clamped: true } : {}) }; ctx.refs.add("@world");
@@ -325,14 +332,18 @@ function buildSculpt(ctx, a) {
 // tile written or levelled by hand; a stroke that met the limit), or where the result would pass the limit: null, and the
 // undo falls back to putting the tiles back as they were (refused where someone else changed them since).
 function sculptInverse(w, ctx, target, res, X) {
-  const ops = opsOf(res), mine = new Set(ops.map((o) => o.comp)), E = w.entries;
-  for (const i of X.changes) { if (i <= res.seq || !opsQuiet(E[i]).some((o) => o.id === "@world" && mine.has(o.comp))) continue;
+  const ops = opsOf(res), mine = new Set(ops.map((o) => o.comp)), E = w.entries, hist = X.touch.get("@world") ?? [];
+  for (let n = firstAfter(hist, res.seq); n < hist.length; n++) { const i = hist[n]; if (!opsQuiet(E[i]).some((o) => o.id === "@world" && mine.has(o.comp))) continue;
     const c = E[E[i].cause], b = isE(c) && c.kind === "request" ? readback(w, E[i].cause) : null;   // READBACK: a purged later request is unknown: not exact
     if (!(b && !b.clamped && ((c.verb === "sculpt" && TR.ADDITIVE.has(b.args?.brush)) || (c.verb === "undo" && b.inverse === true)))) return null; }
-  const was = entityBefore(w, "@world", target.seq, X)?.c ?? {}, now = ctx.st.entities["@world"]?.c ?? {}, out = [];
+  // the tiles before the stroke, as it left them and now, each read as the log lets them be read (entityBefore: a purged
+  // value is REDACTED there, never the bytes the entry still holds). A tile that isn't there is level; one that can't be
+  // read is unknown, and nothing is undone by an unknown amount
+  const was = entityBefore(w, "@world", target.seq, X)?.c ?? {}, left = entityBefore(w, "@world", res.seq + 1, X)?.c ?? {}, now = ctx.st.entities["@world"]?.c ?? {}, out = [];
+  const read = (c, k) => (c[k] === undefined ? LEVEL() : c[k] === REDACTED ? null : c[k]?.mm);
   for (const o of ops) { if (o.id !== "@world" || !o.comp?.startsWith(TILE) || (o.op !== "set" && o.op !== "delete")) return null;
-    const b = was[o.comp]?.mm ?? LEVEL(), a = o.op === "set" ? o.value?.mm : LEVEL(), h = now[o.comp]?.mm ?? LEVEL();
-    if (![b, a, h].every((m) => Array.isArray(m) && m.length === SCULPT.tile ** 2)) return null;   // a purged value, or a tile written by hand since in another shape
+    const b = read(was, o.comp), a = read(left, o.comp), h = read(now, o.comp);
+    if (![b, a, h].every((m) => Array.isArray(m) && m.length === SCULPT.tile ** 2)) return null;   // a purged value, or a tile written by hand in another shape
     const v = h.map((x, k) => x - (a[k] - b[k]));
     if (v.some((x) => x > SCULPT.limit || x < -SCULPT.limit)) return null;
     if (v.every((x, k) => x === h[k])) continue;

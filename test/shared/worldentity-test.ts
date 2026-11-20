@@ -230,8 +230,9 @@ console.log('\n3. the cards: their fields commit as door requests and read back 
   W.call('set', { id: WORLD_ID, component: 'roles:bob', value: { role: 'builder' } });
   const asBob = W.send(worldEditOps(st(), { 'sky.hours': 3 }, { now: now() }).ops[0], {}, 'bob');
   check('…and the door is the gate: a builder\'s sky request is refused (rights)', asBob.ok === false && asBob.refused?.code === 'rights', JSON.stringify(asBob));
-  const bobGround = W.send(worldEditOps(st(), { 'terrain.amplitude': '+=1' }, { now: now() }).ops[0], {}, 'bob');
-  check('…while a builder\'s terrain request is written', bobGround.ok === true, JSON.stringify(bobGround.refused ?? null));
+  const ampBefore = st().terrain.amplitude, bobOps = worldEditOps(st(), { 'terrain.amplitude': '+=1' }, { now: now() }).ops;
+  const bobGround = W.send(bobOps[0], {}, 'bob');
+  check('…while a builder\'s terrain request is written (one request, not the harness\'s no-op, and the relief moved)', bobOps.length === 1 && bobGround.ok === true && bobGround.noop !== true && st().terrain.amplitude === ampBefore + 1, JSON.stringify([bobOps.length, bobGround.refused ?? null, st().terrain.amplitude]));
   check('unknown rights disable nothing (the door decides, as for things)', worldSchema(st(), { now: now() }).groups.every((g: any) => g.fields.every((f: any) => !f.disabled || /clock is real/.test(f.hint ?? ''))));
   const txt = describeSchema(sc, { verbsHint: false });
   check('describeSchema reads it (what an agent\'s inspect prints)', /sky\.hours = /.test(txt) && /weather\.state = /.test(txt) && /terrain\.amplitude = /.test(txt) && /grass\.mow: action/.test(txt), txt.slice(0, 200));

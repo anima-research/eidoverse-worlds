@@ -121,8 +121,9 @@ export function withShaping(terrain, features, tiles) {
   const ord = (n) => num(features[n].order, 0);
   names.sort((a, b) => ord(a) - ord(b));   // a stable sort: equal orders keep their name order
   const named = names.slice(0, MAX_NAMED).map((n) => features[n]);
+  // (in key order, so two readers handed more tiles than a ground carries keep the same ones)
   const T = {}; let count = 0;
-  for (const k of Object.keys(tiles ?? {})) { if (count >= MAX_TILES) break; const mm = tileIndex(k) && tileOf(tiles[k]); if (mm) { T[k] = mm; count++; } }
+  for (const k of Object.keys(tiles ?? {}).sort()) { if (count >= MAX_TILES) break; const mm = tileIndex(k) && tileOf(tiles[k]); if (mm) { T[k] = mm; count++; } }
   if (!named.length && !count) return terrain;
   return { ...terrain, [SHAPING]: { named, tiles: count ? T : null } };
 }
@@ -136,7 +137,8 @@ export function groundArgs(wc) {
   const t = wc?.terrain;
   if (!shapeable(t)) return t ?? null;
   let features = null, tiles = null; const parts = [];
-  for (const k of Object.keys(wc)) {
+  for (const k in wc) {   // every key of @world (its roles and assets too): one cheap test turns most away
+    if (k.charCodeAt(7) !== 45 || k.charCodeAt(0) !== 116) continue;   // 'terrain-…'
     if (k.startsWith('terrain-feature:')) { (features ??= {})[k.slice(16)] = wc[k]; parts.push(k, wc[k]); }
     else if (k.startsWith('terrain-tile:')) { (tiles ??= {})[k.slice(13)] = wc[k]; parts.push(k, wc[k]); }
   }
@@ -153,10 +155,12 @@ export const shapingOf = (args) => args?.[SHAPING] ?? null;
 
 // ---- the sculpted layer --------------------------------------------------------
 // A layer is every tile a ground carries, held by a name made from what the tiles hold, so the same sculpting has the
-// same name on every machine. The last LAYER_CACHE are kept; a height function holds its own from the moment it finds
-// it. A name that isn't here (a sim's state adopted before its world's ground was read) is not ready, as a heightmap's
-// missing grid isn't (shapeReady): reading the ground's args names it again.
-const LAYER_CACHE = 64;
+// same name on every machine. The LAYER_CACHE named or read last are kept; a height function holds its own from the
+// moment it finds it, and the sim builds its height function the moment it is handed a ground (shared/sim.js), so a
+// layer in use is never looked up twice. A name that isn't here (a sim's state adopted before its world's ground was
+// read) is not ready, as a heightmap's missing grid isn't (shapeReady): reading the ground's args names it again, which
+// the replica does before it feeds a sim (protocol/siminputs.js).
+const LAYER_CACHE = 256;
 const layers = new Map();          // name -> Map(tile number -> mm)
 const tileNames = new WeakMap();   // mm -> the hash of its samples
 const layerNames = new WeakMap();  // a ground's tiles -> their layer's name
@@ -174,8 +178,8 @@ function layerRef(tiles) {
   while (layers.size > LAYER_CACHE) layers.delete(layers.keys().next().value);
   return ref;
 }
-/** A layer by its name, or null when this machine doesn't hold it. */
-export const layerFor = (ref) => layers.get(ref) ?? null;
+/** A layer by its name, or null when this machine doesn't hold it. (A layer read is a layer kept.) */
+export function layerFor(ref) { const L = layers.get(ref); if (!L) return null; layers.delete(ref); layers.set(ref, L); return L; }
 /** The layer's height at a point, metres: bilinear between the four samples round it. */
 function sculptSampler(L) {
   const { spacing, tile, span, origin } = SCULPT, N = tile * span;

@@ -54,6 +54,7 @@ export const EIDO = {
   catchup: "eidoverse:catchup",
   worldChange: "eidoverse:world-change",
   particles: "eidoverse:particles",
+  ground: "eidoverse:ground",
 } as const;
 
 /** §16.3 core closure, as the producer's own obligation. Hosts MUST expand these
@@ -201,6 +202,10 @@ const TAG_ONTOLOGY = {
     },
     [EIDO.particles]: {
       desc: "The world-change was an EMITTER: an entity started, retuned, or stopped emitting something visible (fire on a hearth, embers, smoke). Arrives alongside eidoverse:world-change — match the general tag to hear every visual change, this one to hear only emitters.",
+      facet: "lifecycle",
+    },
+    [EIDO.ground]: {
+      desc: "The world-change was the GROUND: someone else raised, lowered or reshaped the terrain near you (a brush stroke, a named feature, or the world's terrain itself), saying who, where from where you stand, by how much, and how far the ground under your own feet moved if it did. Arrives alongside eidoverse:world-change: match the general tag to hear every visible change, this one to hear only the ground.",
       facet: "lifecycle",
     },
     [EIDO.catchup]: {
