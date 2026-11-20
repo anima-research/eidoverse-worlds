@@ -16,7 +16,7 @@ type V = number | boolean | number[];
 const arr = (v: V) => (Array.isArray(v) ? v : [v as number]);
 const lift = (f: (...x: number[]) => number) => (...a: V[]) => { const n = Math.max(...a.map((v) => arr(v).length)); const out = Array.from({ length: n }, (_, i) => f(...a.map((v) => { const l = arr(v); return l.length === 1 ? l[0] : l[i]; }))); return a.every((v) => !Array.isArray(v)) ? out[0] : out; };
 const FN: Record<string, (...a: any[]) => V> = {
-  sin: lift(Math.sin), cos: lift(Math.cos), abs: lift(Math.abs), floor: lift(Math.floor), fract: lift((x) => x - Math.floor(x)), sqrt: lift(Math.sqrt),
+  sin: lift(Math.sin), cos: lift(Math.cos), abs: lift(Math.abs), sign: lift(Math.sign), floor: lift(Math.floor), fract: lift((x) => x - Math.floor(x)), sqrt: lift(Math.sqrt),
   min: lift(Math.min), max: lift(Math.max), pow: lift(Math.pow), mod: lift((x, y) => x - y * Math.floor(x / y)), step: lift((e, x) => (x < e ? 0 : 1)),
   clamp: lift((x, lo, hi) => Math.min(hi, Math.max(lo, x))), mix: lift((a, b, t) => a + (b - a) * t), saturate: lift((x) => Math.min(1, Math.max(0, x))),
   length: (v) => Math.hypot(...arr(v)), dot: (a, b) => arr(a).reduce((s: number, x: number, i: number) => s + x * arr(b)[i], 0),
@@ -101,6 +101,11 @@ console.log("\none program, read twice (position per vertex; everything else per
   check("P3 a program that never assigns position has no position output", !("position" in ok("color = vec3(1.0);").outputs));
   check("P4 position can't use what is only known per pixel, and the refusal says why", /per pixel/.test(shaderProblem("position += baseColor;") ?? "") && /per pixel/.test(shaderProblem("float d = dFdx(uv.x); position.y += d;") ?? ""));
   check("P5 …but colour may", shaderProblem("color = baseColor * fwidth(uv.x);") === null);
+  check("P5b a condition is a dependency too: position under an if, or after a break, that reads a per-pixel value is refused", /per pixel.*condition/.test(shaderProblem("if (baseColor.x > 0.5) position += normal;") ?? "")
+    && /per pixel/.test(shaderProblem("for (int i = 0; i < 4; i++) { if (baseColor.r > 0.5) break; position.y += 0.1; }") ?? "") && shaderProblem("if (uv.x > 0.5) position += normal;") === null);
+  check("P5c the refusal points at the line that assigns position", (() => { const r = compileShader("color = baseColor;\nfloat k = baseRoughness;\nposition.y += k;"); return !r.ok && r.error.line === 3; })());
+  check("P7 a line that moves position reads what earlier lines assigned, an output included (normal = -normal; position += normal)", near(run(ok("normal = -normal; position += normal;"), BASE).position, [1, 1, 3])
+    && near(run(ok("color = vec3(time * 0.1); position += color;"), BASE).position, [2, 3, 4]) && /per pixel/.test(shaderProblem("position += color;") ?? ""));
   check("P6 only what an output reaches is kept (the other reading's work is dropped)", !ok("position += normal; color = baseColor;").nodes.some((n: any, i: number, all: any[]) => n.op === "input" && n.name === "normal" && !all.some((m: any) => m.args.includes(i))));
 }
 
@@ -126,6 +131,9 @@ console.log("\ntypes: what is spread, what is refused, in words that say where:"
   check("T15 a syntax error points at the place", bad("color = vec3(1.0\n  , 2.0;", /'\)' is missing/, [2, 8]) && bad("roughness = ;", /can't start with ';'/, [1, 13]));
   check("T16 fbm's octaves are a whole number written out, 1 to 8", bad("roughness = fbm(position, time);", /must be a constant/) && bad("roughness = fbm(position, 12);", /1 to 8/) && shaderProblem("roughness = fbm(position, 6, 2.0, 0.5);") === null);
   check("T17 a division by zero in whole numbers is caught here", bad("int a = 1 / 0; roughness = float(a);", /division by zero/));
+  check("T19 a loop's bounds can't change inside it (its turns are counted before its body is read)", bad("int limit = 3; float s = 0; for (int i = 0; i < limit; i++) { limit = 1; s += 1; } roughness = s;", /bounds can't change inside it: 'limit'/)
+    && bad("int k = 1; float s = 0; for (int i = 0; i < 8; i += k) { if (s > 2.0) { k = 2; } s += 1; } roughness = s;", /'k' is assigned in the loop/) && near(run(ok("int limit = 3; float s = 0; for (int i = 0; i < limit; i++) { s += 1; } roughness = s;")).roughness, 3));
+  check("T20 a normal of zeros has no direction", bad("normal = vec3(0.0);", /normal can't be a vector of zeros/) && bad("normal = 0.0;", /vector of zeros/) && shaderProblem("normal = vec3(0.0, 1.0, 0.0);") === null && shaderProblem("normal = normal * 0.0 + normalWorld;") === null);
   check("T18 compileShader never throws, whatever it is given", [undefined, null, 5, {}, "", "}{", "((((", "float f(", "for (", "a.b.c.d = 1;", "\u0000", "x".repeat(100)].every((s) => { try { return compileShader(s as any).ok === false; } catch { return false; } }));
 }
 
@@ -137,9 +145,12 @@ console.log("\nconstants are worked out here, and the ones a graphics compiler w
   const one = (src: string) => { const g = ok(src); return g.nodes.length === 1 && g.nodes[0].op === "const" ? g.nodes[0].value : null; };
   check("C1 a call on written-out numbers is one constant (sqrt(16.0) / 8.0 is 0.5)", one("roughness = sqrt(16.0) / 8.0;") === 0.5 && one("roughness = clamp(mix(0.0, 10.0, 0.25), 0.0, 2.0) + step(0.5, 1.0) + pow(2.0, 3.0) + mod(7.5, 2.0);") === 12.5);
   check("C2 vectors too: built, swizzled, joined and called (normalize(vec3(3, 0, 4)).zyx * 2)", near(one("color = normalize(vec3(3.0, 0.0, 4.0)).zyx * 2.0;") as any, [1.6, 0, 1.2]) && near(one("color = cross(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0)) + vec3(dot(vec2(1.0, 2.0), vec2(3.0, 4.0)), length(vec2(3.0, 4.0)), distance(vec3(1.0), vec3(1.0, 1.0, 3.0)));") as any, [11, 5, 3]));
-  check("C3 a constant folded here equals the same call left to run (the evaluator's arithmetic)", near(one("roughness = smoothstep(0.0, 4.0, 1.0) + fract(-0.25) + sign(-3.0) + floor(2.7) + ceil(2.2) + abs(-1.5) + saturate(3.0) + min(1.0, 2.0) + max(1.0, 2.0);") as any, 0.15625 + 0.75 - 1 + 2 + 3 + 1.5 + 1 + 1 + 2));
+  // the same expression twice: its numbers written out (folded here), and read from an input (left as calls, run by the evaluator)
+  const both = (expr: (x: string) => string, x: number) => { const folded = one(`roughness = ${expr(x.toFixed(4))};`); const left = ok(`roughness = ${expr("uv.x")};`); return folded !== null && left.nodes.some((n: any) => n.op === "call") && near(folded as any, run(left, { uv: [x, 0] }).roughness); };
+  check("C3 a constant folded here equals the same expression left to run", both((x) => `clamp(${x}, 0.0, 2.0) + fract(${x} - 3.0) + sign(${x} - 9.0) + floor(${x}) + abs(${x} - 5.0) + saturate(${x}) + min(${x}, 2.0) + max(${x}, 2.0) + mix(1.0, 3.0, ${x}) + pow(${x}, 2.0) + mod(${x}, 2.0) + step(1.0, ${x}) + sqrt(${x}) + sin(${x}) + cos(${x})`, 2.75)
+    && one("roughness = smoothstep(0.0, 4.0, 1.0);") === 0.15625);
   check("C4 out of a function's range: sqrt and log of what they can't take, asin and acos past ±1, pow of a negative", bad("roughness = sqrt(-1.0);", /sqrt takes a number that isn't negative/) && bad("roughness = log(0.0);", /log takes a number above 0/)
-    && bad("roughness = acos(1.5);", /acos takes a number from -1 to 1/) && bad("roughness = asin(-2.0);", /asin/) && bad("roughness = pow(-2.0, 2.0);", /pow of a negative/) && bad("roughness = inversesqrt(0.0);", /above 0/) && bad("color = normalize(vec3(0.0));", /vector of zeros/));
+    && bad("roughness = acos(1.5);", /acos takes a number from -1 to 1/) && bad("roughness = asin(-2.0);", /asin/) && bad("roughness = pow(-2.0, 2.0);", /pow of a negative/) && bad("roughness = pow(0.0, 0.0);", /pow\(0, y\) needs y above 0/) && one("roughness = pow(0.0, 2.0);") === 0 && bad("roughness = inversesqrt(0.0);", /above 0/) && bad("color = normalize(vec3(0.0));", /vector of zeros/));
   check("C5 …seen through other constant work (sqrt(sin(4.0)): sin(4) is negative)", bad("roughness = sqrt(sin(4.0));", /sqrt takes/) && bad("float a = 2.0; float b = a - 3.0; roughness = log(b);", /log takes/));
   check("C6 smoothstep's edges written out equal or crossed, even when what it shapes is not a constant", bad("roughness = smoothstep(0.5, 0.5, uv.x);", /first edge must be below its second/) && bad("roughness = smoothstep(1.0, 0.0, uv.x);", /first edge/) && bad("color = smoothstep(vec3(0.0), vec3(1.0, 0.0, 1.0), position);", /first edge/)
     && shaderProblem("roughness = smoothstep(0.0, 1.0, uv.x);") === null && shaderProblem("roughness = smoothstep(uv.y, uv.y, uv.x);") === null);
@@ -147,18 +158,31 @@ console.log("\nconstants are worked out here, and the ones a graphics compiler w
   check("C8 a division by a written-out zero: floats, vectors, whole numbers, % and mod", bad("roughness = 1.0 / 0.0;", /division by zero/) && bad("roughness = uv.x / 0.0;", /division by zero/) && bad("color = position / vec3(1.0, 0.0, 1.0);", /division by zero/)
     && bad("int k = int(uv.x) / 0; roughness = float(k);", /division by zero/) && bad("roughness = uv.x % 0.0;", /division by zero/) && bad("roughness = mod(uv.x, 0.0);", /division by zero/) && bad("float z = 1.0 - 1.0; roughness = uv.x / z;", /division by zero/));
   check("C9 a number past what a shader's float holds, or a whole number past an int", bad("roughness = exp(100.0);", /too large for a shader/) && bad("roughness = 1e20 * 1e20;", /too large/) && bad("roughness = 1e31;", /too large/) && bad("int k = 2000000000 * 2; roughness = float(k);", /whole number here is beyond/));
-  check("C10 the refusal points at the call", (() => { const r = compileShader("roughness = 0.5;\ncolor = vec3(sqrt(-4.0));"); return !r.ok && r.error.line === 2 && r.error.col === 14; })());
+  check("C10 the refusal points at the call, and at the number itself for one too large", (() => { const r = compileShader("roughness = 0.5;\ncolor = vec3(sqrt(-4.0));"); const big = compileShader("color = vec3(1e31);"); return !r.ok && r.error.line === 2 && r.error.col === 14 && !big.ok && big.error.col === 14; })());
   check("C11 what can't go out of range is left to the graphics card (hash, noise: no constant is invented for them)", ok("roughness = hash(3.0) + noise(vec2(1.0, 2.0));").nodes.filter((n: any) => n.op === "call").length === 2);
 }
 
 console.log("\nlimits (a shader compiles on every viewer's machine):");
 {
   check("L1 the source's length", /at most 20000/.test(shaderProblem(`roughness = 0.5; //${"x".repeat(SHADER_LIMITS.source)}`) ?? ""));
-  check("L2 a loop's turns", /more than 256 times/.test(shaderProblem("float s = 0; for (int i = 0; i < 257; i++) { s += uv.x; } roughness = s;") ?? "") && shaderProblem("float s = 0; for (int i = 0; i < 256; i++) { s += uv.x; } roughness = s;") === null);
+  check("L2 a loop's turns", /bounds allow more than 256 turns/.test(shaderProblem("float s = 0; for (int i = 0; i < 257; i++) { s += uv.x; } roughness = s;") ?? "") && shaderProblem("float s = 0; for (int i = 0; i < 256; i++) { s += uv.x; } roughness = s;") === null);
   const big = "float s = uv.x; for (int i = 0; i < 200; i++) { for (int j = 0; j < 200; j++) { s = sin(s + float(i * 200 + j)); } } roughness = s;";
   check("L3 the whole graph, once unrolled, and the refusal says what to do", /too big.*4096 operations.*shorten a loop/.test(shaderProblem(big) ?? ""));
   check("L4 identical work is one node (the same call twice costs once)", ok("float a = sin(uv.x * 3.0); float b = sin(uv.x * 3.0); roughness = a + b;").nodes.filter((n: any) => n.op === "call").length === 1);
-  check("L5 deep nesting is refused in words, not a stack overflow", compileShader(`roughness = ${"(".repeat(20000)}1.0${")".repeat(20000)};`).ok === false);
+  // under the source limit, so it is the nesting bound that answers, never the engine's stack (whose error differs by browser)
+  check("L5 deep nesting is refused in words by its own bound: brackets, signs, blocks, and a sum too long to read", /nests more than 200 deep/.test(shaderProblem(`roughness = ${"(".repeat(3000)}1.0${")".repeat(3000)};`) ?? "")
+    && /nests more than 200 deep/.test(shaderProblem(`roughness = ${"- ".repeat(3000)}1.0;`) ?? "") && /nests more than 200 deep/.test(shaderProblem(`${"{".repeat(300)} roughness = 1.0; ${"}".repeat(300)}`) ?? "")
+    && /too long or too deeply nested/.test(shaderProblem(`roughness = ${Array(2000).fill("uv.x").join(" + ")};`) ?? "") && shaderProblem(`roughness = ${Array(600).fill("uv.x").join(" + ")};`) === null);
+  // the READING is bounded, not only the graph: loops and inlined calls can do a great deal of work that lands on a few
+  // shared nodes, and every viewer's browser reads a stored shader on its main thread
+  const timed = (src: string) => { const t0 = performance.now(); const r = compileShader(src); return { r, ms: performance.now() - t0 }; };
+  const nested = timed("float s = 0.0; for (int a = 0; a < 256; a++) { for (int b = 0; b < 256; b++) { for (int c = 0; c < 256; c++) { for (int d = 0; d < 256; d++) { s = 1.0; } } } } roughness = s;");
+  let fns = "float f0(float x) { return x * 0.5; }\n"; for (let i = 1; i <= 30; i++) fns += `float f${i}(float x) { return f${i - 1}(x) + f${i - 1}(x); }\n`;
+  const doubling = timed(fns + "roughness = f30(uv.x);");
+  check("L6 four nested 256-turn loops (4 billion turns on one shared node) are refused for the work of reading them, at once", !nested.r.ok && /too much work to read.*100000 steps/.test(nested.r.error.message) && nested.ms < 2000, `${nested.ms.toFixed(0)} ms: ${JSON.stringify(nested.r.error ?? null)}`);
+  check("L7 thirty functions each calling the last twice (a billion inlinings, a small graph) likewise", !doubling.r.ok && /too much work to read/.test(doubling.r.error.message) && doubling.ms < 2000, `${doubling.ms.toFixed(0)} ms`);
+  check("L8 a real heavy shader is far inside both bounds (a 64-step ray march through an inlined distance function)", shaderProblem("float sdf(vec3 p) { return min(length(p - vec3(0.0, 0.3, 0.0)) - 0.4, p.y + 0.5) + 0.05 * sin(p.x * 10.0 + time); }\n vec3 rd = normalize(normal + vec3(0.1, 0.2, 0.3)); float t = 0.0;\n for (int i = 0; i < 64; i++) { float d = sdf(position + rd * t); if (d < 0.001) break; t += d; }\n color = vec3(t * 0.2);") === null);
+  check("L9 a constant is not an operation: a loop of written-out arithmetic leaves one number, however many it passed through", ok("float s = 0.0; for (int i = 0; i < 40; i++) { for (int j = 0; j < 40; j++) { s += float(i * 40 + j) * 0.001; } } roughness = s / 2000.0;").nodes.length === 1);
 }
 
 console.log("\nuniform values (the component's params, then the thing's own, then zero):");

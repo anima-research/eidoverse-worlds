@@ -697,7 +697,7 @@ export class AgentSenses {
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
       // A thing drawn many times (the draft antra/instances) says how many and in what arrangement; the copies are
       // drawn only, so a walk can pass through them, and saying so saves planning round one that isn't there.
-      const many = describeInstances(c[INSTANCES], e.id);
+      const many = describeInstances(c[INSTANCES]);
       if (many) aff.push(`${many} (the copies are drawn only: not solid)`);
       const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("copy-of");

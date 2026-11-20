@@ -35,7 +35,7 @@ import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, MESH_SHAPES, lightOf } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
 import { compileShader } from './shaderlang.js';
-import { INSTANCES, readInstances, describeInstances } from './instances.js';
+import { INSTANCES, countInstances, describeInstances } from './instances.js';
 import { socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
@@ -154,7 +154,7 @@ const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k 
 // the door (sockets-test LS1). Needs the world (live.world).
 const socketsOf = (id, live) => (live?.world ? socketsIn(live.world, id, { all: true }) : []);
 const SHADER_KEY = 'antra/shader';
-const INSTANCES_NOTHING = 'this draws nothing: give at: [[x, y, z], …] (copies placed by hand) or scatter: {count, shape, radius} (copies from a seed)';
+const INSTANCES_NOTHING = 'this draws no copies: give at: [[x, y, z], …] (copies placed by hand) or scatter: {count, shape, radius} (copies from a seed)';
 // the ladder's second rung, for any draft's card: the world's owner may trust it here (the write is trustOp's)
 const draftTrustButton = (name, live) => (isTrusted(name, live.trusted)
   ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: `Takes ${name} off this world's trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.` }
@@ -208,16 +208,16 @@ const HAND = {
       const next = { ...(comps.get(ck) ?? (c[ck] && typeof c[ck] === 'object' ? c[ck] : {})) };
       if (fk === 'code') {
         const code = String(raw ?? ''); const r = compileShader(code);
-        if (!r.ok) { errors.push(`shader.code: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); return; }
+        if (!r.ok) { errors.push(`ashader.${k}: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); return; }
         next.code = code;
       } else if (fk === 'params') {
         const t = typeof raw === 'string' ? raw.trim() : raw;
         if (t === '' || t == null) delete next.params;
-        else { let v = t; if (typeof t === 'string') { try { v = JSON.parse(t); } catch (e) { errors.push(`shader.params: not valid JSON (${e.message})`); return; } }
+        else { let v = t; if (typeof t === 'string') { try { v = JSON.parse(t); } catch (e) { errors.push(`ashader.${k}: not valid JSON (${e.message})`); return; } }
           const bad = !v || typeof v !== 'object' || Array.isArray(v) ? 'an object, {"name": number}' : Object.entries(v).find(([, x]) => !(Number.isFinite(x) || (Array.isArray(x) && x.length >= 2 && x.length <= 4 && x.every(Number.isFinite))))?.[0];
-          if (bad) { errors.push(`shader.params: ${bad.startsWith('an ') ? bad : `'${bad}' must be a number, or a list of 2 to 4 numbers`}`); return; }
+          if (bad) { errors.push(`ashader.${k}: ${bad.startsWith('an ') ? bad : `'${bad}' must be a number, or a list of 2 to 4 numbers`}`); return; }
           next.params = v; }
-      } else { errors.push(`shader.${fk}: no such field`); return; }
+      } else { errors.push(`ashader.${k}: no such field`); return; }
       comps.set(ck, next);
     },
   },
@@ -225,7 +225,7 @@ const HAND = {
     // the DRAFT antra/instances (docs/guide/INSTANCES.md): what it draws, said in words by the module every reader uses
     // (shared/instances.js); the value itself is the card's JSON (its shapes differ too much for rows), checked at that door
     read(c, id, live) {
-      const says = describeInstances(c[INSTANCES], id);
+      const says = describeInstances(c[INSTANCES]);
       const fields = [{ t: 'info', k: 'says', label: says ? 'draws' : 'problem', value: says ?? INSTANCES_NOTHING,
         hint: 'at: [[x, y, z, yaw?, scale?], …] places copies by hand, in the thing\'s own frame. scatter: {count, shape: disc | ring | box | grid | line | sphere, radius, inner, size, to, seed, scale: [min, max], yaw: random | out | in | radians, tilt, jitter}. ground: true stands each copy on the ground. original: false draws only the copies. Copies are drawn, never solid (docs/guide/INSTANCES.md).' }];
       if (live.mayTrust === true) fields.push(draftTrustButton(INSTANCES, live));
@@ -1539,7 +1539,7 @@ export function editOps(ent, id, edits, live = {}) {
         if ((k === 'light' || k === 'collider') && compRefusal(k, data, ent)) { errors.push(`comp.${k}: ${compRefusal(k, data, ent)}`); break; }
         if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data); if (bad) { errors.push(`comp.grabbable: ${bad.reason}`); break; } }
         // the drafts this module has cards for: a value their readers would treat as absent is said here, not sent
-        if (k === INSTANCES && data != null && !readInstances(data, id)) { errors.push(`comp.${k}: ${INSTANCES_NOTHING}`); break; }
+        if (k === INSTANCES && data != null && !countInstances(data)) { errors.push(`comp.${k}: ${INSTANCES_NOTHING}`); break; }
         if ((k === SHADER_KEY || k.startsWith(`${SHADER_KEY}:`)) && data != null) { const r = compileShader(data?.code); if (!r.ok) { errors.push(`comp.${k}: its code: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); break; } }
         if ((k === 'picture' || k === 'sound') && data != null) {
           const n = k === 'picture' ? normalizePicture(data) : normalizeSound(data);

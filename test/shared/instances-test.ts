@@ -6,7 +6,7 @@
 // thing's id); each shape puts its copies where it says; rows placed by hand read in every length; a malformed value
 // is absent, never a throw; the copy count has a ceiling; an option changed never reshuffles the rest.
 import { suite } from "../gate/suite.ts";
-import { readInstances, describeInstances, seedOf, INSTANCE_MAX, SCATTER_SHAPES, INSTANCES } from "../../shared/instances.js";
+import { readInstances, describeInstances, countInstances, seedOf, INSTANCE_MAX, SCATTER_SHAPES, INSTANCES } from "../../shared/instances.js";
 
 const { check, done } = suite("instances");
 const copy = (r: any, i: number) => Array.from(r.copies.slice(i * 8, i * 8 + 8)) as number[];
@@ -34,7 +34,9 @@ console.log("\na scatter is a function of its seed:");
   check("D2 with no seed each thing scatters its own way, the same every time", JSON.stringify(all(readInstances(noSeed, "one")!)) === JSON.stringify(all(readInstances(noSeed, "one")!)) && JSON.stringify(all(readInstances(noSeed, "one")!)) !== JSON.stringify(all(readInstances(noSeed, "two")!)) && seedOf("one") !== seedOf("two"));
   const big = readInstances({ scatter: { ...v.scatter, scale: [0.5, 2], tilt: 0.3 } })!;
   check("D3 changing one option (scale, tilt) leaves every copy where it was", all(a).every((c, i) => near(c[0], copy(big, i)[0]) && near(c[2], copy(big, i)[2])));
-  check("D4 a longer scatter starts with the shorter one's copies", all(readInstances({ scatter: { ...v.scatter, count: 300 } })!).slice(0, 200).every((c, i) => JSON.stringify(c) === JSON.stringify(copy(a, i))));
+  const grown = (shape: string, extra: any = {}) => { const one = all(readInstances({ scatter: { count: 40, shape, radius: 6, size: [8, 3, 6], seed: 9, ...extra } })!), more = all(readInstances({ scatter: { count: 60, shape, radius: 6, size: [8, 3, 6], seed: 9, ...extra } })!); return one.every((c, i) => JSON.stringify(c) === JSON.stringify(more[i])); };
+  check("D4 a scattered shape (disc, box, sphere) keeps its copies where they are when more are asked for", grown("disc") && grown("box") && grown("sphere") && all(readInstances({ scatter: { ...v.scatter, count: 300 } })!).slice(0, 200).every((c, i) => JSON.stringify(c) === JSON.stringify(copy(a, i))));
+  check("D5 an evenly spaced shape (ring, grid, line) is respaced by its count: the guide says which is which", !grown("ring") && !grown("grid") && !grown("line", { to: [8, 0, 0] }));
 }
 
 console.log("\neach shape:");
@@ -65,6 +67,9 @@ console.log("\nmalformed is absent, and there is a ceiling:");
   check("M2 junk in a scatter's fields falls back to what absence means", readInstances({ scatter: { count: 4, radius: "wide", size: [1, 2], scale: "big", tilt: {}, yaw: "sideways", seed: "s" } } as any, "id")?.count === 4);
   check(`M3 at most ${INSTANCE_MAX} copies, by hand and scattered together`, readInstances({ scatter: { count: 10 * INSTANCE_MAX } })!.count === INSTANCE_MAX && readInstances({ at: [[0, 0, 0], [1, 0, 0]], scatter: { count: INSTANCE_MAX } })!.count === INSTANCE_MAX);
   check("M4 hand-placed copies come first, then the scatter", (() => { const r = readInstances({ at: [[9, 9, 9]], scatter: { count: 3, shape: "ring", radius: 1 } })!; return r.count === 4 && copy(r, 0)[0] === 9; })());
+  check("M6 a place past a million metres is no place: the row is skipped (a 32-bit float couldn't hold it)", readInstances({ at: [[1e300, 0, 0], [0, -1e7, 0], [1, 2, 3]] })!.count === 1 && all(readInstances({ at: [[1e300, 0, 0], [1, 2, 3]] })!).every((c) => c.every(Number.isFinite)));
+  const vals: any[] = [{ at: [[1, 2, 3], ["x"], [1e300, 0, 0], [4, 5, 6, 1]] }, { scatter: { count: 77, shape: "grid" } }, { at: [[0, 0, 0]], scatter: { count: 10 * INSTANCE_MAX } }, { scatter: { count: 2.9 } }, {}, null, { scatter: [] }];
+  check("M7 countInstances says how many without working any out, and agrees with readInstances for every value", vals.every((v) => countInstances(v) === (readInstances(v)?.count ?? 0)));
   check("M5 ground is only ever the word true", readInstances({ at: [[0, 0, 0]], ground: true })!.ground === true && readInstances({ at: [[0, 0, 0]], ground: 1 } as any)!.ground === false);
 }
 

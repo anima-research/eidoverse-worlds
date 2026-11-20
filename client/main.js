@@ -506,7 +506,6 @@ registerSystem('motion', () => tickMotion());                   // the world's m
 registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
 registerSystem('texts', () => tickTexts());                     // signs that turn to face you
 registerSystem('openable', () => tickOpenables());           // doors, gates and lids tween to their state
-registerSystem('instances', () => tickInstances());         // a thing's instanced copies follow it (after everything that moves a thing)
 registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
@@ -555,6 +554,7 @@ registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
+registerSystem('instances', () => tickInstances());   // a thing's instanced copies take its pose after everything that moves a thing this frame (motion, build drags, XR grabs): never a frame behind
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does

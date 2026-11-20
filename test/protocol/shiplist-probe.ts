@@ -847,10 +847,15 @@ try {
       transform: { pos: [${me[0]} - 5 + (i % 8) * 1.2, 1.5 + Math.floor(i / 8), ${me[1]} - 6] }, 'antra/shader': { code: progs[i] } } })).refs?.[0]?.id ?? null);
     window.__shIds = ids; return { calls: calls.length, shaders: progs.length, bad, made: ids.filter(Boolean).length };`);
   const dressed = `import('/lib/world.js').then((w) => window.__shIds.every((id) => { let m = null; w.entities.get(id)?.traverse((o) => { if (o.isMesh && !m) m = o.material; }); return !!m?.__uniforms; }))`;
-  const allDressed = await waitFor(dressed, 45000); await frames(30);
-  const gfx = await evalJson(`window.__gfx`);
-  check(`SH1 every function in every argument form (${sweep?.calls} calls in ${sweep?.shaders} shaders, pixel and vertex code) builds a shader the graphics card accepts: zero shader errors after 30 frames`,
-    sweep?.calls > 150 && sweep.bad.length === 0 && sweep.made === sweep.shaders && allDressed && gfx.length === 0, { sweep, allDressed, gfx: gfx.slice(0, 3) });
+  const allDressed = await waitFor(dressed, 45000);
+  // a shader is only built when its mesh is DRAWN: count each sweep mesh's own draws (the renderer calls onAfterRender
+  // for what it drew), so a mesh off camera or culled can't pass as "no errors"
+  await page(`const w = await import('/lib/world.js'); for (const id of window.__shIds) w.entities.get(id)?.traverse((o) => { if (o.isMesh && !o.userData.__counted) { o.userData.__counted = true; o.userData.__draws = 0; o.frustumCulled = false; const was = o.onAfterRender; o.onAfterRender = function (...a) { o.userData.__draws++; return was.apply(this, a); }; } }); return true;`);
+  const drawnExpr = `import('/lib/world.js').then((w) => window.__shIds.map((id) => { let n = 0; w.entities.get(id)?.traverse((o) => { if (o.isMesh) n = Math.max(n, o.userData.__draws ?? 0); }); return n; }))`;
+  const allDrawn = await waitFor(`${drawnExpr}.then((d) => d.every((n) => n >= 10))`, 60000); await frames(20);
+  const [gfx, draws] = [await evalJson(`window.__gfx`), await evalJson(drawnExpr)];
+  check(`SH1 every function in every argument form (${sweep?.calls} calls in ${sweep?.shaders} shaders, pixel and vertex code) builds a shader the graphics card accepts: every sweep mesh drawn ten times and more, and zero shader errors`,
+    sweep?.calls > 150 && sweep.bad.length === 0 && sweep.made === sweep.shaders && allDressed && allDrawn && gfx.length === 0, { sweep, allDressed, allDrawn, draws, gfx: gfx.slice(0, 3) });
   // SH2..SH5 on a library model (a classic material: the copy is its node twin) beside an untouched one
   const made = await page(`const m = await import('/lib/net.js'); const out = []; for (const dx of [2, 3.2]) out.push((await m.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 4], scale: 0.3 } } })).refs?.[0]?.id ?? null); return out;`);
   const [SA, SB] = made ?? []; if (!SA || !SB) throw new Error(`setup: the two crates weren't created: ${JSON.stringify(made)}`);
@@ -908,15 +913,23 @@ try {
   check("IN2 the copies follow the thing when it moves, and wear the shader it wears (the same material object)", moved && Math.abs(at[1] - 0.5) < 0.01, { moved, at });
   // original: false draws only the copies; a hand-placed list replaces the ring; deleting the component draws the thing once again
   await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { at: [[2, 0, 0], [4, 0, 0, 1.57], [6, 0, 0, 0, 2]], original: false } }); return true;`);
-  const three = await waitFor(`${copies}.then((c) => c.n === 1 && c.count === 3 && c.srcVisible === false)`, 20000);
+  const three = await waitFor(`${copies}.then((c) => c.n === 1 && c.count === 3 && c.srcVisible === false && c.shown === true)`, 20000);
+  check("IN3 original: false hides the thing's own mesh and draws 3 hand-placed copies, shown", three, await evalJson(copies));
+  // a value that draws no copies, written over one that drew three: the copies go and the thing is drawn once again
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { scatter: { count: 0 }, original: false } }); return true;`);
+  const none = await waitFor(`${copies}.then((c) => c.n === 0 && c.srcVisible === true)`, 20000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { at: [[2, 0, 0]] } }); return true;`);
+  const again = await waitFor(`${copies}.then((c) => c.n === 1 && c.count === 1 && c.srcVisible === true)`, 20000);
   await page(`const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: '${id}', component: 'antra/instances' }); return true;`);
   const gone = await waitFor(`${copies}.then((c) => c.n === 0 && c.srcVisible === true)`, 20000);
-  check("IN3 original: false hides the thing's own mesh and draws 3 hand-placed copies; deleting the component removes the copies and shows the thing again", three && gone, { three, gone });
-  // a value that draws nothing is absent
-  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { scatter: { count: 0 } } }); await n.sendRequest('set', { id: '${id}', component: 'label', value: 'instanced crate' }); return true;`);
-  await waitFor(`import('/lib/world.js').then((w) => w.bagOf('${id}')?.label === 'instanced crate')`, 15000);
-  const none = await evalJson(copies);
-  check("IN4 a value that draws nothing is absent (no copies, the thing drawn once)", none?.n === 0 && none.srcVisible === true, none);
+  check("IN4 a value that draws no copies clears the ones there and shows the thing; deleting the component removes its copies", none && again && gone, { none, again, gone });
+  // a reshaped mesh thing: its copies take the new shape (the realizer swaps the geometry in place)
+  const box = await page(`const n = await import('/lib/net.js'); return (await n.sendRequest('create', { components: { mesh: { shape: 'box', size: [0.4, 0.4, 0.4] }, transform: { pos: [${me[0]} - 6, 0, ${me[1]} - 6] }, 'antra/instances': { scatter: { count: 5, shape: 'line', to: [3, 0, 0] } } } })).refs?.[0]?.id ?? null;`);
+  const shape = `(async () => { const core = await import('/lib/core.js'); const w = await import('/lib/world.js'); let m = null, src = null; core.scene.traverse((o) => { if (o.userData?.instancesOf === '${box}') m = o; }); w.entities.get('${box}')?.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && !src) src = o; }); return { type: m?.geometry?.type ?? null, same: !!m && m.geometry === src?.geometry, count: m?.count ?? null }; })()`;
+  await waitFor(`${shape}.then((x) => x.type === 'BoxGeometry' && x.count === 5)`, 20000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${box}', component: 'mesh', value: { shape: 'sphere', size: [0.4, 0.4, 0.4] } }); return true;`);
+  const reshaped = await waitFor(`${shape}.then((x) => x.type === 'SphereGeometry' && x.same && x.count === 5)`, 20000);
+  check("IN5 a mesh thing reshaped from a box to a sphere: its copies are spheres too, sharing the new geometry", reshaped, await evalJson(shape));
   });
   // ---- EC: the camera in build mode (R, 10-10: "we need camera moving controls in build mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----

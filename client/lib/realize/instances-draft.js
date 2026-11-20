@@ -47,10 +47,10 @@ function build(id) {
   const obj = entities.get(id); const value = bagOf(id)?.[INSTANCES];
   if (!obj || obj.userData?.placeholder || value == null) return;
   const spec = readInstances(value, id); if (!spec) return;
-  const srcs = meshes(obj).filter((m) => !m.isSkinnedMesh && m.geometry?.attributes?.position);
+  const srcs = sources(obj);
   if (!srcs.length) return;
   obj.updateWorldMatrix(true, true); _inv.copy(obj.matrixWorld).invert();
-  const d = { obj, spec, value, parts: [], hid: [], at: new THREE.Matrix4(), groundAt: 0 };
+  const d = { obj, spec, value, sig: sigOf(srcs), parts: [], hid: [], at: new THREE.Matrix4(), groundAt: 0 };
   for (const src of srcs) {
     const inst = new THREE.InstancedMesh(src.geometry, src.material, spec.count);
     inst.name = 'instances'; inst.matrixAutoUpdate = false; inst.castShadow = src.castShadow; inst.receiveShadow = src.receiveShadow; inst.layers.mask = src.layers.mask;
@@ -63,12 +63,20 @@ function build(id) {
   drawn.set(id, d); place(d); follow(d);
 }
 const shown = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+// what is copied: the thing's own static meshes that are drawn (a part its model hides stays hidden in every copy; one
+// this reader hid for `original: false` still counts)
+const hiddenHere = (id, m) => drawn.get(id)?.hid.includes(m);
+const sources = (obj) => meshes(obj).filter((m) => !m.isSkinnedMesh && m.geometry?.attributes?.position && (m.visible || hiddenHere(obj.userData?.entityId, m)));
+// which meshes, and which geometry each wears: a reshaped mesh thing (models.js syncParts swaps its geometry), a part
+// added or gone
+const sigOf = (srcs) => srcs.map((m) => `${m.uuid}:${m.geometry.uuid}`).join('|');
 function follow(d) {
   const { obj } = d;
   obj.updateWorldMatrix(true, false);
   const vis = shown(obj);
   for (const p of d.parts) {
     if (p.inst.material !== p.src.material) p.inst.material = p.src.material;   // an override or a shader arrived on the thing, or left
+    if (p.inst.geometry !== p.src.geometry) { p.inst.geometry = p.src.geometry; p.inst.computeBoundingSphere(); p.inst.computeBoundingBox(); }   // reshaped in place
     p.inst.matrix.copy(obj.matrixWorld); p.inst.matrixWorld.copy(obj.matrixWorld); p.inst.visible = vis;
   }
   // a thing that moved: its copies stand on the ground where they are now (twice a second while it keeps moving)
@@ -82,7 +90,12 @@ export function tickInstances() {
   }
 }
 export function initInstances() {
-  bus.on('comp', ({ id, type }) => { if (type === INSTANCES) build(id); else if (drawn.has(id) && bagOf(id)?.[INSTANCES] !== drawn.get(id).value) build(id); });   // …or it was deleted (no event names a deleted type)
+  bus.on('comp', ({ id, type }) => {
+    if (type === INSTANCES) build(id);
+    else if (drawn.has(id) && bagOf(id)?.[INSTANCES] !== drawn.get(id).value) build(id);   // …or it was deleted (no event names a deleted type)
+    // any other component may have changed what the thing is made of (its mesh's shape): after the realizers have run
+    else if (drawn.has(id)) requestAnimationFrame(() => { const d = drawn.get(id); if (d && entities.get(id) === d.obj && sigOf(sources(d.obj)) !== d.sig) build(id); });
+  });
   bus.on('entity', ({ id, kind }) => {
     if (kind === 'remove' || kind === 'demote') drop(id);
     else if (kind === 'spawn' || (kind === 'place' && !drawn.has(id))) { if (bagOf(id)?.[INSTANCES] != null) requestAnimationFrame(() => build(id)); }

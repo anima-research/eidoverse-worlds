@@ -11,10 +11,13 @@
 //   - a function is inlined at each call (no recursion).
 // compileShader(source) → {ok: true, nodes, outputs, discard, uniforms} | {ok: false, error: {line, col, message}}.
 
-// Constant work is done here, not on the graphics card: a call whose arguments are all written out becomes one number,
-// and one a graphics compiler would refuse (sqrt of a negative, a division by zero, smoothstep with its edges crossed)
+// Constant work is done here, not on the graphics card: a math call whose arguments are all written out becomes one
+// number (hash and the noises are left to the graphics card: they have no range to leave), and one a graphics compiler
+// would refuse (sqrt of a negative, a division by zero, smoothstep with its edges crossed)
 // is refused here first, in words. WGSL rejects such a shader whole, and the thing would stop being drawn.
-export const SHADER_LIMITS = Object.freeze({ source: 20000, nodes: 4096, iterations: 256, depth: 32, number: 1e30, int: 2147483647 });
+// `steps` bounds the READING, which the node count can't: unrolled loops and inlined calls may do a great deal of work
+// that lands on a handful of shared nodes, and every viewer's browser reads a stored shader on its main thread.
+export const SHADER_LIMITS = Object.freeze({ source: 20000, nodes: 4096, steps: 100000, iterations: 256, depth: 32, nest: 200, number: 1e30, int: 2147483647 });
 
 const DIM = { float: 1, int: 1, bool: 1, vec2: 2, vec3: 3, vec4: 4 };
 const VEC = [null, 'float', 'vec2', 'vec3', 'vec4'];
@@ -31,14 +34,14 @@ export const SHADER_OUTPUTS = Object.freeze({
   roughness: { type: 'float', from: 'baseRoughness', help: '0 mirror-smooth … 1 matte' },
   metalness: { type: 'float', from: 'baseMetalness', help: '0 plastic, wood, paint … 1 bare metal' },
   opacity: { type: 'float', from: 'baseOpacity', help: '1 solid … 0 invisible (assigning it makes the material see-through)' },
-  position: { type: 'vec3', from: 'position', help: 'the vertex, in the thing\'s own frame (metres): assign it to move the surface' },
-  normal: { type: 'vec3', from: 'normal', help: 'the shading normal, in the thing\'s own frame' },
+  position: { type: 'vec3', from: 'position', help: 'the vertex, in its mesh\'s own frame (metres): assign it to move the surface' },
+  normal: { type: 'vec3', from: 'normal', help: 'the shading normal, in its mesh\'s own frame' },
 });
 /** What a program may read. `frag`: known per pixel only, so `position` can't depend on it. */
 export const SHADER_INPUTS = Object.freeze({
-  position: { type: 'vec3', help: 'the point on the surface, in the thing\'s own frame (metres)' },
+  position: { type: 'vec3', help: 'the point on the surface, in its mesh\'s own frame (metres)' },
   positionWorld: { type: 'vec3', help: 'the point on the surface, in world metres' },
-  normal: { type: 'vec3', help: 'the surface normal, in the thing\'s own frame' },
+  normal: { type: 'vec3', help: 'the surface normal, in its mesh\'s own frame' },
   normalWorld: { type: 'vec3', help: 'the surface normal, in the world\'s frame' },
   normalView: { type: 'vec3', help: 'the surface normal, in the eye\'s frame' },
   viewDir: { type: 'vec3', help: 'the unit vector from the surface to the eye, in the eye\'s frame (dot it with normalView)' },
@@ -104,7 +107,7 @@ const FOLD = {
   sqrt: each((x) => (dom(x >= 0, 'sqrt takes a number that isn\'t negative'), Math.sqrt(x))), inversesqrt: each((x) => (dom(x > 0, 'inversesqrt takes a number above 0'), 1 / Math.sqrt(x))),
   abs: each(Math.abs), sign: each(Math.sign), floor: each(Math.floor), ceil: each(Math.ceil), round: each(evenRound), trunc: each(Math.trunc), fract: each((x) => x - Math.floor(x)),
   radians: each((x) => x * Math.PI / 180), degrees: each((x) => x * 180 / Math.PI), saturate: each((x) => Math.min(1, Math.max(0, x))),
-  pow: each((x, y) => (dom(x > 0 || (x === 0 && y > 0), 'pow of a negative number isn\'t defined in a shader (use abs(x), or x * x)'), x ** y)),
+  pow: each((x, y) => (dom(x >= 0, 'pow of a negative number isn\'t defined in a shader (for a whole power, multiply: x * x)'), dom(x > 0 || y > 0, 'pow(0, y) needs y above 0'), x ** y)),
   mod: each((x, y) => (dom(y !== 0, 'a division by zero'), x - y * Math.floor(x / y))),
   min: each(Math.min), max: each(Math.max), step: each((e, x) => (x < e ? 0 : 1)),
   clamp: each((x, lo, hi) => Math.min(hi, Math.max(lo, x))), mix: each((a, b, t) => a + (b - a) * t),
@@ -182,7 +185,11 @@ function parse(toks) {
     fail(x.t === 'end' ? 'the code ends in the middle of an expression' : `an expression can't start with '${x.t}'`, x);
   };
   const postfix = () => { let e = primary(); while (is('.')) { const d = toks[p++]; const f = name('a swizzle (.xyz, .rgb…)'); e = { k: 'swz', of: e, f: f.v, at: d }; } return e; };
-  const unary = () => { const x = peek(); if (x.t === '-' || x.t === '!' || x.t === '+') { p++; const e = unary(); return x.t === '+' ? e : { k: 'un', op: x.t, e, at: x }; } return postfix(); };
+  // every level of nesting (a bracket, a sign, a ?:, a block) passes through here or through statement(): bounded, so
+  // reading never rests on the engine's stack running out (whose error differs from browser to browser)
+  let nest = 0;
+  const deeper = (f) => { if (++nest > SHADER_LIMITS.nest) fail(`this nests more than ${SHADER_LIMITS.nest} deep`, peek()); try { return f(); } finally { nest--; } };
+  const unary = () => deeper(() => { const x = peek(); if (x.t === '-' || x.t === '!' || x.t === '+') { p++; const e = unary(); return x.t === '+' ? e : { k: 'un', op: x.t, e, at: x }; } return postfix(); });
   const left = (next, ops) => () => { let e = next(); for (;;) { const x = peek(); if (!ops.includes(x.t)) return e; p++; e = { k: 'bin', op: x.t, a: e, b: next(), at: x }; } };
   const mul = left(unary, ['*', '/', '%']), add = left(mul, ['+', '-']), rel = left(add, ['<', '>', '<=', '>=']),
     eq = left(rel, ['==', '!=']), and = left(eq, ['&&']), or = left(and, ['||']);
@@ -206,7 +213,8 @@ function parse(toks) {
     need(';');
     return out.length === 1 ? out[0] : { k: 'many', list: out, at };
   }
-  function statement() {
+  function statement() { return deeper(statement1); }
+  function statement1() {
     const x = peek();
     if (x.t === '{') return { k: 'block', body: block(), at: x };
     if (x.t === ';') { p++; return { k: 'block', body: [], at: x }; }
@@ -252,17 +260,39 @@ const SWZ = ['xyzw', 'rgba', 'stpq'];
 const ZERO = { float: 0, int: 0, bool: false };
 const STOPS = ['$returned', '$break', '$continue'];
 
+/** The names an expression reads. */
+function readsOf(e, out = new Set()) {
+  if (!e || typeof e !== 'object') return out;
+  if (e.k === 'var') out.add(e.name);
+  for (const k of ['a', 'b', 'c', 'e', 'of', 'value']) if (e[k]) readsOf(e[k], out);
+  for (const a of e.args ?? []) readsOf(a, out);
+  return out;
+}
+/** The names a run of statements assigns, in any block, branch or loop under it. */
+function assignsOf(body, out = new Set()) {
+  for (const s of body) {
+    if (s.k === 'set') out.add(s.name);
+    else if (s.k === 'block' || s.k === 'for') assignsOf(s.body, out);
+    else if (s.k === 'if') { assignsOf(s.then, out); assignsOf(s.other, out); }
+  }
+  return out;
+}
+
 function lower(prog) {
   const nodes = []; const seen = new Map();
   const N = (id) => nodes[id];
   const mk = (op, type, args = [], extra = {}) => {
     const key = `${op}|${type}|${args.join(',')}|${JSON.stringify(extra)}`;
     const had = seen.get(key); if (had !== undefined) return had;
-    if (nodes.length >= SHADER_LIMITS.nodes) fail(`this shader is too big: more than ${SHADER_LIMITS.nodes} operations once its loops are unrolled and its functions inlined (shorten a loop, or do less in it)`, here);
+    // a constant is not an operation (it costs the graphics card nothing); how many may be made is the step budget's
+    if (op !== 'const' && ++ops > SHADER_LIMITS.nodes) fail(`this shader is too big: more than ${SHADER_LIMITS.nodes} operations once its loops are unrolled and its functions inlined (shorten a loop, call a function fewer times, or do less)`, here);
     const frag = !!extra.frag || args.some((a) => nodes[a].frag);
     nodes.push({ op, type, args, ...extra, ...(frag ? { frag: true } : {}) }); seen.set(key, nodes.length - 1);
     return nodes.length - 1;
   };
+  let ops = 0, steps = 0, deep = 0;
+  /** One unit of reading (a statement run, a value read). */
+  const step = (at) => { if (++steps > SHADER_LIMITS.steps) fail(`this shader takes too much work to read: more than ${SHADER_LIMITS.steps} steps once its loops are unrolled and its functions inlined (shorten a loop, or call a function fewer times)`, at ?? here); };
   let here = { line: 1, col: 1 };   // where a "too big" is reported: the statement being read
   const fits = (v, at) => { if (!(Math.abs(v) <= SHADER_LIMITS.number)) fail(Number.isNaN(v) ? 'this works out to something that isn\'t a number' : `a number here is beyond ±${SHADER_LIMITS.number}: too large for a shader`, at ?? here); return v === 0 ? 0 : v; };
   const lit = (type, value, at) => {
@@ -429,8 +459,14 @@ function lower(prog) {
     return { idx, node: pick(id, idx.map((i) => 'xyzw'[i]).join('')) };
   }
   function rvalue(e, env, depth) {
+    step(e.at);
+    // how deep values nest, calls included (a long chain a + b + c + … nests as deep as it is long)
+    if (++deep > 1000) fail('this expression is too long or too deeply nested to read: split it across statements', e.at);
+    try { return rvalue1(e, env, depth); } finally { deep--; }
+  }
+  function rvalue1(e, env, depth) {
     switch (e.k) {
-      case 'num': return lit(e.float ? 'float' : 'int', e.v);
+      case 'num': return lit(e.float ? 'float' : 'int', e.v, e.at);
       case 'bool': return lit('bool', e.v);
       case 'var': { const b = env.get(e.name); if (!b) fail(`there is no '${e.name}' here${Object.hasOwn(SHADER_FUNCTIONS, e.name) || funcs.has(e.name) ? ` (it is a function: ${e.name}(…))` : ''}`, e.at); return b.node; }
       case 'call': return call(e, env, depth);
@@ -469,12 +505,11 @@ function lower(prog) {
       if (s.op) v = binary(s.op, b.node, v, s.at);
       v = as(v, b.type, s.at, `'${s.name}'`);
     }
-    if (b.out && frozen.has(s.name)) return;   // the other pass's output: checked, and left as it is here
-    if (b.out === 'position' && N(v).frag) fail(`position is worked out at each vertex, so it can't use what is only known per pixel (baseColor and the other base… values, dFdx, dFdy, fwidth)`, s.at);
-    env.set(s.name, { ...b, node: v, set: true });
+    if (b.out && frozen.has(s.name)) return;   // the pixel reading's position: already the moved point, never assigned there
+    env.set(s.name, { ...b, node: v, set: true, ...(b.out ? { at: s.at } : {}) });
   }
   function exec(s, env, declared, depth, where) {
-    here = s.at ?? here;
+    here = s.at ?? here; step(s.at);
     switch (s.k) {
       case 'block': scoped(s.body, env, depth, where); return;
       case 'many': for (const d of s.list) exec(d, env, declared, depth, where); return;
@@ -499,6 +534,10 @@ function lower(prog) {
       case 'for': {
         const from = rvalue(s.from, env, depth); if (!isConst(from) || typeOf(from) !== 'int') fail('a loop starts from a whole number written out: for (int i = 0; …)', s.at);
         if (env.has(s.name) && (reserved(s.name) || env.get(s.name).fixed)) fail(`'${s.name}' is already taken: choose another name for the counter`, s.at);
+        // the turns are counted before the body is read, so what decides them must not change inside it
+        { const bound = readsOf(s.cond); readsOf(s.step.value, bound); bound.delete(s.name);
+          const hit = [...assignsOf(s.body)].find((n) => bound.has(n));
+          if (hit) fail(`a loop's bounds can't change inside it: '${hit}' is assigned in the loop, and the loop's condition or step reads it`, s.at); }
         const saved = STOPS.slice(1).map((n) => [n, env.get(n)]);
         env.set('$break', { type: 'bool', node: lit('bool', false) });
         const shadow = env.get(s.name);
@@ -508,7 +547,7 @@ function lower(prog) {
           const c = rvalue(s.cond, probe, depth);
           if (!isConst(c) || typeOf(c) !== 'bool') fail(`a loop's bounds are constants: its condition may only use the counter and numbers written out (for (int i = 0; i < 8; i++))`, s.at);
           if (!val(c)) break;
-          if (n >= SHADER_LIMITS.iterations) fail(`this loop runs more than ${SHADER_LIMITS.iterations} times`, s.at);
+          if (n >= SHADER_LIMITS.iterations) fail(`this loop's bounds allow more than ${SHADER_LIMITS.iterations} turns (a break doesn't shorten what is read): lower its bound`, s.at);
           iters.push({ k: 'iter', i, body: s.body, name: s.name, at: s.at });
           const st = new Map(probe); assignTo(s.step, st, depth); const next = st.get(s.name).node;
           if (!isConst(next) || typeOf(next) !== 'int') fail('a loop\'s step is the counter going up or down by a whole number (i++, i += 2)', s.at);
@@ -575,13 +614,19 @@ function lower(prog) {
     const env = base(); list(prog.body, env, new Set(env.keys()), 0, { fn: null, loop: false, top: true }); return env;
   };
   // two readings of one program: `position` is worked out per vertex, everything else per pixel, where `position`
-  // already is the moved point (so the pixel pass reads it and never assigns it)
+  // already is the moved point (so the pixel reading takes it as given and never assigns it). The vertex reading runs
+  // every statement: a line that moves position may read a variable an earlier line assigned, an output included.
   const pixelOuts = Object.keys(SHADER_OUTPUTS).filter((n) => n !== 'position');
-  const vertex = run(new Set([...pixelOuts, '$discard']));
+  const vertex = assignsOf(prog.body).has('position') ? run(new Set()) : base();   // nothing moves position: one reading is enough
   const pixel = run(new Set(['position']));
   const outputs = {};
-  if (vertex.get('position').set) outputs.position = vertex.get('position').node;
+  const pos = vertex.get('position');
+  // judged on what position finally is, branches and loops merged in: a condition is a dependency too
+  if (pos.set && N(pos.node).frag) fail(`position is worked out at each vertex, so it can't use what is only known per pixel (baseColor and the other base… values, dFdx, dFdy, fwidth), in what it is assigned or in a condition it sits under`, pos.at);
+  if (pos.set) outputs.position = pos.node;
   for (const n of pixelOuts) if (pixel.get(n).set) outputs[n] = pixel.get(n).node;
+  // the reader normalizes the shading normal, and a graphics compiler refuses to normalize a written-out vector of zeros
+  { const nrm = pixel.get('normal'); if (nrm.set && isConst(nrm.node) && parts(nrm.node).every((x) => x === 0)) fail('normal can\'t be a vector of zeros: it has no direction', nrm.at); }
   const d = pixel.get('$discard');
   // keep only what an output reaches (the other pass's work, and whatever was folded away, is dropped)
   const keep = new Map(); const out = [];
@@ -604,7 +649,8 @@ export function compileShader(source) {
     return { ok: true, ...r };
   } catch (e) {
     if (e instanceof ShaderError) return { ok: false, error: { line: e.line, col: e.col, message: e.message } };
-    if (e instanceof RangeError) return { ok: false, error: { line: 1, col: 1, message: 'this shader nests too deeply to read' } };
+    // the engine's own stack running out (a RangeError; Firefox's is an InternalError): the bounds above come first, this is the net
+    if (e instanceof RangeError || e?.name === 'InternalError') return { ok: false, error: { line: 1, col: 1, message: 'this shader nests too deeply to read' } };
     throw e;
   }
 }

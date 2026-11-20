@@ -11,7 +11,7 @@
 // the thing's own `params` component, so a script's world.param(id, name, n) moves a shader. Changing one is a uniform
 // write: nothing recompiles.
 
-import { THREE, TSL } from '../core.js';
+import * as core from '../core.js';   // THREE and TSL, read when a shader is dressed: a harness that stands in for core.js needs neither to load this
 import { report } from '../base.js';
 import { serverNow } from '../serverclock.js';
 import { compileShader, uniformValue } from '../../../shared/shaderlang.js';
@@ -24,7 +24,8 @@ registerDraft(SHADER, { title: 'Shader', summary: 'draw it with code: colour, gl
   blank: { code: 'color = baseColor;' }, applies: (ent) => ent?.model != null || (ent?.mesh && typeof ent.mesh === 'object') });
 
 // the world's clock in seconds, wrapped hourly so it stays exact in a 32-bit float: one uniform for every shader
-const time = TSL.uniform(0).onRenderUpdate(() => (serverNow() / 1000) % 3600);
+let clock = null;
+const time = () => (clock ??= core.TSL.uniform(0).onRenderUpdate(() => (serverNow() / 1000) % 3600));
 
 const graphs = new Map();   // code → its graph, or null when it doesn't compile (bounded: the oldest is dropped)
 function graphOf(code) {
@@ -44,8 +45,8 @@ export function shaderFor(bag, slot) { return (slot ? read(bag?.[`${SHADER}:${sl
 
 // a model's materials are three's classic ones (the renderer makes their node twins itself); a shader needs the node
 // class, so the copy is built the way the renderer builds its twin: the same class of material, every property carried over
-const nodeClass = (m) => (m.isMeshPhysicalMaterial ? THREE.MeshPhysicalNodeMaterial : m.isMeshStandardMaterial ? THREE.MeshStandardNodeMaterial
-  : m.isMeshBasicMaterial ? THREE.MeshBasicNodeMaterial : m.isMeshLambertMaterial ? THREE.MeshLambertNodeMaterial : m.isMeshPhongMaterial ? THREE.MeshPhongNodeMaterial : null);
+const nodeClass = (m) => { const { THREE } = core; return m.isMeshPhysicalMaterial ? THREE.MeshPhysicalNodeMaterial : m.isMeshStandardMaterial ? THREE.MeshStandardNodeMaterial
+  : m.isMeshBasicMaterial ? THREE.MeshBasicNodeMaterial : m.isMeshLambertMaterial ? THREE.MeshLambertNodeMaterial : m.isMeshPhongMaterial ? THREE.MeshPhongNodeMaterial : null; };
 function nodeCopy(mat) {
   if (mat.isNodeMaterial) return mat.clone();
   const Cls = nodeClass(mat); if (!Cls) return null;
@@ -57,8 +58,9 @@ function nodeCopy(mat) {
 /** A copy of `mat` for `mesh`, drawn by the shader, or null if it can't be built (the caller keeps the plain copy). */
 export function dressShader(mat, sh, mesh) {
   try {
+    const { THREE, TSL } = core; if (!TSL) return null;
     const c = nodeCopy(mat); if (!c) return null;
-    const { outputs: o, discard, uniforms } = emitShader({ TSL, THREE }, sh.graph, time, (name) => !!mesh?.geometry?.attributes?.[name]);
+    const { outputs: o, discard, uniforms } = emitShader({ TSL, THREE }, sh.graph, time(), (name) => !!mesh?.geometry?.attributes?.[name]);
     const wrapped = !!mat.userData?.envWrapped;
     if (o.color || o.roughness || o.metalness) {
       // the factory composed its wetness and cloud shade over the material's own nodes (render/materials.js): take that

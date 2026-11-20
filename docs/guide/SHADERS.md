@@ -1,7 +1,7 @@
 # Shaders on things
 
-A thing can be drawn by code you write: its colour, its glow, how rough or metallic it is, how see-through, and the
-shape of its surface, worked out for every pixel and every vertex, every frame. The code rides the thing as a component,
+A thing can be drawn by code you write: its colour, its glow, how rough or metallic it is and how see-through, worked
+out for every pixel, and the shape of its surface, worked out at every vertex, every frame. The code rides the thing as a component,
 `antra/shader`, so it is in the world's log like everything else, and every browser that reads it draws the same thing.
 
 `antra/shader` is a **draft** component (docs/contributing/COMPONENT-LADDER.md, rung 1): the authority stores it as you
@@ -16,6 +16,14 @@ act {verb: "set", args: {id: "<a thing>", component: "antra/shader", value: {cod
 "}}}
 act {verb: "delete", args: {id: "<a thing>", component: "antra/shader"}}      # its own material again
 ```
+
+**Is this code in a component?** The house rule is that components hold parameters, never code, and it stands: what the
+rule keeps out is code that RUNS, on the authority or in a reader. Nothing runs this text. Every reader checks it and
+turns it into a material, the way a particle effect document becomes an emitter; to the authority and the fold it is a
+string like any other. Code that does run (a script) still lives where the rule puts it, in an uploaded blob.
+
+In a real request the code is one JSON string: write its line breaks as `\n`, or put it on one line (statements end
+with `;`, so line breaks mean nothing). The examples here are laid out to be read.
 
 **Check your code as you send it.** A `set` request stores whatever you send, and code that doesn't compile simply
 isn't drawn. The inspector checks first and tells you the line: `edit {id, set: {"comp.antra/shader": {code: "…"}}}`
@@ -62,21 +70,24 @@ if (w > 0.95) { emissive = vec3(2.0); }
 - **Types**: `float`, `int`, `bool`, `vec2`, `vec3`, `vec4`. A whole number is an `int` and becomes a `float` where one
   is wanted (`float a = 1;`), and a single number beside or assigned to a vector is spread across it (`color = 0.5;`).
   Vectors of different sizes never mix.
-- **Vectors**: `vec3(1.0)`, `vec3(a, b, c)`, `vec3(v2, c)`, `vec3(v4)`; swizzles `.xyz`, `.rg`, `.x`, also on the left
+- **Vectors**: `vec3(1.0)`, `vec3(a, b, c)`, `vec3(uv, c)`, `vec3(vertexColor)`; swizzles `.xyz`, `.rg`, `.x`, also on the left
   (`c.rg = c.gr;`).
 - **Operators**: `+ - * / %` (`%` on floats is `mod`), `< > <= >= == !=` on single numbers, `&& || !`, `?:`, and
   `= += -= *= /= ++ --`.
 - **Statements**: declarations (`float x = …;`, `const`), assignments, `if` / `else`, `for`, `{ … }` blocks, and in
   functions `return`. `discard;` drops the pixel. `//` and `/* */` comments.
 - **Loops**: `for (int i = 0; i < 8; i++) { … }` only. The bounds are numbers written out (the loop is unrolled when
-  the code is read), at most 256 turns a loop; `break` and `continue` work.
+  the code is read), at most 256 turns a loop, and nothing the condition or step reads may be assigned in the body;
+  `break` and `continue` work.
 - **Functions**: `float name(vec3 p, float t) { …; return …; }`. They are inlined where called, so one can't call
   itself. A function sees its parameters, the inputs, the uniforms and top-level `const`s.
 - **Not here**: `while`, `void`, structs, arrays, matrices, textures (`baseColor` already holds the material's own
   texture), comparing whole vectors.
 
-A shader is at most 4,096 operations once its loops are unrolled and its functions inlined. A loop that does a lot
-inside many turns is what reaches that; the refusal says so.
+A shader is at most 4,096 operations once its loops are unrolled and its functions inlined, and reading it may take
+at most 100,000 steps (a statement run, a value read): loops inside loops and functions that call functions multiply,
+and every viewer's browser reads the code before it can draw. Brackets, blocks and signs nest at most 200 deep. Each
+refusal says which bound was met.
 
 **Constants are worked out when the code is read.** `sqrt(16.0) / 8.0` is stored as 0.5 and costs nothing to draw. An
 expression of written-out numbers that has no answer is refused there, with its line, because a graphics card would
@@ -96,20 +107,26 @@ Assign any of these; the ones you leave alone stay the material's own. Each star
 | `roughness` | float | 0 mirror-smooth … 1 matte |
 | `metalness` | float | 0 plastic, wood, paint … 1 bare metal |
 | `opacity` | float | 1 solid … 0 invisible; assigning it makes the material see-through |
-| `position` | vec3 | the vertex, in the thing's own frame (metres): assign it to move the surface |
-| `normal` | vec3 | the shading normal, in the thing's own frame (after moving `position`, light still falls as on the old shape unless you set this) |
+| `position` | vec3 | the vertex, in its mesh's own frame (metres): assign it to move the surface |
+| `normal` | vec3 | the shading normal, in its mesh's own frame, never all zeros (after moving `position`, light still falls as on the old shape unless you set this) |
 
 `position` is worked out at each vertex, everything else at each pixel. So `position` can't use what is only known per
-pixel (`baseColor` and the other `base…` values, `dFdx`, `dFdy`, `fwidth`), and in the lines that set colour,
-`position` already is the moved point. A model with few vertices moves coarsely: there is nothing between them to move.
+pixel (`baseColor` and the other `base…` values, `dFdx`, `dFdy`, `fwidth`), neither in what it is assigned nor in a
+condition it sits under, and in the lines that set colour, `position` already is the moved point. A model with few
+vertices moves coarsely: there is nothing between them to move.
+
+**A mesh's own frame.** `position` and `normal` are in the frame of the mesh being drawn. For a `mesh` thing, and for a
+model that is one mesh at its origin, that is the thing's own frame. A model made of several parts has a frame for each
+part (its node's place, turn and scale inside the model), so `position.y` is height within the part, and a shader on
+such a model is usually better written with `positionWorld`.
 
 ### What you read (inputs)
 
 | | | |
 |---|---|---|
-| `position` | vec3 | the point on the surface, in the thing's own frame (metres) |
+| `position` | vec3 | the point on the surface, in its mesh's own frame (metres) |
 | `positionWorld` | vec3 | the same point in world metres (a pattern in it stays put while the thing moves through it) |
-| `normal` | vec3 | the surface normal, in the thing's own frame |
+| `normal` | vec3 | the surface normal, in its mesh's own frame |
 | `normalWorld` | vec3 | the normal in the world's frame (`normalWorld.y` is how much it faces up) |
 | `normalView` | vec3 | the normal in the eye's frame |
 | `viewDir` | vec3 | the unit vector from the surface to the eye, in the eye's frame |

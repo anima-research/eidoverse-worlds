@@ -505,7 +505,8 @@ console.log("\nShader, the draft antra/shader:");
   const good = editOps(sh, "m1", { "ashader.code": "emissive = vec3(1.0, 0.5, 0.0) * fresnel();", "ashader.params": '{"speed": 2, "tint": [1, 0.5, 0.2]}' }, live);
   check("SC3 code and params edit as ONE set of the component", good.errors.length === 0 && good.ops.length === 1 && good.ops[0].args?.component === "antra/shader" && good.ops[0].args.value.code.startsWith("emissive") && JSON.stringify(good.ops[0].args.value.params) === '{"speed":2,"tint":[1,0.5,0.2]}', JSON.stringify(good));
   const bad = editOps(sh, "m1", { "ashader.code": "color = vec3(1.0;" }, live);
-  check("SC4 code that doesn't compile is refused with its line and column, and nothing is sent", bad.ops.length === 0 && /shader\.code: line 1, column 17: '\)' is missing/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+  check("SC4 code that doesn't compile is refused under the key that was sent, with its line and column, and nothing is sent", bad.ops.length === 0 && /^ashader\.code: line 1, column 17: '\)' is missing/.test(bad.errors[0] ?? "")
+    && /^ashader\.slot\|wood\|code: line 1/.test(editOps({ ...sh, "antra/shader:wood": { code: "roughness = 0.1;" } }, "m1", { "ashader.slot|wood|code": "roughness = ;" }, live).errors[0] ?? ""), JSON.stringify(bad));
   const badP = editOps(sh, "m1", { "ashader.params": '{"speed": "fast"}' }, live);
   check("SC5 params are numbers, or lists of 2 to 4 numbers; blank clears them", badP.ops.length === 0 && /'speed' must be a number/.test(badP.errors[0] ?? "") && !("params" in editOps({ ...plain, "antra/shader": { code: "color = baseColor;", params: { a: 1 } } }, "m1", { "ashader.params": "" }, live).ops[0].args.value));
   const broken = inspectSchema({ ...plain, "antra/shader": { code: "color = nope;" } }, "m1", live).groups.find((g: any) => g.group === "ashader").fields.find((f: any) => f.k === "says");
@@ -533,7 +534,7 @@ console.log("\nInstances, the draft antra/instances:");
   const good = editOps(ring, "m1", { "comp.antra/instances": '{"at": [[1, 0, 0], [2, 0, 0]], "original": false}' }, live);
   check("IC3 its value is the card's JSON, written as one set", good.errors.length === 0 && good.ops.length === 1 && good.ops[0].args?.component === "antra/instances" && good.ops[0].args.value.original === false, JSON.stringify(good));
   const bad = editOps(ring, "m1", { "comp.antra/instances": '{"scatter": {"count": 0}}' }, live);
-  check("IC4 a value that would draw nothing is refused before it is sent, with the two ways to say something", bad.ops.length === 0 && /this draws nothing: give at:.*or scatter:/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
+  check("IC4 a value that would draw nothing is refused before it is sent, with the two ways to say something", bad.ops.length === 0 && /this draws no copies: give at:.*or scatter:/.test(bad.errors[0] ?? ""), JSON.stringify(bad));
   check("IC5 removing the card deletes the component", editOps(ring, "m1", { "remove.antra/instances": true }, live).ops[0]?.verb === "delete");
 }
 

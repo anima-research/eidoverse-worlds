@@ -103,7 +103,9 @@ function applyMaterials(id) {
         if (mat.isNodeMaterial) prepareMaterial(c, mesh);   // a model's classic material never went through the factory: neither does its copy
         clones[i] = c;
       }
-      write(c, mat, o ?? {});
+      // the override's fields, or the model's own back when an override has gone; a copy made for a shader alone keeps the
+      // model's values as copied (write would also decide `transparent` from the opacity, which is the override's to say)
+      if (o || c.__overridden) { write(c, mat, o ?? {}); c.__overridden = !!o; }
       if (sh) writeShaderUniforms(c, sh, bag?.params);
       return c;
     });

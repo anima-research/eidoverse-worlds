@@ -1,7 +1,7 @@
 # One thing, drawn many times
 
 A forest, a field of stones, a ring of pillars, a sky of motes: one thing with the component `antra/instances` is drawn
-as many copies as you say, in one draw for each of its meshes. The copies are not things. Nothing is stored for each
+as many copies as you say, in one draw for each mesh and material it is made of (beside the thing's own). The copies are not things. Nothing is stored for each
 one, so a hundred thousand of them are one small value in the world's log, and they cost the graphics card far less
 than as many separate things would.
 
@@ -39,7 +39,8 @@ antra/instances = {
 Places are in the thing's own frame, in metres before its scale: the copies move, turn and scale with the thing, and a
 `motion` on the thing carries them all. Yaw is in radians (0 faces the thing's front, +Z).
 
-- **`at`**: copies placed by hand, one row each. A row that isn't numbers is skipped.
+- **`at`**: copies placed by hand, one row each. A row that isn't numbers, or that names a place more than a million
+  metres off, is skipped.
 - **`scatter`**: copies worked out from a seed (below). With both, the hand-placed ones come first.
 - **`ground: true`**: each copy stands on the world's ground under it, whatever its `y` says, and again when the thing
   is moved or the ground changes. Absent: copies are where their rows put them.
@@ -53,7 +54,8 @@ A thing draws at most 100,000 copies; a value asking for more draws that many.
 
 Every viewer works the copies out from the same numbers, so everyone sees the same forest. `seed` names the
 arrangement; without one it comes from the thing's id, so each thing scatters its own way. Changing `scale`, `tilt` or
-`yaw` never moves a copy, and raising `count` adds copies without moving the ones already there.
+`yaw` never moves a copy. Raising `count` on a scattered shape (disc, box, sphere) adds copies without moving the ones
+already there; an evenly spaced shape (ring, grid, line) is respaced by its count.
 
 | `shape` | where the copies go | reads |
 |---|---|---|
@@ -93,7 +95,7 @@ walks through a scattered tree, and `move`'s routes don't know it is there. `loo
 thing is drawn many times, not where each copy is. For a tree someone should bump into, place a real thing.
 
 Child things (a light, a socket, a picture hung on it) and a skinned model's body aren't copied: the copies are the
-thing's own static meshes.
+thing's own static meshes, the ones it draws (a part its model hides stays hidden in every copy).
 
 What a copy costs is its triangles: 10,000 copies of a 300-triangle crate are three million triangles a frame. Small
 simple meshes go a long way; a detailed model copied thousands of times does not.

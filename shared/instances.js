@@ -30,9 +30,11 @@ const yawQuat = (yaw) => [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
 // a ⊗ b (apply b, then a)
 const qmul = ([ax, ay, az, aw], [bx, by, bz, bw]) => [aw * bx + ax * bw + ay * bz - az * by, aw * by - ax * bz + ay * bw + az * bx, aw * bz + ax * by - ay * bx + az * bw, aw * bw - ax * bx - ay * by - az * bz];
 
+// a place past this is no place (and past a 32-bit float's reach it would be drawn nowhere at all)
+const FAR = 1e6;
 function row(r) {
   if (!Array.isArray(r) || !r.every(fin) || r.length < 3 || r.length > 8 || r.length === 6) return null;
-  const [x, y, z] = r;
+  const [x, y, z] = r; if (Math.abs(x) > FAR || Math.abs(y) > FAR || Math.abs(z) > FAR) return null;
   if (r.length <= 5) return [x, y, z, ...yawQuat(r[3] ?? 0), num(r[4], 1, 1e-4, 1e4)];
   const l = Math.hypot(r[3], r[4], r[5], r[6]); if (!(l > 1e-9)) return null;
   return [x, y, z, r[3] / l, r[4] / l, r[5] / l, r[6] / l, num(r[7], 1, 1e-4, 1e4)];
@@ -81,9 +83,18 @@ export function readInstances(value, id = '') {
   return { count: out.length / 8, copies: Float32Array.from(out), ground: value.ground === true, original: value.original !== false };
 }
 
+/** How many copies a value draws, without working any of them out (a look reads this for every instanced thing). */
+export function countInstances(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return 0;
+  const placed = Array.isArray(value.at) ? Math.min(INSTANCE_MAX, value.at.filter((r) => row(r)).length) : 0;
+  const s = value.scatter && typeof value.scatter === 'object' && !Array.isArray(value.scatter) ? value.scatter : null;
+  return placed + (s ? Math.min(INSTANCE_MAX - placed, Math.floor(num(s.count, 0, 0, INSTANCE_MAX))) : 0);
+}
+
 /** One line for someone who reads rather than sees ("drawn 400 times, scattered in a disc of 12 m"); null when it draws nothing. */
-export function describeInstances(value, id = '') {
-  const r = readInstances(value, id); if (!r) return null;
+export function describeInstances(value) {
+  const count = countInstances(value); if (!count) return null;
+  const r = { count, ground: value.ground === true, original: value.original !== false };
   const s = value.scatter && typeof value.scatter === 'object' ? value.scatter : null;
   const shape = s && SCATTER_SHAPES.includes(s.shape) ? s.shape : 'disc';
   const where = !s || !(num(s.count, 0) >= 1) ? 'placed by hand' : shape === 'disc' || shape === 'ring' || shape === 'sphere'
