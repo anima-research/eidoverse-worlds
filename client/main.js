@@ -68,6 +68,7 @@ import { initEditLayout } from './lib/edit/layout.js';
 import { initGizmo } from './lib/edit/gizmo.js';
 import { initGripEdit } from './lib/edit/gripedit.js';
 import { initMaterialOverrides } from './lib/realize/material_draft.js';
+import { initInstances, tickInstances } from './lib/realize/instances-draft.js';
 import { initWorldEdge } from './lib/edge.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr/xr.js';
 import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/ui/people.js';
@@ -306,7 +307,8 @@ function start() {
   bus.on('build-mode', (on) => editPanels.show(!!on));
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
-  initMaterialOverrides();   // the draft hesperus/material reader (docs/contributing/COMPONENT-LADDER.md)
+  initMaterialOverrides();   // the draft readers hesperus/material and antra/shader (docs/contributing/COMPONENT-LADDER.md)
+  initInstances();           // the draft antra/instances reader
   initWorldEdge();           // @world.bounds drawn as a fence
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered after show, so it docks visible frames)
 
@@ -504,6 +506,7 @@ registerSystem('motion', () => tickMotion());                   // the world's m
 registerSystem('lookat', () => tickLookAt());                   // look-at: things turn to face something (after motion)
 registerSystem('texts', () => tickTexts());                     // signs that turn to face you
 registerSystem('openable', () => tickOpenables());           // doors, gates and lids tween to their state
+registerSystem('instances', () => tickInstances());         // a thing's instanced copies follow it (after everything that moves a thing)
 registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); });   // an authored environment's sun wins, before the rig fits shadows
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests

@@ -34,6 +34,8 @@ import { readOut, readLine } from './a11y.js';
 import { COMPONENTS as SPEC, registered, outOfRange, rangeWords, statusOf } from './protocol/componentspec.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS, MESH_SHAPES, lightOf } from './components.js';
 import { draftsRead, readsDraft, isTrusted, toggleTrusted, TRUSTED, UNPROVEN_HINT } from './drafts.js';
+import { compileShader } from './shaderlang.js';
+import { INSTANCES, readInstances, describeInstances } from './instances.js';
 import { socketsIn } from './sockbody.js';
 import { grabOf, checkGrabbable, DEFAULTS as GRAB_DEFAULTS, WHO as GRAB_WHO, HOLDS as GRAB_HOLDS, HOLD_POSES as GRAB_HOLD_POSES, RELEASES as GRAB_RELEASES } from './grab.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
@@ -151,6 +153,12 @@ const motionKeys = (ent) => Object.keys(recordComponents(ent)).filter((k) => (k 
 // (shared/sockbody.js socketsIn) and can only delete, one child at a time (`sockets.del`); a `sockets` map is refused at
 // the door (sockets-test LS1). Needs the world (live.world).
 const socketsOf = (id, live) => (live?.world ? socketsIn(live.world, id, { all: true }) : []);
+const SHADER_KEY = 'antra/shader';
+const INSTANCES_NOTHING = 'this draws nothing: give at: [[x, y, z], …] (copies placed by hand) or scatter: {count, shape, radius} (copies from a seed)';
+// the ladder's second rung, for any draft's card: the world's owner may trust it here (the write is trustOp's)
+const draftTrustButton = (name, live) => (isTrusted(name, live.trusted)
+  ? { t: 'btn', k: 'trust', label: 'stop trusting it in this world', hint: `Takes ${name} off this world's trusted list: back to a draft (amber), offered under "drafts". Nothing stored changes.` }
+  : { t: 'btn', k: 'trust', label: 'trust this in this world', hint: "Not engine-official, but used and trusted in this world: the owner's word (@world.trusted-components). It moves into the main Add Component list with a blue chip. The engine still doesn't read it." });
 const HAND = {
   Transform: { read: 'inspectSchema: the pos and rot groups', write: 'editOps: case pos, case rot, and the compose after the loop' },
   Sockets: {
@@ -169,6 +177,63 @@ const HAND = {
       const x = socks.find((s) => s.id === raw || s.name === raw);
       if (!x) { errors.push(`sockets.del: ${id} has no socket ${JSON.stringify(raw)}`); return; }
       ops.push(OP.remove(x.id));
+    },
+  },
+  Shader: {
+    // the DRAFT antra/shader (docs/guide/SHADERS.md): `antra/shader` draws every material of the thing, `antra/shader:<slot>`
+    // one. The code is checked here by the module every reader uses (shared/shaderlang.js), so code that wouldn't draw
+    // is refused before it is sent.
+    keys: (c) => Object.keys(c).filter((k) => (k === SHADER_KEY || k.startsWith(`${SHADER_KEY}:`)) && c[k] && typeof c[k] === 'object' && !Array.isArray(c[k])),
+    read(c, live) {
+      const fields = [];
+      for (const key of HAND.Shader.keys(c)) {
+        const slot = key === SHADER_KEY ? null : key.slice(SHADER_KEY.length + 1); const pre = slot ? `slot|${slot}|` : '';
+        const code = typeof c[key].code === 'string' ? c[key].code : ''; const r = compileShader(code);
+        const zeros = (u) => (u.type === 'float' ? '0' : `[${Array(+u.type.slice(3)).fill(0).join(', ')}]`);
+        if (slot) fields.push({ t: 'info', k: `${pre}head`, label: '', value: `${slot} only` });
+        fields.push({ t: 'text', k: `${pre}code`, label: 'code', value: code, multiline: true, placeholder: 'color = baseColor;',
+            hint: 'What it looks like, as code: assign color, emissive, roughness, metalness, opacity, position or normal. It may read position, normal, uv, time, baseColor and more, and call sin, mix, noise, fbm… (docs/guide/SHADERS.md).' },
+          r.ok ? { t: 'info', k: `${pre}says`, label: 'writes', value: [...Object.keys(r.outputs), ...(r.discard !== null ? ['discard'] : [])].join(', ') }
+            : { t: 'info', k: `${pre}says`, label: 'problem', value: `line ${r.error.line}, column ${r.error.col}: ${r.error.message}` },
+          { t: 'text', k: `${pre}params`, label: 'params', value: c[key].params && typeof c[key].params === 'object' ? JSON.stringify(c[key].params) : '',
+            placeholder: r.ok && r.uniforms.length ? `{${r.uniforms.map((u) => `"${u.name}": ${zeros(u)}`).join(', ')}}` : 'its uniforms, as JSON',
+            hint: `The code's uniforms by name, as JSON: a number, or a list for a vec. ${r.ok && r.uniforms.length ? `This code declares ${r.uniforms.map((u) => `${u.name} (${u.type})`).join(', ')}.` : 'This code declares none (uniform float speed;).'} One left out reads the thing's own params, else 0.` });
+      }
+      if (live.mayTrust === true) fields.push(draftTrustButton(SHADER_KEY, live));
+      return { group: 'ashader', label: 'Shader', types: HAND.Shader.keys(c), fields };
+    },
+    write({ k, raw, c, comps, errors, ops = [], live = {} }) {
+      if (k === 'trust') { ops.push(trustOp(SHADER_KEY, live)); return; }
+      const m = /^slot\|([^|]+)\|(.+)$/.exec(k); const ck = m ? `${SHADER_KEY}:${m[1]}` : SHADER_KEY; const fk = m ? m[2] : k;
+      const next = { ...(comps.get(ck) ?? (c[ck] && typeof c[ck] === 'object' ? c[ck] : {})) };
+      if (fk === 'code') {
+        const code = String(raw ?? ''); const r = compileShader(code);
+        if (!r.ok) { errors.push(`shader.code: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); return; }
+        next.code = code;
+      } else if (fk === 'params') {
+        const t = typeof raw === 'string' ? raw.trim() : raw;
+        if (t === '' || t == null) delete next.params;
+        else { let v = t; if (typeof t === 'string') { try { v = JSON.parse(t); } catch (e) { errors.push(`shader.params: not valid JSON (${e.message})`); return; } }
+          const bad = !v || typeof v !== 'object' || Array.isArray(v) ? 'an object, {"name": number}' : Object.entries(v).find(([, x]) => !(Number.isFinite(x) || (Array.isArray(x) && x.length >= 2 && x.length <= 4 && x.every(Number.isFinite))))?.[0];
+          if (bad) { errors.push(`shader.params: ${bad.startsWith('an ') ? bad : `'${bad}' must be a number, or a list of 2 to 4 numbers`}`); return; }
+          next.params = v; }
+      } else { errors.push(`shader.${fk}: no such field`); return; }
+      comps.set(ck, next);
+    },
+  },
+  Instances: {
+    // the DRAFT antra/instances (docs/guide/INSTANCES.md): what it draws, said in words by the module every reader uses
+    // (shared/instances.js); the value itself is the card's JSON (its shapes differ too much for rows), checked at that door
+    read(c, id, live) {
+      const says = describeInstances(c[INSTANCES], id);
+      const fields = [{ t: 'info', k: 'says', label: says ? 'draws' : 'problem', value: says ?? INSTANCES_NOTHING,
+        hint: 'at: [[x, y, z, yaw?, scale?], …] places copies by hand, in the thing\'s own frame. scatter: {count, shape: disc | ring | box | grid | line | sphere, radius, inner, size, to, seed, scale: [min, max], yaw: random | out | in | radians, tilt, jitter}. ground: true stands each copy on the ground. original: false draws only the copies. Copies are drawn, never solid (docs/guide/INSTANCES.md).' }];
+      if (live.mayTrust === true) fields.push(draftTrustButton(INSTANCES, live));
+      return { group: 'ainst', label: 'Instances', types: [INSTANCES], fields };
+    },
+    write({ k, errors, ops = [], live = {} }) {
+      if (k === 'trust') { ops.push(trustOp(INSTANCES, live)); return; }
+      errors.push(`instances.${k}: no such field (the value is comp.${INSTANCES})`);
     },
   },
   Material: {
@@ -574,6 +639,9 @@ export function inspectSchema(ent, id, live = {}) {
   // its model's own materials (live.materials: a swatch each, read-only), then the overrides. `hesperus/material` changes
   // every slot; `hesperus/material:<slot>` one (keyed by the model's material name; a key the model no longer has is said).
   if (ent.model || compMesh(ent)) groups.push(HAND.Material.read(c, live));   // every thing with meshes: a model's, or a mesh thing's one 'surface'
+  // the drafts antra/shader and antra/instances, when the thing carries one
+  if (HAND.Shader.keys(c).length) groups.push(HAND.Shader.read(c, live));
+  if (c[INSTANCES] != null) groups.push(HAND.Instances.read(c, id, live));
 
   if (c.particles && typeof c.particles === 'object') {
     // the instance is {effect, part?, at?, seed?, playing?, scale?, params?}; the knobs are the effect's own params
@@ -852,6 +920,17 @@ function componentSections(ent, groups, live = {}, id = '?') {
         } else if (inst.key === 'hesperus/material' && g('hmat')) {
           sec.title = 'Material'; sec.fields = refs('hmat'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
           if (isTrusted(inst.key, live.trusted)) sec.trusted = true;   // …blue once the world's owner trusts it here
+        } else if (String(inst.key ?? '').startsWith(`${SHADER_KEY}:`) && g('ashader')) {
+          if (components.some((x) => x.key === SHADER_KEY)) continue;   // a one-slot shader lives inside the Shader card…
+          if (components.find((x) => String(x.key ?? '').startsWith(`${SHADER_KEY}:`)) !== inst) continue;   // …or, with no thing-wide one, in one card for all slots
+          sec.title = 'Shader'; sec.fields = refs('ashader'); sec.removable = false; sec.draft = true;
+          if (isTrusted(SHADER_KEY, live.trusted)) sec.trusted = true;
+        } else if (inst.key === SHADER_KEY && g('ashader')) {
+          sec.title = 'Shader'; sec.fields = refs('ashader'); sec.removable = true; sec.draft = true;   // a draft: the card wears its dot
+          if (isTrusted(SHADER_KEY, live.trusted)) sec.trusted = true;
+        } else if (inst.key === INSTANCES && g('ainst')) {
+          sec.title = 'Instances'; sec.fields = refs('ainst'); sec.removable = true; sec.draft = true;
+          if (isTrusted(INSTANCES, live.trusted)) sec.trusted = true;
         } else if (inst.key === 'physics' && g('physics')) {
           sec.title = 'Physics'; sec.fields = refs('physics'); sec.removable = true;   // its own fields, not raw JSON
         } else if (inst.key === 'home' && g('home')) {
@@ -1325,6 +1404,8 @@ export function editOps(ent, id, edits, live = {}) {
         break;
       }
       case 'hmat': HAND.Material.write({ k, raw, c, comps, errors, ops, live }); break;
+      case 'ashader': HAND.Shader.write({ k, raw, c, comps, errors, ops, live }); break;
+      case 'ainst': HAND.Instances.write({ k, errors, ops, live }); break;
       case 'home': {
         const next = comps.get('home') ?? JSON.parse(JSON.stringify(c.home ?? {}));
         const n = num(f, raw); if (n == null) break;
@@ -1457,6 +1538,9 @@ export function editOps(ent, id, edits, live = {}) {
         // the JSON door is not a way around the evaluators' rules — nor the authority's
         if ((k === 'light' || k === 'collider') && compRefusal(k, data, ent)) { errors.push(`comp.${k}: ${compRefusal(k, data, ent)}`); break; }
         if (k === 'grabbable' && data != null) { const bad = checkGrabbable(data); if (bad) { errors.push(`comp.grabbable: ${bad.reason}`); break; } }
+        // the drafts this module has cards for: a value their readers would treat as absent is said here, not sent
+        if (k === INSTANCES && data != null && !readInstances(data, id)) { errors.push(`comp.${k}: ${INSTANCES_NOTHING}`); break; }
+        if ((k === SHADER_KEY || k.startsWith(`${SHADER_KEY}:`)) && data != null) { const r = compileShader(data?.code); if (!r.ok) { errors.push(`comp.${k}: its code: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); break; } }
         if ((k === 'picture' || k === 'sound') && data != null) {
           const n = k === 'picture' ? normalizePicture(data) : normalizeSound(data);
           if (!n.ok) { errors.push(`${k}: ${n.why}`); break; }

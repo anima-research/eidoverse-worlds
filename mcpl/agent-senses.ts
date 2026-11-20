@@ -22,6 +22,7 @@ import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint } from "../shared/structure.js";
+import { INSTANCES, describeInstances } from "../shared/instances.js";
 import { type Effective } from "./effective.ts";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
@@ -694,8 +695,13 @@ export class AgentSenses {
       // A griddled building says what it IS (rooms, walls, doors), which is
       // actionable where `components: structure` would not be.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
+      // A thing drawn many times (the draft antra/instances) says how many and in what arrangement; the copies are
+      // drawn only, so a walk can pass through them, and saying so saves planning round one that isn't there.
+      const many = describeInstances(c[INSTANCES], e.id);
+      if (many) aff.push(`${many} (the copies are drawn only: not solid)`);
       const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("copy-of");
+      if (many) spoken.push(INSTANCES);
       if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));

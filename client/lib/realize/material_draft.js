@@ -9,12 +9,16 @@
 // Models share materials across instances, so an override is a per-mesh CLONE, built once and prepared like every
 // world material (materials.js prepareMaterial: the node graph's shape is fixed before its first compile); later edits
 // are uniform writes. Removing the override puts the model's own material back.
+//
+// The draft `antra/shader` (shader-draft.js) rides the same clone: a slot with a shader gets a copy drawn by its code,
+// rebuilt only when the code changes, and an override's fields are that copy's base values (the shader's baseColor).
 
 import { THREE } from '../core.js';
 import { bus } from '../base.js';
 import { entities, bagOf } from '../world.js';
 import { prepareMaterial } from '../render/materials.js';
 import { registerDraft } from '../../../shared/drafts.js';
+import { shaderFor, dressShader, writeShaderUniforms, isShaderKey } from './shader-draft.js';
 
 export const MAT = 'hesperus/material';
 // Add Component offers it where this reader applies (every thing with meshes), as a draft or, once trusted here, in the main list
@@ -39,7 +43,7 @@ function readMaterial(v) {
 }
 
 // its own meshes only: a child THING (parented, or settled onto it) is its own entity with its own materials
-function meshes(obj) {
+export function meshes(obj) {
   const out = []; const id = obj?.userData?.entityId;
   const walk = (o) => { if (o !== obj && o.userData?.entityId && o.userData.entityId !== id) return;
     if (o.isMesh && o.material && !o.userData?.noMaterialOverride && !o.isInstancedMesh) out.push(o);
@@ -89,11 +93,19 @@ function applyMaterials(id) {
     const orig = origOf(mesh); const clones = (mesh.userData.__matClones ??= []);
     const next = orig.map((mat, i) => {
       const o = mat ? overrideFor(bag, slots.get(mat)) : null;
-      if (!o) return mat;
+      const sh = mat ? shaderFor(bag, slots.get(mat)) : null;
+      if (!o && !sh) return mat;
       n++;
       let c = clones[i];
-      if (!c || c.__from !== mat) { c = mat.clone(); c.__from = mat; c.name = mat.name; prepareMaterial(c, mesh); clones[i] = c; }
-      write(c, mat, o); return c;
+      if (!c || c.__from !== mat || c.__code !== (sh?.code ?? null)) {
+        c?.dispose();
+        c = (sh && dressShader(mat, sh, mesh)) || mat.clone(); c.__from = mat; c.__code = sh?.code ?? null; c.name = mat.name;
+        if (mat.isNodeMaterial) prepareMaterial(c, mesh);   // a model's classic material never went through the factory: neither does its copy
+        clones[i] = c;
+      }
+      write(c, mat, o ?? {});
+      if (sh) writeShaderUniforms(c, sh, bag?.params);
+      return c;
     });
     mesh.material = Array.isArray(mesh.material) || next.length > 1 ? next : next[0];
   }
@@ -101,9 +113,10 @@ function applyMaterials(id) {
 }
 
 export function initMaterialOverrides() {
-  bus.on('comp', ({ id, type }) => { if (type === MAT || String(type).startsWith(`${MAT}:`)) applyMaterials(id); });
+  const mine = (k) => k === MAT || String(k).startsWith(`${MAT}:`) || isShaderKey(k);
+  bus.on('comp', ({ id, type }) => { if (mine(type)) applyMaterials(id); });
   // a model that arrives (or is swapped in by residency) after its component: the bag is re-announced, but be sure
-  bus.on('entity', ({ id, kind }) => { if (kind === 'spawn' || kind === 'place') { const bag = bagOf(id); if (bag && Object.keys(bag).some((k) => k === MAT || k.startsWith(`${MAT}:`))) requestAnimationFrame(() => applyMaterials(id)); } });
+  bus.on('entity', ({ id, kind }) => { if (kind === 'spawn' || kind === 'place') { const bag = bagOf(id); if (bag && Object.keys(bag).some(mine)) requestAnimationFrame(() => applyMaterials(id)); } });
   // a deleted override: nothing announces a deleted type by name, so re-read on any comp change of a thing that had one
   bus.on('comp', ({ id }) => { const obj = entities.get(id); if (obj && meshes(obj).some((m) => m.userData.__matClones?.some(Boolean))) applyMaterials(id); });
   globalThis.__materialDraft = { applyMaterials, materialsOf: (id) => materialsOf(entities.get(id)) };

@@ -811,6 +811,113 @@ try {
   check("MT2 a one-slot override (hesperus/material:<its slot>) recolours that slot; a slot the model doesn't have changes nothing", r.slot && r.slotA === "0044ff" && r.slotB === r.before[0], r);
   check("MT1 a hesperus/material override recolours that one thing (a clone; the same model elsewhere is untouched), and deleting it brings the model's own material back", r.set === true && r.a[0] === "ff2200" && Math.abs(r.a[1] - 0.15) < 1e-6 && r.b[0] === r.before[0] && !r.sharedWithB && r.backIsOwn && r.del === true, r);
   });
+  // ---- SH: the draft antra/shader, drawn (docs/guide/SHADERS.md; client/lib/realize/shader-draft.js) ----
+  // The checker (shared/shaderlang.js) promises that code it passes builds a shader the graphics card accepts. Only a
+  // graphics card can say so: SH1 draws EVERY function in EVERY argument form the checker admits, in pixel code and in
+  // vertex code, and holds the renderer to zero shader errors. A function added to the language is in this sweep at once.
+  await stage("SH", async () => {
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  await page(`if (!window.__gfx) { window.__gfx = []; window.__frames = 0; const ce = console.error; console.error = (...a) => { try { const t = a.map((x) => (typeof x === 'string' ? x : x?.message ?? '')).join(' '); if (/shader|pipeline|wgsl|program|GPUValidation/i.test(t)) window.__gfx.push(t.slice(0, 300)); } catch {} ce(...a); };
+      const core = await import('/lib/core.js'); core.renderer?.backend?.device?.addEventListener?.('uncapturederror', (e) => window.__gfx.push('gpu: ' + String(e.error?.message ?? e).slice(0, 300)));
+      const f = () => { window.__frames++; requestAnimationFrame(f); }; requestAnimationFrame(f); } return true;`);
+  const frames = async (n: number) => { const f0 = await evalJson(`window.__frames`); return waitFor(`window.__frames >= ${f0 + n}`, 60000); };
+  const sweep = await page(`const n = await import('/lib/net.js'); const L = await import('/shared/shaderlang.js');
+    const VALS = { float: 'uv.x', vec2: 'uv', vec3: 'position', vec4: 'vertexColor' }, T = ['float', 'vec2', 'vec3', 'vec4'];
+    const combos = (k) => (k === 0 ? [[]] : combos(k - 1).flatMap((x) => T.map((t) => [...x, t])));
+    const calls = [];
+    for (const [name, resolve] of Object.entries(L.SHADER_FUNCTIONS)) for (let k = 0; k <= 4; k++) for (const types of combos(k)) {
+      const r = resolve(types); if (!r) continue;
+      const call = name + '(' + types.map((t, i) => (r.constArgs?.includes(i) ? '3' : VALS[t])).join(', ') + ')';
+      calls.push({ name, frag: !!r.frag, expr: r.ret === 'float' ? call : 'length(' + call + ')' });
+    }
+    const body = (part) => 'float s = 0.0;\\n' + part.map((x) => 's += ' + x.expr + ';').join('\\n') + '\\n';
+    const progs = []; for (let i = 0; i < calls.length; i += 40) progs.push(body(calls.slice(i, i + 40)) + 'color = vec3(fract(s * 0.37), 0.4, 0.8);');
+    const v = calls.filter((x) => !x.frag); for (let i = 0; i < v.length; i += 60) progs.push(body(v.slice(i, i + 60)) + 'position.y += fract(s) * 0.05; color = vec3(0.9, 0.5, 0.1);');
+    // …and every kind of node, every input and output, a loop with break and continue, a function with an early return, discard
+    progs.push('uniform float speed; uniform vec2 a2; uniform vec3 tint; uniform vec4 a4;\\nfloat sq(float x) { if (x < 0.0) return 0.0; return x * x; }\\n'
+      + 'int k = int(uv.x * 4.0) % 3; bool b = uv.x > 0.5 && !(uv.y < 0.1) || k == 1 || k != 2 || uv.x <= 0.2 || uv.y >= 0.3;\\n'
+      + 'vec3 c = b ? tint * speed : -position; c.rg = c.gr % 2.0; c /= 2.0; c -= vec3(a2, 0.0) * 0.01 + a4.xyz * 0.01;\\n'
+      + 'float t = 0.0; for (int i = 0; i < 12; i++) { if (t > uv.x * 6.0) break; if (i == 3) continue; t += sq(0.7); }\\n'
+      + 'color = fract(c + t); emissive = baseEmissive + baseColor * instance * 0.1; roughness = baseRoughness - float(k) * 0.1; metalness = baseMetalness; opacity = baseOpacity * 0.9;\\n'
+      + 'normal = normalize(normalWorld + normalView * 0.01 + viewDir * 0.01 + positionWorld * 0.001 + normal); position += normal * sin(time) * 0.02 + vec3(vertexColor.a) * 0.001;\\n'
+      + 'if (fract(uv.x * 7.0) > 0.92) discard;');
+    const bad = progs.map((code, i) => [i, L.shaderProblem(code)]).filter(([, e]) => e);
+    const ids = [];
+    for (let i = 0; i < progs.length; i++) ids.push((await n.sendRequest('create', { components: { mesh: { shape: i % 2 ? 'sphere' : 'box', size: [0.6, 0.6, 0.6] },
+      transform: { pos: [${me[0]} - 5 + (i % 8) * 1.2, 1.5 + Math.floor(i / 8), ${me[1]} - 6] }, 'antra/shader': { code: progs[i] } } })).refs?.[0]?.id ?? null);
+    window.__shIds = ids; return { calls: calls.length, shaders: progs.length, bad, made: ids.filter(Boolean).length };`);
+  const dressed = `import('/lib/world.js').then((w) => window.__shIds.every((id) => { let m = null; w.entities.get(id)?.traverse((o) => { if (o.isMesh && !m) m = o.material; }); return !!m?.__uniforms; }))`;
+  const allDressed = await waitFor(dressed, 45000); await frames(30);
+  const gfx = await evalJson(`window.__gfx`);
+  check(`SH1 every function in every argument form (${sweep?.calls} calls in ${sweep?.shaders} shaders, pixel and vertex code) builds a shader the graphics card accepts: zero shader errors after 30 frames`,
+    sweep?.calls > 150 && sweep.bad.length === 0 && sweep.made === sweep.shaders && allDressed && gfx.length === 0, { sweep, allDressed, gfx: gfx.slice(0, 3) });
+  // SH2..SH5 on a library model (a classic material: the copy is its node twin) beside an untouched one
+  const made = await page(`const m = await import('/lib/net.js'); const out = []; for (const dx of [2, 3.2]) out.push((await m.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} + dx, 0, ${me[1]} - 4], scale: 0.3 } } })).refs?.[0]?.id ?? null); return out;`);
+  const [SA, SB] = made ?? []; if (!SA || !SB) throw new Error(`setup: the two crates weren't created: ${JSON.stringify(made)}`);
+  await needModel(`import('/lib/world.js').then((m) => !!(m.entities.get('${SA}')?.userData.base && m.entities.get('${SB}')?.userData.base))`, 'the two crates');
+  const mat = (id: string) => `(() => { let m = null; globalThis.__shw.entities.get('${id}').traverse((o) => { if (o.isMesh && !m) m = Array.isArray(o.material) ? o.material[0] : o.material; }); return m; })()`;
+  const worn = (id: string) => `import('/lib/world.js').then((w) => { globalThis.__shw = w; return !!${mat(id)}?.__uniforms; })`;
+  const r = await page(`globalThis.__shw = await import('/lib/world.js'); const n = await import('/lib/net.js'); const own = ${mat(SA)}; window.__shOwn = own;
+    const set = await n.sendRequest('set', { id: '${SA}', component: 'antra/shader', value: { code: 'uniform float speed; uniform vec3 tint; color = tint * (0.5 + 0.5 * sin(time * speed)); emissive = tint * 0.2;', params: { tint: [1, 0.5, 0.25] } } });
+    return { set: set.ok ?? set.refused, ownNode: !!own.isNodeMaterial };`);
+  check("(setup) the shader was written", r?.set === true, r);
+  check("SH2a the thing with the shader wears a copy drawn by it", await waitFor(worn(SA), 15000));
+  const a = await page(`const c = ${mat(SA)}, b = ${mat(SB)}; window.__shFirst = c; return { node: !!c.isNodeMaterial, colorNode: !!c.colorNode, emissiveNode: !!c.emissiveNode, positionNode: !!c.positionNode, tint: c.__uniforms.get('tint').node.value.toArray(), speed: c.__uniforms.get('speed').node.value, otherIsOwn: b === window.__shOwn, mapKept: c.map === window.__shOwn.map };`);
+  check("SH2 its copy is a node material carrying the outputs the code assigns (colour, glow; not position), its texture kept; the same model beside it is untouched; a uniform reads the component's params, else 0",
+    a?.node && a.colorNode && a.emissiveNode && !a.positionNode && a.mapKept && a.otherIsOwn && JSON.stringify(a.tint) === "[1,0.5,0.25]" && a.speed === 0, a);
+  // a uniform the component doesn't name reads the thing's own params (what a script's world.param writes); a value change recompiles nothing
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${SA}', component: 'params', value: { speed: 3 } }); return true;`);
+  const p1 = await waitFor(`Promise.resolve(${mat(SA)}.__uniforms?.get('speed')?.node.value === 3)`, 15000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${SA}', component: 'antra/shader', value: { code: 'uniform float speed; uniform vec3 tint; color = tint * (0.5 + 0.5 * sin(time * speed)); emissive = tint * 0.2;', params: { tint: [0, 1, 0], speed: 7 } } }); return true;`);
+  const p2 = await waitFor(`Promise.resolve(${mat(SA)}.__uniforms?.get('speed')?.node.value === 7 && ${mat(SA)}.__uniforms.get('tint').node.value.y === 1)`, 15000);
+  const same = await evalJson(`${mat(SA)} === window.__shFirst`);
+  check("SH3 the thing's own params feed a uniform the shader's params don't name; the shader's own win; changing a value is a uniform write on the SAME material (nothing recompiles)", p1 && p2 && same === true, { p1, p2, same });
+  // new code is a new copy; code that doesn't compile is absent (the thing's own material), and nothing throws
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${SA}', component: 'antra/shader', value: { code: 'position += normal * 0.05 * sin(time); color = baseColor;' } }); return true;`);
+  const recoded = await waitFor(`Promise.resolve(!!${mat(SA)}.positionNode && ${mat(SA)} !== window.__shFirst)`, 15000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${SA}', component: 'antra/shader', value: { code: 'color = nonsense(1.0;' } }); return true;`);
+  const absent = await waitFor(`Promise.resolve(${mat(SA)} === window.__shOwn)`, 15000);
+  check("SH4 new code is a new copy; code that doesn't compile is absent: the thing shows its own material again", recoded && absent, { recoded, absent });
+  // with a hesperus/material override: ONE copy carries both (the override's colour is the shader's baseColor)
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${SA}', component: 'antra/shader', value: { code: 'emissive = baseColor * 0.5;' } }); await n.sendRequest('set', { id: '${SA}', component: 'hesperus/material', value: { color: 0xff2200 } }); return true;`);
+  const both = await waitFor(`Promise.resolve(!!${mat(SA)}.emissiveNode && ${mat(SA)}.color.getHexString() === 'ff2200')`, 15000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: '${SA}', component: 'antra/shader' }); return true;`);
+  const overrideLeft = await waitFor(`Promise.resolve(!${mat(SA)}.emissiveNode && ${mat(SA)}.color.getHexString() === 'ff2200' && ${mat(SA)} !== window.__shOwn)`, 15000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: '${SA}', component: 'hesperus/material' }); return true;`);
+  const back = await waitFor(`Promise.resolve(${mat(SA)} === window.__shOwn)`, 15000);
+  await frames(10);
+  const gfx2 = await evalJson(`window.__gfx`);
+  check("SH5 a shader and a hesperus/material override share one copy; deleting the shader leaves the override, deleting both brings the model's own material back; still no shader error", both && overrideLeft && back && gfx2.length === 0, { both, overrideLeft, back, gfx: gfx2.slice(0, 3) });
+  });
+  // ---- IN: the draft antra/instances, drawn (docs/guide/INSTANCES.md; client/lib/realize/instances-draft.js) ----
+  await stage("IN", async () => {
+  const me = await evalJson(`import('/lib/player/controller.js').then((c) => [c.myState.pos.x, c.myState.pos.z])`);
+  const id = await page(`const n = await import('/lib/net.js'); return (await n.sendRequest('create', { model: '${CRATE}', components: { transform: { pos: [${me[0]} - 3, 0, ${me[1]} - 8], scale: 0.3 }, 'antra/instances': { scatter: { count: 14, shape: 'ring', radius: 6 } } } })).refs?.[0]?.id ?? null;`);
+  if (!id) throw new Error("setup: the crate wasn't created");
+  await needModel(`import('/lib/world.js').then((m) => !!m.entities.get('${id}')?.userData.base)`, 'the instanced crate');
+  const copies = `(async () => { const core = await import('/lib/core.js'); const w = await import('/lib/world.js'); const obj = w.entities.get('${id}'); const out = []; core.scene.traverse((o) => { if (o.userData?.instancesOf === '${id}') out.push(o); }); let src = null, under = 0; obj.traverse((o) => { if (o.isInstancedMesh) under++; if (o.isMesh && !o.isInstancedMesh && !src) src = o; });
+    const m = out[0]; return { n: out.length, count: m?.count ?? null, sameGeometry: !!m && m.geometry === src.geometry, sameMaterial: !!m && m.material === src.material, inScene: !!m && m.parent === core.scene, under, follows: !!m && m.matrixWorld.equals(obj.matrixWorld), srcVisible: src.visible, shown: m?.visible ?? null, dressed: !!m?.material?.__uniforms }; })()`;
+  await waitFor(`${copies}.then((c) => c.n === 1 && c.count === 14)`, 20000);
+  const c1 = await evalJson(copies);
+  check("IN1 a ring of 14: ONE instanced mesh of 14 copies sharing the thing's geometry and material, in the scene and not under the thing (so its collider, bounds and measure never meet the copies); the thing itself still drawn",
+    c1?.n === 1 && c1.count === 14 && c1.sameGeometry && c1.sameMaterial && c1.inScene && c1.under === 0 && c1.follows && c1.srcVisible === true && c1.shown === true, c1);
+  // the copies follow the thing when it moves, and wear what it wears
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'transform', value: { pos: [${me[0]} - 4, 0.5, ${me[1]} - 9], scale: 0.3 }, merge: true }); await n.sendRequest('set', { id: '${id}', component: 'antra/shader', value: { code: 'emissive = hsv(fract(instance / 14.0), 0.9, 1.0) * 0.5;' } }); return true;`);
+  const moved = await waitFor(`${copies}.then((c) => c.follows && c.dressed && c.sameMaterial)`, 20000);
+  const at = await evalJson(`import('/lib/world.js').then((w) => w.entities.get('${id}').position.toArray().map((v) => +v.toFixed(2)))`);
+  check("IN2 the copies follow the thing when it moves, and wear the shader it wears (the same material object)", moved && Math.abs(at[1] - 0.5) < 0.01, { moved, at });
+  // original: false draws only the copies; a hand-placed list replaces the ring; deleting the component draws the thing once again
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { at: [[2, 0, 0], [4, 0, 0, 1.57], [6, 0, 0, 0, 2]], original: false } }); return true;`);
+  const three = await waitFor(`${copies}.then((c) => c.n === 1 && c.count === 3 && c.srcVisible === false)`, 20000);
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('delete', { id: '${id}', component: 'antra/instances' }); return true;`);
+  const gone = await waitFor(`${copies}.then((c) => c.n === 0 && c.srcVisible === true)`, 20000);
+  check("IN3 original: false hides the thing's own mesh and draws 3 hand-placed copies; deleting the component removes the copies and shows the thing again", three && gone, { three, gone });
+  // a value that draws nothing is absent
+  await page(`const n = await import('/lib/net.js'); await n.sendRequest('set', { id: '${id}', component: 'antra/instances', value: { scatter: { count: 0 } } }); await n.sendRequest('set', { id: '${id}', component: 'label', value: 'instanced crate' }); return true;`);
+  await waitFor(`import('/lib/world.js').then((w) => w.bagOf('${id}')?.label === 'instanced crate')`, 15000);
+  const none = await evalJson(copies);
+  check("IN4 a value that draws nothing is absent (no copies, the thing drawn once)", none?.n === 0 && none.srcVisible === true, none);
+  });
   // ---- EC: the camera in build mode (R, 10-10: "we need camera moving controls in build mode ... Blender or Maya ... or
   // left-click hold and move wherever there's a bare space (not even this last one works)") ----
   await stage("EC", async () => {
