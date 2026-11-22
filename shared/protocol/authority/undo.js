@@ -1,5 +1,5 @@
 // shared/protocol/authority/undo.js — the act index (undo and wait without scanning the log) and undo by act, with the
-// sky and weather builders that live beside it. The inverse goes through admit like any write; the write path's
+// sky, weather and sculpt builders that live beside it. The inverse goes through admit like any write; the write path's
 // helpers it borrows (needThing, lastTouch, the reference clears) are above it, reached through UP.
 import { fold, opsOf, isIdentity, jcs, REDACTED, redactionsIn, redactedBodies } from "../fold.js";
 import { materialize, refsOf } from "../componentspec.js";
@@ -12,6 +12,9 @@ import { isSocketC } from "./sockets.js";
 import { RESERVED, admits, may, rankOf, roleOf } from "./rights.js";
 import { reactionCap } from "./use.js";
 import { idOut } from "../view.js";
+import * as TR from "../sculpt.js";
+import { SCULPT, shapeable, shapeParams, groundArgs } from "../../terrainshape.js";
+import { groundOf, spend } from "./spatial.js";
 // the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 const holdsRefs = (...a) => UP.holdsRefs(...a);
@@ -253,6 +256,11 @@ function buildUndo(ctx, a, w) {
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
   const res = result(target.seq); if (!res || changedNothing(target.seq)) refuse("nothing", "that act changed nothing", "");
   refuseLifted(target.seq);
+  // a raise or a lower comes back out from under whatever was sculpted since (sculptInverse); any other stroke, or one
+  // that met the layer's limit, is put back as any write is
+  if (target.verb === "sculpt" && TR.ADDITIVE.has(readBody(target.seq)?.args?.brush) && readBody(target.seq)?.clamped !== true) {
+    const inv = sculptInverse(w, ctx, target, res, X);
+    if (inv) { ctx.actExtra = { undoes: target.seq, inverse: true }; ctx.undid = { act: target.seq, kind: "undo", what: "sculpt" }; ctx.refs.add("@world"); return inv; } }
   const { groups, skipped } = inverseOf(target, res, ctx.st);
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
@@ -276,4 +284,71 @@ function buildUndo(ctx, a, w) {
   return groups.flat();
 }
 
-export { buildSky, buildUndo, buildWeather };
+// ---------- sculpt: one brush stroke on the ground's sculpted layer (verbs.js BATCH_VERBS; shared/protocol/sculpt.js) ----------
+const TILE = "terrain-tile:";
+const LEVEL = () => new Array(SCULPT.tile ** 2).fill(0);
+const tilesAt = (st) => new Map(Object.entries(st.entities["@world"]?.c ?? {}).filter(([k, v]) => k.startsWith(TILE) && Array.isArray(v?.mm)).map(([k, v]) => [k.slice(TILE.length), v.mm]));
+// One act per stroke, worked out against the ground AT HEAD (never a client's copy), writing the tiles it changes, whole;
+// a tile it leaves level is deleted (a tile that isn't there is level).
+function buildSculpt(ctx, a) {
+  const t = ctx.st.entities["@world"]?.c.terrain;
+  if (!shapeable(t)) refuse("level-ground", `this world's ground is the level floor (${t ? "its terrain is kind flat" : "it has no terrain"}), which nothing sculpts`,
+    "give the world a ground that isn't level first: set {id: '@world', component: 'terrain', value: {kind: 'noise', amplitude: 0}} is flat ground you can sculpt (amplitude rolls hills)");
+  // with no path the brush works where the asker's body stands, as the authority tracks it (the act records no position:
+  // what it wrote says where)
+  if (a.path === undefined) { const at = ctx.w.presence?.bodies?.[ctx.actor]?.at;
+    if (!Array.isArray(at)) refuse("missing-arg", "sculpt needs a path: you have no body here for the brush to work under", "path: [[x, z], …] in world metres, e.g. path: [[12, -4]]");
+    a = { ...a, path: [[at[0], at[2]]] }; }
+  const pt = (p) => Array.isArray(p) && p.length === 2 && p.every((n) => isNum(n) && Math.abs(n) <= 100000);
+  if (!Array.isArray(a.path) || !a.path.length || a.path.length > TR.MAX_POINTS || !a.path.every(pt)) refuse("shape", `path is [[x, z], …]: 1–${TR.MAX_POINTS} points in world metres`, "one point is a dab where it stands: path: [[12, -4]]");
+  if (!(a.radius >= 0.25 && a.radius <= TR.MAX_RADIUS)) refuse("bounds", `radius is ${a.radius}; it must be 0.25–${TR.MAX_RADIUS} (m)`, "a wider change is the terrain's own: a terrain-feature, or its heightmap");
+  if (TR.ADDITIVE.has(a.brush) ? !(a.strength > 0 && a.strength <= TR.MAX_STRENGTH) : !(a.strength === undefined || (a.strength > 0 && a.strength <= 1)))
+    refuse(a.strength === undefined ? "missing-arg" : "bounds", TR.ADDITIVE.has(a.brush) ? `a ${a.brush} needs strength: how many metres at the path, more than 0 and at most ${TR.MAX_STRENGTH}` : `a ${a.brush}'s strength is how far to go, more than 0 and at most 1 (absent: all the way)`, "e.g. strength: 0.4");
+  if (a.height !== undefined && (a.brush !== "flatten" || Math.abs(a.height) > 500)) refuse(a.brush !== "flatten" ? "doesnt-apply" : "bounds", a.brush !== "flatten" ? `height is a flatten's (the height it brings the ground to); a ${a.brush} takes strength` : `height is ${a.height}; it must be within ±500 (m)`, "");
+  // Rights and the work's price come BEFORE the work: a stroke is the one write whose building is costly (admit would
+  // refuse the tiles it wrote anyway, after the brush had run). What a stroke costs is the samples its path covers, and for
+  // a flatten or a smooth each of those reads the ground, feature by feature (a smooth ten times a sample).
+  if (!ctx.cap && !may(ctx.st, ctx.actor, "build")) refuse("rights", `sculpting the ground needs builder; you are ${roleOf(ctx.st, ctx.actor)}`, "ask a moderator or an owner for build; help shows your role and permissions", { needs: "build" });
+  const g = groundOf(ctx.st);
+  { const visits = TR.strokeVisits(a.path, a.radius), reads = TR.strokeReads(a.brush, visits), per = 2 + (shapeParams(groundArgs(ctx.st.entities["@world"]?.c))?.features.length ?? 0);
+    spend((visits + reads * per) / 64, `a ${a.brush} over that much ground`, "a shorter path or a smaller radius (a smooth reads the ground ten times a sample; every feature of the ground makes each read dearer)"); }
+  const { writes, clamped, tooBig, reached } = TR.applyStroke(tilesAt(ctx.st), a, (x, z) => g.height(x, z));
+  if (tooBig) refuse("too-big", "that stroke covers more ground than one stroke may", "a shorter path or a smaller radius; a change that wide is the terrain's own (a terrain-feature, or its heightmap)");
+  if (!writes.size) refuse("nothing", !reached ? "the brush reaches no part of the ground there" : TR.ADDITIVE.has(a.brush) ? `the ${a.brush} changes nothing there: every sample it reaches is at the sculpted layer's limit already, or the strength is under a millimetre` : `the ground there is already as a ${a.brush} would leave it`,
+    !reached ? "the ground's sculpted layer runs ±2048 m from the world's centre" : "");
+  const bytes = [...writes.values()].reduce((n, mm) => n + (mm ? jcs(mm).length + 60 : 60), 0);
+  if (bytes > 1000000) refuse("too-big", `that stroke rewrites ${writes.size} tiles of the ground (about ${bytes.toLocaleString("en")} bytes); one change is at most 1 MiB`, "a shorter path or a smaller radius; a change that wide is the terrain's own (a terrain-feature, or its heightmap)");
+  ctx.actExtra = { tiles: writes.size, ...(clamped ? { clamped: true } : {}) }; ctx.refs.add("@world");
+  const ops = [...writes].map(([k, mm]) => (mm ? setOp("@world", TILE + k, { mm }) : delOp("@world", TILE + k)));
+  // what the stroke did where it began: the ground there before and after (m), for whoever can't see it
+  const [x0, z0] = a.path[0], mm3 = (h) => Math.round(h * 1000) / 1000;
+  ctx.reply = { sculpted: { tiles: writes.size, at: [x0, z0], was: mm3(g.height(x0, z0)), now: mm3(groundOf(scratch(ctx.st, ops)).height(x0, z0)) } };
+  if (clamped) ctx.notes.push({ id: "@world", why: `part of the stroke met the sculpted layer's limit (±${SCULPT.limit / 1000} m from the ground under it) and stops there` });
+  return ops;
+}
+// Undo of a raise or a lower writes head − (after − before) per sample, so what was sculpted since stays. That is exact
+// only while everything written to these tiles since is an add too: a later raise or lower that stayed inside the layer's
+// limit, or the undo of one. After anything else (a flatten or a smooth, which read the ground this stroke had raised; a
+// tile written or levelled by hand; a stroke that met the limit), or where the result would pass the limit: null, and the
+// undo falls back to putting the tiles back as they were (refused where someone else changed them since).
+function sculptInverse(w, ctx, target, res, X) {
+  const ops = opsOf(res), mine = new Set(ops.map((o) => o.comp)), E = w.entries, hist = X.touch.get("@world") ?? [];
+  for (let n = firstAfter(hist, res.seq); n < hist.length; n++) { const i = hist[n]; if (!opsQuiet(E[i]).some((o) => o.id === "@world" && mine.has(o.comp))) continue;
+    const c = E[E[i].cause], b = isE(c) && c.kind === "request" ? readback(w, E[i].cause) : null;   // READBACK: a purged later request is unknown: not exact
+    if (!(b && !b.clamped && ((c.verb === "sculpt" && TR.ADDITIVE.has(b.args?.brush)) || (c.verb === "undo" && b.inverse === true)))) return null; }
+  // the tiles before the stroke, as it left them and now, each read as the log lets them be read (entityBefore: a purged
+  // value is REDACTED there, never the bytes the entry still holds). A tile that isn't there is level; one that can't be
+  // read is unknown, and nothing is undone by an unknown amount
+  const was = entityBefore(w, "@world", target.seq, X)?.c ?? {}, left = entityBefore(w, "@world", res.seq + 1, X)?.c ?? {}, now = ctx.st.entities["@world"]?.c ?? {}, out = [];
+  const read = (c, k) => (c[k] === undefined ? LEVEL() : c[k] === REDACTED ? null : c[k]?.mm);
+  for (const o of ops) { if (o.id !== "@world" || !o.comp?.startsWith(TILE) || (o.op !== "set" && o.op !== "delete")) return null;
+    const b = read(was, o.comp), a = read(left, o.comp), h = read(now, o.comp);
+    if (![b, a, h].every((m) => Array.isArray(m) && m.length === SCULPT.tile ** 2)) return null;   // a purged value, or a tile written by hand in another shape
+    const v = h.map((x, k) => x - (a[k] - b[k]));
+    if (v.some((x) => x > SCULPT.limit || x < -SCULPT.limit)) return null;
+    if (v.every((x, k) => x === h[k])) continue;
+    out.push(v.every((x) => x === 0) ? delOp("@world", o.comp) : setOp("@world", o.comp, { mm: v })); }
+  if (!out.length) refuse("nothing", "undoing that stroke changes nothing now", "");
+  return out;
+}
+export { buildSculpt, buildSky, buildUndo, buildWeather };

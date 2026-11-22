@@ -144,8 +144,8 @@ export function makeHost(x) {
     if (o.op === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
   };
   const parentOf = (e) => (e?.c?.parent && typeof e.c.parent.to === "string" ? e.c.parent.to : null);
-  // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 64 times on a
-  // big world must not cost the authority 64 sorts)
+  // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 256 times on a
+  // big world must not cost the authority 256 sorts)
   const allIds = () => { if (idsAll) return idsAll; idsIdx ??= Object.keys(base).sort();
     return (idsAll = ov.size ? [...new Set([...idsIdx, ...ov.keys()])].filter((k) => entOf(k)).sort() : idsIdx); };
   const kidsOf = (id) => { if (!kidsIdx) { kidsIdx = new Map(); for (const k of Object.keys(base)) { const p = parentOf(base[k]); if (p) { let a = kidsIdx.get(p); if (!a) kidsIdx.set(p, (a = [])); a.push(k); } } }

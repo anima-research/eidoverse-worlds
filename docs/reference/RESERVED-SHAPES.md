@@ -13,11 +13,16 @@ the shape each was sketched with, verbatim from the registry before it was unpin
                help: "reserved (refused until an engine reads surfaces): on @world, keyed by name, a surface material things name with physics.surface: {friction? (≥ 0), restitution? (0..1), density? (kg/m³), frictionCombine?, restitutionCombine? (average|min|multiply|max; absent: average and max), label?}. When two touching surfaces' combine modes differ, the later of average < min < multiply < max wins (PhysX, Unity, Rapier; KHR resolves the other way round, PHYSICS §3.2)" },
 ```
 
-## `terrain-grid`, `terrain-tile`
+## `terrain-grid`
+
+`terrain-tile` was sketched with it and left this file on 2026-11-20, when sculpted terrain was built: its shape is the
+registry's now (`{mm: [1024 whole millimetres, row-major]}`, keyed `<i>-<j>`), on a lattice the height law fixes for
+every world (shared/terrainshape.js `SCULPT`: a sample every 0.5 m from −2048 m, 32 × 32 to a tile, ±500 m), so no world
+carries a grid. `terrain-grid` stays held for a world that needs a lattice of its own; this is the shape it was
+sketched with:
 
 ```js
   "terrain-grid": { status: "reserved", on: "world", fields: { spacing: "number", tile: "int", origin: "array", extent: "array", limits: "object" }, help: "the sculpt grid: {spacing (m), tile (samples per side), origin [x, z], extent [nx, nz] tiles, limits {raise, lower} (mm)}; fixed while any terrain-tile exists" },
-  "terrain-tile": { status: "reserved", on: "world", keyed: true, key: "partition", fields: { mm: "array" }, help: "keyed <i>-<j>: {mm: [tile² integer millimetres, row-major]}, a delta over the base; written whole by sculpt" },
 ```
 
 ## `physics`'s reserved fields (`friction`, `restitution`, the combine modes, damping, `centerOfMass`)

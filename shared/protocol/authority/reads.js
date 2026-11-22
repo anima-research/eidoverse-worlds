@@ -12,6 +12,7 @@ import { CTX, UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
 import { modelOf } from "./catalogue.js";
 import { readback, isE, lockedC, versionOf } from "./storage.js";
+import { tileSaid } from "../../terrainshape.js";
 import { aabb, qrot, surfacesOf, worldT } from "./math.js";
 import { kidsMap } from "./spatial.js";
 import { isSocketC, socketsOf, socketRole } from "./sockets.js";
@@ -91,7 +92,10 @@ const READ_VERBS = {
     const st = w.state(); const e = st.entities[a.id];
     if (!e) return { ok: false, refused: { code: "not-found", reason: `no '${a.id}'`, didYouMean: guess(String(a.id), Object.keys(st.entities)) } };
     const piv = e.c.motion?.type === "pendulum" ? pivotOf(st, a.id) : undefined;
-    return { ok: true, ...describe(st, a.id, enginePoses(w.sim()), w.presence.holds, { full: true, w }), born: e.born, components: e.c, versions: Object.fromEntries(Object.keys(e.c).map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, Object.keys(e.c)), world: worldT(st, a.id),
+    // the ground's sculpted tiles (up to 1024 on @world, 1024 samples each) are said in a line apiece, and their versions and
+    // last touch aren't worked out: nobody writes a tile against a base
+    const keys = Object.keys(e.c).filter((k) => !k.startsWith("terrain-tile:")), said = Object.fromEntries(Object.entries(e.c).map(([k, v]) => [k, tileSaid(k, v)]));
+    return { ok: true, ...describe(st, a.id, enginePoses(w.sim()), w.presence.holds, { full: true, w }), born: e.born, components: said, versions: Object.fromEntries(keys.map((k) => [k, versionOf(w, lastTouch(w, a.id, k)?.seq)])), touched: touchedOf(w, a.id, keys), world: worldT(st, a.id),
       derived: { madeBy: madeBy(w, a.id), ...(piv !== undefined ? { pivot: piv } : {}), ...(modelOf(e.c.model)?.credits ? { asset: modelOf(e.c.model).credits } : {}) },
       children: Object.keys(st.entities).filter((k) => st.entities[k].c.parent?.to === a.id), ...offersFor(st, a.id, actor), yourRole: roleOf(st, actor) };
   },

@@ -30,7 +30,7 @@ export function scratchWorld(tag = "edit", { owner = "olive", title = "scratch",
   if (!roots.has(tag)) roots.set(tag, scratch(tag));
   const root = roots.get(tag); const name = `w${++n}`;
   // one world object for the scratch world's life (its state is kept incrementally); the authority's clock steps a second per
-  // request so a long sweep stays inside the authority's rate budget (60 entries / 10 s per actor)
+  // request so a long sweep stays inside the authority's rate budget (600 entries / 10 s per actor)
   let w = null;
   const call = (verb, args = {}, actor = owner) => { clock.advance(1000); w ??= open(root, name, catalogue); return request(w, actor, verb, args); };
   const founded = call("create-world", { title });

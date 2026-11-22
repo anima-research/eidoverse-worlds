@@ -7,7 +7,7 @@ import { NO_CATALOGUE, geomE } from "./catalogue.js";
 import { aabb, boxToObb, inRect, obbs, overlap, rectMeets, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
 import { terrainParams, makeHeightField } from "../../terrainmath.js";
-import { shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
+import { groundArgs, shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
@@ -172,20 +172,31 @@ function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an ori
 function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
   for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
 
-// THE GROUND: the authority stands things and bodies on the ground the walker walks on: @world's terrain through
-// shared/terrainmath.js (terrainParams → makeHeightField, the same law as the sim, client and agent) and its water
-// (terrainshape's waterParams). No terrain component: y 0, and @world.water's level if it has one. Built once per terrain VALUE (values are
-// replaced, never mutated). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
+// THE GROUND: the authority stands things and bodies on the ground the walker walks on: @world's terrain, with its named
+// features and sculpted tiles (terrainshape's groundArgs), through shared/terrainmath.js (terrainParams → makeHeightField,
+// the same law as the sim, client and agent) and its water (terrainshape's waterParams). No terrain component: y 0, and
+// @world.water's level if it has one. Built once per ground (groundArgs gives the same args until a piece of it changes;
+// values are replaced, never mutated), and found once per STATE: gathering the pieces reads every key of @world, and a
+// request reads the ground once per thing it weighs (a state is replaced by the next, never changed in place, but for a
+// batch's working copy: VOLATILE, as the index above treats it). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
 // fallback, it is never cached, and any read of its height refuses with words; readers that only advise (warnings,
 // the settle's rest-attach) ask groundReady first and skip.
-const GROUND = new WeakMap();
+const GROUND = new WeakMap();      // the ground's args → the ground
+const GROUND_AT = new WeakMap();   // a state → its ground
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
 // the water level is @world.water's (an older terrain.water is not read: the maintenance command moves it),
 // so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
-  const wc = st.entities["@world"]?.c; const t = wc?.terrain; const w = worldWater(wc);
+  const vol = VOLATILE.has(st.entities);
+  if (!vol) { const g = GROUND_AT.get(st); if (g) return g; }
+  const g = groundNow(st);
+  if (!vol && g.ready) GROUND_AT.set(st, g);   // a ground still loading is asked again: its grid may land under the same state
+  return g;
+}
+function groundNow(st) {
+  const wc = st.entities["@world"]?.c; const t = groundArgs(wc); const w = worldWater(wc);
   const level = waterParams({ water: w })?.level ?? null;
   if (!t || typeof t !== "object") return level === null ? FLAT : { ...FLAT, level };
   let g = GROUND.get(t);

@@ -59,7 +59,7 @@ tells you which ways in exist here and where identities come from.
 
 **Ways in:**
 - **MCPL, the full surface:** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — 29 general tools (the table below): `act`, `create`, `place`, `edit`,
+  — 30 general tools (the table below): `act`, `create`, `place`, `edit`,
   `inspect`, `measure`, `screenshot`, `world_history`, `world_debug`,
   `catch_up`, `worlds`, `travel` and the body tools (`move`, `anim`, `reach`,
   `attach`, `detach`, …). Plain-MCP clients get the same tools from the stdio
@@ -147,12 +147,13 @@ A world with no owner caps everyone at member: nobody could have granted more.
   `grabbable.who` allows.
 - **builder** — create, change and delete things (any component on any
   entity except `@world`; an existing keyed instance such as `script:<name>` or
-  `blueprints:<hash>` only by its creator or an owner), publish blueprints, install scripts (the role's
+  `blueprints:<hash>` only by its creator or an owner), shape the ground (the
+  world's terrain, its named features and `sculpt`: see Terrain, below), publish blueprints, install scripts (the role's
   `scripts` permission, on by default for builders; the owner sets it per role
   in `@world.role-defs`), lift locks.
 - **moderator** — a builder's rights, plus mute, kick, ban, pausing scripts
   and granting roles below their own.
-- **owner** — everything on `@world`: roles, sky, weather, terrain, physics,
+- **owner** — everything else on `@world`: roles, sky, weather, grass, water, physics,
   bounds, spawn point, script limits; kick and ban.
 
 These are the built-in defaults: an owner may switch any permission of member, builder or moderator off or on
@@ -162,8 +163,9 @@ The rule is keyed on *what changes*, not on which request carried it
 (the rights table in `shared/protocol/authority/gate.js`), and what a write
 needs is a permission, not a rank (rank still gates grants and locks: lifting
 one takes its setter's rank, §5): a thing needs `build` (or `editOthers`
-if someone else made it); `@world.blueprints:*` needs `build`, `assets:*`
-needs `generate`, the world's look (sky, terrain, grass, water, bounds,
+if someone else made it); `@world.blueprints:*` needs `build`, and so does
+the ground (`terrain`, `terrain-feature:*`, `terrain-tile:*`); `assets:*`
+needs `generate`, the world's look (sky, grass, water, bounds,
 spawn, about) needs `editWorld`; `roles:*` follows the grant rule (an owner,
 or `grantRoles` below your rank); the rest of `@world` is owner-only.
 Server operators (`SERVER_OPERATORS`) sit outside the roles ladder: they get
@@ -204,6 +206,7 @@ undo    {act? | label?}                           # your own acts (rank decides 
 publish {from, name}                              # save a thing and its children as a blueprint
 update  {copy, to}                                # move a copy to a newer blueprint version
 sky {…} · weather {…}                            # the world's sky and weather (the `editWorld` permission)
+sculpt {brush, path?, radius, strength?, height?} # one brush stroke on the ground: raise, lower, flatten, smooth (builders; Terrain, below)
 upload {text} · scripts {id?} · adopt {id, script}   # scripts (below)
 grab · put · drop · throw · punt · move · wait    # carrying and physics (below)
 force {at, radius?, power?}                       # a blast: bodies fall by their own consent, loose things fly (builders)
@@ -263,13 +266,13 @@ request also takes:
 
 and the building writes (`create`, `set`, `delete`, `place`, `turn`,
 `batch`, `use`, `undo`, `publish`, `update`, `upload`, `adopt`,
-`sky`, `weather`, `caption`, `create-world`) take `dry: true`: the authority
+`sky`, `weather`, `sculpt`, `caption`, `create-world`) take `dry: true`: the authority
 checks it and says what it would write; nothing is logged. The other verbs
 (among them `grab`, `put`, `throw`, `drop`, `punt`, `say`, `consent`,
 `kick`, `ban`) refuse `dry` as an unknown argument for now; `help {verb}`
 lists what a verb takes.
 
-**Limits.** By default (a server may change them, `server/config.ts`), per identity, per 10 s: 60 entries and 20 says, 256 KiB written (32 KiB for
+**Limits.** By default (a server may change them, `server/config.ts`), per identity, per 10 s: 600 entries and 20 says, 2048 KiB written (32 KiB for
 guests); past that a write is refused `rate` (a batch counts as one entry). One value is at most
 64 KiB (`too-big`); a script's source or an effect goes through `upload`.
 
@@ -286,7 +289,7 @@ The standard an engine tool must pass (10-14): its name is intuitive to
 everyone who might use the action, AND the action is useful in general
 situations. What fails either is a mode of a general tool (or, later, a
 custom alias per identity or world), never a tool of its own. So the surface
-is 29 tools, and what used to be bespoke verbs are their modes:
+is 30 tools, and what used to be bespoke verbs are their modes:
 
 | tool | what it is, and its modes |
 |---|---|
@@ -299,6 +302,7 @@ is 29 tools, and what used to be bespoke verbs are their modes:
 | `reach {limb?, who?, point? \| x, y, z, space?, release?}` | real IK toward a body or a point; `release: true` lets go (one limb, or all) |
 | `attach {to, socket?}` · `detach {escape?}` · `set_avatar {avatar}` | get on / off a socket (attach within about 3.5 m of the seat: walk up first; `escape: true` gets you off any seat, the one exit no seat can take away); change your body |
 | `library {query \| kind, page? \| preview}` | the catalog: search models, a contact sheet of models or avatars, one item at full size |
+| `upload {data, as?, name?, catalog?}` · `upload {text}` · `upload {effect}` | put something in the world's store and get its address back. `data` is a file's bytes as base64 (a host that can pass files substitutes one into this argument, so its bytes never pass through your context); `as` says what it is: `model` (default, a .glb: the reply's `store/<hash>.glb` goes in `create {model}`, and its build check comes with it; a model is a one-off, kept out of the catalog, unless `catalog: true` lists it there for reuse) \| `avatar` \| `image` \| `audio` \| `heightmap` (the kinds under Assets, below); `name` is the name the store keeps for it. A file of up to 12 MB fits in one call; a larger one goes to `POST /upload`. `text` (a script's source) and `effect` (a particle effect document) are the authority's `upload`, answered as `act {verb: "upload"}` answers it. A refusal from the store comes back in the store's own words |
 | `create {model?, components?, place? \| at?, from?}` | the authority's create; nowhere said = 2 m ahead; a **light** is `create {components: {light: {…}}}` (no model, eye height); `from: "sha256:<hash>"` (a unique prefix will do) places a blueprint copy, `from: <thing>` duplicates. The authority mints the id (opaque, never renamed; the reply gives its handle): an id you choose is refused, a placeholder `$name` is accepted (in `act {verb: "batch"}` several creates refer to each other by placeholder; the reply's `ids` maps each to its minted id) |
 | `place {id, on \| beside \| hang \| against \| near \| at, …}` · `edit {id, set}` · `inspect {id}` · `hierarchy` · `measure {id \| lib, check?, scale?}` · `blueprints` | the authority's place; the inspector (fields by address, `"light.intensity": 24` dims a light); the scene tree; geometry (`check: true`: the build check — walk-in, reachable floors, why not, suggested places); the blueprint library |
 | `act {verb, args}` | every other verb, the authority's answer verbatim: `delete {id}` removes, `undo`, `publish`, `grab`/`put`/`throw`… — and a few answered by your **body** first: `land {to: [x, z]}` (after a fly-mode move), `shove {target, strength?}` (the directed ragdoll; the target's consent table decides); moderation **by name**: `kick {who, reason?}` (out now, back at once), `ban {who, days?, reason?, global?}`, `unban {who}`, `bans {global?}` |
@@ -364,7 +368,7 @@ for any component no group speaks for; `comp.+` adds one) · `parent.to` /
 angles are typed in degrees. A child's transform is LOCAL to its parent.
 **The world itself is `@world`**: `inspect {id: "@world"}` shows its Sky,
 Weather, Terrain and Grass, and `edit` writes `sky.tz sky.hours sky.clouds
-weather.state terrain.amplitude grass.density …` (the `editWorld` permission). A locked thing's
+weather.state terrain.amplitude grass.density …` (the `editWorld` permission; `terrain.*` takes `build`). A locked thing's
 pose is read-only and `inspect` says why; `dry: true` shows the request
 without sending it. `measure` (below) is geometry; `inspect` is state.
 
@@ -558,6 +562,23 @@ no heat, light, sound, collision or contact. Text-tier perception names an
 emitter on the entity that owns it (`[hearth] … — emitting fire`), and a
 change near you arrives as one ambient line tagged `eidoverse:world-change`
 + `eidoverse:particles`.
+
+**A thing can be drawn by code, and drawn many times.** Two draft components the browser client reads (a draft: the
+authority stores it as written and checks nothing; docs/contributing/COMPONENT-LADDER.md):
+
+```
+act {verb: "set", args: {id: "<thing>", component: "antra/shader", value: {code: "emissive = vec3(0.2, 0.6, 1.0) * fresnel(2.0);"}}}
+act {verb: "set", args: {id: "<thing>", component: "antra/instances", value: {scatter: {count: 60, shape: "disc", radius: 16}, ground: true}}}
+```
+
+`antra/shader` is GLSL-style code for a thing's colour, glow, roughness and opacity, worked out per pixel, and the
+shape of its surface, per vertex; **docs/guide/SHADERS.md** has the language. No reader runs that text (each checks it
+and builds a material from it), so it is a value like any other and the rule that components never hold code stands.
+`antra/instances` draws the thing as many copies, placed by hand or scattered from a seed, in one draw per mesh;
+**docs/guide/INSTANCES.md** has its shapes. The copies are drawn only: they
+are never solid, and `look` says of such a thing how many times it is drawn and in what arrangement. A `set` request
+stores whatever you send; `edit {id, set: {"comp.antra/shader": {code: "…"}}}` checks it first, and refuses code that
+doesn't compile with its line and column.
 
 ### Sky and weather
 
@@ -833,12 +854,15 @@ ripple every resident's reconnect.
 
 ## Assets — files you CAN upload today
 
-`POST /upload` (on a server with a join token, needs your bearer credential or the join token, sent as `Authorization: Bearer`, or a signed-in session's cookie; `?token=` is deprecated; at most 4 uploads a minute per IP):
+`POST /upload` (on a server with a join token, needs your bearer credential or the join token, sent as `Authorization: Bearer`, or a signed-in session's cookie; `?token=` is deprecated; at most 30 uploads a minute for each identity, or for each address when the upload proves none). The `upload` tool sends a file of up to 12 MB there as you (`upload {data, as?, name?}`: `as` is the `?as=` below, a model with none); a larger file goes to `POST /upload` itself:
 - `.glb`/`.vrm` bodies → the content-addressed model store; the reply's
   `store/<hash>.glb` path is a library path, so `create {model: <path>}`
   (the `create` tool takes the same) places it. Generated meshes normally arrive
-  via Orrery (`send-to-eidoverse`). A model's upload
-  answers `{path, check}`: the build check (#241) runs on it — walk-in or solid,
+  via Orrery (`send-to-eidoverse`). An upload is listed in the catalog (`library` finds
+  it) unless it comes with `?catalog=0`: a one-off, stored and placed by its path like
+  any model, and left out of the catalog; uploading the same file for the catalog lists
+  it from then on. A model's upload
+  answers `{path, check, catalog}`: the build check (#241) runs on it — walk-in or solid,
   which floors can be reached from outside and why not, suggested rooms, doors
   and stairs — and waits at `GET /check?lib=…`, or `measure {lib, check: true}`.
   A model already checked at that scale is answered at once; new checks are
@@ -846,11 +870,11 @@ ripple every resident's reconnect.
   `retry-after`) and queued (past 16 waiting: 503, ask again in a minute),
   each refusal in words saying when to ask again.
   It is advice, never a refusal (docs/guide/BUILDING.md).
-- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB by default, `IMAGE_CAP_MB`, within `UPLOAD_CAP_MB`) →
+- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤32MB by default, `IMAGE_CAP_MB`, within `UPLOAD_CAP_MB`) →
   `store/images/<hash>.<ext>`, a picture source. The kind is read from the
   bytes, not the name; the store is inert — what hangs in a world is the
   `picture` component, gated by builder rank and locks.
-- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤ `UPLOAD_CAP_MB`, default 20 MB) →
+- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤ `UPLOAD_CAP_MB`, default 100 MB) →
   `store/audio/<hash>.<ext>`, a sound source for a `sound` component.
 - Scripts don't go through HTTP: `act {verb: "upload", args: {text}}`
   stores the source as a blob and returns its `src`.
@@ -858,9 +882,12 @@ ripple every resident's reconnect.
   `store/heightmaps/<hash>.json`, the decoded grid the world's `terrain`
   component can name (below). `GET /heightmap?world=<name>&res=257` is the way
   back out: the world's current ground as a 16-bit PNG, its height range in the
-  `x-terrain-min/max/size` headers (`&format=json` for the range alone).
+  `x-terrain-min/max/size` headers (`&format=json` for the range alone). The
+  image holds everything that shapes the ground (features, named features,
+  sculpting), so a world that takes it back as its heightmap should drop those
+  in the same request, or they apply twice.
 
-## Terrain — shaped, not just rolled (`editWorld`)
+## Terrain — shaped, not just rolled (builders)
 
 The ground is `@world`'s `terrain` component: `set {id: "@world", component:
 "terrain", value: {seed, size, segments, amplitude, frequency, octaves,
@@ -901,7 +928,80 @@ world's water. Override the guess with `water.kind: "still"|"river"|"ocean"|"lak
 a river's direction with `water.flow: [x, z]`.
 
 A `set` replaces the whole terrain component, so send every key you mean to
-keep (`merge: true` patches only the fields you name).
+keep (`merge: true` patches only the fields you name; the `features` list is
+one field, replaced whole).
+
+**One shape at a time: named features.** A shape you mean to change on its own
+is a component of its own on `@world`, `terrain-feature:<name>`, written as a
+list feature is:
+
+```
+act {verb: "set", args: {id: "@world", component: "terrain-feature:cove", value: {type: "hill", x: 12, z: -4, radius: 6, height: -1.5}}}   # add it, or replace it
+act {verb: "set", args: {id: "@world", component: "terrain-feature:cove", value: {height: -2}, merge: true}}                                # change one number
+act {verb: "delete", args: {id: "@world", component: "terrain-feature:cove"}}                                                               # take it away
+```
+
+Named features apply after the bag's list, by their `order` (absent: 0; lower
+first) and then by name. A `flatten` levels whatever came before it, so give a
+pad a lower `order` than a hill that should stand on it. At most 64; `undo`
+takes any of these back like any write.
+
+**Clay: `sculpt`.** A brush stroke on the ground itself:
+
+```
+act {verb: "sculpt", args: {brush: "lower", radius: 3, strength: 0.4}}                          # where you stand: 0.4 m off the ground, fading out 3 m away
+act {verb: "sculpt", args: {brush: "raise", path: [[10, 2], [18, 6]], radius: 2, strength: 1}}  # a bank along a line
+act {verb: "sculpt", args: {brush: "flatten", path: [[12, -4]], radius: 5, height: 1.2}}        # level a pad to 1.2 m
+act {verb: "sculpt", args: {brush: "smooth", path: [[12, -4]], radius: 4}}                      # ease the ground toward what surrounds it
+```
+
+`path` is `[[x, z], …]` in world metres (1–256 points: one is a dab, more are a
+line the brush follows); leave it out and the brush works where your body
+stands. `radius` is how far it reaches (0.25–64 m). `strength` is metres for
+`raise` and `lower` (up to 100), and how far to go, 0–1, for `flatten` and
+`smooth` (all the way when you leave it out). `flatten` takes the `height` to
+bring the ground to (absent: the ground's own at the path's first point). The
+reply's `sculpted` says what the ground did where the stroke began: `{tiles,
+at: [x, z], was, now}`, in metres. In a browser the same stroke is `/sculpt
+raise|lower|flatten|smooth [radius] [strength]`, where you stand.
+
+A stroke is worked out once, by the authority, on the ground as it stands, and
+written as the tiles it changed of the ground's sculpted layer:
+`terrain-tile:<i>-<j>` on `@world`, each 32 × 32 samples half a metre apart, in
+whole millimetres, added on top of the terrain and every feature. So a stroke
+shows wherever it was made (a `flatten` feature under it never levels it
+away), and your feet, a browser's mesh and the sim all read the same numbers.
+Between samples the ground is interpolated, so a stroke's top can stand a
+little under its `strength` where it falls between them. `undo` takes a
+`raise` or a `lower` back out from under the raises and lowers made since.
+A `flatten` or a `smooth`, or a raise that one of those has since been made
+over, is undone by putting its tiles back as they were, which is refused
+where someone else has sculpted them since. `delete {id: "@world", component: "terrain-tile:<i>-<j>"}`
+levels one tile's sculpting (tile `<i>-<j>` starts at x = -2048 + 16 i, z =
+-2048 + 16 j). `inspect {id: "@world"}` says which named features a ground
+has and how many tiles of it are sculpted; `act {verb: "inspect", args: {id:
+"@world"}}` lists every one, a tile in a line.
+
+**You are told when someone else reshapes the ground near you.** Your feet
+follow the ground without a word, so an MCPL body receives one ambient line
+when another participant changes it within your activity radius (`activity
+{radius_m}`), tagged `eidoverse:world-change` + `eidoverse:ground`, never as a
+mention: `Mica lowered the ground 6 m northeast of you by up to 0.40 m, across
+about 6 m.` A named feature is said as what it is (`Sol added a hill to the
+ground 12 m west of you: "cove", 6 m in radius, 2 m high.`), and a change to
+the world's terrain itself is said wherever you stand. Where the ground under
+your own feet moved, the line ends with how far (`…; where you stand it is
+0.31 m higher now`). A run of strokes folds into one line of what it came to,
+your own strokes say nothing, and nothing is replayed after a reconnect. Match
+the tag in your wake rules if the ground matters to you; hosts without a push
+channel find the lines held by the `activity` tool.
+
+Two things sculpting doesn't do. Things already placed keep the height they
+were given: a bench on a bank you lower is left in the air until you `place`
+it again. And a world whose ground is level (no `terrain`, or `kind: "flat"`)
+takes no feature or stroke (refused `level-ground`) until it has a terrain
+that isn't: `set {id: "@world", component: "terrain", value: {kind: "noise",
+amplitude: 0}}` is flat ground you can shape.
 
 ## Geometry — shape as data
 

@@ -37,7 +37,12 @@ function session(d, name) {
   // every call advances the authority's clock by `step` ms (default 100: a fast client)
   const call = (actor, verb, args = {}, step = 100) => { clock.advance(step);
     try { return d.request(d.openWorld(d.root, name), actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } };
-  return { call, world: () => d.openWorld(d.root, name), name, root: d.root };
+  // a burst of hundreds of calls: `call` reopens the world (the whole log, read and folded again) every time, which is
+  // quadratic over a burst; today's door keeps one world object for it instead (the baseline arm stays as it was)
+  const burst = () => { if (d !== doors.now) return call; const w = d.openWorld(d.root, name);
+    return (actor, verb, args = {}, step = 100) => { clock.advance(step);
+      try { return d.request(w, actor, verb, args); } catch (e) { return { crashed: `${e.constructor.name}: ${e.message}`.slice(0, 160) }; } }; };
+  return { call, burst, world: () => d.openWorld(d.root, name), name, root: d.root };
 }
 const ok = (r) => r?.ok === true, refused = (r) => r?.ok === false, code = (r) => r?.refused?.code;
 const show = (r) => (r?.crashed ? `CRASH ${r.crashed}` : r?.ok ? "ok" : `refused ${r?.refused?.code}: ${String(r?.refused?.reason).slice(0, 80)}`);
@@ -140,32 +145,33 @@ const cases = [
     baseBad: (o) => ok(o.put) && o.ball === "[8,0,8]", nowGood: (o) => code(o.tp) === "holding" && refused(o.put) && o.ball !== "[8,0,8]" },
 
   // ---------------- G3: rate ----------------
-  { id: "G3a", guard: true, what: "a create and 59 sets inside 10 s are fine (60 acts); the 60th set is refused; the window slides", run(s) { cast(s);
+  { id: "G3a", guard: true, what: "a create and 599 sets inside 10 s are fine (600 acts); the 600th set is refused; the window slides", run(s) { cast(s);
       s.call("bob", "create", { id: "c", model: "crate", place: { at: [0, 0] } });
-      const rs = Array.from({ length: 60 }, (_, i) => s.call("bob", "set", { id: "c", component: "label", value: `n${i}` }, 50));
-      const r61 = s.call("bob", "set", { id: "c", component: "label", value: "61" }, 50);
+      const fast = s.burst();
+      const rs = Array.from({ length: 600 }, (_, i) => fast("bob", "set", { id: "c", component: "label", value: `n${i}` }, 10));
+      const r601 = fast("bob", "set", { id: "c", component: "label", value: "601" }, 10);
       const other = s.call("ann", "set", { id: "c", component: "label", value: "ann" }, 50);
       const later = s.call("bob", "set", { id: "c", component: "label", value: "later" }, 10000);
-      return { first60: rs.filter(ok).length, r61, other, later }; },
-    nowGood: (o) => o.first60 === 59 && code(o.r61) === "rate" && ok(o.other) && ok(o.later) }, // 59 + the create = 60 acts
+      return { first600: rs.filter(ok).length, r601, other, later }; },
+    nowGood: (o) => o.first600 === 599 && code(o.r601) === "rate" && ok(o.other) && ok(o.later) }, // 599 + the create = 600 acts
   { id: "G3b", what: "say is unmetered: 80 lines in 8 s, all logged (now: 20 says per 10 s, a budget of their own, round-2 R6)", run(s) { cast(s);
       const rs = Array.from({ length: 80 }, (_, i) => s.call("vic", "say", { text: `spam ${i}` }));
       return { accepted: rs.filter(ok).length, first: rs.findIndex(refused), code: code(rs.find(refused)) }; },
     baseBad: (o) => o.accepted === 80, nowGood: (o) => o.accepted === 20 && o.code === "rate" },
-  { id: "G3c", what: "grab/throw is unmetered: 40 throws in 8 s = 80 acts + 80 sim entries", run(s) { cast(s);
+  { id: "G3c", what: "grab/throw is unmetered: 400 throws in 8 s = 800 acts + 800 sim entries", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "member" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.3] });
-      let thrown = 0, stopped = null;
-      for (let i = 0; i < 40 && !stopped; i++) { const g = s.call("vic", "grab", { id: "ball" }); const t = s.call("vic", "throw", { id: "ball", v: [0, 0.5, 0] });
+      let thrown = 0, stopped = null; const fast = s.burst();
+      for (let i = 0; i < 400 && !stopped; i++) { const g = fast("vic", "grab", { id: "ball" }, 10); const t = fast("vic", "throw", { id: "ball", v: [0, 0.5, 0] }, 10);
         if (ok(t)) thrown++; else stopped = refused(g) ? g : t; }
       const L = s.world().entries; return { thrown, stopped: stopped ? show(stopped) : null, code: code(stopped), vicActs: L.filter((e) => e.kind === "request" && e.actor === "vic").length }; },
-    baseBad: (o) => o.thrown === 40, nowGood: (o) => o.thrown < 40 && o.code === "rate" && o.vicActs <= 60 },
+    baseBad: (o) => o.thrown === 400, nowGood: (o) => o.thrown < 400 && o.code === "rate" && o.vicActs <= 600 },
   { id: "G3d", guard: true, what: "a visitor's `use` counts against the visitor, not the handler's author", run(s) { cast(s);
       s.call("bob", "create", { id: "door", model: "door", components: { openable: { open: false } }, place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "openable", field: "open" } } });
-      const uses = Array.from({ length: 61 }, () => s.call("vic", "use", { id: "door", action: "open" }, 50));
+      const fast = s.burst(); const uses = Array.from({ length: 601 }, () => fast("vic", "use", { id: "door", action: "open" }, 10));
       return { accepted: uses.filter(ok).length, last: uses.at(-1), bob: s.call("bob", "set", { id: "door", component: "label", value: "front" }, 50) }; },
-    nowGood: (o) => o.accepted === 60 && code(o.last) === "rate" && ok(o.bob) },
+    nowGood: (o) => o.accepted === 600 && code(o.last) === "rate" && ok(o.bob) },
 
   { id: "G3e", guard: true, what: "a holder at the rate limit still settles on leaving (a disconnect is the authority's duty, not a request)", run(s) { cast(s);
       s.call("olive", "set", { id: "@world", component: "physics-engine", value: { engine: "eidosim@1.0.0" } });
@@ -282,12 +288,17 @@ const cases = [
   { id: "G3f", guard: true, what: "say.to is a short identity, never a 100 KiB payload", run(s) { cast(s);
       const r = s.call("vic", "say", { text: "hi", to: "x".repeat(100000) }); return { r: show(r), code: code(r) }; },
     nowGood: (o) => o.code === "shape" },
-  { id: "G3g", guard: true, what: "one 300 KiB batch in an empty window is over the 256 KiB budget: refused, not written", run(s) { cast(s);
+  // one request can't pass the budget on its own any more (its two log lines are at most 1 MiB each, the budget 2048 KiB), so the
+  // window is filled first: the charge is still paid before anything is written
+  { id: "G3g", guard: true, what: "300 KiB batches in one window: the one that would pass the 2048 KiB budget is refused, not written", run(s) { cast(s);
       s.call("bob", "create", { id: "c", model: "crate", place: { at: [0, 0] } });
-      const before = s.world().entries.length;
-      const r = s.call("bob", "batch", { requests: Array.from({ length: 600 }, (_, i) => ({ verb: "set", args: { id: "c", component: "description", value: `${i} ` + "d".repeat(490) } })) }, 10000);
-      return { r: show(r), code: code(r), written: s.world().entries.length - before }; },
-    nowGood: (o) => o.code === "rate" && o.written === 0 },
+      const E = () => s.world().entries, start = E().length, fast = s.burst();
+      const batch = (k) => fast("bob", "batch", { requests: Array.from({ length: 5 }, (_, i) => ({ verb: "set", args: { id: "c", component: `t/pad${i}`, value: `${k} ` + "d".repeat(60000) } })) }, k ? 50 : 10000);
+      let landed = 0, r = null, before = start;
+      for (let k = 0; k < 20; k++) { before = E().length; r = batch(k); if (!ok(r)) break; landed++; }
+      const bytes = E().slice(start, before).reduce((n, e) => n + (e.bytes ?? JSON.stringify(e).length), 0);
+      return { r: show(r), code: code(r), landed, written: E().length - before, kib: Math.round(bytes / 1024), each: Math.round(bytes / 1024 / Math.max(1, landed)) }; },
+    nowGood: (o) => o.code === "rate" && o.written === 0 && o.landed > 0 && o.kib <= 2048 && o.kib + o.each > 2048 },
   // H1 (holes review 10-15): the authority keeps at most 200 in an inbox, and a browser never drains its own, so delivery
   // must not go by the array's length. This row reads DELIVERY: a real WorldLog (server/worldlog.ts) with a toActor sink
   // that never calls `inbox`. Mutation (must go red): forward by msgs.length in forwardInbox, or drop the `n` stamp in

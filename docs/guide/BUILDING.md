@@ -79,7 +79,9 @@ like any solid, so a heavy crate in a doorway blocks the doorway.
 **Budget.** One draw call per material per mesh. Aim under **12 draws, 20k
 triangles, 8 materials**; merge static parts into one mesh, carry variety in
 vertex colours, and keep see-through (glass) materials to a few. Only meshes
-reachable from the scene count — orphan nodes are ignored.
+reachable from the scene count — orphan nodes are ignored. These numbers are
+advice about cost, not a limit: nothing refuses a model for its triangles, its
+draws or its materials, and the build check only ranks it.
 
 ## 2. Optional metadata — what it adds
 
