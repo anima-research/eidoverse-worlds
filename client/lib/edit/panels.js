@@ -35,7 +35,7 @@ import { starterModels } from './catalog.js';
 import { spawnAhead } from '../xr/worldquad.js';
 import { libLabels, modelName } from '../assets.js';
 import { offIn } from '../realize/models_field.js';
-import { schemaFor, commitEdit, commitMany, planEdit, keepView, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
+import { schemaFor, commitEdit, commitMany, planEdit, keepView, setEditHooks, endGesture, foldRecord, mayShape, mayGround } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
 import { xrActive } from '../xr/xrask.js';
@@ -139,12 +139,12 @@ function removeEnv(key) {
   repaintAll();
 }
 function envRows() {
-  const may = mayShape() !== false;
-  return ENV.filter((e) => (e.key === 'weather' ? wxOf() && wxOf() !== 'clear' : state.st[e.key] != null)).map((e) => ({
+  const mayLook = mayShape() !== false, mayTerrain = mayGround() !== false;
+  return ENV.filter((e) => (e.key === 'weather' ? wxOf() && wxOf() !== 'clear' : state.st[e.key] != null)).map((e) => { const may = e.key === 'terrain' ? mayTerrain : mayLook; return {
     id: `env:${e.key}`, icon: e.icon, label: e.label, indent: true, active: worldSel() && envFocus() === e.key,
     sub: e.key === 'weather' ? wxOf() : undefined,
     title: `the world's ${e.label.toLowerCase()}: click to edit it in the Inspector${may ? `; ✕ removes it (${e.gone})` : ''}`,
-    actions: may ? [{ k: 'envdel', label: '✕', danger: true, hover: true, title: `remove: ${e.gone}` }] : [] }));
+    actions: may ? [{ k: 'envdel', label: '✕', danger: true, hover: true, title: `remove: ${e.gone}` }] : [] }; });
 }
 // HIERARCHY VIEW OPTIONS: a row is its name, the rest on hover or by switch. Off by default; kept per browser.
 const HOPTS = { ids: 'show ids', kinds: 'show kinds', comps: 'list components' };
@@ -600,13 +600,13 @@ function worldFields() {
     { t: 'info', label: 'name', value: worldName(), hint: 'the world itself: its sky, weather, ground and grass are its components' },
     { t: 'info', label: 'id', value: WORLD_ID, dim: true, hint: 'the world entity\'s permanent id: agents and scripts name it @world' },
   ];
-  if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
+  if (mayShape() === false) f.push({ t: 'info', label: '', value: mayGround() === false ? 'shaping the world is the owner\'s — read-only for you' : 'the sky, weather and grass are the owner\'s — read-only for you; the ground is yours to shape' });
   pushCards(f, schema, WORLD_ID);
   // no terrain yet: the card's only row pointed elsewhere; put Build ▸ World's ground shapes in it
   if (!state.st.terrain) {
     const at = f.findIndex((x) => x.t === 'info' && /no terrain authored/.test(String(x.value ?? '')));
     const shapes = Object.keys(groundPal?.shapes ?? {}).filter((k) => k !== 'doc');
-    if (at >= 0 && shapes.length) f.splice(at + 1, 0, { t: 'tiles', k: 'wshape', value: null, options: shapes.map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...(mayShape() === false ? { disabled: true } : {}) });
+    if (at >= 0 && shapes.length) f.splice(at + 1, 0, { t: 'tiles', k: 'wshape', value: null, options: shapes.map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...(mayGround() === false ? { disabled: true } : {}) });
     if (at >= 0) f[at] = { ...f[at], value: 'no terrain authored: the default flat ground. Pick a shape:' };
   }
   const shown = filterFields(f, ifilter);
@@ -1032,22 +1032,22 @@ function placeAhead(hash) { return Edits.copyBlueprint(hash, aheadPose()); }
 
 /** The World section: one row of tiles per component, each reading its current choice. */
 function worldBuildFields() {
-  const owner = mayShape() !== false;
-  const ro = owner ? {} : { disabled: true };
+  const owner = mayShape() !== false, builder = mayGround() !== false;
+  const ro = owner ? {} : { disabled: true }, rg = builder ? {} : { disabled: true };   // the ground (shape, colour) takes build; the rest editWorld
   const now = serverNow();
   const ch = worldChoice(state.st, { pal: groundPal, presets: skyPresets, now });
   const names = (o) => Object.keys(o ?? {}).filter((k) => k !== 'doc');
   const f = [
     { t: 'group', k: 'world', label: 'World', open: !buildFolds.world },
     worldRowFields(),
-    ...(owner ? [] : [{ t: 'info', label: '', value: 'shaping the world is the owner\'s — these are read-only for you' }]),
+    ...(owner ? [] : [{ t: 'info', label: '', value: builder ? 'the sky, grass and weather are the owner\'s — read-only for you; the ground is yours to shape' : 'shaping the world is the owner\'s — these are read-only for you' }]),
     // remove what's there from the world's own section too: the same edit as the Hierarchy row's ✕ and the card's button
-    ...(owner ? envRows().map((r) => ({ t: 'btn', k: `envdel-${r.id.slice(4)}`, label: `✕ remove ${r.label.toLowerCase()}`, icon: r.icon, hint: `remove: ${ENV.find((e) => e.key === r.id.slice(4))?.gone} (Ctrl+Z brings it back)` })) : []),
+    ...(owner || builder ? envRows().filter((r) => r.actions.length).map((r) => ({ t: 'btn', k: `envdel-${r.id.slice(4)}`, label: `✕ remove ${r.label.toLowerCase()}`, icon: r.icon, hint: `remove: ${ENV.find((e) => e.key === r.id.slice(4))?.gone} (Ctrl+Z brings it back)` })) : []),
     { t: 'info', label: 'sky', value: ch.sky ? `${ch.sky} — a pick replaces the sky; the weather stays` : 'custom — a pick replaces the sky; the weather stays' },
     { t: 'tiles', k: 'wsky', value: ch.sky, empty: 'this world serves no sky presets (defs/sky/_presets.json)', options: names(skyPresets).map((n) => ({ v: n, label: n, hint: `the sky at ${skyPresets[n].hours ?? '?'}h${skyPresets[n].clouds ? `, ${skyPresets[n].clouds}` : ''}` })), ...ro },
     { t: 'info', label: 'ground', value: 'shape and colour — each pick changes only its own dial' },
-    { t: 'tiles', k: 'wshape', value: ch.shape, empty: 'this world serves no ground palette (defs/ground/_palette.json)', options: names(groundPal?.shapes).map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...ro },
-    { t: 'tiles', k: 'wtint', value: ch.tint, options: names(groundPal?.tints).map((n) => ({ v: n, label: n, hint: `${groundPal.tints[n].layer} ground, grass to match` })), ...ro },
+    { t: 'tiles', k: 'wshape', value: ch.shape, empty: 'this world serves no ground palette (defs/ground/_palette.json)', options: names(groundPal?.shapes).map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...rg },
+    { t: 'tiles', k: 'wtint', value: ch.tint, options: names(groundPal?.tints).map((n) => ({ v: n, label: n, hint: `${groundPal.tints[n].layer} ground, grass to match` })), ...rg },
     { t: 'info', label: 'grass', value: ch.plant ? `${ch.plant} growing` : state.st.grass ? 'something the palette does not name is growing' : 'nothing growing' },
     { t: 'tiles', k: 'wplant', value: ch.plant, options: [...names(groundPal?.plantings).map((n) => ({ v: n, label: n, hint: 'plant it (replaces what grows now)' })), ...(groundPal ? [{ v: '@mow', label: 'mow', hint: 'clear the field' }] : [])], ...ro },
     { t: 'info', label: 'weather', value: state.st.sky?.forecast ? 'a forecast governs — a pick holds until its next change' : 'a pick sets it' },
@@ -1059,7 +1059,7 @@ const WORLD_PICKS = { wsky: 'sky', wshape: 'shape', wtint: 'tint', wplant: 'plan
 /** A World tile: the pick as one request (shared/worldentity.js worldPick): one act, one Ctrl+Z. */
 function pickWorld(action, v) {
   const kind = action === 'wplant' && v === '@mow' ? 'mow' : WORLD_PICKS[action];
-  const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: serverNow(), mayShape: mayShape() });
+  const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: serverNow(), mayShape: mayShape(), mayGround: mayGround() });
   if (r.errors.length) { flashHint(r.errors.join(' · '), 5000); return r; }
   Edits.sendOps(r.ops, { what: kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`, expect: false });
   flashHint(kind === 'mow' ? 'field cleared' : html`${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);

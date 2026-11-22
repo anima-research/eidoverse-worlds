@@ -24,6 +24,7 @@ import { toggleOf } from "./use.js";
 import { scriptCeiling } from "./scripts.js";
 import { CAPACITY_CEILING } from "./capacity.js";
 import { isNum } from "../is.js";
+import { featureOf, shapeable, tileIndex, tileOf, MAX_NAMED, MAX_TILES, SCULPT } from "../../terrainshape.js";
 // the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 
@@ -172,6 +173,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     if (need && v.global !== true) for (const k of need) if (v[k] === undefined) refuse("schema", `${at}: a ${v.shape} needs ${k}`, fix); }
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
+  if (!carry && (comp.startsWith("terrain-feature:") || comp.startsWith("terrain-tile:"))) groundPieceCheck(s, at, comp, v);
   // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces: the
   // check that it names one of this world's surfaces returns when the field opens
 }
@@ -262,6 +264,27 @@ function terrainShapeCheck(at, v, def) {
     if (!l || typeof l !== "object" || Array.isArray(l) || Object.keys(l).some((k) => k !== "color" && k !== "repeat")) refuse("shape", `${here} must be {color?: 0xRRGGBB, repeat?: tiles across its size}`, def.help);
     if (l.color !== undefined && !(Number.isInteger(l.color) && l.color >= 0 && l.color <= 0xffffff)) refuse("shape", `${here}.color is an int 0xRRGGBB (sRGB)`, def.help);
     if (l.repeat !== undefined && !(fin(l.repeat) && l.repeat > 0 && l.repeat <= 4096)) refuse("bounds", `${here}.repeat is how many times it tiles across the ground, 0 < repeat ≤ 4096`, def.help); });
+}
+// a named feature or a sculpted tile (shared/terrainshape.js): a shape every reader would keep (they drop what is
+// malformed, so the door refuses it), on a ground that can be shaped, within what a world may hold
+const LEVEL_FIX = "give the world a ground that isn't level first: set {id: '@world', component: 'terrain', value: {kind: 'noise', amplitude: 0}} is flat ground you can shape (amplitude rolls hills)";
+function groundPieceCheck(s, at, comp, v) {
+  const wc = s.entities["@world"]?.c ?? {}, feature = comp.startsWith("terrain-feature:"), def = COMPONENTS[feature ? "terrain-feature" : "terrain-tile"];
+  if (!shapeable(wc.terrain)) refuse("level-ground", `${at}: this world's ground is the level floor (${wc.terrain ? "its terrain is kind flat" : "it has no terrain"}), which nothing shapes`, LEVEL_FIX);
+  if (feature) {
+    const pts = v.type === "ridge" ? ["x1", "z1", "x2", "z2"] : ["x", "z"], other = v.type === "ridge" ? ["x", "z"] : ["x1", "z1", "x2", "z2"];
+    for (const k of pts) if (v[k] === undefined) refuse("schema", `${at}: a ${v.type} needs ${pts.join(", ")}`, def.help);
+    const stray = [...other, ...(v.type === "flatten" ? [] : ["edge"])].find((k) => v[k] !== undefined);
+    if (stray) refuse("shape", `${at}: a ${v.type} takes ${pts.join(", ")}${v.type === "flatten" ? ", edge" : ""}, not ${stray}`, def.help);
+    if (!featureOf(v)) refuse("shape", `${at} isn't a shape the ground reads`, def.help);
+    const n = Object.keys(wc).filter((k) => k.startsWith("terrain-feature:")).length;
+    if (n > MAX_NAMED) refuse("full", `this world holds ${MAX_NAMED} named terrain features, the most a ground carries`, "delete one first (delete {id: '@world', component: 'terrain-feature:<name>'}); finer work is sculpt's");
+    return; }
+  const ij = tileIndex(comp.slice(13));
+  if (!ij) refuse("shape", `${comp} names no tile of the ground: a key is <i>-<j>, each 0–${SCULPT.span - 1} with no leading zero`, def.help);
+  if (!tileOf(v)) refuse("shape", `${at}.mm must be ${SCULPT.tile ** 2} whole numbers (millimetres), each within ±${SCULPT.limit}`, def.help);
+  const n = Object.keys(wc).filter((k) => k.startsWith("terrain-tile:")).length;
+  if (n > MAX_TILES) refuse("full", `this world's ground holds ${MAX_TILES} sculpted tiles, the most it carries`, "level a tile you don't need (delete {id: '@world', component: 'terrain-tile:<i>-<j>'}); a change that wide is the terrain's own (its heightmap, or a feature)");
 }
 // where a cut field went (componentspec `dropped`), for the refusal's fix
 const DROPPED_FIX = {

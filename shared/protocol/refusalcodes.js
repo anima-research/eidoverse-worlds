@@ -125,6 +125,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-room":        { meaning: "it doesn't fit there", when: "place {on} a surface with no free room for it" },
   "unsupported":    { meaning: "nothing to stand on there", when: "place {beside} where there's no support on that side" },
   "inside":         { meaning: "that would put it inside something solid", when: "a hang or place into a thing's solid parts" },
+  "level-ground":   { meaning: "this ground can't be shaped", when: "a sculpt, a terrain-feature or a terrain-tile where the ground is the level floor (no terrain, or kind flat)" },
   "no-model":       { meaning: "nothing to measure", when: "measure of a thing with no model or mesh" },
   "no-target":      { meaning: "the handler's target isn't there", when: "a set handler naming a field of a component the thing doesn't have" },
   "no-action":      { meaning: "it offers nothing to use", when: "use of a thing with no reactions and no station" },

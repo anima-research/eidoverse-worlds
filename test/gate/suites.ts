@@ -167,6 +167,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["framebudget", "shared/framebudget-test.mjs", 1], // framebudget's rules: one budget per frame, first grant carried as debt, a starved lane granted, one GPU unit per frame
   ["gputime", "client/gputime-test.ts", 1], // gputime's shadow A/B gives the shadow maps back however it ends; a new A/B inside a settle survives
   ["draw-batches", "client/draw-batches-test.ts", 1], // scene ownership and batching eligibility: a recursive shadow render never re-collects the hidden scene
+  ["shaderlang", "shared/shaderlang-test.ts", 1], // the draft antra/shader's code, read into a typed graph: what a program means (run by an evaluator), what is refused and where, constants a graphics compiler would reject
+  ["shader-emit", "client/shader-emit-test.ts", 1], // …and that graph as the renderer's nodes: one vocabulary with the language, every function in every argument form builds
+  ["instances", "shared/instances-test.ts", 1], // the draft antra/instances: every viewer derives the same copies from the same value; each scatter shape; malformed is absent
   ["gpulost", "client/gpulost-test.mjs", 1], // after a lost GPU the page reloads once, never loops, and drops the XR boot flag (gpulost.js)
   ["render-aside", "client/render-aside-test.mjs", 1], // renderAside: an off-eye render while presenting leaves the XR state as it was
   ["quadcolour", "client/quadcolour-test.mjs", 1], // the VR panel grade (quadgrade.js) as numbers: the JS twin of the shader
@@ -437,6 +440,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   // gated by the #333 trim: green with no blocker left (their ungated.json reasons had gone stale)
   ["auth", "server/auth-test.ts", 1], // the aid1 doors (garbage, expired, wrong audience, jti replay, spectate-only scope), sessions, an enrolled agent's name; permtest merged in
   ["door-reresolve", "server/door-reresolve-test.ts", 1], // /upload (behind JOIN_TOKEN) and /seat-profile ask who the caller is again after the body read: a credential revoked or a session ended mid-read writes nothing
+  ["upload-rate", "server/upload-rate-test.ts", 1], // /upload's rate window is the uploader's: 30 a minute for the identity it stands on (two agents from one address each have their own), for the address when it proves none
   ["door-admit-revoke", "mcpl/door-admit-revoke-test.ts", 1], // the MCPL door's admit() asks for the credential again: a token revoked, expired or narrowed while the dial waits on /access admits nobody and takes over no session
   ["mutant-anchors", "gate/mutant-anchors-check.ts", 1], // every mutant table's find text occurs exactly once in its file (static: reads the tables, runs no mutant; #333 H1)
   ["wp5-verdict", "water/wp5-verdict-test.ts", 1], // water-cross's WP5 verdict on synthetic evidence: its negative controls, no browser

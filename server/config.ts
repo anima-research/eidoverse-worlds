@@ -14,9 +14,9 @@ export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 // The renderers' own credential (docs/decisions/WORLD-ACCESS.md): a renderer presenting it may watch any world, invisibly.
 // Distinct from JOIN_TOKEN: that key rides invite links, and "renderer" is a flag any client can set. Unset = none trusted.
 export const RENDERER_TOKEN = process.env.RENDERER_TOKEN ?? "";
-export const UPLOAD_CAP = envNumber("UPLOAD_CAP_MB", 20, (n) => n >= 0) * 1_000_000;
+export const UPLOAD_CAP = envNumber("UPLOAD_CAP_MB", 100, (n) => n >= 0) * 1_000_000;
 // narrower than the model door: a hung image is decoded into GPU memory on every client that sees it
-export const IMAGE_CAP = envNumber("IMAGE_CAP_MB", 8, (n) => n >= 0) * 1_000_000;
+export const IMAGE_CAP = envNumber("IMAGE_CAP_MB", 32, (n) => n >= 0) * 1_000_000;
 // RECORD_FRAMES=1: stage frames + roster deltas to worlds/<name>/frames-<startTs>.jsonl. Clients are told at join.
 export const RECORD = process.env.RECORD_FRAMES === "1";
 // SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod).
@@ -70,13 +70,13 @@ export const SIM_CHECKPOINT_EVERY = envNumber("SIM_CHECKPOINT_EVERY", 1000, (n) 
 // ---- server policy: the limits a server runner may set, in one place (the WebSocket message cap, EW_WS_MESSAGE_BYTES,
 // is in server/limits.ts) ----
 /** One person's acts per window, logged entries (Matrix rc_message's shape; shared/protocol/authority/gate.js rateCheck). */
-export const ACT_RATE = envNumber("ACT_RATE", 60, (n) => n > 0);
+export const ACT_RATE = envNumber("ACT_RATE", 600, (n) => n > 0);
 /** One person's says per window, counted apart from acts so chat and building can't starve each other. */
 export const SAY_RATE = envNumber("SAY_RATE", 20, (n) => n > 0);
 /** The act/say window, in seconds. */
 const RATE_WINDOW_SEC = envNumber("RATE_WINDOW_SEC", 10, (n) => n > 0);
 /** Bytes one account may make the log hold per window, in KiB. */
-const RATE_KIB = envNumber("RATE_KIB", 256, (n) => n > 0);
+const RATE_KIB = envNumber("RATE_KIB", 2048, (n) => n > 0);
 /** Bytes one guest (no account) may make the log hold per window, in KiB. */
 const ANON_RATE_KIB = envNumber("ANON_RATE_KIB", 32, (n) => n > 0);
 /** The act rate as the authority takes it (injected: the authority is shared code, livehost opts.rate). */

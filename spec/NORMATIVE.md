@@ -19,7 +19,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/readback.json` | Every place the authority reads an old request's body, and what an unknown (redacted) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
-| `spec/conformance/laws.json` | The ground's height (terrain numbers and features → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
+| `spec/conformance/laws.json` | The ground's height (terrain numbers, features, named features and sculpted tiles → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
 | `spec/conformance/trig.json` | The heading law's sine, cosine and atan2: inputs and exact float64 outputs every reader reproduces. Machine-checked. |
 | `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json` (rests to the millimetre) with `digests-exact.json` (rests bit for bit, with the engine's final state): what each must come to rest as, per engine version. A server carries a version when it reproduces both of that version's digests. Machine-checked. |
 
@@ -84,7 +84,8 @@ does, and no role overrides it).
 | Q1: caption | a property of the screen it captions, not a role permission | decided · ratified tel0s 11-06 (delegated) |
 | Q2: owners fly | yes by default (v1 had flight off even for owners) | decided · ratified tel0s 11-06 (delegated) |
 | Q3: guests | can't be set above the world's default role | decided · ratified tel0s 11-06 (delegated) |
-| Q4: `editWorld` | a permission (sky, weather, ground, the card, spawn, bounds); false = owner-only | decided · ratified tel0s 11-06 (delegated) |
+| Q4: `editWorld` | a permission (sky, weather, grass, water, the card, spawn, bounds; the ground left it 11-20: the row below); false = owner-only | decided · ratified tel0s 11-06 (delegated) |
+| The ground | the terrain, its named features (`terrain-feature:<name>`) and its sculpted tiles (`terrain-tile:<i>-<j>`, written by `sculpt`) take `build`, not `editWorld`: shaping the ground is building. The pieces are partition keys (one shared ground), so whoever may shape it may change any of them | decided · antra 2026-11-20: "builders should be able to change the terrain in general" |
 | Q5: bans below owner | any length, or until lifted, the same as an owner's (the ban power is the trust) | decided · R (the fork's maintainer), 2026-11-03 22:24: "I would give moderators permanent ban powers too" |
 
 ### Known gap

@@ -139,7 +139,8 @@ checkpoint body's `sim` (the sim-layer digest, `PHYSICS.md`).
 **Where the authority reads old requests (readback).** The fold never reads a
 request, but the *authority* reads a few request fields back for meaning: an undo's
 `undoes` and a rollback's `acts` (the undo chain), a `use`'s `capability`
-(whose rights admitted its writes), a script request's `sponsor`, a request's `label`, the request that typed a
+(whose rights admitted its writes), a script request's `sponsor`, a sculpt's
+`args.brush` and `clamped` (whether its undo is exact), a request's `label`, the request that typed a
 physics-engine `engine` (whether the owner typed a version: a deploy restamps only a
 version the server stamped), and a launch's, lift's or catch's `id`. The full
 list, with what each reader does, is pinned in `spec/readback.json` (each
@@ -283,7 +284,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
   `physics-joint:<name>` (the constraint between two bodies) and `joint` (a skeleton node), both
   reserved, and on
   `@world`: `about`, `bounds`, `spawn`, `roles:<identity>`, `default-role`,
-  `sky`, `terrain`, `water`, `terrain-grid` (reserved), `terrain-tile:<i>-<j>` (reserved), `grass`, `physics-engine`, `surface:<name>` (reserved),
+  `sky`, `terrain`, `terrain-feature:<name>` (one placed shape of the ground), `terrain-tile:<i>-<j>` (one tile of its sculpted layer, written by `sculpt`), `terrain-grid` (reserved), `water`, `grass`, `physics-engine`, `surface:<name>` (reserved),
   `script-settings`, `blueprints:<hash>`, `assets:<key>`, `capacity`, `schemas:<name>` (reserved).
 - **A mesh is a parametric body.** `mesh {shape, size}` draws a parametric
   body (box, sphere, cylinder, plane, capsule); on a thing with no model the
@@ -510,7 +511,7 @@ lives in whatever reads it — a renderer, the authority's checks, a script.
 - **Keyed names are instance or partition keys.** For instance keys
   (`script:`, `blueprints:`, `roles:`), an existing key may be changed or
   deleted only by its creator (whose rights admitted the first write in its
-  current life) or an owner. Partition keys (`terrain-tile:`) are pieces of
+  current life) or an owner. Partition keys (`terrain-feature:`, `terrain-tile:`) are pieces of
   one shared surface and follow ordinary rank rules.
 - **References are typed.** A field that names another thing or a person
   says so in its definition: `ref` (one entity id), `refs` (a list), `person`
@@ -987,8 +988,10 @@ whether the world knows you across visits, a role says what you may do here. A
 guest holds a role like anyone else; it lasts as long as their connection,
 since there is no identity to keep it on. Changing any
 component of an entity needs builder; changing `@world` needs owner, except
-`blueprints:*` (publishing a blueprint: build), `assets:*` (generate), the
-world's look (`about`, `sky`, `terrain*`, `water`, `grass`, `bounds`, `spawn`:
+`blueprints:*` (publishing a blueprint: build), the ground (`terrain`,
+`terrain-feature:*`, `terrain-tile:*`: build, since shaping the ground is
+building), `assets:*` (generate), the
+world's look (`about`, `sky`, `water`, `grass`, `bounds`, `spawn`:
 editWorld), and `roles:*` (the grant rule). Removing the last owner is
 refused while `@world.keep-owner` is absent or true (starter config, on); an
 owner who sets it false may leave the world ownerless on purpose. A world with
@@ -1098,8 +1101,8 @@ moderator-log record likewise), so history and the moderation log say who mended
 
 **1. Standing: what a role may do.** A role is a set of named permissions,
 each one sentence (`roles.js`): `build` (make things; change or delete what
-you made; publish blueprints), `editOthers` (change or delete what others
-made), `editWorld` (sky, weather, ground, the card, spawn, bounds), `generate`
+you made; shape the ground; publish blueprints), `editOthers` (change or delete what others
+made), `editWorld` (sky, weather, grass, water, the card, spawn, bounds), `generate`
 (add models or pictures: the world's credit), `fly`, `scripts` (install and
 edit scripts: they act with your rights), `pauseScripts` (pause scripts whose
 sponsor ranks below you), `mute`, `kick`, `ban` (keep someone out, for days or until

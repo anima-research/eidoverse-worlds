@@ -17,6 +17,7 @@ writeFileSync(tokensPath, JSON.stringify(ENROLLED));
 Object.assign(process.env, {
   SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: OPT, EIDOVERSE_DIR: join(root, "lib"), JOIN_TOKEN: "door-key",
   AGENT_TOKENS_PATH: tokensPath, SESSIONS_PATH: join(root, "sessions.json"), KTX2_TOKTX: "",
+  UPLOAD_CAP_MB: "1",   // this suite's own cap: its over-cap row is 1.5 MB whatever the server's default is
 });
 const { handleUpload } = await import("../../server/upload.ts");
 const { route } = await import("../../server/routes.ts");
@@ -64,9 +65,24 @@ enrol();
 const kept = await upload(bearer, () => {});
 check("control: the same flow with no revoke → 200, stored", kept.status === 200 && kept.body.ran && storedImages().length === 1, `${kept.status} ${kept.text.slice(0, 90)} stored=${storedImages().length}`);
 
-const tooBig = await upload(bearer, revokeToken, new Uint8Array(21_000_000));
+const tooBig = await upload(bearer, revokeToken, new Uint8Array(1_500_000));
 check("/upload: a bearer revoked during an over-cap read → 413, the refusal a renewed bearer would get too", tooBig.body.ran && tooBig.status === 413, `${tooBig.status} ${tooBig.text.slice(0, 90)}`);
 enrol();
+
+// ---- what is being read at once is bounded: bodies are held whole, so two caps' worth, then "come back" ----
+{ let release!: () => void; const gate = new Promise<void>((r) => { release = r; });
+  // a body that stays open until released: its first pull hands over a few bytes, its second waits
+  const held = (bytes: Uint8Array) => { let pulls = 0; return new ReadableStream<Uint8Array>({ async pull(c) { if (++pulls === 1) c.enqueue(bytes.slice(0, 8)); else { await gate; c.enqueue(bytes.slice(8)); c.close(); } } }); };
+  const send = (body: ReadableStream<Uint8Array> | Uint8Array, length?: number) => { const url = new URL(`http://x/upload?as=image&name=f${n}.png`);
+    return handleUpload(new Request(url, { method: "POST", headers: { ...bearer, ...(length ? { "content-length": String(length) } : {}) }, body }), url, srvAt(`198.51.100.${++n}`)); };
+  const a = send(held(png)), b = send(held(png));   // no stated length: each counts as a whole cap, and both are being read (the file `kept` stored: nothing new lands)
+  const small = await send(png, png.length);   // a small upload that says its size: over the two caps by its few bytes
+  check("/upload: with two caps' worth of bodies being read, another upload is asked to come back: 503, retry-after", small.status === 503 && small.headers.get("retry-after") === "5" && /^busy: other uploads are being read/.test(await small.text()), `${small.status}`);
+  release();
+  const [ra, rb] = await Promise.all([a, b]);
+  check("...and the two being read finish as they would have", ra.status === 200 && rb.status === 200, `${ra.status} ${rb.status}`);
+  const after = await send(png, png.length);
+  check("...and once they are done the next upload is taken", after.status === 200, `${after.status} ${(await after.text()).slice(0, 80)}`); }
 
 // ---- /upload, a session that logs out during the read ----
 const sid = "a".repeat(64);

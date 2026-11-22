@@ -15,7 +15,7 @@
 // what changed, in the protocol's terms. `say` entries come back as chat lines ({seq, ts, actor, by, text,
 // to?} plus spokenOf's fields): chat isn't world state, it's the log's own kind.
 import { opsOf, applyInPlace, emptyState, REDACTED, Malformed, DIALECT, VERSION } from "./fold.js";
-import { simFolder, simSnapshotOf, advanceSim, tickOf, carried } from "./simlayer.js";
+import { simFolder, simSnapshotOf, advanceSim, simCopy, tickOf, carried } from "./simlayer.js";
 import { viewState, idOut } from "./view.js";
 import { learnNames, actorName } from "./names.js";
 import { simInputsMissing } from "./siminputs.js";
@@ -118,7 +118,7 @@ export function makeReplica({ freeze = true } = {}) {
   };
   v.reset = () => { waiting = null; v.active = false; v.status = null; v.st = null; v.seq = -1; v.world = null; E = []; folder = null; v.sim = null; v.simVersion++; kids.clear(); par.clear(); };
   /** A copy of the canonical sim (null when the world runs no carried engine), to advance for display. */
-  v.simClone = () => (v.sim?.sim ? JSON.parse(JSON.stringify(v.sim.sim)) : null);
+  v.simClone = () => (v.sim?.sim ? simCopy(v.sim.sim) : null);
   /** The engine's state at display time t (ms, the authority's clock): a cached copy, advanced forward only. */
   let pres = null, presV = -1;
   v.simAt = (t) => {

@@ -29,7 +29,7 @@ const S = suite("door-frame"), { check } = S;
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows whose pid dies at once, so kill() would
 // leave the real server on its port.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath, BENCH_NONCE: NONCE },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, OPT_DIR: join(worldsDir, "opt"), SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath, BENCH_NONCE: NONCE },
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
@@ -100,6 +100,27 @@ try {
   const fresh = await admitted("doorframe-labtok").catch((e: Error) => e);
   check("a new agent's session is still admitted afterwards", !(fresh instanceof Error), fresh instanceof Error ? fresh.message : "");
   if (!(fresh instanceof Error)) fresh.sock.destroy();
+
+  // One websocket message is one tool call, and the door's socket takes a message of at most 16 MiB (mcpl/tools.ts
+  // TOOL_MESSAGE_BYTES). A call as long as upload's largest file fits: it is answered. These bytes are no model, so the
+  // world's store refuses them in its own words and keeps nothing.
+  { const { UPLOAD_DATA_BYTES } = await import("../../mcpl/tools.ts");
+    const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=doorframe-labtok`);
+    const got: any[] = []; let closedWith: number | null = null;
+    ws.onmessage = (ev) => { try { got.push(JSON.parse(String(ev.data))); } catch { /* not a message of ours */ } };
+    ws.onclose = (ev) => { closedWith = ev.code; };
+    const opened = await new Promise<boolean>((r) => { ws.onopen = () => r(true); ws.onerror = () => r(false); });
+    if (opened) ws.send(INIT.trim());
+    await until("the session answers initialize", () => got.some((m) => m.id === 1 && m.result) || closedWith !== null, { ms: 20_000 }).catch(() => null);
+    let long: any = null;
+    if (closedWith === null) {
+      ws.send(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+      ws.send(JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "upload", arguments: { data: Buffer.alloc(UPLOAD_DATA_BYTES, 0x61).toString("base64") } } }));
+      long = await until("the door answers the long call, or closes the socket", () => got.find((m) => m.id === 2) ?? (closedWith !== null ? { closed: closedWith } : null), { ms: 60_000 }).catch(() => null);
+    }
+    check(`a tool call as long as upload's largest file (${(UPLOAD_DATA_BYTES / 1e6).toFixed(1)} MB, base64 in one message) is taken and answered, in the store's words`,
+      long?.result?.isError === true && /not a GLB container/.test(long.result.content?.[0]?.text ?? ""), JSON.stringify(long ?? { opened, closedWith }).slice(0, 200));
+    try { ws.close(); } catch { /* closed */ } }
 } catch (e) {
   check("FATAL the run threw", false, (e as Error).message);
 } finally {

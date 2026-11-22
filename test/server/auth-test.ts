@@ -223,7 +223,7 @@ try {
   check("the enrolled agent with its own bearer joins under its name, with a directory identity", snap(real)?.you === "claude" && /^u-/.test(snap(real)?.actor ?? ""), JSON.stringify([snap(real)?.you, snap(real)?.actor, real.errors]));
   const other = await open({ id: "claude", token: DOOR, agentToken: "not-a-bearer", declares: "agent" });
   check("a wrong bearer for the name is refused", other.closedWith === 4004, JSON.stringify([other.closedWith, other.errors]));
-  { const upFrom = (q: string, ip: string) => fetch(`${HTTP}/upload?${q}`, { method: "POST", body: glb, headers: { "x-real-ip": ip } });   // its own address: /upload's 4 a minute
+  { const upFrom = (q: string, ip: string) => fetch(`${HTTP}/upload?${q}`, { method: "POST", body: glb, headers: { "x-real-ip": ip } });   // each from its own address
     const st = [(await upFrom("token=wrong", "203.0.113.21")).status, (await upFrom("token=authtest-claude-bearer&by=claude", "203.0.113.22")).status, (await upFrom(`token=${DOOR}`, "203.0.113.23")).status];
     check("/upload: a wrong token is refused (401), the enrolled bearer and the door key are accepted", st.join() === "401,200,200", st.join()); }
 

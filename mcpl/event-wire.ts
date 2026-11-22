@@ -13,7 +13,7 @@ export type WireEventKind =
 
 /** The tags a live world event is delivered with. `declares`: the speaker's declared word (PROTOCOL §6a rule 3),
  *  a sender facet on speech and acts only. `mention`: the speech named this agent. */
-export function eventTags(kind: WireEventKind, opts: { declares?: string | null; mention?: boolean } = {}): string[] {
+export function eventTags(kind: WireEventKind, opts: { declares?: string | null; mention?: boolean; part?: "ground" } = {}): string[] {
   switch (kind) {
     case "say":
       return speechTags("say", opts.declares, !!opts.mention);
@@ -24,8 +24,8 @@ export function eventTags(kind: WireEventKind, opts: { declares?: string | null;
       return tags(CHAT.ambient, CHAT.system, EIDO.activityDigest);
     case "weather":
       return tags(CHAT.ambient, CHAT.system, EIDO.weather);
-    case "world-change":
-      return tags(CHAT.ambient, CHAT.system, EIDO.worldChange, EIDO.particles);
+    case "world-change":   // an emitter, unless the event says the ground (agent-senses.ts noteGround)
+      return tags(CHAT.ambient, CHAT.system, EIDO.worldChange, opts.part === "ground" ? EIDO.ground : EIDO.particles);
     case "arrive":
     case "leave":
       return tags(CHAT.ambient, CHAT.system, EIDO.presence);

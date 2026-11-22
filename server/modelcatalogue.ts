@@ -85,19 +85,31 @@ export function modelsIn(args: unknown, out: string[] = [], depth = 0): string[]
   return out;
 }
 
-let listing: string[] | null = null;
+let listing: string[] | null = null, listedAt = -1;
 function libraryListing(): string[] {
-  if (listing) return listing;
+  // listed once, and again when the store gains or loses a file (an upload since the last find is found)
+  let at = 0; try { at = statSync(join(OPT_DIR, "store")).mtimeMs; } catch { /* no store yet */ }
+  if (listing && at === listedAt) return listing;
+  listedAt = at;
   const out: string[] = [];
   for (const base of [OPT_DIR, LIBRARY_DIR]) {
     const walk = (d: string, depth: number) => { if (depth > 6 || out.length > 5000) return; let names: string[] = [];
       try { names = readdirSync(d); } catch { return; }
       for (const n of names) { const p = join(d, n); let st; try { st = statSync(p); } catch { continue; }
         if (st.isDirectory()) walk(p, depth + 1);
-        else if (/\.glb$/i.test(n) && !/\.(lod|ktx2)\./i.test(n)) out.push(relative(base, p)); } };
+        else if (/\.glb$/i.test(n) && !/\.(lod|ktx2)\./i.test(n)) out.push(relative(base, p).replace(/\\/g, "/")); } };
     walk(base, 0);
   }
   return (listing = [...new Set(out)].sort());
+}
+
+/** Stored models their uploader marked one-offs (POST /upload?catalog=0, server/upload.ts): placed by their path, and in
+ *  no catalogue: neither /library-models nor the authority's find lists them. Read from the store's manifest each time. */
+function oneOffs(): Set<string> {
+  try {
+    const man = JSON.parse(readFileSync(join(OPT_DIR, "store", "manifest.json"), "utf8")) as Record<string, { catalog?: false }>;
+    return new Set(Object.entries(man).filter(([, m]) => m?.catalog === false).map(([hash]) => `store/${hash}.glb`));
+  } catch { return new Set(); }
 }
 
 /** The authority's catalogue interface (shared/protocol/authority.js: get / list). */
@@ -113,7 +125,7 @@ export const ENGINE_CATALOGUE = {
   /** The library path an old content address (eido:sha256/<hex>, an older world's) names on this host, or null. */
   pathOf(name: string): string | null { return typeof name === "string" ? pathOfAddress(name) : null; },
   list(q: string): [string, Entry][] {
-    const ql = String(q ?? "").toLowerCase();
-    return libraryListing().filter((l) => l.toLowerCase().includes(ql)).slice(0, 200).map((l) => [l, cache.get(l) ?? { label: l.split("/").pop()!, surfaces: [] }]);
+    const ql = String(q ?? "").toLowerCase(), hide = oneOffs();
+    return libraryListing().filter((l) => !hide.has(l) && l.toLowerCase().includes(ql)).slice(0, 200).map((l) => [l, cache.get(l) ?? { label: l.split("/").pop()!, surfaces: [] }]);
   },
 };
