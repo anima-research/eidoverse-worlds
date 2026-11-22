@@ -248,7 +248,7 @@ const good = await call("path=store/abc123.glb", bearer("t0k"));
 const j = good.status === 200 ? await good.json() : null;
 check("route: token + object → 200 naming the passes", j?.ok === true && j.queued.join() === "ktx2,lod", [good.status, j]);
 await optIdle();
-// rate limit: 4 per IP per minute, like /upload; the 5th is refused before anything is queued
+// rate limit: 4 per IP per minute; the 5th is refused before anything is queued
 const fromIp = async () => await route(new Request("http://x/rebuild?path=store/abc123.glb", { method: "POST", headers: { "x-real-ip": "9.9.9.9", authorization: "Bearer t0k" } }), viaProxy);
 const st: number[] = []; for (let i = 0; i < 4; i++) { st.push((await fromIp()).status); await optIdle(); }
 const runsBefore5th = runs().length;

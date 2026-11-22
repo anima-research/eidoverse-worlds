@@ -68,6 +68,7 @@ import { initEditLayout } from './lib/edit/layout.js';
 import { initGizmo } from './lib/edit/gizmo.js';
 import { initGripEdit } from './lib/edit/gripedit.js';
 import { initMaterialOverrides } from './lib/realize/material_draft.js';
+import { initInstances, tickInstances } from './lib/realize/instances-draft.js';
 import { initWorldEdge } from './lib/edge.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr/xr.js';
 import { initPeople, personOf, isPhone, menuAt as personMenuAt, sheetFor as personSheet, stripFor as personStrip, badgeHtml as personBadge } from './lib/ui/people.js';
@@ -306,7 +307,8 @@ function start() {
   bus.on('build-mode', (on) => editPanels.show(!!on));
   initGizmo();        // TransformControls on the selection while a transform tool is up
   initGripEdit();     // the grip editor: a ghost hand and its handles, opened from the grabbable card
-  initMaterialOverrides();   // the draft hesperus/material reader (docs/contributing/COMPONENT-LADDER.md)
+  initMaterialOverrides();   // the draft readers hesperus/material and antra/shader (docs/contributing/COMPONENT-LADDER.md)
+  initInstances();           // the draft antra/instances reader
   initWorldEdge();           // @world.bounds drawn as a fence
   initEditLayout();   // the workspace: docks the frames while the mode is on (registered after show, so it docks visible frames)
 
@@ -552,6 +554,7 @@ registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('water-view', () => updateWaterView());   // after the camera's last move this frame (movement, XR): the level's fog and background
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
 registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
+registerSystem('instances', () => tickInstances());   // a thing's instanced copies take its pose after everything that moves a thing this frame (motion, build drags, XR grabs): never a frame behind
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
@@ -730,6 +733,11 @@ const EW = globalThis.EW = {
     return next;
   },
   get terrainArgs() { return currentTerrainArgs(); },
+  // EW.sculpt({brush: 'lower', path: [[x, z], …], radius: 3, strength: 0.4}) is one brush stroke on the ground (the
+  // authority's sculpt; no path: where your body stands). EW.feature('cove', {type: 'hill', x, z, radius, height}) sets
+  // one named shape of the ground, EW.feature('cove', null) removes it (@world's terrain-feature:<name>).
+  sculpt: (args = {}) => sendRequest('sculpt', args),
+  feature: (name, value) => (value == null ? sendRequest('delete', { id: '@world', component: `terrain-feature:${name}` }) : sendRequest('set', { id: '@world', component: `terrain-feature:${name}`, value })),
   // the ground as walking reads it, and whether a heightmap terrain is still waiting on its image
   groundAt: (x, z) => heightAt(x, z), get hasTerrain() { return hasTerrain(); },
   get terrainPending() { return terrainPending(); },

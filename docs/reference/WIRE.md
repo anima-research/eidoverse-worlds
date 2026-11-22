@@ -43,7 +43,7 @@ client); a page from another build isn't a supported pair.
   dropped; past `MSG_RATE` over-limit messages in a second, requests are
   dropped too. The authority's
   own rate per identity over everything it makes the log hold (requests and says: entries and bytes per window: server policy,
-  `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 60, 20, 10 s, 256, 32), refused with code `rate`.
+  `server/config.ts` ACT_RATE, SAY_RATE, RATE_WINDOW_SEC, RATE_KIB, ANON_RATE_KIB; defaults 600, 20, 10 s, 2048, 32), refused with code `rate`.
 - No message may kill the process: handler errors answer
   `{type:"error", error:"that request failed server-side — it has been logged"}`.
 
@@ -206,7 +206,7 @@ Every message belongs to exactly one plane:
 The wire carries requests; rights are the authority's, keyed on the components a
 request would change, never on the request's name (PROTOCOL.md §7). In
 short: any component on an entity needs **builder**; anything on `@world`
-needs **owner** (or the `editWorld` permission for sky, terrain and weather, `grantRoles` for a `roles:<id>` below your rank), except `blueprints:*` (publishing a blueprint, builder) and `assets:*` (generate);
+needs **owner** (or the `editWorld` permission for sky, grass, water and weather, `grantRoles` for a `roles:<id>` below your rank), except `blueprints:*` (publishing a blueprint, builder), the ground (`terrain`, `terrain-feature:*`, `terrain-tile:*`: builder) and `assets:*` (generate);
 `use`, `say`, sitting and carrying what a thing's `grabbable.who` allows are
 open to **visitors**. Roles live on `@world` as `roles:<identity>`.
 `snapshot.yourRights` (and a fresh one whenever roles change) is the

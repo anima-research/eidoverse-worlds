@@ -1,6 +1,7 @@
 // upload-cap-test — /upload's whole-body cap (UPLOAD_CAP; server/request-body.ts readCappedBytes, called by server/upload.ts) on a scratch door at UPLOAD_CAP_MB=1:
 // one byte over is refused in the cap's own words, with a length or chunked (a stream far past it is cancelled near the cap), and nothing is stored; exactly the cap is read.
 // (image-upload-test's oversize row is refused by the narrower IMAGE_CAP, so it never reaches this one.)
+// A second door at UPLOAD_CAP_MB=200: a body past Bun's own request-body limit (128 MiB) and under the cap is read too.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/upload-cap-test.ts
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -33,4 +34,16 @@ try {
   u = await up(new Uint8Array(1_000_000));
   check("exactly UPLOAD_CAP is read (refused for what it is, not its size)", u.status !== 413, `${u.status} ${u.text.slice(0, 80)}`);
 } finally { await door.cleanup(S.fail ? 1 : 0); }
+// A cap an operator raises past Bun's own request-body limit (128 MiB, answered with a bare 413 before any route runs):
+// server.ts moves that limit with the cap, so a body between the two is read to its end.
+{ const env2: Record<string, string> = { JOIN_TOKEN: KEY, UPLOAD_CAP_MB: "200", SKIP_OPT_SWEEP: "1" };
+  const door2 = await scratchSequencer("uploadcap-raised", { serverEnv: env2, prepare: (scratch) => { env2.OPT_DIR = join(scratch, "opt"); mkdirSync(env2.OPT_DIR); } });
+  try {
+    let left = 135; const block = new Uint8Array(1_000_000);
+    const res = await fetch(`${door2.BASE}/upload?name=cap.glb`, { method: "POST", headers: { authorization: `Bearer ${KEY}` },
+      body: new ReadableStream({ pull(c) { if (left-- > 0) c.enqueue(block); else c.close(); } }) });
+    const text = await res.text();
+    check("at UPLOAD_CAP_MB=200 a 135 MB body (past Bun's 128 MiB) is read to its end: refused for what it is, not its size", res.status === 415, `${res.status} ${text.slice(0, 80)}`);
+  } finally { await door2.cleanup(S.fail ? 1 : 0); }
+}
 S.done();

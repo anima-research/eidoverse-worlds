@@ -9,7 +9,7 @@
 // that would move a body (seated, standing on it, or in its slide).
 //
 // One punt per contact: again only after the thing has moved (`moved`) and `againMs` has passed. At most `perSec` a
-// second and `per10s` in ten across everything (a third of the authority's act rate, RATE_DEFAULT.n in
+// second and `per10s` in ten across everything (a thirtieth of the authority's act rate, RATE_DEFAULT.n in
 // protocol/authority/gate.js). A standing refusal quiets a thing for `quietMs`; a passing one for `againMs`.
 import { SHOVE, BODY_MASS } from "./protocol/physconst.js";
 import { worldPose, offChain } from "./protocol/simlayer.js";

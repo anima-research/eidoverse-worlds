@@ -232,5 +232,87 @@ console.log("\nwater");
     check(`material layers: ${what} means none`, JSON.stringify(materialLayerSpecs(v)) === "[]");
 }
 
+// ---- shaping from beside the bag: named features (terrain-feature:<name>) and the sculpted layer (terrain-tile:<i>-<j>)
+console.log("\nnamed features and sculpted tiles ride beside the bag");
+{
+  const { withShaping, groundArgs, shapingOf, shapeable, tileIndex, tileKey, tileAt, tileOf, tileSaid, layerFor, SCULPT, MAX_NAMED, MAX_TILES } = await import("../../shared/terrainshape.js");
+  const { applyStroke, BRUSHES } = await import("../../shared/protocol/sculpt.js");
+  const bag = { kind: "noise", seed: 1, size: 80, amplitude: 0 };
+  const level = () => new Array(SCULPT.tile ** 2).fill(0);
+  const H = (args: any) => makeHeightField(terrainParams(args));
+  const hill = { type: "hill", x: 10, z: 0, radius: 4, height: 2 }, pad = { type: "flatten", x: 10, z: 0, radius: 2, height: 0.5 };
+
+  check("with neither, the ground's args are the bag itself (an unshaped world reads as it did)", withShaping(bag, {}, {}) === bag && withShaping(bag, null, null) === bag && groundArgs({ terrain: bag, sky: {} }) === bag);
+  check("a level ground is never shaped: no terrain, and kind flat, read neither", withShaping(null, { a: hill }, null) === null && !shapeable({ kind: "flat" }) && shapeParams(withShaping({ kind: "flat", height: 2 }, { a: hill }, { "128-128": { mm: level().fill(900) } })) === null
+    && H(withShaping({ kind: "flat", height: 2 }, { a: hill }, null))(10, 0) === 2);
+  const one = withShaping(bag, { cove: hill }, null);
+  check("a named feature shapes the ground as a list feature does", H(one)(10, 0) === 2 && H(one)(14, 0) === 0 && JSON.stringify(shapeParams(one)!.features) === JSON.stringify(shapeParams({ ...bag, features: [hill] })!.features));
+  check("…and the args' JSON is still the bag alone: nothing a stored bag could carry", JSON.stringify(one) === JSON.stringify(bag) && shapingOf(one)!.named.length === 1 && shapeParams({ ...bag, named: [hill], tiles: { "128-128": level().fill(900) } }) === null);
+  // order: the bag's list first, then the named ones by order, then by name
+  const listed = { ...bag, features: [{ type: "hill", x: 10, z: 0, radius: 4, height: 1 }] };
+  check("named features apply after the bag's list", H(withShaping(listed, { pad }, null))(10, 0) === 0.5 && H(withShaping(bag, { pad }, null))(10, 0) === 0.5);
+  check("…by name when no order says otherwise (a-pad levels, then b-hill rises on it; b-pad levels a-hill away)", H(withShaping(bag, { "a-pad": pad, "b-hill": hill }, null))(10, 0) === 2.5 && H(withShaping(bag, { "b-pad": pad, "a-hill": hill }, null))(10, 0) === 0.5);
+  check("…and by order before name", H(withShaping(bag, { "b-pad": { ...pad, order: -1 }, "a-hill": hill }, null))(10, 0) === 2.5 && H(withShaping(bag, { "a-pad": { ...pad, order: 5 }, "b-hill": hill }, null))(10, 0) === 0.5);
+  check("a malformed named feature is dropped, as in the list", shapeParams(withShaping(bag, { bad: { type: "dome", x: 0, z: 0, radius: 2, height: 1 }, thin: { type: "hill", x: 0, z: 0, radius: 0.01, height: 1 }, ok: hill }, null))!.features.length === 1);
+  const many = Object.fromEntries(Array.from({ length: MAX_NAMED + 5 }, (_, i) => [`f${String(i).padStart(3, "0")}`, { type: "hill", x: i, z: 0, radius: 1, height: 1 }]));
+  check(`at most ${MAX_NAMED} named features are read`, shapeParams(withShaping(bag, many, null))!.features.length === MAX_NAMED);
+
+  // the lattice
+  check("a tile's key is <i>-<j>, 0–255 each, written one way", JSON.stringify(tileIndex("128-128")) === "[128,128]" && tileIndex("0-255") !== null && tileIndex("256-0") === null && tileIndex("01-2") === null && tileIndex("-1-2") === null && tileIndex("3") === null && tileKey(3, 9) === "3-9");
+  check("the world's centre is the corner of tile 128-128; a tile is 16 m a side", tileAt(0, 0) === "128-128" && tileAt(-0.01, 0) === "127-128" && tileAt(15.99, 16) === "128-129" && tileAt(-2048, -2048) === "0-0" && tileAt(2048, 0) === null && tileAt(-2048.01, 0) === null);
+  check("a tile is 1024 whole millimetres within the limit, or it isn't one", tileOf({ mm: level() }) !== null && tileOf({ mm: [1, 2] }) === null && tileOf({ mm: level().fill(0.5) }) === null && tileOf({ mm: level().fill(SCULPT.limit + 1) }) === null && tileOf({}) === null);
+  const mm = level(); mm[0] = 1000; mm[1] = 400; mm[SCULPT.tile] = -250;   // (gx, gz) = (0,0), (1,0), (0,1) of tile 128-128: x = 0, 0.5; z = 0, 0.5
+  const sc = withShaping(bag, null, { "128-128": { mm } }), h = H(sc);
+  check("a sample stands at its lattice point, in millimetres, row-major with rows along z", h(0, 0) === 1 && h(0.5, 0) === 0.4 && h(0, 0.5) === -0.25 && h(0.5, 0.5) === 0);
+  check("between samples the layer is bilinear, and it fades into the level tile beside it", near(h(0.25, 0), 0.7) && near(h(0, 0.25), 0.375) && near(h(0.25, 0.25), (1000 + 400 - 250 + 0) / 4000) && near(h(-0.25, 0), 0.5) && near(h(0, -0.25), 0.5) && h(-0.5, 0) === 0 && h(8, 8) === 0);
+  const over = withShaping({ ...bag, features: [{ type: "flatten", x: 0, z: 0, radius: 6, height: 3 }] }, { rise: { type: "hill", x: 0, z: 0, radius: 5, height: 1 } }, { "128-128": { mm } });
+  check("the sculpted layer is added last: a flatten under it never levels a stroke away", H(over)(0, 0) === 5 && H(over)(0.5, 0) > 4.3);
+  check("a tile that names no tile, or isn't one, is not read", shapeParams(withShaping(bag, null, { "300-1": { mm }, "128-128": { mm: [1] } })) === null);
+  check("the sim's params name the layer and never carry it (they are hashed whole, at every digest)", typeof shapeParams(sc)!.sculpt === "string" && /^[0-9a-f]{32}$/.test(shapeParams(sc)!.sculpt!) && JSON.stringify(terrainParams(sc)).length < 400 && !("sculpt" in shapeParams(one)!));
+  const again = withShaping(bag, null, { "128-128": { mm: mm.slice() } }), other = level(); other[5] = 1;
+  check("the same sculpting has the same name on every machine, and other sculpting another", shapeParams(again)!.sculpt === shapeParams(sc)!.sculpt && shapeParams(withShaping(bag, null, { "128-128": { mm: other } }))!.sculpt !== shapeParams(sc)!.sculpt
+    && shapeParams(withShaping(bag, null, { "128-129": { mm } }))!.sculpt !== shapeParams(sc)!.sculpt);
+  check("params that crossed a wire (a sim's snapshot) find the layer by its name and stand on the same ground", makeHeightField(JSON.parse(JSON.stringify(terrainParams(sc))))(0.25, 0) === h(0.25, 0) && shapeReady(JSON.parse(JSON.stringify(shapeParams(sc)))));
+  check("a layer this machine doesn't hold is not ready, as a heightmap's missing grid isn't", shapeReady({ features: [], heightmap: null, sculpt: "0".repeat(32) }) === false && layerFor("0".repeat(32)) === null);
+  { const kept = shapeParams(sc)!.sculpt!; for (let i = 0; i < 300; i++) { const t = level(); t[0] = i + 1; shapeParams(withShaping(bag, null, { "1-1": { mm: t } })); }
+    check("…and reading the ground's args again names a layer that had gone", layerFor(kept) === null && shapeParams(sc)!.sculpt === kept && layerFor(kept) !== null); }
+
+  // from a fold's record of @world
+  const wc: any = { terrain: bag, "terrain-feature:cove": hill, "terrain-tile:128-128": { mm }, sky: { hours: 3 }, "roles:u-x": { role: "builder" } };
+  const g1 = groundArgs(wc), g2 = groundArgs({ ...wc, sky: { hours: 4 } }), g3 = groundArgs({ ...wc, "terrain-feature:cove": { ...hill } });
+  check("groundArgs gathers @world's pieces: the same pieces give the same args (a cache keyed on them holds), a changed piece new ones", H(g1)(10, 0) === 2 && H(g1)(0, 0) === 1 && g1 === g2 && g3 !== g1);
+  check("…and a world whose ground is level reads its terrain as it is, pieces or not", groundArgs({ ...wc, terrain: { kind: "flat", height: 1 } }).kind === "flat" && shapingOf(groundArgs({ ...wc, terrain: { kind: "flat", height: 1 } })) === null && groundArgs({ sky: {} }) === null);
+  { resetExportBudget(); const base = { kind: "noise", seed: 3, size: 40, amplitude: 1 }, raised = level(); raised.fill(5000);
+    const plain = serveHeightmapExport(base, 33, "clay", "10.0.0.1") as any, withHill = withShaping(base, { m: { type: "hill", x: 0, z: 0, radius: 15, height: 9 } }, null), withTile = withShaping(base, null, { "128-128": { mm: raised } });
+    const cachedBefore = [exportIsCached(base, 33, "clay"), exportIsCached(withHill, 33, "clay"), exportIsCached(withTile, 33, "clay")];
+    const a = serveHeightmapExport(withHill, 33, "clay", "10.0.0.1") as any, b = serveHeightmapExport(withTile, 33, "clay", "10.0.0.1") as any;
+    check("the heightmap export is cached by the whole ground: a named feature or a stroke on the same bag is a new export, never the image from before it",
+      plain.ok && JSON.stringify(cachedBefore) === "[true,false,false]" && a.ok && !a.cached && b.ok && !b.cached && a.meta.max > plain.meta.max + 5 && b.meta.max > plain.meta.max + 3 && exportIsCached(withHill, 33, "clay"),
+      JSON.stringify({ cachedBefore, plain: plain.meta, a: a.meta, b: b.meta })); }
+  check("a reply says a tile in a line, never its samples", JSON.stringify(tileSaid("terrain-tile:128-128", { mm })) === JSON.stringify({ samples: 1024, min: -250, max: 1000 }) && tileSaid("terrain", bag) === bag);
+
+  // the brush (shared/protocol/sculpt.js): worked out once, on whole millimetres
+  const tiles0 = new Map<string, number[]>(), flatGround = (extra = new Map<string, number[]>()) => H(withShaping(bag, null, Object.fromEntries([...extra].map(([k, v]) => [k, { mm: v }]))));
+  const stroke = (tiles: Map<string, number[]>, a: any) => { const r: any = applyStroke(tiles, a, flatGround(tiles)); const next = new Map(tiles); for (const [k, v] of r.writes ?? []) { if (v) next.set(k, v); else next.delete(k); } return { ...r, tiles: next, h: flatGround(next) }; };
+  const up = stroke(tiles0, { brush: "raise", path: [[8, 8]], radius: 3, strength: 0.5 });
+  check("raise: the path's own height rises by the strength, falling to nothing at the radius", up.h(8, 8) === 0.5 && up.h(9.5, 8) > 0.2 && up.h(9.5, 8) < 0.4 && up.h(11, 8) === 0 && up.h(8, 4.9) === 0 && up.writes.size === 1 && !up.clamped);
+  const down = stroke(up.tiles, { brush: "lower", path: [[8, 8]], radius: 3, strength: 0.5 });
+  check("lower takes the same away, sample for sample, and a tile left level is given back as none", down.h(8, 8) === 0 && down.writes.get("128-128") === null && down.tiles.size === 0);
+  const a = stroke(stroke(tiles0, { brush: "raise", path: [[8, 8]], radius: 3, strength: 0.5 }).tiles, { brush: "lower", path: [[9, 8], [12, 8]], radius: 2, strength: 0.2 });
+  const b = stroke(stroke(tiles0, { brush: "lower", path: [[9, 8], [12, 8]], radius: 2, strength: 0.2 }).tiles, { brush: "raise", path: [[8, 8]], radius: 3, strength: 0.5 });
+  check("a raise and a lower land the same in either order (each an integer add per sample)", JSON.stringify([...a.tiles]) === JSON.stringify([...b.tiles]));
+  const line = stroke(tiles0, { brush: "raise", path: [[2, 2], [30, 2]], radius: 1.5, strength: 1 });
+  check("a path of more points is one line the brush follows: the same height all along it, across tiles", line.h(2, 2) === 1 && line.h(16, 2) === 1 && line.h(30, 2) === 1 && line.h(16, 3.5) === 0 && line.writes.size === 2);
+  const fl = stroke(up.tiles, { brush: "flatten", path: [[8, 8]], radius: 3, height: 2 });
+  check("flatten brings the ground to one height at the path, by its strength elsewhere", fl.h(8, 8) === 2 && fl.h(9.5, 8) > 0.5 && fl.h(9.5, 8) < 2 && stroke(up.tiles, { brush: "flatten", path: [[8, 8]], radius: 3, height: 2, strength: 0.5 }).h(8, 8) === 1.25);
+  check("…to the ground's own height at the path's first point when none is said", stroke(up.tiles, { brush: "flatten", path: [[8, 8], [10, 8]], radius: 1 }).h(10, 8) === 0.5);
+  const sm = stroke(up.tiles, { brush: "smooth", path: [[8, 8]], radius: 3 });
+  check("smooth brings a peak down toward the ground round it", sm.h(8, 8) < 0.5 && sm.h(8, 8) > 0);
+  const top = stroke(new Map([["128-128", level().fill(SCULPT.limit - 100)]]), { brush: "raise", path: [[8, 8]], radius: 2, strength: 1 });
+  check("a sample stops at the layer's limit, and the stroke says it did", top.clamped === true && Math.max(...top.tiles.get("128-128")!) === SCULPT.limit);
+  check("a stroke over more ground than one stroke may is refused before it is worked out", (applyStroke(tiles0, { brush: "raise", path: [[-1500, 0], [1500, 0]], radius: 64, strength: 1 }, () => 0) as any).tooBig === true);
+  check("a stroke off the lattice writes nothing", (applyStroke(tiles0, { brush: "raise", path: [[5000, 5000]], radius: 3, strength: 1 }, () => 0) as any).writes.size === 0 && BRUSHES.length === 4 && MAX_TILES === 1024);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m` : "\n\x1b[32mall passed\x1b[0m");
 process.exit(failures ? 1 : 0);

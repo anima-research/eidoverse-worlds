@@ -26,7 +26,7 @@ type Any = any;
  *  numbered seq × 1000, its actor a display name. */
 export type ChatLine = { seq: number; ts: number; actor: string; verb: "say"; args: { text: string; to?: string; spoken?: boolean; utt?: number; t0?: number } };
 /** The view of the fold (shared/protocol/view.js viewState) plus the chat window. */
-export type WorldView = { entities: Record<string, Any>; terrain: Any; grass: Any; sky: Any; assets: Any[]; recentChat: Any[]; chatTotal: number; roles: Record<string, Any>; bans: Record<string, Any> };
+export type WorldView = { entities: Record<string, Any>; terrain: Any; terrainFeatures: Record<string, Any>; terrainTiles: Record<string, number[]>; grass: Any; sky: Any; assets: Any[]; recentChat: Any[]; chatTotal: number; roles: Record<string, Any>; bans: Record<string, Any> };
 
 /** An entry as clients are sent it: without the chain fields (world, head, sig) and an act/say body's salt, which nothing
  *  client-side reads and which dominated a short say's bytes. The log on disk keeps them. Exported for txn-check's T3d. */

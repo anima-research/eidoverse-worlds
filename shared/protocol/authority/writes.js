@@ -26,7 +26,7 @@ import { stampHomes, stampResetHomes } from "./manipulate.js";
 import { outsideWorld } from "../../spawn.js";
 import { bareYaw, isLookAt } from "./checks.js";
 import { Admitted, admit, rateCheck, rated } from "./gate.js";
-import { applyResettle, clearRefsTo, lastTouch, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
+import { applyResettle, clearRefsTo, lastTouch, opsSaid, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, warnOrNot, warnings } from "./followups.js";
 import { AXES, POSITIVE_AXES } from "../../axes.js";
 import { ratedHoursAt } from "../../forecast.js";
 // the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
@@ -96,7 +96,7 @@ function commit(w, actor, verb, args, build) {
   const settle = planResettle(w, actor, plan.ops, st, plan.after);
   if (args.dry) { const woke = (ctx.launches ?? []).filter((b) => plan.after.entities[b.id]).map((b) => b.id);
     const lifted = liftsOf(w, ctx, plan).map((e) => e.body.id);
-    return { ok: true, dry: true, would: plan.ops, notes: [...ctx.notes, ...(settle?.note ? [settle.note] : []), ...handsLetGo(w, plan, plan.after).map(handNote)],
+    return { ok: true, dry: true, would: opsSaid(plan.ops), ...(ctx.reply ?? {}), notes: [...ctx.notes, ...(settle?.note ? [settle.note] : []), ...handsLetGo(w, plan, plan.after).map(handNote)],
       ...(plan.vacate.length ? { vacates: plan.vacate.map((u) => ({ who: u.who, socket: u.socket })) } : {}),
       ...(settle?.occupants?.length ? { resettles: settle.occupants } : {}), ...(woke.length ? { wakes: woke } : {}), ...(lifted.length ? { lifts: lifted } : {}),
       ...warnOrNot(warnings(plan.after, [...ctx.refs])) }; }
@@ -119,7 +119,7 @@ function commit(w, actor, verb, args, build) {
   for (const e of lifts) w.append({ ...e, cause: act });
   letGoEdited(w, plan, act, st, after, actor, ctx.notes);
   return { ok: true, seq, head: w.headAt(seq), act, refs: [...ctx.refs].filter((id) => after.entities[id]).map((id) => ({ id, born: after.entities[id].born })),
-    after: touched(plan.ops, after), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
+    after: touched(plan.ops, after), ...(ctx.reply ?? {}), ...(ctx.undid ? { undid: ctx.undid } : {}), ...(ctx.notes.length ? { notes: ctx.notes } : {}), ...warnOrNot(warnings(after, [...ctx.refs])) };
 }
 
 // what an engine's start finds in a hand (buildEpoch), lifted out of its world: one physics entry (verb lift) each, naming its holder. Only

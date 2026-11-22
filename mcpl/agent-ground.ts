@@ -152,6 +152,13 @@ export class AgentGround {
   heightAt(x: number, z: number): number {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
+  /** The world's terrain is gone: back on the level floor. A build still on its way commits nothing. */
+  dropTerrain() {
+    this.terrainRev++; this.pendingTerrain = null;
+    if (!this.terrain) return;
+    this.terrain = null; this.navTerrainRev++;
+    void setHeightField((x, z) => this.a.heightAt(x, z));
+  }
   /** This world's @world.bounds as written (the edge flight banks at; shared/flight.js boxOf reads it), else null. */
   worldBox(): unknown { return this.a.replica?.st?.entities?.["@world"]?.c?.bounds ?? null; }
 

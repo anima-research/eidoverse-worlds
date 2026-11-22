@@ -17,8 +17,7 @@
 // content-addressed and idempotent, served back byte-identical with the right
 // content-type under the store's immutable policy, admitted by the sound
 // allow-list, manifest first-arrival-wins, same token gate as everything.
-// The upload window is 4/min per IP and every POST past the token check
-// spends it, so the door is exercised four at a time with a rest between.
+// (The door's rate limit, 30 uploads a minute, is test/server/upload-rate-test.ts's: the twelve here stay under it.)
 import { allowedSoundSrc } from "../../shared/sound.js";
 import { ownedWorld, proveOwned } from "../harness/probe-harness.mjs";
 import { mkdtempSync } from "node:fs";
@@ -49,7 +48,6 @@ async function post(body: Uint8Array, q: Record<string, string>, token: string |
   let json: any = null; try { json = JSON.parse(text); } catch { /* not json */ }
   return { status: r.status, text, json };
 }
-const rest = async () => { console.log("  (resting out the 4/min upload window…)"); await new Promise((r) => setTimeout(r, 61_000)); };
 
 try {
 console.log(`\naudio door — ${HTTP}\n`);
@@ -71,7 +69,6 @@ check("GET /library/<path> serves it: 200 audio/wav", g.status === 200 && (g.hea
 check("…byte-identical", served.length === WAV.length && served.every((b, i) => b === WAV[i]), `${served.length} vs ${WAV.length}`);
 check("…under the store's immutable cache policy", /immutable/.test(g.headers.get("cache-control") ?? ""), g.headers.get("cache-control") ?? "none");
 
-await rest();
 r = await post(MP3RAW, { as: "audio", name: "raw.mp3" });
 check("a bare MPEG frame (no ID3) is still an .mp3", r.status === 200 && /\.mp3$/.test(r.json?.path ?? ""), r.text);
 r = await post(WEBM, { as: "audio", name: "x.webm" });
@@ -81,7 +78,6 @@ check("an MP4 container (ftyp) lands as .m4a", r.status === 200 && /\.m4a$/.test
 r = await post(PNG, { as: "audio", name: "song.mp3" });
 check("a PNG named .mp3 is refused at the audio door (415)", r.status === 415 && /not an MP3/.test(r.text), `${r.status} ${r.text}`);
 
-await rest();
 r = await post(JUNK, { as: "audio", name: "x.wav" });
 check("junk bytes are refused (415)", r.status === 415, `${r.status} ${r.text}`);
 r = await post(WAV, {});

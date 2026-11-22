@@ -455,3 +455,7 @@ docs/contributing/COMPONENT-LADDER.md). Written by `bun test/protocol/pretrans-c
 - 2026-11-13: @world.spawn.yaw range ±2π → ±YAW_LIMIT (2π + 1e-3 rounding slack), the same bound as a bare yaw (Mica #324)
 - 2026-11-16: structure.slabT's doc said the slab's top is at the level's y; the slab sits ON y and its top is the walk surface (structure.js tileBox, GRID_DEFAULTS): the meaning was always so, the doc now says it
   - structure.slabT: its meaning "floor slab thickness, metres (its top at the level's y)" → "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)"
+- 2026-11-20: sculpted terrain is built (antra 11-20): terrain-tile leaves reserved with the shape its sketch held, on a lattice the law fixes (no terrain-grid); terrain-feature is new
+  - terrain-tile: status reserved → trial
+- 2026-11-20: normative: undo's readback gains inverse: an undo that took a raise or a lower back by its own amount says so, and a later undo of a stroke under it reads that to stay exact (sculpt, 11-20)
+  - readback request:undo: {"fields":["undoes","rollback.acts"],"unknown":"undoes nothing we can name: the chain ends there and its target isn't counted undone"} → {"fields":["undoes","rollback.acts","inverse"],"unknown":"undoes nothing we can name: the chain ends there and its target isn't counted undone; a stroke under it is no longer undone by its own amount"}
