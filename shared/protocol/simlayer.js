@@ -19,6 +19,7 @@ import { isBoxShape, shapeError } from "./shapes.js";
 import { r3, r2 } from "./round.js";
 import { composePose } from "../rot.js";
 import { scale3 } from "../scale3.js";
+import { groundArgs } from "../terrainshape.js";
 
 // An engine is named by its VERSION: carried when this server reproduces its conformance digests (above).
 export const ENGINES = { [eidosim.SIM_ID]: { module: eidosim, rotates: true, maxSpeed: 20,
@@ -27,6 +28,8 @@ export const DEFAULT_ENGINE = eidosim.SIM_ID;
 export const TICK_MS = eidosim.TICK_MS;
 // a sim state advanced by its engine (readers that hold a clone: the replica, the client's flights)
 export const advanceSim = (sim, tick) => eidosim.advanceSim(sim, tick);
+/** A copy of a sim to step on its own, standing on the ground its source stands on (shared/sim.js simCopy). */
+export const simCopy = (sim) => eidosim.simCopy(sim);
 export const tickOf = (sim, ts) => eidosim.tickOf(sim, ts);
 export const carried = (spec) => !!spec && typeof spec.engine === "string" && Object.hasOwn(ENGINES, spec.engine);   // a version this server reproduces
 /** "eidosim@1.0.0" → "eidosim" */
@@ -123,7 +126,7 @@ function engineEntity(st, id, models = {}, fixed = null) {
 export function engineViewM(st, models = {}) {
   const entities = {}, fixed = fixedSet(st);
   for (const id of Object.keys(st.entities)) { const v = engineEntity(st, id, models, fixed); if (v) entities[id] = v; }
-  const terr = st.entities["@world"]?.c.terrain;
+  const terr = groundArgs(st.entities["@world"]?.c);   // the terrain with its named features and sculpted tiles
   return { entities, terrain: terr ?? { amplitude: 0 } }; // worlds stand on y = 0 unless they declare terrain
 }
 const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
@@ -251,10 +254,11 @@ export function simFolder(entries, { models = {}, from = null, purged = null } =
         return;
       }
       if (!out.sim) return;
-      let relock = false;
+      let relock = false, reground = false;
       for (const o of ops) { // keyed by component (PHYSICAL), never by verb
-        if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders
-          if (o.comp === "terrain") { SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? { amplitude: 0 } }, engineView(st)); out.launched = {}; }   // removed: flat y = 0, as at boot, never the toolkit's default hills
+        if (o.id === "@world") { // the ground itself changed (its terrain, a named feature, a sculpted tile): re-ground, release every body, rebuild colliders. Once per change, however many pieces it wrote
+          if (!reground && (o.comp === "terrain" || o.comp?.startsWith("terrain-feature:") || o.comp?.startsWith("terrain-tile:"))) { reground = true;
+            SE(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: groundArgs(st.entities["@world"].c) ?? { amplitude: 0 } }, engineView(st)); out.launched = {}; }   // removed: flat y = 0, as at boot, never the toolkit's default hills
           continue; }
         const shape = engineBox(st.entities[o.id]?.c.physics), model = libOf(st.entities[o.id]);
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
@@ -380,7 +384,7 @@ export const snapshotOf = (sim) => JSON.parse(JSON.stringify(eidosim.simSnapshot
 // Predict when everything now in flight will be at rest (a carrier can look ahead; a barrier waits for it).
 export function restEta(sf) {
   if (!sf.sim) return null;
-  const s = JSON.parse(JSON.stringify(sf.sim)); const live = () => Object.values(s.bodies).filter((b) => !b.resting).length;
+  const s = eidosim.simCopy(sf.sim); const live = () => Object.values(s.bodies).filter((b) => !b.resting).length;
   if (!live()) return 0;
   const t0 = s.tick; let k = t0;
   while (live() && k < t0 + 20000) { k++; eidosim.advanceSim(s, k); }

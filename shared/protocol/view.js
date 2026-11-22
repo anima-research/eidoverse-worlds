@@ -11,7 +11,8 @@
 //   - ids, roles and parent targets come back through names.dec (an imported world's x-- escapes undone);
 //   - imported:<field> (a field an imported world's translation carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], imported-bans:<id> → bans, assets:<k> → assets,
-//     sky/terrain/grass/water → themselves, imported:<k> → st[k] where nothing else fills it. Nothing else on @world is shown.
+//     sky/terrain/grass/water → themselves, terrain-feature:<name> → terrainFeatures, terrain-tile:<i>-<j> → terrainTiles
+//     (its samples), imported:<k> → st[k] where nothing else fills it. Nothing else on @world is shown.
 // The old protocol's record names (model as `lib`, components in a `comp` bag) stay out: test/protocol/vocab-check.ts.
 import { dec } from "./names.js";
 import { qNorm, qHeading } from "../rot.js";
@@ -25,7 +26,7 @@ export const DERIVED = new Set(["id", "pos", "q", "yaw", "scale", "scale3", "bor
 export const fillsFromImported = (n) => !DERIVED.has(n) && n !== "parent";
 /** The components on a record (its facts), without the derived fields. */
 export const recordComponents = (rec) => { const out = {}; for (const k in rec ?? {}) if (!DERIVED.has(k)) out[k] = rec[k]; return out; };
-export const emptyView = () => ({ entities: {}, terrain: null, grass: null, sky: null, water: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
+export const emptyView = () => ({ entities: {}, terrain: null, terrainFeatures: {}, terrainTiles: {}, grass: null, sky: null, water: null, assets: [], recentChat: [], chatTotal: 0, roles: {}, bans: {} });
 
 /** The fold record's transform as readers hold it: {pos, q, yaw, scale (one number), scale3? ([x,y,z] when non-uniform)}.
  *  A missing or malformed part is its default (the origin, no turn, unit scale), never undefined. */
@@ -99,6 +100,10 @@ export function viewState(folded, { recentChat = [], chatTotal = 0 } = {}) {
       for (const [k, v] of Object.entries(c)) {
         if (HIDDEN_WORLD.has(k) || k.startsWith("imported-behavior:")) continue;
         if (k === "sky" || k === "terrain" || k === "grass" || k === "water") st[k] = clone(v);   // water: its own component
+        // the ground's other pieces (shared/terrainshape.js withShaping reads them beside the terrain). A tile's samples are
+        // handed over as they are, not copied: a tile is replaced whole, never changed in place, and a ground carries megabytes
+        else if (k.startsWith("terrain-feature:")) st.terrainFeatures[k.slice(16)] = clone(v);
+        else if (k.startsWith("terrain-tile:")) { if (Array.isArray(v?.mm)) st.terrainTiles[k.slice(13)] = v.mm; }
         else if (k === "default-role") st.roles["*"] = clone(v);
         else if (k.startsWith("roles:")) st.roles[idOut(k.slice(6))] = clone(v);
         else if (k.startsWith(IMP_BANS)) st.bans[idOut(k.slice(IMP_BANS.length))] = clone(v);

@@ -438,6 +438,10 @@
    "meaning": "that would put it inside something solid",
    "when": "a hang or place into a thing's solid parts"
   },
+  "level-ground": {
+   "meaning": "this ground can't be shaped",
+   "when": "a sculpt, a terrain-feature or a terrain-tile where the ground is the level floor (no terrain, or kind flat)"
+  },
   "no-model": {
    "meaning": "nothing to measure",
    "when": "measure of a thing with no model or mesh"

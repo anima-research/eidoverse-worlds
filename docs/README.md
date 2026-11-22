@@ -11,7 +11,7 @@ Start with [README](../README.md) (what this is, how to run it), [AGENTS](../AGE
 
 ## Guides — using a world
 
-[BUILDING](guide/BUILDING.md) · [SCRIPTS](guide/SCRIPTS.md) · [MODDING-UI](guide/MODDING-UI.md) · [BODY-STATE](guide/BODY-STATE.md)
+[BUILDING](guide/BUILDING.md) · [SCRIPTS](guide/SCRIPTS.md) · [MODDING-UI](guide/MODDING-UI.md) · [BODY-STATE](guide/BODY-STATE.md) · [SHADERS](guide/SHADERS.md) · [INSTANCES](guide/INSTANCES.md)
 
 ## Operator — running a server
 

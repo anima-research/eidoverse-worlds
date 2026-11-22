@@ -5,13 +5,16 @@
 
 import { state, onWorldChange } from '../state.js';
 import { applyTerrainState, applyGrassState, applySkyFolded, applyAssetState } from '../world.js';
+import { withShaping } from '../../../shared/terrainshape.js';
 
 // no sky authored (never, or removed): a plain clear sky, not the sky defaults' cumulus
 const NO_SKY = Object.freeze({ clouds: 'clear' });
 
 // the ground's builder fills water on the ground it builds: the world's water component rides on its args, and in a world
 // with no terrain on the stage floor ({stageFloor, water})
-const groundArgs = (st) => (st.terrain ? (st.water ? { ...st.terrain, water: st.water } : st.terrain) : st.water ? { stageFloor: true, water: st.water } : null);
+// …and so do the ground's named features and sculpted tiles (shared/terrainshape.js withShaping), which shape a terrain that isn't level
+const groundArgs = (st) => { const t = withShaping(st.terrain, st.terrainFeatures, st.terrainTiles);
+  return t ? (st.water ? { ...t, water: st.water } : t) : st.water ? { stageFloor: true, water: st.water } : null; };
 
 // every join hands over what the fold says, absence included: a rejoin into a world whose terrain or grass went while we
 // were away clears them, instead of keeping the last session's
@@ -26,7 +29,7 @@ function reconcileEnvironment() {
 function onWorld({ key, ts }) {
   const st = state.st;
   switch (key) {
-    case 'terrain': case 'water': applyTerrainState(groundArgs(st)); break;   // removed: the default flat ground
+    case 'terrain': case 'water': case 'terrainFeatures': case 'terrainTiles': applyTerrainState(groundArgs(st)); break;   // removed: the default flat ground
     // a mown lawn folds to null; the realizer is told to clear
     case 'grass': applyGrassState(st.grass ?? { clear: true }); break;
     // the fold merged this change into st.sky already; its ts anchors live transition timing

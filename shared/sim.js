@@ -93,7 +93,7 @@ export function simEntry(sim, entry, st) {
     sim.epoch = { sim: a.sim, tickMs: a.tickMs, ts: entry.ts, seq: entry.seq, ...(a.sim === SIM_ID ? {} : { foreign: true }) };
     if (sim.epoch.foreign) return;
     sim.e2 = { nextUid: 0, stepNo: 0, impulses: [], manifolds: [], pairs: [] };
-    sim.terrain = st?.terrain ? terrainParams(st.terrain) : null;
+    sim.terrain = st?.terrain ? terrainParams(st.terrain) : null; groundOf(sim);   // (its height function, built now: see `fields`)
     if (a.boxes && typeof a.boxes === 'object') for (const lib of Object.keys(a.boxes)) if (boxOk(a.boxes[lib])) sim.boxes[lib] = a.boxes[lib];
     for (const id of Object.keys(st?.entities ?? {})) setStatic(sim, id, st.entities[id]);
     return;
@@ -101,7 +101,7 @@ export function simEntry(sim, entry, st) {
   if (!sim.epoch || sim.epoch.foreign) return;
   if (entry.verb === 'terrain') {
     advanceSim(sim, tickOf(sim, entry.ts));
-    sim.terrain = terrainParams(a);
+    sim.terrain = terrainParams(a); groundOf(sim);
     sim.bodies = {}; sim.statics = {};
     for (const id of Object.keys(st?.entities ?? {})) setStatic(sim, id, st.entities[id]);
     return;
@@ -128,7 +128,10 @@ export function simEntry(sim, entry, st) {
 const RELEASERS = new Set(['place', 'spawn', 'remove', 'mount', 'dismount', 'motion', 'light']);
 const RESEATERS = new Set(['place', 'spawn', 'dismount', 'light']);
 
-// height fields are compiled once per params object (outside the state: the state stays plain JSON)
+// height fields are compiled once per params object (outside the state: the state stays plain JSON), and when the sim is
+// handed its ground, not when it first steps: a shaped ground's params only NAME its heightmap grid and its sculpted layer
+// (shared/terrainshape.js keeps the last few by name), and a field holds what it found from then on. A copy of a sim
+// made here (simCopy) keeps its source's field, so it never looks a name up again either.
 const fields = new WeakMap();
 function groundOf(sim) {
   if (!sim.terrain) return { height: () => 0 };
@@ -238,3 +241,5 @@ function restBody(sim, id, b) {
 export function simPose(sim, id) { const b = sim.bodies[id]; return b ? { p: b.p, q: b.q, resting: b.resting } : null; }
 // plain JSON, keys in insertion order (entry order): the snapshot IS the state
 export const simSnapshot = (sim) => JSON.parse(JSON.stringify(sim));
+/** A copy of a sim to step on its own (a prediction, a rest's forecast): its state, with the ground its source stands on. */
+export function simCopy(sim) { const s = JSON.parse(JSON.stringify(sim)); const f = sim?.terrain && fields.get(sim.terrain); if (f && s.terrain) fields.set(s.terrain, f); return s; }

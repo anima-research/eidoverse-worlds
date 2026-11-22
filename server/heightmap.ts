@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { OPT_DIR } from "./config.ts";
-import { decodeGrid, encodeGrid, setGridLoader, MAX_GRID } from "../shared/terrainshape.js";
+import { decodeGrid, encodeGrid, setGridLoader, MAX_GRID, shapeParams, shapingOf } from "../shared/terrainshape.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
 import { windowLimiter } from "./ratewindow.ts";
 
@@ -114,7 +114,9 @@ const exportCache = new Map<string, { png: Uint8Array; meta: HeightmapMeta }>();
 const exportGate = windowLimiter(EXPORT_PER_ADDRESS, EXPORT_PER_MINUTE);   // server/ratewindow.ts: the limiter /check uses too, each door its own budget
 let exporting = false;
 
-const exportKey = (terrainArgs: Record<string, unknown>, n: number, world?: string) => `${n}|${world ?? ""}|${JSON.stringify(terrainArgs)}`;
+// the ground is the bag AND what shapes it from beside the bag (named features, the sculpted layer by its name), which
+// ride under a symbol JSON doesn't see: all of it is the key, or a stroke would be answered with the ground before it
+const exportKey = (terrainArgs: Record<string, unknown>, n: number, world?: string) => `${n}|${world ?? ""}|${JSON.stringify(terrainArgs)}|${JSON.stringify(shapingOf(terrainArgs)?.named ?? [])}|${shapeParams(terrainArgs)?.sculpt ?? ""}`;
 const clampRes = (res: number) => Math.max(2, Math.min(EXPORT_MAX, Math.round(Number.isFinite(res) ? res : 257)));
 
 export type ExportAnswer =

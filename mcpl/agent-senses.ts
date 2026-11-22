@@ -8,6 +8,7 @@ import { grabOf, describeGrab } from "../shared/grab.js";
 import { type Entity, type Pose, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
 import { briefingLines } from "../shared/briefing.js";
 import { compass } from "../shared/waterkind.js";
+import { groundChange, groundLine } from "./ground-words.ts";
 import { SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS, APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { waterStance } from "../shared/mover.js";
 import { foldedIn } from "../shared/wingpresence.js";
@@ -22,6 +23,7 @@ import { quoted } from "../shared/text.js";
 import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint } from "../shared/structure.js";
+import { INSTANCES, describeInstances } from "../shared/instances.js";
 import { type Effective } from "./effective.ts";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
@@ -389,6 +391,46 @@ export class AgentSenses {
     this.openEmitterWindow(id, actor, after);
   }
 
+  /**
+   * The ground was reshaped (the terrain, a named feature, a brush stroke): ONE ambient world-change percept, tagged
+   * as the ground. The first change in a quiet period speaks at once; whatever follows inside the window folds into at
+   * most one line of the NET result, as an emitter's does (a run of strokes is one line). Gated by this body's
+   * activity radius, except where the ground under its own feet moved; silent for its own authoring.
+   * `prev` / `next`: the views before and after; `feet`: how far the ground under this body moved, metres.
+   */
+  noteGround(actor: string, prev: any, next: any, feet: number, ts: number) {
+    if (actor === this.a.name) return;
+    const slot = this.groundNarration;
+    if (slot) { slot.latest = next; slot.feet += feet; slot.who.add(actor); return; }   // inside the quiet window: fold
+    const c = groundChange(prev, next); if (!c) return;
+    this.sayGround([actor], c, feet, ts);
+    this.openGroundWindow(next);
+  }
+  private sayGround(who: string[], c: NonNullable<ReturnType<typeof groundChange>>, feet: number, ts: number) {
+    const named = who.map((w) => (w === "world" ? "Someone" : w));   // a change with no request behind it this body can name
+    const by = named.length <= 1 ? named[0] ?? "someone" : named.length === 2 ? `${named[0]} and ${named[1]}` : `${named[0]}, ${named[1]} and others`;
+    const line = groundLine(by, c, { x: this.a.pos.x, z: this.a.pos.z }, this.a.activityRadiusM, feet);
+    if (!line) return;
+    this.act30.builds++;            // it feeds the activity digest like any build
+    this.a.onEvent?.({ ts, kind: "world-change", who: who[0] ?? "world", text: line, part: "ground" });
+  }
+  private groundNarration: { announced: any; latest: any; feet: number; who: Set<string>; timer: ReturnType<typeof setTimeout> } | null = null;
+  /** Leaving a world: its open window says nothing in the next one. */
+  forgetGround() { if (this.groundNarration) clearTimeout(this.groundNarration.timer); this.groundNarration = null; }
+  private openGroundWindow(announced: any) {
+    const close = () => {
+      const slot = this.groundNarration; if (!slot) return;
+      this.groundNarration = null;
+      const c = groundChange(slot.announced, slot.latest);
+      if (!c) return;               // the run netted out to what was already said
+      this.sayGround([...slot.who], c, slot.feet, Date.now());
+      this.openGroundWindow(slot.latest);   // a long run speaks once a window, never silenced by its own persistence
+    };
+    const timer = setTimeout(close, EMITTER_COALESCE_MS);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    this.groundNarration = { announced, latest: announced, feet: 0, who: new Set(), timer };
+  }
+
   private openEmitterWindow(id: string, actor: string, announced: unknown) {
     const close = () => {
       const slot = this.emitterNarration.get(id);
@@ -695,8 +737,13 @@ export class AgentSenses {
       // A griddled building says what it IS (rooms, walls, doors), which is
       // actionable where `components: structure` would not be.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
+      // A thing drawn many times (the draft antra/instances) says how many and in what arrangement; the copies are
+      // drawn only, so a walk can pass through them, and saying so saves planning round one that isn't there.
+      const many = describeInstances(c[INSTANCES]);
+      if (many) aff.push(`${many} (the copies are drawn only: not solid)`);
       const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("copy-of");
+      if (many) spoken.push(INSTANCES);
       if (lit) spoken.push("light");   // described above; a malformed one stays listed
       if (col === "mesh" || col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
