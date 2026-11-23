@@ -57,6 +57,11 @@ const MUTANTS: [string, string, string | [string, string, string?][], string, st
   ["place: nearest first, stopping when no ring can be nearer", "shared/protocol/authority/writes.js", "            if (lb > best.d) break; }", "            }", ["S1", "S2", "S3", "Q6"]],
   ["place: the one gate before solving", "shared/protocol/authority/writes.js", "if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, \"transform\", COMPONENTS.transform.defaults)]);", "", ["Q1"]],
   ["previews and batches copy only what they touch (the deep copy per preview back)", "shared/protocol/authority/storage.js", [["const scratch = (st, ops) => { const s = applyCow(cowState(st), ops);", "const scratch = (st, ops) => { const s = applyInPlace(cloneState(st), ops);"], ["all.push(...ops); st = applyCow(work, ops); forget(st);", "all.push(...ops); st = scratch(st, ops);", "shared/protocol/authority/verbs.js"], ["import { VOLATILE, delOp, nonce16, setOp } from \"./storage.js\";", "import { VOLATILE, delOp, nonce16, setOp, scratch } from \"./storage.js\";", "shared/protocol/authority/verbs.js"]], "", ["S3"]],
+  ["place: its family through the index (the walk of every thing's parent chain back)", "shared/protocol/authority/writes.js", "  const fam = familyOf(st, a.id);   // through", "  const fam = new Set([a.id, ...descendants(st, a.id)]);   // through", ["S7"]],
+  ["returns: the things that return, once per state (the scan of every thing per request back)", "shared/protocol/authority/manipulate.js", "  if (!VOLATILE.has(st.entities)) RETURNERS.set(st.entities, a); return a; };", "  return a; };", ["S7"]],
+  ["socket rules: a write that touches no socket asks the state before's socket children", "shared/protocol/authority/gate.js", "socketRules(s, new Set(norm.map((o) => o.id)), st)", "socketRules(s, new Set(norm.map((o) => o.id)))", ["S7"]],
+  ["shapes: no preview when no op can stamp one", "shared/protocol/authority/followups.js", "o.comp === \"physics-engine\")) return ops;", "o.comp === \"physics-engine\") && false) return ops;", ["S7"]],
+  ["homes: no preview when nothing it weighs wants a home", "shared/protocol/authority/manipulate.js", "o.comp === \"grabbable\")))) return ops;", "o.comp === \"grabbable\"))) && false) return ops;", ["S7"]],
   ["place: a ring's sides bound its distance", "shared/protocol/authority/writes.js", "if (lb > best.d) break; }", "if (lb > best.d + 1e9) break; }", ["Q6"]],
   ["the work budget", "shared/protocol/authority/spatial.js", "if ((CTX.work.left -= n) < 0 || ((CTX.work.k += n) >= 64 && ((CTX.work.k = 0), clockMs() > CTX.work.until))) {", "if (false) {", ["Q2", "Q3"]],
   ["a write's warnings never refuse it", "shared/protocol/authority/followups.js", "if (strict || !(e instanceof Refusal) || e.code !== \"too-costly\") throw e;", "throw e;", ["Q3"]],
@@ -490,6 +495,29 @@ const cases: Case[] = [
       let first = true; const { small, large } = paired(() => at(session(), 72), () => at(first ? ((first = false), s) : session(), 2000)); const x = { ms: large.ms.look, r: large.r };
       return { ms: r1(x.ms), grew: growth(small.ms, large.ms), bound: r1(bound()), n: x.r.things?.length, total: x.r.total, first: x.r.things?.slice(0, 40).map((t: any) => `${t.id}@${t.depth}`) }; },
     good: (o) => o.ms <= o.bound && grewOk(o.grew) && o.n === 40 && o.total === 2003 && JSON.stringify(o.first) === JSON.stringify(["c-0@0", "kid-0@1", "kid-1@1", "kid-2@1", ...Array.from({ length: 36 }, (_, i) => `c-${i + 1}@0`)]) },
+  // S7 counts what S2/S3 time: S3's place grew 0.8 → 1.8 ms from 72 to 2 000 things (CI 3.2–3.4×, over GROWS) through whole-world
+  // passes a place onto one known table never needed. A pass here is one Object.keys/values/entries of the whole world (the
+  // result at least as long as the world), a copy one Object.assign from a source that large (fold.js cowState): machine-free.
+  // Left: the derived index's walk of the keys (deriveIx), its children map (rebuilt: the place re-parents the crate), admit's
+  // working copies; and planResettle's occupant scan (re-parenting re-expresses the crate's local scale, which geomKey reads as
+  // a reshape)
+  { id: "S7", what: "a dry place onto one known table at 2 000 things reads the whole world at most 3 times (the derived index, its children map, the reshape's occupant scan) and copies it at most 3 (admit's two working copies, the search's preview); main read it 7 times (also the return-home scan, two socket-rule child maps, place's descendants) and copied it 5 (also shapes' and homes' previews, made when no op could stamp anything)", run(s) { cast(s);
+      s.call("olive", "set", { id: "@world", component: "capacity", value: { entities: 2400 } });
+      const f = fill(s, 2000); if (!ok(f)) return { fill: show(f) };
+      const X = f.side * 2 + 40;
+      s.call("olive", "create", { id: "big", model: "table", components: { transform: T0([X, 0, 0], [20, 1, 20]) } });
+      s.call("olive", "create", { id: "slab", model: "crate", components: { transform: T0([X, 0.75, 0]) } });
+      s.call("bob", "place", { id: "c-6", on: "big", dry: true });   // warm: the first request builds this state's index whole
+      const n = Object.keys(s.w().state().entities).length; const passes: string[] = [];
+      const orig = { keys: Object.keys, values: Object.values, entries: Object.entries, assign: Object.assign }; const copies: string[] = [];
+      const at = () => new Error().stack?.split("\n")[3]?.trim().replace(/\(.*\//, "(");
+      const wrap = (k: "keys" | "values" | "entries") => function (o: any) { const r = (orig[k] as any)(o); if (r.length >= n) passes.push(`${k} ${at()}`); return r; };
+      // a copy of the world: an Object.assign from a source as large as it (fold.js cowState's entities)
+      const assign = function (t: any, ...src: any[]) { if (src.some((x) => x && typeof x === "object" && orig.keys(x).length >= n)) copies.push(new Error().stack?.split("\n")[3]?.trim().replace(/\(.*\//, "(") ?? ""); return orig.assign(t, ...src); };
+      let r: any; try { Object.keys = wrap("keys"); Object.values = wrap("values") as any; Object.entries = wrap("entries") as any; Object.assign = assign as any;
+        r = s.call("bob", "place", { id: "c-7", on: "big", dry: true }); } finally { orig.assign(Object, orig); }
+      return { code: code(r), n, passes: passes.length, copies: copies.length, where: passes, copied: copies }; },
+    good: (o) => o.code === "ok" && o.n >= 2000 && o.passes <= 3 && o.copies <= 3 },
   { id: "G2", what: "the index a state's queries use (derived from the last one, write by write) files exactly what a fresh build files, through moves, re-parenting, deletes of parents, creates and undo", run(s) { cast(s);
       if (!D.indexAudit) return { skipped: "no audit at this tree" };
       fill(s, 60); const bad: any[] = []; let rnd = 7; const rand = (n: number) => ((rnd = (rnd * 16807) % 2147483647) % n);

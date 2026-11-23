@@ -153,7 +153,7 @@ function admit(w, st, who, ops) {
   const vacate = CTX.forking ? [] : vacatesFor(w, st, who, norm);
   capacityCheck(w, st, s, who, norm);
   for (const op of norm) if (op.op === "set") valueCheck(s, op, { carry: CTX.forking, now: w.now() }); // against the state the whole write leaves (parents may come later in a batch); a fork's copy carries what its parent holds
-  { const bad = socketRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
+  { const bad = socketRules(s, new Set(norm.map((o) => o.id)), st); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   if (!CTX.forking) { const bad = actionRules(s, new Set(norm.map((o) => o.id))); if (bad) { const { code, reason, fix, ...rest } = bad; refuse(code, reason, fix, rest); } }
   if (!CTX.forking) { const bad = zoneRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
   if (!CTX.forking) { const bad = colliderRules(s, new Set(norm.map((o) => o.id))); if (bad) refuse(bad.code, bad.reason, bad.fix); }
