@@ -18,7 +18,8 @@
 //       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
 //       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
 //       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
-//       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim
+//       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim; a newer
+//       drag released where it began puts back what it took from an older drag's refusal
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -553,6 +554,32 @@ try {
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
       check("MM24 …and the gizmo's release writes the box alone (one act), the table where the log has it", myActs().length === n0 + 1 && !near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { acts: actsSince(n0), B: pose("mm-box"), T: pose("mm-tbl") });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+    // a newer drag that writes nothing (armed, released within 5 mm: the `same` release) still took the box from the older
+    // drag's refusal: it must put the box back itself, or the box stays at the older drag's unwritten pose (#352 review, Fable)
+    { const atN = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atN && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      if (atN) await gesture(atN, [atN[0] + 30, atN[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const atM = (await evalJson(`__mmPress('mm-box', null)`)) ?? atN;
+      const held = await localOf(["mm-box"]);
+      // press, travel past the slop (it arms and holds the box), release: in one turn, so no frame moves the box between
+      const armed = await evalJson(`import('/lib/core.js').then((m) => { m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atM?.[0]}, clientY: ${atM?.[1]} }));
+        dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atM?.[0] + 6}, clientY: ${atM?.[1]} })); const a = globalThis.__buildDrag?.()?.armed === true;
+        dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atM?.[0] + 6}, clientY: ${atM?.[1]} })); return a; })`);
+      check("MM27 (setup) the table locked, the group release asks the lock question, the box left moved, and a newer drag of the box arms",
+        !!atN && lk && asked && !near(held?.[0], B0) && armed, { asked, held, B0, armed });
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM27 a newer drag released where it began writes nothing and leaves nothing at the older drag's pose: the box and the table back where the log has them",
+        myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, T0, acts: actsSince(n0) });
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
     }

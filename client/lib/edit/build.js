@@ -655,6 +655,9 @@ addEventListener('mouseup', () => {
       && o.quaternion.angleTo(_q.fromArray(moved.q)) < 1e-4
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
     if (!same) commitPlace(moved, dragging.multi, dragging.gen);   // release commits ONE clean entry (the followers in it)
+    // nothing to write, but this drag took its things from any older gesture's refusal still in flight: it puts them back
+    // where the log has them, as that refusal would have (a follower nudged under 5 mm with them) (#352 review, Fable)
+    else MM.revertHeld(dragging.gen, MM.idsOf(dragging.id, dragging.multi));
   }
   // the last sample says so: others drop the claim at once rather than after CLAIM_MS (a group's: MM.end, the lead's with it)
   if (dragging?.multi) MM.end(dragging.multi);
