@@ -49,8 +49,8 @@ export function quoted(s, max = 200) {
 }
 
 // the first character in an RTL or LTR block decides a paragraph's base direction (near the bidi algorithm's P2–P3, which
-// a canvas then applies; the RTL block includes Arabic-Indic digits, which P2 skips)
-const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/u, LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ぀-ヿ一-鿿가-힯]/u;
+// a canvas then applies; Arabic-Indic digits and their separators are numbers, not letters, so P2 skips them: G2-082)
+const RTL = /(?![\u0660-\u066c\u06f0-\u06f9])[֐-ࣿיִ-﷿ﹰ-﻿]/u, LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ぀-ヿ一-鿿가-힯]/u;
 export function directionOf(p) { for (const ch of p) { if (RTL.test(ch)) return 'rtl'; if (LTR.test(ch)) return 'ltr'; } return 'ltr'; }
 
 /** Break text into lines no wider than `width`. measure(str) → width. Returns [{text, dir}] (dir per paragraph). */

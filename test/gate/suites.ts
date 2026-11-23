@@ -75,6 +75,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["fp-view", "client/fp-view-test.ts", 1], // the first-person eye and exclusion contract (#75)
   ["reachwire", "shared/reachwire-test.ts", 1], // the reach descriptor grammar and its event edges
   ["reach", "shared/reach-test.ts", 1], // two-bone IK geometry: no rig, no renderer, no server
+  ["text", "shared/text-test.ts", 1], // shared/text.js directionOf: a paragraph's direction is its first strong letter's (digits are skipped, G2-082)
   ["posture-tiles", "client/posture-tiles-test.ts", 1], // the action bar's posture tiles drive controller.js sitHere/standUp/getPosture
   ["poseclip-parity", "mcpl/poseclip-parity-test.ts", 1], // headless pose-clip joints equal the browser mixer's on the committed fixture
   ["pose-handler", "server/pose-handler-test.ts", 1], // the pose fence is the real "pose" handler's: non-finite and oversized poses dropped; #274: a lying body's `floor` only if finite
