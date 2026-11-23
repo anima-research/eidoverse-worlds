@@ -62,9 +62,9 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  let bobTyping = 0, sentTyping = 0;   // caughtUp's fence notes: sent by the page, counted as bob receives them
+  const fenceSeen: string[] = [], fenceSent = new Map<string, number>();   // caughtUp's fence notes (typing, state 'tool'): who bob saw send one; how many each page id sent
   const bobDrags: any[] = [];   // the live drags bob is shown (MM15–MM21: which samples end a claim, which put a thing back)
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); if (m.type === "typing") bobTyping++; };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); if (m.type === "typing" && m.state === "tool") fenceSeen.push(m.id); };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   // everything the page has sent so far has landed: its requests on the record (the authority runs one connection's requests
@@ -72,9 +72,15 @@ try {
   // at bob (one socket each way, relayed in order: a typing note sent after them reaches bob after them). This is what the
   // MM rows waited for with a fixed sleep: a put-back's or a release's last samples, or a write that should never come.
   const caughtUp = async () => {
-    await page(`await (await import('/lib/net.js')).sendRequest('inspect', { id: 'mm-box' }); return true;`);
-    const n = ++sentTyping; await page(`(await import('/lib/net.js')).sendTyping(null, null); return true;`);
-    await until("bob has every sample the page sent (the fence's typing note reached him)", () => bobTyping >= n);   // throws: a fence that never closes must not pass a "nothing arrived" row
+    // the read must be RUN to prove anything: a rate-cap or read-meter refusal, or an offline/timeout answer, skips the queue
+    const r = await page(`return await (await import('/lib/net.js')).sendRequest('inspect', { id: 'mm-box' });`);
+    if (!r?.ok) throw new Error(`caughtUp: the fence's read was refused (${r?.refused?.code})`);
+    // the note: state 'tool' (server/messages.ts relays ear/think/tool/mic; the client's own senders use none or 'mic'), counted
+    // only from the page's id, so a composing or mic note never closes a fence
+    const me = await evalJson(`import('/lib/net.js').then((m) => m.net.myId)`);
+    const n = (fenceSent.get(me) ?? 0) + 1; fenceSent.set(me, n);
+    await page(`(await import('/lib/net.js')).sendTyping(null, 'tool'); return true;`);
+    await until("bob has every sample the page sent (the fence's typing note reached him)", () => fenceSeen.filter((id) => id === me).length >= n);   // throws: a fence that never closes must not pass a "nothing arrived" row
   };
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__hints = [];
