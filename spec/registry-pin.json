@@ -2644,7 +2644,7 @@
   "docs": {
    "kind": "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
    "factor": "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows",
-   "modes": "which movement modes it touches: walk | swim | fly | climb (Unreal's per-mode settings); absent: all. Main's slow water translates to ['swim']"
+   "modes": "a list of the movement modes it touches, of walk / swim / fly / climb, e.g. ['swim'] (Unreal's per-mode settings); absent, every mode; only walk and swim change a body's speed yet (fly and climb are accepted; nothing slows or boosts them). Main's slow water translates to ['swim']"
   },
   "units": {
    "factor": "×"
