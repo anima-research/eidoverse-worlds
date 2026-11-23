@@ -6,9 +6,11 @@
 import { renderer } from '../core.js';
 import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
+import { domQuadMesh } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
+import { setHeadsetAsk } from '../edit/confirmcenter.js';
 
-let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve}
+let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve, input?: {value, placeholder, max}}
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
 export const xrActive = () => !!renderer?.xr?.isPresenting;
 function paintFrame() {
@@ -17,6 +19,14 @@ function paintFrame() {
   const q = pending; if (!q) return;
   const h = document.createElement('div'); h.className = 'ask-title'; h.textContent = q.title; api.body.appendChild(h);
   if (q.body) { const p = document.createElement('div'); p.className = 'ask-body'; p.textContent = q.body; api.body.appendChild(p); }
+  if (q.input) {
+    // a few words: the VR keyboard (xrkeyboard.js) types into the last-focused text input and its ⏎ is an Enter keydown here
+    const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'ask-input'; inp.autocomplete = 'off'; inp.spellcheck = false;
+    inp.maxLength = q.input.max; inp.placeholder = q.input.placeholder; inp.value = q.input.value;
+    inp.addEventListener('input', () => { q.input.value = inp.value; });
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); dispatch('c:ok'); } });
+    api.body.appendChild(inp);
+  }
   const row = document.createElement('div'); row.className = 'ask-row';
   for (const c of q.choices) { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = c.v;
     b.addEventListener('click', () => dispatch(`c:${c.v}`)); row.appendChild(b); }
@@ -36,6 +46,9 @@ function settle(v) {
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
+// the house centre card (edit/confirmcenter.js) asks here whenever a headset is presenting: confirmCenter, chooseCenter
+// and askCenter callers need no headset branch of their own
+setHeadsetAsk({ active: xrActive, choose: (q) => chooseXR(q), ask: (q) => askXR(q) });
 // leaving the headset answers the open question with its cancel (nobody can see it now; see the header)
 bus.on('xr:state', (on) => { if (!on && pending) settle(pending.cancel); });
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
@@ -45,7 +58,7 @@ export function initXRAsk() {
   api.xr = true;
   const css = document.createElement('style');
   css.textContent = `[data-frame=ask] .fr-body { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-.ask-title { font-weight: 600; flex: none; } .ask-body { flex: 1; min-height: 0; overflow: auto; } .ask-row { flex: none; display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
+.ask-title { font-weight: 600; flex: none; } .ask-input { flex: none; min-height: 30px; } .ask-body { flex: 1; min-height: 0; overflow: auto; } .ask-row { flex: none; display: flex; gap: 6px; flex-wrap: wrap; } .ask-row button { flex: 1 1 0; min-height: 34px; }`;
   document.head.appendChild(css);
   bus.on('xr:domquads', () => { if (!pending) showXRPanel('ask', false); });   // entering VR: present but hidden until asked
   return api;
@@ -57,6 +70,30 @@ export function chooseXR({ title, body = '', choices = [], cancel = null } = {})
   if (!choices.length) return Promise.resolve(cancel);
   if (pending) settle(pending.cancel);
   return new Promise((resolve) => { pending = { title, body, choices, cancel, resolve }; showXRPanel('ask', true); repaint(); });
+}
+
+/** askCenter's contract ({title, body, value, placeholder, ok, cancel, max} → the trimmed text, or null), on the VR quad:
+ *  a text field the VR keyboard types into, OK / ⏎ to answer. On the canvas-quad path (no text field) OK answers `value`. */
+export function askXR({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
+  if (pending) settle(pending.cancel);
+  return new Promise((resolve) => {
+    const input = { value: String(value ?? '').slice(0, max), placeholder, max };
+    pending = { title, body, choices: [{ v: 'cancel', label: cancel }, { v: 'ok', label: ok }], cancel: 'cancel', input,
+      resolve: (v) => { const t = input.value.trim(); resolve(v === 'ok' && t ? t : null); } };
+    showXRPanel('ask', true); repaint();
+    // focus it at once, so the VR keyboard comes up with the question (its focusin listener shows it)…
+    setTimeout(() => { const el = api?.body.querySelector('.ask-input'); if (pending?.input === input && el) { try { el.focus(); el.select(); } catch { /* not drawn */ } keyboardBelow(); } }, 0);
+  });
+}
+
+// …and just under the question: on the arc the two are neighbours and overlap (0.58 m quads, 0.55 rad apart at 0.85 m),
+// so the question covered the keyboard's ⌫ and ⏎. Moved for this ask only (a drag afterwards still saves its own place).
+function keyboardBelow() {
+  const a = domQuadMesh('ask'), k = domQuadMesh('keyboard');
+  if (!a?.visible || !k?.visible || a.parent !== k.parent) return;
+  const h = (m) => (m.geometry.parameters?.height ?? 0) * m.scale.y;
+  k.position.copy(a.position); k.position.y -= (h(a) + h(k)) / 2 + 0.05;   // the gap clears the ask quad's grab handle (~4 cm under it)
+  k.quaternion.copy(a.quaternion); k.updateMatrixWorld(true);
 }
 
 // a refusal in a headset: the toast's words, on the quad, until OK (never on top of an open question)

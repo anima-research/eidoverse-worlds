@@ -5,10 +5,19 @@
 //
 // OK, or Enter (unless Cancel has focus), says yes; Esc, Cancel or the backdrop says no. One at a time: a new ask answers the open one with its
 // cancel. No imports: the lite client and the boot path use this too.
+//
+// In a headset (a DOM card isn't drawn in an immersive session) every ask here goes to the headset's own quad instead:
+// xr/xrask.js registers itself with setHeadsetAsk() when it loads, so the lite client and the boot path never load it.
 
 let open = null;   // { root, settle, cancel }
+let headset = null;   // { active() → bool, choose(q) → Promise<v>, ask(q) → Promise<string|null> } — xr/xrask.js
+
+/** xr/xrask.js: while `active()`, the questions below are asked on the headset's quad, not on the desk */
+export function setHeadsetAsk(h) { headset = h; }
+const inHeadset = () => { try { return !!headset?.active(); } catch { return false; } };
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
+  if (inHeadset()) return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok');
   if (typeof document === 'undefined') return Promise.resolve(false);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
@@ -54,6 +63,7 @@ export const confirmOpen = () => !!open;
 /** The same centre card asking for a few words (a name): {title, body, value, placeholder, ok, cancel, max} → the
  *  trimmed text, or null (Esc, Cancel, the backdrop, or nothing typed). Enter in the field says OK. */
 export function askCenter({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
+  if (inHeadset() && headset.ask) return headset.ask({ title, body, value, placeholder, ok, cancel, max });
   if (typeof document === 'undefined') return Promise.resolve(null);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
@@ -97,6 +107,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
  *  The first choice has focus (the house yes) unless `focus` names another v; Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
  *  rule: asking again answers the open one with its cancel. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
+  if (inHeadset() && choices.length) return headset.choose({ title, body, choices, cancel });
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
