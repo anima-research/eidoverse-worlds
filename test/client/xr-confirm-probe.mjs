@@ -5,7 +5,8 @@
 //   bun test/client/xr-confirm-probe.mjs
 // Then the consent edges (a dismissed question is never a remembered answer): S1 leaving VR mid-question, S2 a moderator's
 // warning arriving mid-question, S3 a desk card left open when the session starts and a headset ⏎ elsewhere, S4 two
-// consent asks while one is open (mic on → off → on) are one question with one answer.
+// consent asks while one is open (mic on → off → on) are one question with one answer, S5 the mic turned off while the
+// consent question is open: a Turn on after that keeps the consent but never starts the recognizer.
 // Mutations (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch;
 // in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
 // instead of queueing (S2); drop the xr:state(true) closeCenter() and the desk card's aimedElsewhere guard (S3).
@@ -170,6 +171,33 @@ try {
   check('S4 two consent asks while one is open show one question: after Turn on nothing more is asked',
     s4pre.stored === null && !s4pre.open && /speech-to-text/i.test(s4.q1 ?? '') && s4.pressed && s4.afterYes.next === null, JSON.stringify({ s4pre, ...s4 }));
   check('…both callers get the one answer (true), and the stored value is that press', s4.end.a === true && s4.end.b === true && s4.end.stored === true, JSON.stringify(s4.end));
+
+  // S5: mic on → consent question opens → mic off → Turn on. The yes is a real press and is kept, but the mic is off now:
+  // the recognizer (SpeechRecognition holds its own capture, audio to the vendor) must not start. A fake transport and a
+  // fake recognizer stand in for the SFU bridge and the browser's engine, so the row counts start() calls exactly
+  await fresh(); await enterVR(pg); await pg.waitForTimeout(1500); await helpers();
+  const s5 = await pg.evaluate(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    let live = false, starts = 0;
+    window.__voiceRelayAbsent = false;
+    window.__sfuMic = async () => { live = !live; return live; };
+    window.__sfuMicOn = () => live;
+    window.SpeechRecognition = class { start() { starts++; } stop() {} abort() {} };
+    const mt = await import('./lib/audio/mictoggle.js'); const ask = await import('./lib/xr/xrask.js');
+    const prefs = () => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'x'; } };
+    let flipped = 'unsettled';
+    mt.flipMic().then(() => { flipped = 'done'; }); await sleep(400);
+    const q = ask.xrAskState()?.title ?? null, liveAtAsk = live;
+    await mt.flipMic(); await sleep(200);   // mic off while the question is open
+    const liveAtPress = live;
+    const pressed = globalThis.__px.press(/turn on/i); await sleep(600);
+    const out = { q, liveAtAsk, liveAtPress, pressed, flipped, starts, live, stored: prefs(), next: ask.xrAskState()?.title ?? null };
+    (await import('./lib/audio/stt.js')).setSTT(false);   // tidy: nothing of this row outlives it
+    return out;
+  });
+  check('S5 mic turned off while the consent question is open, then Turn on: the recognizer never starts',
+    /speech-to-text/i.test(s5.q ?? '') && s5.liveAtAsk && !s5.liveAtPress && s5.pressed && s5.flipped === 'done' && s5.starts === 0, JSON.stringify(s5));
+  check('…and the consent is still stored (true): that was a real press', s5.stored === true && s5.next === null, JSON.stringify(s5));
   check('no native dialogs at all', dialogs.length === 0, dialogs.join(' | '));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }

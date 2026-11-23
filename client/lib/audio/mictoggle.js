@@ -180,7 +180,8 @@ async function flipMic() {
   const on = await toggleMic(CONFIG.name);
   // speech-to-text is a separate consent (audio goes to the browser vendor's cloud): ask once, remember the answer
   if (on && sttAvailable()) {
-    if (await ensureSttConsent()) setSTT(true);
+    // the question can stay open while the mic goes off again: a yes still counts, but the recognizer holds its own capture
+    if (await ensureSttConsent() && micIsOn()) setSTT(true);
   } else setSTT(false);
   paint();
 }
