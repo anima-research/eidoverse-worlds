@@ -8,6 +8,7 @@ import { VERBSPEC } from "../../shared/protocol/verbspec.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 import { PERMISSION_NAMES, RENAMED_ROLES } from "../../shared/protocol/roles.js";
 import { RECORDS } from "../../shared/components.js";
+import { GATE_WORDS } from "../../client/lib/player/consent.js";
 
 const { check, done } = suite("help-words");
 const TAG = /\bR \d{1,2}-\d{2}\b/;
@@ -40,5 +41,9 @@ const W = scratchWorld("help-words").seed({ cup: { model: "cup.glb", pos: [0, 0,
 // HW7 consent's refusal of a retired argument carries no review tag
 { const r = W.call("consent", { switch: "accept" }); const said = `${r.refused?.reason ?? ""}`;
   check("HW7 consent {switch} is refused shape, with no review tag in the words", r.refused?.code === "shape" && /switch/.test(said) && !TAG.test(said), said); }
+
+// HW11 Settings ▸ body's gate tips say the world's own default comes first (shared/protocol/consent.js decide reads @world.body-default)
+{ const tips = Object.values(GATE_WORDS).map((w) => w.tip);
+  check("HW11 each gate tip says this world may set its own default", tips.length === 2 && tips.every((t) => /unless this world sets its own default/.test(t) && !/ by default\.$/.test(t)), tips); }
 
 done();
