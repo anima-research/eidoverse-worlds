@@ -181,7 +181,8 @@ try {
   const { idAliases } = await import("../harness/idalias.ts"); const IDS = idAliases();
   const areq = async (verb: string, args: any) => IDS.back(await ag!.request(verb, IDS.out(verb, args)));
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
-  const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] }, label: "crate1" } });
+  // the crate stands 2 m off the spawn at (0, 0): over it, a dismount would be pushed out of the crate, not back on its own track
+  const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 2] }, label: "crate1" } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
   // a seat is a socket child of the host with a station ({action, anim, anchor}) (G4-187: the old `sockets` component is
   // refused); the legacy seat's station authors no support plane
