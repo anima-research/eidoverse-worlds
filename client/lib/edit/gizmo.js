@@ -154,7 +154,7 @@ function endPivotDrag() {
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
 /** A release that writes nothing: the lead and every follower go back where the log has it, together (architecture read D6). */
-function abort(m, id) { start = null; Edits.revertPose(id); MM.revert(m); MM.end(m); }
+function abort(m, id) { start = null; MM.revertHeld(gen, MM.idsOf(id, m)); MM.end(m); }
 function endDrag() {
   release();
   const m = multi; multi = null;
@@ -189,7 +189,7 @@ function endDrag() {
 /** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */
 function cancelDrag() {
   if (!start || !attachedId) return false;
-  cancelled = true; Edits.revertPose(attachedId); MM.revert(multi); refreshOutline();
+  cancelled = true; MM.revertHeld(gen, MM.idsOf(attachedId, multi)); refreshOutline();
   import('../ui/ui.js').then((m) => m.flashHint('cancelled — nothing written'));
   return true;
 }

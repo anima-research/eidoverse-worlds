@@ -70,8 +70,8 @@ export const RELAY_PER_TICK = 1, RELAY_MS = 66;   // at 15 Hz: lead + pose + 1 f
 export const CLAIM_MS = 1500;   // a live drag's claim lapses after this much silence (build.js claims)
 // The most things one drag moves: 1 + CLAIM_MS / (1.5 × RELAY_MS) × RELAY_PER_TICK = 16. The relay gate lands on frames (a tick is
 // 66.7–83 ms at 60 Hz, 80 at 50), so the 1.5× headroom keeps every follower relayed within its claim on a real clock (multimove-test
-// drives it); END_BUDGET (every follower) closes all their claims at release (#352 review, point 1)
-export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / (1.5 * RELAY_MS)) * RELAY_PER_TICK, END_BUDGET = MAX_GROUP - 1;
+// drives it); `end` closes every claim at release, a burst of MAX_GROUP well under the relay's 120 (#352 review, point 1)
+export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / (1.5 * RELAY_MS)) * RELAY_PER_TICK;
 /** Why a drag of `n` things (over MAX_GROUP) didn't start. */
 export const tooManyHint = (n) => `${n} things selected — a drag moves at most ${MAX_GROUP} at once, so everyone watching sees each one move. Nothing moved`;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
@@ -138,9 +138,6 @@ export function ops(st, opsFor) {
   return out;
 }
 
-/** Put every follower back where the log has it (Esc, a refusal, a cancelled lock question). */
-export function revert(st) { for (const f of st?.followers ?? []) Edits.revertPose(f.id); }
-
 // Each gesture's generation. A refusal or a cancelled lock question can answer after a newer gesture took some of the same
 // things: it puts back only those no newer gesture has taken since (#352 review 8d7c6b9, point 5).
 let gen = 0; const heldBy = new Map();   // id → the generation of the newest gesture that moved it
@@ -150,8 +147,9 @@ export function hold(ids) { const g = ++gen; for (const id of ids) heldBy.set(id
 export function revertHeld(g, ids) { for (const id of ids) if (heldBy.get(id) === g) Edits.revertPose(id); }
 /** The ids a gesture holds: its lead and its followers. */
 export const idsOf = (leadId, st) => [leadId, ...(st?.followers ?? []).map((f) => f.id)];
-/** The last pose sample, so others drop the claim at once: for every follower (END_BUDGET covers a MAX_GROUP drag). Send
+/** The last pose sample, so others drop the claim at once: for the lead and every follower, so both surfaces close a group's
+ *  claims together (architecture read D7). Send
  *  it AFTER the release request, so the request never waits behind them. */
 export function end(st) {
-  for (const f of (st?.followers ?? []).slice(0, END_BUDGET)) { const o = entities.get(f.id); if (o) sendDrag(f.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
+  for (const id of st ? idsOf(st.leadId, st) : []) { const o = entities.get(id); if (o) sendDrag(id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
 }

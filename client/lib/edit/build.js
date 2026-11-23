@@ -656,9 +656,9 @@ addEventListener('mouseup', () => {
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
     if (!same) commitPlace(moved, dragging.multi, dragging.gen);   // release commits ONE clean entry (the followers in it)
   }
+  // the last sample says so: others drop the claim at once rather than after CLAIM_MS (a group's: MM.end, the lead's with it)
   if (dragging?.multi) MM.end(dragging.multi);
-  // the last sample says so: others drop the claim at once rather than after CLAIM_MS
-  if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
+  else if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
   dragging = null;
 });
 

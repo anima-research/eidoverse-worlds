@@ -121,8 +121,8 @@ a.quaternion.identity(); a.updateMatrixWorld(true);
 // release: the followers' writes come back for one batch, each with its start components as the expect base
 const out = MM.ops(st, (id: string) => ({ ops: [{ op: "set", id }] }));
 check("ops: one write per follower, with its start components for the expect", out.ops.length === 1 && out.ops[0].id === "b" && !!out.base.b, JSON.stringify(out));
-MM.revert(st);
-check("revert puts each follower back where the log has it", stub.reverted.join() === "b", JSON.stringify(stub.reverted));
+MM.revertHeld(MM.hold(["b"]), ["b"]);
+check("revertHeld puts a follower its gesture holds back where the log has it", stub.reverted.join() === "b", JSON.stringify(stub.reverted));
 
 // relay budget: ten followers share RELAY_PER_TICK samples a tick, round-robin, so a drag stays under the server's cap
 const many = Array.from({ length: 10 }, (_, i) => thing(`m${i}`, [i, 0, 10]).userData.entityId);
@@ -134,7 +134,7 @@ const covered = new Set(stub.drags.map((d: any[]) => d[0]));
 check("relay: ten followers send RELAY_PER_TICK samples every tick", perTick.every((n) => n === MM.RELAY_PER_TICK), JSON.stringify(perTick));
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
 stub.drags.length = 0; MM.end(st);
-check("end: a last sample for every follower", stub.drags.length === 10 && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
+check("end: a last sample for the lead and every follower", stub.drags.length === 11 && stub.drags[0][0] === "a" && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
 // the cap, by behaviour: MAX_GROUP − 1 followers driven through apply on a real frame clock (the relay gate lands on frames:
 // 66.7 ms at 60 Hz at best, 83 when a frame comes early), each relayed again before its claim lapses (CLAIM_MS)
 { const realNow = performance.now; let clock = 0; (performance as any).now = () => clock;
@@ -155,8 +155,8 @@ check("end: a last sample for every follower", stub.drags.length === 10 && stub.
     worst[hz] = Math.round(gap);
   }
   (performance as any).now = realNow;
-  check(`the cap: ${MM.MAX_GROUP - 1} followers on a jittered 50/60/144 Hz frame clock are each relayed within CLAIM_MS (${MM.CLAIM_MS} ms), and END_BUDGET ends every one`,
-    Object.values(worst).every((g) => g <= MM.CLAIM_MS) && MM.END_BUDGET === MM.MAX_GROUP - 1, JSON.stringify({ cap: MM.MAX_GROUP, worstGapMs: worst }));
+  check(`the cap: ${MM.MAX_GROUP - 1} followers on a jittered 50/60/144 Hz frame clock are each relayed within CLAIM_MS (${MM.CLAIM_MS} ms), `,
+    Object.values(worst).every((g) => g <= MM.CLAIM_MS), JSON.stringify({ cap: MM.MAX_GROUP, worstGapMs: worst }));
   for (const id of fol) { stub.entities.get(id).removeFromParent(); stub.entities.delete(id); }
 }
 

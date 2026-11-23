@@ -546,7 +546,7 @@ try {
     await frame("mm-tbl", 1.5);
     await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
     check("MM (setup) the gizmo is on the box", await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
-    { const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+    { const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, d0 = bobDrags.length;
       await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
         return import('/lib/world.js').then((m) => { m.entities.get('mm-box').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
       await page(`(await import('/lib/edit/build.js')).setTool('pivot'); globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); return true;`);
@@ -556,6 +556,8 @@ try {
       check("MM8 a gizmo drag the pivot tool is switched to mid-way stays a move: ONE act moving the box and the table by its 1 m, no pivot written",
         acts.length === 1 && reqs.length === 2 && reqs.every((r: any) => r.args?.component === "transform") && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")) && !disk().entities[NODE.get("mm-box")]?.c.pivot,
         { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl"), pivot: disk().entities[NODE.get("mm-box")]?.c.pivot ?? null });
+      await sleep(400 * WAIT_SCALE); const ends8 = lastEnds(["mm-box", "mm-tbl"], d0);
+      check("MM8 …and the gizmo group release ends every claim, the lead's with the followers' (bob's last sample of each ends the drag)", ends8["mm-box"] && ends8["mm-tbl"], ends8);
       await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
       if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
     }
