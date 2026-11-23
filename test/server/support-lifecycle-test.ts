@@ -51,6 +51,7 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 }
 
 const { WorldAgent } = await import("../../mcpl/agent.ts");
+const { tryUntil } = await import("../gate/wait.ts");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9480);   // a free port, never a fixed default
 const URL_ = `ws://127.0.0.1:${PORT}/ws`;
@@ -317,7 +318,10 @@ try {
     await sleep(600);
     const a1 = new WorldAgent({ url: URL_, name: "leak-a", world: W1 });
     await a1.connect();
-    await sleep(1500);                                  // its support is registered
+    // its support is registered (else the no-leak row below passes on nothing; G6-144)
+    const { supportShape } = await import("../../mcpl/physics.ts");
+    const held = await tryUntil("leak-a has registered the deck", () => supportShape(`${W1}/${IDS.of("deck")}`) != null, { ms: 8000 });
+    check("(setup) the first world's agent registered the deck", !!held, JSON.stringify((a1 as any).ground.supportIds.get(IDS.of("deck"))));
     h1.close(); a1.close?.();                           // ...and it leaves
     await sleep(500);
 
