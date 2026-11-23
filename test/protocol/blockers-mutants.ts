@@ -74,7 +74,7 @@ const M: Mutant[] = [
     find: '    if (g >= 0) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', repl: '    if (false) throw new Error(`"${name}" can\'t be served: its log holds a governance entry', suite: "gov-reserved", rows: ["G2"], expect: 1 },
   // ---- review r14 (10-18) ----
   { id: "r14-M1", what: "voice-moderate writes through w.log.request directly (no capability, no queue, no meters)", file: "server/server.ts",
-    find: '          void requestAs(c, ws, w, muted ? "mute" : "unmute",', repl: '          void w.log.request(actorIdOf(c), muted ? "mute" : "unmute",', suite: "txn", rows: ["T11"], expect: 1 },
+    find: '          detach(requestAs(c, ws, w, muted ? "mute" : "unmute",', repl: '          detach(w.log.request(actorIdOf(c), muted ? "mute" : "unmute",', suite: "txn", rows: ["T11"], expect: 1 },
   { id: "r14-M2", what: "the transaction outcome ignores the moderator log's wedge (a ban whose mod-log write threw is rolled-back)", file: "shared/protocol/authority/storage.js",
     find: 'export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: !!w.wedged?.["moderator log"] });', repl: "export const wedgedOf = (w) => ({ log: !!w.wedged?.log, mod: false });", suite: "authority", rows: ["ST4"], expect: 9 },
   { id: "r14-M3", what: "rollback ignores files the server made since the translation (world.mod.jsonl is neither refused nor removed)", file: "tools/world.ts",
