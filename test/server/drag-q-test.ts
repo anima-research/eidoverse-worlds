@@ -5,7 +5,9 @@ import { suite } from "../gate/suite.ts";
 // relays no q at all for a malformed one. The relay is gated on the door's
 // `build` permission (roles S2), read by the person's directory id.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/drag-q-test.ts
-process.env.WORLDS_DIR ??= require('node:fs').mkdtempSync(require('node:os').tmpdir() + '/drag-q-');
+// its own scratch, never an inherited WORLDS_DIR: that is the one dir it removes (G2-085)
+const OWN_WORLDS = require('node:fs').mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'drag-q-'));
+process.env.WORLDS_DIR = OWN_WORLDS;
 process.env.JOIN_TOKEN ??= 'test-door';
 const { MESSAGES } = await import('../../server/messages.ts');
 const S = suite("drag-q");
@@ -32,5 +34,5 @@ check('a yaw-only drag (an old client) relays exactly as before', out.length ===
 { n = out.length;
   MESSAGES['drag']({ ...ctx, c: { id: 'v', actorId: 'u-visitor', world, spectator: false } }, { type: 'drag', id: 'crate', pos: [9, 0, 9], yaw: 0, q: [0, 0, 0, 1] });
   check("a visitor's drag is not relayed (the door's role, by identity)", out.length === n, JSON.stringify(out.slice(n))); }
-import('node:fs').then((fs) => { try { fs.rmSync(process.env.WORLDS_DIR!, { recursive: true, force: true }); } catch {} });
+require('node:fs').rmSync(OWN_WORLDS, { recursive: true, force: true });   // before done(): its exit left a .then() unrun
 S.done();
