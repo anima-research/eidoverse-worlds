@@ -34,7 +34,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
+import { pageWaiter, tryUntil, until, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -62,10 +62,20 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
+  let bobTyping = 0, sentTyping = 0;   // caughtUp's fence notes: sent by the page, counted as bob receives them
   const bobDrags: any[] = [];   // the live drags bob is shown (MM15–MM21: which samples end a claim, which put a thing back)
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); };
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); if (m.type === "typing") bobTyping++; };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  // everything the page has sent so far has landed: its requests on the record (the authority runs one connection's requests
+  // in order and fsyncs before it answers, so a read's reply comes after every earlier write is on disk), and its drag samples
+  // at bob (one socket each way, relayed in order: a typing note sent after them reaches bob after them). This is what the
+  // MM rows waited for with a fixed sleep: a put-back's or a release's last samples, or a write that should never come.
+  const caughtUp = async () => {
+    await page(`await (await import('/lib/net.js')).sendRequest('inspect', { id: 'mm-box' }); return true;`);
+    const n = ++sentTyping; await page(`(await import('/lib/net.js')).sendTyping(null, null); return true;`);
+    await until("bob has every sample the page sent (the fence's typing note reached him)", () => bobTyping >= n);   // throws: a fence that never closes must not pass a "nothing arrived" row
+  };
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__hints = [];
     import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('keyhint', (h) => __hints.push(h)); });` });
@@ -409,7 +419,7 @@ try {
         bw = await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: theirs });
         await waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['mm-tbl']?.c?.transform?.pos) === ${JSON.stringify(JSON.stringify(theirs.pos))})`);
         d0 = bobDrags.length; });
-      const refused = await waitFor(`__refused.length > ${r0}`, 6000); await sleep(800 * WAIT_SCALE);
+      const refused = await waitFor(`__refused.length > ${r0}`, 6000); await caughtUp();
       const why = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code)`);
       const local = await evalJson(`import('/lib/world.js').then((m) => ['mm-box', 'mm-tbl'].map((n) => m.entities.get(n).position.toArray()))`);
       check("MM15 (setup) bob moves the table during the drag, and the release is refused for it (changed)", bw?.ok && refused && why?.includes("changed"), { bw: bw?.refused, why });
@@ -442,7 +452,7 @@ try {
       await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`); await frames(3);
       const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]').click(), true)`);
-      await frames(3); await sleep(500 * WAIT_SCALE);
+      await frames(3); await caughtUp();
       const reverts = await evalJson(`__reverts.slice(${rv0})`);
       const backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
       check("MM16 the cancelled lock question puts the table back, but not the box the newer drag holds (no put-back of it here, nor to bob)",
@@ -466,7 +476,7 @@ try {
       const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length, d0 = bobDrags.length;
       let during: any = null;
       await gesture(atC, [atC[0] + 30, atC[1] + 10], async () => { await what(); await frames(3); during = await evalJson(`globalThis.__buildDrag?.() ?? null`); });
-      await frames(3); await sleep(600 * WAIT_SCALE);
+      await frames(3); await caughtUp();
       const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), ends = lastEnds(["mm-box", "mm-tbl"], d0);
       const r = { during, local, B0, T0, H0, disk: [pose("mm-box"), pose("mm-tbl"), pose("mm-chair")], ends, acts: actsSince(n0) };
       check(label, during === null && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && near(pose("mm-chair"), H0)
@@ -498,7 +508,7 @@ try {
       const mid = await localOf(["mm-box", "mm-tbl"]);
       await what(); await frames(3);
       const local = await localOf(["mm-box", "mm-tbl"]);
-      await gizmoUp(); await frames(3); await sleep(600 * WAIT_SCALE);
+      await gizmoUp(); await frames(3); await caughtUp();
       const ends = lastEnds(["mm-box", "mm-tbl"], d0), wrote = myActs().slice(n0).filter((x) => x.e.verb !== "undo");
       const r = { on, mid, local, B0, T0, disk: [pose("mm-box"), pose("mm-tbl")], ends, acts: actsSince(n0) };
       check(label, on && !near(mid?.[1], T0) && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && wrote.length === 0 && ends["mm-box"] && ends["mm-tbl"] && await extra(), r);
@@ -529,7 +539,7 @@ try {
       await gizmoDrag("mm-box", 0.5); await frames(2);
       const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
-      await frames(3); await sleep(500 * WAIT_SCALE);
+      await frames(3); await caughtUp();
       const reverts = await evalJson(`__reverts.slice(${rv0})`), backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
       check("MM24 a lock question cancelled while a newer GIZMO drag holds the box puts the table back, not the box (here or to bob)",
         reverts.includes(NODE.get("mm-tbl")) && !reverts.includes(NODE.get("mm-box")) && backs.length === 0, { reverts, backs: backs.length });
@@ -556,7 +566,7 @@ try {
       check("MM8 a gizmo drag the pivot tool is switched to mid-way stays a move: ONE act moving the box and the table by its 1 m, no pivot written",
         acts.length === 1 && reqs.length === 2 && reqs.every((r: any) => r.args?.component === "transform") && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")) && !disk().entities[NODE.get("mm-box")]?.c.pivot,
         { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl"), pivot: disk().entities[NODE.get("mm-box")]?.c.pivot ?? null });
-      await sleep(400 * WAIT_SCALE); const ends8 = lastEnds(["mm-box", "mm-tbl"], d0);
+      await caughtUp(); const ends8 = lastEnds(["mm-box", "mm-tbl"], d0);
       check("MM8 …and the gizmo group release ends every claim, the lead's with the followers' (bob's last sample of each ends the drag)", ends8["mm-box"] && ends8["mm-tbl"], ends8);
       await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
       if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
@@ -568,7 +578,7 @@ try {
       const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
       const B0 = pose("mm-box"), n0 = myActs().length, d0 = bobDrags.length;
       await gizmoDrag("mm-box", 0.5); await frames(2); await gizmoUp();
-      await waitDisk(() => myActs().length === n0 + 1, 4000); await sleep(400 * WAIT_SCALE);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
       const e26 = lastEnds(["mm-box"], d0);
       check("MM26 a single-thing gizmo release (the box alone) ends its claim: bob's last sample of it ends the drag", on && myActs().length === n0 + 1 && e26["mm-box"], { on, e26, acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
@@ -581,7 +591,7 @@ try {
     { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
       const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
       const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
-      await gizmoDrag("mm-box", NaN); await frames(2); await gizmoUp(); await frames(3); await sleep(400 * WAIT_SCALE);
+      await gizmoDrag("mm-box", NaN); await frames(2); await gizmoUp(); await frames(3); await caughtUp();
       const local = await localOf(["mm-box", "mm-tbl"]);
       check("MM25 a gizmo release the lead can't write (editOps refuses a non-number position) puts the lead and the table back, and writes nothing",
         on && near(local?.[0], B0) && near(local?.[1], T0) && myActs().length === n0, { on, local, B0, T0, acts: actsSince(n0) });
@@ -621,7 +631,7 @@ try {
       await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify(GN)}); return true;`);
       n0 = myActs().length; const d0 = bobDrags.length;
       const drag = await gesture(atG, [atG[0] + 30, atG[1] + 10]);
-      await waitDisk(() => myActs().length === n0 + 1, 4000); await sleep(600 * WAIT_SCALE);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
       const act = myActs().at(-1)?.e, reqs = act?.verb === "batch" ? act.body.args.requests : [];
       const ends = lastEnds(GN, d0), open = GN.filter((n) => !ends[n]);
       check("MM21 a mesh drag of 16 arms and lands as ONE act setting all 16 transforms", drag?.armed === true && myActs().length === n0 + 1 && reqs.length === 16 && GN.every((n) => !near(pose(n), P0[n])), { acts: actsSince(n0).length, reqs: reqs.length });
