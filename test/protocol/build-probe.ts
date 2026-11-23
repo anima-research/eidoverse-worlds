@@ -15,7 +15,7 @@
 //       ground, and a member already below its ground, leading or following, doesn't lift the lot; a switch to the pivot
 //       tool mid-way through a gizmo drag doesn't take it over (it stays a move); a refused group release puts every member
 //       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
-//       drag doesn't hold
+//       drag doesn't hold; an undo, a deselect or a selection change mid-drag cancels it as Esc does, then goes ahead
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -59,7 +59,7 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  const bobDrags: any[] = [];   // the live drags bob is shown (MM15, MM16: which samples end a claim, which put a thing back)
+  const bobDrags: any[] = [];   // the live drags bob is shown (MM15–MM19: which samples end a claim, which put a thing back)
   bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
@@ -451,6 +451,36 @@ try {
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
     }
+
+    // an undo, a deselect or a selection change mid-drag ends the drag as Esc does (everything it holds goes back where the log
+    // has it, the samples end, nothing is written), then the action goes ahead: the drag never outlives its captured lead
+    const lastEnds = (names: string[], d0: number) => Object.fromEntries(names.map((n) => [n, bobDrags.slice(d0).filter((m) => m.id === NODE.get(n)).at(-1)?.end === true]));
+    const localOf = (names: string[]) => evalJson(`import('/lib/world.js').then((m) => ${JSON.stringify(names)}.map((n) => m.entities.get(n).position.toArray()))`);
+    const midCancel = async (label: string, what: () => Promise<any>, extra: (r: any) => boolean = () => true) => {
+      const atC = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      if (!atC) { check(`${label} (setup) a press point on the box over the table`, false); return; }
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length, d0 = bobDrags.length;
+      let during: any = null;
+      await gesture(atC, [atC[0] + 30, atC[1] + 10], async () => { await what(); await frames(3); during = await evalJson(`globalThis.__buildDrag?.() ?? null`); });
+      await frames(3); await sleep(600 * WAIT_SCALE);
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), ends = lastEnds(["mm-box", "mm-tbl"], d0);
+      const r = { during, local, B0, T0, H0, disk: [pose("mm-box"), pose("mm-tbl"), pose("mm-chair")], ends, acts: actsSince(n0) };
+      check(label, during === null && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && near(pose("mm-chair"), H0)
+        && myActs().slice(n0).every((x) => x.e.verb === "undo") && ends["mm-box"] && ends["mm-tbl"] && extra(r), r);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    };
+    // Ctrl+Z: a known act of mine (a label on the chair) for it to take once the drag is cancelled
+    const la = await page(`const W = await import('/lib/edit/writes.js'); const OP = await import('/shared/requests.js'); return (await W.sendOps([OP.set('mm-chair', 'label', 'undo me')], { what: 'label the chair' })).ok;`);
+    await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`);
+    check("MM17 (setup) a label on the chair, my last act", la && disk().entities[NODE.get("mm-chair")]?.c.label === "undo me");
+    await midCancel("MM17 Ctrl+Z mid-drag cancels the drag (the box and the table back where the log has them, every sample ended, nothing written for it), then undoes my last act",
+      () => key("KeyZ", { ctrlKey: true }), () => true);
+    check("MM17 …the undo it carried on with took the chair's label away", await waitDisk(() => !disk().entities[NODE.get("mm-chair")]?.c.label, 4000), disk().entities[NODE.get("mm-chair")]?.c.label);
+    await midCancel("MM18 a deselect mid-drag (Edit ▸ deselect) cancels it: everything back, every sample ended, nothing written",
+      () => page(`(await import('/lib/edit/build.js')).deselectAll(); return true;`));
+    await midCancel("MM19 a selection change mid-drag (the chair selected in the Hierarchy) cancels it: everything back, the chair never dragged, nothing written",
+      () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`));
 
     // a switch to the pivot tool mid-way through a gizmo drag doesn't take it over: the drag stays the move it began as (as a
     // mesh drag's does, MM7), so the box and the table land moved as one act, and no pivot is written from a proxy it never rode

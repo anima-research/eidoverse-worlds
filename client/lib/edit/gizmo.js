@@ -8,7 +8,7 @@ import { entities, bagOf } from '../world.js';
 import { sendDrag } from '../net.js';
 import { registerSystem } from '../render/frameloop.js';
 import { sceneSelected } from '../scenegraph.js';
-import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook, onDragCancel } from './build.js';
 import * as Edits from './writes.js';
 import { reindexCollider } from '../colliders.js';
 import { engage, release } from './keyhints.js';
@@ -69,8 +69,9 @@ const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'tran
 const editable = MM.takes;   // the gesture test the followers share (edit/multimove.js)
 
 function sync() {
-  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority
-  if (start) return;
+  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority. Leaving build mode or
+  // a selection without its thing first cancels it as Esc does (#352 review 8d7c6b9, points 2, 3)
+  if (start) { if (!cancelled && (!isBuilding() || sceneSelected() !== attachedId)) cancelDrag(); return; }
   const id = sceneSelected();
   const want = isBuilding() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
@@ -189,6 +190,7 @@ function cancelDrag() {
 
 export function initGizmo() {
   setEscapeHook(cancelDrag);
+  onDragCancel(() => { if (!cancelled) cancelDrag(); });   // a deselect or an undo mid-drag (build.js deselect)
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
   bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('build-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window

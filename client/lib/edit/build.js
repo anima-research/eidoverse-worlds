@@ -177,10 +177,23 @@ export function select(id) {
  *  working on. */
 export function deselectAll() { deselect(); Sel.clear(); }
 export function deselect() {
-  dragging = null;
+  cancelDrag();
+  for (const f of dragCancels) f();   // the gizmo's drag too
   hideInspector();
   followSelection();
 }
+/** End a drag as Esc does: an armed one puts back all it holds (the samples end), writes nothing, and says so. A deselect, an
+ *  undo, leaving build mode or a selection change mid-drag ends it so, then goes ahead (#352 review 8d7c6b9, points 2, 3). */
+function cancelDrag() {
+  const d = dragging; dragging = null;
+  if (!d?.armed) return false;
+  MM.revertHeld(d.gen, MM.idsOf(d.id, d.multi)); release();
+  flashHint('move cancelled — nothing written');
+  return true;
+}
+const dragCancels = [];
+/** Another surface's drag (gizmo.js) ends with this one. */
+export function onDragCancel(fn) { dragCancels.push(fn); }
 export function refreshOutline() {
   if (selected) outline.box.setFromObject(selected.obj);
 }
@@ -188,6 +201,8 @@ export function refreshOutline() {
 // event and each edit-mode frame (a model swapped under it, a thing gone), the box re-measured. editHolds keeps the
 // residency sweep from demoting what someone is editing (id-based: promotion swaps the object).
 function followSelection() {
+  // the drag never outlives its captured lead: a selection without it first, or without a follower, cancels it
+  if (dragging?.armed) { const s = Sel.selection(); if (s.kind !== 'things' || s.ids[0] !== dragging.id || !MM.idsOf(dragging.id, dragging.multi).every((x) => s.ids.includes(x))) cancelDrag(); }
   const sid = buildMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
   if (obj) {
     if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
@@ -661,7 +676,7 @@ export function setEscapeHook(fn) { escapeHooks.unshift(fn); }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
     // Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
-    if (dragging?.armed) { const id = dragging.id; const m = dragging.multi; dragging = null; Edits.revertPose(id); MM.revert(m); flashHint('move cancelled — nothing written'); return; }
+    if (dragging?.armed && cancelDrag()) return;
     if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSocketArm()) { /* an armed placement is the most transient state */ }
