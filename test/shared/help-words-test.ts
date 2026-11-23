@@ -4,7 +4,7 @@
 // @ts-nocheck
 import { scratchWorld } from "../harness/scratchworld.ts";
 import { suite } from "../gate/suite.ts";
-import { VERBSPEC } from "../../shared/protocol/verbspec.js";
+import { VERBSPEC, REMOVED_VERBS, RESERVED_VERBS } from "../../shared/protocol/verbspec.js";
 import { COMPONENTS } from "../../shared/protocol/componentspec.js";
 import { PERMISSION_NAMES, RENAMED_ROLES } from "../../shared/protocol/roles.js";
 import { RECORDS } from "../../shared/components.js";
@@ -32,11 +32,11 @@ const W = scratchWorld("help-words").seed({ cup: { model: "cup.glb", pos: [0, 0,
   const fields = Object.keys(COMPONENTS.light.fields), stray = keys.filter((k) => !fields.includes(k));
   check("HW5 the Light note's wire keys are light component fields, and include decay and daytime", keys.length > 0 && !stray.length && keys.includes("decay") && keys.includes("daytime"), { keys, stray }); }
 
-// HW6 no help string an agent reads (every verb's and component's doc, help, why, dropped note) carries a review tag
+// HW6 no help string an agent reads (every verb's, removed or reserved verb's and component's doc, help, why, dropped note) carries a review tag
 { const hits = []; const walk = (v, at) => { if (typeof v === "string") { if (TAG.test(v)) hits.push(`${at}: ${v.slice(0, 80)}`); }
     else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, `${at}.${k}`); };
-  walk(VERBSPEC, "VERBSPEC"); walk(COMPONENTS, "COMPONENTS");
-  check("HW6 no VERBSPEC or COMPONENTS string carries a review tag", !hits.length, hits); }
+  walk(VERBSPEC, "VERBSPEC"); walk(REMOVED_VERBS, "REMOVED_VERBS"); walk(RESERVED_VERBS, "RESERVED_VERBS"); walk(COMPONENTS, "COMPONENTS");
+  check("HW6 no VERBSPEC, REMOVED_VERBS, RESERVED_VERBS or COMPONENTS string carries a review tag", !hits.length, hits); }
 
 // HW7 consent's refusal of a retired argument carries no review tag
 { const r = W.call("consent", { switch: "accept" }); const said = `${r.refused?.reason ?? ""}`;
