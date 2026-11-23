@@ -13,7 +13,8 @@
 //       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
 //       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
 //       ground, and a member already below its ground, leading or following, doesn't lift the lot; a gizmo drag the pivot
-//       tool takes over puts the followers back; a refused group release puts every member back and leaves no claim open
+//       tool takes over puts the followers back; a refused group release puts every member back and leaves no claim open;
+//       a lock question cancelled after a newer drag began puts back only what that newer drag doesn't hold
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -57,7 +58,7 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  const bobDrags: any[] = [];   // the live drags bob is shown (MM15: which samples end a claim)
+  const bobDrags: any[] = [];   // the live drags bob is shown (MM15, MM16: which samples end a claim, which put a thing back)
   bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
@@ -414,6 +415,40 @@ try {
       check("MM15 …and the put-back reopens no claim: the last sample bob saw of each member ends the drag, at the log's pose",
         Object.values(last).every((m: any) => m?.end === true) && near(last["mm-box"]?.pos, B0) && near(last["mm-tbl"]?.pos, theirs.pos), last);
       await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: TT0 }); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a lock question still open when a newer drag of the box begins: cancelling it puts back the table (the old drag's alone),
+    // never the box the newer drag now holds, here or on anyone else's screen; the newer drag's release writes the box
+    const at10 = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+    check("MM (setup) a press point on the box over the table, once more", !!at10, { at10 });
+    if (at10) {
+      const lk = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`if (!globalThis.__reverts) { globalThis.__reverts = []; (await import('/lib/base.js')).bus.on('pose-revert', (e) => __reverts.push(e.id)); } (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gesture(at10, [at10[0] + 30, at10[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      check("MM16 (setup) the table is locked, and the group release asks the lock question", lk && asked);
+      // the newer drag: the box alone, pressed where it is drawn now (the old drag left it moved), held still mid-travel
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const at11 = (await evalJson(`__mmPress('mm-box', null)`)) ?? at10;
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at11[0]}, clientY: ${at11[1]} })), true))`);
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 6}, clientY: ${at11[1]} })), true)`);
+      const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`); await frames(3);
+      const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]').click(), true)`);
+      await frames(3); await sleep(500 * WAIT_SCALE);
+      const reverts = await evalJson(`__reverts.slice(${rv0})`);
+      const backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
+      check("MM16 the cancelled lock question puts the table back, but not the box the newer drag holds (no put-back of it here, nor to bob)",
+        armed && reverts.includes(NODE.get("mm-tbl")) && !reverts.includes(NODE.get("mm-box")) && backs.length === 0, { armed, reverts, backs: backs.length });
+      await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
+      check("MM16 …and the newer drag's release writes the box alone (one act), the table left where the log has it", myActs().length === n0 + 1 && !near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
     }
 
     // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)

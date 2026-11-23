@@ -133,6 +133,16 @@ export function ops(st, opsFor) {
 
 /** Put every follower back where the log has it (Esc, a refusal, a cancelled lock question). */
 export function revert(st) { for (const f of st?.followers ?? []) Edits.revertPose(f.id); }
+
+// Each gesture's generation. A refusal or a cancelled lock question can answer after a newer gesture took some of the same
+// things: it puts back only those no newer gesture has taken since (#352 review 8d7c6b9, point 5).
+let gen = 0; const heldBy = new Map();   // id → the generation of the newest gesture that moved it
+/** A gesture arms on these things (the lead and its followers): returns its generation. */
+export function hold(ids) { const g = ++gen; for (const id of ids) heldBy.set(id, g); return g; }
+/** Put back what gesture `g` still holds (each as revertPose does); a thing a newer gesture took stays that one's. */
+export function revertHeld(g, ids) { for (const id of ids) if (heldBy.get(id) === g) Edits.revertPose(id); }
+/** The ids a gesture holds: its lead and its followers. */
+export const idsOf = (leadId, st) => [leadId, ...(st?.followers ?? []).map((f) => f.id)];
 /** The last pose sample, so others drop the claim at once: for the first END_BUDGET followers (the rest expire on the
  *  claim timeout). Send it AFTER the release request, so the request never waits behind them. */
 export function end(st) {

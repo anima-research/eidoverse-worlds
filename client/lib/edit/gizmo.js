@@ -27,6 +27,7 @@ let attachedId = null;
 let start = null;        // { rec, comps? } at drag start (the components the release's expect names)
 let cancelled = false;   // Esc during the drag: the thing goes back, the release writes nothing
 let multi = null;        // the other selected things following this drag (edit/multimove.js), or null
+let gen = 0;             // this drag's generation (MM.hold): a late refusal of an older one leaves its things to this one
 let lastSent = 0;
 // the pivot (Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as the thing,
 // and the thing follows it: objWorld = proxy × offset (offset fixed at drag start), so a turn or a size goes about the pivot.
@@ -97,6 +98,7 @@ function beginDrag() {
   if (start && getTool() !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
     multi = MM.begin(attachedId, f.ids);
+    gen = MM.hold(MM.idsOf(attachedId, multi));
     if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));
   }
 }
@@ -171,7 +173,7 @@ function endDrag() {
   const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${n > 1 ? `${n} things` : id}`;
   const base = start.comps || Object.keys(more.base).length ? { ...(start.comps ? { [id]: start.comps } : {}), ...more.base } : null; start = null;
   bus.emit('gizmo-release', { id, ops: all, ids: [id, ...(m?.followers.map((f) => f.id) ?? [])] });
-  Edits.sendOps(all, { what, base, revert: () => { Edits.revertPose(id); MM.revert(m); } });
+  const g = gen; Edits.sendOps(all, { what, base, revert: () => MM.revertHeld(g, MM.idsOf(id, m)) });
   MM.end(m);   // after the request, so it never queues behind the followers' last samples
 }
 

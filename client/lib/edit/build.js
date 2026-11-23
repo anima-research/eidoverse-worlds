@@ -450,7 +450,7 @@ function selectWhenHere(id, ms = 3000) {
 
 // ---- lock: the `lock` component (writes.js lock) nails a thing down; the authority enforces it for everyone
 function isLocked(id) { return !!bagOf(id)?.lock; }
-function commitPlace(before, multi = null) {
+function commitPlace(before, multi = null, gen = 0) {
   if (!selected) return;
   const o = selected.obj;
   // the drag was presence; the release is ONE request (the whole transform, local for a child), expecting where it started —
@@ -460,7 +460,7 @@ function commitPlace(before, multi = null) {
   const more = MM.ops(multi, (x, ob) => ({ ops: [tf(x, ob)] }));
   const n = 1 + (multi?.followers.length ?? 0);
   Edits.sendOps([tf(id, o), ...more.ops],
-    { what: n > 1 ? `move ${n} things` : `move ${id}`, base: { ...(before.comps ? { [id]: before.comps } : {}), ...more.base }, revert: () => { Edits.revertPose(id); MM.revert(multi); } });
+    { what: n > 1 ? `move ${n} things` : `move ${id}`, base: { ...(before.comps ? { [id]: before.comps } : {}), ...more.base }, revert: () => MM.revertHeld(gen, MM.idsOf(id, multi)) });
 }
 
 const _up = new THREE.Vector3(0, 1, 0), _turn = new THREE.Quaternion(), _q = new THREE.Quaternion();
@@ -620,6 +620,7 @@ addEventListener('mousemove', (e) => {
       dragging.shiftPick = false;
     }
     dragging.multi = MM.begin(dragging.id, dragging.follow);
+    dragging.gen = MM.hold(MM.idsOf(dragging.id, dragging.multi));   // a late refusal of an older drag leaves these to this one
     if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, dragging.mode), 3500);
     engage('meshMove');
   }
@@ -637,7 +638,7 @@ addEventListener('mouseup', () => {
       && Math.abs(o.position.z - moved.pos[2]) < 0.005
       && o.quaternion.angleTo(_q.fromArray(moved.q)) < 1e-4
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
-    if (!same) commitPlace(moved, dragging.multi);   // release commits ONE clean entry (the followers in it)
+    if (!same) commitPlace(moved, dragging.multi, dragging.gen);   // release commits ONE clean entry (the followers in it)
   }
   if (dragging?.multi) MM.end(dragging.multi);
   // the last sample says so: others drop the claim at once rather than after CLAIM_MS

@@ -136,4 +136,12 @@ check("...round-robin, so every follower is relayed once in ten ticks", covered.
 stub.drags.length = 0; MM.end(st);
 check("end: at most END_BUDGET last samples (the rest expire on the claim timeout)", stub.drags.length === MM.END_BUDGET && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
 
+// a gesture's generation: a late refusal of an older gesture puts back only what no newer gesture has taken since
+stub.reverted.length = 0;
+const g1 = MM.hold(["a", "b", "c"]), g2 = MM.hold(["b"]);
+MM.revertHeld(g1, ["a", "b", "c"]);
+check("a late revert of an older gesture leaves a thing a newer gesture holds", stub.reverted.join() === "a,c", JSON.stringify(stub.reverted));
+MM.revertHeld(g2, ["b"]);
+check("...and the newer gesture's own revert puts it back", stub.reverted.join() === "a,c,b", JSON.stringify(stub.reverted));
+
 done();
