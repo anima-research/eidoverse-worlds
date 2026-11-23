@@ -1,7 +1,7 @@
 // gzcache-test: the gzip copies serveFrom hands out are bounded (server/gzcache.ts): kept under GZIP_CACHE_MB, least
 // recently served first out, and a file over GZIP_MAX_MB is never gzipped. `bun test/server/gzcache-test.ts`
 import { suite } from "../gate/suite.ts";
-import { gzConfig, gzipOf, gzStats, gzReset } from "../../server/gzcache.ts";
+import { gzConfig, gzipOf, gzipsAt, gzStats, gzReset } from "../../server/gzcache.ts";
 
 const S = suite("gzcache");
 // random bytes, so a copy's size is about its file's
@@ -9,6 +9,8 @@ const bytesOf = (n: number, _seed: number) => crypto.getRandomValues(new Uint8Ar
 let reads = 0;
 const ask = (name: string, n: number, mtime = 1, seed = name.length) => gzipOf(`/f/${name}`, mtime, n, () => { reads++; return bytesOf(n, seed); });
 
+// at the defaults, any file the store takes (UPLOAD_CAP_MB, 100) still gzips: the house avatar is some 35 MB
+S.check("Z0 at the default GZIP_MAX_MB a 35 MB avatar and a 100 MB upload are gzipped, not served plain", gzipsAt(35_000_000) && gzipsAt(100_000_000), gzConfig);
 gzConfig.maxBytes = 50_000; gzConfig.maxFile = 30_000; gzReset();
 for (let i = 0; i < 10; i++) ask(`a${i}`, 20_000, 1, i);
 S.check("the copies kept stay under the byte budget", gzStats().bytes <= 50_000 && gzStats().entries >= 1, gzStats());
