@@ -1,4 +1,4 @@
-// bun test/server/upload-rate-test.ts — /upload's rate window is the uploader's: 30 uploads a minute for the identity an
+// bun test/server/upload-rate-test.ts — /upload's rate window and its byte budgets (a day's bytes, the disk's floor) are the uploader's: 30 uploads a minute for the identity an
 // upload stands on (an agent's bearer, a person's sign-in), whatever address it comes from, and for the address when it
 // proves none (the door key everyone shares). The agent tool server posts every agent's upload from one address, so a
 // window per address would be one window for all of them. In-process: handleUpload with a stand-in for Bun's server.
@@ -13,12 +13,12 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const tokensPath = join(root, "tokens.json"), OPT = join(root, "opt");
 mkdirSync(OPT);
 // the door key is ALSO enrolled as an agent's bearer here (a host may do that): it is still everyone's key, so it still proves no one
-writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "door-key": { id: "keeper" } }));
+writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "rate-bearer-elm": { id: "elm" }, "rate-bearer-oak": { id: "oak" }, "rate-bearer-pine": { id: "pine" }, "door-key": { id: "keeper" } }));
 Object.assign(process.env, {
   SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: OPT, EIDOVERSE_DIR: join(root, "lib"), JOIN_TOKEN: "door-key",
   AGENT_TOKENS_PATH: tokensPath, SESSIONS_PATH: join(root, "sessions.json"), KTX2_TOKTX: "",
 });
-const { handleUpload, UPLOADS_PER_MINUTE } = await import("../../server/upload.ts");
+const { handleUpload, UPLOADS_PER_MINUTE, uploadBudget } = await import("../../server/upload.ts");
 const { hnSessions } = await import("../../server/auth.ts");
 
 const png = (() => {   // a 2×2 grayscale PNG: the image door stores it as is, with no optimize pass and no build check
@@ -66,4 +66,21 @@ check("the door key proves no identity, enrolled or not: its uploads count again
 const keyElsewhere = await upload(key, "198.51.100.9");
 check("...and the same key from another address is taken (that address's own window)", keyElsewhere.status === 200, `${keyElsewhere.status} ${keyElsewhere.text}`);
 check("every upload stored the one file its bytes name (content-addressed)", stored() === 1, stored());
+// ---- an IPv6 host is its /64: two addresses in one /64 share an address's window ----
+const v6 = await burst(UPLOADS_PER_MINUTE, key, (i) => `2001:db8:7:7::${(i + 1).toString(16)}`);
+const v6next = await upload(key, "2001:db8:7:7:ffff::1");
+check("B1 uploads from one IPv6 /64 count as one address: 30 from thirty of its addresses, then a 31st from another is refused", v6[200] === UPLOADS_PER_MINUTE && v6next.status === 429, { v6, next: v6next.status });
+// ---- bytes a day per uploader (UPLOAD_MB_PER_DAY) ----
+{ const was = uploadBudget.perDayBytes; uploadBudget.perDayBytes = png.length * 3;
+  const elm = { authorization: "Bearer rate-bearer-elm" };
+  const day = await burst(3, elm, () => "192.0.2.80"), past = await upload(elm, "192.0.2.80");
+  check("B2 an uploader past its bytes for the day is refused 429, saying so", day[200] === 3 && past.status === 429 && /a day/.test(past.text), { day, past });
+  const fresh = await upload({ authorization: "Bearer rate-bearer-oak" }, "192.0.2.80");
+  check("B2b ...another uploader is not", fresh.status === 200, `${fresh.status} ${fresh.text}`);
+  uploadBudget.perDayBytes = was; }
+// ---- the disk's floor (UPLOAD_MIN_FREE_MB) ----
+{ const was = uploadBudget.minFreeBytes; uploadBudget.minFreeBytes = Number.MAX_SAFE_INTEGER;
+  const r = await upload({ authorization: "Bearer rate-bearer-pine" }, "192.0.2.81");
+  check("B3 with less free disk than the floor, an upload is refused 507 before its body is stored", r.status === 507 && /disk/.test(r.text), `${r.status} ${r.text}`);
+  uploadBudget.minFreeBytes = was; }
 S.done();

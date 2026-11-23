@@ -2,7 +2,7 @@
 // upload rate windows (one per uploader), the store-optimization queue (a subprocess builds each variant off the request
 // path), and the deferred boot sweeps. routes.ts delegates the endpoint here.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, statfsSync, rmSync } from "node:fs";
 import { addressOf } from "./peer.ts";
 import { bearerOf } from "./access.ts";
 import { join, basename, dirname, relative } from "node:path";
@@ -18,6 +18,7 @@ import { envNumber } from "./limits.ts";
 import { sha256Bytes } from "../shared/protocol/hash.js";
 import { avatarDefs } from "./defs.ts";
 import { resolveLibFile } from "./libfile.ts";
+import { ipBucketKey } from "./clientlog.ts";
 
 /** What the handler needs from Bun's server object, structurally: the socket address behind the proxy. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
@@ -26,6 +27,24 @@ type UploadSrv = { requestIP(req: Request): { address: string } | null };
  *  it proves none (an open server's anonymous upload, the door key everyone shares), the address it comes from. */
 export const UPLOADS_PER_MINUTE = 30;
 const uploadWin = new Map<string, { t: number; n: number }>(); // upload rate windows, by uploader (identity, else address)
+/** What the store may take. perDayBytes (UPLOAD_MB_PER_DAY, default 2000): the bytes one uploader may send in a day, twenty
+ *  uploads at the 100 MB cap, far past a busy builder's day. minFreeBytes (UPLOAD_MIN_FREE_MB, default 2048): uploads stop
+ *  while the store's disk has less free than this, so world logs keep room to grow. 0 turns either off. */
+export const uploadBudget = {
+  perDayBytes: envNumber("UPLOAD_MB_PER_DAY", 2000) * 1_000_000,
+  minFreeBytes: envNumber("UPLOAD_MIN_FREE_MB", 2048) * 1_000_000,
+};
+const DAY_MS = 86_400_000;
+const uploadDay = new Map<string, { t: number; bytes: number }>();   // bytes sent today, by uploader
+/** Free bytes on the store's disk; null when the platform can't say (the floor is then not applied). */
+function freeBytes(): number | null {
+  try { mkdirSync(OPT_DIR, { recursive: true }); const f = statfsSync(OPT_DIR); return Number(f.bavail) * Number(f.bsize); } catch { return null; }
+}
+/** Drop windows that have ended, once a map holds many (each address that ever uploaded had one, for good). */
+function pruneWindows(now: number) {
+  if (uploadWin.size > 10_000) for (const [k, w] of uploadWin) if (now - w.t >= 60_000) uploadWin.delete(k);
+  if (uploadDay.size > 10_000) for (const [k, w] of uploadDay) if (now - w.t >= DAY_MS) uploadDay.delete(k);
+}
 let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-seconds
 
 // ---- store optimization -----------------------------------------------------
@@ -444,7 +463,9 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   // upload from its own address, so a window per address would be one window for all of them. Else the client's address
   // (X-Real-IP only from a trusted proxy: server/peer.ts).
   // …and the door key is nobody's identity even when it is also enrolled as an agent's bearer: everyone holds it
-  const uploader = stoodOn && stoodOn !== "key" && !(JOIN_TOKEN && upTok === JOIN_TOKEN) ? stoodOn : `address:${addressOf(req, srv)}`;
+  // An address is keyed as its limiters key it (an IPv6 host holds a whole /64: clientlog.ts ipBucketKey).
+  const uploader = stoodOn && stoodOn !== "key" && !(JOIN_TOKEN && upTok === JOIN_TOKEN) ? stoodOn : `address:${ipBucketKey(addressOf(req, srv))}`;
+  pruneWindows(Date.now());
   const u = uploadWin.get(uploader) ?? { t: 0, n: 0 };
   if (Date.now() - u.t >= 60_000) { u.t = Date.now(); u.n = 0; }
   u.n++; uploadWin.set(uploader, u);
@@ -452,8 +473,19 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
     return new Response(`upload rate limit (${UPLOADS_PER_MINUTE} uploads a minute); try again in ${wait}s`, { status: 429, headers: { "retry-after": String(wait) } });
   }
+  // the disk's floor, then the uploader's bytes for the day (the stated length now; what was read once it is)
+  const stated = Math.max(0, Math.min(Number(req.headers.get("content-length")) || 0, UPLOAD_CAP));
+  if (uploadBudget.minFreeBytes > 0) { const free = freeBytes();
+    if (free !== null && free - stated < uploadBudget.minFreeBytes) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 }); }
+  const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 };
+  if (Date.now() - day.t >= DAY_MS) { day.t = Date.now(); day.bytes = 0; }
+  const dayRefused = () => { const wait = Math.max(1, Math.ceil((DAY_MS - (Date.now() - day.t)) / 1000));
+    return new Response(`upload limit (${Math.round(uploadBudget.perDayBytes / 1e6)} MB a day) reached; try again in ${Math.ceil(wait / 3600)}h`, { status: 429, headers: { "retry-after": String(wait) } }); };
+  if (uploadBudget.perDayBytes > 0 && day.bytes + stated > uploadBudget.perDayBytes) return dayRefused();
   const body = await readCappedBytes(req, UPLOAD_CAP);
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
+  if (uploadBudget.perDayBytes > 0 && day.bytes + body.length > uploadBudget.perDayBytes) return dayRefused();
+  day.bytes += body.length; uploadDay.set(uploader, day);
   if (JOIN_TOKEN && !who().ids.includes(stoodOn!))
     return new Response(stoodOn!.startsWith("person:")
       ? "not stored: your sign-in ended while the upload was read (sign in again and resend)"
