@@ -25,6 +25,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `JOIN_RATE` / `JOIN_BURST` / `WS_PER_ADDRESS` | Joins one connection may make (`JOIN_BURST` at once, default 5, then `JOIN_RATE` a second, default 1; travel is a join), and open websockets one address may hold (default 64; an IPv6 /64 counts as one address; the box's own loopback is not counted). `0` turns `JOIN_RATE` or `WS_PER_ADDRESS` off. | defaults |
 | `UPLOAD_MB_PER_DAY` / `UPLOAD_MIN_FREE_MB` | Bytes one uploader may send a day (default 2000 MB: twenty uploads at the 100 MB cap; an uploader is the identity an upload proves, else its address, an IPv6 /64 counting as one), and the free disk below which uploads pause (default 2048 MB, so world logs keep room). `0` turns either off (server/upload.ts uploadBudget). | defaults |
 | `THUMBS_MAX` | Distinct avatar names `POST /thumb` keeps a portrait or measurements for (default 5000, far more bodies than a server holds; a portrait is at most 400 KB). A name already held always updates. New names also stop at `UPLOAD_MIN_FREE_MB`. `0` = no limit. | default |
+| `PERFLOG_MB` | The load beacon's file (`worlds/.perflogs.jsonl`) is rotated to `.perflogs.1.jsonl` past this size (default 5; one older file is kept). | default |
 
 ## URLs
 

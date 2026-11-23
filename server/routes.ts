@@ -119,6 +119,8 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
 }
 /** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
  *  server holds; each portrait is at most 400 KB). 0 = no limit. */
+/** The load beacon's file (POST /perflog), in MB, before it is rotated (PERFLOG_MB, default 5; one older file is kept). */
+const PERFLOG_BYTES = envNumber("PERFLOG_MB", 5, (n) => n > 0) * 1_000_000;
 export const thumbLimits = { max: envNumber("THUMBS_MAX", 5000, (n) => Number.isInteger(n) && n >= 0) };
 
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
@@ -784,9 +786,11 @@ const ROUTES: Route[] = [
       try {
         const body = await readCapped(req, 100_000);
         if (body !== null) {
+          // past PERFLOG_MB the file becomes .perflogs.1.jsonl (replacing the one before) and a fresh one starts: at most
+          // twice the cap on disk, and the beacon is never full for good
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
-          const big = existsSync(dest) && Bun.file(dest).size > 5_000_000;
-          if (!big) {
+          if (existsSync(dest) && Bun.file(dest).size > PERFLOG_BYTES) renameSync(dest, join(WORLDS_DIR, ".perflogs.1.jsonl"));
+          {
             // the address HASHED, like everywhere else this server keeps one: enough to tell one
             // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
             const ip = addressOf(req, srv);
