@@ -86,6 +86,16 @@ export type GeomSummary = {
 
 const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolean }>();
 const CACHE_MAX = 64;
+// files that failed to parse, by the mtime that failed: not parsed again until they change
+const failed = new Map<string, number>();
+const FAILED_MAX = 256;
+/** Whether summarizeGlb would answer `absPath` without parsing it (a summary or a failure remembered for its mtime). */
+export function geomCached(absPath: string, opts: { solids?: boolean } = {}): boolean {
+  let mtime = 0;
+  try { mtime = statSync(absPath).mtimeMs; } catch { return true; }   // no file: answered at once
+  const hit = cache.get(absPath);
+  return (!!hit && hit.mtime === mtime && (!!hit.solids || !opts.solids)) || failed.get(absPath) === mtime;
+}
 const SAMPLE_ABOVE_TRIS = 500_000;
 const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
@@ -96,11 +106,14 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
   const hit = cache.get(absPath);
   if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) return hit.sum;
+  if (failed.get(absPath) === mtime) return null;
   const io = await getIO();
   if (!io) return null;
   let doc: any;
   try { doc = await io.read(absPath); } catch (err) {
     console.warn(`[geometry] unreadable ${absPath}:`, String(err).slice(0, 200));
+    failed.delete(absPath); failed.set(absPath, mtime);
+    if (failed.size > FAILED_MAX) failed.delete(failed.keys().next().value!);
     return null;
   }
 

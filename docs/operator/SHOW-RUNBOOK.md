@@ -26,6 +26,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `UPLOAD_MB_PER_DAY` / `UPLOAD_MIN_FREE_MB` | Bytes one uploader may send a day (default 2000 MB: twenty uploads at the 100 MB cap; an uploader is the identity an upload proves, else its address, an IPv6 /64 counting as one), and the free disk below which uploads pause (default 2048 MB, so world logs keep room). `0` turns either off (server/upload.ts uploadBudget). | defaults |
 | `THUMBS_MAX` | Distinct avatar names `POST /thumb` keeps a portrait or measurements for (default 5000, far more bodies than a server holds; a portrait is at most 400 KB). A name already held always updates. New names also stop at `UPLOAD_MIN_FREE_MB`. `0` = no limit. | default |
 | `PERFLOG_MB` | The load beacon's file (`worlds/.perflogs.jsonl`) is rotated to `.perflogs.1.jsonl` past this size (default 5; one older file is kept). | default |
+| `GEOM_PER_ADDRESS` / `GEOM_PER_MINUTE` | New model parses `GET /geom?lib=` may start: per address a minute (default 60) and in all (default 600). A cached answer is never refused; the box's own loopback (the agent door) counts toward the total only. | defaults |
 
 ## URLs
 

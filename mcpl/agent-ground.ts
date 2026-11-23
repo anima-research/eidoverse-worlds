@@ -375,10 +375,10 @@ export class AgentGround {
     let p = this.geomCache.get(lib);
     if (!p) {
       // no geometry is a soft state, never a crash; a read that threw, timed out or met a 5xx (the server's own trouble)
-      // isn't kept, so the next one asks again (a 4xx is kept as no geometry)
+      // isn't kept, so the next one asks again (a 4xx is kept as no geometry; a 429, the server's rate limit, is not)
       const q: Promise<any | null> = fetch(`${this.a.httpBase}/geom?lib=${encodeURIComponent(lib)}`,
         { signal: AbortSignal.timeout(WORLD_READ_MS) })
-        .then((r) => (r.ok ? r.json() : r.status >= 500 ? Promise.reject(new Error(`HTTP ${r.status}`)) : null))
+        .then((r) => (r.ok ? r.json() : r.status >= 500 || r.status === 429 ? Promise.reject(new Error(`HTTP ${r.status}`)) : null))
         .then((g) => (g && !g.error && g.bbox ? g : null))
         .catch(() => { if (this.geomCache.get(lib) === q) this.geomCache.delete(lib); return null; });
       this.geomCache.set(lib, p = q);

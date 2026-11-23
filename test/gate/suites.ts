@@ -464,6 +464,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["gzcache", "server/gzcache-test.ts", 1], // server/gzcache.ts: gzip copies stay under GZIP_CACHE_MB, least recently served out first; a file over GZIP_MAX_MB is served plain
   ["join-rate", "server/join-rate-test.ts", 1], // joins per connection (JOIN_RATE, JOIN_BURST) and sockets per address (WS_PER_ADDRESS), on a scratch server; loopback is not counted
   ["perflog", "server/perflog-test.ts", 1], // the load beacon's file is rotated past PERFLOG_MB, never left full for good
+  ["geom-gate", "server/geom-gate-test.ts", 1], // GET /geom?lib= new parses are rate-limited (a cached answer never is) and a failed parse is remembered by mtime
 ];
 
 // ---- lanes ----

@@ -35,7 +35,8 @@ const nativeLogin = createNativeLogin({
   issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
 });
 import { resolveLibFile, libraryFile, libraryRel } from "./libfile.ts";
-import { summarizeGlb } from "./geometry.ts";
+import { summarizeGlb, geomCached } from "./geometry.ts";
+import { windowLimiter } from "./ratewindow.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
 import { worlds, getWorld, worldDirNamed, type World } from "./world.ts";
@@ -121,6 +122,9 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
  *  server holds; each portrait is at most 400 KB). 0 = no limit. */
 /** The load beacon's file (POST /perflog), in MB, before it is rotated (PERFLOG_MB, default 5; one older file is kept). */
 const PERFLOG_BYTES = envNumber("PERFLOG_MB", 5, (n) => n > 0) * 1_000_000;
+/** New model parses GET /geom?lib= may start (GEOM_PER_ADDRESS a minute for one address, default 60; GEOM_PER_MINUTE in
+ *  all, default 600): a world's models are read once and then cached, so a visitor reaches neither. */
+const geomGate = windowLimiter(envNumber("GEOM_PER_ADDRESS", 60, (n) => Number.isInteger(n) && n >= 1), envNumber("GEOM_PER_MINUTE", 600, (n) => Number.isInteger(n) && n >= 1));
 export const thumbLimits = { max: envNumber("THUMBS_MAX", 5000, (n) => Number.isInteger(n) && n >= 0) };
 
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
@@ -531,6 +535,15 @@ const ROUTES: Route[] = [
         const lib = url.searchParams.get("lib") ?? "";
         const file = resolveLibFile(lib);
         if (!file) return j({ error: `no such asset: ${lib}` }, 404);
+        // a parse holds the serving thread: new ones are rate-limited (a cached answer never is; the box's own loopback,
+        // where the agent door asks from, only counts toward the total)
+        if (!geomCached(file)) {
+          const g = geomGate.grant(socketKeyOf(addressOf(req, srv)));
+          if (!g.ok) return new Response(JSON.stringify({ error: g.which === "address"
+            ? `geometry rate limit (${geomGate.perAddress} new models a minute); a model already read is answered at once`
+            : `the server is busy reading models (${geomGate.perWindow} a minute in all)`, retryAfter: g.retryAfter }),
+            { status: 429, headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": String(g.retryAfter) } });
+        }
         const sum = await summarizeGlb(file);
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
