@@ -127,13 +127,16 @@ const sharp = fixtureSharp;
       const actual = sniff(im.bytes);
       check(`image ${i}: declared ${im.mime}, and actually is`, actual === im.mime,
         `actual ${actual}, ${im.bytes.length} bytes`);
-      let decoded = "";
+      // decode the PIXELS (a header can be right over garbage) and compare them with the source at the same size (G6-088)
+      let decoded = "", near = false;
       try {
-        const m = await sharp(Buffer.from(im.bytes)).metadata();
-        decoded = `${m.width}x${m.height}`;
+        const { data, info } = await sharp(Buffer.from(im.bytes)).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+        const want = await sharp(jpeg).resize(info.width, info.height).removeAlpha().raw().toBuffer();
+        let sum = 0; for (let k = 0; k < data.length; k++) sum += Math.abs(data[k] - want[k]);
+        const mad = data.length === want.length ? sum / data.length : Infinity;
+        decoded = `${info.width}x${info.height}, mean |Δ| ${mad.toFixed(2)} vs the source`; near = mad <= 8;
       } catch (e) { decoded = `FAILED: ${(e as Error).message}`; }
-      check(`image ${i}: decodes for real, not just the right header`,
-        /^\d+x\d+$/.test(decoded), decoded);
+      check(`image ${i}: decodes for real, not just the right header — its pixels are the source's`, near, decoded);
     }
   }
 }
