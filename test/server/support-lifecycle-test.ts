@@ -1,8 +1,7 @@
 // Support surfaces through the SHIPPED DOOR (#17, review of #53).
 //
-//   bun test/server/support-lifecycle-test.ts        # spawns its own scratch server
-//   URL=ws://host:8940/ws bun test/server/support-lifecycle-test.ts   # against a running one: broken today, its sup-<time>
-//                                              # worlds are named at run time and only founded locally (hand)
+//   bun test/server/support-lifecycle-test.ts        # spawns its own scratch server (always: G4-195)
+// (no external mode: each row founds its own sup-<time> world, and joining never founds one, so it needs the worlds dir)
 //
 // test/client/support-test.ts drives the physics and collider modules directly: it
 // proves the solver rests a body on a box. It cannot prove that a real
@@ -53,10 +52,9 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 
-const EXTERNAL = process.env.URL;
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9480);   // a free port, never a fixed default
-const URL_ = EXTERNAL ?? `ws://127.0.0.1:${PORT}/ws`;
-const TOKEN = process.env.TOKEN ?? "";
+const URL_ = `ws://127.0.0.1:${PORT}/ws`;
+const TOKEN = "";   // the scratch server's door is open (JOIN_TOKEN "")
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-support-"));
 
 // A crate: small enough to stay a plain box, tall enough that resting on it
@@ -76,7 +74,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let server: ReturnType<typeof spawn> | null = null;
 async function startServer() {
-  if (EXTERNAL) return;
   // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
   // shim whose pid is not the real process — kill() takes the shim and
   // orphans the sequencer, which then squats the port and poisons the NEXT
@@ -126,7 +123,7 @@ const requestsOf = (v: string, a: any): { verb: string; args: any }[] => {
 };
 /** A bare socket: authors the scene (the world's founder and owner) and plays the dragger's hand. */
 function hand(world: string, name: string) {
-  if (!EXTERNAL && !existsSync(join(worldsDir, world))) foundWorlds(worldsDir, [world], name);   // joining never founds a world
+  if (!existsSync(join(worldsDir, world))) foundWorlds(worldsDir, [world], name);   // joining never founds a world
   return new Promise<any>((res) => {
     const ws = new WebSocket(`${URL_}?name=${name}`);
     let n = 0;
