@@ -8,7 +8,7 @@ import { RTCPeerConnection, MediaStreamTrack, RTCRtpCodecParameters, RtpPacket, 
 import { Sfu } from "../../server/sfu.ts";
 import { installSfuTransportGuard } from "../../server/sfuguard.ts";
 import { suite } from "../gate/suite.ts";
-import { until, tryUntil, pause } from "../gate/wait.ts";
+import { until, tryUntil, pause, WAIT_SCALE } from "../gate/wait.ts";
 
 // Run the ENTIRE suite guarded (review 2026-08-18): the negotiation vectors
 // below are the receipt that the ownership patch is transparent under real
@@ -186,10 +186,11 @@ const atHear = await heardAll(alice, bob, 20);
 check("undeafened: hears again (the control)", bob.heard > atHear, `heard ${atHear}→${bob.heard}`);
 
 // ── revocation is LOCAL and immediate (no webhook, no TTL) ─────────────────
-const t0 = Date.now();
+// monotonic + PROTOCOL_TIMEOUT_SCALE: WSL's wall clock steps ~2 s, and a CPU quota stretches 50 ms (G4-189, as screenshots-test)
+const t0 = performance.now();
 sfu.closeLeg("alice");
-const revokeMs = Date.now() - t0;
-check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50, `${revokeMs}ms`);
+const revokeMs = performance.now() - t0;
+check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50 * WAIT_SCALE, `${revokeMs.toFixed(1)}ms (bound ${50 * WAIT_SCALE})`);
 check("revoked leg is gone", sfu.getLeg("alice") === undefined);
 // 🔴 #130 item 3: routes SURVIVE speaker retirement (deleting them leaked the
 // transceiver — the only handle werift keeps — one per reconnect). The safety
