@@ -2692,6 +2692,7 @@ export class WorldAgent {
     // clearing a slump IS standing up — don't leave the clip lying, don't
     // leave a sim tumbling a body that has decided to stand
     if (bones == null && this.clip === "ragdoll") {
+      ++this.bodyEpoch;   // a fall still loading abandons itself, as for a walk, a grab or close (#295)
       this.body?.stop(); this.stopSim();
       this.clip = "idle";
       this.pos.y = this.feetGround(true);
@@ -2713,11 +2714,13 @@ export class WorldAgent {
   /** Settle into a posture clip (sit/sitchair/lie/idle). Rides the presence
    *  stream like locomotion does; walking replaces it, restore re-applies it. */
   setPosture(clip: string) {
+    ++this.bodyEpoch;   // a posture takes authority over the body: a fall still loading abandons itself (#295)
+    const down = this.clip === "ragdoll" && !this.flight;   // read before stop() sets "idle"; a limp flight's "ragdoll" is the flight's fall
     this.stop();
     this.speed = 0;
     // choosing a posture ends a tumble the same way walking does: a physics
     // frame must not survive under the new label.
-    if (this.clip === "ragdoll" || (this.heldPose && !this.heldPoseAuthored)) {
+    if (down || (this.heldPose && !this.heldPoseAuthored)) {
       this.body?.stop(); this.stopSim();
       this.heldPose = null; this.heldPoseAuthored = false;
       this.pos.y = this.feetGround(true);

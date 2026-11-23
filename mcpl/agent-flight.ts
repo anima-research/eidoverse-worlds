@@ -242,8 +242,8 @@ export class AgentFlight {
     // slump that puts them RAGDOLL_ROOT_DROP above the root is cleared.
     const feetY = this.a.feetY(this.a.isSlumped());
     if (!this.a.flight || this.a.flight.phase !== "GROUND") this.flightBegin(feetY);
-    // ...and the ragdoll, if one is still running, no longer owns her.
-    this.a.body?.stop(); this.a.stopSim();
+    // ...and the ragdoll, if one is still running or still loading, no longer owns her (#295).
+    ++this.a.bodyEpoch; this.a.body?.stop(); this.a.stopSim();
     this.a.heldPose = null; this.a.heldPoseAuthored = false;
     this.a.flight = flightTakeOff(this.a.flightCfg, this.a.flight,
       { groundY: this.a.groundAt(this.a.pos.x, this.a.pos.z, feetY) });
