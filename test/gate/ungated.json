@@ -58,6 +58,7 @@
  "test/water/fog-mask-check.ts": "Chromium probe: 1 fixed waits to turn into conditions",
  "test/water/gpu-test.ts": "Chromium probe: 1 fixed waits to turn into conditions; imports playwright itself with channel 'chrome' (the gate refuses it); MERGE into test/water/level-dive-check.ts",
  "test/water/level-underwater-check.ts": "Chromium probe: 5 fixed waits to turn into conditions; imports playwright itself with channel 'chrome' (the gate refuses it); MERGE into test/water/level-dive-check.ts",
+ "test/client/xr-confirm-probe.mjs": "Chromium probe: 7 fixed waits to turn into conditions",
  "test/client/xr-dropdown-probe.mjs": "Chromium probe: 6 fixed waits to turn into conditions",
  "test/client/xr-mirror-probe.mjs": "Chromium probe: red on the CDP harness: exit TIMEOUT",
  "test/client/xr-panel-drag-probe.mjs": "Chromium probe: 10 fixed waits to turn into conditions",
