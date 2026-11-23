@@ -4,7 +4,8 @@
 // domQuadsPick, the same laser path the trigger uses, on the `ask` quad (xr/xrask.js).
 //   bun test/client/xr-confirm-probe.mjs
 // Then the consent edges (a dismissed question is never a remembered answer): S1 leaving VR mid-question, S2 a moderator's
-// warning arriving mid-question, S3 a desk card left open when the session starts and a headset ⏎ elsewhere.
+// warning arriving mid-question, S3 a desk card left open when the session starts and a headset ⏎ elsewhere, S4 two
+// consent asks while one is open (mic on → off → on) are one question with one answer.
 // Mutations (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch;
 // in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
 // instead of queueing (S2); drop the xr:state(true) closeCenter() and the desk card's aimedElsewhere guard (S3).
@@ -149,6 +150,26 @@ try {
   const s3 = { cardAtStart: s3card, keys: s3keys, words: await pg.evaluate(() => globalThis.__w), stored: await stored(), card: await pg.evaluate(() => !!document.querySelector('#confirm-center')) };
   check('S3 a desk consent card open at session start never takes the headset ⏎: sttConsent stays null', s3.cardAtStart && s3.stored === null, JSON.stringify(s3));
   check('…and the headset text question gets "hi"', s3.words === 'hi', JSON.stringify(s3));
+
+  // S4: mic on → off → on while the consent question is open: two ensureSttConsent calls. One question, one answer:
+  // a second copy queued behind it would ask again after Turn on, and its Not now would overwrite the yes just given
+  const s4pre = { stored: await stored(), open: await askTitle() };
+  const s4 = await pg.evaluate(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const vc = await import('./lib/audio/voiceconsent.js'); const ask = await import('./lib/xr/xrask.js');
+    const prefs = () => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'x'; } };
+    let a = 'unsettled', b = 'unsettled';
+    vc.ensureSttConsent().then((v) => { a = v; }); await sleep(100);
+    vc.ensureSttConsent().then((v) => { b = v; }); await sleep(400);
+    const q1 = ask.xrAskState()?.title ?? null;
+    const pressed = globalThis.__px.press(/turn on/i); await sleep(400);
+    const afterYes = { a, b, stored: prefs(), next: ask.xrAskState()?.title ?? null };
+    if (afterYes.next) { globalThis.__px.press(/not now/i); await sleep(400); }   // the copy, answered: the stale answer would win
+    return { q1, pressed, afterYes, end: { a, b, stored: prefs(), next: ask.xrAskState()?.title ?? null } };
+  });
+  check('S4 two consent asks while one is open show one question: after Turn on nothing more is asked',
+    s4pre.stored === null && !s4pre.open && /speech-to-text/i.test(s4.q1 ?? '') && s4.pressed && s4.afterYes.next === null, JSON.stringify({ s4pre, ...s4 }));
+  check('…both callers get the one answer (true), and the stored value is that press', s4.end.a === true && s4.end.b === true && s4.end.stored === true, JSON.stringify(s4.end));
   check('no native dialogs at all', dialogs.length === 0, dialogs.join(' | '));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }

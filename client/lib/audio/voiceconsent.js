@@ -102,13 +102,21 @@ export function setSttConsent(on) {
 /** Ask once; a remembered answer, yes or no, is returned without asking again (the audio panel
  *  is where it changes). Only a pressed answer is remembered: `ask` resolves true (yes), false (no), or anything else
  *  for a question nobody answered (Esc, the backdrop, another question replacing it, leaving the headset). That one
- *  says no for now and saves nothing, so the next mic-on asks again. */
-export async function ensureSttConsent(ask = defaultAsk) {
-  if (sttAsked()) return prefs.sttConsent === true;
-  const yes = await ask();
-  if (yes !== true && yes !== false) return false;   // dismissed: not an answer
-  setSttConsent(yes);
-  return prefs.sttConsent === true;
+ *  says no for now and saves nothing, so the next mic-on asks again. Asked again while the question is open, it
+ *  returns the open question's answer (asking it once). */
+let asking = null;   // the question in flight: a second ask while it is open (mic on → off → on) shares its answer
+export function ensureSttConsent(ask = defaultAsk) {
+  if (sttAsked()) return Promise.resolve(prefs.sttConsent === true);
+  // one question, one answer: a second copy would be asked again after the first was answered, and its answer would
+  // overwrite the one the person just gave
+  if (asking) return asking;
+  asking = (async () => {
+    const yes = await ask();
+    if (yes !== true && yes !== false) return false;   // dismissed: not an answer
+    setSttConsent(yes);
+    return prefs.sttConsent === true;
+  })().finally(() => { asking = null; });
+  return asking;
 }
 
 function defaultAsk() {
