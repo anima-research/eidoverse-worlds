@@ -85,7 +85,8 @@ export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 
 /** All messages per client per second: 15 Hz of pose plus verbs plus slack; a token bucket with two seconds of burst (server/msgrate.ts). */
 export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 1);   // at least 1 a second: 0 refuses every message, and under 0.5 the 2 s burst never holds a token
 /** Joins one connection may make: JOIN_BURST at once, then JOIN_RATE a second (travel is a join; a person changes world
- *  far less often, and each join serializes the whole world for its sender). JOIN_RATE=0: no limit. */
+ *  far less often, and each join serializes the whole world for its sender). A re-join to the world the connection is in
+ *  (an avatar change, a replica's resync) is held past it, never refused (server.ts holdRejoin). JOIN_RATE=0: no limit. */
 export const JOIN_RATE = envNumber("JOIN_RATE", 1, (n) => n >= 0);
 export const JOIN_BURST = envNumber("JOIN_BURST", 5, (n) => Number.isInteger(n) && n >= 1);
 /** Open websockets one address may hold (an IPv6 /64 is one address): 512, room for a venue or a campus behind one NAT,

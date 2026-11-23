@@ -689,6 +689,21 @@ function buildSnapshot(w: World, c: Client) {
     };
 }
 
+/** A re-join to the world `c` is already in (an avatar change, a replica's resync) that met an empty join bucket: it is
+ *  never refused (the person's new body would never reach the others), only held, the latest replacing any held before
+ *  it, and delivered once the bucket has a token. So a burst of them costs what JOIN_RATE allows, not one snapshot each. */
+function holdRejoin(c: Client, ws: unknown, raw: string, deliver: (ws: any, raw: string, held: boolean) => void) {
+  c.heldRejoin = raw;
+  if (c.heldRejoinTimer) return;
+  const wait = Math.max(1, Math.ceil((1 - (c.joins?.tokens ?? 0)) * 1000 / JOIN_RATE));
+  c.heldRejoinTimer = setTimeout(() => {
+    c.heldRejoinTimer = undefined;
+    const r = c.heldRejoin; c.heldRejoin = undefined;
+    if (!r || clients.get(ws as never) !== c || c.superseded) return;
+    try { deliver(ws, r, true); } catch (err) { console.error(`[ws] held re-join for ${c.id}`, err); }
+  }, wait);
+}
+
 const server = Bun.serve({
   port: PORT,
   hostname: HOST,
@@ -727,6 +742,7 @@ const server = Bun.serve({
         if (!c) return;
         screenshots.retire(c);
         clients.delete(ws);
+        if (c.heldRejoinTimer) { clearTimeout(c.heldRejoinTimer); c.heldRejoinTimer = undefined; }
         if (c.actorId && c.anonymous) directoryFor(WORLDS_DIR).release(c.actorId);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -754,7 +770,8 @@ const server = Bun.serve({
         console.error(`[ws] close failed server-side:`, err);
       }
     },
-    message(ws, raw) {
+    // named, so a held re-join (holdRejoin) is delivered through it again; `held`: it was charged to MSG_RATE when it came
+    message: function wsMessage(ws, raw, held = false) {
       const c = clients.get(ws);
       if (!c) return;
       // a superseded generation is dead to the world even while its socket drains. Every superseding path also unmaps the
@@ -767,7 +784,7 @@ const server = Bun.serve({
       // server's own busy thread caused isn't charged to the client. Over it, a REQUEST is answered (its client awaits a reply
       // by id: silence would leave it hanging), up to MSG_RATE answers a second; anything else is dropped.
       const now = Date.now();
-      const verdict = admitMessage(c.msgs, now, MSG_RATE);
+      const verdict = held ? "run" : admitMessage(c.msgs, now, MSG_RATE);
       if (verdict !== "run") {
         if (msg?.type === "request" && verdict === "refuse") { try { ws.send(JSON.stringify({ type: "reply", id: msg.id ?? null, verb: String(msg.verb ?? "").slice(0, 32), ok: false,
           reply: { ok: false, refused: { code: "rate", reason: `more than ${MSG_RATE} messages a second from this connection: this request wasn't run`, fix: "slow down and send it again" } } })); } catch { /* gone */ } }
@@ -779,11 +796,14 @@ const server = Bun.serve({
       try {
       switch (msg.type) {
         case "join": {
-          // joins per connection (config.ts JOIN_RATE): a refused one leaves the connection where it was
+          // joins per connection (config.ts JOIN_RATE): a refused one leaves the connection where it was. A re-join to the
+          // world this connection is in (an avatar change, a replica's resync) is held instead, never refused (holdRejoin)
           if (JOIN_RATE > 0 && admitMessage(c.joins ??= newBucket(JOIN_BURST), Date.now(), JOIN_RATE, JOIN_BURST) !== "run") {
+            if (c.world && String(msg.world ?? "commons") === c.world.name) { holdRejoin(c, ws, String(raw), wsMessage); return; }
             ws.send(JSON.stringify({ type: "error", about: "join", error: "joining too often: wait a moment and try again" }));   // MSG_RATE bounds these
             return;
           }
+          c.heldRejoin = undefined;   // this join runs: one held from before it is out of date
           // a verified session (bound at upgrade) passes without the door key; everyone else needs JOIN_TOKEN. Both may
           // be live at once
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;
