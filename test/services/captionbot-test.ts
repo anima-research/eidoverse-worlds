@@ -37,10 +37,11 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { suite } from '../gate/suite.ts';
+import { tryUntil, pause } from '../gate/wait.ts';
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  ok' : 'FAIL'}  ${name}${ok || !detail ? '' : ` — ${detail}`}`); };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const T = suite('captionbot');
+const check = (name: string, ok: boolean, detail = '') => T.check(name, ok, detail || undefined);
 const RATE = 16_000;
 
 // ── the fake provider: one session per segment; commit() → a final ────────
@@ -83,7 +84,8 @@ async function run(script: (n: number, emit: (t: SttTranscript) => void) => void
   const f = framer(tap);
   for (const a of audio) f.write(a);
   f.end();
-  await sleep((opts.settleMs ?? 30) * 6);
+  // every segment's session closes at 4× settle, after its finals settled (captioner.ts close): by then each caption is out
+  await tryUntil('every STT session closed', () => provider.sessions.length > 0 && provider.sessions.every((s) => s.closed), { ms: 5_000, step: 5 });
   return { out, provider, cap, tap };
 }
 
@@ -109,7 +111,7 @@ console.log('— B. revision doctrine —');
     setTimeout(() => emit({ utteranceId: `u${n}`, text: 'partial text, revised final, settled', final: true }), 5);   // before settle: replaces
     setTimeout(() => emit({ utteranceId: `u${n}`, text: 'too late', final: true }), 120);                              // after emission: dropped
   }, [tone(400), silence(600)], { settleMs: 30 });
-  await sleep(200);
+  await tryUntil('the late revision (120 ms after commit) is counted', () => cap.lateRevisions >= 1, { ms: 5_000, step: 5 });
   check('a partial never becomes a caption; the settled final does', out.length === 1 && out[0].text === 'partial text, revised final, settled', JSON.stringify(out));
   check('a revision after emission is counted and dropped', cap.lateRevisions === 1 && out.length === 1, String(cap.lateRevisions));
 }
@@ -121,7 +123,7 @@ console.log('— B. revision doctrine —');
     emit({ utteranceId: `u${n}`, text: 'a partial that', final: false });
     emit({ utteranceId: `u${n}`, text: 'a partial that never lands', final: false });
   }, [tone(400), silence(600)], { settleMs: 30 });
-  await sleep(150);
+  await pause('nothing may arrive: partials alone never emit, so this is a window, not a condition', 150);
   check('partials with no final behind them never become a caption', out.length === 0, JSON.stringify(out));
 }
 
@@ -142,10 +144,10 @@ console.log('— D. sealing —');
   // sealed) a revision of the same utterance and a brand-new final
   let late: ((t: SttTranscript) => void) | null = null;
   const { out, cap } = await run((n, emit) => { emit({ utteranceId: `u${n}`, text: 'first words', final: true }); late = emit; }, [tone(400), silence(600)], { settleMs: 30 });
-  await sleep(30 * 10);   // past 8× settle: sealed
+  await pause('past 8× settle: the segment seals on the captioner\'s own clock', 30 * 10);
   late!({ utteranceId: 'u1', text: 'first words, revised', final: true });
   late!({ utteranceId: 'u1-b', text: 'a brand new final', final: true });
-  await sleep(60);
+  await pause('an unsealed final would emit within one settle (30 ms): two settles show it did not', 60);
   check('one caption from the burst; a revision AND a new final after sealing are counted, never emitted', out.length === 1 && out[0].text === 'first words' && cap.lateRevisions === 2, `${out.length} captions, ${cap.lateRevisions} late`);
   check('the sealed segment holds nothing (its pending map and emitted set are cleared)', (cap as any).segment === null);
 }
@@ -179,12 +181,12 @@ console.log('— G. source loss is owned —');
   tap.attach({ onPcm() {}, onEnd() { ends++; } });
   const logs: string[] = [];
   const src = ffmpegSource('rtsp://nowhere/screen', tap, (m) => logs.push(m), { spawnFn, onReattach: () => reattaches++, minBackoffMs: 20, maxBackoffMs: 40 });
-  await sleep(200);
+  await tryUntil('two reattaches, and the third child\'s PCM in', () => reattaches >= 2 && ends >= 2 && children.length >= 3 && tap.mediaTime > 0, { ms: 5_000, step: 5 });
   check('two unasked exits → two reattaches, each flushing the tap and resetting its clock', reattaches === 2 && ends === 2 && children.length === 3 && tap.mediaTime > 0 && tap.mediaTime < 0.1, `reattaches=${reattaches} ends=${ends} spawns=${children.length} mediaTime=${tap.mediaTime}`);
   check('…said out loud with the backoff', logs.filter((l) => /source lost; reattaching in/.test(l)).length === 2, JSON.stringify(logs));
   const before = children.length;
   src.close();
-  await sleep(80);
+  await pause('nothing may respawn: two of the longest backoff (40 ms)', 80);
   check('close() ends it for good: the child is killed and nothing respawns', children[before - 1].killed && children.length === before && src.attempts === 3, `spawns=${children.length} attempts=${src.attempts}`);
 }
 
@@ -310,5 +312,4 @@ console.log('— M. the join line: the captioners hint keeps the screen\'s exist
   (w as any).halted = 'x';
 }
 
-console.log(`\n${pass} ok, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+T.done();

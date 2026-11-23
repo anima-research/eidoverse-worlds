@@ -22,12 +22,11 @@ import { fileURLToPath } from "node:url";
 import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { suite } from '../gate/suite.ts';
+import { tryUntil } from '../gate/wait.ts';
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: unknown, detail = '') => {
-  if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
-  else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
-};
+const T = suite('captionbot-cli');
+const check = (name: string, ok: unknown, detail = '') => T.check(name, ok, detail || undefined);
 
 const CLI = fileURLToPath(new URL('../../services/captionbot/index.ts', import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), 'captionbot-cli-'));
@@ -102,8 +101,8 @@ console.log('\n— E. the spool goes after the lines are on it, before the end �
   for (let attempt = 1; attempt <= 3 && !caught; attempt++) {
     rmSync(spool, { recursive: true, force: true }); rmSync(`${spool}.lines`, { force: true });
     const proc = Bun.spawn(['bun', CLI], { env: envFor({ SPOOL: spool }), stdout: 'pipe', stderr: 'pipe' });
-    rows = 0;
-    for (let i = 0; i < 3000 && rows < 2; i++) { await Bun.sleep(10); rows = rowsIn(spool); }
+    // polled every 10 ms: the window is the CLI's 2 s
+    rows = (await tryUntil("both lines' rows on the spool", () => { const n = rowsIn(spool); return n >= 2 ? n : 0; }, { ms: 30_000, step: 10 })) ?? rowsIn(spool);
     if (rows === 2) { renameSync(spool, `${spool}.lines`); mkdirSync(spool); }
     else proc.kill();
     code = await proc.exited;
@@ -132,5 +131,4 @@ console.log('\n— G. lines dropped for overflow: the summary counts them, and t
 }
 
 rmSync(dir, { recursive: true, force: true });
-console.log(`\n${pass} ok, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+T.done();

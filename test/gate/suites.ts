@@ -450,6 +450,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["aux-binding", "server/aux-binding-test.ts", 1], // B1 (#57): an aux leg binds to the primary's identity authority, or it does not attach
   ["keepalive", "server/keepalive-test.ts", 1], // the MCPL door's keepalive tolerates a thinking agent: missed pongs survive, a reap only after the full grace
   ["chatbridge", "services/chatbridge-test.ts", 1], // the Discord chat bridge (services/chatbridge) against an owned scratch world, in its DRY_RUN
+  ["captionbot", "services/captionbot-test.ts", 1], // the caption bot's pipeline with a fake STT: segmentation, revision doctrine, the cue, sealing, source loss, the spool's fail-closed promise
+  ["captionbot-cli", "services/captionbot-cli-test.ts", 1], // the shipping captionbot CLI's exit status is the spool's promise (FILE-mode replay, no world reachable)
   ["spoken-say-door", "server/spoken-say-door-test.ts", 1], // #100: the advertised MCPL surface (tools/call say) against an owned door, watched on the world socket
   ["sfu", "server/sfu-test.ts", 1], // the SFU's policy over real RTP (loopback werift peers): the acceptance rows checkable without a browser
   ["sfu-verb-gate", "server/sfu-verb-gate-test.mjs", 1], // every sfu-* verb in server.ts dispatch gates on spectator/surface (the sfu-pos remote-mute hole)

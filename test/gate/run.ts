@@ -81,6 +81,7 @@ const EXPECT: Record<string, number> = {
   "vrmic-exec": 0.5, "xr-nullfb": 0.3,
   "reexport-binding": 0.3, "schema-layers": 0.3, "picture-note": 0.3, "realized-lifecycle": 0.7, "components-wire": 1.2, "grass-quality": 0.3, "rebuild": 1,
   "store-variants": 30, "object-lod": 72,   // 11-22, inside the test lock: four / seven child sequencers each
+  "captionbot": 1.6, "captionbot-cli": 21.5,
   "skywatch": 1.3,
   "stdio-door": 14,
   "panels-schema": 0.3,
