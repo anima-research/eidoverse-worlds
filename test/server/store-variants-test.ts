@@ -14,9 +14,9 @@
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
 // A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs if present (a small source, then the 2048² budget). Sections 4-8 spawn the real
-// sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership).
+// sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership) on a scratch OPT_DIR.
 
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, symlinkSync, statSync, unlinkSync, rmdirSync, lstatSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -428,11 +428,10 @@ console.log("\n  the optimizer, against the fake encoder:");
 }
 
 // ---------------------------------------------- the real sequencer
-// fixtures go in this checkout's assets/opt (the child's default OPT_DIR; none is passed) and come out in cleanup,
-// manifest entries too; the child gets an EMPTY library, so its sweep has nothing to encode
-const OPT = join(ROOT, "assets", "opt");
+// every child gets a scratch OPT_DIR (fixtures, manifest, verdicts) and an EMPTY library, so its sweep has nothing to
+// encode and a killed run leaves nothing in the checkout (G4-192)
+const OPT = mkdtempSync(join(tmpdir(), "ew-store-opt-"));
 const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
-const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
 mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
 const EMPTY_LIB = mkdtempSync(join(tmpdir(), "ew-empty-lib-"));
 // "no encoder" must be TRUE for the child: Bun.which("toktx") finds toktx.cmd through PATHEXT on Windows, so PATH and
@@ -440,27 +439,17 @@ const EMPTY_LIB = mkdtempSync(join(tmpdir(), "ew-empty-lib-"));
 const NOWHERE = mkdtempSync(join(tmpdir(), "ew-nowhere-"));
 const NO_ENCODER = { KTX2_TOKTX: join(NOWHERE, "no-such-toktx"), PATH: NOWHERE, HOME: NOWHERE, USERPROFILE: NOWHERE };
 const DOOR = "test-door";
-const mine = new Set<string>();   // hashes this run put in the store
-const shadowsOf = (hash: string) => [
-  join(STORE, `${hash}.glb`), join(STORE, `${hash}.glb.ktx2.glb`), join(STORE, `${hash}.glb.ktx2.glb.failed`),
-  join(STORE, `${hash}.glb.ktx2.glb.tmp`), join(STORE_MIN, `${hash}.glb`), join(STORE_MIN, `${hash}.glb.failed`), join(STORE_MIN, `${hash}.glb.tmp`)];
+const scratch: string[] = [];   // the children's WORLDS_DIRs and section 8's tree
+const links: string[] = [];     // section 8's links INTO this checkout: unlinked first, so no recursive rm can walk through one
 let live: ChildProcess | null = null;
 const cleanup = () => {
   try { live?.kill(); } catch { /* gone */ }
-  for (const h of mine) for (const p of shadowsOf(h)) try { rmSync(p, { force: true }); } catch { /* best effort */ }
-  try {   // our manifest entries, not anyone else's
-    const mp = join(STORE, "manifest.json");
-    if (existsSync(mp)) {
-      const man = JSON.parse(readFileSync(mp, "utf8"));
-      for (const h of mine) delete man[h];
-      if (Object.keys(man).length) writeFileSync(mp, JSON.stringify(man)); else rmSync(mp);
-    }
-  } catch { /* best effort */ }
-  if (madeStore) try { rmdirSync(STORE); } catch { /* not empty — someone else's uploads */ }
-  if (madeMin) try { rmdirSync(STORE_MIN); } catch { /* same */ }
-  try { rmSync(FAKE_DIR, { recursive: true, force: true }); } catch { /* best effort */ }
-  try { rmSync(EMPTY_LIB, { recursive: true, force: true }); } catch { /* best effort */ }
-  try { rmSync(NOWHERE, { recursive: true, force: true }); } catch { /* best effort */ }
+  for (const l of links) try { unlinkSync(l); } catch { try { rmdirSync(l); } catch { /* best effort */ } }
+  const linked = links.some((l) => { try { lstatSync(l); return true; } catch { return false; } });   // a link survived: keep its tree
+  for (const d of [OPT, FAKE_DIR, EMPTY_LIB, NOWHERE, ...scratch]) {
+    if (linked && links.some((l) => l.startsWith(d))) continue;
+    try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
+  }
 };
 process.on("exit", cleanup);
 
@@ -474,11 +463,12 @@ async function freePort(): Promise<number> {
 }
 /** Spawn the sequencer with `extra` in its environment (the optimize subprocesses inherit it: how the fake encoder's mode
  *  reaches them). Returns the door, the log so far, and a stop. */
-async function startServer(extra: Record<string, string | undefined>) {
+async function startServer(extra: Record<string, string | undefined>, root = ROOT) {
   const PORT = await freePort();
+  const worlds = mkdtempSync(join(tmpdir(), "ew-store-serve-")); scratch.push(worlds);
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
-    WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-store-serve-")), EIDOVERSE_DIR: EMPTY_LIB, ...extra };
-  const proc = spawn(process.execPath, [join(ROOT, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
+    WORLDS_DIR: worlds, OPT_DIR: OPT, EIDOVERSE_DIR: EMPTY_LIB, ...extra };
+  const proc = spawn(process.execPath, [join(root, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
   live = proc;
   let log = "";
   proc.stdout!.on("data", (d) => { log += d; });
@@ -512,7 +502,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
   check("child server came up on its probed port", S.up, `:${S.PORT}`);
   if (S.up) {
     const glb = await fixtureGlb("uploaded", 2);
-    const hash = hashOf(glb); mine.add(hash);
+    const hash = hashOf(glb);
     check("the running sequencer publishes its key on /version — the one a browser negotiates with", S.key === KTX2_KEY, `published ${S.key}, defined ${KTX2_KEY}`);
     const up = await S.upload(glb, "store-variants-test");
     check("POST /upload landed it content-addressed", up.status === 200 && up.body?.path === `store/${hash}.glb`, `${up.status} ${JSON.stringify(up.body)}`);
@@ -562,7 +552,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
 
       // exit 2's marker, through the pump: an untextured upload
       const none = await fixtureGlb("untextured", 0);
-      const h2 = hashOf(none); mine.add(h2);
+      const h2 = hashOf(none);
       await S.upload(none, "untextured");
       const marked = await until(() => existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)), 30_000);
       check("nothing to convert → the pump writes the .failed marker (exit 2) and no variant", marked && !existsSync(join(STORE, `${h2}.glb.ktx2.glb`)));
@@ -577,7 +567,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
 console.log("\n  the boot sweep — a partial conversion is refused, retryably:");
 {
   const glb = await fixtureGlb("booted", 2);
-  const hash = hashOf(glb); mine.add(hash);
+  const hash = hashOf(glb);
   writeFileSync(join(STORE, `${hash}.glb`), glb);       // an original with no shadows, before the server exists
   const counter = join(FAKE_DIR, `counter-${hash}`);
   const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "fail-second", FAKE_TOKTX_COUNTER: counter });
@@ -605,7 +595,7 @@ console.log("\n  the boot sweep — a stale size verdict is re-measured, a curre
 {
   const stale = await fixtureGlb("stale", 1);
   const current = await fixtureGlb("current", 1);
-  const hs = hashOf(stale), hc = hashOf(current); mine.add(hs); mine.add(hc);
+  const hs = hashOf(stale), hc = hashOf(current);
   writeFileSync(join(STORE, `${hs}.glb`), stale);
   writeFileSync(join(STORE, `${hc}.glb`), current);
   // both have a store-min verdict so only the KTX2 arm is in play
@@ -633,7 +623,7 @@ console.log("\n  the boot sweep — a stale size verdict is re-measured, a curre
 console.log("\n  no encoder on the box — exit 3, once, and no marker:");
 {
   const glb = await fixtureGlb("noenc", 1);
-  const hash = hashOf(glb); mine.add(hash);
+  const hash = hashOf(glb);
   writeFileSync(join(STORE, `${hash}.glb`), glb);
   const S = await startServer(NO_ENCODER);
   check("child server came up", S.up, `:${S.PORT}`);
@@ -642,7 +632,7 @@ console.log("\n  no encoder on the box — exit 3, once, and no marker:");
     check("the sweep's --ktx2 item exited 3: 'no encoder … variants skipped this boot'", said);
     check("…no variant, no marker (environmental)", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)) && !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
     const glb2 = await fixtureGlb("noenc-upload", 1);
-    const h2 = hashOf(glb2); mine.add(h2);
+    const h2 = hashOf(glb2);
     await S.upload(glb2, "noenc-upload");
     await until(() => existsSync(join(STORE_MIN, `${h2}.glb`)) || existsSync(join(STORE_MIN, `${h2}.glb.failed`)), 30_000);
     await sleep(1500);
@@ -658,7 +648,7 @@ console.log("\n  the swap a browser makes when the variant lands:");
 {
   const glb = await fixtureGlb("swap", 1);
   const variant = await fixtureGlb("swap-variant", 1, true);   // a stand-in: which FILE answers is the question here
-  const hash = hashOf(glb); mine.add(hash);
+  const hash = hashOf(glb);
   writeFileSync(join(STORE, `${hash}.glb`), glb);
   writeFileSync(join(STORE_MIN, `${hash}.glb.failed`), "fixture");   // "already lean": the unflagged answer is the original, deterministically
   const S = await startServer(NO_ENCODER);
@@ -684,22 +674,30 @@ console.log("\n  the swap a browser makes when the variant lands:");
 
 // ---------------------------------------------- 8. the canary — pull before restart cannot poison
 // a pull lands a new shared/ktx2.js key under a running sequencer: a client reading the served file asks with a key the
-// process doesn't hold, one reading /version is answered right; both fetches are made, and the file is restored
-// byte-for-byte (finally + exit hook)
+// process doesn't hold, one reading /version is answered right. The pull lands in a SCRATCH COPY of server/ + shared/
+// the child runs from, never in this checkout (G4-192: parallel suites read the real file, and a killed run can't restore it)
 console.log("\n  the canary — a pull lands under a running sequencer:");
 {
-  const SHARED = join(ROOT, "shared", "ktx2.js");
-  const pristine = readFileSync(SHARED);
-  const restore = () => { try { writeFileSync(SHARED, pristine); } catch { /* best effort */ } };
-  process.on("exit", restore);
+  const REAL_SHARED = join(ROOT, "shared", "ktx2.js");
+  const pristine = readFileSync(REAL_SHARED);
+  // server/ and shared/ copied for real (config.ts resolves ROOT from server/'s realpath, and the pull rewrites a shared file);
+  // everything else the server reads (client/, defs/, mcpl/, node_modules, …) linked read-only
+  const TREE = mkdtempSync(join(tmpdir(), "ew-canary-tree-")); scratch.push(TREE);
+  for (const name of readdirSync(ROOT)) {
+    if (name === ".git" || name === "assets" || name === "worlds") continue;
+    const from = join(ROOT, name), to = join(TREE, name);
+    if (name === "server" || name === "shared" || !statSync(from).isDirectory()) cpSync(from, to, { recursive: true });
+    else { symlinkSync(from, to, "junction"); links.push(to); }   // a junction: no privilege needed on Windows
+  }
+  const SHARED = join(TREE, "shared", "ktx2.js");
   const glb = await fixtureGlb("canary", 1);
   const variant = await fixtureGlb("canary-variant", 1, true);
-  const hash = hashOf(glb); mine.add(hash);
+  const hash = hashOf(glb);
   writeFileSync(join(STORE, `${hash}.glb`), glb);
   writeFileSync(ktx2VariantPath(join(STORE, `${hash}.glb`)), variant);
   writeFileSync(join(STORE_MIN, `${hash}.glb.failed`), "fixture");
-  const S = await startServer(NO_ENCODER);
-  check("child server came up — with the PRISTINE key in memory", S.up && S.key === KTX2_KEY, `${S.up} key=${S.key}`);
+  const S = await startServer(NO_ENCODER, TREE);
+  check("child server came up from the scratch tree — with the PRISTINE key in memory", S.up && S.key === KTX2_KEY, `${S.up} key=${S.key}\n${S.log().slice(-600)}`);
   try {
     if (S.up) {
       const NEXT = "99";   // the pulled generation, not yet running anywhere
@@ -720,10 +718,9 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
       check("the two answers differ — the split brain is real, and only the on-disk path walks into it", good.etag !== bad.etag);
     }
   } finally {
-    restore();
     await S.stop();
   }
-  check("the served file is restored byte-for-byte", same(new Uint8Array(readFileSync(SHARED)), new Uint8Array(pristine)));
+  check("this checkout's shared/ktx2.js was never touched", same(new Uint8Array(readFileSync(REAL_SHARED)), new Uint8Array(pristine)));
 }
 
 cleanup();
