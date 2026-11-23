@@ -418,7 +418,9 @@ async function startServer(extra: Record<string, string | undefined>, lib?: stri
   const nonce = crypto.randomUUID();
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
     WORLD_INSTANCE_NONCE: nonce,
-    WORLDS_DIR: mk("ew-lod-w-"), OPT_DIR: OPT, EIDOVERSE_DIR: lib ?? mk("ew-lod-lib-"), ...extra };
+    WORLDS_DIR: mk("ew-lod-w-"), OPT_DIR: OPT,
+    SKIP_OPT_SWEEP: "",   // the boot sweeps are under test here: the gate sets SKIP_OPT_SWEEP=1 for every suite (run.ts)
+    EIDOVERSE_DIR: lib ?? mk("ew-lod-lib-"), ...extra };
   const proc = spawn(process.execPath, [join(root, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
   live = proc;
   let log = "";
