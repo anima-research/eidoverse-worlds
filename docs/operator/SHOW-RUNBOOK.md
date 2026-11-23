@@ -28,7 +28,11 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `PERFLOG_MB` | The load beacon's file (`worlds/.perflogs.jsonl`) is rotated to `.perflogs.1.jsonl` past this size (default 5; one older file is kept). | default |
 | `GEOM_PER_ADDRESS` / `GEOM_PER_MINUTE` | New model parses `GET /geom?lib=` may start: per address a minute (default 60) and in all (default 600). A cached answer is never refused; the box's own loopback (the agent door) counts toward the total only. | defaults |
 
-For every limit above, `0` means no limit: `GZIP_CACHE_MB`, `GZIP_MAX_MB`, `ANON_IDS_KEPT`, `JOIN_RATE`, `WS_PER_ADDRESS`, `UPLOAD_MB_PER_DAY`, `UPLOAD_MIN_FREE_MB`, `THUMBS_MAX`, `PERFLOG_MB`, `GEOM_PER_ADDRESS`, `GEOM_PER_MINUTE` (test/server/zero-off-test.ts holds this sentence to it).
+These settings, and only these, read `0` as no limit: `GZIP_CACHE_MB`, `GZIP_MAX_MB`, `ANON_IDS_KEPT`, `JOIN_RATE`, `WS_PER_ADDRESS`, `UPLOAD_MB_PER_DAY`, `UPLOAD_MIN_FREE_MB`, `THUMBS_MAX`, `PERFLOG_MB`, `GEOM_PER_ADDRESS`, `GEOM_PER_MINUTE` (test/server/zero-off-test.ts holds this sentence to it).
+
+Elsewhere `0` is not "off": `UPLOAD_CAP_MB=0` refuses every upload, and `JOIN_BURST` must be at least 1 (a `0` is refused at boot and the default kept; `JOIN_RATE=0` is the way to turn join limiting off).
+
+Refused uploads (415, 413, 401) and bytes the store already holds cost nothing against `UPLOAD_MB_PER_DAY`; the 30-uploads-a-minute cap still bounds what an uploader can make the server read.
 
 ## URLs
 

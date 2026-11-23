@@ -74,7 +74,7 @@ for (const [knob, body] of ROWS) {
 
 // the runbook says it once, and it stays true: the settings its sentence names are exactly the rows above
 { const doc = readFileSync(join(R, "docs/operator/SHOW-RUNBOOK.md"), "utf8");
-  const said = doc.split("\n").find((l) => l.includes("`0` means no limit"));
+  const said = doc.split("\n").find((l) => l.includes("and only these, read `0` as no limit"));
   const named = new Set([...(said ?? "").matchAll(/`([A-Z][A-Z0-9_]+)`/g)].map((m) => m[1]));
   const rows = new Set(ROWS.map(([k]) => k));
   const missing = [...rows].filter((k) => !named.has(k)), extra = [...named].filter((k) => !rows.has(k));

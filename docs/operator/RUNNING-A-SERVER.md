@@ -21,7 +21,7 @@ founds a world.
 
 **A small disk.** Uploads pause while the store's disk has less than 2048 MB free, so world logs keep room to grow
 (`UPLOAD_MIN_FREE_MB`). On a small disk (a Raspberry Pi's card, a 10 GB VPS) set it lower, e.g. `UPLOAD_MIN_FREE_MB=256`,
-or `0` to turn the floor off. The other upload and connection limits are in docs/operator/SHOW-RUNBOOK.md; each takes `0` as no limit.
+or `0` to turn the floor off. The other upload and connection limits are in docs/operator/SHOW-RUNBOOK.md, with the list of the ones that read `0` as no limit (not all do: `UPLOAD_CAP_MB=0` refuses every upload).
 
 **Which library.** Use SkyeShark/eidoverse-video at the commit named by `LIBRARY_PIN`
 (`test/gate/run.ts`). Until upstream takes the rain-splash ground fix (SkyeShark/eidoverse-video#9), rain splashes
