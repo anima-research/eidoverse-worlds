@@ -649,22 +649,29 @@ export function localizePoint(ent, wx, wy, wz) {
   return [(dx * c - dz * n) / s, (wy - py) / s, (dx * n + dz * c) / s];
 }
 
+// where a diagonal lies from each half (halfTriangle): ↘'s A is the north-east triangle, ↗'s A the north-west one
+const DIAG_SIDE = { 2: { A: 'southwest', B: 'northeast' }, 3: { A: 'southeast', B: 'northwest' } };
+
 /** A room's openings, each named by the side of THIS room it sits on and what lies beyond (null: outdoors). */
 export function openingsOf(level, room) {
   const mine = new Set(room.cells);
   const byId = new Map(level.rooms.map((r) => [r.id, r]));
   const out = [];
   for (const p of level.portals) {
-    const [[ax, az], [bx, bz]] = edgeCells(p.axis, p.x, p.z);
-    const aK = cellKey(ax, az), bK = cellKey(bx, bz);
-    const near = mine.has(aK) ? [ax, az] : mine.has(bK) ? [bx, bz] : null;
-    if (!near) continue;
-    const other = mine.has(aK) ? p.between[1] : p.between[0];
-    out.push({
-      kind: p.kind,
-      side: SIDES[sideOfCell(p.axis, p.x, p.z, near[0], near[1])],
-      to: other ? (byId.get(other)?.label ?? other) : null,
-    });
+    // a room's cells are graph nodes ("x,z:A" for a half), and a diagonal's two sides are its own cell's halves (derivePortals)
+    let side, other;
+    if (p.axis >= 2) {
+      const k = cellKey(p.x, p.z), h = mine.has(`${k}:A`) ? 'A' : mine.has(`${k}:B`) ? 'B' : null;
+      if (!h) continue;
+      side = DIAG_SIDE[p.axis][h]; other = h === 'A' ? p.between[1] : p.between[0];
+    } else {
+      const [[ax, az], [bx, bz]] = edgeCells(p.axis, p.x, p.z);
+      const sA = sideOfCell(p.axis, p.x, p.z, ax, az), sB = sideOfCell(p.axis, p.x, p.z, bx, bz);
+      const inA = mine.has(nodeOnSide(level.level, ax, az, sA));   // the plan level's grid level holds the walls
+      if (!inA && !mine.has(nodeOnSide(level.level, bx, bz, sB))) continue;
+      side = SIDES[inA ? sA : sB]; other = inA ? p.between[1] : p.between[0];
+    }
+    out.push({ kind: p.kind, side, to: other ? (byId.get(other)?.label ?? other) : null });
   }
   return out;
 }

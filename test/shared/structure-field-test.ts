@@ -765,6 +765,19 @@ const HOUSE = {
   check("...but it still divides the rooms",
     planStructure({ levels: [{ tiles: [[0, 0], [1, 0]],
       walls: [[2, 0, 0]], apertures: [[2, 0, 0, "door"]] }] }).levels[0].rooms.length === 2);
+  // perception across a cut cell (G3-104): openingsOf matches a room's NODES (a half is "x,z:A"), as derivePortals does
+  { const nook = planStructure({ labels: { "0,0:A": "nook", "0,0:B": "closet", "1,0": "hall" },
+      levels: [{ tiles: [[0, 0], [1, 0]], walls: [[2, 0, 0], [1, 1, 0]], apertures: [[1, 1, 0, "door"]] }] });
+    const inNook = describeHere(nook, 0.8, 0.2)!, inHall = describeHere(nook, 1.5, 0.5)!;
+    check("a door between a half-cell and a whole one shows from the half's side too", /a door on its east to hall/.test(inNook), inNook);
+    check("...and from the whole cell's, as before", /a door on its west to nook/.test(inHall), inHall);
+    check("...and the half the door doesn't touch is sealed", /sealed/.test(describeHere(nook, 0.2, 0.8)!), describeHere(nook, 0.2, 0.8)); }
+  for (const [axis, west, east] of [[2, "northeast", "southwest"], [3, "southeast", "northwest"]] as const) {
+    const P = planStructure({ labels: { "-1,0": "study", "1,0": "hall" },
+      levels: [{ tiles: [[-1, 0], [0, 0], [1, 0]], walls: [[axis, 0, 0]], apertures: [[axis, 0, 0, "door"]] }] });
+    const inStudy = describeHere(P, -0.5, 0.5)!, inHall = describeHere(P, 1.5, 0.5)!;
+    check(`a doored ${axis === 2 ? "↘" : "↗"} diagonal shows from the west room, on its ${west}, to the room beyond it`, new RegExp(`a door on its ${west} to hall`).test(inStudy) && !/to study/.test(inStudy), inStudy);
+    check(`...and from the east room, on its ${east}`, new RegExp(`a door on its ${east} to study`).test(inHall) && !/to hall/.test(inHall), inHall); }
   // an opening at or above wallH leaves no lintel, as an axis wall's (wallBoxes): never an inverted box
   for (const [wallH, kind] of [[2.0, "door"], [2.4, "arch"], [2.2, "door"]] as const) {
     const bx = planStructure({ wallH, levels: [{ tiles: [[0, 0]], walls: [[2, 0, 0]], apertures: [[2, 0, 0, kind]] }] }).boxes.filter((b: any) => b.kind === "wall");
