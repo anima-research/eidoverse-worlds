@@ -30,6 +30,7 @@ import { isWorldSaved } from "./worldlog.ts";
 import { bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.ts";
 import { warmIndex } from "./worldindex.ts";
 import { oldFormatRefused, provenWho } from "./upgrade.ts";
+import { detach } from "./detach.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
@@ -430,7 +431,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         else if (t.kind === "unavailable") unavailableHere();
         return null; };
       const told = toldOf(wname, { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer }, provenWho(c, msg));
-      if (told instanceof Promise) { void told.then(answer); return null; }
+      if (told instanceof Promise) { detach(told.then(answer), "join"); return null; }
       if (told.kind !== "door") return answer(told); }
     const w = getWorld(wname);
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous visitor
@@ -956,7 +957,7 @@ const server = Bun.serve({
           // (Moderation › Bans, /unmute), not ended quietly from a voice button
           if (!muted && w.log.mutedHere(target, "chat")) { ws.send(JSON.stringify({ type: "error", error: "that mute covers chat too: lift it in Moderation › Bans (or /unmute)" })); return; }
           // through the request path: one capability, the connection's queue, the meters, both recheck seams
-          void requestAs(c, ws, w, muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
+          detach(requestAs(c, ws, w, muted ? "mute" : "unmute", muted ? { who: target, minutes, channels: ["voice"], ...(typeof msg.reason === "string" ? { reason: msg.reason } : {}) } : { who: target })
             .then((r: any) => {
               if (!r?.ok) { ws.send(JSON.stringify({ type: "error", error: r?.refused?.reason ?? "that mute was refused" })); return; }
               sanctionSweep(w);
@@ -968,7 +969,7 @@ const server = Bun.serve({
               const note = JSON.stringify({ type: "voice-moderated", id: name, actorId: target, muted, by: c.id, ...(muted ? { until: r.until } : {}) });
               for (const t of w.clients) { try { t.ws.send(note); } catch { /* gone */ } }
               console.log(`[world:${w.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${name} (${target}) for everyone`);
-            });
+            }), "voice-moderate");
           return;
         }
         case "voice-consent": {

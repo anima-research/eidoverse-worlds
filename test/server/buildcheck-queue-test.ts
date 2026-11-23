@@ -9,7 +9,7 @@
 //   - a worker that ignores SIGTERM and never answers is killed after the
 //     grace, the ask fails, the process is gone, and the next check runs;
 //   - output past the cap is no report.
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, statSync, utimesSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const dir = mkdtempSync(join(tmpdir(), "checkq-"));
@@ -72,6 +72,35 @@ try {
       first.ok && (first as any).r.seen === "AAAA", JSON.stringify(first));
     check("...so the original's bytes, put back, get the original's report — never the replacement's",
       second.ok && (second as any).r.seen === "AAAA", JSON.stringify(second));
+    Q.checkConfig.runner = real;
+  }
+
+  console.log("\na snapshot that can't be written:");
+  {
+    // the write starts when the ask is queued and is first awaited when its turn comes: a failure in between must be
+    // the ask's failure, not a rejection nobody holds (the process treats one of those as fatal)
+    const { sha256Bytes } = await import("../../shared/protocol/hash.js");
+    const holdGate = join(dir, "hold-gate"), jobs = join(dir, "opt", "checks", "jobs");
+    Q.checkConfig.runner = worker("hold", `${gated(holdGate)} console.log(JSON.stringify({ levels: [] }));`);
+    const holdFile = join(dir, "hold.glb"); writeFileSync(holdFile, "HOLD");
+    const ahead = outcome(Q.checkFile(holdFile, 6));
+    await until("the queue is busy", () => existsSync(jobs) && readdirSync(jobs).length === 1, { ms: 3000, step: 10 });
+    const bytes = new TextEncoder().encode("UNWRITABLE");
+    const blocked = join(jobs, `${sha256Bytes(bytes)}.glb`);
+    mkdirSync(blocked);   // a directory where the snapshot goes: the write rejects
+    const loose: unknown[] = []; const onLoose = (e: unknown) => loose.push(e);
+    process.on("unhandledRejection", onLoose);
+    const asked = outcome(Q.checkFile(holdFile, 6.5, bytes));
+    // the write's rejection settles while the ask still waits behind the held worker; two macrotask turns let it surface
+    await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r));
+    const looseBefore = loose.length;
+    writeFileSync(holdGate, "go");
+    const [, r] = await Promise.all([ahead, asked]);
+    await new Promise((r2) => setImmediate(r2));
+    process.off("unhandledRejection", onLoose);
+    check("a snapshot write that fails while the check waits its turn is not an unhandled rejection", looseBefore === 0 && loose.length === 0, String(loose[0] ?? ""));
+    check("...and the ask fails", !r.ok, JSON.stringify(r).slice(0, 160));
+    rmSync(blocked, { recursive: true, force: true });
     Q.checkConfig.runner = real;
   }
 
