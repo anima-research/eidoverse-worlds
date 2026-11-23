@@ -138,6 +138,6 @@ bus.on('edit-warned', ({ text }) => {
   chooseXR({ title: 'done — with a warning', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
-/** for probes: the open question as a quad shows it, and the same answer a button press gives */
-export const xrAskState = () => (pending ? { title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v) } : null);
+/** for probes: the open question as a quad shows it (and how many wait behind it), and the same answer a button press gives */
+export const xrAskState = () => (pending ? { title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length } : null);
 export const xrAnswer = (v) => dispatch(`c:${v}`);
