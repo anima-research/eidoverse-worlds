@@ -10,7 +10,8 @@ import { domQuadMesh } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
 import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
 
-let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve, input?: {value, placeholder, max}}
+let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve, input?: {value, placeholder, max}, onShow?}
+const waiting = [];   // questions asked while one was open: each is asked in turn, none replaces another
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
 export const xrActive = () => !!renderer?.xr?.isPresenting;
 function paintFrame() {
@@ -40,9 +41,14 @@ function fields() {
   for (const c of pending.choices) f.push({ t: 'btn', k: `c:${c.v}`, label: c.label });
   return f;
 }
+function show(q) {
+  if (pending) { waiting.push(q); return; }
+  pending = q; showXRPanel('ask', true); repaint(); q.onShow?.();
+}
 function settle(v) {
   const p = pending; if (!p) return;
   pending = null; showXRPanel('ask', false); repaint(); p.resolve(v);
+  const next = waiting.shift(); if (next) show(next);
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
@@ -51,7 +57,11 @@ registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the ca
 setHeadsetAsk({ active: xrActive, choose: (q) => chooseXR(q), ask: (q) => askXR(q) });
 // entering: a desk card still open is dismissed (nobody can see it now, and it must not take a key meant for the headset);
 // leaving: the open question is answered with its cancel, likewise
-bus.on('xr:state', (on) => { if (on) closeCenter(); else if (pending) settle(pending.cancel); });
+bus.on('xr:state', (on) => {
+  if (on) { closeCenter(); return; }
+  for (const q of waiting.splice(0)) q.resolve(q.cancel);   // the ones waiting too: nobody will see them now
+  if (pending) settle(pending.cancel);
+});
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
 export function initXRAsk() {
   if (api) return api;
@@ -65,25 +75,25 @@ export function initXRAsk() {
   return api;
 }
 
-/** chooseCenter's contract ({title, body, choices: [{v, label}], cancel} → the chosen v), on a VR quad. Asking again
- *  answers the open question with its cancel, as the centre card does. */
+/** chooseCenter's contract ({title, body, choices: [{v, label}], cancel} → the chosen v), on a VR quad. Asked while
+ *  another question is open, it waits its turn: replacing the open one would answer it with its cancel, and a consent
+ *  question (audio/voiceconsent.js) must be answered by a person, not by a moderator's warning arriving. */
 export function chooseXR({ title, body = '', choices = [], cancel = null } = {}) {
   if (!choices.length) return Promise.resolve(cancel);
-  if (pending) settle(pending.cancel);
-  return new Promise((resolve) => { pending = { title, body, choices, cancel, resolve }; showXRPanel('ask', true); repaint(); });
+  return new Promise((resolve) => show({ title, body, choices, cancel, resolve }));
 }
 
 /** askCenter's contract ({title, body, value, placeholder, ok, cancel, max} → the trimmed text, or null), on the VR quad:
  *  a text field the VR keyboard types into, OK / ⏎ to answer. On the canvas-quad path (no text field) OK answers `value`. */
 export function askXR({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
-  if (pending) settle(pending.cancel);
   return new Promise((resolve) => {
     const input = { value: String(value ?? '').slice(0, max), placeholder, max };
-    pending = { title, body, choices: [{ v: 'cancel', label: cancel }, { v: 'ok', label: ok }], cancel: 'cancel', input,
-      resolve: (v) => { const t = input.value.trim(); resolve(v === 'ok' && t ? t : null); } };
-    showXRPanel('ask', true); repaint();
-    // focus it at once, so the VR keyboard comes up with the question (its focusin listener shows it)…
-    setTimeout(() => { const el = api?.body.querySelector('.ask-input'); if (pending?.input === input && el) { try { el.focus(); el.select(); } catch { /* not drawn */ } keyboardBelow(); } }, 0);
+    const q = { title, body, choices: [{ v: 'cancel', label: cancel }, { v: 'ok', label: ok }], cancel: 'cancel', input,
+      resolve: (v) => { const t = input.value.trim(); resolve(v === 'ok' && t ? t : null); },
+      // when it is asked (now, or when its turn comes): focus the field at once, so the VR keyboard comes up with the
+      // question (its focusin listener shows it)…
+      onShow: () => setTimeout(() => { const el = api?.body.querySelector('.ask-input'); if (pending === q && el) { try { el.focus(); el.select(); } catch { /* not drawn */ } keyboardBelow(); } }, 0) };
+    show(q);
   });
 }
 
