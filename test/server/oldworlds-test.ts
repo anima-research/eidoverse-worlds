@@ -63,13 +63,13 @@ ok(ot?.file === path.join(W, "oldtown", "log.jsonl") && pn?.file === path.join(W
 ok(ot?.suggestedName === "oldtown-3" && pn?.suggestedName === "prenamed-2" && !fs.existsSync(path.join(W, ot.suggestedName)),
   "O3 the suggested new name collides with nothing on disk (oldtown-2 is taken, even though it is empty)", [ot?.suggestedName, pn?.suggestedName]);
 const unq = (x?: string) => x?.replace(/^'(.*)'$/s, "$1").replace(/'\\''/g, "'");   // sh() quotes a dir outside its safe set (any Windows path: "\\")
-const CMD = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=(\S+) bun tools\/world\.ts translate ([a-z0-9_-]{1,64}) --dry-run --no-founder-key --claim$/i;
+const CMD = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=('(?:[^']|'\\'')*'|\S+) bun tools\/world\.ts translate ([a-z0-9_-]{1,64}) --dry-run --no-founder-key --claim$/i;
 const m = CMD.exec(ot?.command ?? "");
 ok(m && unq(m[1]) === W && m[2] === "oldtown", "O4 the command is world.ts's own usage, in place (R 10-17: links keep working), the DRY RUN first (review of PR #260 item 6), with this WORLDS_DIR filled in (no founder key: a translation names none, #260 rereview blocker 1)", ot?.command);
-const APPROVE = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=(\S+) bun tools\/world\.ts translate ([a-z0-9_-]{1,64}) --no-founder-key --approved <[^>]+> --operator-only-no-owner --claim$/i;
+const APPROVE = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=('(?:[^']|'\\'')*'|\S+) bun tools\/world\.ts translate ([a-z0-9_-]{1,64}) --no-founder-key --approved <[^>]+> --operator-only-no-owner --claim$/i;
 const am = APPROVE.exec(ot?.approve ?? "");
 ok(am && unq(am[1]) === W && am[2] === "oldtown", "O4 …and the second command translates bound to the approved report hash (a placeholder), on the operator's countersignature alone (no owner can be attested)", ot?.approve);
-const pm = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=(\S+) bun tools\/world\.ts translate (<[a-z-]+>) ([a-z0-9_-]{1,64}) --dry-run --no-founder-key --claim$/i.exec(pn?.command ?? "");
+const pm = /^EIDO_UPGRADER_ACCOUNT=<your-account> WORLDS_DIR=('(?:[^']|'\\'')*'|\S+) bun tools\/world\.ts translate (<[a-z-]+>) ([a-z0-9_-]{1,64}) --dry-run --no-founder-key --claim$/i.exec(pn?.command ?? "");
 ok(pm && unq(pm[1]) === W && pm[3] === "prenamed-2" && pm[2] !== "prenamed" && /found prenamed-2 --owner/.test(pn?.refound ?? "") && /translate <[a-z-]+> prenamed-2 --no-founder-key --approved <[^>]+> --operator-only-no-owner --claim$/.test(pn?.approve ?? ""),
   "O4 a pre-names world's command re-translates from its ORIGINAL old log (not itself), dry run then approved, and a refound is offered", [pn?.command, pn?.approve, pn?.refound]);
 ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && oldWorldAt(W, "nowhere") === null && oldWorldAt(W, "oldtown")?.kind === "translatable",
@@ -100,10 +100,16 @@ ok(oldWorldAt(W, "garden") === null && oldWorldAt(W, "oldtown-2") === null && ol
   ok(oldWorldAt(W, "oldtown")?.visitor === v1 && oldWorldAt(W, "prenamed")?.visitor === v2, "O7 oldWorldAt carries the visitor text the join sends"); }
 
 // ---- O5: the printed command, run ----
-/** a printed command, roughly as a shell runs it: split on spaces (a quoted word holding a space isn't kept whole), its
- *  leading NAME=value words are the environment (<your-account> filled in) */
-const asRun = (cmd: string, account = "human:test:op") => { const argv = cmd.replaceAll("<your-account>", account).split(" "), env: Record<string, string> = {};
-  while (/^[A-Z_]+=/.test(argv[0] ?? "")) { const [k, ...v] = argv.shift()!.split("="); env[k] = unq(v.join("=")); }   // a shell would unquote a Windows WORLDS_DIR; so does this
+/** sh's word splitting for what shellWord prints: spaces split, '…' is literal (a spaced WORLDS_DIR stays one word: G4-184), \x is x */
+const shWords = (cmd: string) => { const out: string[] = []; let w: string | null = null, q = false;
+  for (let i = 0; i < cmd.length; i++) { const c = cmd[i];
+    if (q) { if (c === "'") q = false; else w += c; }
+    else if (c === " ") { if (w !== null) out.push(w); w = null; }
+    else { w ??= ""; if (c === "'") q = true; else if (c === "\\" && i + 1 < cmd.length) w += cmd[++i]; else w += c; } }
+  if (w !== null) out.push(w); return out; };
+/** a printed command as a shell runs it: its leading NAME=value words are the environment (<your-account> filled in) */
+const asRun = (cmd: string, account = "human:test:op") => { const argv = shWords(cmd.replaceAll("<your-account>", account)), env: Record<string, string> = {};
+  while (/^[A-Z_]+=/.test(argv[0] ?? "")) { const [k, ...v] = argv.shift()!.split("="); env[k] = v.join("="); }
   return { argv, env }; };
 { const { argv, env } = asRun(ot?.command ?? "x=y bun");
   ok(argv[0] === "bun" && argv[1] === "tools/world.ts", "O5 the command runs world.ts", argv);
