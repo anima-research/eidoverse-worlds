@@ -6,7 +6,8 @@
 //   capped   — a 2048² base-colour PNG comes out of optimizeGlbKtx2 as a 1024² KTX2        [mutate: revert → 2048]
 //   aspect   — a 2048x1024 texture keeps its aspect (1024x512)
 //   small    — a 512² texture is untouched (512²)
-//   no sharp — on a ktx-create host without sharp, an over-cap texture is skipped, not shipped full-size    [mutate: revert → 2048]
+//   no sharp — with sharp off (KTX2_NO_SHARP=1), an over-cap texture is skipped, not shipped full-size    [mutate: revert → 2048]
+//              (the ktx-create arm only where the encoder found is ktx; with toktx it is toktx --resize: G4-179)
 import { Document, NodeIO } from "@gltf-transform/core";
 import { optimizeGlbKtx2, findKtx2Encoder, getSharp } from "../../server/optimize.ts";
 import { suite } from "../gate/suite.ts";
