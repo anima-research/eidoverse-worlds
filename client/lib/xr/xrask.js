@@ -8,7 +8,7 @@ import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
 import { domQuadMesh } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
-import { setHeadsetAsk } from '../edit/confirmcenter.js';
+import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
 
 let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve, input?: {value, placeholder, max}}
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
@@ -49,8 +49,9 @@ registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the ca
 // the house centre card (edit/confirmcenter.js) asks here whenever a headset is presenting: confirmCenter, chooseCenter
 // and askCenter callers need no headset branch of their own
 setHeadsetAsk({ active: xrActive, choose: (q) => chooseXR(q), ask: (q) => askXR(q) });
-// leaving the headset answers the open question with its cancel (nobody can see it now; see the header)
-bus.on('xr:state', (on) => { if (!on && pending) settle(pending.cancel); });
+// entering: a desk card still open is dismissed (nobody can see it now, and it must not take a key meant for the headset);
+// leaving: the open question is answered with its cancel, likewise
+bus.on('xr:state', (on) => { if (on) closeCenter(); else if (pending) settle(pending.cancel); });
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
 export function initXRAsk() {
   if (api) return api;

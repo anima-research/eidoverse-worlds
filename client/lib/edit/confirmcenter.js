@@ -15,9 +15,14 @@ let headset = null;   // { active() → bool, choose(q) → Promise<v>, ask(q) �
 /** xr/xrask.js: while `active()`, the questions below are asked on the headset's quad, not on the desk */
 export function setHeadsetAsk(h) { headset = h; }
 const inHeadset = () => { try { return !!headset?.active(); } catch { return false; } };
+/** answer the open desk card with its cancel (a dismissal, never a yes): a headset session starting, or a question
+ *  going to the headset, leaves nothing on the desk that a key meant for the headset could answer */
+export function closeCenter() { open?.settle(open.cancel); }
+// a key aimed at an element outside the card (the headset's text field, typed on the VR keyboard) is not for the card
+const aimedElsewhere = (e, root) => e.target?.nodeType === 1 && e.target !== document.body && e.target !== document.documentElement && !root.contains(e.target);
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
-  if (inHeadset()) return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok');
+  if (inHeadset()) { closeCenter(); return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok'); }
   if (typeof document === 'undefined') return Promise.resolve(false);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
@@ -33,6 +38,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
     const before = document.activeElement;
     const okB = root.querySelector('.cc-ok'), noB = root.querySelector('.cc-no');
     const onKey = (e) => {
+      if (aimedElsewhere(e, root)) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(false); }
       // Enter on a focused button presses THAT button (Cancel included) — not "yes" whatever has focus
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); settle(!e.target?.classList?.contains('cc-no')); }
@@ -63,7 +69,7 @@ export const confirmOpen = () => !!open;
 /** The same centre card asking for a few words (a name): {title, body, value, placeholder, ok, cancel, max} → the
  *  trimmed text, or null (Esc, Cancel, the backdrop, or nothing typed). Enter in the field says OK. */
 export function askCenter({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
-  if (inHeadset() && headset.ask) return headset.ask({ title, body, value, placeholder, ok, cancel, max });
+  if (inHeadset() && headset.ask) { closeCenter(); return headset.ask({ title, body, value, placeholder, ok, cancel, max }); }
   if (typeof document === 'undefined') return Promise.resolve(null);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
@@ -80,6 +86,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
     const before = document.activeElement;
     const answer = () => { const v = inp.value.trim(); return v ? v : null; };
     const onKey = (e) => {
+      if (aimedElsewhere(e, root)) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(null); }
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); settle(e.target === noB ? null : answer()); }
       else e.stopPropagation();   // typing a name is never walking or a hotkey
@@ -107,7 +114,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
  *  The first choice has focus (the house yes) unless `focus` names another v; Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
  *  rule: asking again answers the open one with its cancel. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
-  if (inHeadset() && choices.length) return headset.choose({ title, body, choices, cancel });
+  if (inHeadset() && choices.length) { closeCenter(); return headset.choose({ title, body, choices, cancel }); }
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
   open?.settle(open.cancel);
   return new Promise((resolve) => {
@@ -128,6 +135,7 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
     });
     const before = document.activeElement;
     const onKey = (e) => {
+      if (aimedElsewhere(e, root)) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(cancel); }
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); settle(i >= 0 ? choices[i].v : cancel); }
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus(); }
