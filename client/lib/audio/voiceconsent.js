@@ -7,6 +7,7 @@
 // ambience is taste, set once on a settings slider.
 
 import { bus } from '../base.js';
+import { confirmCenter } from '../edit/confirmcenter.js';   // the house yes/no: the centre card, or the ask quad in a headset
 
 const KEY = 'eido.audio.prefs';
 // sttConsent is tri-state: null = never asked, true = accepted, false = refused (a refusal
@@ -108,13 +109,14 @@ export async function ensureSttConsent(ask = defaultAsk) {
 }
 
 function defaultAsk() {
-  return Promise.resolve(confirm(
-    'Turn on speech-to-text?\n\n' +
-    'Your microphone audio will be sent to your browser vendor\'s speech ' +
-    'service (a third party outside this world) to be transcribed. The text ' +
-    'is then posted as your chat message and stored in the world log.\n\n' +
-    'Voice chat itself does NOT require this — you can talk without it.',
-  ));
+  return confirmCenter({
+    title: 'Turn on speech-to-text?',
+    body: 'Your microphone audio will be sent to your browser vendor\'s speech ' +
+      'service (a third party outside this world) to be transcribed. The text ' +
+      'is then posted as your chat message and stored in the world log. ' +
+      'Voice chat itself does NOT require this — you can talk without it.',
+    ok: 'Turn on', cancel: 'Not now',
+  });
 }
 
 // The gate threshold is a dB position (Discord's model), not a multiplier over the room: the level
