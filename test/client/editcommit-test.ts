@@ -177,6 +177,25 @@ console.log("\nI23. a scrubbed run edits the whole selection, and the world:");
   check("a World run is ONE request, and both fields land", w.ok && H.sent.length === n1 + 1 && t?.exposure === 0.8 && t?.fog === 2, JSON.stringify([w.errors, H.sent.slice(n1), t]));
 }
 
+// #352 review (Fable, cold read): a group drag moves up to 16 things (edit/multimove.js MAX_GROUP), and the door refuses
+// one lock at a time (gate.js lockCheck throws at the first), so answering "unlock" to each takes one round per lock.
+// A fixed 8 rounds stopped a group with nine locked members short: eight locks lifted, the move never written.
+// Mutation (must go red): put writes.js's round bound back to a fixed 8.
+console.log("\na group with more locked members than the old round bound (8), each answered unlock:");
+{
+  const OP = await import("../../shared/requests.js");
+  const ids = Array.from({ length: 10 }, (_, i) => `lk${i}`);
+  H.W.seed(Object.fromEntries(ids.map((id, i) => [id, { model: "crate.glb", pos: [i, 0, 9], yaw: 0 }]))); H.sync();
+  for (const id of ids) H.W.call("set", { id, component: "lock", value: true }); H.sync();
+  const asked0 = H.asked.length;
+  Object.defineProperty(H, "choose", { value: "unlock", writable: true, configurable: true });
+  const r = await Edits.sendOps(ids.map((id, i) => OP.set(id, "transform", { pos: [i, 1, 9], q: [0, 0, 0, 1], scale: [1, 1, 1] })), { what: "move 10 things" });
+  H.choose = "cancel";
+  const asked = H.asked.length - asked0, left = ids.filter((id) => c(id).lock !== undefined), moved = ids.filter((id) => c(id).transform?.pos?.[1] === 1);
+  check("the door names one lock per refusal: ten locked members, ten questions", asked === 10, JSON.stringify({ asked }));
+  check("…and ten unlocks later the group's move is written: every lock lifted, all ten moved", r.ok && left.length === 0 && moved.length === 10, JSON.stringify({ ok: r.ok, refused: r.refused?.code, left, moved: moved.length }));
+}
+
 console.log("\nan edit landing while an undo is in flight (house I162, #260):");
 {
   H.W.seed({ u1: { model: "chair.glb", pos: [0, 0, 5], yaw: 0 } }); H.sync();

@@ -96,6 +96,15 @@ export function send(req, opts = {}) {
   const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
   return p;
 }
+// Each lock round lifts one lock (the authority names the first it meets: shared/protocol/authority/gate.js lockCheck), so
+// the rounds a request may need are the locks that could stand in its way: one on each thing it names, or on an ancestor of
+// one. A fixed 8 stopped a group drag (up to 16 things, edit/multimove.js MAX_GROUP) with nine locked members short: eight
+// locks lifted and the move never written (#352 review). Never fewer than 8, for a request that names no thing (an undo).
+function lockRounds(req) {
+  const st = replica.st?.entities ?? {}; const ops = req?.verb === 'batch' ? (req.args?.requests ?? []) : [req]; const seen = new Set();
+  for (const o of ops) for (let k = o?.args?.id, n = 0; k != null && !seen.has(k) && n++ < 64; k = st[k]?.c?.parent?.to) seen.add(k);
+  return Math.max(8, seen.size);
+}
 const dropAct = (stack, act) => { const i = stack.lastIndexOf(act); if (i >= 0) stack.splice(i, 1); };
 const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
 async function sendNow(req, { what = req.verb, revert = null, record = true } = {}) {
@@ -109,7 +118,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   //            to undo/redo, whose act isn't mine to stack under an unlock.
   // A refusal with mayLift: false (a lock above your rank) shows as words, no buttons. Another lock further up asks again.
   let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled
-  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift !== false && req.args?.throughLock !== true && mayLift(); round++) {
+  for (let round = 0, rounds = lockRounds(req); round < rounds && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift !== false && req.args?.throughLock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     // a delete or a replace through a lock is destructive: styled so, and not the answer Enter gives
     const destructive = verb === 'Delete' || verb === 'Replace';
