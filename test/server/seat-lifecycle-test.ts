@@ -183,16 +183,17 @@ try {
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
   const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] }, label: "crate1" } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
-  // a seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
-  const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
-  const legacy = await areq("set", { id: "crate1", component: "sockets", value: { seatL } });
+  // a seat is a socket child of the host with a station ({action, anim, anchor}) (G4-187: the old `sockets` component is
+  // refused); the legacy seat's station authors no support plane
+  const { addSocket } = await import("../../shared/requests.js");
+  const mkSeat = (name: string, anchor?: "surface") => { const o = addSocket(IDS.of("crate1"), { name }, { pos: [0, 1, 0], station: { action: "sit", anim: "sitchair", ...(anchor ? { anchor } : {}) } }); return areq(o.verb, o.args); };
+  const legacy = await mkSeat("seatL");
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
-  // the seat-profile correction keys on a socket that authors its support plane: its body anchors at the surface
-  // (D14: body.anchor 'surface', one enum; shared/seatcore.js socketAnchor).
+  // the seat-profile correction keys on a seat that authors its support plane: its body anchors at the surface
+  // (D14: station.anchor 'surface', one enum; shared/seatcore.js socketAnchor).
   // (two of them: one body per socket, and seatbot is still on seatS when probebot sits below)
-  const seatS = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair", anchor: "surface" } };
-  const surface = await areq("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
-  check("…and a seat that authors its support plane (body.anchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
+  const surface = [await mkSeat("seatS", "surface"), await mkSeat("seatS2", "surface")];
+  check("…and a seat that authors its support plane (station.anchor: surface)", surface.every((r) => r?.ok === true), JSON.stringify(surface.map((r) => r?.refused ?? r?.ok)));
   // the agent attaches by what it sees: wait until its view of crate1 carries all three sockets
   const seesSeats = (a: WorldAgent) => [...a.entities.entries()].some(([id, e]: [string, any]) => e.label === "crate1" && a.socketsOf(id).length === 3);
   await until("seatbot sees crate1's three seats", () => seesSeats(ag!));
