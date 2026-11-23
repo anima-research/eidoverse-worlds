@@ -85,7 +85,9 @@ export type GeomSummary = {
 };
 
 const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolean }>();
-const CACHE_MAX = 64;
+/** Parsed models kept (least recently used out first): 256, a world's worth of distinct models with room, each summary a
+ *  few KB. A model evicted is parsed again, on the serving thread and against GEOM_PER_ADDRESS. */
+export const geomCacheConfig = { max: 256 };
 // files that failed to parse, by the mtime that failed: not parsed again until they change
 const failed = new Map<string, number>();
 const FAILED_MAX = 256;
@@ -105,7 +107,7 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   let mtime = 0;
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
   const hit = cache.get(absPath);
-  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) return hit.sum;
+  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) { cache.delete(absPath); cache.set(absPath, hit); return hit.sum; }   // most recently used last
   if (failed.get(absPath) === mtime) return null;
   const io = await getIO();
   if (!io) return null;
@@ -385,8 +387,8 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
     ...(orphans.length ? { orphans } : {}),
     ...(solids ? { solids } : {}),
   };
-  cache.set(absPath, { mtime, sum, solids: !!opts.solids });
-  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  cache.delete(absPath); cache.set(absPath, { mtime, sum, solids: !!opts.solids });
+  while (cache.size > geomCacheConfig.max) cache.delete(cache.keys().next().value!);
   return sum;
 }
 

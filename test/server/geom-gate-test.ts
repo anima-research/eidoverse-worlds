@@ -38,4 +38,16 @@ try {
   await ask("broken", "127.0.0.1");
   S.check("G2b ...and again once it changes", unread() === 2, unread());
 } finally { console.warn = w; }
+
+// G3: the parsed-model cache is least recently USED: a model asked for again is kept over one read once and left alone
+{ const { summarizeGlb, geomCached, geomCacheConfig } = await import("../../server/geometry.ts");
+  S.check("G3 the cache holds 256 models by default (a world's worth, with room)", geomCacheConfig.max >= 256, geomCacheConfig);
+  const was = geomCacheConfig.max; geomCacheConfig.max = 3;
+  const f = (i: number) => join(models, `c${i}.glb`);
+  for (let i = 0; i < 4; i++) writeFileSync(f(i), glb);
+  for (const i of [0, 1, 2]) await summarizeGlb(f(i));
+  await summarizeGlb(f(0));   // c0 asked for again: now the most recent
+  await summarizeGlb(f(3));   // over the cap: the least recently used (c1) goes
+  S.check("G3b ...past it, the least recently used model goes, not the one asked for again", geomCached(f(0)) && !geomCached(f(1)) && geomCached(f(3)), [0, 1, 2, 3].map((i) => geomCached(f(i))));
+  geomCacheConfig.max = was; }
 S.done();
