@@ -17,7 +17,7 @@
 //       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
 //       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
 //       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
-//       group of 24 refuses to arm (the cap, 23), and a group of 23 lands with every claim ended
+//       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -560,25 +560,25 @@ try {
     }
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
 
-    // the cap (edit/multimove.js MAX_GROUP = 23): 23 things arm and land as one act with every claim ended; 24 refuse to arm and
+    // the cap (edit/multimove.js MAX_GROUP = 16): 16 things arm and land as one act with every claim ended; 17 refuse to arm and
     // nothing moves, by a mesh drag or the gizmo, and the status bar says why
-    const GN = Array.from({ length: 23 }, (_, i) => `mm-g${i}`); NAMES.push(...GN);
+    const GN = Array.from({ length: 16 }, (_, i) => `mm-g${i}`); NAMES.push(...GN);
     let gok = true;
     for (const [i, n] of GN.entries()) gok = gok && await place(n, [sx - 9 + (i % 6) * 0.8, 0, sz + 3 + Math.floor(i / 6) * 0.8], [0.2, 0.2, 0.2]);
-    check("MM (setup) 23 small crates in a grid", gok);
+    check("MM (setup) 16 small crates in a grid", gok);
     await frame("mm-g0", 2);
     const atG = await evalJson(`__mmPress('mm-g0', null)`);
     check("MM (setup) a press point on the first crate", !!atG, { atG });
     if (gok && atG) {
       const P0 = Object.fromEntries([...GN, "mm-chair"].map((n) => [n, pose(n)]));
-      // 24: the 23 crates and the chair
+      // 17: the 16 crates and the chair
       await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify([...GN, "mm-chair"])}); return true;`);
       let n0 = myActs().length;
       await gesture(atG, [atG[0] + 30, atG[1] + 10], undefined, { arms: false });
       await waitDisk(() => myActs().length > n0, 1500); await frames(3);
       const loc24 = await localOf([...GN, "mm-chair"]);
-      const said = await evalJson(`document.body.innerText.includes('at most 23')`);
-      check("MM20 a mesh drag of one of 24 selected things refuses to arm: nothing moves, here or on the record, and the status bar says at most 23",
+      const said = await evalJson(`document.body.innerText.includes('at most 16')`);
+      check("MM20 a mesh drag of one of 17 selected things refuses to arm: nothing moves, here or on the record, and the status bar says at most 16",
         myActs().length === n0 && [...GN, "mm-chair"].every((n, i) => near(loc24?.[i], P0[n]) && near(pose(n), P0[n])) && said, { acts: actsSince(n0), said, lead: [loc24?.[0], P0["mm-g0"]] });
       await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(${JSON.stringify([...GN, "mm-chair"])}); return true;`);
       const gz = await waitFor(`globalThis.__gizmo?.().attached === 'mm-g0'`);
@@ -587,17 +587,17 @@ try {
         return import('/lib/world.js').then((m) => { m.entities.get('mm-g0').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; }); })()`);
       await waitDisk(() => myActs().length > n0, 1500); await frames(3);
       const locG = await localOf(["mm-g0", "mm-g1"]);
-      check("MM20 …and so does a gizmo drag of 24: nothing written, the lead and the rest where the log has them", gz && myActs().length === n0 && near(locG?.[0], P0["mm-g0"]) && near(locG?.[1], P0["mm-g1"]), { gz, acts: actsSince(n0), locG });
+      check("MM20 …and so does a gizmo drag of 17: nothing written, the lead and the rest where the log has them", gz && myActs().length === n0 && near(locG?.[0], P0["mm-g0"]) && near(locG?.[1], P0["mm-g1"]), { gz, acts: actsSince(n0), locG });
       await onRecord("mm-g0"); await frames(3);
-      // 23: the crates alone
+      // 16: the crates alone
       await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify(GN)}); return true;`);
       n0 = myActs().length; const d0 = bobDrags.length;
       const drag = await gesture(atG, [atG[0] + 30, atG[1] + 10]);
       await waitDisk(() => myActs().length === n0 + 1, 4000); await sleep(600 * WAIT_SCALE);
       const act = myActs().at(-1)?.e, reqs = act?.verb === "batch" ? act.body.args.requests : [];
       const ends = lastEnds(GN, d0), open = GN.filter((n) => !ends[n]);
-      check("MM21 a mesh drag of 23 arms and lands as ONE act setting all 23 transforms", drag?.armed === true && myActs().length === n0 + 1 && reqs.length === 23 && GN.every((n) => !near(pose(n), P0[n])), { acts: actsSince(n0).length, reqs: reqs.length });
-      check("MM21 …and the last sample bob saw of every one of the 23 ends its claim", open.length === 0, { open });
+      check("MM21 a mesh drag of 16 arms and lands as ONE act setting all 16 transforms", drag?.armed === true && myActs().length === n0 + 1 && reqs.length === 16 && GN.every((n) => !near(pose(n), P0[n])), { acts: actsSince(n0).length, reqs: reqs.length });
+      check("MM21 …and the last sample bob saw of every one of the 16 ends its claim", open.length === 0, { open });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-g0"), P0["mm-g0"])); }
     }
   }

@@ -123,7 +123,7 @@ function onChange() {
   reindexCollider(attachedId); refreshOutline();
   if (multi) MM.apply(multi, gizmoGesture(), controls.space === 'local' ? 'local' : 'world');
   const now = performance.now();
-  if (now - lastSent >= 66) {
+  if (now - lastSent >= MM.RELAY_MS) {
     lastSent = now; const p = obj.position; const q = obj.quaternion;
     // yaw for older peers (the heading), q for everyone who reads it
     sendDrag(attachedId, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);

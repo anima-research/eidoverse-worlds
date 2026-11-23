@@ -407,7 +407,7 @@ function setWorldPosition(obj, w) {
 // relay at pose cadence so others see it move, not teleport
 function relayDrag() {
   const now = performance.now();
-  if (now - (dragging.lastSent ?? 0) < 66) return;
+  if (now - (dragging.lastSent ?? 0) < MM.RELAY_MS) return;
   dragging.lastSent = now;
   const p = selected.obj.position; const q = selected.obj.quaternion;
   sendDrag(selected.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);

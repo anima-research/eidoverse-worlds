@@ -68,9 +68,10 @@ export function skippedHint(n, mode) {
 
 export const RELAY_PER_TICK = 1, RELAY_MS = 66;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
 export const CLAIM_MS = 1500;   // a live drag's claim lapses after this much silence (build.js claims)
-// The most things one drag moves: 1 + CLAIM_MS / RELAY_MS × RELAY_PER_TICK = 23, so every follower is relayed before its claim
-// lapses; END_BUDGET (every follower) closes all their claims at release, a burst well under the relay's 120 (#352 review, point 1)
-export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / RELAY_MS) * RELAY_PER_TICK, END_BUDGET = MAX_GROUP - 1;
+// The most things one drag moves: 1 + CLAIM_MS / (1.5 × RELAY_MS) × RELAY_PER_TICK = 16. The relay gate lands on frames (a tick is
+// 66.7–83 ms at 60 Hz, 80 at 50), so the 1.5× headroom keeps every follower relayed within its claim on a real clock (multimove-test
+// drives it); END_BUDGET (every follower) closes all their claims at release (#352 review, point 1)
+export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / (1.5 * RELAY_MS)) * RELAY_PER_TICK, END_BUDGET = MAX_GROUP - 1;
 /** Why a drag of `n` things (over MAX_GROUP) didn't start. */
 export const tooManyHint = (n) => `${n} things selected — a drag moves at most ${MAX_GROUP} at once, so everyone watching sees each one move. Nothing moved`;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();

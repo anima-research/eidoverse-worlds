@@ -135,8 +135,30 @@ check("relay: ten followers send RELAY_PER_TICK samples every tick", perTick.eve
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
 stub.drags.length = 0; MM.end(st);
 check("end: a last sample for every follower", stub.drags.length === 10 && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
-check("the cap: 1 + CLAIM_MS / RELAY_MS followers relayed before a claim lapses = 23, and END_BUDGET ends every follower's claim",
-  MM.MAX_GROUP === 23 && MM.END_BUDGET === MM.MAX_GROUP - 1 && (MM.MAX_GROUP - 1) * MM.RELAY_MS / MM.RELAY_PER_TICK <= MM.CLAIM_MS, JSON.stringify([MM.MAX_GROUP, MM.END_BUDGET]));
+// the cap, by behaviour: MAX_GROUP − 1 followers driven through apply on a real frame clock (the relay gate lands on frames:
+// 66.7 ms at 60 Hz at best, 83 when a frame comes early), each relayed again before its claim lapses (CLAIM_MS)
+{ const realNow = performance.now; let clock = 0; (performance as any).now = () => clock;
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const fol = Array.from({ length: MM.MAX_GROUP - 1 }, (_, i) => thing(`cap${i}`, [i, 0, 20]).userData.entityId);
+  const worst: Record<string, number> = {};
+  for (const hz of [50, 60, 144]) {
+    clock = 1000; a.position.set(0, 0, 0); a.updateMatrixWorld(true);
+    const cst = MM.begin("a", fol); cst.lastSent = clock; const last = new Map(fol.map((id) => [id, clock])); let gap = 0;
+    stub.drags.length = 0;
+    while (clock < 21000) {
+      clock += 1000 / hz + (rnd() * 2 - 1);   // ±1 ms of frame jitter
+      a.position.x += 0.01; a.updateMatrixWorld(true);
+      const n = stub.drags.length; MM.apply(cst, "move");
+      for (const d of stub.drags.slice(n)) { gap = Math.max(gap, clock - last.get(d[0])!); last.set(d[0], clock); }
+    }
+    for (const id of fol) gap = Math.max(gap, clock - last.get(id)!);
+    worst[hz] = Math.round(gap);
+  }
+  (performance as any).now = realNow;
+  check(`the cap: ${MM.MAX_GROUP - 1} followers on a jittered 50/60/144 Hz frame clock are each relayed within CLAIM_MS (${MM.CLAIM_MS} ms), and END_BUDGET ends every one`,
+    Object.values(worst).every((g) => g <= MM.CLAIM_MS) && MM.END_BUDGET === MM.MAX_GROUP - 1, JSON.stringify({ cap: MM.MAX_GROUP, worstGapMs: worst }));
+  for (const id of fol) { stub.entities.get(id).removeFromParent(); stub.entities.delete(id); }
+}
 
 // a gesture's generation: a late refusal of an older gesture puts back only what no newer gesture has taken since
 stub.reverted.length = 0;
