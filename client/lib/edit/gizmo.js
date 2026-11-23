@@ -153,13 +153,15 @@ function endPivotDrag() {
   import('../ui/ui.js').then((m) => m.flashHint(snapped ? m.html`pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
+/** A release that writes nothing: the lead and every follower go back where the log has it, together (architecture read D6). */
+function abort(m, id) { start = null; Edits.revertPose(id); MM.revert(m); MM.end(m); }
 function endDrag() {
   release();
   const m = multi; multi = null;
   if (dragTool === 'pivot') { endPivotDrag(); return; }   // a pivot drag (it has no followers); a switch to pivot mid-drag is not one
   if (cancelled) { cancelled = false; start = null; MM.end(m); return; }
   const id = attachedId; const obj = id && entities.get(id);
-  if (!obj || !start?.rec) { start = null; MM.revert(m); MM.end(m); return; }
+  if (!obj || !start?.rec) { abort(m, id); return; }
   const rec = foldRecord(id) ?? start.rec;
   // only the fields this gesture moved and this thing HAS (shared/editschema.js poseEdits); editOps makes them one transform
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
@@ -168,12 +170,12 @@ function endDrag() {
   // about a pivot, a turn or a size ALSO moves the origin (it swings round the pivot): send the position with it
   const set = viaProxy && mode !== 'move' ? { ...poseEdits(rec, id, 'move', pose), ...poseEdits(rec, id, mode, pose) } : poseEdits(rec, id, mode, pose);
   const { ops, errors } = editOps(rec, id, set);   // the authority asks about locks
-  if (errors.length || !ops.length) { start = null; MM.revert(m); MM.end(m); return; }
+  if (errors.length || !ops.length) { abort(m, id); return; }
   // the followers' writes ride the same request: each one's own fields (a turn about its pivot moves its origin too)
   const more = MM.ops(m, (fid) => { const fr = foldRecord(fid); if (!fr) return null;
     const o2 = entities.get(fid).quaternion; const fp = { pos: entities.get(fid).position.toArray(), q: [o2.x, o2.y, o2.z, o2.w], scale: entities.get(fid).scale.toArray() };
     return editOps(fr, fid, mode === 'move' ? poseEdits(fr, fid, 'move', fp) : { ...poseEdits(fr, fid, 'move', fp), ...poseEdits(fr, fid, mode, fp) }); });
-  if (more.errors.length) { start = null; MM.revert(m); MM.end(m); Edits.revertPose(id); import('../ui/ui.js').then((u) => u.flashHint(more.errors.join(' · '), 5000)); return; }
+  if (more.errors.length) { abort(m, id); import('../ui/ui.js').then((u) => u.flashHint(more.errors.join(' · '), 5000)); return; }
   const all = [...ops, ...more.ops];
   // the drag was presence; the release is ONE request (one act, one Ctrl+Z, one lock question for the lot), expecting where the drag started
   const n = 1 + (m?.followers.length ?? 0);

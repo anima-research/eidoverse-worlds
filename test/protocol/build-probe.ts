@@ -17,7 +17,8 @@
 //       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
 //       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
 //       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
-//       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended
+//       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
+//       can't write puts back the lead and its followers together
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -559,6 +560,19 @@ try {
       if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
     }
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+
+    // a gizmo release the lead can't write (a non-number position: editOps refuses it before anything is sent) puts back the
+    // lead AND the followers, as every gizmo exit does (one abort): nothing half-left where the drag had it
+    await frame("mm-tbl", 1.5);
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gizmoDrag("mm-box", NaN); await frames(2); await gizmoUp(); await frames(3); await sleep(400 * WAIT_SCALE);
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM25 a gizmo release the lead can't write (editOps refuses a non-number position) puts the lead and the table back, and writes nothing",
+        on && near(local?.[0], B0) && near(local?.[1], T0) && myActs().length === n0, { on, local, B0, T0, acts: actsSince(n0) });
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
 
     // the cap (edit/multimove.js MAX_GROUP = 16): 16 things arm and land as one act with every claim ended; 17 refuse to arm and
     // nothing moves, by a mesh drag or the gizmo, and the status bar says why
