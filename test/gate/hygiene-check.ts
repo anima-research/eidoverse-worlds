@@ -4,8 +4,8 @@
 // gate's own code: every suite run.ts runs, with the local files it imports (not a runner's file argument, as bun-test.ts
 // x-test.ts: that file gets only the all-files rules), plus server/, shared/ and mcpl/. Counts are
 // per file and per rule, against test/gate/hygiene-baseline.json, which may only go DOWN: a file over its count fails,
-// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything while the
-// baseline holds a count; an emptied `{}` one doesn't stop it). A file not in the baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
+// a file under it fails too until the baseline is lowered (`--write`, which refuses to raise anything, from an
+// emptied `{}` baseline too, and refuses a missing one). A file not in the baseline is allowed 0. So existing debt is visible and shrinking, and new debt can't land.
 //
 //   bare-wait     a fixed sleep (setTimeout-in-a-Promise, Bun.sleep, sleep()/delay(), waitForTimeout) in a suite. Wait on
 //                 the condition with wait.ts `until`; a wait where elapsed time IS the test uses `pause(why, ms)`.
@@ -184,6 +184,12 @@ export function ungatedTests(): string[] {
   for (const d of ["tools", "tools/water", "bench", "mcpl", "test"]) scan(d);
   return out.sort();
 }
+/** Why `--write` must not write `now` over `base` (null: a missing file), or null when it may. */
+export function writeRefusal(now: Record<string, Record<string, number>>, base: Record<string, Record<string, number>> | null): string | null {
+  if (!base) return `${rel(BASE)} is missing: --write only lowers a baseline (restore it from git)`;
+  const { over } = compare(now, base);
+  return over.length ? `--write would raise the baseline:\n  ${over.join("\n  ")}` : null;
+}
 export function compare(now: Record<string, Record<string, number>>, base: Record<string, Record<string, number>>) {
   const over: string[] = [], under: string[] = [];
   for (const f of new Set([...Object.keys(now), ...Object.keys(base)])) for (const k of Object.keys(RULES)) {
@@ -269,12 +275,16 @@ if (import.meta.main) {
   const bodyHits = wholeBodyHits();
   check(`H${i++} whole-body: server/ reads no request body whole (${bodyHits.length ? "found" : "none"})`, bodyHits.length === 0 && fs.existsSync(path.join(ENGINE, "server/request-body.ts")), bodyHits.join("\n      "));
 
+  // --write only lowers (G2-086): an emptied or missing baseline is no licence to write today's debt in as the new floor
+  { const R = writeRefusal, debt = { "a.ts": { "bare-wait": 2 } };
+    const got = { emptied: R(debt, {}), missing: R(debt, null), lower: R({ "a.ts": { "bare-wait": 1 } }, debt), raise: R(debt, { "a.ts": { "bare-wait": 1 } }), clean: R({}, null) };
+    check(`H${i++} --write refuses to raise the baseline, also from an emptied {} one or a missing file; a lowering writes`, !!got.emptied && !!got.missing && got.lower === null && !!got.raise && !!got.clean, got); }
   // then the gate's code against the baseline (may only go down: --write refuses a raise; a hand-edited raise is review's to catch)
   const now = measure();
-  const base = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, "utf8")) : {};
+  const base = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, "utf8")) : null;
   if (process.argv.includes("--write")) {
-    const { over } = compare(now, base);
-    if (Object.keys(base).length && over.length) { console.log(`refused: --write would raise the baseline:\n  ${over.join("\n  ")}`); process.exit(1); }
+    const no = writeRefusal(now, base);
+    if (no) { console.log(`refused: ${no}`); process.exit(1); }
     fs.writeFileSync(BASE, JSON.stringify(now, null, 1) + "\n"); console.log(`wrote ${rel(BASE)}`);
   }
   const { over, under } = compare(now, JSON.parse(fs.existsSync(BASE) ? fs.readFileSync(BASE, "utf8") : "{}"));
