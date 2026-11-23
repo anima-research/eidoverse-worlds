@@ -484,7 +484,8 @@ try {
     await midCancel("MM19 a selection change mid-drag (the chair selected in the Hierarchy) cancels it: everything back, the chair never dragged, nothing written",
       () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`));
 
-    // the gizmo's drag ends the same way: Ctrl+Z mid gizmo drag cancels it as Esc does; and a late lock-question cancel leaves the box a newer gizmo drag holds (the generation check, as MM16)
+    // the gizmo's drag ends the same way: Ctrl+Z, or a follower dropped from the selection, mid gizmo drag cancels it as Esc
+    // does; and a late lock-question cancel leaves the box a newer gizmo drag holds (the generation check, as MM16)
     const gizmoDrag = (lead: string, dx: number) => evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
       return import('/lib/world.js').then((m) => { m.entities.get('${lead}').position.x += ${dx}; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
     const gizmoUp = () => evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }), true)`);
@@ -509,6 +510,8 @@ try {
       await gizmoCancel("MM22 Ctrl+Z mid gizmo drag cancels it (the box and the table it carried back where the log has them, every sample ended, nothing written for it)",
         () => key("KeyZ", { ctrlKey: true }));
       check("MM22 …and the undo it carried on with took the chair's label away", await waitDisk(() => !disk().entities[NODE.get("mm-chair")]?.c.label, 4000), disk().entities[NODE.get("mm-chair")]?.c.label);
+      await gizmoCancel("MM23 the table (a follower) dropped from the selection mid gizmo drag cancels it, as a mesh drag's does (MM19): everything back, nothing written",
+        () => page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`));
     }
     // the generation check through the gizmo: a group mesh drag asks the lock question; a newer gizmo drag of the box arms;
     // cancelling the question puts the table back, never the box the gizmo holds, and the gizmo's release writes the box

@@ -19,6 +19,7 @@ import * as OP from '../../../shared/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { gripEditing } from './gripedit.js';
 import * as MM from './multimove.js';   // the rest of the selection follows the drag (R, gym 10-17 21:40)
+import * as Sel from './selection.js';
 
 const R2D = 180 / Math.PI;
 let controls = null;
@@ -69,9 +70,10 @@ const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'tran
 const editable = MM.takes;   // the gesture test the followers share (edit/multimove.js)
 
 function sync() {
-  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority. Leaving build mode or
-  // a selection without its thing first cancels it as Esc does (#352 review 8d7c6b9, points 2, 3)
-  if (start) { if (!cancelled && (!isBuilding() || sceneSelected() !== attachedId)) cancelDrag(); return; }
+  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority. Leaving build mode, or
+  // a selection without its thing first or without one of its followers, cancels it as Esc does, as the mesh drag's does
+  // (build.js followSelection; #352 review 8d7c6b9, points 2, 3)
+  if (start) { if (!cancelled && (!isBuilding() || sceneSelected() !== attachedId || !MM.idsOf(attachedId, multi).every((x) => Sel.selection().ids?.includes(x)))) cancelDrag(); return; }
   const id = sceneSelected();
   const want = isBuilding() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
