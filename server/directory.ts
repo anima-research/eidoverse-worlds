@@ -44,7 +44,7 @@ export function nameTagKey(worldsDir: string): Buffer | null {
 /** `existingWorlds` is accepted but no longer read: the v1 → v2 upgrade keeps every id server-wide without it. */
 /** Departed guests whose anonymous ids (and names, for the history they wrote) are kept in memory, oldest forgotten first
  *  past it: ANON_IDS_KEPT, default 10000 (about a megabyte). A guest still connected is never forgotten. Past this many,
- *  an older guest's lines in history show their id rather than their name. Set it as high as wanted. */
+ *  an older guest's lines in history show their id rather than their name. Set it as high as wanted; 0 keeps them all. */
 export const anonConfig = { kept: envNumber("ANON_IDS_KEPT", 10_000, (n) => Number.isInteger(n) && n >= 0) };
 
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
@@ -110,7 +110,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
           return add({ name, subs: [sub], kind: "account", since: now() }); }); }
       let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId();
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
-      for (const old of departed) { if (departed.size <= anonConfig.kept) break; departed.delete(old); anon.delete(old); }
+      if (anonConfig.kept > 0) for (const old of departed) { if (departed.size <= anonConfig.kept) break; departed.delete(old); anon.delete(old); }
       return id;
     },
     /** A guest's connection is gone (closed, or joined again under a fresh id): its anonymous id may be forgotten once
