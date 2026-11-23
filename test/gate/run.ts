@@ -6,6 +6,7 @@
 //   bun test/gate/run.ts --shard 2/4     shard 2 of 4 (1-based; shard.ts packs SUITES); the gate is all 4 merged by merge-receipts.ts
 //   bun test/gate/run.ts --manifest      print the suite table docs/contributing/GATE-MANIFEST.md carries (generated from here)
 //   bun test/gate/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
+//   bun test/gate/run.ts --write-manifest   rewrite the doc's generated block with what --manifest prints
 //   bun test/gate/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in .siblings/, and install the packages that take them
 //   bun test/gate/run.ts --library <dir>    clone (or move) the asset library to its pin at <dir>, for EIDOVERSE_DIR
 //   bun test/gate/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
@@ -34,7 +35,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
-import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, inheritedEnv, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, inheritedEnv, laneOf, localImports, spliceGenerated, suitePath } from "./suites.ts";
 import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
 
 
@@ -113,7 +114,7 @@ function manifestDrift(): string | null {
   const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
   if (a < 0 || b < a) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`;
   return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
-     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --manifest prints the table: paste it between the BEGIN/END GENERATED lines)`;
+     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --write-manifest rewrites it)`;
 }
 
 const argv = process.argv.slice(2);
@@ -189,6 +190,9 @@ if (argv.includes("--library")) {
   process.exit(0);
 }
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
+if (argv.includes("--write-manifest")) { const t = fs.existsSync(DOC) ? fs.readFileSync(DOC, "utf8") : "", next = spliceGenerated(t, BEGIN, END, manifest());
+  if (next === null) { console.error(`--write-manifest: ${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`); process.exit(1); }
+  fs.writeFileSync(DOC, next); console.log(`wrote ${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table`); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/contributing/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
 const laneArg = valueOf("--lane");
 const only = argv.filter((a, i) => !a.startsWith("--") && !VALUED.includes(argv[i - 1]));

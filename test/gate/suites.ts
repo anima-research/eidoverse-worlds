@@ -537,6 +537,11 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
     record() { return dropped.map((l) => l + "\n").join("") + out; },
   };
 }
+/** `doc` with the lines between `begin` and `end` replaced by `body`, or null when it has no such block (run.ts --write-manifest). */
+export function spliceGenerated(doc: string, begin: string, end: string, body: string): string | null {
+  const a = doc.indexOf(begin), b = doc.indexOf(end);
+  return a < 0 || b < a ? null : doc.slice(0, a + begin.length) + "\n" + body.trim() + "\n" + doc.slice(b);
+}
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
  *  (where checks print what they saw), at most `per` each, so a FAIL says WHAT it saw as well as which row failed. */
 export function failLines(lines: string[], per = 3): string[] {

@@ -227,5 +227,11 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   check("PG25 the record a receipt hashes holds every verdict line the cut dropped, then the tail (two runs that differ only in a dropped FAIL hash apart), and run.ts hashes that record",
     red.out === other.out && rec(red) !== rec(other) && rec(red).startsWith("FAIL B2 early red\n") && rec(red).endsWith(red.out) && /out: kept\.record\(\)/.test(rs) && /createHash\("sha256"\)\.update\(r\.out\)/.test(rs),
     { dropped: red.dropped, recorded: typeof red.record === "function" }); }
+{ // PG26 (G4-224): --write-manifest rewrites only GATE-MANIFEST's generated block; a doc without one is refused
+  const { spliceGenerated } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const B = "<!-- BEGIN -->", E = "<!-- END -->", doc = `# head\n\n${B}\n| old |\n${E}\ntail\n`;
+  const got = typeof spliceGenerated === "function" ? { fresh: spliceGenerated(doc, B, E, "| new |\n| row |\n"), none: spliceGenerated("# no block\n", B, E, "| new |") } : null;
+  check("PG26 --write-manifest puts --manifest's table between the GENERATED markers and leaves every other byte; a doc with no block is refused, not appended to",
+    !!got && got.fresh === `# head\n\n${B}\n| new |\n| row |\n${E}\ntail\n` && got.none === null && /argv\.includes\("--write-manifest"\)/.test(rs) && /spliceGenerated\(t, BEGIN, END, manifest\(\)\)/.test(rs), got); }
 
 done();
