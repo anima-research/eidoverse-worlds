@@ -26,7 +26,6 @@ const guess = (...a) => UP.guess(...a);
 const historyDiff = (...a) => UP.historyDiff(...a);
 const lastTouch = (...a) => UP.lastTouch(...a);
 const opsTouching = (...a) => UP.opsTouching(...a);
-const resolve = (...a) => UP.resolve(...a);
 const touchedOf = (...a) => UP.touchedOf(...a);
 const warnings = (...a) => UP.warnings(...a);
 
