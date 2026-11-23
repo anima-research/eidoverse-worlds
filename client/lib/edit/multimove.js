@@ -66,7 +66,13 @@ export function skippedHint(n, mode) {
   return `${n} selected ${n === 1 ? "thing can't" : "things can't"} ${verb} this way — left where ${n === 1 ? 'it is' : 'they are'}`;
 }
 
-export const RELAY_PER_TICK = 1, END_BUDGET = 8;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
+export const RELAY_PER_TICK = 1, RELAY_MS = 66;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
+export const CLAIM_MS = 1500;   // a live drag's claim lapses after this much silence (build.js claims)
+// The most things one drag moves: 1 + CLAIM_MS / RELAY_MS × RELAY_PER_TICK = 23, so every follower is relayed before its claim
+// lapses; END_BUDGET (every follower) closes all their claims at release, a burst well under the relay's 120 (#352 review, point 1)
+export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / RELAY_MS) * RELAY_PER_TICK, END_BUDGET = MAX_GROUP - 1;
+/** Why a drag of `n` things (over MAX_GROUP) didn't start. */
+export const tooManyHint = (n) => `${n} things selected — a drag moves at most ${MAX_GROUP} at once, so everyone watching sees each one move. Nothing moved`;
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3(), _m = new THREE.Matrix4();
 
 /** Take the start: the lead's world turn and local scale, each follower's world matrix and pivot. */
@@ -93,7 +99,7 @@ export function apply(st, mode, space = 'world') {
   const dWorld = _q.clone().multiply(st.leadQ.clone().invert());            // the lead's world turn
   const dLocal = st.leadQ.clone().invert().multiply(_q);                    // …in its own axes
   const ratio = new THREE.Vector3(lead.scale.x / (st.leadScale.x || 1), lead.scale.y / (st.leadScale.y || 1), lead.scale.z / (st.leadScale.z || 1));
-  const now = performance.now(); const relay = now - st.lastSent >= 66; if (relay) st.lastSent = now;
+  const now = performance.now(); const relay = now - st.lastSent >= RELAY_MS; if (relay) st.lastSent = now;
   // followers share a relay budget: the server allows ~60 messages/s per connection, and a refused release snaps the
   // whole move back, so RELAY_PER_TICK followers' samples a tick (one), round-robin (the lead and the pose take the rest)
   const sendNow = new Set();
@@ -143,8 +149,8 @@ export function hold(ids) { const g = ++gen; for (const id of ids) heldBy.set(id
 export function revertHeld(g, ids) { for (const id of ids) if (heldBy.get(id) === g) Edits.revertPose(id); }
 /** The ids a gesture holds: its lead and its followers. */
 export const idsOf = (leadId, st) => [leadId, ...(st?.followers ?? []).map((f) => f.id)];
-/** The last pose sample, so others drop the claim at once: for the first END_BUDGET followers (the rest expire on the
- *  claim timeout). Send it AFTER the release request, so the request never waits behind them. */
+/** The last pose sample, so others drop the claim at once: for every follower (END_BUDGET covers a MAX_GROUP drag). Send
+ *  it AFTER the release request, so the request never waits behind them. */
 export function end(st) {
   for (const f of (st?.followers ?? []).slice(0, END_BUDGET)) { const o = entities.get(f.id); if (o) sendDrag(f.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
 }

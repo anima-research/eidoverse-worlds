@@ -100,6 +100,8 @@ function beginDrag() {
   multi = null;
   if (start && dragTool !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
+    // over the cap the drag doesn't start: held where the log has it (as Esc holds it), nothing written
+    if (1 + f.ids.length > MM.MAX_GROUP) { cancelled = true; import('../ui/ui.js').then((m) => m.flashHint(MM.tooManyHint(1 + f.ids.length), 6000)); return; }
     multi = MM.begin(attachedId, f.ids);
     gen = MM.hold(MM.idsOf(attachedId, multi));
     if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));

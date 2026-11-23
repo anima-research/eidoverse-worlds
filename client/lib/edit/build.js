@@ -415,7 +415,7 @@ function relayDrag() {
 
 // remote drags: applied transiently, no log involvement. A live drag is a CLAIM: while samples flow, `by` is editing
 // `id` (an amber box, and the Hierarchy says 'editing: <name>'); it lapses on the last sample (`end`) or CLAIM_MS of silence.
-const CLAIM_MS = 1500;
+const CLAIM_MS = MM.CLAIM_MS;   // one number with the group cap (edit/multimove.js MAX_GROUP)
 const claims = new Map();   // id -> { by, at, box }
 const claimBox = () => { const b = new THREE.Box3Helper(new THREE.Box3(), 0xe0a33a); b.userData.noCamCollide = true; scene.add(b); return b; };
 function endClaim(id) { const c = claims.get(id); if (!c) return; claims.delete(id); c.box.removeFromParent(); bus.emit('claims', claimsNow()); }
@@ -627,7 +627,8 @@ addEventListener('mousemove', (e) => {
   if (dragging.mode === 'select') return;       // a press under select picks, travel never moves
   if (!dragging.armed
       && Math.hypot(e.clientX - dragging.startX, e.clientY - dragging.startY) > DRAG_SLOP) {
-    // the press selected it; travel is where a move begins
+    // the press selected it; travel is where a move begins, unless the group is over the cap: then nothing moves
+    if (1 + dragging.follow.length > MM.MAX_GROUP) { flashHint(MM.tooManyHint(1 + dragging.follow.length), 6000); dragging = null; return; }
     dragging.armed = true;
     if (dragging.shiftPick) {
       if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }

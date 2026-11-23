@@ -134,7 +134,9 @@ const covered = new Set(stub.drags.map((d: any[]) => d[0]));
 check("relay: ten followers send RELAY_PER_TICK samples every tick", perTick.every((n) => n === MM.RELAY_PER_TICK), JSON.stringify(perTick));
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
 stub.drags.length = 0; MM.end(st);
-check("end: at most END_BUDGET last samples (the rest expire on the claim timeout)", stub.drags.length === MM.END_BUDGET && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
+check("end: a last sample for every follower", stub.drags.length === 10 && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
+check("the cap: 1 + CLAIM_MS / RELAY_MS followers relayed before a claim lapses = 23, and END_BUDGET ends every follower's claim",
+  MM.MAX_GROUP === 23 && MM.END_BUDGET === MM.MAX_GROUP - 1 && (MM.MAX_GROUP - 1) * MM.RELAY_MS / MM.RELAY_PER_TICK <= MM.CLAIM_MS, JSON.stringify([MM.MAX_GROUP, MM.END_BUDGET]));
 
 // a gesture's generation: a late refusal of an older gesture puts back only what no newer gesture has taken since
 stub.reverted.length = 0;
