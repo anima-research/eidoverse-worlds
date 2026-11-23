@@ -176,12 +176,16 @@ export function ungatedTests(): string[] {
     for (const f of localImports(suitePath(file))) gated.add(rel(f));
     for (const a of file.split(" ").slice(1)) if (/\.(?:ts|mjs|js)$/.test(a)) for (const f of localImports(path.join(ENGINE, a))) gated.add(rel(f));   // a runner's file argument (bun-test.ts tools/x-test.ts)
   }
+  return testFilesUnder(ENGINE).filter((f) => !gated.has(f));
+}
+/** Every test-named file under `root`'s tools/, bench/, mcpl/ and test/, at any depth (not in node_modules or the test helpers' folders). */
+export function testFilesUnder(root: string): string[] {
   const out: string[] = [];
   const NOT_TESTS = new Set(["harness", "stubs", "fixtures", "labs", "node_modules"]);
-  const scan = (d: string): void => { for (const e of fs.readdirSync(path.join(ENGINE, d), { withFileTypes: true }))
-    if (e.isDirectory()) { if (d.startsWith("test") && !NOT_TESTS.has(e.name)) scan(`${d}/${e.name}`); }
-    else if (e.isFile() && TEST_NAME.test(e.name) && !gated.has(`${d}/${e.name}`)) out.push(`${d}/${e.name}`); };
-  for (const d of ["tools", "tools/water", "bench", "mcpl", "test"]) scan(d);
+  const scan = (d: string): void => { if (!fs.existsSync(path.join(root, d))) return; for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true }))
+    if (e.isDirectory()) { if (!NOT_TESTS.has(e.name)) scan(`${d}/${e.name}`); }
+    else if (e.isFile() && TEST_NAME.test(e.name)) out.push(`${d}/${e.name}`); };
+  for (const d of ["tools", "bench", "mcpl", "test"]) scan(d);
   return out.sort();
 }
 /** Why `--write` must not write `now` over `base` (null: a missing file), or null when it may. */
@@ -252,6 +256,11 @@ if (import.meta.main) {
   check(`H${i++} ungated: every test-named file runs in the gate, or ungated.json says in one line why not`, unlisted.length === 0, unlisted.join("\n      "));
   const stale = Object.keys(listed).filter((f) => !out.includes(f));
   check(`H${i++} ungated: ungated.json names only files that exist and are still out of the gate (a gated or deleted one comes off)`, stale.length === 0, stale.join("\n      "));
+  // the scan reaches every depth of tools/, bench/ and mcpl/, not only test/ (G4-101): a planted test in a subfolder is found
+  { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-101-"));
+    for (const f of ["tools/assets/a-test.ts", "tools/water/b-check.ts", "mcpl/vectors/deep/c-probe.ts", "bench/seatlab/d-bench.ts", "test/x/e-test.ts", "mcpl/node_modules/p/f-test.ts", "test/harness/g-test.ts", "tools/h.ts"]) { fs.mkdirSync(path.dirname(path.join(tmp, f)), { recursive: true }); fs.writeFileSync(path.join(tmp, f), ""); }
+    const got = testFilesUnder(tmp); fs.rmSync(tmp, { recursive: true, force: true });
+    check(`H${i++} ungated: the scan finds a test-named file at any depth of tools/, bench/, mcpl/ and test/, once each (not node_modules or test helpers)`, JSON.stringify(got) === JSON.stringify(["bench/seatlab/d-bench.ts", "mcpl/vectors/deep/c-probe.ts", "test/x/e-test.ts", "tools/assets/a-test.ts", "tools/water/b-check.ts"]), got); }
   console.log(`[hygiene] tests still out of the gate: ${out.length}`);
 
   // underscore-names: new files are lowercase-hyphen (CONTRIBUTING); underscore-names.json is today's exceptions, and it only shrinks
