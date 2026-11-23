@@ -433,7 +433,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         else if (t.kind === "unavailable") unavailableHere();
         return null; };
       const told = toldOf(wname, { account: c.account ?? null, actorId: c.account ? dir.idOfSub(c.account) : null, trustedRenderer: !!c.trustedRenderer }, provenWho(c, msg));
-      if (told instanceof Promise) { detach(told.then(answer), "join"); return null; }
+      // a door that couldn't be asked is a refusal the joiner hears, never silence (they would wait on a join that never lands)
+      if (told instanceof Promise) { detach(told.then(answer), "join", () => ws.send(JSON.stringify({ type: "error", about: "join", error: "this world's door couldn't be asked just now: try joining again" }))); return null; }
       if (told.kind !== "door") return answer(told); }
     const w = getWorld(wname);
     // A display name is not proof of anything, so two people may never show the same one at once, and an anonymous visitor
