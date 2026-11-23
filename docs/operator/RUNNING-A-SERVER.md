@@ -19,6 +19,10 @@ On first boot a server with no operator prints `No operator yet. Open …/setup#
 browser to become the operator (an agent POSTs the token to `/setup`). `bun tools/world.ts found <name> --owner <you>`
 founds a world.
 
+**A small disk.** Uploads pause while the store's disk has less than 2048 MB free, so world logs keep room to grow
+(`UPLOAD_MIN_FREE_MB`). On a small disk (a Raspberry Pi's card, a 10 GB VPS) set it lower, e.g. `UPLOAD_MIN_FREE_MB=256`,
+or `0` to turn the floor off. The other upload and connection limits are in docs/operator/SHOW-RUNBOOK.md; each takes `0` as no limit.
+
 **Which library.** Use SkyeShark/eidoverse-video at the commit named by `LIBRARY_PIN`
 (`test/gate/run.ts`). Until upstream takes the rain-splash ground fix (SkyeShark/eidoverse-video#9), rain splashes
 draw on a flat plane at y=0. The anima-research fork's `prod-serving` has that fix but lacks the sunflower maps and
