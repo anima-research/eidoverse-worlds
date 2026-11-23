@@ -128,20 +128,20 @@ check("revertHeld puts a follower its gesture holds back where the log has it", 
 const many = Array.from({ length: 10 }, (_, i) => thing(`m${i}`, [i, 0, 10]).userData.entityId);
 st = MM.begin("a", many);
 stub.drags.length = 0; const perTick: number[] = [];
-for (let t = 0; t < 10; t++) { st.lastSent = -Infinity;   // every apply is a relay tick (performance.now() can be < 66 ms in a fresh process)
+for (let t = 0; t < 10; t++) { st.lastSent = performance.now() - MM.RELAY_MS;   // every apply is exactly one relay tick
   const n = stub.drags.length; a.position.x += 0.1; a.updateMatrixWorld(true); MM.apply(st, "move"); perTick.push(stub.drags.length - n); }
 const covered = new Set(stub.drags.map((d: any[]) => d[0]));
 check("relay: ten followers send RELAY_PER_TICK samples every tick", perTick.every((n) => n === MM.RELAY_PER_TICK), JSON.stringify(perTick));
 check("...round-robin, so every follower is relayed once in ten ticks", covered.size === 10, JSON.stringify([...covered]));
 stub.drags.length = 0; MM.end(st);
 check("end: a last sample for the lead and every follower", stub.drags.length === 11 && stub.drags[0][0] === "a" && stub.drags.every((d: any[]) => d[4]?.end), `${stub.drags.length}`);
-// the cap, by behaviour: MAX_GROUP − 1 followers driven through apply on a real frame clock (the relay gate lands on frames:
-// 66.7 ms at 60 Hz at best, 83 when a frame comes early), each relayed again before its claim lapses (CLAIM_MS)
+// the cap, by behaviour: MAX_GROUP − 1 followers driven through apply on a real frame clock (10 to 144 Hz, ±1 ms jitter: the
+// relay's samples land on frames), each relayed again before its claim lapses (CLAIM_MS)
 { const realNow = performance.now; let clock = 0; (performance as any).now = () => clock;
   let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const fol = Array.from({ length: MM.MAX_GROUP - 1 }, (_, i) => thing(`cap${i}`, [i, 0, 20]).userData.entityId);
   const worst: Record<string, number> = {};
-  for (const hz of [50, 60, 144]) {
+  for (const hz of [10, 16, 17, 18, 19, 20, 50, 60, 144]) {
     clock = 1000; a.position.set(0, 0, 0); a.updateMatrixWorld(true);
     const cst = MM.begin("a", fol); cst.lastSent = clock; const last = new Map(fol.map((id) => [id, clock])); let gap = 0;
     stub.drags.length = 0;
@@ -155,7 +155,7 @@ check("end: a last sample for the lead and every follower", stub.drags.length ==
     worst[hz] = Math.round(gap);
   }
   (performance as any).now = realNow;
-  check(`the cap: ${MM.MAX_GROUP - 1} followers on a jittered 50/60/144 Hz frame clock are each relayed within CLAIM_MS (${MM.CLAIM_MS} ms), `,
+  check(`the cap: ${MM.MAX_GROUP - 1} followers on a jittered 10–144 Hz frame clock are each relayed within CLAIM_MS (${MM.CLAIM_MS} ms)`,
     Object.values(worst).every((g) => g <= MM.CLAIM_MS), JSON.stringify({ cap: MM.MAX_GROUP, worstGapMs: worst }));
   for (const id of fol) { stub.entities.get(id).removeFromParent(); stub.entities.delete(id); }
 }

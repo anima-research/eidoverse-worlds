@@ -68,8 +68,8 @@ export function skippedHint(n, mode) {
 
 export const RELAY_PER_TICK = 1, RELAY_MS = 66;   // at 15 Hz: lead + pose + 1 follower ≈ 45 msg/s, under server/config.ts MSG_RATE (60)
 export const CLAIM_MS = 1500;   // a live drag's claim lapses after this much silence (build.js claims)
-// The most things one drag moves: 1 + CLAIM_MS / (1.5 × RELAY_MS) × RELAY_PER_TICK = 16. The relay gate lands on frames (a tick is
-// 66.7–83 ms at 60 Hz, 80 at 50), so the 1.5× headroom keeps every follower relayed within its claim on a real clock (multimove-test
+// The most things one drag moves: 1 + CLAIM_MS / (1.5 × RELAY_MS) × RELAY_PER_TICK = 16. The relay is fixed-rate (apply), but its
+// samples still land on frames, so the 1.5× headroom keeps every follower relayed within its claim from 10 to 144 Hz (multimove-test
 // drives it); `end` closes every claim at release, a burst of MAX_GROUP well under the relay's 120 (#352 review, point 1)
 export const MAX_GROUP = 1 + Math.floor(CLAIM_MS / (1.5 * RELAY_MS)) * RELAY_PER_TICK;
 /** Why a drag of `n` things (over MAX_GROUP) didn't start. */
@@ -100,11 +100,14 @@ export function apply(st, mode, space = 'world') {
   const dWorld = _q.clone().multiply(st.leadQ.clone().invert());            // the lead's world turn
   const dLocal = st.leadQ.clone().invert().multiply(_q);                    // …in its own axes
   const ratio = new THREE.Vector3(lead.scale.x / (st.leadScale.x || 1), lead.scale.y / (st.leadScale.y || 1), lead.scale.z / (st.leadScale.z || 1));
-  const now = performance.now(); const relay = now - st.lastSent >= RELAY_MS; if (relay) st.lastSent = now;
+  // fixed-rate ticks (15 Hz on average at any frame rate): a slow frame that spans two ticks sends two ticks' followers, and
+  // the clock never falls more than a tick behind (a stall doesn't become a burst)
+  const now = performance.now(); const ticks = Math.min(2, Math.floor((now - st.lastSent) / RELAY_MS)); const relay = ticks > 0;
+  if (relay) st.lastSent = Math.max(st.lastSent + ticks * RELAY_MS, now - RELAY_MS);
   // followers share a relay budget: the server allows ~60 messages/s per connection, and a refused release snaps the
   // whole move back, so RELAY_PER_TICK followers' samples a tick (one), round-robin (the lead and the pose take the rest)
   const sendNow = new Set();
-  if (relay) for (let k = 0; k < Math.min(RELAY_PER_TICK, st.followers.length); k++) sendNow.add((st.cursor++) % st.followers.length);
+  if (relay) for (let k = 0; k < Math.min(ticks * RELAY_PER_TICK, st.followers.length); k++) sendNow.add((st.cursor++) % st.followers.length);
   for (const [i, f] of st.followers.entries()) {
     const o = entities.get(f.id); if (!o) continue;
     const W = f.world.clone();
