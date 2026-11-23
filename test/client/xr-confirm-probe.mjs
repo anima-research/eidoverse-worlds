@@ -3,8 +3,12 @@
 // immersive session draws: the action blocked or quietly said no. Real client + IWER; the answers go through
 // domQuadsPick, the same laser path the trigger uses, on the `ask` quad (xr/xrask.js).
 //   bun test/client/xr-confirm-probe.mjs
-// Mutation (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch.
-import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR } from '../harness/probe-harness.mjs';
+// Then the consent edges (a dismissed question is never a remembered answer): S1 leaving VR mid-question, S2 a moderator's
+// warning arriving mid-question, S3 a desk card left open when the session starts and a headset ⏎ elsewhere.
+// Mutations (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch;
+// in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
+// instead of queueing (S2); drop the xr:state(true) closeCenter() and the desk card's aimedElsewhere guard (S3).
+import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 const { check, done } = checker();
 const world = await ownedWorld({});
 const { browser, page } = await launchBrowser(); const pg = await page();
@@ -53,6 +57,9 @@ try {
     out.after = ask.xrAskState(); out.quadAfter = dq.domQuadOpen('ask');
     // A: a few words asked in a headset (askCenter: the speech-server address, a blueprint's name) — typed on the VR keyboard
     const cc = await import('./lib/edit/confirmcenter.js');
+    // the keyboard's own place on the arc, before a text question moves it under the question
+    const pose = () => { const m = dq.domQuadMesh('keyboard'); return m ? [...m.position.toArray(), ...m.quaternion.toArray()].map((x) => +x.toFixed(4)) : null; };
+    dq.domQuadShow('keyboard', true); await sleep(200); out.kbPose0 = pose(); dq.domQuadShow('keyboard', false);
     let words; const pa = cc.askCenter({ title: 'Name it', value: '', ok: 'Save' }).then((v) => { words = v; });
     await sleep(600);
     out.askState = ask.xrAskState();
@@ -70,6 +77,7 @@ try {
     await Promise.race([pa, sleep(1500)]);
     out.words = words === undefined ? 'unsettled' : words;
     out.askAfter = ask.xrAskState();
+    await sleep(100); out.kbPose1 = pose();
     out.card = !!document.querySelector('#confirm-center');
     return out;
   });
@@ -81,6 +89,66 @@ try {
   check('A1 a few words asked in a headset show a text field on the ask quad', r.input && r.askState && /Name it/.test(r.askState.title), JSON.stringify(r.askState));
   check('A2 …the trigger on it opens the VR keyboard, and its keys and ⏎ answer it', r.kbOpen && r.words === 'hi', JSON.stringify({ kb: r.kbOpen, words: r.words, keys: r.keys, typed: r.typed }));
   check('A3 …and nothing was left on the desk card nobody could see', !r.card && r.askAfter === null);
+  check('K1 after a text question the keyboard is back at its own place', !!r.kbPose0 && JSON.stringify(r.kbPose0) === JSON.stringify(r.kbPose1), JSON.stringify({ before: r.kbPose0, after: r.kbPose1 }));
+
+  // ---- the consent edges: a dismissed question is never a remembered answer ----
+  const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
+  const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
+    if (await pg.evaluate(async () => (await import('./lib/xr/xrask.js')).xrActive())) await exitVR(pg);
+    await pg.evaluate(() => localStorage.removeItem('eido.audio.prefs'));
+    await pg.reload({ waitUntil: 'domcontentloaded' }); await visorShown(pg);
+  };
+  const helpers = () => pg.evaluate(async () => {
+    const dq = await import('./lib/xr/domquad.js'); const THREE = await import('three');
+    const pull = (id, el) => {
+      const mesh = dq.domQuadMesh(id), dom = dq.domQuadTexture(id).dom, fr = dom.getBoundingClientRect(), er = el.getBoundingClientRect();
+      const u = (er.left + er.width / 2 - fr.left) / fr.width, v = (er.top + er.height / 2 - fr.top) / fr.height;
+      const { width: W, height: H } = mesh.geometry.parameters; mesh.updateMatrixWorld(true);
+      const p = mesh.localToWorld(new THREE.Vector3((u - 0.5) * W, (0.5 - v) * H, 0));
+      const q = new THREE.Quaternion(); mesh.getWorldQuaternion(q);
+      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+      return dq.domQuadsPick({ matrixWorld: new THREE.Matrix4().compose(p.clone().addScaledVector(n, 0.5), q, new THREE.Vector3(1, 1, 1)) }, true);
+    };
+    const btn = (id, re) => [...(dq.domQuadTexture(id)?.dom?.querySelectorAll('button') ?? [])].find((b) => re.test(b.textContent) && b.getBoundingClientRect().height > 0);
+    globalThis.__px = { pull, press: (re) => { const b = btn('ask', re); return b ? pull('ask', b) != null : false; }, key: (k) => { const b = dq.domQuadTexture('keyboard')?.dom?.querySelector(`button[data-k="${k}"]`); return b ? pull('keyboard', b) != null : false; } };
+    return true;
+  });
+  const askTitle = () => pg.evaluate(async () => (await import('./lib/xr/xrask.js')).xrAskState()?.title ?? null);
+  const startConsent = () => pg.evaluate(async () => { const vc = await import('./lib/audio/voiceconsent.js'); globalThis.__cr = 'unsettled'; vc.ensureSttConsent().then((v) => { globalThis.__cr = v; }); return true; });
+
+  // S1: leave the headset while the consent question is open
+  await fresh(); await enterVR(pg); await pg.waitForTimeout(1500); await helpers();
+  await startConsent(); await pg.waitForTimeout(600);
+  const s1asked = await askTitle();
+  await exitVR(pg); await pg.waitForTimeout(800);
+  const s1 = { asked: s1asked, resolved: await pg.evaluate(() => globalThis.__cr), stored: await stored() };
+  check('S1 leaving VR mid-consent: the question was open, ensureSttConsent says no for now, and nothing is remembered (sttConsent still null)',
+    /speech-to-text/i.test(s1.asked ?? '') && s1.resolved === false && s1.stored === null, JSON.stringify(s1));
+
+  // S2: a moderator's warning arrives while the consent question is open (same page: still never asked)
+  await enterVR(pg); await pg.waitForTimeout(1500); await helpers();
+  await startConsent(); await pg.waitForTimeout(600);
+  await pg.evaluate(async () => { (await import('./lib/base.js')).bus.emit('warned', { by: 'Mod Rowan', reason: 'probe' }); return true; });
+  await pg.waitForTimeout(800);
+  const s2 = { open: await askTitle(), stored: await stored(), resolved: await pg.evaluate(() => globalThis.__cr) };
+  s2.pressed = await pg.evaluate(() => globalThis.__px.press(/not now/i)); await pg.waitForTimeout(400);
+  s2.after = { stored: await stored(), resolved: await pg.evaluate(() => globalThis.__cr), next: await askTitle() };
+  check("S2 a warning mid-consent waits behind it: the consent question stays open and unanswered (sttConsent null)",
+    /speech-to-text/i.test(s2.open ?? '') && s2.stored === null && s2.resolved === 'unsettled', JSON.stringify(s2));
+  check("…then answering it is remembered (Not now → false), and the warning is asked next", s2.pressed && s2.after.stored === false && s2.after.resolved === false && /moderator/i.test(s2.after.next ?? ''), JSON.stringify(s2.after));
+  await pg.evaluate(() => globalThis.__px.press(/understand|ok/i));
+
+  // S3: the desk consent card is open when the session starts; then a headset text question answered with the VR keyboard's ⏎
+  await fresh(); await startConsent(); await pg.waitForTimeout(400);
+  const s3card = await pg.evaluate(() => !!document.querySelector('#confirm-center'));
+  await enterVR(pg); await pg.waitForTimeout(1500); await helpers();
+  await pg.evaluate(async () => { const cc = await import('./lib/edit/confirmcenter.js'); globalThis.__w = 'unsettled'; cc.askCenter({ title: 'Name it', value: '' }).then((v) => { globalThis.__w = v; }); return true; });
+  await pg.waitForTimeout(600);
+  const s3keys = await pg.evaluate(async () => { const out = []; for (const k of ['h', 'i', '⏎']) { out.push(globalThis.__px.key(k)); await new Promise((r) => setTimeout(r, 150)); } return out; });
+  await pg.waitForTimeout(400);
+  const s3 = { cardAtStart: s3card, keys: s3keys, words: await pg.evaluate(() => globalThis.__w), stored: await stored(), card: await pg.evaluate(() => !!document.querySelector('#confirm-center')) };
+  check('S3 a desk consent card open at session start never takes the headset ⏎: sttConsent stays null', s3.cardAtStart && s3.stored === null, JSON.stringify(s3));
+  check('…and the headset text question gets "hi"', s3.words === 'hi', JSON.stringify(s3));
   check('no native dialogs at all', dialogs.length === 0, dialogs.join(' | '));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }
