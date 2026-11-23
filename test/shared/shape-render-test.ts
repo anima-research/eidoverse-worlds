@@ -235,7 +235,12 @@ await tryRow('DS', async () => {
     const wp = Pi.normalizePicture(lp), ws = So.normalizeSound(ls), rp = Pi.normalizePicture(lp, { clip: true }), rs = So.normalizeSound(ls, { clip: true });
     check('DS7 an over-long description: a write refuses it, a read clips it to the cap with a note', !wp.ok && !ws.ok && rp.ok && rp.picture.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rs.ok && rs.sound.description === 'é'.repeat(So.SOUND_DESCRIPTION_MAX) && rp.notes.some((n) => /clipped/.test(n)) && rs.notes.some((n) => /clipped/.test(n)), [wp, rp.ok && rp.notes, rs.ok && rs.notes]);
     const src = (f) => read(`client/lib/realize/${f}`);
-    check('DS7 …the realizers read a stored bag that way, so it isn\'t torn down', /function applyFrom[\s\S]{0,200}normalizePicture\(data, \{ clip: true \}\)/.test(src('pictures.js')) && /function applyFrom[\s\S]{0,200}normalizeSound\(data, \{ clip: true \}\)/.test(src('sounds.js'))); }
+    check('DS7 …the realizers read a stored bag that way, so it isn\'t torn down', /function applyFrom[\s\S]{0,200}normalizePicture\(data, \{ clip: true \}\)/.test(src('pictures.js')) && /function applyFrom[\s\S]{0,200}normalizeSound\(data, \{ clip: true \}\)/.test(src('sounds.js')));
+    // material's description is the same field with the same cap (G3-095): one rule for all three
+    const Ma = await import('../../shared/material.js'), lm = { node: 'screen', texture: 'store/images/0123456789abcdef.png', description: long };
+    const wm = Ma.normalizeMaterial(lm), rm = Ma.normalizeMaterial(lm, { clip: true });
+    check('DS7 …material too: a write refuses an over-long description, a read clips it with a note', !wm.ok && /at most 200/.test(wm.why ?? '') && rm.ok && rm.material.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rm.notes.some((n) => /clipped/.test(n)), [wm, rm.ok && rm.notes]);
+    check('DS7 …and its realizer reads a stored bag that way', /function applyFrom[\s\S]{0,200}normalizeMaterial\(data, \{ clip: true \}\)/.test(src('material.js'))); }
   const { renameFields } = await import('../../tools/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);
