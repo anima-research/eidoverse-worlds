@@ -78,7 +78,6 @@
  "test/client/htmlmesh-pick-probe.mjs": "red on windows-latest in #333's CI (no WebGL context through launchBrowser); green on Linux and macOS. Gate it again once a Windows lane is green.",
  "test/server/sfu-browser-probe.mjs": "a manual check over a real network (its header): needs BASE= a running server with VOICE_TRANSPORT=sfu and two real Chromium bodies; not a gate row",
  "test/server/object-lod-test.ts": "green (0 failed in 76 s, no encoder needed) but 8 fixed waits and 1 own poll loop to move onto wait.ts before it can be a row (#333 trim: hygiene counts them once gated)",
- "test/server/store-variants-test.ts": "green (0 failed in 30 s, no encoder needed) but 6 fixed waits and 1 own poll loop to move onto wait.ts before it can be a row (#333 trim)",
  "test/services/captionbot-test.ts": "green (46 ok) but 8 fixed waits onto wait.ts and its own ok() onto suite.ts before it can be a row (#333 trim)",
  "test/services/captionbot-cli-test.ts": "green (21 ok) but 1 fixed wait onto wait.ts and its own ok() onto suite.ts before it can be a row (#333 trim)"
 }

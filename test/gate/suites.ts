@@ -36,6 +36,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["idle-stall", "server/idle-stall-test.ts", 1], // a download whose reader stalls past Bun's idle timeout still arrives whole
   ["fetchbytes", "client/fetchbytes-test.mjs", 1], // fetchBytes retries 5xx and network failures, never a 4xx, and evicts a failure
   ["variant-status", "server/variant-status-test.ts", 1], // store-variants variantStatus/classifyVariant: every optimization's state for a model
+  ["store-variants", "server/store-variants-test.ts", 1], // the store's KTX2 shadow: helpers, the optimizer's refusal seams (a fake encoder), the real sequencer on a scratch OPT_DIR, the /version-key canary in a scratch tree
   ["optimize-pump", "server/optimize-pump-test.ts", 1], // the optimizer pump with a fake child: estimate, defer, queue
   ["rebuild", "server/rebuild-test.ts", 1], // a Build card's rebuild: rebuildAsset reruns one object's KTX2 + LOD passes; POST /rebuild takes a sign-in, refuses a key in the URL, 4 per address per minute
   ["ktx2-tf-purge", "server/ktx2-tf-purge-test.ts", 1], // the KTX2 purge tool's two detectors on synthetic headers

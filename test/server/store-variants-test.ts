@@ -30,18 +30,15 @@ import { toolsStamp, toolsDigest, toolVersions, currentToolsDigest, hasToolsStam
 import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../../shared/ktx2.js";
 import { freePort } from "../harness/harness.ts";
 import { linkInto } from "../gate/common.ts";
+import { tryUntil } from "../gate/wait.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
   console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${label}${!ok && detail ? `\n      ${detail}` : ""}`);
   if (!ok) failures++;
 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const until = async (pred: () => boolean, ms: number, step = 250) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(step); }
-  return pred();
-};
+// true once `pred` holds, false at the deadline (wait.ts tryUntil: scaled, monotonic)
+const settled = async (pred: () => boolean | Promise<boolean>, ms: number) => (await tryUntil("a store-variants condition", pred, { ms })) !== undefined;
 const ROOT = join(import.meta.dir, "..", "..");
 const OPTIMIZE = join(ROOT, "server", "optimize.ts");
 
@@ -467,11 +464,8 @@ async function startServer(extra: Record<string, string | undefined>, root = ROO
   let log = "";
   proc.stdout!.on("data", (d) => { log += d; });
   proc.stderr!.on("data", (d) => { log += d; });
-  let up = false;
-  for (let i = 0; i < 60 && !up; i++) {
-    try { await fetch(`http://127.0.0.1:${PORT}/`); up = true; } catch { await sleep(250); }
-  }
   const base = `http://127.0.0.1:${PORT}`;
+  const up = await settled(() => fetch(`${base}/`, { signal: AbortSignal.timeout(1000) }).then(() => true), 15_000);
   const get = async (rel: string, headers: Record<string, string> = {}) => {
     const res = await fetch(`${base}/library/${rel}`, { headers });
     return { status: res.status, cc: res.headers.get("cache-control") ?? "", etag: res.headers.get("etag") ?? "",
@@ -481,10 +475,13 @@ async function startServer(extra: Record<string, string | undefined>, root = ROO
     const res = await fetch(`${base}/upload?token=${DOOR}&name=${name}`, { method: "POST", body: bytes });
     return { status: res.status, body: res.ok ? await res.json() : await res.text() };
   };
-  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await sleep(300); };
+  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await settled(() => proc.exitCode !== null || proc.signalCode !== null, 5_000); };
+  // the optimizer has nothing queued or running (/version's opt: upload.ts optStatus) — "nothing more will happen"
+  const drained = () => settled(() => fetch(`${base}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json())
+    .then((v) => v?.opt?.queued === 0 && v?.opt?.running === false), 40_000);
   // the key THIS child publishes — what a browser would use (assets.js)
   const key = up ? keyFromVersion(await fetch(`${base}/version`).then((r) => r.json()).catch(() => null)) : null;
-  return { up, PORT, base, get, upload, stop, log: () => log, key };
+  return { up, PORT, base, get, upload, stop, drained, log: () => log, key };
 }
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 const whichFile = (b: Uint8Array) => { try { return String(glbJson(b).nodes?.[0]?.name ?? "?").split("-")[0]; } catch { return "unparseable"; } };
@@ -512,7 +509,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
       const earlyIsVariant = isKtx2Glb(early.bytes);
       check("a flagged fetch is answered either way, and its caching says which", early.status === 200
         && (earlyIsVariant ? early.cc.includes("max-age=60") && !early.cc.includes("immutable") : early.cc === "no-cache"), `variant=${earlyIsVariant} cc=${early.cc}`);
-      const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
+      const landed = await settled(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
       check("the queue built the KTX2 shadow beside the original", landed, ktx2VariantPath(join(STORE, `${hash}.glb`)));
       if (landed) {   // every image this encoder writes carries the transfer mark — the purge tells fixed from old by it
         const { parseGlb } = await import("../../server/glbparse.ts"); const { KTX2_TF_MARK } = await import("../../server/optimize.ts");
@@ -520,7 +517,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
         check(`…and every KTX2 image in it carries the transfer mark (${ims.length} image(s))`, ims.length > 0 && ims.every((i: any) => i.extras?.[KTX2_TF_MARK]), ims.map((i: any) => i.extras));
       }
       // the parent logs a beat after the child's rename lands the file — poll
-      const logged = await until(() => /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), 5_000);
+      const logged = await settled(() => /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), 5_000);
       check("…and it says so in the sequencer's log", logged, S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
       const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
       check("flagged (current key) → the variant, really KTX2, short-lived + revalidating", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("max-age=60") && !flagged.cc.includes("immutable"),
@@ -548,7 +545,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
       const none = await fixtureGlb("untextured", 0);
       const h2 = hashOf(none);
       await S.upload(none, "untextured");
-      const marked = await until(() => existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)), 30_000);
+      const marked = await settled(() => existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)), 30_000);
       check("nothing to convert → the pump writes the .failed marker (exit 2) and no variant", marked && !existsSync(join(STORE, `${h2}.glb.ktx2.glb`)));
       const listing2: { path: string }[] = await fetch(`${S.base}/library-list?dir=store`).then((r) => r.json());
       check("…and the marker is not a listing entry either", !listing2.some((f) => f.path.includes(h2) && f.path !== `store/${h2}.glb`));
@@ -568,9 +565,9 @@ console.log("\n  the boot sweep — a partial conversion is refused, retryably:"
   check("child server came up", S.up, `:${S.PORT}`);
   if (S.up) {
     // the store sweep fires 5s after boot; store-min first, then --ktx2
-    const swept = await until(() => existsSync(join(STORE_MIN, `${hash}.glb`)) || existsSync(join(STORE_MIN, `${hash}.glb.failed`)), 40_000);
+    const swept = await settled(() => existsSync(join(STORE_MIN, `${hash}.glb`)) || existsSync(join(STORE_MIN, `${hash}.glb.failed`)), 40_000);
     check("the boot sweep queued the pre-existing original (its store-min shadow or verdict appeared)", swept);
-    const refused = await until(() => /REFUSED — partial conversion/.test(S.log()), 30_000);
+    const refused = await settled(() => /REFUSED — partial conversion/.test(S.log()), 30_000);
     check("the --ktx2 pass converted 1 of 2 and was REFUSED (exit 5)", refused && /1\/2/.test(S.log()),
       S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
     check("…no variant written", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)));
@@ -602,10 +599,10 @@ console.log("\n  the boot sweep — a stale size verdict is re-measured, a curre
   if (S.up) {
     // one wait for both: the server writes the variant, then retires the marker (server/upload.ts), so they coexist a moment (#303)
     const variant = ktx2VariantPath(join(STORE, `${hs}.glb`));
-    await until(() => existsSync(variant) && !existsSync(`${variant}.failed`), 40_000);
+    await settled(() => existsSync(variant) && !existsSync(`${variant}.failed`), 40_000);
     check("the stale verdict was re-measured: its variant landed", existsSync(variant));
     check("…and the old verdict is gone (a landed variant retires it)", !existsSync(`${variant}.failed`));
-    await sleep(1500);
+    check("(setup) the optimizer drained: every queued pass has run", await S.drained());   // G6-141: not 1.5 s
     check("the current verdict stands: no variant, marker intact", !existsSync(ktx2VariantPath(join(STORE, `${hc}.glb`))) && existsSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`));
     const flagged = await S.get(negotiate(`store/${hs}.glb`, S.key));
     check("…and the re-measured one now serves its variant", flagged.status === 200 && isKtx2Glb(flagged.bytes));
@@ -622,14 +619,14 @@ console.log("\n  no encoder on the box — exit 3, once, and no marker:");
   const S = await startServer(NO_ENCODER);
   check("child server came up", S.up, `:${S.PORT}`);
   if (S.up) {
-    const said = await until(() => /no encoder/.test(S.log()), 40_000);
+    const said = await settled(() => /no encoder/.test(S.log()), 40_000);
     check("the sweep's --ktx2 item exited 3: 'no encoder … variants skipped this boot'", said);
     check("…no variant, no marker (environmental)", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)) && !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
     const glb2 = await fixtureGlb("noenc-upload", 1);
     const h2 = hashOf(glb2);
     await S.upload(glb2, "noenc-upload");
-    await until(() => existsSync(join(STORE_MIN, `${h2}.glb`)) || existsSync(join(STORE_MIN, `${h2}.glb.failed`)), 30_000);
-    await sleep(1500);
+    await settled(() => existsSync(join(STORE_MIN, `${h2}.glb`)) || existsSync(join(STORE_MIN, `${h2}.glb.failed`)), 30_000);
+    check("(setup) the optimizer drained: the upload's passes have all run", await S.drained());   // G6-141: not 1.5 s
     const noEncoderLines = S.log().split("\n").filter((l) => l.includes("no encoder")).length;
     check("a later upload does not re-spawn an exit-3 pass — ktx2Skip held (the line appears exactly once)", noEncoderLines === 1, `${noEncoderLines} line(s)`);
     check("…and got no marker either", !existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)));
