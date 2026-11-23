@@ -183,7 +183,7 @@ function endDrag() {
   const base = start.comps || Object.keys(more.base).length ? { ...(start.comps ? { [id]: start.comps } : {}), ...more.base } : null; start = null;
   bus.emit('gizmo-release', { id, ops: all, ids: [id, ...(m?.followers.map((f) => f.id) ?? [])] });
   const g = gen; Edits.sendOps(all, { what, base, revert: () => MM.revertHeld(g, MM.idsOf(id, m)) });
-  MM.end(m);   // after the request, so it never queues behind the followers' last samples
+  MM.end(m ?? { leadId: id });   // after the request, so it never queues behind the last samples; a lone drag's lead ends too
 }
 
 /** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */

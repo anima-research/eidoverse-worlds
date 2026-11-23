@@ -18,7 +18,7 @@
 //       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
 //       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
 //       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
-//       can't write puts back the lead and its followers together
+//       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -562,6 +562,18 @@ try {
       if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
     }
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+
+    // a single-thing gizmo release ends its claim too, as a group's does (MM8): bob's last sample of it ends the drag
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), n0 = myActs().length, d0 = bobDrags.length;
+      await gizmoDrag("mm-box", 0.5); await frames(2); await gizmoUp();
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await sleep(400 * WAIT_SCALE);
+      const e26 = lastEnds(["mm-box"], d0);
+      check("MM26 a single-thing gizmo release (the box alone) ends its claim: bob's last sample of it ends the drag", on && myActs().length === n0 + 1 && e26["mm-box"], { on, e26, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await onRecord("mm-box"); await frames(3);
+    }
 
     // a gizmo release the lead can't write (a non-number position: editOps refuses it before anything is sent) puts back the
     // lead AND the followers, as every gizmo exit does (one abort): nothing half-left where the drag had it
