@@ -59,6 +59,29 @@ try {
     const again = await tryUntil("a socket from that address opens again", async () => { const x = connect("203.0.113.9"); const ok = await x.open; if (ok) x.ws.close(); return ok || null; }, { ms: 5000, step: 100 });
     S.check("J2d once one of its sockets closes, the address may open another", again === true);
     for (const x of [b, third, other, ...locals]) try { x.ws.close(); } catch { /* gone */ } }
+  // J6: an upgrade that fails (a plain GET on /ws) gives its address's socket back: five of them, then the address may still
+  // open WS_PER_ADDRESS (2) sockets
+  { const http = h.BASE + "/ws";
+    const plain: number[] = []; for (let i = 0; i < 5; i++) plain.push((await fetch(http, { headers: { "x-real-ip": "203.0.113.50" } })).status);
+    const two = [connect("203.0.113.50"), connect("203.0.113.50")]; const opened = await Promise.all(two.map((x) => x.open));
+    S.check("J6 a failed upgrade gives its socket back: after five plain GETs on /ws an address still opens WS_PER_ADDRESS sockets", plain.every((x) => x === 400) && opened.every(Boolean), { plain, opened });
+    for (const x of two) try { x.ws.close(); } catch { /* gone */ } }
+  // J7: a guest's join refused after its old id was let go (a name refused at the door, past the release in admitJoin): the
+  // world hears it leave once, and the name is free again for the next person
+  { const o = connect(), g = connect(); await Promise.all([o.open, g.open]);
+    join(o, "watcher3"); join(g, "Gus");
+    await until("both are in", () => snapshots(o) && snapshots(g), { ms: 10_000, step: 50 });
+    const gid = youOf(g);
+    join(g, "<b>Gus</b>");   // markup in a typed name: refused (4004) after the old id is released
+    await until("the refused guest's socket closes", () => g.ws.readyState === WebSocket.CLOSED, { ms: 5000, step: 20 });
+    await until("the world hears the guest leave", () => o.msgs.some((m) => m.type === "leave" && m.id === gid), { ms: 5000, step: 20 });
+    await pause("a second leave, if the close sent one, has had its time to arrive", 500);
+    const leaves = o.msgs.filter((m) => m.type === "leave" && m.id === gid).length;
+    const again = connect(); await again.open; join(again, "Gus");
+    const back = await tryUntil("the name is taken again", () => snapshots(again) > 0 && youOf(again), { ms: 5000, step: 50 });
+    S.check("J7 a guest refused on a re-join, after its old id is let go, leaves the world once", leaves === 1, { leaves });
+    S.check("J7b ...and its name is free for the next person", back === "Gus", { back, errs: again.msgs.filter((m) => m.type === "error") });
+    for (const x of [o, again]) try { x.ws.close(); } catch { /* gone */ } }
   // J4: at the defaults, a person changes avatar six times, 150 ms apart (the browser re-sends join on the same socket for
   // each, mybody.js): none is refused, and the world sees the last body
   { const o = connect(undefined, WSD), p = connect("198.51.100.8", WSD); await Promise.all([o.open, p.open]);
