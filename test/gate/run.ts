@@ -350,7 +350,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
-  return { code, signal, out: kept.out, lines: kept.lines(), timedOut, leftovers, stuck };
+  return { code, signal, out: kept.record(), lines: kept.lines(), timedOut, leftovers, stuck };
 }
 
 // ---- the gate ----
@@ -420,7 +420,7 @@ if (receiptAt) {
     library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
     notSelected: notRun, suites, optional: Object.fromEntries(optional),
-    // one hash over every suite's kept tail (outputKeeper's out; the verdict lines its cut dropped aren't hashed), in run order
+    // one hash over every suite's outSha256 (outputKeeper's record: the verdict lines its cut dropped, then the tail), in run order
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
     ...(shard ? { shard: { index: shard.index, of: shard.of, hash: partitionHash(bins), assigned } } : {}),
   };

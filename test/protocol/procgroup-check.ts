@@ -219,5 +219,13 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const got = typeof inheritedEnv === "function" ? inheritedEnv({ WORLD_URL: "ws://live/ws", JOIN_TOKEN: "j", WORLD_TOKEN: "w", WORLD: "real", PORT: "8940", world_url: "ws://win/ws", KEEP: "yes", GONE: undefined }) : null;
   check("PG24 the gate hands a suite the shell's environment without WORLD_URL, JOIN_TOKEN, WORLD_TOKEN, WORLD or PORT (any case), and run.ts builds every suite's env from that",
     !!got && JSON.stringify(got) === '{"KEEP":"yes"}' && LIVE_TARGET.includes("WORLD_URL") && /const env: Record<string, string> = \{ \.\.\.inheritedEnv\(process\.env\),/.test(rs) && !/\.\.\.process\.env as Record/.test(rs), got); }
+{ // PG25 (G4-105): a suite's outSha256 covers the verdict lines the output cut dropped, not only the kept tail
+  const { outputKeeper } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const feed = (early: string) => { const k = outputKeeper(4000, 2000); k.add(`ok   A1 fine\n${early}\n`); for (let i = 0; i < 400; i++) k.add("ok   filler row ".padEnd(40, "x") + "\n"); return k; };
+  const red = feed("FAIL B2 early red"), other = feed("FAIL B2 another red");
+  const rec = (k: any) => typeof k.record === "function" ? k.record() : k.out;
+  check("PG25 the record a receipt hashes holds every verdict line the cut dropped, then the tail (two runs that differ only in a dropped FAIL hash apart), and run.ts hashes that record",
+    red.out === other.out && rec(red) !== rec(other) && rec(red).startsWith("FAIL B2 early red\n") && rec(red).endsWith(red.out) && /out: kept\.record\(\)/.test(rs) && /createHash\("sha256"\)\.update\(r\.out\)/.test(rs),
+    { dropped: red.dropped, recorded: typeof red.record === "function" }); }
 
 done();

@@ -533,6 +533,8 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
       out = out.slice(cut); },
     get out() { return out; }, get dropped() { return dropped; },
     lines() { return [...dropped, ...out.trimEnd().split("\n")]; },
+    /** what the gate keeps, as one text: the dropped verdict lines, then the tail (the receipt's outSha256; G4-105) */
+    record() { return dropped.map((l) => l + "\n").join("") + out; },
   };
 }
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
