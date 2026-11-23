@@ -40,6 +40,11 @@ const uploadDay = new Map<string, { t: number; bytes: number }>();   // bytes se
 function freeBytes(): number | null {
   try { mkdirSync(OPT_DIR, { recursive: true }); const f = statfsSync(OPT_DIR); return Number(f.bavail) * Number(f.bsize); } catch { return null; }
 }
+/** Whether storing `need` more bytes would take the store's disk under UPLOAD_MIN_FREE_MB (false when that is off or unknown). */
+export function diskNearlyFull(need = 0): boolean {
+  if (uploadBudget.minFreeBytes <= 0) return false;
+  const free = freeBytes(); return free !== null && free - need < uploadBudget.minFreeBytes;
+}
 /** Drop windows that have ended, once a map holds many (each address that ever uploaded had one, for good). */
 function pruneWindows(now: number) {
   if (uploadWin.size > 10_000) for (const [k, w] of uploadWin) if (now - w.t >= 60_000) uploadWin.delete(k);
@@ -475,8 +480,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   }
   // the disk's floor, then the uploader's bytes for the day (the stated length now; what was read once it is)
   const stated = Math.max(0, Math.min(Number(req.headers.get("content-length")) || 0, UPLOAD_CAP));
-  if (uploadBudget.minFreeBytes > 0) { const free = freeBytes();
-    if (free !== null && free - stated < uploadBudget.minFreeBytes) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 }); }
+  if (diskNearlyFull(stated)) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 });
   const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 };
   if (Date.now() - day.t >= DAY_MS) { day.t = Date.now(); day.bytes = 0; }
   const dayRefused = () => { const wait = Math.max(1, Math.ceil((DAY_MS - (Date.now() - day.t)) / 1000));

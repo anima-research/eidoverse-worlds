@@ -21,6 +21,7 @@ import { socketKeyOf, takeSocket, releaseSocket } from "./sockcount.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
 import { gzipOf, gzipsAt } from "./gzcache.ts";
+import { envNumber } from "./limits.ts";
 import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
@@ -39,7 +40,7 @@ import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
 import { worlds, getWorld, worldDirNamed, type World } from "./world.ts";
 import { screenshots } from "./screenshots.ts";
-import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
+import { handleUpload, optStatus, rebuildAsset, diskNearlyFull } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
@@ -116,6 +117,10 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
   const r = rankOf(n);
   return { ...n, rank: r.rank, rankName: TIER_NAMES[r.rank], worst: r.worst, v };
 }
+/** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
+ *  server holds; each portrait is at most 400 KB). 0 = no limit. */
+export const thumbLimits = { max: envNumber("THUMBS_MAX", 5000, (n) => Number.isInteger(n) && n >= 0) };
+
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
   const seen = new Map<string, { url: string; file: string; v: string }>();
   for (const base of [...LADDER].reverse()) {   // /library's precedence, lowest first: ?v= and height describe the bytes served
@@ -836,6 +841,17 @@ const ROUTES: Route[] = [
       const dir = join(OPT_DIR, "thumbs");
       mkdirSync(dir, { recursive: true });
       const dest = join(dir, `${safe}.png`);
+      // a name not held yet is taken only while the store holds fewer than THUMBS_MAX names (portraits or meta entries)
+      // and the disk has room (UPLOAD_MIN_FREE_MB): any name may be posted, so without these the names are unbounded
+      if (!existsSync(dest)) {
+        let metaNow: Record<string, unknown> = {};
+        try { const mp = join(dir, "meta.json"); if (existsSync(mp)) metaNow = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
+        if (!(safe in metaNow)) {
+          const names = new Set([...readdirSync(dir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(metaNow)]);
+          if (thumbLimits.max > 0 && names.size >= thumbLimits.max) return new Response(`the portrait store is full (${thumbLimits.max} names)`, { status: 507 });
+          if (diskNearlyFull(400_000)) return new Response("the server's disk is nearly full", { status: 507 });
+        }
+      }
       // the body's measured stature, kept beside the images for /avatars
       const height = Number(url.searchParams.get("height"));
       const hOk = Number.isFinite(height) && height > 0.2 && height < 20;
