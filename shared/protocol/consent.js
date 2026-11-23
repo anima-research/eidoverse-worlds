@@ -100,7 +100,7 @@ export const CONSENT_FIX = "consent {move: true|false, touch: true|false}, or {a
 export function setConsent(P, actor, a) {
   if (a == null || typeof a !== "object") return { ok: false, code: "shape", reason: "consent takes an object" };
   const gone = RETIRED_CONSENT.find((k) => a[k] !== undefined);
-  if (gone) return { ok: false, code: "shape", reason: `consent has no '${gone}' since the two gates replaced the switch (R 10-28)`, fix: CONSENT_FIX };
+  if (gone) return { ok: false, code: "shape", reason: `consent has no '${gone}' since the two gates replaced the switch`, fix: CONSENT_FIX };
   const bad = GATES.find((g) => a[g] !== undefined && typeof a[g] !== "boolean");
   if (bad) return { ok: false, code: "shape", reason: `${bad}: true or false, got ${JSON.stringify(a[bad])}`, fix: CONSENT_FIX };
   const ops = PERSON_OPS.filter((k) => a[k] !== undefined);
