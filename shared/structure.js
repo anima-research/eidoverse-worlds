@@ -671,6 +671,7 @@ export function openingsOf(level, room) {
       if (!inA && !mine.has(nodeOnSide(level.level, bx, bz, sB))) continue;
       side = SIDES[inA ? sA : sB]; other = inA ? p.between[1] : p.between[0];
     }
+    if (other === room.id) continue;   // both sides are this room (a freestanding wall in it): no way out
     out.push({ kind: p.kind, side, to: other ? (byId.get(other)?.label ?? other) : null });
   }
   return out;

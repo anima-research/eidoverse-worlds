@@ -778,6 +778,12 @@ const HOUSE = {
     const inStudy = describeHere(P, -0.5, 0.5)!, inHall = describeHere(P, 1.5, 0.5)!;
     check(`a doored ${axis === 2 ? "↘" : "↗"} diagonal shows from the west room, on its ${west}, to the room beyond it`, new RegExp(`a door on its ${west} to hall`).test(inStudy) && !/to study/.test(inStudy), inStudy);
     check(`...and from the east room, on its ${east}`, new RegExp(`a door on its ${east} to study`).test(inHall) && !/to hall/.test(inHall), inHall); }
+  // a freestanding doored diagonal inside one room joins the room to itself: it is no way out of it
+  for (const axis of [2, 3]) {
+    const P = planStructure({ labels: { "0,0": "hall" },
+      levels: [{ tiles: [0, 1, 2].flatMap((x) => [0, 1, 2].map((z) => [x, z])), walls: [[axis, 1, 1]], apertures: [[axis, 1, 1, "door"]] }] });
+    const here = describeHere(P, 0.5, 0.5)!;
+    check(`a freestanding doored ${axis === 2 ? "↘" : "↗"} diagonal in one room is not a way out of it`, P.levels[0].rooms.length === 1 && !/to hall/.test(here) && /sealed/.test(here), here); }
   // an opening at or above wallH leaves no lintel, as an axis wall's (wallBoxes): never an inverted box
   for (const [wallH, kind] of [[2.0, "door"], [2.4, "arch"], [2.2, "door"]] as const) {
     const bx = planStructure({ wallH, levels: [{ tiles: [[0, 0]], walls: [[2, 0, 0]], apertures: [[2, 0, 0, kind]] }] }).boxes.filter((b: any) => b.kind === "wall");
