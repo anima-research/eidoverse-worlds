@@ -10,7 +10,7 @@
 //   1. the URL carries the recipe (`?lod=<recipe>`), the filename carries it
 //      too, and an unrecognized generation is answered PROVISIONALLY — a
 //      recipe change can never pin yesterday's bytes under today's address
-//      (the mutation canary rewrites the on-disk recipe under a live child);
+//      (the mutation canary rewrites the recipe under a live child, in a scratch copy of the tree);
 //   2. the library sweep queues LODs (its `seen` set is keyed by mode) —
 //      proven with a pre-existing library GLB, not an upload;
 //   3. a missing encoder does not delete valid untextured LOD work — the
@@ -32,10 +32,10 @@
 // The fake toktx (the store-variants-test pattern) stands in for the
 // encoder; the one real-encoder receipt runs when the box has one.
 
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, rmdirSync, chmodSync, utimesSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, rmdirSync, chmodSync, utimesSync, cpSync, statSync, unlinkSync, lstatSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isLodVariant, isServingArtifact, isStoreOriginal, lodVariantPath, ktx2VariantPath, storeShadowsMissing,
@@ -43,18 +43,17 @@ import { isLodVariant, isServingArtifact, isStoreOriginal, lodVariantPath, ktx2V
 import { lodExclusion, findKtx2Encoder, optimizeGlbLod, lodNodesSig, lodMatsSig } from "../../server/optimize.ts";
 import { toolsStamp, toolsDigest, toolVersions } from "../../server/tools-stamp.ts";
 import { lodFromVersion, withLod, keyFromVersion, negotiate } from "../../shared/ktx2.js";
+import { freePort } from "../harness/harness.ts";
+import { linkInto } from "../gate/common.ts";
+import { tryUntil, pause } from "../gate/wait.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
   console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${label}${!ok && detail ? `\n      ${detail}` : ""}`);
   if (!ok) failures++;
 };
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const until = async (pred: () => boolean, ms: number, step = 250) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(step); }
-  return pred();
-};
+// true once `pred` holds, false at the deadline (wait.ts tryUntil: scaled, monotonic)
+const settled = async (pred: () => boolean | Promise<boolean>, ms: number) => (await tryUntil("an object-lod condition", pred, { ms })) !== undefined;
 const ROOT = join(import.meta.dir, "..", "..");
 const OPTIMIZE = join(ROOT, "server", "optimize.ts");
 
@@ -378,49 +377,31 @@ console.log("\n  the CLI — bodies and animation refused, objects reduced, iden
 }
 
 // ---------------------------------------------- the owned-process harness
-const OPT = join(ROOT, "assets", "opt");
+// every child gets a scratch OPT_DIR (store, store-min, the library sweep's variants, manifest), so a killed run leaves
+// nothing in the checkout (G4-192's class)
+const OPT = mkdtempSync(join(tmpdir(), "ew-lod-opt-"));
 const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
-const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
 mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
 const DOOR = "test-door";
 // routes.ts VARIANT_CC — the tier every BUILT variant answers at, and the tier a standing verdict's final answer shares
 // (it serves the plain ktx2 variant). Not #205's `immutable` / a day: variants rebuild IN PLACE (↻, the tf/cap purge, a
 // host gaining sharp), so the recipe in the URL does not pin the bytes; spelled out here so the wire is checked exactly.
 const VARIANT_CC = "public, max-age=60, stale-while-revalidate=300";
-const mine = new Set<string>();          // store hashes this run created
-const mineOpt: string[] = [];            // OPT_DIR-relative files the library sweep created for us
+const scratch: string[] = [];   // the children's WORLDS_DIRs and default libraries, and section 7's tree
+const links: string[] = [];     // section 7's links INTO this checkout: unlinked first, so no recursive rm can walk through one
+const mk = (prefix: string) => { const d = mkdtempSync(join(tmpdir(), prefix)); scratch.push(d); return d; };
 let live: ChildProcess | null = null;
 const cleanup = () => {
   try { live?.kill(); } catch { /* gone */ }
-  for (const h of mine) {
-    for (const p of [join(STORE, `${h}.glb`), join(STORE, `${h}.glb.ktx2.glb`), join(STORE, `${h}.glb.ktx2.glb.failed`),
-      join(STORE_MIN, `${h}.glb`), join(STORE_MIN, `${h}.glb.failed`), lodVariantPath(join(STORE, `${h}.glb`)), `${lodVariantPath(join(STORE, `${h}.glb`))}.failed`])
-      try { rmSync(p, { force: true }); } catch { /* best effort */ }
+  for (const l of links) try { unlinkSync(l); } catch { try { rmdirSync(l); } catch { /* best effort */ } }
+  const linked = links.some((l) => { try { lstatSync(l); return true; } catch { return false; } });   // a link survived: keep its tree
+  for (const d of [OPT, FAKE_DIR, NOWHERE, ...scratch]) {
+    if (linked && links.some((l) => l.startsWith(d))) continue;
+    try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
   }
-  for (const h of mine) for (const f of (existsSync(STORE) ? readdirSync(STORE) : [])) if (f.startsWith(`${h}.glb.lod.`)) try { rmSync(join(STORE, f), { force: true }); } catch { /* best effort */ }
-  for (const rel of mineOpt) { try { rmSync(join(OPT, rel), { force: true }); } catch { /* best effort */ } }
-  for (const rel of mineOpt) { let d = dirname(join(OPT, rel)); while (d !== OPT) { try { rmdirSync(d); } catch { break; } d = dirname(d); } }
-  try {
-    const mp = join(STORE, "manifest.json");
-    if (existsSync(mp)) {
-      const man = JSON.parse(readFileSync(mp, "utf8"));
-      for (const h of mine) delete man[h];
-      if (Object.keys(man).length) writeFileSync(mp, JSON.stringify(man)); else rmSync(mp);
-    }
-  } catch { /* best effort */ }
-  if (madeStore) try { rmdirSync(STORE); } catch { /* not empty */ }
-  if (madeMin) try { rmdirSync(STORE_MIN); } catch { /* same */ }
-  for (const d of [FAKE_DIR, NOWHERE]) try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
 };
 process.on("exit", cleanup);
 
-async function freePort(): Promise<number> {
-  for (let i = 0; i < 20; i++) {
-    const cand = 20000 + Math.floor(Math.random() * 20000);
-    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); } catch { return cand; }
-  }
-  throw new Error("no free port in 20 tries");
-}
 /** Is this /version body the child WE spawned? Nonce-bound: nothing but our
  *  child was handed this run's WORLD_INSTANCE_NONCE, so no squatter, stale
  *  server, or TOCTOU winner on the probed port can answer with it. */
@@ -432,31 +413,35 @@ const ownedBy = (version: any, nonce: string) => version != null && typeof versi
  *  foreign responder on the probed port never greens a claim. Logs piped (a
  *  failed boot prints its tail); stop() is the one cleanup owner and every
  *  section holds it in a finally. */
-async function startServer(extra: Record<string, string | undefined>, lib?: string) {
-  const PORT = await freePort();
+async function startServer(extra: Record<string, string | undefined>, lib?: string, root = ROOT) {
+  const PORT = freePort(20000 + Math.floor(Math.random() * 18000));   // a bind-and-close probe (G4-191's class: a fetch probe called a silent listener free)
   const nonce = crypto.randomUUID();
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
     WORLD_INSTANCE_NONCE: nonce,
-    WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-lod-w-")), EIDOVERSE_DIR: lib ?? mkdtempSync(join(tmpdir(), "ew-lod-lib-")), ...extra };
-  const proc = spawn(process.execPath, [join(ROOT, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
+    WORLDS_DIR: mk("ew-lod-w-"), OPT_DIR: OPT, EIDOVERSE_DIR: lib ?? mk("ew-lod-lib-"), ...extra };
+  const proc = spawn(process.execPath, [join(root, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
   live = proc;
   let log = "";
   proc.stdout!.on("data", (d) => { log += d; });
   proc.stderr!.on("data", (d) => { log += d; });
-  let up = false;
-  let version: any = null;
-  for (let i = 0; i < 120 && !up; i++) {   // a cold transpile can eat 15s before the first log line
-    if (proc.exitCode != null) break;   // died at boot — the tail says why
-    try {
-      version = await fetch(`http://127.0.0.1:${PORT}/version`).then((r) => r.json());
-      if (ownedBy(version, nonce)) up = true;            // OUR child, not merely A server
-      else break;                                        // someone else answers here — refuse, do not retry into their world
-    } catch { await sleep(250); }
-  }
+  let version: any = null, foreign = false;
+  // a cold transpile can eat 15s before the first log line; settles early when the child died at boot (the tail says why)
+  // or someone else answers here (refuse, do not retry into their world)
+  await settled(async () => {
+    if (proc.exitCode != null) return true;
+    try { version = await fetch(`http://127.0.0.1:${PORT}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json()); }
+    catch { return false; }
+    if (!ownedBy(version, nonce)) foreign = true;
+    return true;
+  }, 30_000);
+  const up = proc.exitCode == null && !foreign && ownedBy(version, nonce);   // OUR child, not merely A server
   if (!up) console.log(`      child did not come up OWNED — log tail:\n      ${log.split("\n").slice(-6).join("\n      ")}`);
   const base = `http://127.0.0.1:${PORT}`;
-  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await sleep(300); };
-  return { up, PORT, base, stop, log: () => log, version, nonce,
+  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await settled(() => proc.exitCode !== null || proc.signalCode !== null, 5_000); };
+  // the optimizer has nothing queued or running (/version's opt: upload.ts optStatus) — "nothing more will happen"
+  const drained = () => settled(() => fetch(`${base}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json())
+    .then((v) => v?.opt?.queued === 0 && v?.opt?.running === false), 45_000);
+  return { up, PORT, base, stop, drained, log: () => log, version, nonce,
     key: keyFromVersion(version), lod: lodFromVersion(version),
     get: async (rel: string, headers: Record<string, string> = {}) => {
       const res = await fetch(`${base}/library/${rel}`, { headers });
@@ -479,7 +464,7 @@ console.log("\n  the store door — the tier URL carries the generation:");
     check("impostor control: the same body under a WRONG or MISSING nonce is refused by the verifier",
       !ownedBy(S.version, crypto.randomUUID()) && !ownedBy({ ...S.version, instance: undefined }, S.nonce) && !ownedBy(null, S.nonce));
     const glb = await gridGlb("served", 160, true);
-    const hash = hashOf(glb); mine.add(hash);
+    const hash = hashOf(glb);
     await S.upload(glb, "lod-test");
     // ownership: only the tree we spawned from holds this run's fixture
     const own = await S.get(`store/${hash}.glb`);
@@ -488,7 +473,7 @@ console.log("\n  the store door — the tier URL carries the generation:");
     const early = await S.get(url);
     check("before the variant lands, the recipe URL answers PROVISIONALLY — and says so",
       isLodGlb(early.bytes) ? early.lod === "variant" : (early.cc === "no-cache" && early.lod === "provisional"), `cc=${early.cc} lod=${early.lod}`);
-    const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
+    const landed = await settled(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
     check("the queue built the recipe-named LOD shadow", landed, lodVariantPath(join(STORE, `${hash}.glb`)));
     if (landed) {
       const res = await S.get(url);
@@ -507,9 +492,9 @@ console.log("\n  the store door — the tier URL carries the generation:");
         catalog.filter((h) => h.path === `store/${hash}.glb`).length === 1 && !catalog.some((h) => isLodVariant(h.path)));
     }
     const body = await skinnedGlb("served");
-    const bh = hashOf(body); mine.add(bh);
+    const bh = hashOf(body);
     await S.upload(body, "body-test");
-    const refused = await until(() => existsSync(`${lodVariantPath(join(STORE, `${bh}.glb`))}.failed`), 45_000);
+    const refused = await settled(() => existsSync(`${lodVariantPath(join(STORE, `${bh}.glb`))}.failed`), 45_000);
     const verdict = refused ? readFileSync(`${lodVariantPath(join(STORE, `${bh}.glb`))}.failed`, "utf8") : "";
     check("an uploaded BODY gets the typed verdict marker and no variant",
       refused && verdict.includes("unsupported: skinned/avatar asset") && !existsSync(lodVariantPath(join(STORE, `${bh}.glb`))), verdict.slice(0, 80));
@@ -523,13 +508,13 @@ console.log("\n  the store door — the tier URL carries the generation:");
 
     // a TEXTURED already-light prop: the ktx2 arm bakes its variant, the lod arm refuses typed → the lod URL's answer is FINAL
     const lightGlb = await gridGlb("light", 8, true);
-    const lh = hashOf(lightGlb); mine.add(lh);
+    const lh = hashOf(lightGlb);
     // an OLDER generation's leftovers beside it must not survive the verdict — a recipe bump leaves one generation on disk
     const oldGen = `${join(STORE, `${lh}.glb`)}.lod.lod0-r50e05-texel2048-min1.glb`;
     writeFileSync(oldGen, "dead"); writeFileSync(`${oldGen}.failed`, "dead");
     await S.upload(lightGlb, "light-test");
     const lPath = lodVariantPath(join(STORE, `${lh}.glb`)), lMarker = `${lPath}.failed`;
-    const lRefused = await until(() => existsSync(lMarker) && existsSync(ktx2VariantPath(join(STORE, `${lh}.glb`))), 45_000);
+    const lRefused = await settled(() => existsSync(lMarker) && existsSync(ktx2VariantPath(join(STORE, `${lh}.glb`))), 45_000);
     check("an already-light TEXTURED prop: the ktx2 variant lands and the lod arm writes its typed verdict", lRefused,
       S.log().split("\n").filter((l) => l.includes(lh.slice(0, 8))).slice(-3).join(" | "));
     if (lRefused) {
@@ -596,11 +581,8 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
   const libGlb = await gridGlb("library", 160, true);
   const REL = "eidoverse/assets/models/lod_probe_fixture.glb";
   writeFileSync(join(LIB, REL), libGlb);
-  mineOpt.push(`${REL}.ktx2.glb`, `${REL}.ktx2.glb.failed`,
-    ...[LOD_RECIPE, "x"].map((r0) => `${REL}.lod.${r0}.glb`), `${REL}.lod.${LOD_RECIPE}.glb.failed`);
   const REL2 = "eidoverse/assets/models/lod_probe_light.glb";   // textured, under the floor: a standing verdict, bound to a MUTABLE source
   writeFileSync(join(LIB, REL2), await gridGlb("library-light", 8, true));
-  mineOpt.push(`${REL2}.ktx2.glb`, `${REL2}.ktx2.glb.failed`, `${REL2}.lod.${LOD_RECIPE}.glb`, `${REL2}.lod.${LOD_RECIPE}.glb.failed`, `${REL2}.lod.${LOD_RECIPE}.glb.deferred`);
   let S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
   try {
   check("child server came up OWNED over the fixture library", S.up, `:${S.PORT}`);
@@ -608,15 +590,15 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
     const own = await S.get(REL);
     check("listener is OUR child (the per-run library fixture round-trips)", own.status === 200 && own.bytes.length === libGlb.length);
     const lodPath = join(OPT, `${REL}.lod.${LOD_RECIPE}.glb`);
-    const landed = await until(() => existsSync(lodPath), 60_000);
+    const landed = await settled(() => existsSync(lodPath), 60_000);
     check("the LIBRARY sweep queued and built the LOD (the shared-seen bug is dead)", landed,
       S.log().split("\n").filter((l) => l.includes("lod") || l.includes("ktx2")).slice(-4).join(" | "));
-    check("…and the ktx2 arm still built its own variant beside it", await until(() => existsSync(join(OPT, `${REL}.ktx2.glb`)), 60_000));
+    check("…and the ktx2 arm still built its own variant beside it", await settled(() => existsSync(join(OPT, `${REL}.ktx2.glb`)), 60_000));
     if (landed) {
       const res = await S.get(withLod(negotiate(REL, S.key), S.lod));
       check("the library LOD serves under the recipe URL", isLodGlb(res.bytes) && res.lod === "variant", res.lod);
       const lMarker2 = join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb.failed`);
-      const lightDone = await until(() => existsSync(lMarker2) && existsSync(join(OPT, `${REL2}.ktx2.glb`)), 60_000);
+      const lightDone = await settled(() => existsSync(lMarker2) && existsSync(join(OPT, `${REL2}.ktx2.glb`)), 60_000);
       check("the library sweep wrote the light prop's typed verdict beside its ktx2 variant", lightDone);
       check("…stamped with the recipe AND the tools the CLI ran with (this box's encoder — tools-stamp.ts)", lightDone
         && readFileSync(lMarker2, "utf8").includes(`${recipeStamp(LOD_RECIPE)} ${toolsStamp(toolsDigest(toolVersions(FAKE_TOKTX)))}`)
@@ -628,7 +610,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
         const cat1: { path: string; opt?: { lod?: { state: string } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
         check("…and its catalog card reads the same verdict: LOD not needed (lodVerdictKind light)", cat1.find((h) => h.path === REL2)?.opt?.lod?.state === "not-needed",
           cat1.find((h) => h.path === REL2)?.opt);
-        await sleep(1100);
+        await pause("the source's next mtime must be strictly newer than the verdict's, past timestamp granularity", 1100);
         const t2 = new Date(); utimesSync(join(LIB, REL2), t2, t2);   // the SOURCE mutates: the verdict is older than it now
         const f2 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
         check("source newer than the verdict → a question again: provisional, unnamed verdict", f2.cc === "no-cache" && f2.lod === "provisional", `cc=${f2.cc} lod=${f2.lod}`);
@@ -656,7 +638,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
         `original×${catalog.filter((h) => h.path === REL).length}, leaked: ${leaked.slice(0, 2).join(" | ") || "none"}`);
       // the source mutates (a library file is MUTABLE): the old variant must
       // never serve under the new source — provisional until rebuilt
-      await sleep(1100);   // a strictly newer mtime, beyond timestamp granularity
+      await pause("a strictly newer mtime for the source, beyond timestamp granularity", 1100);
       const libGlb2 = await gridGlb("library-v2", 160, true);
       writeFileSync(join(LIB, REL), libGlb2);
       const now = new Date();
@@ -670,7 +652,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       check("child rebooted", S.up);
       if (S.up) {
         // fresh by THE rule (freshOver: the variant records the new source's identity), not by mtime order
-        const rebuilt = await until(() => existsSync(lodPath) && freshOver(lodPath, join(LIB, REL)), 60_000);
+        const rebuilt = await settled(() => existsSync(lodPath) && freshOver(lodPath, join(LIB, REL)), 60_000);
         check("the next boot re-swept the mutated source into a FRESH variant", rebuilt);
         if (rebuilt) {
           const res2 = await S.get(withLod(negotiate(REL, S.key), S.lod));
@@ -678,12 +660,12 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
           // the light prop's stale verdict was RE-MEASURED by the same boot (a marker older than its source does not
           // stand in the sweep either — the pre-existing skip ignored mtime) and stands again, newer than the source
           const lMarker2 = join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb.failed`);
-          const remeasured = await until(() => existsSync(lMarker2) && Bun.file(lMarker2).lastModified > Bun.file(join(LIB, REL2)).lastModified, 60_000);
+          const remeasured = await settled(() => existsSync(lMarker2) && Bun.file(lMarker2).lastModified > Bun.file(join(LIB, REL2)).lastModified, 60_000);
           const f3 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
           check("…and the mutated light prop was re-measured: its verdict stands again, newer than the source — final",
             remeasured && f3.cc === VARIANT_CC && f3.lod === "refused=light", `remeasured=${remeasured} cc=${f3.cc} lod=${f3.lod}`);
           // the refused re-measure removed the variant it outlived — so the card reads the verdict, not `stale`
-          const plantedGone = await until(() => !existsSync(join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb`)), 10_000);
+          const plantedGone = await settled(() => !existsSync(join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb`)), 10_000);
           const cat3: { path: string; opt?: { lod?: { state: string } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
           const card3 = cat3.find((h) => h.path === REL2)?.opt?.lod;
           check("…and the refused re-measure REMOVED the stale variant it outlived (not left beside a fresh verdict)", plantedGone,
@@ -692,7 +674,7 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
           // a FRESH verdict over a STALE ktx2 variant (the source re-exported, the ktx2 rebuild not yet run — or refused):
           // the unflagged answer tolerates that window; a FINAL answer must not serve yesterday's bytes for a day
           if (remeasured) {
-            await sleep(1100);
+            await pause("the source's next mtime must be strictly newer than its ktx2 variant's, past timestamp granularity", 1100);
             const t3 = new Date(); utimesSync(join(LIB, REL2), t3, t3);                                   // source newer than the ktx2 variant…
             // …but the verdict re-measured over THIS source (it records the identity it judged — freshOver; touching the
             // marker's mtime no longer makes it fresh, only a recorded identity equal to the source's does)
@@ -720,16 +702,16 @@ console.log("\n  no encoder — geometry work is not the encoder's hostage:");
   check("child server came up OWNED with no encoder anywhere", S.up, `:${S.PORT}`);
   if (S.up) {
     const untex = await gridGlb("noenc-untex", 160, false);
-    const uh = hashOf(untex); mine.add(uh);
+    const uh = hashOf(untex);
     await S.upload(untex, "noenc-untex");
     const tex = await gridGlb("noenc-tex", 160, true);
-    const th = hashOf(tex); mine.add(th);
+    const th = hashOf(tex);
     await S.upload(tex, "noenc-tex");
-    const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${uh}.glb`))), 45_000);
+    const landed = await settled(() => existsSync(lodVariantPath(join(STORE, `${uh}.glb`))), 45_000);
     check("the UNTEXTURED upload got its LOD — ktx2Skip no longer deletes valid geometry work", landed,
       S.log().split("\n").filter((l) => l.includes("lod") || l.includes("encoder")).slice(-4).join(" | "));
-    await until(() => existsSync(join(STORE_MIN, `${th}.glb`)) || existsSync(join(STORE_MIN, `${th}.glb.failed`)), 45_000);
-    await sleep(1500);
+    await settled(() => existsSync(join(STORE_MIN, `${th}.glb`)) || existsSync(join(STORE_MIN, `${th}.glb.failed`)), 45_000);
+    check("(setup) the optimizer drained: every queued pass has run", await S.drained());   // not 1.5 s (G6-141's class)
     check("the TEXTURED upload kept its original: no variant, NO marker (environmental)",
       !existsSync(lodVariantPath(join(STORE, `${th}.glb`))) && !existsSync(`${lodVariantPath(join(STORE, `${th}.glb`))}.failed`));
     check("…with the --lod arm's own once-per-boot note, and no ktx2Skip purge of lod items",
@@ -739,20 +721,29 @@ console.log("\n  no encoder — geometry work is not the encoder's hostage:");
 }
 
 // ---------------------------------------------- 7. the mutation canary: a recipe change cannot pin
+// the pull lands in a SCRATCH COPY of server/ + shared/ the child runs from, never in this checkout (G4-192's class: a
+// parallel suite importing store-variants.ts would read the pulled floor, and a killed run can't restore it)
 console.log("\n  the canary — a pulled recipe lands under a running sequencer:");
 {
-  const SV = join(ROOT, "server", "store-variants.ts");
-  const pristine = readFileSync(SV);
-  const restore = () => { try { writeFileSync(SV, pristine); } catch { /* best effort */ } };
-  process.on("exit", restore);
+  const REAL_SV = join(ROOT, "server", "store-variants.ts");
+  const pristine = readFileSync(REAL_SV);
+  // server/ and shared/ copied for real (config.ts resolves ROOT from server/'s own path); every other top-level dir linked
+  const TREE = mk("ew-lod-tree-");
+  for (const name of readdirSync(ROOT)) {
+    if (name === ".git" || name === "assets" || name === "worlds") continue;
+    const from = join(ROOT, name), to = join(TREE, name);
+    if (name === "server" || name === "shared" || !statSync(from).isDirectory()) cpSync(from, to, { recursive: true });
+    else { linkInto(from, to); links.push(to); }   // a junction for a dir: no privilege needed on Windows
+  }
+  const SV = join(TREE, "server", "store-variants.ts");
   const glb = await gridGlb("canary", 160, true);
-  const hash = hashOf(glb); mine.add(hash);
+  const hash = hashOf(glb);
   writeFileSync(join(STORE, `${hash}.glb`), glb);
-  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX });
-  check("child server came up with the PRISTINE recipe in memory", S.up && S.lod === LOD_RECIPE, `${S.up} lod=${S.lod}`);
+  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, undefined, TREE);
+  check("child server came up from the scratch tree with the PRISTINE recipe in memory", S.up && S.lod === LOD_RECIPE, `${S.up} lod=${S.lod}`);
   try {
     if (S.up) {
-      const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
+      const landed = await settled(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
       check("its boot sweep built the current-generation variant", landed);
       // the recipe DERIVES from its parameters now, so a pull that changes one is what a real deploy looks like — and the
       // mutation must be PROVEN to have landed (the old literal-replace went silently inert when the literal left the file)
@@ -760,7 +751,7 @@ console.log("\n  the canary — a pulled recipe lands under a running sequencer:
       const pulled = pristine.toString("utf8").replace(/^export const LOD_MIN_VERTS = [\d_]+;/m, `export const LOD_MIN_VERTS = ${LOD_MIN_VERTS / 2};`);
       check("the canary's pull changes the on-disk source (a no-op mutation proves nothing)", pulled !== pristine.toString("utf8") && NEXT !== LOD_RECIPE, NEXT);
       writeFileSync(SV, pulled);
-      const fresh = spawn(process.execPath, ["-e", "import { LOD_RECIPE } from './server/store-variants.ts'; console.log(LOD_RECIPE)"], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
+      const fresh = spawn(process.execPath, ["-e", "import { LOD_RECIPE } from './server/store-variants.ts'; console.log(LOD_RECIPE)"], { cwd: TREE, stdio: ["ignore", "pipe", "pipe"] });
       let freshOut = ""; fresh.stdout!.on("data", (d) => { freshOut += d; });
       await new Promise<void>((r) => fresh.on("close", () => r()));
       check("a FRESH process reading the pulled file derives the NEXT recipe — the pull is real", freshOut.trim() === NEXT, `fresh=${freshOut.trim()}`);
@@ -772,8 +763,8 @@ console.log("\n  the canary — a pulled recipe lands under a running sequencer:
       check("the NEXT generation's URL answers no-cache and NOT the old variant — nothing for the new recipe to inherit",
         !isLodGlb(bad.bytes) && bad.cc === "no-cache", `cc=${bad.cc} lod=${isLodGlb(bad.bytes)}`);
     }
-  } finally { restore(); await S.stop(); }
-  check("the on-disk recipe is restored byte-for-byte", readFileSync(SV).equals(pristine));
+  } finally { await S.stop(); }
+  check("this checkout's server/store-variants.ts was never touched", readFileSync(REAL_SV).equals(pristine));
 }
 
 { // the Permissive fallback: a UV-seam-locked mesh still gets its LOD, and the result says it was permissive

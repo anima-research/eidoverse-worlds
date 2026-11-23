@@ -80,6 +80,7 @@ const EXPECT: Record<string, number> = {
   "xr-entry-effects": 0.2, "xr-session-lifecycle": 0.2, "xrpanels": 0.3, "xrpass": 0.3, "xrpixelratio": 0.2, "xrpointer": 0.2, "xrshadow": 0.2, "voice-wire-mutation": 10.5, "voicesource-real": 0.2, "vrmheight": 0.6, "waterkind": 0.5, "wiring": 0.2, "worldentity": 1.4, "manifest": 0.2, "hierarchy": 17, "worn-name": 0.1, "voicebot": 3, "water-lifecycle": 1.8, "walk-support-lifecycle": 0.8, "worlds-route": 2.8,
   "vrmic-exec": 0.5, "xr-nullfb": 0.3,
   "reexport-binding": 0.3, "schema-layers": 0.3, "picture-note": 0.3, "realized-lifecycle": 0.7, "components-wire": 1.2, "grass-quality": 0.3, "rebuild": 1,
+  "store-variants": 30, "object-lod": 72,   // 11-22, inside the test lock: four / seven child sequencers each
   "skywatch": 1.3,
   "stdio-door": 14,
   "panels-schema": 0.3,
