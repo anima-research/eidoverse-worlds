@@ -24,7 +24,7 @@ const ok = (cond: unknown, label: string, detail?: unknown) => {
   if (cond) { pass++; console.log(`  ok  ${label}`); }
   else { fail++; console.log(`  FAIL ${label}${detail !== undefined ? `\n       ${typeof detail === "string" ? detail : JSON.stringify(detail)}` : ""}`); }
 };
-const base = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "oldworlds-"));
+const base = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(), "oldworlds sp-"));   // a space on purpose: the printed commands must quote WORLDS_DIR, and asRun must keep it whole (G4-184)
 process.on("exit", () => { if (!process.env.PROTOCOL_KEEP) fs.rmSync(base, { recursive: true, force: true }); });
 const W = path.join(base, "worlds"), OPT = path.join(base, "opt");
 fs.mkdirSync(W, { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
@@ -111,6 +111,8 @@ const shWords = (cmd: string) => { const out: string[] = []; let w: string | nul
 const asRun = (cmd: string, account = "human:test:op") => { const argv = shWords(cmd.replaceAll("<your-account>", account)), env: Record<string, string> = {};
   while (/^[A-Z_]+=/.test(argv[0] ?? "")) { const [k, ...v] = argv.shift()!.split("="); env[k] = v.join("="); }
   return { argv, env }; };
+ok(JSON.stringify(shWords(`A='/t/it'\\''s a dir' bun x.ts 'two words'`)) === JSON.stringify(["A=/t/it's a dir", "bun", "x.ts", "two words"]),
+  "O9 shWords keeps a quoted word with a space whole and reads the '\\'' escape, as sh does", shWords(`A='/t/it'\\''s a dir' bun x.ts 'two words'`));
 { const { argv, env } = asRun(ot?.command ?? "x=y bun");
   ok(argv[0] === "bun" && argv[1] === "tools/world.ts", "O5 the command runs world.ts", argv);
   const before = fs.readdirSync(path.join(W, "oldtown")).sort();
