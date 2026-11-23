@@ -13,7 +13,7 @@
 //       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
 //       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
 //       ground, and a member already below its ground, leading or following, doesn't lift the lot; a gizmo drag the pivot
-//       tool takes over puts the followers back
+//       tool takes over puts the followers back; a refused group release puts every member back and leaves no claim open
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -57,7 +57,8 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; };
+  const bobDrags: any[] = [];   // the live drags bob is shown (MM15: which samples end a claim)
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
@@ -387,6 +388,32 @@ try {
       check("MM14 a Shift nudge up led by the sunk post raises both by the nudge (well under its depth), not to its ground",
         myActs().length === n0 + 1 && depth > 0.25 && !!S1 && !!P1 && P1[1] - P0[1] > 0.005 && P1[1] - P0[1] < depth - 0.1 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { depth, S0, S1, P0, P1, acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+    }
+
+    // a refused group release (bob moved the table under the drag: its expect fails) puts EVERY member back where the log has
+    // it, writes nothing, and leaves no claim open on anyone else's screen (the put-back samples end the drag)
+    await frame("mm-tbl", 1.5);
+    const at9 = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+    check("MM (setup) a press point on the box over the table, again", !!at9, { at9 });
+    if (at9) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const TT0 = disk().entities[NODE.get("mm-tbl")].c.transform, B0 = pose("mm-box"), n0 = myActs().length, r0 = await evalJson(`__refused.length`);
+      const theirs = { ...TT0, pos: [TT0.pos[0] + 0.5, TT0.pos[1], TT0.pos[2]] };
+      let bw: any = null, d0 = 0;
+      await gesture(at9, [at9[0] + 30, at9[1] + 10], async () => {
+        bw = await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: theirs });
+        await waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['mm-tbl']?.c?.transform?.pos) === ${JSON.stringify(JSON.stringify(theirs.pos))})`);
+        d0 = bobDrags.length; });
+      const refused = await waitFor(`__refused.length > ${r0}`, 6000); await sleep(800 * WAIT_SCALE);
+      const why = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code)`);
+      const local = await evalJson(`import('/lib/world.js').then((m) => ['mm-box', 'mm-tbl'].map((n) => m.entities.get(n).position.toArray()))`);
+      check("MM15 (setup) bob moves the table during the drag, and the release is refused for it (changed)", bw?.ok && refused && why?.includes("changed"), { bw: bw?.refused, why });
+      check("MM15 a refused group release writes nothing and puts every member back where the log has it: the box where it was, the table where bob put it",
+        myActs().length === n0 && near(pose("mm-box"), B0) && near(pose("mm-tbl"), theirs.pos) && near(local?.[0], B0) && near(local?.[1], theirs.pos), { local, B0, theirs: theirs.pos, disk: [pose("mm-box"), pose("mm-tbl")], acts: actsSince(n0) });
+      const last = Object.fromEntries(["mm-box", "mm-tbl"].map((n) => [n, bobDrags.slice(d0).filter((m) => m.id === NODE.get(n)).at(-1) ?? null]));
+      check("MM15 …and the put-back reopens no claim: the last sample bob saw of each member ends the drag, at the log's pose",
+        Object.values(last).every((m: any) => m?.end === true) && near(last["mm-box"]?.pos, B0) && near(last["mm-tbl"]?.pos, theirs.pos), last);
+      await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: TT0 }); await onRecord("mm-tbl"); await frames(3); await settle();
     }
 
     // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)

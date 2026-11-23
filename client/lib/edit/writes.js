@@ -60,12 +60,13 @@ export function writesOf(req) {
 export const mayLift = () => { const r = net.myRights; if (!r) return false;
   return Array.isArray(r.permissions) ? r.permissions.includes('build') : isOwner(r); };
 
-/** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
+/** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. The
+ *  sample ends the drag: the gesture is over, so it must not reopen a claim on anyone's screen (#352 review, point 6). */
 export function revertPose(id) {
   bus.emit('pose-revert', { id });
   const o = entities.get(id); if (!o) return;
   const q = o.quaternion; const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.x * q.x + q.y * q.y));
-  sendDrag(id, [o.position.x, o.position.y, o.position.z], yaw, [q.x, q.y, q.z, q.w]);
+  sendDrag(id, [o.position.x, o.position.y, o.position.z], yaw, [q.x, q.y, q.z, q.w], { end: true });
 }
 
 /** Show a refusal in a person's words (plainwords.js: no code, no tool syntax, things by their labels). The authority's whole
