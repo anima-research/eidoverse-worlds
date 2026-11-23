@@ -5,7 +5,7 @@ import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { directoryAt, directoryFor, isMinted, accountTag, nameTagKey, foldName, lockFor } from "../../server/directory.ts";
+import { directoryAt, directoryFor, anonConfig, isMinted, accountTag, nameTagKey, foldName, lockFor } from "../../server/directory.ts";
 import { CUSTODY_FILE, DIRECTORY_FILE, OLD_NAMES, custodyFileIn } from "../../server/keyfiles.ts";
 import { custodyAt } from "../../server/custody.ts";
 import { openLive } from "../harness/labhost.ts";
@@ -664,5 +664,19 @@ fs.rmSync(tmp, { recursive: true, force: true });
     "D40 a stand-in (kind \"imported\") is made only by the directory, the old-world translator and the legacy migration; mintId is called only by the directory, the legacy migration (and the entity minter): the translator derives its ids, so the dry run and the apply agree", { standIns: [...new Set(standIns)], mints: [...new Set(mints)] });
   ok(isMinted("u-" + "a".repeat(20)) && !isMinted("w-" + "a".repeat(20)) && !isMinted("u-imported-" + "a".repeat(11)) && !isMinted("u-" + "a".repeat(21)),
     "D40b one id shape, u- and 20 (or 24) base32 characters: nothing in it says a world, a name or a kind"); }
+
+// ---- D41: guests' ids are bounded: a departed guest's is forgotten past ANON_IDS_KEPT, a connected one's never ----
+{ const d = directoryAt(path.join(tmp, "d41", ".directory.json")); const kept = anonConfig.kept; anonConfig.kept = 5;
+  const live = d.resolve({ name: "Stays" });
+  const gone: string[] = [];
+  for (let i = 0; i < 50; i++) { const id = d.resolve({ name: `Guest${i}` }); gone.push(id); d.release(id); }
+  const st = d.anonStats();
+  ok(st.held <= 5 + 1 + 1 && st.departed <= 5 + 1, "D41 fifty guests come and go: only ANON_IDS_KEPT departed ids are held", st);
+  ok(d.nameOf(live) === "Stays", "D41b a guest still connected is never forgotten, however many come and go after", d.nameOf(live));
+  ok(d.nameOf(gone[49]) === "Guest49" && d.nameOf(gone[0]) === null, "D41c the most recent departed guests keep their names; the oldest are forgotten", [d.nameOf(gone[49]), d.nameOf(gone[0])]);
+  const acct = d.resolve({ sub: "human:discord:941", name: "Held" }); d.release(acct);
+  for (let i = 0; i < 20; i++) d.release(d.resolve({ name: `More${i}` }));
+  ok(d.nameOf(acct) === "Held", "D41d release never touches an account's id");
+  anonConfig.kept = kept; }
 
 done();

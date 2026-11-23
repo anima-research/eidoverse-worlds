@@ -313,6 +313,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     }
     // what this join proves is decided from this join's own credentials: nothing a previous join on this socket proved carries
     // over (else a token presented once would let a second join wear any agent's name).
+    if (c.actorId && c.anonymous) directoryFor(WORLDS_DIR).release(c.actorId);   // a guest's earlier id on this socket is done with
     c.tokenVerified = false; c.auxBound = false; c.actorId = undefined;
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
@@ -724,6 +725,7 @@ const server = Bun.serve({
         if (!c) return;
         screenshots.retire(c);
         clients.delete(ws);
+        if (c.actorId && c.anonymous) directoryFor(WORLDS_DIR).release(c.actorId);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
         if (c.bcRing?.length) {

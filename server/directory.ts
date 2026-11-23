@@ -13,6 +13,7 @@ import { secretOf } from "./custody.ts";
 import { readCustody } from "./custodycheck.ts";
 import { replaceDurable, withFileLock } from "./durable.ts";
 import { sha256 } from "../shared/protocol/hash.js";
+import { envNumber } from "./limits.ts";
 
 // kind is about the ACCOUNT, never what holds it (PROTOCOL §6a rule 3): "account" (one is bound), "anon" (none: a guest),
 // "imported" (a name from an imported log, no account yet). Older files' "human"/"agent" read as "account".
@@ -41,6 +42,11 @@ export function nameTagKey(worldsDir: string): Buffer | null {
 }
 
 /** `existingWorlds` is accepted but no longer read: the v1 → v2 upgrade keeps every id server-wide without it. */
+/** Departed guests whose anonymous ids (and names, for the history they wrote) are kept in memory, oldest forgotten first
+ *  past it: ANON_IDS_KEPT, default 10000 (about a megabyte). A guest still connected is never forgotten. Past this many,
+ *  an older guest's lines in history show their id rather than their name. Set it as high as wanted. */
+export const anonConfig = { kept: envNumber("ANON_IDS_KEPT", 10_000, (n) => Number.isInteger(n) && n >= 0) };
+
 export function directoryAt(file: string, now: () => number = Date.now, existingWorlds: () => string[] = () => []) {
   const read = (): File => (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, "utf8")) : { v: 2, ids: {} });
   const d: File = read();
@@ -60,6 +66,7 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
     for (const [, e] of odd) for (const s of e.subs) if (!ACCOUNT_SHAPE.test(s)) byKey.delete(e.world ? `${s}|${e.world}` : s);
     if (odd.length) console.log(`[directory] ${odd.length} stored account(s) refused (not an account shape; kept on disk, nobody wears them): ${odd.map(([id, e]) => `${e.name} (${id})`).join(", ")}`); }
   const anon = new Map<string, Entry>();   // in memory only: an anonymous id is never written, never outlives the process
+  const departed = new Set<string>();      // anonymous ids whose connection has gone (release), oldest first: the ones forgotten
   // two writers (the CLI tools and a running server) share this file: re-read and merge before every write, so neither
   // drops the other's entries. Ours win on a clash (the same id can only be minted by one of them).
   const tomb = new Set<string>();   // ids this process forgot (forgetPlanned): the merge below must not bring them back from disk
@@ -103,8 +110,14 @@ export function directoryAt(file: string, now: () => number = Date.now, existing
           return add({ name, subs: [sub], kind: "account", since: now() }); }); }
       let id = mintId(); while (d.ids[id] || anon.has(id)) id = mintId();
       anon.set(id, { name, subs: [], kind: "anon", since: now() });
+      for (const old of departed) { if (departed.size <= anonConfig.kept) break; departed.delete(old); anon.delete(old); }
       return id;
     },
+    /** A guest's connection is gone (closed, or joined again under a fresh id): its anonymous id may be forgotten once
+     *  ANON_IDS_KEPT departed guests are newer. An account's id is never affected. */
+    release(id: string) { if (anon.has(id)) departed.add(id); },
+    /** For tests and diagnostics: anonymous ids held, and how many of them are departed. */
+    anonStats: () => ({ held: anon.size, departed: departed.size }),
     /** An identity with no account yet (a name from an imported world's log): holds its roles until an operator binds an account. */
     imported(name: string): string { return add({ name, subs: [], kind: "imported", since: now() }); },
     /** Operator: let an account wear an existing id (e.g. a legacy owner proving who they are) — in that id's world. */
