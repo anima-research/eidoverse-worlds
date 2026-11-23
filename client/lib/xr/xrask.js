@@ -47,7 +47,7 @@ function show(q) {
 }
 function settle(v) {
   const p = pending; if (!p) return;
-  pending = null; showXRPanel('ask', false); repaint(); p.resolve(v);
+  pending = null; keyboardBack(); showXRPanel('ask', false); repaint(); p.resolve(v);
   const next = waiting.shift(); if (next) show(next);
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
@@ -98,13 +98,22 @@ export function askXR({ title, body = '', value = '', placeholder = '', ok = 'Sa
 }
 
 // …and just under the question: on the arc the two are neighbours and overlap (0.58 m quads, 0.55 rad apart at 0.85 m),
-// so the question covered the keyboard's ⌫ and ⏎. Moved for this ask only (a drag afterwards still saves its own place).
+// so the question covered the keyboard's ⌫ and ⏎. Moved for this ask only: keyboardBack() puts it where it was when the
+// question is settled (the mesh outlives the question and the session), unless the person dragged it meanwhile.
+let kbWas = null;   // {mesh, pos, quat, placed}: the keyboard's own pose, and where keyboardBelow put it
 function keyboardBelow() {
   const a = domQuadMesh('ask'), k = domQuadMesh('keyboard');
   if (!a?.visible || !k?.visible || a.parent !== k.parent) return;
+  if (kbWas?.mesh !== k) kbWas = { mesh: k, pos: k.position.clone(), quat: k.quaternion.clone(), placed: null };
   const h = (m) => (m.geometry.parameters?.height ?? 0) * m.scale.y;
   k.position.copy(a.position); k.position.y -= (h(a) + h(k)) / 2 + 0.05;   // the gap clears the ask quad's grab handle (~4 cm under it)
   k.quaternion.copy(a.quaternion); k.updateMatrixWorld(true);
+  kbWas.placed = k.position.clone();
+}
+function keyboardBack() {
+  const w = kbWas; kbWas = null;
+  if (!w || domQuadMesh('keyboard') !== w.mesh || !w.placed || w.mesh.position.distanceTo(w.placed) > 1e-6) return;   // rebuilt, or dragged: theirs now
+  w.mesh.position.copy(w.pos); w.mesh.quaternion.copy(w.quat); w.mesh.updateMatrixWorld(true);
 }
 
 // a refusal in a headset: the toast's words, on the quad, until OK (never on top of an open question)
