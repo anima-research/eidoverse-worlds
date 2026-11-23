@@ -467,6 +467,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["geom-gate", "server/geom-gate-test.ts", 1], // GET /geom?lib= new parses are rate-limited (a cached answer never is) and a failed parse is remembered by mtime
   ["zero-off", "server/zero-off-test.ts", 1], // every DoS rail takes 0 as no limit (R: rails are settings), one fresh process per setting; the runbook's one sentence names exactly these
   ["geom-retry", "mcpl/geom-retry-test.ts", 1], // an agent's support sync that meets /geom's 429 asks again on a timer, backing off (a join replay is when the limit is met), and not for a thing removed meanwhile
+  ["gz-stall", "server/gz-stall-test.ts", 1], // a body over GZIP_MAX_MB (32) is served uncompressed, by design: gzip runs on the serving thread (the cold review's 2.4 s stalls at 128)
 ];
 
 // ---- lanes ----

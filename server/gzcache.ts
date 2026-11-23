@@ -4,12 +4,12 @@
 import { envNumber } from "./limits.ts";
 
 /** GZIP_CACHE_MB: gzip copies kept in memory, in MB (default 256: the client's code plus some fifty 10 MB avatars, gzipped).
- *  GZIP_MAX_MB: a file larger than this is served as it is, never gzipped (default 128: above UPLOAD_CAP_MB's 100, so any
- *  avatar the store takes still gzips, once, and is then served from the cache; a file past it would hold the thread for
- *  seconds). Either may be set as high as wanted; 0 is no limit (every copy kept, every such file gzipped). */
+ *  GZIP_MAX_MB: a file larger than this is served as it is, uncompressed, by design (default 32). The gzip runs on the
+ *  serving thread: a 40 MB body holds every visitor for most of a second, and a big avatar is mostly packed binary that
+ *  shrinks some 25% (test/server/gz-stall-test.ts). Either may be set as high as wanted; 0 is no limit (every copy kept, every such file gzipped). */
 export const gzConfig = {
   maxBytes: envNumber("GZIP_CACHE_MB", 256, (n) => n >= 0) * 1_000_000,
-  maxFile: envNumber("GZIP_MAX_MB", 128, (n) => n >= 0) * 1_000_000,
+  maxFile: envNumber("GZIP_MAX_MB", 32, (n) => n >= 0) * 1_000_000,
 };
 
 const cache = new Map<string, { mtime: number; gz: Uint8Array }>();   // insertion order = least recently served first

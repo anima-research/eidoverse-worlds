@@ -9,8 +9,8 @@ const bytesOf = (n: number, _seed: number) => crypto.getRandomValues(new Uint8Ar
 let reads = 0;
 const ask = (name: string, n: number, mtime = 1, seed = name.length) => gzipOf(`/f/${name}`, mtime, n, () => { reads++; return bytesOf(n, seed); });
 
-// at the defaults, any file the store takes (UPLOAD_CAP_MB, 100) still gzips: the house avatar is some 35 MB
-S.check("Z0 at the default GZIP_MAX_MB a 35 MB avatar and a 100 MB upload are gzipped, not served plain", gzipsAt(35_000_000) && gzipsAt(100_000_000), gzConfig);
+// at the defaults, a body over 32 MB is served plain, by design (gzip holds the serving thread: test/server/gz-stall-test.ts)
+S.check("Z0 at the default GZIP_MAX_MB (32) a 30 MB file gzips and a 35 MB avatar is served plain", gzipsAt(30_000_000) && !gzipsAt(35_000_000), gzConfig);
 gzConfig.maxBytes = 50_000; gzConfig.maxFile = 30_000; gzReset();
 for (let i = 0; i < 10; i++) ask(`a${i}`, 20_000, 1, i);
 S.check("the copies kept stay under the byte budget", gzStats().bytes <= 50_000 && gzStats().entries >= 1, gzStats());
