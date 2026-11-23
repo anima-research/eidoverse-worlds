@@ -15,7 +15,8 @@
 //       ground, and a member already below its ground, leading or following, doesn't lift the lot; a switch to the pivot
 //       tool mid-way through a gizmo drag doesn't take it over (it stays a move); a refused group release puts every member
 //       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
-//       drag doesn't hold; an undo, a deselect or a selection change mid-drag cancels it as Esc does, then goes ahead; a
+//       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
+//       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
 //       group of 24 refuses to arm (the cap, 23), and a group of 23 lands with every claim ended
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
@@ -482,6 +483,59 @@ try {
       () => page(`(await import('/lib/edit/build.js')).deselectAll(); return true;`));
     await midCancel("MM19 a selection change mid-drag (the chair selected in the Hierarchy) cancels it: everything back, the chair never dragged, nothing written",
       () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`));
+
+    // the gizmo's drag ends the same way: Ctrl+Z mid gizmo drag cancels it as Esc does; and a late lock-question cancel leaves the box a newer gizmo drag holds (the generation check, as MM16)
+    const gizmoDrag = (lead: string, dx: number) => evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+      return import('/lib/world.js').then((m) => { m.entities.get('${lead}').position.x += ${dx}; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
+    const gizmoUp = () => evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }), true)`);
+    const gizmoCancel = async (label: string, what: () => Promise<any>, extra: () => Promise<boolean> = async () => true) => {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, d0 = bobDrags.length;
+      await gizmoDrag("mm-box", 1); await frames(2);
+      const mid = await localOf(["mm-box", "mm-tbl"]);
+      await what(); await frames(3);
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      await gizmoUp(); await frames(3); await sleep(600 * WAIT_SCALE);
+      const ends = lastEnds(["mm-box", "mm-tbl"], d0), wrote = myActs().slice(n0).filter((x) => x.e.verb !== "undo");
+      const r = { on, mid, local, B0, T0, disk: [pose("mm-box"), pose("mm-tbl")], ends, acts: actsSince(n0) };
+      check(label, on && !near(mid?.[1], T0) && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && wrote.length === 0 && ends["mm-box"] && ends["mm-tbl"] && await extra(), r);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    };
+    {
+      const la2 = await page(`const W = await import('/lib/edit/writes.js'); const OP = await import('/shared/requests.js'); return (await W.sendOps([OP.set('mm-chair', 'label', 'undo me too')], { what: 'label the chair' })).ok;`);
+      await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`);
+      check("MM22 (setup) a label on the chair, my last act", la2);
+      await gizmoCancel("MM22 Ctrl+Z mid gizmo drag cancels it (the box and the table it carried back where the log has them, every sample ended, nothing written for it)",
+        () => key("KeyZ", { ctrlKey: true }));
+      check("MM22 …and the undo it carried on with took the chair's label away", await waitDisk(() => !disk().entities[NODE.get("mm-chair")]?.c.label, 4000), disk().entities[NODE.get("mm-chair")]?.c.label);
+    }
+    // the generation check through the gizmo: a group mesh drag asks the lock question; a newer gizmo drag of the box arms;
+    // cancelling the question puts the table back, never the box the gizmo holds, and the gizmo's release writes the box
+    { const atL = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atL && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`if (!globalThis.__reverts) { globalThis.__reverts = []; (await import('/lib/base.js')).bus.on('pose-revert', (e) => __reverts.push(e.id)); } (await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      if (atL) await gesture(atL, [atL[0] + 30, atL[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      check("MM24 (setup) the table locked, the group release asks the lock question, and the gizmo is on the box alone", !!atL && lk && asked && on);
+      await gizmoDrag("mm-box", 0.5); await frames(2);
+      const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await sleep(500 * WAIT_SCALE);
+      const reverts = await evalJson(`__reverts.slice(${rv0})`), backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
+      check("MM24 a lock question cancelled while a newer GIZMO drag holds the box puts the table back, not the box (here or to bob)",
+        reverts.includes(NODE.get("mm-tbl")) && !reverts.includes(NODE.get("mm-box")) && backs.length === 0, { reverts, backs: backs.length });
+      await gizmoUp();
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
+      check("MM24 …and the gizmo's release writes the box alone (one act), the table where the log has it", myActs().length === n0 + 1 && !near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { acts: actsSince(n0), B: pose("mm-box"), T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
 
     // a switch to the pivot tool mid-way through a gizmo drag doesn't take it over: the drag stays the move it began as (as a
     // mesh drag's does, MM7), so the box and the table land moved as one act, and no pivot is written from a proxy it never rode
