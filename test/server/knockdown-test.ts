@@ -172,6 +172,12 @@ h.send({ type: "bodydrag", target: "kd-bot3", end: true, pinAt: { joint: "head",
 await pause("the nailed body has had its time to fall, were the nail not holding it", 2500);
 check("released with a nail: the agent's sim HANGS the body",
   ag3.pins.size === 1 && ag3.pos.y > -0.3, `pins=${ag3.pins.size} y=${ag3.pos.y.toFixed(2)}`);
+// a dead sim passes the row above too (the drag sample left at 1.2, the nail set): so watch it step, still held (G6-086)
+{ const frames = new Set<unknown>(); let low = Infinity;
+  await tryUntil("the nailed body's own sim steps 10 more frames", () => { frames.add(ag3.heldPose); low = Math.min(low, ag3.pos.y); return frames.size > 10; }, { ms: 3000, step: 20 });
+  check("...its own sim keeps stepping it, still nailed, hung off the drag's root",
+    frames.size > 10 && ag3.pins.size === 1 && low > -0.3 && Math.abs(ag3.pos.y - 1.2) > 0.1,
+    `frames=${frames.size} pins=${ag3.pins.size} lowest y=${low.toFixed(2)} y=${ag3.pos.y.toFixed(2)}`); }
 check("...and told, as the dragger's acts: taken hold of, then nailed",
   ev3.some((t) => /^\S*shover\S*: takes hold of your limp body/.test(t)) && ev3.some((t) => /^\S*shover\S*: nails part of you in place/.test(t)), ev3.join(" | "));
 h.send({ type: "bodydrag", target: "kd-bot3", unpin: { joint: "head" } });
