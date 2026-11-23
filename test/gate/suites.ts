@@ -488,6 +488,12 @@ export function localImports(f: string, seen = new Set<string>()): Set<string> {
   return seen;
 }
 
+/** The shell's environment as a suite inherits it: a live server's address or credential exported there is dropped, so a
+ *  suite that starts its own server unless WORLD_URL names one (knockdown) never reaches a live door from the gate (G4-103). */
+export const LIVE_TARGET = ["WORLD_URL", "JOIN_TOKEN", "WORLD_TOKEN", "WORLD", "PORT"];
+export const inheritedEnv = (env: Record<string, string | undefined>): Record<string, string> =>
+  Object.fromEntries(Object.entries(env).filter(([k, v]) => v !== undefined && !LIVE_TARGET.includes(k.toUpperCase()))) as Record<string, string>;
+
 export function suitePath(file: string) { return path.resolve(ENGINE, "test", file.split(" ")[0]); }
 
 /** A file that launches a Chromium, directly or through the bench helpers (a helper counts where it is CALLED; a runner

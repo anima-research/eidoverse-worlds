@@ -34,7 +34,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
-import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, inheritedEnv, laneOf, localImports, suitePath } from "./suites.ts";
 import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
 
 
@@ -321,7 +321,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   // hermetic means no host cache, not hiding this checkout's own files
   for (const rel of OPT_TRACKED) { const to = path.join(dir, "opt", rel); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(ENGINE, "test/fixtures", rel), to); }
   // hermetic: nothing the suite reads by default lies outside this checkout and this dir (no ~, no ../eidoverse-video)
-  const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+  const env: Record<string, string> = { ...inheritedEnv(process.env), PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (process.platform === "win32") env.EIDO_SANDBOX ??= "inprocess";   // Windows runs scripts only on this opt-in (shared/protocol/sandbox.js winRefuses)

@@ -214,4 +214,10 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   }
 }
 
+{ // PG24 (G4-103): a live server's address or credential exported in the shell never reaches a suite; everything else does
+  const { inheritedEnv, LIVE_TARGET } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const got = typeof inheritedEnv === "function" ? inheritedEnv({ WORLD_URL: "ws://live/ws", JOIN_TOKEN: "j", WORLD_TOKEN: "w", WORLD: "real", PORT: "8940", world_url: "ws://win/ws", KEEP: "yes", GONE: undefined }) : null;
+  check("PG24 the gate hands a suite the shell's environment without WORLD_URL, JOIN_TOKEN, WORLD_TOKEN, WORLD or PORT (any case), and run.ts builds every suite's env from that",
+    !!got && JSON.stringify(got) === '{"KEEP":"yes"}' && LIVE_TARGET.includes("WORLD_URL") && /const env: Record<string, string> = \{ \.\.\.inheritedEnv\(process\.env\),/.test(rs) && !/\.\.\.process\.env as Record/.test(rs), got); }
+
 done();
