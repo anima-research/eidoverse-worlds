@@ -66,7 +66,7 @@ for (const [w, h, want, name] of [[2048, 2048, [1024, 1024], "capped: 2048² →
   const dims = r.out ? ktx2Dims(r.out) : [];
   check(name, dims.length === 1 && dims[0][0] === want[0] && dims[0][1] === want[1], `got ${JSON.stringify(dims)}${r.out ? "" : " (no output: " + JSON.stringify(r).slice(0, 160) + ")"}`);
 }
-{ const child = Bun.spawnSync(["bun", import.meta.path], { env: { ...process.env, KTX2_NO_SHARP: "1" } });
+{ const child = Bun.spawnSync([process.execPath, import.meta.path], { env: { ...process.env, KTX2_NO_SHARP: "1" } });
   const line = new TextDecoder().decode(child.stdout).split("\n").find((l) => l.startsWith("NO_SHARP")) ?? "(no answer)";
   check("no sharp: a 2048² texture is never shipped over the cap, with this host's encoder (Greptile #207)", /^NO_SHARP OK/.test(line), line); }
 S.done();

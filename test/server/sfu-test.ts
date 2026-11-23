@@ -558,7 +558,7 @@ check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)
 // process-global error that happens to look UDP-shaped.
 // Proven in child processes because the fatal contract IS process-level.
 {
-  const run = (code: string) => Bun.spawnSync(["bun", "-e", code], { cwd: import.meta.dir + "/../.." });
+  const run = (code: string) => Bun.spawnSync([process.execPath, "-e", code], { cwd: import.meta.dir + "/../.." });
   const unrelated = run(`
     const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
     installSfuTransportGuard();
