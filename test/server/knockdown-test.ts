@@ -51,7 +51,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // a "human" — a bare socket that joins, watches, and throws its weight around. The relay forwards a shove or a drag only
 // between bodies whose last frames it has, within reach (server/messages.ts bodyRefusal), so `near` publishes a pose
 // beside the target first; `errors` collects the relay's refusals (a refused shove is answered, never silently dropped)
-type Human = { ws: WebSocket; send: (m: any) => void; close: () => void; errors: string[]; near: (who: { pos: { x: number; y: number; z: number } }) => Promise<void> };
+type Human = { ws: WebSocket; send: (m: any) => void; close: () => void; errors: string[]; near: (who: { name: string; pos: { x: number; y: number; z: number }; people: Map<string, any> }) => Promise<void> };
 function human(name: string): Promise<Human> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
@@ -64,7 +64,13 @@ function human(name: string): Promise<Human> {
       if (m.type === "snapshot") res({
         ws, send, errors,
         close: () => ws.close(),
-        near: async (who) => { send({ type: "pose", pose: { p: [who.pos.x - 1, 0, who.pos.z], yaw: 0, speed: 0, clip: "idle" } }); await sleep(300); },
+        // done once the target sees this frame relayed: the relay then holds it as our lastPose (G4-178)
+        near: async (who) => {
+          const p = [who.pos.x - 1, 0, who.pos.z];
+          send({ type: "pose", pose: { p, yaw: 0, speed: 0, clip: "idle" } });
+          const seen = await tryUntil(`${who.name} sees ${name} beside it`, () => { const q = who.people.get(name)?.pose?.p; return Array.isArray(q) && Math.hypot(q[0] - p[0], q[2] - p[2]) < 0.01; }, { ms: 3000, step: 25 });
+          check(`(setup) the relay has ${name}'s frame beside ${who.name}`, !!seen, JSON.stringify(who.people.get(name)?.pose?.p));
+        },
       });
     };
   });
