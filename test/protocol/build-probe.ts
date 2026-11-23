@@ -19,7 +19,8 @@
 //       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
 //       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
 //       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim; a newer
-//       drag released where it began puts back what it took from an older drag's refusal
+//       drag released where it began puts back what it took from an older drag's refusal, and so does an over-cap gizmo
+//       drag (which holds nothing, and lets its hint show while held)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -670,6 +671,36 @@ try {
       check("MM21 a mesh drag of 16 arms and lands as ONE act setting all 16 transforms", drag?.armed === true && myActs().length === n0 + 1 && reqs.length === 16 && GN.every((n) => !near(pose(n), P0[n])), { acts: actsSince(n0).length, reqs: reqs.length });
       check("MM21 …and the last sample bob saw of every one of the 16 ends its claim", open.length === 0, { open });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-g0"), P0["mm-g0"])); }
+      await onRecord("mm-g0"); await frames(3);
+
+      // a gizmo drag over the cap never moves anything, so it must hold nothing: an older drag's refusal (a lock question
+      // cancelled while it is pressed) still puts the box it led back (#352 review, Fable)
+      await frame("mm-tbl", 1.5);
+      const atO = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atO && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"); n0 = myActs().length;
+      if (atO) await gesture(atO, [atO[0] + 30, atO[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify(["mm-box", ...GN])}); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const held = await localOf(["mm-box"]);
+      // pressed, never moved (an objectChange would put the box back itself, as a cancelled drag does)
+      await evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: true }), true)`); await frames(2);
+      const sel17 = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids.length)`);
+      check("MM28 (setup) the table locked, the group release asks the lock question, the box left moved, and the gizmo pressed on the box with 17 selected",
+        !!atO && lk && asked && on && sel17 === 17 && !near(held?.[0], B0), { asked, on, sel17, held, B0 });
+      // the gesture's key hints outrank a flash on the status bar, so a drag that never starts must not claim them
+      check("MM28 …and while it is held the status bar says why nothing moves (at most 16)", await waitFor(`document.body.innerText.includes('at most 16')`, 3000));
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      await gizmoUp(); await frames(3); await caughtUp();
+      check("MM28 a lock question cancelled while an over-cap gizmo drag is pressed on the box puts the box back as well as the table, and nothing is written",
+        myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0), { local, B0, T0, acts: actsSince(n0) });
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

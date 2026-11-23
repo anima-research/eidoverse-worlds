@@ -91,24 +91,25 @@ function sync() {
 
 function beginDrag() {
   if (!attachedId) return;
-  engage('gizmo');
   if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
   dragTool = getTool();
-  gen = MM.hold([attachedId]);   // on every path, so no exit puts back by the previous drag's generation (a group re-holds below)
   // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
   // this gesture (a part socket's occupant) stays put, and the hint says so
   multi = null;
   if (start && dragTool !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
-    // over the cap the drag doesn't start: held where the log has it (as Esc holds it), nothing written
-    if (1 + f.ids.length > MM.MAX_GROUP) { cancelled = true; import('../ui/ui.js').then((m) => m.flashHint(MM.tooManyHint(1 + f.ids.length), 6000)); return; }
+    // over the cap the drag doesn't start: held where the log has it (as Esc holds it), nothing written. It holds nothing
+    // either (generation 0 is no gesture's), so an older drag's refusal still puts its things back; and it claims no key
+    // hints, which would outrank the flash saying why (#352 review, Fable)
+    if (1 + f.ids.length > MM.MAX_GROUP) { gen = 0; cancelled = true; import('../ui/ui.js').then((m) => m.flashHint(MM.tooManyHint(1 + f.ids.length), 6000)); return; }
     multi = MM.begin(attachedId, f.ids);
-    gen = MM.hold(MM.idsOf(attachedId, multi));
     if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));
   }
+  engage('gizmo');
+  gen = MM.hold(MM.idsOf(attachedId, multi));   // on every other path, so no exit puts back by the previous drag's generation
 }
 const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale' }[controls?.mode] ?? 'move');
 function onChange() {
