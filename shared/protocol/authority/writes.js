@@ -389,7 +389,7 @@ function buildPlace(ctx, a) {
   // locks, flight and rate). One place runs admit up to 3× on purpose: this, commit's on the result, planResettle's
   if (!a.__made) admit(ctx.w, ctx.st, { actor: ctx.actor }, [setOp(a.id, "transform", COMPONENTS.transform.defaults)]);   // (the value is a stand-in: these checks don't read it)
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
-  const fam = familyOf(st, a.id);   // through the index's children map (spatial.js), not a walk of every thing's chain
+  const fam = familyOf(st, a.id, 32);   // the index's children map, to descendants' 32 hops (worldT's reach)
   let yaw = a.yaw ?? qYaw(cur.q);
   // lying: rest on the largest face. The authority owns the tilt and where the origin ends up.
   let tilt = [0, 0, 0, 1];

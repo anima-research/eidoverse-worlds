@@ -169,8 +169,9 @@ function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an ori
   return false;
 }
 // descendants() through the index's children map (a set: callers here only ask membership)
-function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
-  for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
+// depth: how many hops below id to follow (descendants' 32, for a caller that must match it); none = all
+function familyOf(st, id, depth = Infinity) { const kids = kidsMap(st); const out = new Set([id]); let level = [id];
+  for (let d = 0; level.length && d < depth; d++) { const next = []; for (const p of level) for (const k of kids.get(p) ?? []) if (!out.has(k)) { out.add(k); next.push(k); } level = next; } return out; }
 
 // THE GROUND: the authority stands things and bodies on the ground the walker walks on: @world's terrain, with its named
 // features and sculpted tiles (terrainshape's groundArgs), through shared/terrainmath.js (terrainParams → makeHeightField,
