@@ -11,10 +11,13 @@ const W = "joinrate";
 const h = await scratchSequencer("join-rate", { worlds: [W], owner: "keeper",
   serverEnv: { JOIN_RATE: "1", JOIN_BURST: "3", WS_PER_ADDRESS: "2", SKIP_OPT_SWEEP: "1" } });
 const WS = h.BASE.replace("http", "ws") + "/ws";
+// a second server at the shipped defaults: what a household or a venue behind one NAT meets
+const hd = await scratchSequencer("join-rate-defaults", { worlds: [W], owner: "keeper", serverEnv: { SKIP_OPT_SWEEP: "1" } });
+const WSD = hd.BASE.replace("http", "ws") + "/ws";
 type Conn = { ws: WebSocket; msgs: any[]; open: Promise<boolean> };
 // from: the address a trusted proxy (loopback) says the socket is from; none = the loopback itself
-const connect = (from?: string): Conn => {
-  const ws = new WebSocket(WS, from ? { headers: { "x-real-ip": from } } as any : undefined);
+const connect = (from?: string, url = WS): Conn => {
+  const ws = new WebSocket(url, from ? { headers: { "x-real-ip": from } } as any : undefined);
   const c: Conn = { ws, msgs: [], open: new Promise((res) => { ws.onopen = () => res(true); ws.onerror = () => res(false); ws.onclose = () => res(false); }) };
   ws.onmessage = (e) => c.msgs.push(JSON.parse(String(e.data)));
   return c;
@@ -48,5 +51,10 @@ try {
     const again = await tryUntil("a socket from that address opens again", async () => { const x = connect("203.0.113.9"); const ok = await x.open; if (ok) x.ws.close(); return ok || null; }, { ms: 5000, step: 100 });
     S.check("J2d once one of its sockets closes, the address may open another", again === true);
     for (const x of [b, third, other, ...locals]) try { x.ws.close(); } catch { /* gone */ } }
-} finally { await h.cleanup(0); }
+  // J3: at the defaults, a household or a venue behind one NAT (seventy people, each with a socket) all get in
+  { const many = Array.from({ length: 70 }, () => connect("198.51.100.70", WSD));
+    const opened = (await Promise.all(many.map((x) => x.open))).filter(Boolean).length;
+    S.check("J3 at the default WS_PER_ADDRESS, seventy sockets from one address (a venue behind one NAT) all open", opened === 70, { opened });
+    for (const x of many) try { x.ws.close(); } catch { /* gone */ } }
+} finally { await h.cleanup(0); await hd.cleanup(0); }
 S.done();

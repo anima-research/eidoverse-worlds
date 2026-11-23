@@ -88,9 +88,10 @@ export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 1);   // at least 
  *  far less often, and each join serializes the whole world for its sender). JOIN_RATE=0: no limit. */
 export const JOIN_RATE = envNumber("JOIN_RATE", 1, (n) => n >= 0);
 export const JOIN_BURST = envNumber("JOIN_BURST", 5, (n) => Number.isInteger(n) && n >= 1);
-/** Open websockets one address may hold (an IPv6 /64 is one address): 64, room for a household or an office behind one NAT
- *  with aux legs. The box's own loopback (its renderers, its agent door) is not counted. 0: no limit. */
-export const WS_PER_ADDRESS = envNumber("WS_PER_ADDRESS", 64, (n) => Number.isInteger(n) && n >= 0);
+/** Open websockets one address may hold (an IPv6 /64 is one address): 512, room for a venue or a campus behind one NAT,
+ *  each person with aux legs (a socket flood from one address still stops there). The box's own loopback (its renderers,
+ *  its agent door) is not counted. 0: no limit. */
+export const WS_PER_ADDRESS = envNumber("WS_PER_ADDRESS", 512, (n) => Number.isInteger(n) && n >= 0);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle
 // Bytes of unsent backlog before frames to a client are dropped. Keep tight: proxy and kernel buffers absorb a lot before

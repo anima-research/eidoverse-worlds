@@ -27,7 +27,9 @@ everything upstream added since July; don't start new servers on it.
 ## Behind a reverse proxy
 
 The client's address rides `X-Real-IP`; the server believes that header only from loopback or the peers named in
-`TRUSTED_PROXIES=<addr,addr>` (`server/peer.ts`), else it uses the socket's own. A proxy that writes `X-Forwarded-For`
+`TRUSTED_PROXIES=<addr,addr>` (`server/peer.ts`), else it uses the socket's own. A proxy that isn't on loopback (in a
+Docker bridge network, on another host) must be listed, or every visitor counts as the proxy's one address and the
+per-address limits (`WS_PER_ADDRESS`, uploads, bans) treat them all as one guest. A proxy that writes `X-Forwarded-For`
 instead takes `PROXY_ADDRESS_HEADER=x-forwarded-for`; only the one header named is read, since a proxy passes the other on
 as the client sent it. Set `HN_NATIVE_ORIGIN=https://<public host>`: a signed-in socket from an older browser opens only
 from that exact origin.
