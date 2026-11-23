@@ -22,7 +22,7 @@ const NONCE = randomUUID();
 const scratch = mkdtempSync(join(tmpdir(), "served-routes-"));
 // process.execPath, not "bun": on Windows the PATH "bun" is a .cmd shim whose pid dies at once, so the server outlives the test
 const server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "served-routes-test", WORLDS_DIR: scratch, EIDO_BOOT_NONCE: NONCE },
+  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "served-routes-test", WORLDS_DIR: scratch, EIDO_BOOT_NONCE: NONCE, GZIP_MAX_MB: "1" },
   stdio: "ignore",
 });
 const childAlive = () => server.exitCode === null && !server.killed;
@@ -96,6 +96,16 @@ try {
     gz.headers.get("content-encoding") === "gzip" && !plain.headers.get("content-encoding") && vary(gz) && vary(plain) && !!gz.headers.get("etag") && gz.headers.get("etag") !== plain.headers.get("etag"),
     `gz vary=${gz.headers.get("vary")} etag=${gz.headers.get("etag")}; plain vary=${plain.headers.get("vary")} etag=${plain.headers.get("etag")}`);
 } catch (e) { check("gzip/identity Vary and ETag", false, String(e).slice(0, 60)); }
+
+// a file past GZIP_MAX_MB (1 here) is served as it is: gzipping it in-process would hold the serving thread, and its copy
+// the gzip cache. It names one encoding, so it carries no Vary and no -gz ETag.
+try {
+  const big = "/node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm";   // 13 MB, a gzippable type
+  const res = await fetch(`${BASE}${big}`, { headers: { "accept-encoding": "gzip" } }); const n = (await res.arrayBuffer()).byteLength;
+  check(`a file over GZIP_MAX_MB comes back plain, without Vary (${big})`,
+    res.status === 200 && !res.headers.get("content-encoding") && !/accept-encoding/i.test(res.headers.get("vary") ?? "") && !/-gz"$/.test(res.headers.get("etag") ?? "") && n > 1_000_000,
+    `status=${res.status} encoding=${res.headers.get("content-encoding")} vary=${res.headers.get("vary")} etag=${res.headers.get("etag")} bytes=${n}`);
+} catch (e) { check("a file over GZIP_MAX_MB comes back plain", false, String(e).slice(0, 60)); }
 
 // a q of 0 refuses gzip (RFC 9110 12.5.3): the file comes plain
 for (const ae of ["gzip;q=0", "br, GZIP; q=0.0, identity"]) {

@@ -20,6 +20,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `EIDOVERSE_DIR` | eidoverse-video checkout (asset library). | box path |
 | `CSP_CONNECT_EXTRA` | Extra origins the page may connect to (space-separated `https://`/`wss://` origins: an external voice or TTS endpoint). Absent: the server's own origin, loopback, the orrery origin (`ORRERY_ORIGIN`) and, for captions, the portal (server/csp.ts). | unset unless voice runs off-box |
 | `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name is refused loudly at boot (the server still starts with the rest, or with the setup link if none is left). Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/operator/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
+| `GZIP_CACHE_MB` / `GZIP_MAX_MB` | Gzip copies the server keeps in memory (default 256 MB, least recently served dropped first), and the file size past which it serves a file uncompressed rather than gzip it in-process (default 32 MB). Either may be set as high as wanted (server/gzcache.ts). | defaults |
 
 ## URLs
 

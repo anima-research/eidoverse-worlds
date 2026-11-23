@@ -461,6 +461,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} the gate doesn't run as its own row loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
   ["help-words", "shared/help-words-test.ts", 1], // help lists and refusals say what the code holds: role-defs' permissions, undo's roles, the Light note; no review tags
   ["detach", "server/detach-test.ts", 1], // server/detach.ts: a fire-and-forget promise's rejection is logged, never left unhandled (which exits the server)
+  ["gzcache", "server/gzcache-test.ts", 1], // server/gzcache.ts: gzip copies stay under GZIP_CACHE_MB, least recently served out first; a file over GZIP_MAX_MB is served plain
 ];
 
 // ---- lanes ----

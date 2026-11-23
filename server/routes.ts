@@ -2,7 +2,7 @@
 //
 // A route table: one row per endpoint, first match wins, so ORDER matters (the catch-all
 // last serves the browser client); server.ts's fetch() is a one-line delegate. Also home to
-// the static-file machinery (serveFrom/contentType/gzCache) and the avatar/animation rosters.
+// the static-file machinery (serveFrom/contentType; gzip copies in gzcache.ts) and the avatar/animation rosters.
 // Imports are one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
@@ -19,6 +19,7 @@ import { libraryCredits } from "./modelcatalogue.ts";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
+import { gzipOf, gzipsAt } from "./gzcache.ts";
 import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
@@ -238,8 +239,6 @@ const BUILD = (() => {
     ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}) };
 })();
 
-const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
-
 // What may cache for a day without asking: heavy, rarely-edited art. Not things we iterate on, where a stale copy
 // costs a debugging session: avatars and animations (.vrm/.vrma) and library code and data sidecars.
 // Those get no-cache, which still rides the ETag (a 304, not a re-download).
@@ -273,7 +272,8 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // cache-control too (it refreshes the stored response's lifetime)
   // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
   // packed) are left out. Such a file varies by Accept-Encoding whichever it gets, and each encoding has its own ETag
-  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000, gz = gzippable && acceptsGzip(req);
+  // A file over GZIP_MAX_MB is never gzipped (server/gzcache.ts), so it names one encoding and carries no Vary.
+  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000 && gzipsAt(f.size), gz = gzippable && acceptsGzip(req);
   if (gzippable) headers["vary"] = "accept-encoding";
   if (f.size > 0) {
     const etag = `"${f.size}-${f.lastModified}${gz ? "-gz" : ""}"`;
@@ -281,13 +281,9 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     if (req?.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
   }
   if (gz) {
-    let entry = gzCache.get(path);
-    if (!entry || entry.mtime !== f.lastModified) {
-      entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
-      gzCache.set(path, entry);
-    }
+    const body = gzipOf(path, f.lastModified, f.size, () => new Uint8Array(readFileSync(path)))!;   // gzipsAt held above
     headers["content-encoding"] = "gzip";
-    return new Response(entry.gz, { headers });
+    return new Response(body, { headers });
   }
   return new Response(f, { headers });
 }
