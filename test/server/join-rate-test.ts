@@ -76,12 +76,28 @@ try {
     await until("the refused guest's socket closes", () => g.ws.readyState === WebSocket.CLOSED, { ms: 5000, step: 20 });
     await until("the world hears the guest leave", () => o.msgs.some((m) => m.type === "leave" && m.id === gid), { ms: 5000, step: 20 });
     await pause("a second leave, if the close sent one, has had its time to arrive", 500);
-    const leaves = o.msgs.filter((m) => m.type === "leave" && m.id === gid).length;
+    // every leave the world heard, under any name: the refused join renamed the socket before refusing it (admitJoin), so
+    // a second leave would come under the refused name, not the guest's
+    const heard = o.msgs.filter((m) => m.type === "leave").map((m) => m.id), leaves = heard.length;
     const again = connect(); await again.open; join(again, "Gus");
     const back = await tryUntil("the name is taken again", () => snapshots(again) > 0 && youOf(again), { ms: 5000, step: 50 });
-    S.check("J7 a guest refused on a re-join, after its old id is let go, leaves the world once", leaves === 1, { leaves });
+    S.check("J7 a guest refused on a re-join, after its old id is let go, leaves the world once, under its own name", leaves === 1 && heard[0] === gid, { heard, gid });
     S.check("J7b ...and its name is free for the next person", back === "Gus", { back, errs: again.msgs.filter((m) => m.type === "error") });
     for (const x of [o, again]) try { x.ws.close(); } catch { /* gone */ } }
+  // J8: a guest's refused travel can't speak a leave for someone else: Mal, in W, travels to a world that doesn't exist under
+  // Alice's name; the travel leaves W (as Mal), admitJoin takes the name before the refusal, and the close must not then
+  // tell W that Alice left (she would vanish for everyone)
+  { const alice = connect(), o = connect(), mal = connect(); await Promise.all([alice.open, o.open, mal.open]);
+    join(alice, "Alice"); join(o, "watcher4"); join(mal, "Mal");
+    await until("all three are in", () => snapshots(alice) && snapshots(o) && snapshots(mal), { ms: 10_000, step: 50 });
+    const aliceId = youOf(alice), malId = youOf(mal);
+    join(mal, "Alice", "no-such-world-xyz");
+    await until("the refused traveller's socket closes", () => mal.ws.readyState === WebSocket.CLOSED, { ms: 5000, step: 20 });
+    await until("the world hears Mal leave", () => o.msgs.some((m) => m.type === "leave" && m.id === malId), { ms: 5000, step: 20 });
+    await pause("a spoofed leave, if the close sent one, has had its time to arrive", 500);
+    const heard = o.msgs.filter((m) => m.type === "leave").map((m) => m.id);
+    S.check("J8 a refused travel under another's name broadcasts no leave for them: the world hears only the traveller leave", heard.length === 1 && heard[0] === malId && !heard.includes(aliceId) && !heard.includes("Alice"), { heard, aliceId, malId });
+    for (const x of [alice, o]) try { x.ws.close(); } catch { /* gone */ } }
   // J4: at the defaults, a person changes avatar six times, 150 ms apart (the browser re-sends join on the same socket for
   // each, mybody.js): none is refused, and the world sees the last body
   { const o = connect(undefined, WSD), p = connect("198.51.100.8", WSD); await Promise.all([o.open, p.open]);

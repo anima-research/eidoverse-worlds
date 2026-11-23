@@ -838,6 +838,10 @@ const server = Bun.serve({
               if (c.actorId) c.world.log?.departed(c.actorId);
               reapAuxLegs(c.world, c, "primary traveled");
             }
+            // it has left: until a join installs it somewhere (installJoin) it is in no world. A join refused from here on
+            // (admitJoin renames the socket before some refusals) must not have its close tell the old world that a name
+            // it never wore there left
+            c.world = null;
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
