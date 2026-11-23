@@ -48,6 +48,10 @@ const W = scratchWorld("help-words").seed({ cup: { model: "cup.glb", pos: [0, 0,
   const r = W.call("scripts", { id: "cup", script: "x", test: {} }); const said = `${r.refused?.reason ?? ""}`; const missingR = want.filter((e) => !said.includes(`'${e}'`));
   check("HW9 scripts test doc and its refusal name every script event (grab and release too)", !missing.length && !missingR.length && r.refused?.code === "shape", { missing, missingR, said }); }
 
+// HW10 access help says who skips what (server/access.ts bypassOf): listed owners and moderators skip join, age and capacity, never a ban
+{ const help = COMPONENTS.access.help;
+  check("HW10 access help no longer says moderators and owners always get in, and says a ban still holds", !/always get in/.test(help) && /ban/.test(help), help); }
+
 // HW11 Settings ▸ body's gate tips say the world's own default comes first (shared/protocol/consent.js decide reads @world.body-default)
 { const tips = Object.values(GATE_WORDS).map((w) => w.tip);
   check("HW11 each gate tip says this world may set its own default", tips.length === 2 && tips.every((t) => /unless this world sets its own default/.test(t) && !/ by default\.$/.test(t)), tips); }
