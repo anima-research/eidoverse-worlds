@@ -13,7 +13,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const tokensPath = join(root, "tokens.json"), OPT = join(root, "opt");
 mkdirSync(OPT);
 // the door key is ALSO enrolled as an agent's bearer here (a host may do that): it is still everyone's key, so it still proves no one
-writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "rate-bearer-elm": { id: "elm" }, "rate-bearer-oak": { id: "oak" }, "rate-bearer-pine": { id: "pine" }, "door-key": { id: "keeper" } }));
+writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "rate-bearer-elm": { id: "elm" }, "rate-bearer-oak": { id: "oak" }, "rate-bearer-pine": { id: "pine" }, "rate-bearer-fir": { id: "fir" }, "rate-bearer-yew": { id: "yew" }, "door-key": { id: "keeper" } }));
 Object.assign(process.env, {
   SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: OPT, EIDOVERSE_DIR: join(root, "lib"), JOIN_TOKEN: "door-key",
   AGENT_TOKENS_PATH: tokensPath, SESSIONS_PATH: join(root, "sessions.json"), KTX2_TOKTX: "",
@@ -21,18 +21,20 @@ Object.assign(process.env, {
 const { handleUpload, UPLOADS_PER_MINUTE, uploadBudget } = await import("../../server/upload.ts");
 const { hnSessions } = await import("../../server/auth.ts");
 
-const png = (() => {   // a 2×2 grayscale PNG: the image door stores it as is, with no optimize pass and no build check
+// a 2×2 grayscale PNG: the image door stores it as is, with no optimize pass and no build check; `seed` makes other bytes
+const pngOf = (seed = 0) => {
   const { PNG } = require("pngjs");
   const p = new PNG({ width: 2, height: 2, colorType: 0, inputColorType: 0, inputHasAlpha: false });
-  p.data = Buffer.from([0, 85, 170, 255]);
+  p.data = Buffer.from([seed & 255, 85, 170, 255]);
   return new Uint8Array(PNG.sync.write(p, { colorType: 0, inputColorType: 0, inputHasAlpha: false }));
-})();
+};
+const png = pngOf(0);
 const stored = () => { try { return readdirSync(join(OPT, "store", "images")).filter((f) => f !== "manifest.json").length; } catch { return 0; } };
-async function upload(headers: Record<string, string>, address: string) {
+async function upload(headers: Record<string, string>, address: string, body: Uint8Array = png) {
   const url = new URL("http://x/upload?as=image&name=dot.png");
   const log = console.log; console.log = () => {};   // the door logs each upload: a hundred lines here
   try {
-    const r = await handleUpload(new Request(url, { method: "POST", headers, body: png }), url, { requestIP: () => ({ address }) });
+    const r = await handleUpload(new Request(url, { method: "POST", headers, body }), url, { requestIP: () => ({ address }) });
     return { status: r.status, text: await r.text(), retry: r.headers.get("retry-after") };
   } finally { console.log = log; }
 }
@@ -71,12 +73,26 @@ const v6 = await burst(UPLOADS_PER_MINUTE, key, (i) => `2001:db8:7:7::${(i + 1).
 const v6next = await upload(key, "2001:db8:7:7:ffff::1");
 check("B1 uploads from one IPv6 /64 count as one address: 30 from thirty of its addresses, then a 31st from another is refused", v6[200] === UPLOADS_PER_MINUTE && v6next.status === 429, { v6, next: v6next.status });
 // ---- bytes a day per uploader (UPLOAD_MB_PER_DAY) ----
-{ const was = uploadBudget.perDayBytes; uploadBudget.perDayBytes = png.length * 3;
+// (three different pictures: the same bytes again are stored once, and charged once: B4b)
+const three = [pngOf(1), pngOf(2), pngOf(3)], threeBytes = three.reduce((n, b) => n + b.length, 0);
+{ const was = uploadBudget.perDayBytes; uploadBudget.perDayBytes = threeBytes;
   const elm = { authorization: "Bearer rate-bearer-elm" };
-  const day = await burst(3, elm, () => "192.0.2.80"), past = await upload(elm, "192.0.2.80");
+  const day: Record<number, number> = {}; for (const b of three) { const st = (await upload(elm, "192.0.2.80", b)).status; day[st] = (day[st] ?? 0) + 1; }
+  const past = await upload(elm, "192.0.2.80", pngOf(4));
   check("B2 an uploader past its bytes for the day is refused 429, saying so", day[200] === 3 && past.status === 429 && /a day/.test(past.text), { day, past });
   const fresh = await upload({ authorization: "Bearer rate-bearer-oak" }, "192.0.2.80");
   check("B2b ...another uploader is not", fresh.status === 200, `${fresh.status} ${fresh.text}`);
+  uploadBudget.perDayBytes = was; }
+// ---- only what is stored is charged: a refusal, and the same bytes again, are free ----
+{ const was = uploadBudget.perDayBytes; uploadBudget.perDayBytes = threeBytes;
+  const fir = { authorization: "Bearer rate-bearer-fir" }, yew = { authorization: "Bearer rate-bearer-yew" };
+  const junk = new Uint8Array(threeBytes);   // not a picture: refused 415 once read, the whole day's bytes in size
+  const refused: number[] = []; for (let i = 0; i < 5; i++) refused.push((await upload(fir, "192.0.2.82", junk)).status);
+  const after: number[] = []; for (const b of [pngOf(11), pngOf(12), pngOf(13)]) after.push((await upload(fir, "192.0.2.82", b)).status);
+  check("B4 refused uploads (415) are not charged to the day: after five the size of the whole day, the day's pictures still land", refused.every((x) => x === 415) && after.every((x) => x === 200), { refused, after });
+  const same: number[] = []; for (let i = 0; i < 10; i++) same.push((await upload(yew, "192.0.2.83", pngOf(21))).status);
+  const next: number[] = []; for (const b of [pngOf(22), pngOf(23)]) next.push((await upload(yew, "192.0.2.83", b)).status);
+  check("B4b the same picture sent ten times is stored, and charged, once: two more different ones still land", same.every((x) => x === 200) && next.every((x) => x === 200), { same, next });
   uploadBudget.perDayBytes = was; }
 // ---- the disk's floor (UPLOAD_MIN_FREE_MB) ----
 { const was = uploadBudget.minFreeBytes; uploadBudget.minFreeBytes = Number.MAX_SAFE_INTEGER;

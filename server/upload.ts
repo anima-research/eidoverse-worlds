@@ -27,8 +27,8 @@ type UploadSrv = { requestIP(req: Request): { address: string } | null };
  *  it proves none (an open server's anonymous upload, the door key everyone shares), the address it comes from. */
 export const UPLOADS_PER_MINUTE = 30;
 const uploadWin = new Map<string, { t: number; n: number }>(); // upload rate windows, by uploader (identity, else address)
-/** What the store may take. perDayBytes (UPLOAD_MB_PER_DAY, default 2000): the bytes one uploader may send in a day, twenty
- *  uploads at the 100 MB cap, far past a busy builder's day. minFreeBytes (UPLOAD_MIN_FREE_MB, default 2048): uploads stop
+/** What the store may take. perDayBytes (UPLOAD_MB_PER_DAY, default 2000): the bytes one uploader may store in a day
+ *  (refusals and bytes already stored are free), twenty uploads at the 100 MB cap, far past a busy builder's day. minFreeBytes (UPLOAD_MIN_FREE_MB, default 2048): uploads stop
  *  while the store's disk has less free than this, so world logs keep room to grow. 0 turns either off. */
 export const uploadBudget = {
   perDayBytes: envNumber("UPLOAD_MB_PER_DAY", 2000) * 1_000_000,
@@ -478,7 +478,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
     return new Response(`upload rate limit (${UPLOADS_PER_MINUTE} uploads a minute); try again in ${wait}s`, { status: 429, headers: { "retry-after": String(wait) } });
   }
-  // the disk's floor, then the uploader's bytes for the day (the stated length now; what was read once it is)
+  // the disk's floor, then the uploader's bytes for the day (the stated length now; what was read once it is). The day is
+  // charged only for bytes stored (charge, below)
   const stated = Math.max(0, Math.min(Number(req.headers.get("content-length")) || 0, UPLOAD_CAP));
   if (diskNearlyFull(stated)) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 });
   const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 };
@@ -489,7 +490,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   const body = await readCappedBytes(req, UPLOAD_CAP);
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
   if (uploadBudget.perDayBytes > 0 && day.bytes + body.length > uploadBudget.perDayBytes) return dayRefused();
-  day.bytes += body.length; uploadDay.set(uploader, day);
+  // charged only for what is stored: a refusal, and bytes the store already holds (content-addressed), cost the day nothing
+  const charge = () => { day.bytes += body.length; uploadDay.set(uploader, day); };
   if (JOIN_TOKEN && !who().ids.includes(stoodOn!))
     return new Response(stoodOn!.startsWith("person:")
       ? "not stored: your sign-in ended while the upload was read (sign in again and resend)"
@@ -508,7 +510,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     const idir = join(OPT_DIR, "store", "images");
     mkdirSync(idir, { recursive: true });
     const irel = `store/images/${ihash}.${kind}`;
-    if (!existsSync(join(OPT_DIR, irel))) writeFileSync(join(OPT_DIR, irel), body);
+    if (!existsSync(join(OPT_DIR, irel))) { writeFileSync(join(OPT_DIR, irel), body); charge(); }
     // the human name lives only here, same as models: content-addressed
     // means the catalog would otherwise know this picture as a hash
     const iname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
@@ -532,8 +534,10 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     if (body.length > IMAGE_CAP) return new Response(`heightmap too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     if (sniffImage(body) !== "png") return new Response("a heightmap must be a PNG (16-bit grayscale is best)", { status: 415 });
     const hhash = sha256Bytes(body).slice(0, 16);
+    const hfresh = !existsSync(join(OPT_DIR, "store", "heightmaps", `${hhash}.png`));   // heightmap.ts's own path for these bytes
     const r = ingestHeightmap(body, hhash);
     if ("error" in r) return new Response(r.error, { status: r.status });
+    if (hfresh) charge();
     console.log(`[upload] heightmap ${r.grid} (${r.w}×${r.h}, ${r.bits}-bit) by ${upBy}`);
     return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
   }
@@ -546,7 +550,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     const adir = join(OPT_DIR, "store", "audio");
     mkdirSync(adir, { recursive: true });
     const arel = `store/audio/${ahash}.${kind}`;
-    if (!existsSync(join(OPT_DIR, arel))) writeFileSync(join(OPT_DIR, arel), body);
+    if (!existsSync(join(OPT_DIR, arel))) { writeFileSync(join(OPT_DIR, arel), body); charge(); }
     const aname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
     {
       // first arrival is the provenance; a later upload only fills a missing name
@@ -609,10 +613,11 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
             { status: 422 });
         }
         renameSync(join(OPT_DIR, `${name}.vrm`), join(dir, `${name}.vrm`));
+        charge();
         console.log(`[upload] tripo→vrm "${name}" imported by ${upBy}\n${log.split("\n").slice(-8).join("\n")}`);
       } finally { tripoImportBusy = false; }
     } else {
-      writeFileSync(join(dir, `${name}.vrm`), body);
+      writeFileSync(join(dir, `${name}.vrm`), body); charge();
       console.log(`[upload] avatar "${name}" (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
     }
     // avatars are name-keyed and mutable: every connected client learns the file changed, and wearers hot-swap
@@ -629,7 +634,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   mkdirSync(dir, { recursive: true });
   const rel = `store/${hash}.glb`;
   const fresh = !existsSync(join(OPT_DIR, rel));   // new to the store: only then can this upload decide it is a one-off
-  if (fresh) writeFileSync(join(OPT_DIR, rel), body);
+  if (fresh) { writeFileSync(join(OPT_DIR, rel), body); charge(); }
   queueOptimize(join(OPT_DIR, rel)); // draco+webp shadow, built off the request path
   // content-addressed: the human name arrives ONLY here, so record it (or the catalog lists a hash)
   const upName = (url.searchParams.get("name") ?? "").replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
