@@ -5,9 +5,9 @@
 // Digits are not strong (Arabic-Indic U+0660–0669 and their separators are AN, extended U+06F0–06F9 are EN), so P2
 // skips them: a line that starts with them takes its direction from the first letter after (G2-082).
 import { directionOf, layoutLines } from "../../shared/text.js";
+import { suite } from "../gate/suite.ts";
 
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => { ok ? pass++ : fail++; console.log(`${ok ? "  ok" : "FAIL"}  ${name}${ok || !detail ? "" : ` — ${detail}`}`); };
+const { check, done } = suite("text-test");
 
 check("Arabic reads right to left", directionOf("مرحبا بالعالم") === "rtl");
 check("Hebrew reads right to left", directionOf("שלום עולם") === "rtl");
@@ -21,5 +21,4 @@ check("European digits before Arabic: right to left", directionOf("3 تفاحا�
 const lines = layoutLines("١٢٣ apples\nمرحبا", 1000, (s: string) => s.length);
 check("layoutLines carries each paragraph's own direction", lines.map((l) => l.dir).join(",") === "ltr,rtl", JSON.stringify(lines));
 
-console.log(`[text-test] ${pass} passed, ${fail} failed`);
-if (fail) process.exit(1);
+done();
