@@ -1646,13 +1646,15 @@ export function resolveTool(name: string): { name: string } | null {
 }
 const edits = (x: string, y: string) => { const d: number[][] = Array.from({ length: x.length + 1 }, (_, i) => [i, ...Array(y.length).fill(0)]); for (let j = 1; j <= y.length; j++) d[0][j] = j;
   for (let i = 1; i <= x.length; i++) for (let j = 1; j <= y.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1)); return d[x.length][y.length]; };
-export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
+// the table is length × length per tool, on the thread every session shares: a name longer than any tool's gets no suggestion
+const NEAREST_MAX = 64;
+export const nearestTool = (name: string) => name.length > NEAREST_MAX ? undefined : Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   // any other name this server has no tool for: said so, with the nearest name when one is close
-  if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
+  if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name.length > NEAREST_MAX ? `${name.slice(0, NEAREST_MAX)}…` : name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // A tool's failure belongs in its result, where the model reads it: a
   // handler that throws, such as puppet()'s refusal while the link is down,
   // answers as a failed call rather than as a protocol error.
