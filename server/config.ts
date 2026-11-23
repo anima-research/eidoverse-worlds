@@ -84,6 +84,13 @@ export const RATE_POLICY = { n: ACT_RATE, says: SAY_RATE, ms: RATE_WINDOW_SEC * 
 // Founding and copying a world: no limits (a copy is one synchronous call; long copies off the shared thread are wishlisted).
 /** All messages per client per second: 15 Hz of pose plus verbs plus slack; a token bucket with two seconds of burst (server/msgrate.ts). */
 export const MSG_RATE = envNumber("MSG_RATE", 60, (n) => n >= 1);   // at least 1 a second: 0 refuses every message, and under 0.5 the 2 s burst never holds a token
+/** Joins one connection may make: JOIN_BURST at once, then JOIN_RATE a second (travel is a join; a person changes world
+ *  far less often, and each join serializes the whole world for its sender). JOIN_RATE=0: no limit. */
+export const JOIN_RATE = envNumber("JOIN_RATE", 1, (n) => n >= 0);
+export const JOIN_BURST = envNumber("JOIN_BURST", 5, (n) => Number.isInteger(n) && n >= 1);
+/** Open websockets one address may hold (an IPv6 /64 is one address): 64, room for a household or an office behind one NAT
+ *  with aux legs. The box's own loopback (its renderers, its agent door) is not counted. 0: no limit. */
+export const WS_PER_ADDRESS = envNumber("WS_PER_ADDRESS", 64, (n) => Number.isInteger(n) && n >= 0);
 
 export const FRAME_MS = 66;                 // ~15Hz, matches the client's send throttle
 // Bytes of unsent backlog before frames to a client are dropped. Keep tight: proxy and kernel buffers absorb a lot before

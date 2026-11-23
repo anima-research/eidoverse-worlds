@@ -61,6 +61,7 @@ export type Client = {
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgs: import("./msgrate.ts").MsgBucket;   // all messages: a token bucket (server/msgrate.ts)
+  joins?: import("./msgrate.ts").MsgBucket;   // joins on this connection (config.ts JOIN_RATE)
   /** this connection's requests, one at a time in the order sent (server/requestwire.ts) */
   verbQueue?: Promise<void>;
   /** how many of them are still waiting their turn (requestwire.ts QUEUE_MAX) */

@@ -22,6 +22,7 @@ JOIN_TOKEN=<door-key> RECORD_FRAMES=1 UPLOAD_CAP_MB=30 PORT=8940 \
 | `SERVER_OPERATORS` | The server operators, by account (`human:discord:<id>`; `/whoami` shows yours), comma-separated. A bare name is refused loudly at boot (the server still starts with the rest, or with the setup link if none is left). Replaces `WORLD_ADMIN`, still read for one release with a boot warning: docs/operator/TRANSLATING-OLD-WORLDS.md "Upgrading a main-era server". | the show's operators |
 | `GZIP_CACHE_MB` / `GZIP_MAX_MB` | Gzip copies the server keeps in memory (default 256 MB, least recently served dropped first), and the file size past which it serves a file uncompressed rather than gzip it in-process (default 32 MB). Either may be set as high as wanted (server/gzcache.ts). | defaults |
 | `ANON_IDS_KEPT` | Departed guests whose ids and names the server keeps in memory (default 10000, about a megabyte); past it the oldest are forgotten, and their lines in history show an id rather than a name. A connected guest is never forgotten (server/directory.ts). | default |
+| `JOIN_RATE` / `JOIN_BURST` / `WS_PER_ADDRESS` | Joins one connection may make (`JOIN_BURST` at once, default 5, then `JOIN_RATE` a second, default 1; travel is a join), and open websockets one address may hold (default 64; an IPv6 /64 counts as one address; the box's own loopback is not counted). `0` turns `JOIN_RATE` or `WS_PER_ADDRESS` off. | defaults |
 
 ## URLs
 

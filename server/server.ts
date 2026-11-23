@@ -15,7 +15,7 @@ import { checkHello, missingFeatures, versionLine } from "../shared/protocol/hel
 import { featureDecision, KNOWN_FEATURES } from "../shared/protocol/features.js";
 // how often a person may change the name they show (moderation: a name is how people recognise who did what)
 const RENAME_COOLDOWN_MS = envNumber("RENAME_COOLDOWN_DAYS", 7) * 86400000;
-import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS, UPLOAD_CAP } from "./config.ts";
+import { PORT, HOST, JOIN_TOKEN, RENDERER_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, JOIN_RATE, JOIN_BURST, FRAME_MS, FRAME_SKIP_BUFFERED, SNAP_TIMEOUT_MS, SNAP_SWEEP_GRACE_MS, SNAP_SWEEP_EVERY_MS, UPLOAD_CAP } from "./config.ts";
 import { type HnSession, agentTokens, accountOf } from "./auth.ts";
 import { addrSanctionsFor, saveAddrSanctions, notPersisted } from "./moderation.ts";
 import { entryFor, doorOfWorld, whoOf, settleAccess, sweepAccess, setLoadedWorlds, unavailable, unavailableClose, toldOf, type Told, type Expel } from "./access.ts";
@@ -31,6 +31,7 @@ import { bootNotice, noFoldRefusal, interruptedVisitorText } from "./oldworlds.t
 import { warmIndex } from "./worldindex.ts";
 import { oldFormatRefused, provenWho } from "./upgrade.ts";
 import { detach } from "./detach.ts";
+import { releaseSocket } from "./sockcount.ts";
 import { backupsDirProblem } from "./backups.ts";
 import { isNativeSession } from "./native-login.ts";
 import { custodyFileIn, directoryFileIn } from "./keyfiles.ts";
@@ -720,6 +721,7 @@ const server = Bun.serve({
       }
     },
     close(ws) {
+      try { releaseSocket((ws as unknown as { data?: { sockKey?: string | null } }).data?.sockKey); } catch { /* counted nowhere */ }
       try {
         const c = clients.get(ws);
         if (!c) return;
@@ -777,6 +779,11 @@ const server = Bun.serve({
       try {
       switch (msg.type) {
         case "join": {
+          // joins per connection (config.ts JOIN_RATE): a refused one leaves the connection where it was
+          if (JOIN_RATE > 0 && admitMessage(c.joins ??= newBucket(JOIN_BURST), Date.now(), JOIN_RATE, JOIN_BURST) !== "run") {
+            ws.send(JSON.stringify({ type: "error", about: "join", error: "joining too often: wait a moment and try again" }));   // MSG_RATE bounds these
+            return;
+          }
           // a verified session (bound at upgrade) passes without the door key; everyone else needs JOIN_TOKEN. Both may
           // be live at once
           const auth = c.auth && c.auth.exp > Date.now() ? c.auth : null;

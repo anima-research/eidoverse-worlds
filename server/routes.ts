@@ -16,7 +16,8 @@ import { randomBytes } from "node:crypto";
 import { agentGuideResponse } from "./briefing.ts";
 import { creditsFor } from "../shared/libcredits.js";
 import { libraryCredits } from "./modelcatalogue.ts";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN, WS_PER_ADDRESS } from "./config.ts";
+import { socketKeyOf, takeSocket, releaseSocket } from "./sockcount.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
 import { gzipOf, gzipsAt } from "./gzcache.ts";
@@ -362,7 +363,11 @@ const ROUTES: Route[] = [
       if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
       const addr = hashedAddress(req, srv);
-      if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
+      // an address holds at most WS_PER_ADDRESS sockets (server/sockcount.ts); the close handler gives this one back
+      const sockKey = socketKeyOf(addressOf(req, srv));
+      if (!takeSocket(sockKey, WS_PER_ADDRESS)) return new Response(`too many connections from your address (${WS_PER_ADDRESS})`, { status: 429, headers: { "retry-after": "10" } });
+      if (srv.upgrade(req, { data: { session, addr, sockKey } })) return undefined as unknown as Response;
+      releaseSocket(sockKey);
       return new Response("expected websocket", { status: 400 });
     },
   },

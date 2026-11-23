@@ -462,6 +462,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["help-words", "shared/help-words-test.ts", 1], // help lists and refusals say what the code holds: role-defs' permissions, undo's roles, the Light note; no review tags
   ["detach", "server/detach-test.ts", 1], // server/detach.ts: a fire-and-forget promise's rejection is logged, never left unhandled (which exits the server)
   ["gzcache", "server/gzcache-test.ts", 1], // server/gzcache.ts: gzip copies stay under GZIP_CACHE_MB, least recently served out first; a file over GZIP_MAX_MB is served plain
+  ["join-rate", "server/join-rate-test.ts", 1], // joins per connection (JOIN_RATE, JOIN_BURST) and sockets per address (WS_PER_ADDRESS), on a scratch server; loopback is not counted
 ];
 
 // ---- lanes ----
