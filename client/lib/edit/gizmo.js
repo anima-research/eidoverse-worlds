@@ -97,6 +97,7 @@ function beginDrag() {
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
   dragTool = getTool();
+  gen = MM.hold([attachedId]);   // on every path, so no exit puts back by the previous drag's generation (a group re-holds below)
   // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
   // this gesture (a part socket's occupant) stays put, and the hint says so
   multi = null;
