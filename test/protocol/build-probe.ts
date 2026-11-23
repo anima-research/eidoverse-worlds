@@ -12,9 +12,10 @@
 //       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
 //       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
 //       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
-//       ground, and a member already below its ground, leading or following, doesn't lift the lot; a gizmo drag the pivot
-//       tool takes over puts the followers back; a refused group release puts every member back and leaves no claim open;
-//       a lock question cancelled after a newer drag began puts back only what that newer drag doesn't hold
+//       ground, and a member already below its ground, leading or following, doesn't lift the lot; a switch to the pivot
+//       tool mid-way through a gizmo drag doesn't take it over (it stays a move); a refused group release puts every member
+//       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
+//       drag doesn't hold
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -451,19 +452,24 @@ try {
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
     }
 
-    // a gizmo drag the pivot tool takes over mid-way: the followers go back (nothing is written for them)
+    // a switch to the pivot tool mid-way through a gizmo drag doesn't take it over: the drag stays the move it began as (as a
+    // mesh drag's does, MM7), so the box and the table land moved as one act, and no pivot is written from a proxy it never rode
     await frame("mm-tbl", 1.5);
     await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
     check("MM (setup) the gizmo is on the box", await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
-    const tLocal = () => evalJson(`import('/lib/world.js').then((m) => m.entities.get('mm-tbl').position.toArray())`);
-    const g0 = await tLocal();
-    await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
-      return import('/lib/world.js').then((m) => { m.entities.get('mm-box').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
-    const g1 = await tLocal();
-    await page(`(await import('/lib/edit/build.js')).setTool('pivot'); globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); return true;`);
-    await frames(3);
-    const g2 = await tLocal();
-    check("MM8 a gizmo drag ended under the pivot tool puts the followers back (the table moved mid-drag, then returned)", Math.abs(g1[0] - g0[0] - 1) < 0.01 && near(g2, g0), { g0, g1, g2 });
+    { const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+        return import('/lib/world.js').then((m) => { m.entities.get('mm-box').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
+      await page(`(await import('/lib/edit/build.js')).setTool('pivot'); globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); return true;`);
+      await waitDisk(() => myActs().length > n0, 4000); await waitDisk(() => !near(pose("mm-tbl"), T0), 3000);
+      const acts = myActs().slice(n0).map((x) => x.e), reqs = acts[0]?.verb === "batch" ? acts[0].body.args.requests : [];
+      const moved = (a: any, b: any) => !!a && !!b && Math.abs(b[0] - a[0] - 1) < 0.01 && Math.abs(b[1] - a[1]) < 0.01 && Math.abs(b[2] - a[2]) < 0.01;
+      check("MM8 a gizmo drag the pivot tool is switched to mid-way stays a move: ONE act moving the box and the table by its 1 m, no pivot written",
+        acts.length === 1 && reqs.length === 2 && reqs.every((r: any) => r.args?.component === "transform") && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")) && !disk().entities[NODE.get("mm-box")]?.c.pivot,
+        { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl"), pivot: disk().entities[NODE.get("mm-box")]?.c.pivot ?? null });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+    }
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

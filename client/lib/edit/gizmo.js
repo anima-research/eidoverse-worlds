@@ -28,6 +28,7 @@ let start = null;        // { rec, comps? } at drag start (the components the re
 let cancelled = false;   // Esc during the drag: the thing goes back, the release writes nothing
 let multi = null;        // the other selected things following this drag (edit/multimove.js), or null
 let gen = 0;             // this drag's generation (MM.hold): a late refusal of an older one leaves its things to this one
+let dragTool = null;     // the tool at the press: a tool key mid-drag changes the next drag, not this one (#352 review, point 4)
 let lastSent = 0;
 // the pivot (Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as the thing,
 // and the thing follows it: objWorld = proxy × offset (offset fixed at drag start), so a turn or a size goes about the pivot.
@@ -92,10 +93,11 @@ function beginDrag() {
   const rec = foldRecord(attachedId);
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
+  dragTool = getTool();
   // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
   // this gesture (a part socket's occupant) stays put, and the hint says so
   multi = null;
-  if (start && getTool() !== 'pivot') {
+  if (start && dragTool !== 'pivot') {
     const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
     multi = MM.begin(attachedId, f.ids);
     gen = MM.hold(MM.idsOf(attachedId, multi));
@@ -106,7 +108,7 @@ const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
   if (cancelled) { bus.emit('pose-revert', { id: attachedId }); for (const f of multi?.followers ?? []) bus.emit('pose-revert', { id: f.id }); return; }   // Esc held it where the log has it
-  if (getTool() === 'pivot') { refreshOutline(); return; }   // the pivot tool moves the pivot only: the thing stays
+  if (dragTool === 'pivot') { refreshOutline(); return; }   // the pivot tool moves the pivot only: the thing stays
   if (viaProxy && offset) {   // the thing follows the proxy: world = proxy × offset, then into its parent's frame
     proxy.updateMatrixWorld(true);
     _m.multiplyMatrices(proxy.matrixWorld, offset);
@@ -149,7 +151,7 @@ function endPivotDrag() {
 function endDrag() {
   release();
   const m = multi; multi = null;
-  if (getTool() === 'pivot') { MM.revert(m); MM.end(m); endPivotDrag(); return; }   // the pivot tool took over: the followers go back
+  if (dragTool === 'pivot') { endPivotDrag(); return; }   // a pivot drag (it has no followers); a switch to pivot mid-drag is not one
   if (cancelled) { cancelled = false; start = null; MM.end(m); return; }
   const id = attachedId; const obj = id && entities.get(id);
   if (!obj || !start?.rec) { start = null; MM.revert(m); MM.end(m); return; }
