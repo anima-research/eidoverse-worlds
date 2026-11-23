@@ -20,7 +20,8 @@
 //       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
 //       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim; a newer
 //       drag released where it began puts back what it took from an older drag's refusal, and so does an over-cap gizmo
-//       drag (which holds nothing, and lets its hint show while held)
+//       drag (which holds nothing, and lets its hint show while held); a gizmo release writes a follower whose object was
+//       swapped mid-drag where the drag put it
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -606,6 +607,32 @@ try {
       if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
     }
     await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+
+    // a follower's object swapped mid gizmo drag (a tier change, a demotion or a load finishing makes a fresh object at the
+    // fold's pose: realize/models.js exempts only the lead, editHolds), then a pause and a release with no objectChange
+    // between: the release must write the follower where the drag put it, not where its fresh object stands (#352 review D2)
+    { await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gizmoDrag("mm-box", 1); await frames(2);
+      // the swap, as models.js makes it: a fresh object at the fold's pose takes the table's place in `entities`
+      const swapped = await page(`const { THREE, scene } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const net = await import('/lib/net.js');
+        const o = w.entities.get('mm-tbl'), t = net.replica.st.entities['mm-tbl'].c.transform, n = new THREE.Object3D();
+        n.userData.entityId = o.userData.entityId; n.position.fromArray(t.pos); if (t.q) n.quaternion.fromArray(t.q); if (t.scale != null) n.scale.fromArray([].concat(t.scale).length === 3 ? t.scale : [t.scale, t.scale, t.scale]);
+        scene.add(n); n.updateMatrixWorld(true); w.entities.set('mm-tbl', n); globalThis.__mmSwap = { o, n }; return n.position.toArray();`);
+      await frames(4);   // the pause: the gizmo held still, no objectChange
+      // release, then the real object back in its place (the fold's answer moves it to whatever was written)
+      await page(`globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); const { scene } = await import('/lib/core.js'); const w = await import('/lib/world.js');
+        const { o, n } = globalThis.__mmSwap; scene.remove(n); w.entities.set('mm-tbl', o); delete globalThis.__mmSwap; return true;`);
+      await waitDisk(() => myActs().length > n0, 4000); await caughtUp();
+      const moved = (a: any, b: any) => !!a && !!b && Math.abs(b[0] - a[0] - 1) < 0.01 && Math.abs(b[1] - a[1]) < 0.01 && Math.abs(b[2] - a[2]) < 0.01;
+      check("MM29 (setup) the gizmo on the box with the table following, and the table's object swapped for a fresh one at the fold's pose", on && near(swapped, T0), { on, swapped, T0 });
+      check("MM29 a gizmo release after a follower's object was swapped mid-drag writes the follower where the drag put it: ONE act moving the box and the table by its 1 m",
+        myActs().length === n0 + 1 && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")), { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
 
     // a single-thing gizmo release ends its claim too, as a group's does (MM8): bob's last sample of it ends the drag
     { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
