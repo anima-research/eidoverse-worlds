@@ -56,20 +56,27 @@ function human(name: string): Promise<Human> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
     const errors: string[] = [];
+    const seen = new Map<string, number[]>();   // the relay's frames as this socket hears them: id -> last p
     const send = (m2: any) => ws.send(JSON.stringify(m2));
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "error") errors.push(String(m.error));
+      if (m.type === "frame") for (const [id, p] of Object.entries(m.poses ?? {}) as [string, any][]) if (Array.isArray(p?.p)) seen.set(id, p.p);
       if (m.type === "snapshot") res({
         ws, send, errors,
         close: () => ws.close(),
-        // done once the target sees this frame relayed: the relay then holds it as our lastPose (G4-178)
+        // the range check (bodyRefusal) reads both bodies' last frames at the relay: wait until the relay has relayed
+        // ours beside the target (the target hears it) and the target's own at where it now is (we hear it). In a world
+        // without BODY_RANGE, as here, neither is read; the wait is for a world with a range (G4-178)
         near: async (who) => {
           const p = [who.pos.x - 1, 0, who.pos.z];
           send({ type: "pose", pose: { p, yaw: 0, speed: 0, clip: "idle" } });
-          const seen = await tryUntil(`${who.name} sees ${name} beside it`, () => { const q = who.people.get(name)?.pose?.p; return Array.isArray(q) && Math.hypot(q[0] - p[0], q[2] - p[2]) < 0.01; }, { ms: 3000, step: 25 });
-          check(`(setup) the relay has ${name}'s frame beside ${who.name}`, !!seen, JSON.stringify(who.people.get(name)?.pose?.p));
+          const at = (q: any, x: number, z: number, tol: number) => Array.isArray(q) && Math.hypot(q[0] - x, q[2] - z) < tol;
+          const ok = await tryUntil(`${name}'s frame and ${who.name}'s are both relayed`, () =>
+            at(who.people.get(name)?.pose?.p, p[0], p[2], 0.01) && at(seen.get(who.name), who.pos.x, who.pos.z, 0.5), { ms: 3000, step: 25 });
+          check(`(setup) the relay has ${name}'s frame beside ${who.name}, and ${who.name}'s where it is`, !!ok,
+            `ours as ${who.name} heard it ${JSON.stringify(who.people.get(name)?.pose?.p)}; theirs as we heard it ${JSON.stringify(seen.get(who.name))} vs ${who.pos.x.toFixed(2)},${who.pos.z.toFixed(2)}`);
         },
       });
     };

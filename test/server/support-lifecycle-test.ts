@@ -133,14 +133,14 @@ function hand(world: string, name: string) {
     // order holds
     const waiting = new Map<string, (r: any) => void>(); let chain: Promise<any> = Promise.resolve();
     const ask = (r: { verb: string; args: any }) => new Promise<any>((done) => { const id = `${name}-${++n}`; waiting.set(id, done);
-      ws.send(JSON.stringify({ type: "request", id, verb: r.verb, args: IDS.out(r.verb, r.args) })); setTimeout(() => { if (waiting.delete(id)) done(null); }, 8000); });
+      ws.send(JSON.stringify({ type: "request", id, verb: r.verb, args: IDS.out(r.verb, r.args) })); setTimeout(() => { if (waiting.delete(id)) done(false); }, 8000); });
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
-      if (m.type === "reply") { IDS.back(m.reply); const d = waiting.get(m.id); if (d) { waiting.delete(m.id); d(m.reply); } }
+      if (m.type === "reply") { IDS.back(m.reply); const d = waiting.get(m.id); if (d) { waiting.delete(m.id); d(m.ok === true); } }
       if (m.type === "reply" && !m.ok) console.log(`  (door refused ${m.verb}: ${JSON.stringify(m.reply?.refused)})`);
       if (m.type === "snapshot") res({
-        verb: (v: string, a: any) => (chain = chain.then(async () => { for (const r of requestsOf(v, a)) await ask(r); })),
+        verb: (v: string, a: any) => (chain = chain.then(async () => { let ok = true; for (const r of requestsOf(v, a)) ok = (await ask(r)) && ok; return ok; })),   // true: every request taken
         send: (o: any) => ws.send(JSON.stringify(o)),
         close: () => ws.close(),
       });
@@ -185,6 +185,8 @@ const onTerrain = (rootY: number) => restsOn(rootY, 0);
 // a write the scene made has reached the agent's replica: waited on, and said as a (setup) row when it never does (G6-143)
 const landed = async (what: string, probe: () => unknown) => { check(`(setup) ${what}`, !!(await tryUntil(what, probe, { ms: 8000, step: 25 }))); };
 const deckOf = (ag: any, name = "deck") => ag.entities.get(IDS.of(name));
+// a scene write the door took (answered ok, so it is in the log), as a (setup) row: a refusal or no answer fails it
+const took = async (h: any, v: string, a: any) => { check(`(setup) the door took ${v} ${a.id}`, (await h.verb(v, a)) === true); };
 
 // ---- the run ---------------------------------------------------------------
 
@@ -199,7 +201,7 @@ try {
   {
     const W = `sup-replay-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     h.close();
 
     const ag = new WorldAgent({ url: URL_, name: "rep-bot", world: W });
@@ -225,7 +227,7 @@ try {
   {
     const W = `sup-silence-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "sil-bot", world: W });
     await ag.connect();
     await sleep(1200);
@@ -240,11 +242,11 @@ try {
   {
     const W = `sup-place-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "plc-bot", world: W });
     await ag.connect();
     await sleep(1200);
-    await h.verb("place", { id: "deck", pos: [-4, 0, 0], yaw: 0 });   // moved away
+    await took(h, "place", { id: "deck", pos: [-4, 0, 0], yaw: 0 });   // moved away
     await landed("plc-bot's replica has the deck at its new place", () => deckOf(ag)?.pos?.[0] === -4);
 
     await ag.walkTo(3, 0, false, 8000);
@@ -261,11 +263,11 @@ try {
   {
     const W = `sup-remove-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "rm-bot", world: W });
     await ag.connect();
     await sleep(1200);
-    await h.verb("remove", { id: "deck" });
+    await took(h, "remove", { id: "deck" });
     await landed("rm-bot's replica has the deck gone", () => !ag.entities.has(IDS.of("deck")));
     await ag.walkTo(3, 0, false, 8000);
     const y = await dropOver(h, ag, "rm-bot", [3, 0], DECK_Y, "release");
@@ -281,19 +283,19 @@ try {
   {
     const W = `sup-motion-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "mot-bot", world: W });
     await ag.connect();
     await sleep(1200);
     await ag.walkTo(3, 0, false, 8000);
 
     // a motion (requestsOf writes an oscillate along z): the crate does not stay put
-    await h.verb("motion", { id: "deck", type: "oscillate" });
+    await took(h, "motion", { id: "deck", type: "oscillate" });
     await landed("mot-bot's replica has the deck moving", () => deckOf(ag)?.motion?.type === "oscillate");
     const moving = await dropOver(h, ag, "mot-bot", [3, 0], DECK_Y, "release");
     check("a MOVING platform is not a ghost floor", onTerrain(moving), `root=${moving.toFixed(2)}`);
 
-    await h.verb("motion", { id: "deck" });            // type omitted = motion removed
+    await took(h, "motion", { id: "deck" });            // type omitted = motion removed
     await landed("mot-bot's replica has the deck still", () => deckOf(ag) && deckOf(ag).motion == null);
     await ag.walkTo(3, 0, false, 8000);
     const stopped = await dropOver(h, ag, "mot-bot", [3, 0], DECK_Y, "release");
@@ -312,7 +314,7 @@ try {
   {
     const W1 = `sup-leak-a-${Date.now().toString(36)}`;
     const h1 = await hand(W1, "stagehand");
-    await h1.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
+    await took(h1, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const a1 = new WorldAgent({ url: URL_, name: "leak-a", world: W1 });
     await a1.connect();
     // its support is registered (else the no-leak row below passes on nothing; G6-144)
@@ -364,7 +366,7 @@ try {
       for (const [how, delay] of [["release", 4000], ["silence", 6000]] as const) {
         const W = `sup-barrier-${how}-${Date.now().toString(36)}`;
         const h = await hand(W, "stagehand");
-        await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
+        await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
 
         delayMs = delay; geomLandedAt = 0;     // geometry now arrives slowly
         const ag = new WorldAgent({ url: URL_, name: `bar-${how}`, world: W });
@@ -393,20 +395,20 @@ try {
   {
     const W = `sup-mount-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
-    await h.verb("spawn", { id: "cart", lib: LIB, pos: [8, 0, 0], yaw: 0 });   // in order: both answered
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
+    await took(h, "spawn", { id: "cart", lib: LIB, pos: [8, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "mnt-bot", world: W });
     await ag.connect();
     await sleep(1500);
     await ag.walkTo(8, 0, false, 10_000);
 
-    await h.verb("mount", { id: "cart", to: "deck" });     // the cart is cargo now
+    await took(h, "mount", { id: "cart", to: "deck" });     // the cart is cargo now
     await landed("mnt-bot's replica has the cart mounted", () => ag.mounts.has(IDS.of("cart")));
     const mounted = await dropOver(h, ag, "mnt-bot", [8, 0], DECK_Y, "release");
     check("MOUNTED cargo stops holding bodies at its old coordinate",
       onTerrain(mounted), `root=${mounted.toFixed(2)}`);
 
-    await h.verb("dismount", { id: "cart", pos: [8, 0, 0], yaw: 0 });
+    await took(h, "dismount", { id: "cart", pos: [8, 0, 0], yaw: 0 });
     await landed("mnt-bot's replica has the cart set down", () => !ag.mounts.has(IDS.of("cart")) && deckOf(ag, "cart")?.pos?.[0] === 8);
     await ag.walkTo(8, 0, false, 10_000);
     const off = await dropOver(h, ag, "mnt-bot", [8, 0], DECK_Y, "release");
@@ -420,7 +422,7 @@ try {
   {
     const W = `sup-cores-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
-    await h.verb("spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });   // answered: it is in the log
+    await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const stays = new WorldAgent({ url: URL_, name: "stays", world: W });
     const leaves = new WorldAgent({ url: URL_, name: "leaves", world: W });
     await stays.connect(); await leaves.connect();
@@ -459,7 +461,7 @@ try {
     const W = `sup-tower-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
     const at = [3, 0, 0];
-    await h.verb("spawn", { id: "tower", lib: TOWER, pos: at, yaw: 0 });
+    await took(h, "spawn", { id: "tower", lib: TOWER, pos: at, yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "twr-bot", world: W });
     await ag.connect();
     await sleep(2000);
@@ -501,7 +503,7 @@ try {
     const W = `sup-palm-${Date.now().toString(36)}`;
     const h = await hand(W, "stagehand");
     const at = [3, 0, 0];
-    await h.verb("spawn", { id: "palm", lib: PALM, pos: at, yaw: 0 });
+    await took(h, "spawn", { id: "palm", lib: PALM, pos: at, yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "palm-bot", world: W });
     await ag.connect();
     await sleep(2000);
