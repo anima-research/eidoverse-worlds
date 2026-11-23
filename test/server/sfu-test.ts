@@ -80,6 +80,8 @@ async function forwardedWhile(room: Sfu, legId: string, speaker: FakePeer, n: nu
   await speaker.speak(n);
   await tryUntil(`the SFU took in ${legId}'s ${n} packets`, () => got >= n);   // a lost loopback packet is a short count, not a throw
   tap.unSubscribe();
+  // positive control (AMB-016/G6-135): with zero ingress, every caller's `fwd === 0` would pass with nothing sent
+  check(`…${legId}'s packets reached the SFU (positive control for the row below)`, got > 0, `ingress ${got}/${n}`);
   return room.diag().forwarded - f0;
 }
 const connected = (...pcs: RTCPeerConnection[]) => pcs.every((pc) => pc.connectionState === "connected");
