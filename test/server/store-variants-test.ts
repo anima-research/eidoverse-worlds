@@ -14,9 +14,9 @@
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
 // A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs if present (a small source, then the 2048² budget). Sections 4-8 spawn the real
-// sequencer (a probed port: nothing answered HTTP there within 400 ms; fixture-as-nonce ownership) on a scratch OPT_DIR.
+// sequencer (a port a bind-and-close probe found free; fixture-as-nonce ownership) on a scratch OPT_DIR.
 
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, symlinkSync, statSync, unlinkSync, rmdirSync, lstatSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, statSync, unlinkSync, rmdirSync, lstatSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,6 +28,8 @@ import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, sto
 import { findKtx2Encoder, isKtx2Container, lodGpuRefusal } from "../../server/optimize.ts";
 import { toolsStamp, toolsDigest, toolVersions, currentToolsDigest, hasToolsStamp } from "../../server/tools-stamp.ts";
 import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../../shared/ktx2.js";
+import { freePort } from "../harness/harness.ts";
+import { linkInto } from "../gate/common.ts";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -453,18 +455,10 @@ const cleanup = () => {
 };
 process.on("exit", cleanup);
 
-async function freePort(): Promise<number> {
-  for (let i = 0; i < 20; i++) {
-    const cand = 20000 + Math.floor(Math.random() * 20000);
-    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); }
-    catch { return cand; }
-  }
-  throw new Error("no free port in 20 tries");
-}
 /** Spawn the sequencer with `extra` in its environment (the optimize subprocesses inherit it: how the fake encoder's mode
  *  reaches them). Returns the door, the log so far, and a stop. */
 async function startServer(extra: Record<string, string | undefined>, root = ROOT) {
-  const PORT = await freePort();
+  const PORT = freePort(20000 + Math.floor(Math.random() * 18000));   // a bind-and-close probe (G4-191: a fetch probe called a silent listener free)
   const worlds = mkdtempSync(join(tmpdir(), "ew-store-serve-")); scratch.push(worlds);
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
     WORLDS_DIR: worlds, OPT_DIR: OPT, EIDOVERSE_DIR: EMPTY_LIB, ...extra };
@@ -687,7 +681,7 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
     if (name === ".git" || name === "assets" || name === "worlds") continue;
     const from = join(ROOT, name), to = join(TREE, name);
     if (name === "server" || name === "shared" || !statSync(from).isDirectory()) cpSync(from, to, { recursive: true });
-    else { symlinkSync(from, to, "junction"); links.push(to); }   // a junction: no privilege needed on Windows
+    else { linkInto(from, to); links.push(to); }   // a junction for a dir: no privilege needed on Windows
   }
   const SHARED = join(TREE, "shared", "ktx2.js");
   const glb = await fixtureGlb("canary", 1);
