@@ -28,15 +28,16 @@ function paintFrame() {
     if (q.input.max != null) inp.maxLength = q.input.max;   // null: no limit
     inp.placeholder = q.input.placeholder; inp.value = q.input.value;
     inp.addEventListener('input', () => { q.input.value = inp.value; });
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); answer(q, q.choices.findIndex((c) => c.v === 'ok'), e); } });
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); if (!e.repeat) answer(q, q.choices.findIndex((c) => c.v === 'ok'), e); } });
     api.body.appendChild(inp);
   }
   const row = document.createElement('div'); row.className = 'ask-row';
   q.choices.forEach((c, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = String(c.v);
     b.addEventListener('click', (e) => answer(q, i, e));
     // a keyboard in the headset: Enter on a focused choice is that choice, Esc the question's cancel (as on the desk card);
-    // neither goes on to open chat or walk
-    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); if (e.key === 'Enter') answer(q, i, e); else if (pending === q) settle(q.cancel); });
+    // neither goes on to open chat or walk. A held key's auto-repeat answers nothing: it is the key that answered the
+    // question before this one, still down
+    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); if (e.repeat) return; if (e.key === 'Enter') answer(q, i, e); else if (pending === q) settle(q.cancel); });
     row.appendChild(b); });
   api.body.appendChild(row);
   // the choice the asker wants Enter to give at first (a destructive question's safe answer), as the desk card focuses it

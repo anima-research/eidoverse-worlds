@@ -9,6 +9,7 @@
 // aimedElsewhere line in chooseCenter's onKey), and closeCenter() answers the open card with its cancel, never a yes.
 // Then (cold read of #359's fixes): no press or Enter counts in a card's first ARM_MS, and one then isn't kept for later
 // (mutation: `armed = () => true` in arm()). The page's clock is the test's: `later()` moves it past a card's arm time.
+// And a held key's auto-repeat answers nothing (mutation: drop `!e.repeat` from an onKey's Enter or Escape).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register({ width: 800, height: 600 });
 let now = 1e6; performance.now = () => now;   // event timeStamps read it too
@@ -69,6 +70,25 @@ const enter = (target: Element | null = document.activeElement) => target?.dispa
   const e = C.chooseCenter({ title: 'esc', choices: [{ v: 'go', label: 'Go' }], cancel: 'stay' });
   document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   check('a dismissal (Esc) is never held back: it is no answer', (await settled(e)) === 'stay' && !C.confirmOpen(), String(await settled(e)));
+}
+{ // (cold read) a held key: its first keydown answers the card, its auto-repeat (repeat: true) never answers the next one
+  const key = (k: string, repeat: boolean) => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: k, repeat, bubbles: true, cancelable: true }));
+  const a = C.confirmCenter({ title: 'A' }), b = C.confirmCenter({ title: 'B' });
+  later(); key('Enter', false); later(); key('Enter', true);
+  check('Enter held down answers the card it was pressed on, and its repeat never the next (its OK focused)', (await settled(a)) === true && (await settled(b)) === 'unsettled' && title() === 'B', `${await settled(a)} / ${await settled(b)} / ${title()}`);
+  key('Escape', true);
+  check('…nor does a held Escape\'s repeat', (await settled(b)) === 'unsettled' && C.confirmOpen(), String(await settled(b)));
+  key('Escape', false);
+  const c = C.chooseCenter({ title: 'consent', choices: [{ v: 'yes', label: 'Turn on' }, { v: 'no', label: 'Not now' }], cancel: 'dismissed', focus: 'no' });
+  later(); key('Enter', true);
+  const d = C.askCenter({ title: 'name?', value: 'x' }); later(); key('Enter', true);   // waits behind c: the field isn't up, the key goes to c
+  check('a repeat on a chooseCenter card answers nothing (no remembered no)', (await settled(c)) === 'unsettled', String(await settled(c)));
+  C.closeCenter();
+  check('…and closeCenter still dismisses each (dismissed, null)', (await settled(c)) === 'dismissed' && (await settled(d)) === null, `${await settled(c)} / ${await settled(d)}`);
+  const f = C.askCenter({ title: 'name?', value: 'y' }); later(); key('Enter', true);
+  check('a repeat on an askCenter field answers nothing', (await settled(f)) === 'unsettled' && C.confirmOpen(), String(await settled(f)));
+  key('Enter', false);
+  check('…and a fresh Enter there answers it', (await settled(f)) === 'y', String(await settled(f)));
 }
 { // (review #359 10) max: null is no limit: the speech server's address (audio/ttsrow.js) was unlimited in main's prompt()
   const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(400);

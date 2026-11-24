@@ -4,7 +4,8 @@
 //   confirmCenter({ title, body, ok = 'OK', cancel = 'Cancel' }) → Promise<boolean>
 //
 // OK, or Enter (unless Cancel has focus), says yes; Esc, Cancel or the backdrop says no. No press or Enter counts in a
-// card's first ARM_MS (see below). One at a time: an ask made while a
+// card's first ARM_MS (see below), and a held key's auto-repeat never answers: it is the key that answered the card
+// before, still down. One at a time: an ask made while a
 // card is open waits its turn and is shown when that one is answered, never answering it (a moderator's warning arriving
 // must not dismiss the speech-to-text consent question). No imports: the lite client and the boot path use this too.
 //
@@ -67,9 +68,9 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
     const okB = root.querySelector('.cc-ok'), noB = root.querySelector('.cc-no');
     const onKey = (e) => {
       if (aimedElsewhere(e, root)) return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(false); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) settle(false); }
       // Enter on a focused button presses THAT button (Cancel included) — not "yes" whatever has focus
-      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (armed(e)) settle(!e.target?.classList?.contains('cc-no')); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (!e.repeat && armed(e)) settle(!e.target?.classList?.contains('cc-no')); }
       // Tab stays between the two buttons: focus that wandered off the card would leave Enter meaning yes out of sight
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); (e.target === okB ? noB : okB).focus(); }
       else e.stopPropagation();   // typing here is never walking or a hotkey
@@ -117,8 +118,8 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
     const answer = () => { const v = inp.value.trim(); return v ? v : null; };
     const onKey = (e) => {
       if (aimedElsewhere(e, root)) return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(null); }
-      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (armed(e)) settle(e.target === noB ? null : answer()); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) settle(null); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (!e.repeat && armed(e)) settle(e.target === noB ? null : answer()); }
       // Tab walks the field and the two buttons, never off the card
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const ring = [inp, noB, okB], i = ring.indexOf(e.target); ring[(i + (e.shiftKey ? ring.length - 1 : 1)) % ring.length].focus(); }
       else e.stopPropagation();   // typing a name is never walking or a hotkey
@@ -169,8 +170,8 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
     const before = document.activeElement;
     const onKey = (e) => {
       if (aimedElsewhere(e, root)) return;
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(cancel); }
-      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); if (armed(e)) settle(i >= 0 ? choices[i].v : cancel); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) settle(cancel); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); if (!e.repeat && armed(e)) settle(i >= 0 ? choices[i].v : cancel); }
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus(); }
       else e.stopPropagation();   // typing here is never walking or a hotkey
     };

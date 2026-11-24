@@ -55,6 +55,10 @@ const install = () => pg.evaluate(async () => {
 });
 // a software-rendered XR loop can stall for minutes on a GPU-less host (a shader link): a wait that needs a frame drawn waits that out
 const S = (what, fn, arg, ms = 15000) => until(what, () => pg.evaluate(fn, arg), { ms });   // a page condition, polled
+// a key held down, as the OS sends it: its first keydown, then (repeat) more keydowns with no keyup between
+const ENTER = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+const enterDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...ENTER, text: '\r', autoRepeat: repeat });
+const enterUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...ENTER });
 const R = (name) => pg.evaluate((n) => globalThis.__r[n], name);                            // a tracked promise's value
 const settledR = (name, what) => S(what, (n) => globalThis.__r[n] !== 'unsettled' && globalThis.__r[n] !== undefined, name);
 const askTitle = () => pg.evaluate(() => globalThis.__px.ask.xrAskState()?.title ?? null);
@@ -133,6 +137,20 @@ try {
   check('D5 an Enter as the desk consent card appears answers nothing (the card stays open, sttConsent null)', d5.early === 'unsettled' && d5.open && d5.stored === null, JSON.stringify(d5));
   check('…and is not kept for later: once the card can be answered it is still unanswered, and Escape then is no for now, nothing stored', d5.armed === 'unsettled' && d5.after === false && d5.storedAfter === null, JSON.stringify(d5));
   if (d5.storedAfter !== null) await fresh();   // a remembered answer would skip every consent row below
+
+  // E1 (cold read): Enter held down answers one desk card, never the next one in line. Its auto-repeat starts ~500 ms
+  // later, past the next card's arm time, and lands on that card's home button (OK on a confirmCenter card)
+  const deskArmed = (t) => S(`E1: the desk card "${t}" can be answered`, (src) => document.querySelector('#confirm-center #cc-title')?.textContent === src && document.querySelector('#confirm-center')?.dataset.armed !== undefined, t);
+  await pg.evaluate(async () => { const C = await import('./lib/edit/confirmcenter.js'); globalThis.__px.track('e1a', C.confirmCenter({ title: 'Held A' })); globalThis.__px.track('e1b', C.confirmCenter({ title: 'Held B' })); return true; });
+  await deskArmed('Held A'); await enterDown();
+  await settledR('e1a', 'E1: the first card answered').catch(() => {});
+  const e1 = { a: await R('e1a') };
+  await deskArmed('Held B').catch(() => {});
+  await enterDown(true); await enterDown(true); await enterUp();
+  e1.b = await R('e1b');
+  if (e1.b === 'unsettled') { await pg.keyboard.press('Escape'); await settledR('e1b', 'E1: Escape answers the second card').catch(() => {}); }
+  console.log('  · E1', JSON.stringify(e1));
+  check('E1 Enter held down answers the desk card it was pressed on (yes), and its auto-repeat never answers the next one', e1.a === true && e1.b === 'unsettled', JSON.stringify(e1));
   await inVR();
 
   // C: the guarded action — turning on speech-to-text asks for consent first (audio/voiceconsent.js)
@@ -220,6 +238,22 @@ try {
   q2.later = await settledR('q2b', 'Q2: the second question answered').then(() => R('q2b'), () => 'unsettled');
   check('Q2 two presses in one frame on two queued questions answer only the one that was drawn', q2.first === 'through' && q2.second === 'unsettled' && /Same place/.test(q2.next ?? ''), JSON.stringify(q2));
   check('…and the next one is answered by a press once it is drawn', q2.later === 'through', JSON.stringify(q2));
+
+  // E2 (cold read): the same in the headset (a keyboard on PCVR): the quad focuses OK, so a held Enter's repeat would close
+  // the next question in line, a door or a log out, as nobody chose
+  await pg.evaluate(() => { const q = (t) => globalThis.__px.ask.chooseXR({ title: t, choices: [{ v: 'ok', label: 'OK' }, { v: 'cancel', label: 'Cancel' }], cancel: 'cancel', focus: 'ok' });
+    globalThis.__px.track('e2a', q('Held in VR A')); globalThis.__px.track('e2b', q('Held in VR B')); return true; });
+  await asked(/Held in VR A/, 'E2: the first question can be answered');
+  await enterDown();
+  await settledR('e2a', 'E2: the first question answered').catch(() => {});
+  const e2 = { a: await R('e2a') };
+  await asked(/Held in VR B/, 'E2: the second question can be answered').catch(() => {});
+  e2.focused = await pg.evaluate(() => document.activeElement?.textContent ?? null);
+  await enterDown(true); await enterDown(true); await enterUp();
+  e2.b = await R('e2b');
+  if (e2.b === 'unsettled') { await pg.evaluate(() => globalThis.__px.press(/^cancel$/i)); await settledR('e2b', 'E2: the second question answered').catch(() => {}); }
+  console.log('  · E2', JSON.stringify(e2));
+  check('E2 Enter held down in a headset answers the question it was pressed on, and its auto-repeat never answers the next one (focused on OK)', e2.a === 'ok' && e2.focused === 'OK' && e2.b === 'unsettled', JSON.stringify(e2));
 
   // ---- the consent edges: a dismissed question is never a remembered answer ----
   const startConsent = () => pg.evaluate(async () => globalThis.__px.track('cr', (await import('./lib/audio/voiceconsent.js')).ensureSttConsent()));
