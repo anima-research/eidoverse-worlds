@@ -179,7 +179,7 @@ function playground(clock = "pinned") {
   call("rowan", "create", { id: "wall-w", model: "wall", place: { at: [0, 1.5] } });
   const n0 = L().length;
   { const r = call("rowan", "move", { to: [0, 0, 10] }); ok(code(r) === "too-fast", "W1 a step too far is refused", r); }
-  { const r = call("rowan", "move", { to: [0, 0, 3] }); ok(code(r) === "solid", "W2 a step through the table is refused", r); }
+  { const r = call("rowan", "move", { to: [0, 0, 3] }); ok(code(r) === "solid" && r.refused?.blocker === "wall-w", "W2 a step through the wall is refused, naming it", r); }   // wall-w stands between (G4-152)
   ok(L().length === n0, "W3 …and neither refusal is written to the log (a person's client sends steps several times a second)", L().slice(n0).map((e) => [e.kind, e.verb, e.body?.refused]));
   const x = live(); x.call("rowan", "create-world", { title: "w" }); x.call("rowan", "create", { id: "wall", model: "wall", place: { at: [0, 0] } });
   const n1 = x.L().length;
