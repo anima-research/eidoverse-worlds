@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 
 // [name, key, fallback (null: machine-derived), scale, floor, floor taken?, cap?, middle]; the _SEC vars are ×1000
 const VARS: [string, string, number | null, number, number, boolean, number | undefined, number][] = [
-  ["OPT_MEM_BUDGET_MB", "b", null, 1, 0, true, undefined, 512],          // 0 = no cap, documented
+  ["OPT_MEM_BUDGET_MB", "b", null, 1, 0, true, undefined, 512],          // 0 = no gate, documented
   ["OPT_COST_FACTOR", "f", 48, 1, 0, false, undefined, 12],
   ["SNAP_TIMEOUT_SEC", "s", 12, 1000, 0, false, 225, 60],
   ["SNAP_SWEEP_GRACE_SEC", "g", 30, 1000, 0, true, 600, 120],

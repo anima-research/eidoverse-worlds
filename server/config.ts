@@ -34,8 +34,9 @@ export function cgroupMemoryMax(read: (path: string) => string = (path) => readF
     if (at === "" || at === "/") return tightest;
   }
 }
-// OPT_MEM_BUDGET_MB: each optimize child runs under RLIMIT_DATA of this many MB (Linux only), and an item whose estimated
-// cost exceeds it is deferred (a `.deferred` marker). Default: half the usable memory (cgroup limit, else physical). 0 = no cap.
+// OPT_MEM_BUDGET_MB: an optimize item whose estimated cost exceeds this many MB is deferred (a `.deferred` marker), not run.
+// Default: half the usable memory (cgroup limit, else physical). 0 = no gate. Outside systemd it is the only cap; under the
+// units in deploy/ the hard one is the cgroup's MemoryMax=, which kills the child first (upload.ts).
 function usableMemory(): number {
   const m = cgroupMemoryMax();
   return m > 0 ? Math.min(m, totalmem()) : totalmem();

@@ -49,7 +49,7 @@ function pruneOldLodGenerations(src: string, dest: string) {
   }
 }
 
-// Items this host could not afford (over budget, or the child died under the cap). Informational: the marker never
+// Items this host could not afford (over budget, or the child died, as an OOM kill does). Informational: the marker never
 // blocks a retry (the next boot re-estimates); /version reports the count, which is this boot's.
 const optDeferred = new Set<string>();
 if (process.env.OPT_CMD) console.warn(`[optimize] OPT_CMD=${process.env.OPT_CMD} — a stand-in optimizer is in charge of every variant this boot`);
@@ -169,10 +169,12 @@ async function pumpOptimize() {
       const estMB = Math.ceil(Bun.file(src).size * OPT_COST_FACTOR / 1_000_000);
       if (OPT_MEM_BUDGET_MB && estMB > OPT_MEM_BUDGET_MB) { defer(dest, `estimated ${estMB}MB > budget ${OPT_MEM_BUDGET_MB}MB`); continue; }
       mkdirSync(dirname(dest), { recursive: true });
-      // process.execPath = the running bun binary (PATH under systemd has no bun). Under a budget the child runs beneath sh's
-      // `ulimit -d` (KB; RLIMIT_DATA, not RLIMIT_AS: bun reserves far more address space than it touches), so an encode that
-      // outgrows it dies as the child. The wrapper's own failures (126, 127) never read as a content verdict.
-      const capped = OPT_MEM_BUDGET_MB > 0 && process.platform === "linux";
+      // process.execPath = the running bun binary (PATH under systemd has no bun). The hard cap is the unit's cgroup
+      // (MemoryMax=, OOMPolicy=continue): on Linux the child raises its own oom_score_adj before exec, so when the cgroup
+      // runs out the kernel kills it, not the server, and the death below defers the item. No rlimit: RLIMIT_DATA charges
+      // bun's startup reservations, so bun aborts under some caps and runs without its JIT under most (docs/research/
+      // service-hardening.md). The wrapper's own failures (126, 127) never read as a content verdict.
+      const linux = process.platform === "linux";
       // OPT_CMD: a harness may own the child (test/server/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
       // a .js/.ts OPT_CMD runs under this bun: a shebang script is no executable on Windows (EFTYPE)
       const opt = process.env.OPT_CMD, viaBun = !!opt && /\.(m?js|ts)$/.test(opt);
@@ -181,11 +183,9 @@ async function pumpOptimize() {
       try {
         // /bin/sh by absolute path: PATH may hold no shell (a harness's fake encoder), and a spawn that can't start
         // throws here, synchronously
-        proc = Bun.spawn(capped
-          ? ["/bin/sh", "-c", 'ulimit -d "$0" || exit 126; exec "$@"', String(OPT_MEM_BUDGET_MB * 1024), ...cmd]
-          : cmd, { stdout: "pipe", stderr: "pipe" });
+        proc = Bun.spawn(linux ? ["/bin/sh", "-c", 'echo 1000 2>/dev/null >/proc/self/oom_score_adj; exec "$@"', "sh", ...cmd] : cmd, { stdout: "pipe", stderr: "pipe" });
       } catch (e) {
-        console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
+        console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked`);
         optQueue.length = 0; break;
       }
       // never wait forever on a child: one that never answers is killed and deferred (test/server/optimize-pump-test.ts 6b)
@@ -202,14 +202,14 @@ async function pumpOptimize() {
         else if (existsSync(sourceSidecar(dest))) try { rmSync(sourceSidecar(dest)); } catch { /* best effort */ }
       }
       const err = (await stderr(STDERR_GRACE_MS)).trim();
-      if (capped && (code === 126 || code === 127)) {
+      if (linux && (code === 126 || code === 127)) {
         // environmental, like a missing dep: no marker, and no point grinding on
-        console.error(`[optimize] cap wrapper failed (exit ${code}: ${err.split("\n").pop() || "sh"}) — set OPT_MEM_BUDGET_MB within this process's hard RLIMIT_DATA, or 0`);
+        console.error(`[optimize] the optimizer could not start (exit ${code}: ${err.split("\n").pop() || "sh"}) — nothing marked`);
         optQueue.length = 0; break;
       }
-      if (capped && (proc.signalCode || code >= 128)) {
-        // OOM under the cap and a crash on a corrupt file look the same here: both retried next boot
-        defer(dest, `child died (${proc.signalCode ?? `exit ${code}`}) under the ${OPT_MEM_BUDGET_MB}MB cap`);
+      if (linux && (proc.signalCode || code >= 128)) {
+        // an OOM kill and a crash on a corrupt file look the same here: both retried next boot
+        defer(dest, `child died (${proc.signalCode ?? `exit ${code}`})`);
         continue;
       }
       if (code === 0) {
