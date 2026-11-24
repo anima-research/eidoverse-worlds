@@ -10,6 +10,7 @@
 // Then (cold read of #359's fixes): no press or Enter counts in a card's first ARM_MS, and one then isn't kept for later
 // (mutation: `armed = () => true` in arm()). The page's clock is the test's: `later()` moves it past a card's arm time.
 // And a held key's auto-repeat answers nothing (mutation: drop `!e.repeat` from an onKey's Enter or Escape).
+// And a click counts from the press that began it (mutation: `clicked` returns `armed(e)` in arm()).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register({ width: 800, height: 600 });
 let now = 1e6; performance.now = () => now;   // event timeStamps read it too
@@ -89,6 +90,29 @@ const enter = (target: Element | null = document.activeElement) => target?.dispa
   check('a repeat on an askCenter field answers nothing', (await settled(f)) === 'unsettled' && C.confirmOpen(), String(await settled(f)));
   key('Enter', false);
   check('…and a fresh Enter there answers it', (await settled(f)) === 'y', String(await settled(f)));
+}
+{ // (cold review of the arm time) a pointer's click is its release: it counts from the press that began it. A press
+  // that starts in a card's first ARM_MS and is let go after was meant for what was there before (a double-press held a
+  // moment), and answers nothing; nor does a click whose press the card never saw (it began before the card was there)
+  const at = (b: Element | undefined, type: string, init: any = {}) => b?.dispatchEvent(new (type.startsWith('pointer') ? PointerEvent : MouseEvent)(type, { bubbles: true, cancelable: true, ...init }));
+  const btn = (label: string) => [...document.querySelectorAll('#confirm-center button')].find((b) => b.textContent === label);
+  const hold = (label: string, down: number, up: number) => { const t0 = now, b = btn(label);
+    now = t0 + down; at(b, 'pointerdown', { pointerType: 'mouse' }); at(b, 'mousedown');
+    now = t0 + up; at(b, 'pointerup', { pointerType: 'mouse' }); at(b, 'mouseup'); at(b, 'click', { detail: 1 }); now = t0; };
+  const consent = () => C.chooseCenter({ title: 'consent', choices: [{ v: 'yes', label: 'Turn on' }, { v: 'no', label: 'Not now' }], cancel: 'dismissed' });
+  const a = consent(); hold('Turn on', 300, 470);
+  check('a mouse press begun 300 ms after the card appeared and let go at 470 answers nothing', (await settled(a)) === 'unsettled' && C.confirmOpen(), String(await settled(a)));
+  C.closeCenter(); const b = consent(); hold('Turn on', 120, 470);
+  check('…nor one begun at 120 ms and let go at 470', (await settled(b)) === 'unsettled' && C.confirmOpen(), String(await settled(b)));
+  C.closeCenter(); const c = consent(); later(); at(btn('Turn on'), 'click', { detail: 1 });
+  check('a pointer click whose press the card never saw answers nothing', (await settled(c)) === 'unsettled' && C.confirmOpen(), String(await settled(c)));
+  hold('Turn on', 0, 10);
+  check('…and a press begun once the card can be answered is its answer', (await settled(c)) === 'yes' && !C.confirmOpen(), String(await settled(c)));
+  const d = consent(), t0 = now; now = t0 + 300; btn('Turn on')?.focus(); document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+  now = t0 + 470; at(btn('Turn on'), 'click');   // Space's click comes at its keyup (detail 0)
+  check('Space pressed at 300 ms and let go at 470 answers nothing', (await settled(d)) === 'unsettled' && C.confirmOpen(), String(await settled(d)));
+  C.closeCenter(); const e = consent(); later(); at(btn('Turn on'), 'click');
+  check('…while a click with no press behind it (a script, assistive tech) still counts from when it lands', (await settled(e)) === 'yes', String(await settled(e)));
 }
 { // (review #359 10) max: null is no limit: the speech server's address (audio/ttsrow.js) was unlimited in main's prompt()
   const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(400);

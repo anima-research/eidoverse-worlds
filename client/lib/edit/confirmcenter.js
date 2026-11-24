@@ -33,12 +33,19 @@ const next = () => waiting.shift()?.go();
 export const ARM_MS = 450;
 // when an input happened: the event's own time (a key that waited behind a busy main thread still arrived early), else now
 export const inputAt = (e) => { const n = performance.now(), t = e?.timeStamp; return Number.isFinite(t) && t > 0 ? Math.min(t, n) : n; };
-// from now: `armed(e)` says whether input `e` may answer the card; the card wears data-armed once it can (for probes)
+// from now: `armed(e)` says whether input `e` may answer the card; the card wears data-armed once it can (for probes).
+// A click is a release, so `clicked(e)` counts it from the press that began it (its pointerdown, or Space's keydown via
+// `pressed`), which this card must have seen: a press begun in its first ARM_MS, or before it was there, answers nothing.
+// A click with no press behind it (detail 0: a script, assistive tech) counts from when it lands
 function arm(root) {
   const t0 = performance.now(), armed = (e) => inputAt(e) - t0 >= ARM_MS;
+  let down = null;   // when the press now on the card began
+  const pressed = (e) => { down = inputAt(e); };
+  root.addEventListener('pointerdown', pressed, true);
+  const clicked = (e) => { const d = down; down = null; return armed(e) && (d != null ? d - t0 >= ARM_MS : !(e.detail > 0)); };
   const mark = () => { if (!root.isConnected) return; if (armed()) root.dataset.armed = ''; else setTimeout(mark, Math.max(1, ARM_MS - (performance.now() - t0))); };
   setTimeout(mark, ARM_MS);
-  return armed;
+  return { armed, clicked, pressed };
 }
 // a synthetic key aimed at an element outside the card (the VR keyboard's ⏎ on the headset's text field) is not for the
 // card. A real key always is: wherever focus went, Esc still answers and a walking key never reaches the body behind
@@ -73,7 +80,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (!e.repeat && armed(e)) settle(!e.target?.classList?.contains('cc-no')); }
       // Tab stays between the two buttons: focus that wandered off the card would leave Enter meaning yes out of sight
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); (e.target === okB ? noB : okB).focus(); }
-      else e.stopPropagation();   // typing here is never walking or a hotkey
+      else { if (e.key === ' ' && !e.repeat && e.target?.tagName === 'BUTTON') pressed(e); e.stopPropagation(); }   // typing here is never walking or a hotkey; Space clicks at its keyup
     };
     let release = () => {};
     function settle(v) {
@@ -85,11 +92,11 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
       resolve(v); next();
     }
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(false); });
-    okB.addEventListener('click', (e) => { if (armed(e)) settle(true); });
-    noB.addEventListener('click', (e) => { if (armed(e)) settle(false); });
+    okB.addEventListener('click', (e) => { if (clicked(e)) settle(true); });
+    noB.addEventListener('click', (e) => { if (clicked(e)) settle(false); });
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
-    const armed = arm(root);
+    const { armed, clicked, pressed } = arm(root);
     open = { root, settle, cancel: false };   // cancel: what a dismissal (closeCenter) answers it with
     okB.focus(); release = holdFocus(root, okB);
   });
@@ -122,7 +129,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); if (!e.repeat && armed(e)) settle(e.target === noB ? null : answer()); }
       // Tab walks the field and the two buttons, never off the card
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const ring = [inp, noB, okB], i = ring.indexOf(e.target); ring[(i + (e.shiftKey ? ring.length - 1 : 1)) % ring.length].focus(); }
-      else e.stopPropagation();   // typing a name is never walking or a hotkey
+      else { if (e.key === ' ' && !e.repeat && e.target?.tagName === 'BUTTON') pressed(e); e.stopPropagation(); }   // typing a name is never walking or a hotkey; Space clicks at its keyup
     };
     let release = () => {};
     function settle(v) {
@@ -134,11 +141,11 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
       resolve(v); next();
     }
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(null); });
-    okB.addEventListener('click', (e) => { if (armed(e)) settle(answer()); });
-    noB.addEventListener('click', (e) => { if (armed(e)) settle(null); });
+    okB.addEventListener('click', (e) => { if (clicked(e)) settle(answer()); });
+    noB.addEventListener('click', (e) => { if (clicked(e)) settle(null); });
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
-    const armed = arm(root);
+    const { armed, clicked, pressed } = arm(root);
     open = { root, settle, cancel: null };
     inp.focus(); inp.select(); release = holdFocus(root, inp);
   });
@@ -164,7 +171,7 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
       const b = document.createElement('button'); b.type = 'button';
       b.className = c.danger ? 'cc-danger' : i === 0 ? 'cc-ok' : c.v === cancel ? 'cc-no' : 'cc-alt';
       b.textContent = c.label; b.dataset.v = String(c.v);
-      b.addEventListener('click', (e) => { if (armed(e)) settle(c.v); });
+      b.addEventListener('click', (e) => { if (clicked(e)) settle(c.v); });
       box.append(b); return b;
     });
     const before = document.activeElement;
@@ -173,7 +180,7 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); if (!e.repeat) settle(cancel); }
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); if (!e.repeat && armed(e)) settle(i >= 0 ? choices[i].v : cancel); }
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus(); }
-      else e.stopPropagation();   // typing here is never walking or a hotkey
+      else { if (e.key === ' ' && !e.repeat && e.target?.tagName === 'BUTTON') pressed(e); e.stopPropagation(); }   // typing here is never walking or a hotkey; Space clicks at its keyup
     };
     let release = () => {};
     function settle(v) {
@@ -187,7 +194,7 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(cancel); });
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
-    const armed = arm(root);
+    const { armed, clicked, pressed } = arm(root);
     open = { root, settle, cancel };
     // `focus`: the answer Enter gives at first — a destructive question focuses its safe answer
     const fi = focus != null ? choices.findIndex((c) => c.v === focus) : -1;

@@ -7,7 +7,7 @@ import { renderer } from '../core.js';
 import { perf } from '../render/perf.js';
 import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
-import { domQuadMesh, domQuadShow } from './domquad.js';
+import { domQuadMesh, domQuadShow, quadPressAt } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
 import { setHeadsetAsk, closeCenter, ARM_MS, inputAt } from '../edit/confirmcenter.js';
 
@@ -70,8 +70,10 @@ function settle(v) {
 // was aimed at, once that question has been drawn and has been up for ARM_MS (edit/confirmcenter.js): the buttons sit in
 // the same bottom row whatever the question, so the next one's appear under a press meant for the one that just closed.
 // Two hands on one button in one frame, a double-press, a press at a notice going by itself: each answers only the first
-// question, never the one that replaced it under them. A press too soon is dropped, not kept for later
-const armed = (q, e) => (perf.frameNo ?? 0) > q.drawnAt && inputAt(e) - q.shownAt >= ARM_MS;
+// question, never the one that replaced it under them. A press too soon is dropped, not kept for later. The trigger
+// clicks at its release (domquad.js): a held press counts from when it began
+const pressedAt = (e) => Math.min(inputAt(e), quadPressAt() ?? Infinity);
+const armed = (q, e) => (perf.frameNo ?? 0) > q.drawnAt && pressedAt(e) - q.shownAt >= ARM_MS;
 function answer(q, i, e) { if (pending === q && q.choices[i] && armed(q, e)) settle(q.choices[i].v); }
 function dispatch(action) { const m = /^c:(\d+):(\d+)$/.exec(String(action)); if (m && pending && pending.id === Number(m[1])) answer(pending, Number(m[2])); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)

@@ -14,6 +14,8 @@
 // in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
 // instead of queueing (S2); drop the xr:state(true) closeCenter() (S3a, alone: S3's later rows stay green, a headset
 // question closing the card too) and the desk card's aimedElsewhere guard (S3).
+// XH/DH (a press counts from when it began): in xr/xrask.js `pressedAt` returns inputAt(e) (XH, XH2); in
+// edit/confirmcenter.js arm()'s `clicked` returns armed(e) (DH, DH2).
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until } from '../gate/wait.ts';
 const { check, done } = checker();
@@ -31,20 +33,22 @@ pg.on('dialog', (d) => { dialogs.push(`${d.type()}: ${d.message().slice(0, 60)}`
 const install = () => pg.evaluate(async () => {
   const dq = await import('./lib/xr/domquad.js'); const THREE = await import('three');
   const ask = await import('./lib/xr/xrask.js');
-  const pull = (id, el) => {
-    const mesh = dq.domQuadMesh(id), dom = dq.domQuadTexture(id).dom, fr = dom.getBoundingClientRect(), er = el.getBoundingClientRect();
-    const u = (er.left + er.width / 2 - fr.left) / fr.width, v = (er.top + er.height / 2 - fr.top) / fr.height;
+  // a hand ray aimed at DOM point `pt` (client coords of the offscreen frame) on quad `id`
+  const ray = (id, pt) => {
+    const mesh = dq.domQuadMesh(id), dom = dq.domQuadTexture(id).dom, fr = dom.getBoundingClientRect();
+    const u = (pt.x - fr.left) / fr.width, v = (pt.y - fr.top) / fr.height;
     const { width: W, height: H } = mesh.geometry.parameters; mesh.updateMatrixWorld(true);
     const p = mesh.localToWorld(new THREE.Vector3((u - 0.5) * W, (0.5 - v) * H, 0));
     const q = new THREE.Quaternion(); mesh.getWorldQuaternion(q);
     const n = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
-    return dq.domQuadsPick({ matrixWorld: new THREE.Matrix4().compose(p.clone().addScaledVector(n, 0.5), q, new THREE.Vector3(1, 1, 1)) }, true);
+    return { matrixWorld: new THREE.Matrix4().compose(p.clone().addScaledVector(n, 0.5), q, new THREE.Vector3(1, 1, 1)) };
   };
+  const pull = (id, el) => { const er = el.getBoundingClientRect(); return dq.domQuadsPick(ray(id, { x: er.left + er.width / 2, y: er.top + er.height / 2 }), true); };
   const btn = (id, re) => [...(dq.domQuadTexture(id)?.dom?.querySelectorAll('button') ?? [])].find((b) => re.test(b.textContent) && b.getBoundingClientRect().height > 0);
   const input = () => dq.domQuadTexture('ask')?.dom?.querySelector('input') ?? null;
   globalThis.__r ??= {};   // kept across a session start (S3 reads what entering VR did to a question asked before it)
   globalThis.__px = {
-    dq, ask, pull, btn, input,
+    dq, ask, ray, pull, btn, input,
     press: (re) => { const b = btn('ask', re); return b ? pull('ask', b) != null : false; },
     key: (k) => { const b = dq.domQuadTexture('keyboard')?.dom?.querySelector(`button[data-k="${k}"]`); return b ? pull('keyboard', b) != null : false; },
     // a page-side promise, recorded under `name` when it settles
@@ -504,6 +508,67 @@ try {
   xl.pressed = await pg.evaluate(() => globalThis.__px.press(/turn on/i));
   xl.consent = await settledR('cr', 'X: the consent question answered').then(() => R('cr'), () => 'unsettled'); xl.stored = await stored();
   check('…the dropped press is not kept for later, and a press once the question can be answered is its answer (true)', xl.still === 'unsettled' && xl.pressed && xl.consent === true && xl.stored === true, JSON.stringify(xl));
+
+  // XH (cold review of the arm time): the arm time counts from when a press STARTED. X's presses click at once; the
+  // trigger clicks at its release (xr.js: domQuadsPress on trigger down, domQuadsRelease on trigger up), so a double-press
+  // whose second press starts inside ARM_MS and is let go after it was answering the question nobody had seen yet.
+  // Same spot as X (OK's left quarter, where Turn on appears), same spun time and one counted frame
+  const xrHeld = async (tag, down, up) => {
+    await fresh(); await inVR();
+    await pg.evaluate(() => globalThis.__px.track('xn', globalThis.__px.ask.chooseXR({ title: 'refused — nothing changed', body: 'probe', choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' })));
+    await asked(/refused/, `${tag}: the notice is drawn`);
+    await startConsent();
+    await S(`${tag}: the consent question waits behind the notice`, () => (globalThis.__px.ask.xrAskState()?.waiting ?? 0) > 0);
+    const h = await pg.evaluate(async ({ down, up }) => {
+      const { btn, ray, dq } = globalThis.__px; const { perf } = await import('./lib/render/perf.js');
+      const r = btn('ask', /^ok$/i).getBoundingClientRect(), pt = { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
+      const p1 = dq.domQuadsPress(ray('ask', pt)); dq.domQuadsRelease(p1?.press);   // the first trigger click: answers the notice
+      const t0 = performance.now(), f0 = perf.frameNo ?? 0;
+      perf.frameNo = f0 + 1;
+      const spin = (ms) => { while (performance.now() - t0 < ms) { /* time passing, no frame able to run */ } };
+      spin(down); const p2 = dq.domQuadsPress(ray('ask', pt)); const downMs = Math.round(performance.now() - t0);
+      spin(up); const upMs = Math.round(performance.now() - t0); dq.domQuadsRelease(p2?.press);
+      return { first: !!p1?.press, under: p2?.press?.el?.textContent ?? null, downMs, upMs };
+    }, { down, up });
+    Object.assign(h, { notice: await R('xn'), consent: await R('cr'), stored: await stored() });
+    console.log(`  · ${tag}`, JSON.stringify(h));
+    return h;
+  };
+  for (const [tag, down, up] of [['XH', 300, 470], ['XH2', 120, 470]]) {
+    const h = await xrHeld(tag, down, up);
+    check(`${tag} a trigger press begun ${down} ms after the notice went and let go at ${up} never answers the consent question under it (sttConsent null)`,
+      h.first && h.notice === 'ok' && h.under === 'Turn on' && h.downMs < 450 && h.upMs >= 450 && h.consent === 'unsettled' && h.stored === null, JSON.stringify(h));
+  }
+
+  // DH: the same on the desk, with a mouse: a press begun inside the card's ARM_MS and let go after it answers nothing.
+  // The notice's Close and consent's Turn on don't share a spot on the desk (the consent card is taller), so the press is
+  // put on Turn on; the events are a real mouse's (pointerdown, mousedown … pointerup, mouseup, click), spun in one task
+  const deskHeld = async (tag, down, up) => {
+    await fresh();
+    await pg.evaluate(async () => globalThis.__px.track('dn', (await import('./lib/edit/confirmcenter.js')).confirmCenter({ title: 'From a moderator', body: 'warned you', ok: 'I understand', cancel: 'Close' })));
+    await S(`${tag}: the desk notice can be answered`, () => document.querySelector('#confirm-center')?.dataset.armed !== undefined);
+    await startConsent();
+    const h = await pg.evaluate(({ down, up }) => {
+      const mouse = (b, phase) => { const r = b.getBoundingClientRect(), init = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true, composed: true, pointerType: 'mouse', isPrimary: true, pointerId: 1 };
+        const seq = phase === 'down' ? [['pointerdown', PointerEvent], ['mousedown', MouseEvent]] : [['pointerup', PointerEvent], ['mouseup', MouseEvent], ['click', PointerEvent]];
+        for (const [type, E] of seq) b.dispatchEvent(new E(type, { ...init, detail: 1 })); };
+      const close = document.querySelector('#confirm-center .cc-no'); mouse(close, 'down'); mouse(close, 'up');   // Close: the notice
+      const t0 = performance.now(), spin = (ms) => { while (performance.now() - t0 < ms) { /* */ } };
+      spin(down); const b = [...document.querySelectorAll('#confirm-center button')].find((x) => /turn on/i.test(x.textContent));
+      if (b) mouse(b, 'down'); const downMs = Math.round(performance.now() - t0);
+      spin(up); if (b) mouse(b, 'up');
+      return { under: b?.textContent ?? null, downMs, upMs: Math.round(performance.now() - t0) };
+    }, { down, up });
+    Object.assign(h, { notice: await R('dn'), consent: await R('cr'), stored: await stored() });
+    console.log(`  · ${tag}`, JSON.stringify(h));
+    await pg.evaluate(async () => { (await import('./lib/edit/confirmcenter.js')).closeCenter(); return true; });
+    return h;
+  };
+  for (const [tag, down, up] of [['DH', 300, 470], ['DH2', 120, 470]]) {
+    const h = await deskHeld(tag, down, up);
+    check(`${tag} a mouse press begun ${down} ms after the desk notice went and let go at ${up} never answers the consent card (sttConsent null)`,
+      h.notice === false && h.under === 'Turn on' && h.downMs < 450 && h.upMs >= 450 && h.consent === 'unsettled' && h.stored === null, JSON.stringify(h));
+  }
   check('no native dialogs at all', dialogs.length === 0, dialogs.join(' | '));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }
