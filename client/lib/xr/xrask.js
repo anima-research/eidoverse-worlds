@@ -10,7 +10,7 @@ import { domQuadMesh, domQuadShow } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
 import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
 
-let pending = null;   // {title, body, choices: [{v, label}], cancel, resolve, input?: {value, placeholder, max}, onShow?}
+let pending = null;   // {title, body, choices: [{v, label}], cancel, focus?, resolve, input?: {value, placeholder, max}, onShow?}
 const waiting = [];   // questions asked while one was open: each is asked in turn, none replaces another
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
 export const xrActive = () => !!renderer?.xr?.isPresenting;
@@ -30,8 +30,15 @@ function paintFrame() {
   }
   const row = document.createElement('div'); row.className = 'ask-row';
   for (const c of q.choices) { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = c.v;
-    b.addEventListener('click', () => dispatch(`c:${c.v}`)); row.appendChild(b); }
+    b.addEventListener('click', () => dispatch(`c:${c.v}`));
+    // a keyboard in the headset: Enter on a focused choice is that choice, Esc the question's cancel (as on the desk card);
+    // neither goes on to open chat or walk
+    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); dispatch(`c:${e.key === 'Enter' ? c.v : q.cancel}`); });
+    row.appendChild(b); }
   api.body.appendChild(row);
+  // the choice the asker wants Enter to give at first (a destructive question's safe answer), as the desk card focuses it
+  const fi = q.focus != null ? q.choices.findIndex((c) => c.v === q.focus) : -1;
+  if (fi >= 0 && !q.input) try { row.children[fi].focus(); } catch { /* not drawn */ }
 }
 const repaint = () => { paintFrame(); bus.emit('xr:repaint'); };
 
@@ -77,12 +84,13 @@ export function initXRAsk() {
   return api;
 }
 
-/** chooseCenter's contract ({title, body, choices: [{v, label}], cancel} → the chosen v), on a VR quad. Asked while
+/** chooseCenter's contract ({title, body, choices: [{v, label}], cancel, focus} → the chosen v), on a VR quad; `focus`
+ *  names the choice a keyboard's Enter gives at first (none: nothing is focused, so a notice never takes the keys). Asked while
  *  another question is open, it waits its turn: replacing the open one would answer it with its cancel, and a consent
  *  question (audio/voiceconsent.js) must be answered by a person, not by a moderator's warning arriving. */
-export function chooseXR({ title, body = '', choices = [], cancel = null } = {}) {
+export function chooseXR({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
   if (!choices.length) return Promise.resolve(cancel);
-  return new Promise((resolve) => show({ title, body, choices, cancel, resolve }));
+  return new Promise((resolve) => show({ title, body, choices, cancel, focus, resolve }));
 }
 
 /** askCenter's contract ({title, body, value, placeholder, ok, cancel, max} → the trimmed text, or null), on the VR quad:

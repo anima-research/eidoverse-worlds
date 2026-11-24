@@ -35,7 +35,7 @@ function holdFocus(root, home) {
 }
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
-  if (inHeadset()) { closeCenter(); return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok'); }
+  if (inHeadset()) { closeCenter(); return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel', focus: 'ok' }).then((v) => v === 'ok'); }
   if (typeof document === 'undefined') return Promise.resolve(false);
   return inTurn(false, (resolve) => {
     const root = document.createElement('div');
@@ -129,7 +129,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
  *  The first choice has focus (the house yes) unless `focus` names another v; Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
  *  rule: asked while a card is open, it waits its turn. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
-  if (inHeadset() && choices.length) { closeCenter(); return headset.choose({ title, body, choices, cancel }); }
+  if (inHeadset() && choices.length) { closeCenter(); return headset.choose({ title, body, choices, cancel, focus: focus ?? choices[0].v }); }   // focused as the desk card would
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
   return inTurn(cancel, (resolve) => {
     const root = document.createElement('div');

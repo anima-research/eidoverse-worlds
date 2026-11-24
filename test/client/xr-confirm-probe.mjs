@@ -168,12 +168,14 @@ try {
   // the warning is asked (people.js imports xrask.js first): it either waits in line or replaced the question
   await S('S2: the warning was asked', () => (globalThis.__px.ask.xrAskState()?.waiting ?? 0) > 0 || /moderator/i.test(globalThis.__px.ask.xrAskState()?.title ?? '')).catch(() => {});
   const s2 = { open: await askTitle(), stored: await stored(), resolved: await R('cr') };
-  s2.pressed = await pg.evaluate(() => globalThis.__px.press(/not now/i));
+  // (review #359 8) answered with a keyboard's Enter: the headset question focuses its safe choice (Not now), as the desk card does
+  s2.focused = await pg.evaluate(() => document.activeElement?.textContent ?? null);
+  await pg.keyboard.press('Enter'); s2.pressed = true;
   await settledR('cr', 'S2: the consent question answered').catch(() => {});
   s2.after = { stored: await stored(), resolved: await R('cr'), next: await askTitle() };
   check("S2 a warning mid-consent waits behind it: the consent question stays open and unanswered (sttConsent null)",
     /speech-to-text/i.test(s2.open ?? '') && s2.stored === null && s2.resolved === 'unsettled', JSON.stringify(s2));
-  check("…then answering it is remembered (Not now → false), and the warning is asked next", s2.pressed && s2.after.stored === false && s2.after.resolved === false && /moderator/i.test(s2.after.next ?? ''), JSON.stringify(s2.after));
+  check("…then Enter on its focused Not now answers it, remembered (false), and the warning is asked next", s2.pressed && s2.after.stored === false && s2.after.resolved === false && /moderator/i.test(s2.after.next ?? ''), JSON.stringify(s2.after));
   await pg.evaluate(() => globalThis.__px.press(/understand|ok/i));
 
   // S3: the desk consent card is open when the session starts; then a headset text question answered with the VR keyboard's ⏎
