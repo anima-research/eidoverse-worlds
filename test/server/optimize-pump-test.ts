@@ -88,9 +88,11 @@ if (process.platform === "linux") {
   const killer = join(root, "toktx"); writeFileSync(killer, "#!/bin/sh\nkill -KILL $$\n"); chmodSync(killer, 0o755);
   const { PNG } = await import("pngjs"); const png = new PNG({ width: 4, height: 4 }); png.data.fill(200);
   const img = join(root, "src", "tile.png"); writeFileSync(img, PNG.sync.write(png));
+  const scratch = join(root, "enc-tmp"); mkdirSync(scratch);   // its TMPDIR: the pass's scratch must not outlive the kill
   const enc = spawnSync(process.execPath, ["run", "server/optimize.ts", "--ktx2-img", img, join(root, "tile.ktx2")],
-    { env: { ...process.env, KTX2_TOKTX: killer }, cwd: import.meta.dir + "/../..", encoding: "utf8" });
+    { env: { ...process.env, KTX2_TOKTX: killer, TMPDIR: scratch }, cwd: import.meta.dir + "/../..", encoding: "utf8" });
   ok(enc.signal === "SIGKILL", `an encoder killed by SIGKILL kills --ktx2-img the same way (saw status ${enc.status}, signal ${enc.signal}: ${(enc.stderr ?? "").trim().split("\n").pop()})`);
+  ok(readdirSync(scratch).length === 0, `…and removes its scratch first: under PrivateTmp a leaked one sits in the cgroup that just ran out (left ${readdirSync(scratch).join(", ")})`);
 } else console.log("(non-Linux: child-death and oom cases skipped)");
 // 6b. the pump never waits forever on a child (it would hold optIdle and every pass behind it): one that never answers is
 //     killed at OPT_CHILD_TIMEOUT_MS and deferred; one whose grandchild keeps its stderr open is read up to a grace past
