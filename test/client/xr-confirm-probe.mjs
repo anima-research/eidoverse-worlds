@@ -103,6 +103,32 @@ try {
   check('D2 …and a walking key pressed meanwhile never reaches the body', d.keys1 === d.keys0, JSON.stringify(d));
   check('D3 Tab walks the desk text card (field, Cancel, Save) and never leaves it', d.tabs.every(Boolean) && d.d3 === null, JSON.stringify(d.tabs));
 
+  // D1–D3 hold while either of the card's two guards does (each covers for the other); D6 and D7 pin each one alone.
+  // D6, a real key goes to the card wherever it was aimed (aimedElsewhere's `!e.isTrusted`): focus moved off the card
+  // without a focusin reaching holdFocus (here a listener swallows it, as a page script may), and a walking key still
+  // never reaches the body, a real Escape still answers. Mutation: drop `!e.isTrusted &&` from aimedElsewhere
+  await pg.evaluate(async () => { globalThis.__swallow = (e) => e.stopImmediatePropagation(); addEventListener('focusin', globalThis.__swallow, true);
+    globalThis.__px.track('d6', (await import('./lib/edit/confirmcenter.js')).confirmCenter({ title: 'Desk question' }));
+    const b = document.createElement('button'); b.id = 'probe-elsewhere'; b.textContent = 'elsewhere'; document.body.append(b); b.focus(); return true; });
+  const d6 = { away: await pg.evaluate(() => document.activeElement?.id ?? null), keys0: await pg.evaluate(() => globalThis.__keys) };
+  await pg.keyboard.press('KeyW'); d6.keys1 = await pg.evaluate(() => globalThis.__keys);
+  await pg.keyboard.press('Escape');
+  d6.answer = await settledR('d6', 'D6: Escape answers the desk card').then(() => R('d6'), () => 'unsettled');
+  await pg.evaluate(() => { removeEventListener('focusin', globalThis.__swallow, true); document.querySelector('#probe-elsewhere')?.remove(); return true; });
+  if (d6.answer === 'unsettled') await pg.evaluate(async () => { (await import('./lib/edit/confirmcenter.js')).closeCenter(); return true; });
+  check('D6 focus off the desk card with no focusin heard: a walking key still never reaches the body, and a real Escape answers (no)', d6.away === 'probe-elsewhere' && d6.keys1 === d6.keys0 && d6.answer === false, JSON.stringify(d6));
+  // D7, focus taken off the card comes back to it (holdFocus): letters typed after a control elsewhere took focus go into
+  // the card's field, never into that control (the chat line, a name field behind the card). Mutation: holdFocus returns
+  // a no-op without listening
+  await pg.evaluate(async () => { globalThis.__px.track('d7', (await import('./lib/edit/confirmcenter.js')).askCenter({ title: 'Desk name', value: '' }));
+    const i = document.createElement('input'); i.id = 'probe-behind'; document.body.append(i); i.focus(); return true; });
+  await pg.keyboard.type('ab');
+  const d7 = await pg.evaluate(() => ({ behind: document.querySelector('#probe-behind')?.value ?? null, card: document.querySelector('#confirm-center input')?.value ?? null }));
+  await pg.keyboard.press('Escape');
+  d7.answer = await settledR('d7', 'D7: Escape answers the desk text card').then(() => R('d7'), () => 'unsettled');
+  await pg.evaluate(() => { document.querySelector('#probe-behind')?.remove(); return true; });
+  check('D7 letters typed after a control behind the desk text card took focus go into the card\'s field, not that control', d7.behind === '' && d7.card === 'ab' && d7.answer === null, JSON.stringify(d7));
+
   // D4 (review #359 10): the speech server's address, from the real caller (audio/ttsrow.js addEndpoint), is as long as
   // it is: main's prompt() had no limit, and a signed URL runs past 300 characters
   await pg.evaluate(async () => { const host = document.createElement('div'); host.id = 'probe-tts'; document.body.append(host); (await import('./lib/audio/ttsrow.js')).ttsSection(host); return true; });
