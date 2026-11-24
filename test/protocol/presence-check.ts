@@ -173,7 +173,8 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   await diver.req("say", { text: "underwater wire check" });
   const entries = fs.readFileSync(jsonl, "utf8").trim().split("\n").slice(logAt).map((l) => JSON.parse(l));
   const ours = new Set([diver.actor, watch.actor, late.actor, tick.actor].filter(Boolean)), theirs = entries.filter((e) => ours.has(e.actor));
-  ok(ours.size === 4 && theirs.some((e) => e.kind === "say") && theirs.every((e) => e.kind === "say"), "UW5 movement is never authored: their only log entry is the control's say", theirs.map((e) => [e.kind, e.op ?? e.verb]));
+  // every entry since logAt, whoever wrote it: a move logged with no actor, or as system, is caught too
+  ok(ours.size === 4 && theirs.some((e) => e.kind === "say") && entries.every((e) => e.kind === "say" && ours.has(e.actor)), "UW5 movement is never authored: the only log entry is the control's say", entries.map((e) => [e.kind, e.op ?? e.verb, e.actor ?? null]));
   for (const s of [diver, watch, late, tick]) s.close(); }
 
 try { proc.kill(); } catch {}
