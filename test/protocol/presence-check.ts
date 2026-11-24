@@ -13,6 +13,8 @@
 //       arrive carries), not whoever wears a name: the actor wins over the name; a puppet to an actor who isn't here is
 //       refused (a bodydrag to one is dropped silently, the drag being moot; typing goes out with to: null); a
 //       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
+//   UW  a 3D pose on the wire (from underwater-wire-test): orientation and locomotion relay as sent and reach a late
+//       joiner's snapshot; a zero quaternion and a spectator's pose are never relayed; movement writes nothing to the log
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -33,11 +35,11 @@ const { port, proc, dead } = await startServer(env(), root, { from: 9420 });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 ok(!dead, "(setup) the server is up");
 
-async function sock(name) {
+async function sock(name, extra = {}) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = [];
   ws.onmessage = (ev) => msgs.push(JSON.parse(String(ev.data)));
   await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
-  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "glade", id: name, avatar: "", replica: true }));
+  ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: "glade", id: name, avatar: "", replica: true, ...extra }));
   await tryUntil(`${name}'s join is answered`, () => msgs.some((m) => m.type === "snapshot" || m.type === "error"), { ms: 4000, step: 50 });
   const snap = msgs.find((m) => m.type === "snapshot");
   let rn = 0;
@@ -147,6 +149,32 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   vic.send({ type: "puppet", target: "Vic", targetActor: vic.actor, ragdoll: true }); await tryUntil("Vic is sent her own knock-over", () => got(k, "puppet").length, { ms: 2000 }); await pause("a second copy would arrive within the old window", 300);
   ok(got(k, "puppet").length === 1, "BC6 your own body is always yours to knock over", vic.since(k).map((m) => m.type));
   vic.close(); sly.close(); }
+
+// ---- UW: a 3D pose on the wire (moved from underwater-wire-test, #333 backlog G4-198, G6-148) ----
+{ const jsonl = path.join(W, "glade", "world.jsonl"), logAt = fs.readFileSync(jsonl, "utf8").trim().split("\n").length;
+  const frames = (s, id, k = 0) => s.since(k).filter((m) => m.type === "frame" && m.poses?.[id]).map((m) => m.poses[id]);
+  const diver = await sock("Diver"), watch = await sock("Watcher", { spectate: true });
+  const pose = { p: [12, -30, 8], yaw: 0.2, speed: 1.4, clip: "walk", q: [0, 0, 0, 1], locomotion: { mode: "swim", body: "diver", medium: "water" } };
+  diver.send({ type: "pose", pose });
+  await tryUntil("the diver's pose is relayed", () => frames(watch, "Diver").length, { ms: 4000, step: 20 });
+  ok(JSON.stringify(frames(watch, "Diver")[0]) === JSON.stringify(pose), "UW1 a 3D pose (orientation q, locomotion metadata) is relayed as sent", frames(watch, "Diver"));
+  const late = await sock("Late", { spectate: true });
+  ok(JSON.stringify(late.snap?.present?.find((p) => p.id === "Diver")?.pose) === JSON.stringify(pose), "UW2 …and a late joiner's snapshot carries it", late.snap?.present);
+  // the barrier, not a sleep: each socket's request is answered after its pose is handled, and a pose staged after both
+  // rides the same frame or a later one, so once it arrives any frame carrying theirs has too
+  const k = late.msgs.length, tick = await sock("Tick");
+  diver.send({ type: "pose", pose: { ...pose, q: [0, 0, 0, 0] } }); watch.send({ type: "pose", pose });
+  await diver.req("help"); await watch.req("help");
+  tick.at(1, 1);
+  const barrier = await tryUntil("a pose sent after both is relayed", () => frames(late, "Tick", k).length, { ms: 4000, step: 20 });
+  ok(!!barrier && !frames(late, "Diver", k).some((p) => p.q?.[3] === 0), "UW3 a pose with a zero quaternion is dropped, not relayed", frames(late, "Diver", k));
+  ok(!!barrier && frames(late, "Watcher", k).length === 0, "UW4 a spectator's pose is never relayed", frames(late, "Watcher", k));
+  // the control: a say from the diver IS in the log, so the log was read and the actor ids match
+  await diver.req("say", { text: "underwater wire check" });
+  const entries = fs.readFileSync(jsonl, "utf8").trim().split("\n").slice(logAt).map((l) => JSON.parse(l));
+  const ours = new Set([diver.actor, watch.actor, late.actor, tick.actor].filter(Boolean)), theirs = entries.filter((e) => ours.has(e.actor));
+  ok(ours.size === 4 && theirs.some((e) => e.kind === "say") && theirs.every((e) => e.kind === "say"), "UW5 movement is never authored: their only log entry is the control's say", theirs.map((e) => [e.kind, e.op ?? e.verb]));
+  for (const s of [diver, watch, late, tick]) s.close(); }
 
 try { proc.kill(); } catch {}
 done();
