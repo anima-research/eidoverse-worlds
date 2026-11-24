@@ -113,7 +113,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
   check('an imported lamp (Model + light on one record, as the fold keeps it) lands WITHOUT inferred lamps — the authored light alone lights it', !!stub.entities.get('implamp')?.userData?.lib && lamps('implamp') === 0 && rq('implamp')?.obj === stub.entities.get('implamp'),
     JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:implamp')));
-  // a glowing model glows and lights nothing (Godot, Unity, Unreal): its lights are light components (LEGACY-PINS item 6)
+  // a glowing model glows and lights nothing (Godot, Unity, Unreal): its lights are light components (docs/operator/TRANSLATING-OLD-WORLDS.md, inferred lamps)
   check('…a model with no Light component lights nothing: no lamp is inferred for it, at landing or after', lamps('plain') === 0 && lamps('crate') === 0
     && !stub.lampLog.some((e: any) => e[1] === 'entity:plain' || e[1] === 'entity:crate'), JSON.stringify([[...stub.lampOwners], stub.lampLog]));
   const fit = (id: string) => stub.colliders.get(id)?.opts;

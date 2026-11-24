@@ -1,5 +1,5 @@
-// test/protocol/scars-check.ts — the engine-scars and consent-gaps fix pass (REVIEW-engine-scars-2026-10-17,
-// REVIEW-consent-permissions-gaps-2026-10-17; R 10-17 02:45 "I like all of these rulings"). Every row was red first.
+// test/protocol/scars-check.ts — the engine-scars and consent-gaps fix pass (two reviews of
+// 2026-10-17; R 10-17 02:45 "I like all of these rulings"). Every row was red first.
 //   bun test/protocol/scars-check.ts                 every row
 //   bun test/protocol/scars-check.ts --only L1,O2    just those
 //   bun test/protocol/scars-check.ts --tree <dir>    against another checkout's shared/, server/, spec/ and docs/ (a mutant)

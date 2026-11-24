@@ -1,4 +1,4 @@
-// test/protocol/shiplist-check.ts — the ship list's group A (audit 10-07, AUDIT-shiplist-blockers-2026-10-07.md), through the
+// test/protocol/shiplist-check.ts — the ship list's group A (audit 10-07), through the
 // real door, the real importer, the shared evaluators and the editor's own planners:
 //   bun test/protocol/shiplist-check.ts                 every case
 //   bun test/protocol/shiplist-check.ts --only O3,R2    just those

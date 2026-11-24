@@ -186,7 +186,7 @@ function oldNorm(st: any, phys: any = null) {
     if (!R["*"] || !owned) world.roles = { ...R, "*": { role: "builder" } };
     if (!owned) { for (const [k, r] of Object.entries<any>(world.roles)) if (k !== "*" && r && typeof r === "object" && (r.role === undefined || r.role === "visitor")) world.roles[k] = { ...r, role: "builder" };
       world["??role-defs"] = { builder: { can: { generate: true } } }; } }
-  // declared (translate-v1@31, LEGACY-PINS item 2): main kept walkers within 78 m and fliers under 60 m where it had no bounds; with
+  // declared (translate-v1@31): main kept walkers within 78 m and fliers under 60 m where it had no bounds; with
   // neither bounds nor terrain the world's box says so, 2 m under the stage floor, grown 2 m past every thing, volume and vehicle band
   if (st.terrain == null && !Object.values<any>(st.entities ?? {}).some((e) => e?.comp?.environment)) {
     const lo = [-78, -2, -78], hi = [78, 60, 78], take = (p: any) => { if (Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i] - 2); hi[i] = Math.max(hi[i], p[i] + 2); } };

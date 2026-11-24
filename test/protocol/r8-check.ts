@@ -1,4 +1,4 @@
-// test/protocol/r8-check.ts — review round 8 (REVIEW-holes-r8-2026-10-17, REVIEW-scars-r8-2026-10-17): the fixes the
+// test/protocol/r8-check.ts — review round 8 (2026-10-17): the fixes the
 // scars suite doesn't hold. Every row was red first.
 //   bun test/protocol/r8-check.ts                 every row
 //   bun test/protocol/r8-check.ts --only H1,R2    just those

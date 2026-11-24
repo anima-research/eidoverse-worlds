@@ -152,7 +152,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@51";   // @51: main's water sp
 // @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0] (newSockets), where @32 wrote none (y 0). Output differs there.
 // @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
 // [band-<hash of its id>]}) and its host scans it (collider {mask: [1, that layer]}), so only it meets them; @29-@31's walls stopped every hull. Output differs there.
-// @31 (LEGACY-PINS 10-29, items 2, 6, 8, 9): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
+// @31 (10-29; docs/operator/TRANSLATING-OLD-WORLDS.md): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
 // (stageBoundsOf); main's inferred lamps are light children (lampPartsOf); water.speed is the water's own drag (waterOfOld), not a
 // physics-area; an ownerless world no longer carries imported:ownerless (the upgrader's claim is its owner). Output differs there.
 // @30 (fixF 10-29, item 22): an ownerless world is builder for everyone (default-role, guests, every grant below it) with builder's
@@ -744,7 +744,7 @@ const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:s
 // same from every translation of the same world, never a person's id
 const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 /** main's inferred lamps (import-v1/lamps.ts: up to two per glowing model, measured from its GLB) as light children at their spots,
- *  main's numbers through light parity (decay 2, × (range/2)^0.3), dimmed by day as main's were (@31, LEGACY-PINS item 6). */
+ *  main's numbers through light parity (decay 2, × (range/2)^0.3), dimmed by day as main's were (@31). */
 export const lampChildId = (host, i) => `lamp-${i}-${sha256(`eido-lamp\0${host}\0${i}`).slice(0, 26)}`;
 export function lampPartsOf(host, lamps) {
   return (Array.isArray(lamps) ? lamps.slice(0, 2) : []).map((L, i) => [lampChildId(host, i), { transform: { pos: [...L.at], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: host }, label: "lamp",

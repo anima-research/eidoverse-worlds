@@ -238,7 +238,7 @@ export function ownerWarning(world: string, people: Any[] = []): string | null {
 }
 /** Whether a claim applies: asked for, and no owner in the translated world (people). */
 const claims = (claim: unknown, people: Any[]) => !!claim && !people.some((p) => p.role === "owner");
-/** Every translation ends with an owner (LEGACY-PINS item 9): world.ts translate refuses a world with none and no claim, naming the fix; else null. */
+/** Every translation ends with an owner: world.ts translate refuses a world with none and no claim, naming the fix; else null. */
 export function ownerlessRefusal(world: string, people: Any[], claim: unknown): string | null {
   if (claim || people.some((p) => p.role === "owner")) return null;
   return `"${world}" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=<the account that will own it> (yours, as SERVER_OPERATORS lists it), as the browser's upgrade does; everyone else keeps what main gave them (build and generate). Nothing was changed.`;

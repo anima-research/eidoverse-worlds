@@ -155,7 +155,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "UN1 no owner bound to any account: the dry run, the approved report and the upgrade's result warn, naming the owners (not the builder) and the bind; the upgrade still runs", { w: a.report?.ownerWarning, r: a.result?.ownerWarning, code: a.up.code }));
   const no = (o: string) => /"shed" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=/.test(o);
   row("UN3", () => ok(s.dry.code !== 0 && no(s.dry.out) && s.up.code !== 0 && no(s.up.out) && !fs.existsSync(path.join(W, "shed", "world.jsonl")) && fs.existsSync(path.join(W, "shed", "log.jsonl")),
-    "UN3 a world with no owner and no --claim: the dry run and the upgrade refuse, naming --claim and EIDO_UPGRADER_ACCOUNT; nothing is written (LEGACY-PINS item 9)", { dry: s.dry.out.slice(-300), up: s.up.out.slice(-300), code: s.up.code }));
+    "UN3 a world with no owner and no --claim: the dry run and the upgrade refuse, naming --claim and EIDO_UPGRADER_ACCOUNT; nothing is written", { dry: s.dry.out.slice(-300), up: s.up.out.slice(-300), code: s.up.code }));
 }
 
 // ================= OU: who may upgrade as the world's owner (R 10-28: "owners or operators can update worlds") =================

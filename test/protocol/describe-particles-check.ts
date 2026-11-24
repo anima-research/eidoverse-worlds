@@ -282,7 +282,7 @@ const cases: Case[] = [
       const a = run(e, 0.7, 11), b = run(e, 0.7, 11), c = run(e, 0.7, 12); return { same: a.pos.join() === b.pos.join(), diff: a.pos.join() !== c.pos.join() }; },
     good: (o) => o.same && o.diff },
 
-  // ---------------- P: the pins before the trial ships (lead 10-17, REVIEW-particles-shape-2026-10-17 §5) ----------------
+  // ---------------- P: the pins before the trial ships (lead 10-17) ----------------
   { id: "P1", what: "angles in an effect document are radians (PROTOCOL §9.2): spread π/9 is taken at upload, 20 (a degree value) refused (0..π); a cone's default spread is π/4 and a ring's cone π/2; fire spins in rad and rad/s", run(s) { cast(s);
       const e0 = doc().emitters[0]; const up = (sp: number) => show(s.call("bob", "upload", { effect: doc({ emitters: [{ ...e0, velocity: { ...e0.velocity, spread: sp } }] }) }));
       const r = PE.resolveEmitter({ spawn: { amount: 1 } }); const rot = PE.ESSENTIALS.fire.emitters[0].rotation;

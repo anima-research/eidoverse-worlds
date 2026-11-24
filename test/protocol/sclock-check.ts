@@ -1,5 +1,5 @@
-// test/protocol/sclock-check.ts — the client's server clock slews (DESIGN-physics-responsiveness §3; STRIKES PH-S2 'display
-// clock jumps'): a new minimum-RTT sample moves the shown offset gradually, a large one at once. usage: bun test/protocol/sclock-check.ts
+// test/protocol/sclock-check.ts — the client's server clock slews (the shown clock used to
+// jump): a new minimum-RTT sample moves the shown offset gradually, a large one at once. usage: bun test/protocol/sclock-check.ts
 // @ts-nocheck
 // a virtual clock: serverclock.js reads performance.now() at each call, so the slew is measured over exact, unwaited ms
 let vt = performance.now(); performance.now = () => vt;

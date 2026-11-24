@@ -4,7 +4,7 @@
 // A  byte-equal launch: for a few releases (a −0 in pos/q/v, the engine's speed cap, a throw with spin and occupants) the
 //    entry planLaunch builds from the inputs planRelease (client/lib/thingphysics.js) passes it, rebuilt here as
 //    `predicted` (planRelease itself isn't run), equals the body the authority logs: the engine folds the same
-//    bits (DESIGN-physics-responsiveness §3). −0 is compared too (bytes() shows it), though jcs hashes −0 and 0 alike (shared/protocol/fold.js jcs).
+//    bits. −0 is compared too (bytes() shows it), though jcs hashes −0 and 0 alike (shared/protocol/fold.js jcs).
 // B  one binding: the shared values are the ones the design states (the imports and the no-copy scan over every file
 //    are test/client/one-binding-test.ts's).
 // @ts-nocheck

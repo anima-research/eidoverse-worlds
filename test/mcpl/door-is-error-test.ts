@@ -220,7 +220,7 @@ check('a climb asked above the ceiling stops there and is failed, naming the cei
   failed(r) && new RegExp(`^at ${ceiling.toFixed(1)}m, the ceiling here, short of the ${(ceiling + 50).toFixed(1)}m you asked for`).test(said(r)), said(r));
 r = await climbs(ceiling - 1);
 check('a climb that gets there is done, at the height asked', ok(r) && new RegExp(`^at ${(ceiling - 1).toFixed(1)}m.*stamina spent`).test(said(r)), said(r));
-ag.worldBox = () => null;   // no @world.bounds: no ceiling (LEGACY-PINS item 3; main's 60 m was every world's)
+ag.worldBox = () => null;   // no @world.bounds: no ceiling (main's 60 m was every world's)
 r = await climbs(ceiling + 50);
 check('with no bounds, a climb asked above 60 m gets there: the world has no ceiling', ok(r) && new RegExp(`^at ${(ceiling + 50).toFixed(1)}m`).test(said(r)), said(r));
 ag.worldBox = () => STAGE_BOX;

@@ -346,7 +346,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
     await ann.req("delete", { id: "@world", component: "default-role" });   // the later rows expect no default-role: a newcomer is a member (CM4's whois)
     await bye(da, db); }
-  // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
+  // ---- RN: the rename cooldown is judged on the name a person will actually wear ----
   { const z1 = await client(srv.port, "garden", "zeph", { ...REPLICA, account: "acct-zp" }); const n1 = z1.snapshot?.you; await bye(z1);
     const z2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-zp" }); const n2 = z2.snapshot?.you, r2 = z2.snapshot?.renameRefused; await bye(z2);
     const z3 = await client(srv.port, "garden", "zeph-three", { ...REPLICA, account: "acct-zp" }); const n3 = z3.snapshot?.you, r3 = z3.snapshot?.renameRefused;

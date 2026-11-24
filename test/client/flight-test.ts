@@ -512,7 +512,7 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
 console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft');
 {
   const cfg = makeConfig();
-  // the world's @world.bounds is the fence and its top the ceiling (LEGACY-PINS item 3); no bounds, no fence
+  // the world's @world.bounds is the fence and its top the ceiling; no bounds, no fence
   const box = { min: [-110, -10, -110], max: [110, 60, 110] }, ceil = box.max[1];
   const lift = () => 3;   // strong enough to climb through a lid that is not enforced
   for (const phase of ['GLIDE', 'PILOT'] as const) {
