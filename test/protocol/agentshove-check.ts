@@ -208,7 +208,9 @@ try {
     await call("stop", {});
     const tB = T(await wB);
     ok(!/late2/.test(tB), "AS8 …and stopped, it does not report the first walk's crate", tB);
-    ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA); }
+    ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA);
+    // G6-092: and what each did say: neither arrived; each ended as an interrupted walk (superseded, then stopped)
+    ok(/^walk interrupted/.test(tA) && /^walk interrupted/.test(tB), "AS8 …each ended as an interrupted walk, not an arrival or a refusal", { tA, tB }); }
   // AS9
   { const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS9 setup) the agent stands south of AS7's crate, still locked", T(m0));
     const ul = await ann.req("delete", { id: "late", component: "lock" });
