@@ -24,8 +24,8 @@ $(row, ".sp-color-sw").click();
 SU.ok(!$(row, ".sp-picker").hidden && cells(row).length === 72 && !!$(row, ".sp-pick-hex"), "CP2 the swatch opens 72 solid cells (a grey ramp + 12 hues × 5 tones) and a hex field", cells(row).length);
 const greys = cells(row).slice(0, 12).map((c) => +c.dataset.c);
 SU.ok(greys[0] === 0xffffff && greys[11] === 0, "CP3 the first row runs white to black", greys);
-const c = cells(row)[12 + 12 * 2 + 4], pick = +c.dataset.c; c.click();
-SU.ok(JSON.stringify(edits.at(-1)) === JSON.stringify(["light.color", pick]), "CP4 a cell click commits that cell's colour, once", edits);
+const c = cells(row)[12 + 12 * 2 + 4], pick = +c.dataset.c, before = edits.length; c.click();
+SU.ok(edits.length === before + 1 && JSON.stringify(edits.at(-1)) === JSON.stringify(["light.color", pick]), "CP4 a cell click commits that cell's colour, once", [edits.length - before, edits.at(-1)]);
 // the Inspector repaints from the folded state: an update with the new value, and a rebuilt row for the same field
 row.update(field(pick)); const rebuilt = build(pick);
 const marked = (r: Element) => +$(r, ".sp-pick-grid .sp-pick-cell.on")?.dataset.c, recent0 = (r: Element) => +$(r, ".sp-pick-recent .sp-pick-cell")?.dataset.c;
