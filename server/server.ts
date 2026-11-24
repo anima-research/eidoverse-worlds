@@ -753,11 +753,13 @@ const server = Bun.serve({
           console.log(`[bc] ${c.id} last breadcrumbs: ${c.bcRing.join(" | ")}`);
         }
         if (c.world) {
-          c.world.clients.delete(c);
+          // only a body that was installed (installJoin) leaves: a join refused after admitJoin (the fold check, a missing
+          // feature) shares an account's id and actorId with its live body, and must not announce, reap or drop for it
+          const wasIn = c.world.clients.delete(c);
           // AUX LEG DEATH IS AN EVENT, carrying the dying gen (a client that already saw a successor ignores it). Not on
           // takeover: the join-time transition announced the successor. retireAuxLeg owns "only an ACCEPTED leg was a session".
           if (!c.superseded) retireAuxLeg(c.world, c);
-          if (!c.spectator) {
+          if (wasIn && !c.spectator) {
             if (!c.superseded) {
               try { if (c.actorId && !c.anonymous) c.world.rememberPose(c.actorId, c.lastPose); } // sleep where you stood (by identity; a guest's id is new each visit)
               catch (err) { console.error(`[world:${c.world.name}] rememberPose for ${c.id} on close`, err); }
