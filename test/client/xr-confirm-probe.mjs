@@ -167,6 +167,14 @@ try {
   await settledR('a5', 'A5: the text question answered').catch(() => {});
   check('A5 a headset text question with max 3: four VR keys type three letters, and the answer is those', a5typed === 'hix' && (await R('a5')) === 'hix', JSON.stringify({ typed: a5typed, words: await R('a5') }));
 
+  // Q1 (review #359 17): a headset chooseCenter answers with the choice's own value, as the desk card does (1, not "1")
+  await pg.evaluate(async () => globalThis.__px.track('q1', (await import('./lib/edit/confirmcenter.js')).chooseCenter({ title: 'Which kind', choices: [{ v: 1, label: 'one' }, { v: true, label: 'yes' }], cancel: 0 })));
+  await asked(/Which kind/, 'Q1: the question is on the ask quad');
+  await pg.evaluate(() => globalThis.__px.press(/^one$/));
+  await settledR('q1', 'Q1: answered').catch(() => {});
+  const q1 = await R('q1');
+  check('Q1 a headset choice of value 1 answers 1 (a number), not "1"', q1 === 1, JSON.stringify(q1));
+
   // ---- the consent edges: a dismissed question is never a remembered answer ----
   const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
   const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that

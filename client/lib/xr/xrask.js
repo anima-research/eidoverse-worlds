@@ -26,16 +26,16 @@ function paintFrame() {
     if (q.input.max != null) inp.maxLength = q.input.max;   // null: no limit
     inp.placeholder = q.input.placeholder; inp.value = q.input.value;
     inp.addEventListener('input', () => { q.input.value = inp.value; });
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); dispatch('c:ok'); } });
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); answer(q, q.choices.findIndex((c) => c.v === 'ok')); } });
     api.body.appendChild(inp);
   }
   const row = document.createElement('div'); row.className = 'ask-row';
-  for (const c of q.choices) { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = c.v;
-    b.addEventListener('click', () => dispatch(`c:${c.v}`));
+  q.choices.forEach((c, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = String(c.v);
+    b.addEventListener('click', () => answer(q, i));
     // a keyboard in the headset: Enter on a focused choice is that choice, Esc the question's cancel (as on the desk card);
     // neither goes on to open chat or walk
-    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); dispatch(`c:${e.key === 'Enter' ? c.v : q.cancel}`); });
-    row.appendChild(b); }
+    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); if (e.key === 'Enter') answer(q, i); else if (pending === q) settle(q.cancel); });
+    row.appendChild(b); });
   api.body.appendChild(row);
   // the choice the asker wants Enter to give at first (a destructive question's safe answer), as the desk card focuses it
   const fi = q.focus != null ? q.choices.findIndex((c) => c.v === q.focus) : -1;
@@ -46,7 +46,7 @@ const repaint = () => { paintFrame(); bus.emit('xr:repaint'); };
 function fields() {
   if (!pending) return [{ t: 'info', label: '', value: 'nothing to answer' }];
   const f = [{ t: 'info', label: pending.title, value: pending.body }];
-  for (const c of pending.choices) f.push({ t: 'btn', k: `c:${c.v}`, label: c.label });
+  pending.choices.forEach((c, i) => f.push({ t: 'btn', k: `c:${i}`, label: c.label }));   // by place: a value needn't be a string
   return f;
 }
 function show(q) {
@@ -60,7 +60,9 @@ function settle(v) {
   pending = null; keyboardBack(); if (p.input) domQuadShow('keyboard', false); showXRPanel('ask', false); repaint(); p.resolve(v);
   const next = waiting.shift(); if (next) show(next);
 }
-function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }
+// a press answers with the choice's own value (a number stays a number, as on the desk card), and only the question it is on
+function answer(q, i) { if (pending === q && q.choices[i]) settle(q.choices[i].v); }
+function dispatch(action) { const m = /^c:(\d+)$/.exec(String(action)); if (m && pending) answer(pending, Number(m[1])); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
 // the house centre card (edit/confirmcenter.js) asks here whenever a headset is presenting: confirmCenter, chooseCenter
 // and askCenter callers need no headset branch of their own
@@ -151,4 +153,4 @@ bus.on('edit-warned', ({ text }) => {
 
 /** for probes: the open question as a quad shows it (and how many wait behind it), and the same answer a button press gives */
 export const xrAskState = () => (pending ? { title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length } : null);
-export const xrAnswer = (v) => dispatch(`c:${v}`);
+export const xrAnswer = (v) => { const i = pending?.choices.findIndex((c) => String(c.v) === String(v)) ?? -1; if (i >= 0) answer(pending, i); };
