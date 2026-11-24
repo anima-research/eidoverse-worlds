@@ -215,7 +215,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["reset-race", "protocol/reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["txn", "protocol/txn-check.ts", 1],           // reviewer items 1–2 (10-18): every request ends committed | rolled-back | ambiguous (persist before publish, publish in a finally, ambiguous never ok); one immutable request capability rechecked at both await→commit seams (liveness, identity, operator, the door, role)
   ["txn-mutants", "protocol/txn-check.ts --mutants", 1], // …and each of its rows turns red under the mutation it exists to catch (a scratch copy of the tree per mutant; the control stays green)
-  ["blockers-mutants-a", "protocol/blockers-mutants.ts --group a", 1], // the RED side of every blocker's row: one mutation of each fix (B1–B10, M1–M9, r14) in a scratch tree turns its named row red; the control stays green; one of four pieces (GROUPS there)
+  ["blockers-mutants-a", "protocol/blockers-mutants.ts --group a", 1], // the RED side of every blocker's row: one mutation of each fix (B1–B10, M1–M8, r14) in a scratch tree turns its named row red; the control stays green; one of four pieces (GROUPS there)
   ["blockers-mutants-b", "protocol/blockers-mutants.ts --group b", 1], // blockers-mutants' piece b
   ["blockers-mutants-c", "protocol/blockers-mutants.ts --group c", 1], // blockers-mutants' piece c
   ["blockers-mutants-d", "protocol/blockers-mutants.ts --group d", 1], // blockers-mutants' piece d

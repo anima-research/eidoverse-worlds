@@ -44,7 +44,7 @@ const M: Mutant[] = [
     find: "{ name, deferIdentities: true, approval, claim: CLAIM });", repl: "{ name, deferIdentities: false, approval, claim: CLAIM });", suite: "inplace", rows: ["IP17"], expect: 20 },
   { id: "B10", what: "deleting a support skips what is parented elsewhere but rested on it too", file: "shared/protocol/authority/writes.js",
     find: "      if (tops.some((s) => hitsIx(ctx.st, { min: [s.min[0], s.y - 0.01, s.min[1]], max: [s.max[0], s.y + 0.03, s.max[1]] }, k, 0))) wake.push(k); }", repl: "      if (false) wake.push(k); }", suite: "settle", rows: ["SE18"], expect: 6 },
-  // ---- M1–M8: the architecture note's items (M9 has no mutant here; M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
+  // ---- M1–M8: the architecture note's items (M9, read-time repair, lost its code with shape repair in 897601678; M10, the gate itself, has no code to mutate: --check-manifest is its row) ----
   { id: "M1", what: "a throw from a durable write reported rolled-back (no ambiguous outcome)", file: "shared/protocol/authority/storage.js",
     find: '  if (newLog || newMod) return { outcome: "ambiguous"', repl: '  if (false) return { outcome: "ambiguous"', suite: "txn", rows: ["T2"], expect: 1 },
   { id: "M2", what: "a connection that became someone else while its request waited is not refused (the capability's identity not rechecked at the commit seam)", file: "server/request-capability.ts",
