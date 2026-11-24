@@ -15,7 +15,7 @@
 // instead of queueing (S2); drop the xr:state(true) closeCenter() (S3a, alone: S3's later rows stay green, a headset
 // question closing the card too) and the desk card's aimedElsewhere guard (S3).
 // XH/DH (a press counts from when it began): in xr/xrask.js `pressedAt` returns inputAt(e) (XH, XH2); in
-// edit/confirmcenter.js arm()'s `clicked` returns armed(e) (DH, DH2).
+// edit/confirmcenter.js arm()'s `clicked` returns armed(e) (DH, DH2). XS: in xrask.js show(), stamp shownAt = performance.now().
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until } from '../gate/wait.ts';
 const { check, done } = checker();
@@ -493,7 +493,7 @@ try {
     const under = () => [...dq.domQuadTexture('ask').dom.querySelectorAll('button')].find((b) => { const q = b.getBoundingClientRect(); return q.height > 0 && pt.x >= q.left && pt.x <= q.right && pt.y >= q.top && pt.y <= q.bottom; }) ?? null;
     const pressAt = () => { const b = under(); return b ? pull('ask', b) != null : false; };
     const t0 = performance.now(), x1 = pressAt(), f0 = perf.frameNo ?? 0;
-    perf.frameNo = f0 + 1;
+    perf.frameNo = f0 + 1; globalThis.__px.ask.xrAskTick?.();   // the frame that drew it, and the next one starting
     while (performance.now() - t0 < 120) { /* a double-press's gap, with no frame able to run in it */ }
     const label = under()?.textContent ?? null, ms = Math.round(performance.now() - t0), x2 = pressAt();
     return { x1, label, ms, x2 };
@@ -524,7 +524,7 @@ try {
       const r = btn('ask', /^ok$/i).getBoundingClientRect(), pt = { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
       const p1 = dq.domQuadsPress(ray('ask', pt)); dq.domQuadsRelease(p1?.press);   // the first trigger click: answers the notice
       const t0 = performance.now(), f0 = perf.frameNo ?? 0;
-      perf.frameNo = f0 + 1;
+      perf.frameNo = f0 + 1; globalThis.__px.ask.xrAskTick?.();   // as X
       const spin = (ms) => { while (performance.now() - t0 < ms) { /* time passing, no frame able to run */ } };
       spin(down); const p2 = dq.domQuadsPress(ray('ask', pt)); const downMs = Math.round(performance.now() - t0);
       spin(up); const upMs = Math.round(performance.now() - t0); dq.domQuadsRelease(p2?.press);
@@ -539,6 +539,31 @@ try {
     check(`${tag} a trigger press begun ${down} ms after the notice went and let go at ${up} never answers the consent question under it (sttConsent null)`,
       h.first && h.notice === 'ok' && h.under === 'Turn on' && h.downMs < 450 && h.upMs >= 450 && h.consent === 'unsettled' && h.stored === null, JSON.stringify(h));
   }
+
+  // XS (cold review of the arm time): a question's ARM_MS starts once it has been drawn, on the frame after (xrask.js
+  // xrAskTick), not when it was asked. A frame that takes 600 ms as the question appears (a shader compiling for it) left
+  // it in sight ~100 ms when a press 700 ms after the ask counted. In one task, as X: the stall spun, the frame that drew
+  // it counted, the next tick stood in for (xrAskTick is the frame loop's first system), then 100 ms, then a press
+  await fresh(); await inVR();
+  const xs = await pg.evaluate(async () => {
+    const { btn, pull, ask, track } = globalThis.__px; const { perf } = await import('./lib/render/perf.js');
+    const vc = await import('./lib/audio/voiceconsent.js');
+    const t0 = performance.now(), f0 = perf.frameNo ?? 0;
+    track('cr', vc.ensureSttConsent());   // asked now: the question is on the quad at once
+    const spin = (ms) => { while (performance.now() - t0 < ms) { /* */ } };
+    spin(600); perf.frameNo = f0 + 1; ask.xrAskTick?.();
+    const stallMs = Math.round(performance.now() - t0);
+    spin(stallMs + 100); const title = ask.xrAskState()?.title ?? null, b = btn('ask', /turn on/i), ms = Math.round(performance.now() - t0), hit = b ? pull('ask', b) != null : false;
+    return { title, stallMs, ms, hit };
+  });
+  Object.assign(xs, { consent: await R('cr'), stored: await stored() });
+  console.log('  · XS', JSON.stringify(xs));
+  check('XS a press 100 ms after a 600 ms frame that drew the consent question never answers it (sttConsent null)',
+    /speech-to-text/i.test(xs.title ?? '') && xs.hit && xs.stallMs >= 600 && xs.ms >= 450 && xs.consent === 'unsettled' && xs.stored === null, JSON.stringify(xs));
+  await asked(/speech-to-text/, 'XS: the consent question can be answered').catch(() => {});
+  const xs2 = { pressed: await pg.evaluate(() => globalThis.__px.press(/turn on/i)) };
+  xs2.consent = await settledR('cr', 'XS: the consent question answered').then(() => R('cr'), () => 'unsettled');
+  check('…and once it has been up ARM_MS, a press is its answer (true)', xs2.pressed && xs2.consent === true, JSON.stringify(xs2));
 
   // DH: the same on the desk, with a mouse: a press begun inside the card's ARM_MS and let go after it answers nothing.
   // The notice's Close and consent's Turn on don't share a spot on the desk (the consent card is taller), so the press is

@@ -6,6 +6,7 @@
 import { renderer } from '../core.js';
 import { perf } from '../render/perf.js';
 import { bus } from '../base.js';
+import { registerSystem } from '../render/frameloop.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
 import { domQuadMesh, domQuadShow, quadPressAt } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
@@ -55,8 +56,8 @@ function fields() {
 }
 function show(q) {
   if (pending) { waiting.push(q); return; }
-  q.id = ++asked; q.drawnAt = perf.frameNo ?? 0;   // the frame loop's count now: this frame draws it, the next can answer it
-  q.shownAt = performance.now();                    // …once it has been up for ARM_MS (answer)
+  q.id = ++asked; q.drawnAt = perf.frameNo ?? 0;   // the frame loop's count now: this frame draws it…
+  q.shownAt = null;                                 // …and its ARM_MS starts on the next (xrAskTick)
   pending = q; showXRPanel('ask', true); repaint(); q.onShow?.();
 }
 function settle(v) {
@@ -73,7 +74,10 @@ function settle(v) {
 // question, never the one that replaced it under them. A press too soon is dropped, not kept for later. The trigger
 // clicks at its release (domquad.js): a held press counts from when it began
 const pressedAt = (e) => Math.min(inputAt(e), quadPressAt() ?? Infinity);
-const armed = (q, e) => (perf.frameNo ?? 0) > q.drawnAt && pressedAt(e) - q.shownAt >= ARM_MS;
+const armed = (q, e) => q.shownAt != null && pressedAt(e) - q.shownAt >= ARM_MS;
+/** each frame, first (initXRAsk registers it): the open question's ARM_MS starts on the first frame after the one that
+ *  drew it, so a long frame as it appears (a shader compiling) eats none of the time it is up before a press counts */
+export function xrAskTick() { if (pending && pending.shownAt == null && (perf.frameNo ?? 0) > pending.drawnAt) pending.shownAt = performance.now(); }
 function answer(q, i, e) { if (pending === q && q.choices[i] && armed(q, e)) settle(q.choices[i].v); }
 function dispatch(action) { const m = /^c:(\d+):(\d+)$/.exec(String(action)); if (m && pending && pending.id === Number(m[1])) answer(pending, Number(m[2])); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
@@ -90,6 +94,7 @@ bus.on('xr:state', (on) => {
 /** the default path's frame: hidden on the desk (the centre card asks there), a quad in a headset */
 export function initXRAsk() {
   if (api) return api;
+  registerSystem('xrask', xrAskTick);
   api = makeFrame('ask', { title: 'question', w: 380, h: 170, minW: 280, minH: 120, hidden: true, collapsible: false, resizable: false });
   api.xr = true;
   const css = document.createElement('style');
