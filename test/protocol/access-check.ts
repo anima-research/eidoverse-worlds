@@ -62,11 +62,21 @@ async function start(extra = {}) {
     try { if ((await fetch(`http://127.0.0.1:${port}/version`, { signal: AbortSignal.timeout(800) })).ok) return { port, proc: p, log: logf }; } catch {} }
   return { port, proc: p, dead: true, log: logf };
 }
+// G4-128: every socket here is bounded, so a server that never opens or never closes one fails a row instead of hanging the suite
+const SOCK_MS = 8000;
+const settleWithin = <T,>(what: string, p: Promise<T>, onLate: () => void, ms = SOCK_MS): Promise<T> => { let t; return Promise.race([p,
+  new Promise<T>((_, j) => { t = setTimeout(() => { try { onLate(); } catch {} j(new Error(`${what}: not within ${ms} ms`)); }, ms); })]).finally(() => clearTimeout(t)); };
+/** A raw socket's transcript, resolved at its close; a socket the server never closes resolves at SOCK_MS with that said. */
+const transcript = (url: string, onopen: (ws: WebSocket) => void, onmsg?: (ws: WebSocket, data: string) => void, end = (got: string[], ev: any) => [...got, `close ${ev.code} ${ev.reason}`]) =>
+  new Promise<string[]>((res) => { const ws = new WebSocket(url); const got: string[] = [];
+    const t = setTimeout(() => { res([...got, `no close within ${SOCK_MS} ms`]); try { ws.close(); } catch {} }, SOCK_MS);
+    ws.onmessage = (ev) => { got.push(String(ev.data)); onmsg?.(ws, String(ev.data)); }; ws.onclose = (ev) => { clearTimeout(t); res(end(got, ev)); }; ws.onopen = () => onopen(ws); });
 async function sock(port) {
   const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`); const msgs = []; let n = 0; const waiters = new Map();
   ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "reply") waiters.get(m.id)?.(m.reply); };
-  let closed = null; ws.onclose = (e) => { closed = e.code; };
-  await new Promise((r, j) => { ws.onopen = r; ws.onerror = j; });
+  let closed = null;   // set by the onclose below
+  let opened = false; await settleWithin(`the socket to :${port} opens`, new Promise((r, j) => { ws.onopen = () => { opened = true; r(null); }; ws.onerror = j;
+    ws.onclose = (e) => { closed = e.code; if (!opened) j(new Error(`the socket to :${port} closed before it opened (${e.code})`)); }; }), () => ws.close());
   return {
     msgs, get closed() { return closed; },
     async join(world, id, extra = {}) { const k = msgs.length; ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id, avatar: "", replica: true, ...extra }));
@@ -124,9 +134,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     "A3 /access: 401 anonymously; world-unavailable (404) for a stranger, as for a name with no world; enter for a member", [a0.status, a1.body, a2.body, a3.body]); }
 // ---- F23 no existence oracle: one discoverability predicate (access.ts discoverable) behind /worlds, the join, /access and redial ----
 { // the raw bytes of a join: every message as sent, then the close code and reason; the world's name stands as <name>
-  const rawJoin = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
-    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: "Moss", agentToken: "tok-moss", avatar: "", replica: true, ...extra })); });
+  const rawJoin = async (world, extra = {}) => (await transcript(`ws://127.0.0.1:${srv.port}/ws`,
+    (ws) => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: "Moss", agentToken: "tok-moss", avatar: "", replica: true, ...extra })))).join("\n").split(world).join("<name>");
   const rawAccess = async (world, bearer?) => { const r = await fetch(`http://127.0.0.1:${srv.port}/access?world=${world}`, bearer ? { headers: { authorization: `Bearer ${bearer}` } } : {});
     return `${r.status} ${r.headers.get("content-type")} ${(await r.text()).split(world).join("<name>")}`; };
   const body = [await rawJoin("keep"), await rawJoin("nowhere")], watch = [await rawJoin("keep", { spectate: true }), await rawJoin("nowhere", { spectate: true })];
@@ -144,9 +153,8 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const pj = await sock(srv.port); const jp = await pj.join("porch", "Moss", { agentToken: "tok-moss" }); const ap = await accessAs(srv.port, "porch", "tok-moss");
   ok(door.ok && !jp.snapshot && pj.closed === 4010 && /"porch" isn.t open to you.*you may watch/.test(jp.errors.join(" ")) && ap.body?.exists === true && ap.body?.you === "watch",
     "F23-O4 a world the stranger may discover (anyone may watch it) keeps its specific words: a body is refused naming the world and that watching is open; /access says exists, watch", [door.ok, jp.errors, pj.closed, ap.body]); pj.close();
-  const anonAcc = [await rawAccess("keep"), await rawAccess("nowhere")], anonJoin = await Promise.all(["keep", "nowhere"].map((w) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${srv.port}/ws`); const got = [];
-    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code}`].join("\n").split(w).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: w, id: "Carl", avatar: "", replica: true })); })));
+  const anonAcc = [await rawAccess("keep"), await rawAccess("nowhere")], anonJoin = await Promise.all(["keep", "nowhere"].map(async (w) => (await transcript(`ws://127.0.0.1:${srv.port}/ws`,
+    (ws) => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: w, id: "Carl", avatar: "", replica: true })), undefined, (got, ev) => [...got, `close ${ev.code}`])).join("\n").split(w).join("<name>")));
   ok(anonAcc[0] === anonAcc[1] && /^401 /.test(anonAcc[0]) && /sign in/.test(anonAcc[0]) && !/world-unavailable/.test(anonAcc[0]) && acc[0] !== anonAcc[0] && anonJoin[0] === anonJoin[1] && /world-unavailable/.test(anonJoin[0]),
     "F23-O5 the unauthenticated stay classified apart from the signed-but-unentitled: /access says sign in (401) for both names, a stranger's says world-unavailable (404); a guest's join is world-unavailable for both", { anonAcc, anonJoin }); }
 // F23-O7–O9 (Mica 11-05, #23 ruling 4): an interrupted conversion and an old-format world are unavailable states too. To a
@@ -160,13 +168,10 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
   const TRACE = path.join(root, "access-trace.jsonl");   // server/worldindex.ts accessTrace: the test seam (F23-O10/O11)
   const s3 = await start({ SERVER_OPERATORS: "agent:token:ivy", EIDO_TEST_ACCESS_TRACE: TRACE });
   ok(!s3.dead, "(F23-O7 setup) a server with an operator is up", s3.dead ? fs.readFileSync(s3.log + ".err", "utf8").slice(-400) : "");
-  const raw = (world, extra = {}) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
-    ws.onmessage = (ev) => got.push(String(ev.data)); ws.onclose = (ev) => res([...got, `close ${ev.code} ${ev.reason}`].join("\n").split(world).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: extra.agentToken ? String(extra.agentToken).slice(4) : "Carl", avatar: "", replica: true, ...extra })); });
-  const upgrade = (world, tok) => new Promise((res) => { const ws = new WebSocket(`ws://127.0.0.1:${s3.port}/ws`); const got = [];
-    ws.onmessage = (ev) => { got.push(String(ev.data)); if (JSON.parse(String(ev.data)).type === "world-upgrade-review") ws.close(); };
-    ws.onclose = () => res(got.filter((g) => /world-upgrade-review/.test(g)).join("\n").split(world).join("<name>"));
-    ws.onopen = () => ws.send(JSON.stringify({ type: "world-upgrade-review", id: 1, world, ...(tok ? { agentToken: tok } : {}) })); });
+  const raw = async (world, extra = {}) => (await transcript(`ws://127.0.0.1:${s3.port}/ws`,
+    (ws) => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world, id: extra.agentToken ? String(extra.agentToken).slice(4) : "Carl", avatar: "", replica: true, ...extra })))).join("\n").split(world).join("<name>");
+  const upgrade = async (world, tok) => (await transcript(`ws://127.0.0.1:${s3.port}/ws`, (ws) => ws.send(JSON.stringify({ type: "world-upgrade-review", id: 1, world, ...(tok ? { agentToken: tok } : {}) })),
+    (ws, d) => { if (JSON.parse(d).type === "world-upgrade-review") ws.close(); }, (got) => got.filter((g) => /world-upgrade-review/.test(g)))).join("\n").split(world).join("<name>");
   const http = async (p, world, tok) => { const r = await fetch(`http://127.0.0.1:${s3.port}${p}${world}`, tok ? { headers: { authorization: `Bearer ${tok}` } } : {});
     return `${r.status} ${r.headers.get("content-type")} ${(await r.text()).split(world).join("<name>")}`; };
   const all = async (world, tok) => [await raw(world, tok ? { agentToken: tok } : {}), await raw(world, { spectate: true, ...(tok ? { agentToken: tok } : {}) }),
@@ -218,7 +223,7 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
 { const code = `const { doorFor } = await import(${JSON.stringify(new URL("../../server/access.ts", import.meta.url).href)});
     const fs = await import("node:fs"); const ci = fs.existsSync(${JSON.stringify(path.join(W, "KEEP"))});
     console.log(JSON.stringify({ exact: doorFor("keep") !== null, variant: doorFor("Keep") !== null || doorFor("KEEP") !== null, ci }));`;
-  const r = Bun.spawnSync(["bun", "-e", code], { env: env(), stdout: "pipe", stderr: "pipe" }); let j: any = null; try { j = JSON.parse(r.stdout.toString().trim()); } catch {}
+  const r = Bun.spawnSync(["bun", "-e", code], { env: env(), timeout: 30_000, stdout: "pipe", stderr: "pipe" }); let j: any = null; try { j = JSON.parse(r.stdout.toString().trim()); } catch {}
   ok(!!j && j.exact && !j.variant, `A3b the unloaded door reader answers for a world's name in its own case only, never a case variant of it${j?.ci ? "" : " (case-sensitive filesystem here: the variant misses on its own)"}`, j ?? r.stderr.toString().slice(0, 300)); }
 
 // ---- A2: watch only ----
@@ -429,7 +434,7 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
     const req = new Request("http://x/", { headers: { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.66, 203.0.113.8" } });
     console.log(addressOf(req, { requestIP: () => ({ address: "127.0.0.1" }) }));`;
     const { PROXY_ADDRESS_HEADER: _drop, ...base } = process.env;
-    const r = Bun.spawnSync(["bun", "-e", code], { env: { ...base, ...env }, stdout: "pipe", stderr: "pipe" }); return r.stdout.toString().trim() || r.stderr.toString().trim().slice(0, 200); };
+    const r = Bun.spawnSync(["bun", "-e", code], { env: { ...base, ...env }, timeout: 30_000, stdout: "pipe", stderr: "pipe" }); return r.stdout.toString().trim() || r.stderr.toString().trim().slice(0, 200); };
   const unset = probe({}), xff = probe({ PROXY_ADDRESS_HEADER: "X-Forwarded-For" }), real = probe({ PROXY_ADDRESS_HEADER: "x-real-ip" });
   ok(unset === "203.0.113.7" && xff === "203.0.113.8" && real === "203.0.113.7",
     "A13e the setting picks the header the routes read: unset or x-real-ip reads X-Real-IP, X-Forwarded-For (any case) reads its rightmost untrusted hop", { unset, xff, real }); }
@@ -440,13 +445,13 @@ fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({
   const code = `const M = await import(${JSON.stringify(modTs)});
     M.serverBans["acct:u-bbbbbbbbbbbbbbbbbbbb"] = { by: "op", ts: 2, account: "u-bbbbbbbbbbbbbbbbbbbb" }; M.saveServerBans();
     M.fileAddrSanction({ kind: "mute", world: "w", addr: "h", actor: "u-cccccccccccccccccccc", by: "op", who: "g-1" });`;
-  const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["bun", "-e", code], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000, stdout: "pipe", stderr: "pipe" });
   const out = r.stdout.toString() + r.stderr.toString(), b = fs.readFileSync(bans, "utf8"), s = fs.readFileSync(sanc, "utf8");
   ok(r.exitCode === 0 && /restore failed/.test(out) && b === torn && s === torn && /not saved/.test(out),
     "A13m an unreadable .bans.json and .addr-sanctions.json are kept byte-identical: a later ban and mute are not saved over them, and the log says so", { exit: r.exitCode, bansKept: b === torn, sancKept: s === torn, out: out.slice(0, 400) });
   // A13m2: a file that parses but isn't an object of records (hand-made) is unreadable the same way: LOCKED, never saved over
   fs.writeFileSync(bans, "[]"); fs.writeFileSync(sanc, "false");
-  const r2 = Bun.spawnSync(["bun", "-e", code + `\nconsole.log(M.lockedLine() ?? "not locked");`], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const r2 = Bun.spawnSync(["bun", "-e", code + `\nconsole.log(M.lockedLine() ?? "not locked");`], { env: { ...process.env, WORLDS_DIR: D, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 30_000, stdout: "pipe", stderr: "pipe" });
   const out2 = r2.stdout.toString() + r2.stderr.toString();
   ok(r2.exitCode === 0 && /^LOCKED/m.test(out2) && fs.readFileSync(bans, "utf8") === "[]" && fs.readFileSync(sanc, "utf8") === "false",
     "A13m2 a ban or sanction file of the wrong shape (an array, a boolean) locks the door like a torn one and is kept as it was", { exit: r2.exitCode, out: out2.slice(0, 400) }); }
@@ -729,7 +734,7 @@ const gonePid = await exitedPid();
       const w = { name: "t14", clients: new Set([c]), log: { live: { state: () => ({ entities: { "@world": { c: wc } } }) }, expireRoles: () => [], bannedHere: () => false } };
       const gone = []; A.sweepAccess([w], (_w, who, why) => gone.push(why), now); out.sweep[k] = gone; }
     console.log(JSON.stringify(out));`;
-  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, timeout: 30_000, stdout: "pipe", stderr: "pipe" });
   let o = null; try { o = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
   ok(o?.door === "listed", "B7 an unloaded world's door leaves out a torn last line (complete JSON, no newline): still listed, not anyone", o?.door ?? r.stderr.toString().slice(-300));
   ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,
