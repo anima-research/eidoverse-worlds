@@ -70,11 +70,18 @@ try {
     if (watches && !real) real = c; else if (c.closedWith == null) c.ws.close();
   }
   if (!real) throw new Error("no renderer was admitted");
+  // the barrier, not a sleep: a removal happens inside the access write (server/access.ts settleAccess, before the
+  // owner's reply), so a clock answered on the renderer's own socket after the reply says it is still there (#333 G4-186)
+  const stillThere = (c: Conn) => new Promise<boolean>((res) => {
+    const t0 = Math.random(), t = setTimeout(() => res(false), 5000);
+    const on = (e: MessageEvent) => { const m = JSON.parse(String(e.data)); if (m.type === "clock" && m.t0 === t0) { clearTimeout(t); c.ws.removeEventListener("message", on); res(c.closedWith == null); } };
+    c.ws.addEventListener("message", on); c.ws.addEventListener("close", () => { clearTimeout(t); res(false); });
+    c.ws.send(JSON.stringify({ type: "clock", t0 }));
+  });
   const again = await req(owner, "set", { id: "@world", component: "access", value: { join: "listed", watch: "anyone" } });
-  await h.sleep(600);
   const shut = await req(owner, "set", { id: "@world", component: "access", value: { join: "listed" } });
-  await h.sleep(800);
-  check("…and the trusted renderer is not removed when the world closes again", again.ok && shut.ok && real!.closedWith == null, `code=${real!.closedWith}`);
+  const kept = await stillThere(real);
+  check("…and the trusted renderer is not removed when the world closes again", again.ok && shut.ok && kept && real!.closedWith == null, `code=${real!.closedWith}`);
 
   const hm = await fetch(`${h.BASE}/heightmap?world=${W}&format=json`, KEY);
   check("a stranger's /heightmap of the invite-only world: 404, nothing about it", hm.status === 404, `${hm.status} ${await hm.text()}`);
