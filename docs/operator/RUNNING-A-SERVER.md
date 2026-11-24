@@ -86,7 +86,7 @@ package has it, and the state in `/var/lib/<name>`, as Gitea, Jellyfin and Vault
 | bun | `/usr/local/bin/bun` | root |
 | worlds, their backups, the optimizer's store and variants, sign-in sessions | `/var/lib/eidoverse` | `eidoverse` |
 | the door's memory | `/var/lib/eidoverse-mcpl` | `eidoverse` |
-| secrets: `/etc/eidoverse/<unit>.env`, agents' tokens in `/etc/eidoverse/agent-tokens.json` | edit with `sudoedit`, which keeps owner and mode | root (the tokens: group `eidoverse`, 0640) |
+| secrets: `/etc/eidoverse/<unit>.env` (the door's holds `WORLD_TOKEN`, the server's `JOIN_TOKEN`), agents' tokens in `/etc/eidoverse/agent-tokens.json` | edit with `sudoedit`, which keeps owner and mode; the directory is 755, so the units can reach the tokens | root (the tokens: group `eidoverse`, 0640) |
 
 The units run as `eidoverse`, a system user with no login and no home, with the system read-only but their state
 directory, no `/home`, no capabilities and a syscall filter (`systemd-analyze security`: 1.1, from 9.0). Outbound network
@@ -100,7 +100,9 @@ id -u eidoverse >/dev/null 2>&1 || sudo useradd --system --user-group --no-creat
 sudo install -d -o "$USER" -g "$USER" /opt/eidoverse /opt/eidoverse-video
 git clone <this repo> /opt/eidoverse && git clone <the library> /opt/eidoverse-video   # at LIBRARY_PIN (above)
 cd /opt/eidoverse
-sudo install -D -m 600 /dev/null /etc/eidoverse/eidoverse.env      # then sudoedit it: JOIN_TOKEN=… and the like
+sudo install -d -m 755 /etc/eidoverse
+sudo install -m 600 /dev/null /etc/eidoverse/eidoverse.env              # then sudoedit it: JOIN_TOKEN=… and the like
+sudo install -m 600 /dev/null /etc/eidoverse/eidoverse-mcpl.env         # WORLD_TOKEN=<that JOIN_TOKEN>, or agents are refused
 echo '{}' | sudo install -o root -g eidoverse -m 640 /dev/stdin /etc/eidoverse/agent-tokens.json   # sudoedit: mcpl/tokens.example.json's shape
 sudo install -m 644 deploy/eidoverse.service.template /etc/systemd/system/eidoverse.service
 sudo install -m 644 deploy/eidoverse-mcpl.service.template /etc/systemd/system/eidoverse-mcpl.service
@@ -171,6 +173,8 @@ sudo install -m 755 ~/.bun/bin/bun /usr/local/bin/bun
 # 3. state to /var/lib and the agents' tokens to /etc, for the units' user
 id -u eidoverse >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin eidoverse
 sudo install -d -o eidoverse -g eidoverse -m 700 /var/lib/eidoverse /var/lib/eidoverse-mcpl
+sudo install -d -m 755 /etc/eidoverse
+sudo test -e /etc/eidoverse/eidoverse-mcpl.env || sudo install -m 600 /dev/null /etc/eidoverse/eidoverse-mcpl.env   # the door's
 cd /opt/eidoverse
 for d in worlds backups; do [ ! -e $d ] || sudo mv -T $d /var/lib/eidoverse/$d; done
 [ ! -e assets/opt ] || sudo mv -T assets/opt /var/lib/eidoverse/opt
@@ -178,8 +182,19 @@ for d in worlds backups; do [ ! -e $d ] || sudo mv -T $d /var/lib/eidoverse/$d; 
 [ ! -e mcpl/state.json ] || sudo mv mcpl/state.json /var/lib/eidoverse-mcpl/state.json
 sudo chown -R eidoverse:eidoverse /var/lib/eidoverse /var/lib/eidoverse-mcpl
 [ ! -e mcpl/tokens.json ] || { sudo install -o root -g eidoverse -m 640 mcpl/tokens.json /etc/eidoverse/agent-tokens.json && rm mcpl/tokens.json; }
-# 4. the new code and units, then the usual deploy, and the bridge it leaves stopped
+# 4. the new code, and what the box's units set that the templates don't
 git fetch origin main && git reset --hard origin/main
+sudo diff ~/before-opt/eidoverse.service deploy/eidoverse.service.template
+sudo diff ~/before-opt/eidoverse-mcpl.service deploy/eidoverse-mcpl.service.template
+```
+
+The next block replaces the box's `eidoverse.service` and `eidoverse-mcpl.service` with the templates, so first carry
+over every setting the old units set inline that the templates lack: each `Environment=` (a `JOIN_TOKEN` there, left
+behind, brings the box up open; the door's `WORLD_TOKEN`; a port) goes into `/etc/eidoverse/eidoverse.env` or
+`/etc/eidoverse/eidoverse-mcpl.env` (`sudoedit`, one per line), anything else into a drop-in. Drop-ins stay as they are.
+
+```sh
+# 5. the new units, then the usual deploy, and the bridge it leaves stopped
 sudo install -m 644 deploy/eidoverse.service.template /etc/systemd/system/eidoverse.service
 sudo install -m 644 deploy/eidoverse-mcpl.service.template /etc/systemd/system/eidoverse-mcpl.service
 [ ! -f /etc/systemd/system/eido-chatbridge.service ] || sudo install -m 644 deploy/eido-chatbridge.service /etc/systemd/system/
@@ -197,7 +212,7 @@ for d in worlds backups; do ! sudo test -e /var/lib/eidoverse/$d || sudo mv -T /
 ! sudo test -e /var/lib/eidoverse/opt || sudo mv -T /var/lib/eidoverse/opt assets/opt
 ! sudo test -e /var/lib/eidoverse/sessions.json || sudo mv /var/lib/eidoverse/sessions.json .sessions.json
 ! sudo test -e /var/lib/eidoverse-mcpl/state.json || sudo mv /var/lib/eidoverse-mcpl/state.json mcpl/state.json
-[ ! -e /etc/eidoverse/agent-tokens.json ] || sudo mv /etc/eidoverse/agent-tokens.json mcpl/tokens.json
+! sudo test -e /etc/eidoverse/agent-tokens.json || sudo mv /etc/eidoverse/agent-tokens.json mcpl/tokens.json
 sudo chown -R "$USER:$USER" worlds backups assets .sessions.json mcpl/state.json mcpl/tokens.json 2>/dev/null
 git reset --hard "$(cat ~/before-opt/commit)"
 cd ~ && sudo mv -T /opt/eidoverse ~/eidoverse-worlds && sudo mv -T /opt/eidoverse-video ~/eidoverse-video
