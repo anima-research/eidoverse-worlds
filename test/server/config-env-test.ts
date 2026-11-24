@@ -46,5 +46,19 @@ for (let i = 0; i < Math.max(...cases.map((c) => c.length)); i++) {
   if (got.v.l !== 64 || got.v.c !== 30 || !got.warn.includes('EW_ID_LEN="1.5" is not valid') || !got.warn.includes('CLIENTLOG_IP_PER_10MIN="0.5" is not valid')) { fail++; console.error(`FAIL a fractional count: got l=${got.v.l} c=${got.v.c}, want 64 and 30 with warnings`); } }
 // the budget's own default is machine-derived (half the usable memory): finite, never negative
 if (!(Number.isFinite(budgetDefault) && budgetDefault >= 0)) { fail++; console.error(`FAIL OPT_MEM_BUDGET_MB default ${budgetDefault}`); }
+// …and its "usable" is the tightest memory.max on this process's own cgroup path: a systemd MemoryMax= is the unit's file, not the root's
+{ process.env.WORLDS_DIR ??= "/tmp/config-env-test-worlds";
+  const { cgroupMemoryMax } = await import("../../server/config.ts");
+  const fake = (files: Record<string, string>) => (p: string) => { if (p in files) return files[p]; throw new Error("ENOENT"); };
+  const unit = "0::/system.slice/eidoverse.service\n";
+  const got = {
+    unit: cgroupMemoryMax(fake({ "/proc/self/cgroup": unit, "/sys/fs/cgroup/system.slice/eidoverse.service/memory.max": "4294967296\n", "/sys/fs/cgroup/memory.max": "max\n" })),
+    slice: cgroupMemoryMax(fake({ "/proc/self/cgroup": unit, "/sys/fs/cgroup/system.slice/eidoverse.service/memory.max": "max\n", "/sys/fs/cgroup/system.slice/memory.max": "2147483648\n" })),
+    container: cgroupMemoryMax(fake({ "/proc/self/cgroup": "0::/\n", "/sys/fs/cgroup/memory.max": "1073741824\n" })),
+    none: cgroupMemoryMax(fake({ "/proc/self/cgroup": unit })),
+    v1: cgroupMemoryMax(fake({})),
+  };
+  rows++;
+  if (got.unit !== 4294967296 || got.slice !== 2147483648 || got.container !== 1073741824 || got.none !== 0 || got.v1 !== 0) { fail++; console.error(`FAIL cgroupMemoryMax ${JSON.stringify(got)}`); } }
 if (fail) process.exit(1);
 console.log(`config-env: ${rows} rows ok`);
