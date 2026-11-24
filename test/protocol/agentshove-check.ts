@@ -252,20 +252,22 @@ try {
     ok(slow.length >= 1, "(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", { slow, t });
     ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
   // AS15 (review of #260): a rejoin resends what the agent chose with consent. The rejoin reads what the authority holds
-  // and sets only what differs; the agent never sends the gate it closed open, and it is closed after (the authority's
-  // own table between the join and the replay isn't read here: a default that reopens it for that moment would pass)
+  // and sets only what differs; the agent never sends the gate it closed open, and it is closed after. G4-216: the
+  // replay's own first read (consent {}) is the authority's table between the join and the replay: closed there too
   { const closed = await ag.request("consent", { move: false });
-    const sent: any[] = []; const orig = ag.request.bind(ag);
-    ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); return orig(verb, args); };
+    const sent: any[] = []; const orig = ag.request.bind(ag); let held = null;
+    ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); const r = orig(verb, args);
+      if (verb === "consent" && !Object.keys(args ?? {}).length && !held) held = r; return r; };
     let replay = null; const replayOrig = ag.replayConsent.bind(ag); ag.replayConsent = () => (replay = replayOrig());   // the arrival's resend, to await it
     ag.ws?.close();
     await tryUntil("the agent's socket drops", () => !ag.joined, { ms: 5000, step: 50 });
     await tryUntil("the agent rejoins", () => ag.joined, { ms: 15_000, step: 50 });
     await tryUntil("the rejoin's consent replay", () => replay, { ms: 2000, step: 20 }); await replay; delete ag.replayConsent;
-    const after = await orig("consent", {});
+    const after = await orig("consent", {}), between = await held;
     ag.request = orig;
     ok(closed?.ok && ag.joined && sent.length > 0 && sent.every((a) => a?.move !== true) && after?.table?.move === false,
-      "AS15 (R 10-28) a rejoin keeps the agent's gates: it never sends a closed one open, and it is closed after the replay", { closed, joined: ag.joined, sent, table: after?.table }); }
+      "AS15 (R 10-28) a rejoin keeps the agent's gates: it never sends a closed one open, and it is closed after the replay", { closed, joined: ag.joined, sent, table: after?.table });
+    ok(between?.ok && between.table?.move === false, "AS15 …and closed before it: the authority's table, read by the replay before it sends anything, already has move false", { between: between?.table ?? between }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {
       const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });
