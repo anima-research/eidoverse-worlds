@@ -109,7 +109,7 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
     stub.entities.get('farlamp') === null && rq('farlamp-light')?.obj === farChild && inStandIn(farChild, 'farlamp') && jeq(lit('farlamp-light'), [600, 0, 0]) && rq('farlamp-light').intensity === 5,
     JSON.stringify({ lit: lit('farlamp-light'), obj: rq('farlamp-light')?.obj?.userData?.entityId ?? null, pos: rq('farlamp-light')?.pos }));
 
-  // authored beats inferred (design §3): a Light component suppresses the model's inferred lamps
+  // authored beats inferred: a Light component suppresses the model's inferred lamps
   const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
   check('an imported lamp (Model + light on one record, as the fold keeps it) lands WITHOUT inferred lamps — the authored light alone lights it', !!stub.entities.get('implamp')?.userData?.lib && lamps('implamp') === 0 && rq('implamp')?.obj === stub.entities.get('implamp'),
     JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:implamp')));

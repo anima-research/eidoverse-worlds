@@ -1,4 +1,4 @@
-// hierarchy-commit — a drag in the Hierarchy is ONE undo step (design §5),
+// hierarchy-commit — a drag in the Hierarchy is ONE undo step,
 // through the client's real commit path (client/lib/edit/inspect.js commitEdit →
 // client/lib/edit/writes.js sendOps → the door), headless. The Hierarchy's drop and
 // the inspector's Parent field both call commitEdit(id, 'parent.to', onto);

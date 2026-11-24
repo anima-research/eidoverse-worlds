@@ -88,7 +88,7 @@ console.log("\nschema is a function of the record:");
   check("motion group covers the whole comp AND the part", fieldAt(w, "motion.amp")?.t === "num" && fieldAt(w, "motion.plank|degPerSec")?.value === 60);
   check("axis vector reads back as a name", fieldAt(w, "motion.axis")?.value === "x");
   const m = inspectSchema(cargo, "k");
-  // step 4 (design §3): a child's transform is LOCAL to its parent and editable — the mount's offset, not the fold's pre-mount pos
+  // a child's transform is LOCAL to its parent and editable — the mount's offset, not the fold's pre-mount pos
   check("mounted → transform is local (the mount offset), editable, and says which parent", !fieldAt(m, "pos.x")!.disabled && fieldAt(m, "pos.y")!.value === 1 && fieldAt(m, "pos.x")!.value === 0
     && m.groups.find((g: any) => g.group === "pos")!.local === "truck" && fieldAt(m, "parent.to")!.value === "truck");
   check("null record → empty", inspectSchema(null, "zz").groups.length === 0);

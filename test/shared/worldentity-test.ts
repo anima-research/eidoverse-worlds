@@ -1,5 +1,5 @@
-// worldentity-test — the world entity `@world` (design §3, shared/worldentity.js)
-// and the Build tab's memory (design §5, client/lib/edit/tabs.js).
+// worldentity-test — the world entity `@world` (shared/worldentity.js)
+// and the Build tab's memory (client/lib/edit/tabs.js).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/shared/worldentity-test.ts
 //

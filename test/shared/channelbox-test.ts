@@ -1,4 +1,4 @@
-// channelbox-test — the inspector's channel box (design §5, step 3): Translate,
+// channelbox-test — the inspector's channel box: Translate,
 // Rotate (Euler read from q in the entity's rotation order), Scale, the order,
 // and the Quaternion row — schema → editOps → the REAL door (a scratch
 // world, test/harness/scratchworld.ts) → the view → schema again.

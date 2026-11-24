@@ -114,7 +114,7 @@ console.log('\nBuild — the building tools and the library, docked beside the H
   const tab = (id: string) => `document.querySelector('.edit-tab[data-tab="${id}"]')`;
   const shown = (f: string) => `getComputedStyle(document.querySelector('[data-frame="${f}"]')).display !== 'none'`;
   check('the viewport carries no floating building bar', await evalJson(`!document.querySelector('#structbar')`));
-  check('Build is the open tab on a first B (design §5); the Hierarchy waits behind it', await evalJson(`${tab('build')}.classList.contains('on') && ${shown('build')} && !(${shown('hierarchy')})`));
+  check('Build is the open tab on a first B; the Hierarchy waits behind it', await evalJson(`${tab('build')}.classList.contains('on') && ${shown('build')} && !(${shown('hierarchy')})`));
   await evalJson(`${tab('hierarchy')}?.click(), true`);
   check('the Hierarchy tab swaps the pane', await waitFor(`${shown('hierarchy')} && !(${shown('build')}) && ${tab('hierarchy')}.classList.contains('on')`));
   await evalJson(`${tab('build')}?.click(), true`);
