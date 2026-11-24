@@ -1,3 +1,6 @@
+// test/mcpl/poseclip-parity-test.ts — a headless body's pose clips land every joint where the browser's mixer puts it (within
+// 1e-6 m, VRM 0 and 1, idle/sit/sitchair/lie at three times), and syncClipPhase follows a remote clip's phase, pause and slot.
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/mcpl/poseclip-parity-test.ts
 import {PoseClips} from '../../mcpl/pose-clips.ts';
 import {parsePoseAnimation,retargetPoseAnimation,syncClipPhase} from '../../client/lib/avatar/poseclips.js';
 import {ReachBody} from '../../mcpl/physics.ts';

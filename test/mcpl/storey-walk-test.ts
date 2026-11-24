@@ -1002,8 +1002,8 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
 {
   // A floor walk's feet go no lower than its floor's height, so its grid
   // stands nowhere lower (onOrAboveFloor). On a one-row deck with a chest
-  // across it, each walk round the chest below is refused, where the grid
-  // used to route it with the feet held at the deck's height over the air.
+  // across it, each walk round the chest below is refused, never routed
+  // with the feet held at the deck's height over the air.
   const { boxMesh } = await import("../fixtures/two-storey-fixture.ts");
   const { registerMeshSupport, removeSupport } = await import("../../mcpl/physics.ts");
   const deckOf = (n: number) => ({ levels: [{ y: 3, tiles: Array.from({ length: n }, (_, i) => [i, 0]), walls: [], apertures: [] }] });
@@ -1047,8 +1047,8 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
 {
   // A storey holds the feet from a route step below its floor to just under
   // its height above it (the grid's wallH, 2.8 m by default): feet on
-  // something placed on the floor are on the storey. At 0.53 m above it they
-  // used to be the terrain's.
+  // something placed on the floor are on the storey: at 0.53 m above it they
+  // are the storey's, not the terrain's.
   const support = (y: number) => agentIn(y).walkSupport();
   const on = support(upperY + 0.53);
   check("feet on a top 0.53 m above the upper floor are on the upper storey", on.kind === "floor" && Math.abs(on.height - upperY) < 1e-9, JSON.stringify(on));
