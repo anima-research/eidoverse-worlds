@@ -177,6 +177,7 @@ ok(!srv.dead, "(setup) the server is up", srv.dead ? fs.readFileSync(srv.log + "
 { const a1 = await sock(srv.port); const j1 = await a1.join("garden", "x", { agentToken: mint({ kind: "agent", name: "Wren", sub: "agent:wren@home.test" }) });
   const t1 = await sock(srv.port); const j2 = await t1.join("orchard", "Wren", { agentToken: "tok-wren" });
   ok(j1.snapshot?.you === "Wren", "C2 an aid1 agent whose subject an enrolment lists IS that enrolled agent (named by the enrolment)", [j1.snapshot?.you, j1.errors]);
+  ok(j2.snapshot?.you === "Wren" && !!you(j1) && you(j2) === you(j1), "C2 …the same identity its enrolment token wears (the two doors are one Wren)", [j2.snapshot?.you, you(j2), you(j1), j2.errors]);
   const imp = await sock(srv.port); const j3 = await imp.join("garden", "x", { agentToken: mint({ kind: "agent", name: "Wren", sub: "agent:wren@elsewhere.test" }) });
   ok(j3.snapshot ? (j3.snapshot.you !== "Wren" && you(j3) !== you(j1)) : /reserved agent name/.test(j3.errors.join(" ")), "C2 another aid1 agent whose NAME slugs to an enrolled agent's isn't them (refused as reserved, or its own identity)", [j3.snapshot?.you, j3.errors]);
   a1.close(); t1.close(); imp.close(); }
