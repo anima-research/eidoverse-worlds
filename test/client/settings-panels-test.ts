@@ -21,6 +21,7 @@ plugin({ name: 'settings-stubs', setup(b) {
 
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { suite } from "../gate/suite.ts";
+import { pause } from "../gate/wait.ts";
 GlobalRegistrator.register();
 // happy-dom's global registrar ships no `Option`; videopanel builds its selects with `new Option(text, value)`
 (globalThis as any).Option = function (text: string, value?: string) { const o = document.createElement('option'); o.text = text; if (value !== undefined) o.value = value; return o; };
@@ -312,7 +313,7 @@ console.log('TABS — every registered section is a tab; choosing one shows its 
     check('...and a World Settings tab too (every tabbed frame, #577)', opened && !ws.box.classList.contains('open'), { opened, after: ws.box.className }); }
   // collapseAll before a new tab's queued ensureTab has run (gates under load, 11-19..11-24): the queue must not reopen it
   { const ws2 = ui.makeSection('WS probe 2', () => {}, { id: 'ws-probe-2', host: 'world-settings' }); await ws2.toggle(true);
-    ui.collapseAll(); await new Promise((r) => setTimeout(r, 0)); await tick();
+    ui.collapseAll(); await pause('the queued ensureTab runs first: timers fire in order', 0); await tick();
     check('...and a collapse made before a new tab\'s queued pass stays collapsed after it', !ws2.box.classList.contains('open'), { after: ws2.box.className }); }
   frame.hide(); frame.show(); await tick();
   check('shown again with nothing chosen, the frame opens its last tab (the last of them)', state() === alone(secs().at(-1)!.key), state());
