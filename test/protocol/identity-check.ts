@@ -339,9 +339,10 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     // sweep applies the sanctions in force to the new leg
     const kc = m2.msgs.length; m2.raw({ type: "relay-cred" });
     const gotCred = !!(await tryUntil("Moss's fresh relay credential", () => m2.msgs.slice(kc).some((m) => m.type === "relay-cred"), { ms: 5000, step: 20 }));
-    // muted again within a sweep tick (2 s) at the latest: the mint resets the id, the sweep re-applies what is in force
-    const diag3 = (await tryUntil("Moss is muted on the fresh leg", async () => { const d = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json(); return (d.moderatorMuted ?? []).includes("Moss") ? d : null; }, { ms: 6000 })) ?? {};
-    ok(gotCred && (diag3.moderatorMuted ?? []).includes("Moss"), "RS2b a muted person who asks for a fresh relay credential is still muted at the SFU", [gotCred, diag3.moderatorMuted]);
+    // muted again BEFORE the credential is answered: the mint resets the id and its own sweep re-applies what is in force
+    // (server.ts relay-cred), so read at once; waiting out the 2 s sweep tick would pass with the mint's sweep gone (G4-147)
+    const diag3 = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
+    ok(gotCred && (diag3.moderatorMuted ?? []).includes("Moss"), "RS2b a muted person who asks for a fresh relay credential is still muted at the SFU, from the moment it's answered", [gotCred, diag3.moderatorMuted]);
     // a builder (no mute permission) can't, and an unmute by the moderator lifts it at the SFU
     const kw = wren.msgs.length; wren.raw({ type: "voice-moderate", id: "Moss", muted: false });
     const wrenErr = await tryUntil("wren's unmute is answered with an error", () => wren.msgs.slice(kw).find((m) => m.type === "error"), { ms: 5000 });   // the refusal, not a 300 ms guess
