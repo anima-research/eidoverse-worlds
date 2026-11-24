@@ -619,7 +619,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await pause("the next rows start in a fresh message window", 1100); }
 await bye(ann, bob, vic, spec);
 // ================= CB: the captioner bot (services/captionbot/world.ts) through a real server: the authority's caption tool, the
-// screen's captioners list, the server-stamped leg generation (a duplicate read as a receipt isn't driven here) =================
+// screen's captioners list, the server-stamped leg generation, a duplicate read as a receipt (CB-R) =================
 { const { WorldClient } = await import("../../services/captionbot/world.ts");
   const own = await client(srv.port, "garden", "Ann", REPLICA);
   ok((await own.req("create", { id: "screen1", model: "test/table.glb", place: { at: [6, 6] } })).ok, "CB (setup) a screen");
@@ -638,6 +638,19 @@ await bye(ann, bob, vic, spec);
   ok(bot.acked === 2 && bag?.n === 2 && bag?.line?.text === "and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
   const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
   ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.gen]);
+  // CB-R (G4-168): a line that landed but whose receipt was lost is resent; the door refuses the duplicate (at or below its
+  // high-water), and the bot reads that refusal as the receipt: acked once, written once
+  { const ws = bot.ws, real = ws.onmessage; let lost = 0;
+    ws.onmessage = (ev: any) => { const m = JSON.parse(String(ev.data)); if (!lost && m.type === "reply" && m.id === bot.inflightId && m.reply?.ok) { lost++; return; } return real.call(ws, ev); };
+    const a0 = bot.acked, n0 = logs.length;
+    bot.caption({ t0: 2, t1: 3, text: "a lost receipt" } as any);
+    await tryUntil("the resend's dedupe is read as the receipt", () => bot.acked === a0 + 1 && !bot.pendingCount, { ms: 8000, step: 50 });
+    ws.onmessage = real;
+    const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl"))).filter((e: any) => e.kind === "request" && e.verb === "caption");
+    const wrote = L.filter((e: any) => !e.body?.refused && e.body?.args?.text === "a lost receipt").length, dup = L.at(-1);
+    ok(lost === 1 && bot.acked === a0 + 1 && !bot.pendingCount && logs.slice(n0).some((l) => /no receipt .* resending/.test(l)) && wrote === 1 && !!dup?.body?.refused,
+      "CB-R a resent line that had already landed: the door refuses the duplicate, the bot reads that as its receipt (acked once), and the line is written once",
+      { lost, acked: bot.acked - a0, pending: bot.pendingCount, wrote, last: dup?.body, said: logs.slice(n0) }); }
   bot.close(); await bye(own); }
 
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
