@@ -304,6 +304,50 @@ try {
   if (l2.askedAgain) { await asked(/locked/, 'L2: the second lock question is drawn'); await pg.evaluate(() => globalThis.__px.press(/cancel/i)); await settledR('m2', 'L2: the move settled').catch(() => {}); }
   check('L2 🔓 Unlock on a queued question whose lock was replaced asks again, and the new lock stays on', relock.off.ok && relock.on.ok && l2.hit && l2.askedAgain && l2.unlocks === 0 && l2.locked === true, JSON.stringify(l2));
 
+  // ---- the real callers in a headset (review #359 12, 13): each one's question rides the ask quad, nothing native ----
+  const nDialogs = dialogs.length;
+  // speech server (audio/ttsrow.js addEndpoint → askCenter)
+  await pg.evaluate(async () => { const host = document.createElement('div'); host.id = 'probe-tts'; document.body.append(host); (await import('./lib/audio/ttsrow.js')).ttsSection(host); return true; });
+  await S('R1: the voice list offers "add a speech server"', () => [...document.querySelectorAll('#probe-tts .vl-add')].some((r) => /speech server/.test(r.textContent)));
+  await pg.evaluate(() => { [...document.querySelectorAll('#probe-tts .vl-add')].find((r) => /speech server/.test(r.textContent)).click(); return true; });
+  const r1 = await asked(/speech server/, 'R1: the speech server is asked on the ask quad').then(() => true, () => false);
+  if (r1) { await pg.evaluate(() => globalThis.__px.press(/^cancel$/i)); await S('R1: answered', () => !globalThis.__px.ask.xrAskState()); }
+  await pg.evaluate(() => { document.querySelector('#probe-tts')?.remove(); return true; });
+  check('R1 in a headset, adding a speech server asks for its address on the ask quad', r1, dialogs.slice(nDialogs).join(' | '));
+
+  // closing the door with people here who have no role (ui/rolespanels.js → confirmCenter's headset branch); two stand-ins
+  // for people present, as net.js identities holds them.
+  await pg.evaluate(async () => { const n = await import('./lib/net.js'); n.identities.set('probe-peer-1', 'u-probe-guest-1');
+    const host = document.createElement('div'); host.id = 'probe-door'; document.body.append(host); (await import('./lib/ui/rolespanels.js'))._test.paintAccess(host); return true; });
+  const door0 = await pg.evaluate(async () => JSON.stringify((await import('./lib/net.js')).replica.st?.entities?.['@world']?.c?.access ?? null));
+  await pg.evaluate(() => { document.querySelector('#probe-door button[data-door="invite-only"]').click(); return true; });
+  const r2 = await asked(/close the door/, 'R2: the door question is on the ask quad').then(() => true, () => false);
+  const r2body = await pg.evaluate(() => globalThis.__px.ask.xrAskState()?.body ?? null);
+  const r2why = r2 ? null : await pg.evaluate(async () => { const n = await import('./lib/net.js'); const b = document.querySelector('#probe-door button[data-door="invite-only"]'); return { rights: n.net.myRights, you: n.net.you, ids: [...n.identities], btn: b ? { disabled: b.disabled, on: b.className } : null }; });
+  check('R2 in a headset, closing the door on someone with no role asks on the ask quad, counting them', r2 && /^1 person /.test(r2body ?? ''), JSON.stringify({ r2body, r2why, dialogs: dialogs.slice(nDialogs) }));
+  if (r2) await pg.evaluate(() => globalThis.__px.press(/keep it open/i));
+  await pg.evaluate(async () => { const n = await import('./lib/net.js'); n.identities.delete('probe-peer-1'); document.querySelector('#probe-door')?.remove(); return true; });
+
+  // log out (ui/ui-menu.js logOut → confirmCenter): the menu's own action, as a signed-in person has it
+  await pg.evaluate(async () => { (await import('./lib/base.js')).CONFIG.authed = true; (await import('./lib/ui/actions.js')).get('menu:login').run(); return true; });
+  const r3 = await asked(/log out/, 'R3: the log out question is on the ask quad').then(() => true, () => false);
+  if (r3) { await pg.evaluate(() => globalThis.__px.press(/^stay$/i)); await S('R3: answered', () => !globalThis.__px.ask.xrAskState()); }
+  await pg.evaluate(async () => { (await import('./lib/base.js')).CONFIG.authed = false; return true; });
+  check('R3 in a headset, Log out asks on the ask quad (Stay keeps you here)', r3, dialogs.slice(nDialogs).join(' | '));
+
+  // save as blueprint (edit/panels.js bpsave → askCenter): the Build tab's own button, with the lock probe selected
+  await pg.evaluate(async () => { (await import('./lib/edit/build.js')).setBuildMode(true); return true; });
+  await pg.evaluate(() => { document.querySelector('.edit-tab[data-tab="build"]')?.click(); return true; });
+  await pg.evaluate(async () => { (await import('./lib/scenegraph.js')).sceneSelect(globalThis.__lk); return true; });
+  await pg.evaluate(() => { globalThis.__bp = () => [...(document.querySelector('[data-frame="build"]')?.querySelectorAll('.sp-btn') ?? [])].find((b) => /save as blueprint/.test(b.textContent) && !b.disabled); return true; });
+  await S('R4: Build offers "save as blueprint"', () => !!globalThis.__bp()).catch(() => {});
+  await pg.evaluate(() => { globalThis.__bp()?.click(); return true; });
+  const r4 = await asked(/blueprint/, 'R4: the blueprint name is asked on the ask quad').then(() => true, () => false);
+  const r4input = await pg.evaluate(() => globalThis.__px.input()?.value ?? null);
+  if (r4) { await pg.evaluate(() => globalThis.__px.press(/^cancel$/i)); await S('R4: answered', () => !globalThis.__px.ask.xrAskState()); }
+  await pg.evaluate(async () => { (await import('./lib/edit/build.js')).setBuildMode(false); return true; });
+  check('R4 in a headset, Save as blueprint asks for its name on the ask quad, its label offered', r4 && r4input === 'lock probe', JSON.stringify({ r4input, dialogs: dialogs.slice(nDialogs) }));
+
   // S5: mic on → consent question opens → mic off → Turn on. The yes is a real press and is kept, but the mic is off now:
   // the recognizer (SpeechRecognition holds its own capture, audio to the vendor) must not start. A fake transport and a
   // fake recognizer stand in for the SFU bridge and the browser's engine, so the row counts start() calls exactly
