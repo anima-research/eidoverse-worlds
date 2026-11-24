@@ -64,5 +64,11 @@ try {
   await ag.ground.supportReady();
   const r3 = await tryUntil("the re-modelled thing's support registers", () => ag.ground.supportIds.has("r3") || null, { ms: 6000, step: 100 });
   S.check("R3 re-modelled while the old model's ask is out: the new model's 429 still asks again, and its support registers", r3 === true && (askedFor.get("b.glb") ?? 0) >= 2, Object.fromEntries(askedFor));
+
+  // R4: measure meeting the geometry limit tells the agent when to ask again (the server's retryAfter), not only the 429
+  { const { HANDLERS } = await import("../../mcpl/tools.ts");
+    scripted.set("busy.glb", { refuse: 1, delay: 0 });
+    const t = ((await HANDLERS.measure(ag, { lib: "busy.glb" }, {}, "measure")) as any).content?.[0]?.text ?? "";
+    S.check("R4 measure refused by the geometry limit says when to try again", /429/.test(t) && /try again in 1 ?s/.test(t), t); }
 } finally { ag.close(); srv.stop(true); }
 S.done();
