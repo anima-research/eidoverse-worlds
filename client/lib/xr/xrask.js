@@ -6,7 +6,7 @@
 import { renderer } from '../core.js';
 import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
-import { domQuadMesh } from './domquad.js';
+import { domQuadMesh, domQuadShow } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
 import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
 
@@ -47,7 +47,9 @@ function show(q) {
 }
 function settle(v) {
   const p = pending; if (!p) return;
-  pending = null; keyboardBack(); showXRPanel('ask', false); repaint(); p.resolve(v);
+  // a text question takes the VR keyboard with it, however it was answered (⏎, or the laser on OK / Cancel): left up, it
+  // would type into the chat line, its field being gone
+  pending = null; keyboardBack(); if (p.input) domQuadShow('keyboard', false); showXRPanel('ask', false); repaint(); p.resolve(v);
   const next = waiting.shift(); if (next) show(next);
 }
 function dispatch(action) { if (typeof action === 'string' && action.startsWith('c:')) settle(action.slice(2)); }

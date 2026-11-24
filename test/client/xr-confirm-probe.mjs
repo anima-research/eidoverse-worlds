@@ -128,6 +128,20 @@ try {
   check('A3 …and nothing was left on the desk card nobody could see', !a.card && a.askAfter === null);
   check('K1 after a text question the keyboard is back at its own place', !!kbPose0 && JSON.stringify(kbPose0) === JSON.stringify(a.kbPose1), JSON.stringify({ before: kbPose0, after: a.kbPose1 }));
 
+  // A4 (review #359 2): a text question answered with the laser on its OK, not the keyboard's ⏎: the keyboard goes with it.
+  // Left up, it typed into the chat line (its field was gone) and its ⏎ sent that
+  await pg.evaluate(async () => globalThis.__px.track('a4', (await import('./lib/edit/confirmcenter.js')).askCenter({ title: 'Name it again', value: '', ok: 'Save' })));
+  await asked(/Name it again/, 'A4: the text question is on the ask quad');
+  await pg.evaluate(() => globalThis.__px.pull('ask', globalThis.__px.input()));
+  await S('A4: the VR keyboard is up for the field', () => globalThis.__px.dq.domQuadOpen('keyboard'));
+  await pg.evaluate(() => globalThis.__px.key('o'));
+  await S('A4: the field reads "o"', () => globalThis.__px.input()?.value === 'o');
+  const a4 = { pressed: await pg.evaluate(() => globalThis.__px.press(/^save$/i)) };
+  await settledR('a4', 'A4: the text question answered').catch(() => {});
+  Object.assign(a4, await pg.evaluate(() => { const chat = document.getElementById('chatline'); const before = chat?.value ?? null;
+    const typed = globalThis.__px.key('x'); return { words: globalThis.__r.a4, kbOpen: globalThis.__px.dq.domQuadOpen('keyboard'), typed, chatBefore: before, chatAfter: chat?.value ?? null }; }));
+  check('A4 a text question answered by its OK button takes the VR keyboard with it (nothing typed into chat after)', a4.pressed && a4.words === 'o' && !a4.kbOpen && !a4.typed && a4.chatAfter === a4.chatBefore, JSON.stringify(a4));
+
   // ---- the consent edges: a dismissed question is never a remembered answer ----
   const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
   const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
