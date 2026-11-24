@@ -88,7 +88,7 @@ const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolea
 /** Parsed models kept (least recently used out first): 256, a world's worth of distinct models with room, each summary a
  *  few KB. A model evicted is parsed again, on the serving thread and against GEOM_PER_ADDRESS. */
 export const geomCacheConfig = { max: 256 };
-// files that failed to parse, by the mtime that failed: not parsed again until they change
+// files that failed to parse, by the mtime that failed: not parsed again until they change (the last FAILED_MAX of them)
 const failed = new Map<string, number>();
 const FAILED_MAX = 256;
 /** Whether summarizeGlb would answer `absPath` without parsing it (a summary or a failure remembered for its mtime). */
@@ -114,8 +114,11 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   let doc: any;
   try { doc = await io.read(absPath); } catch (err) {
     console.warn(`[geometry] unreadable ${absPath}:`, String(err).slice(0, 200));
-    failed.delete(absPath); failed.set(absPath, mtime);
-    if (failed.size > FAILED_MAX) failed.delete(failed.keys().next().value!);
+    // remembered only when the FILE is at fault: a system error (EMFILE, EACCES, a missing .bin: it has a code) may pass
+    if (typeof (err as { code?: unknown })?.code !== "string") {
+      failed.delete(absPath); failed.set(absPath, mtime);
+      if (failed.size > FAILED_MAX) failed.delete(failed.keys().next().value!);
+    }
     return null;
   }
 

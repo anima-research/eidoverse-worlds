@@ -2,7 +2,7 @@
 // (GEOM_PER_ADDRESS a minute per address, GEOM_PER_MINUTE in all; a cached answer is never refused, and the box's own
 // loopback, where the agent door asks from, is not limited per address), and a model that fails to parse is remembered
 // by its mtime instead of parsed again on every ask. Real route(), temp dirs. `bun test/server/geom-gate-test.ts`
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, utimesSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { suite } from "../gate/suite.ts";
@@ -37,6 +37,16 @@ try {
   const t = new Date(Date.now() + 5000); utimesSync(join(models, "broken.glb"), t, t);
   await ask("broken", "127.0.0.1");
   S.check("G2b ...and again once it changes", unread() === 2, unread());
+  // G2c: a read that failed for a reason outside the file (here a permission, as EMFILE or EACCES would be) isn't remembered:
+  // once the file can be read again, unchanged, it parses
+  // (POSIX only, not as root: chmod doesn't stop a read on Windows or for root)
+  if (process.platform !== "win32" && process.getuid?.() !== 0) {
+  const { summarizeGlb } = await import("../../server/geometry.ts");
+  const shut = join(models, "shut.glb"); writeFileSync(shut, glb); chmodSync(shut, 0o000);
+  const first = await summarizeGlb(shut); chmodSync(shut, 0o644);
+  const then = await summarizeGlb(shut);
+  S.check("G2c ...but a read refused by the system (a permission, EMFILE) is tried again: once readable, the unchanged file parses", first === null && then !== null, { first: first === null ? null : "parsed", then: then === null ? null : "parsed" });
+  }
 } finally { console.warn = w; }
 
 // G3: the parsed-model cache is least recently USED: a model asked for again is kept over one read once and left alone

@@ -122,7 +122,8 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
  *  0: never rotated, the file grows as it will). */
 const PERFLOG_BYTES = envNumber("PERFLOG_MB", 5) * 1_000_000;
 /** New model parses GET /geom?lib= may start (GEOM_PER_ADDRESS a minute for one address, default 60; GEOM_PER_MINUTE in
- *  all, default 600; 0 turns either off): a world's models are read once and then cached, so a visitor reaches neither. */
+ *  all, default 600; 0 turns either off): parsed models are cached (geometry.ts, the last 256), so a visitor to a world
+ *  of fewer models reaches neither. */
 export const geomGate = windowLimiter(envNumber("GEOM_PER_ADDRESS", 60, (n) => Number.isInteger(n) && n >= 0), envNumber("GEOM_PER_MINUTE", 600, (n) => Number.isInteger(n) && n >= 0));
 /** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
  *  server holds; each portrait is at most 400 KB). 0 = no limit. */
