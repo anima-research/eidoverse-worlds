@@ -220,7 +220,9 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
     const r = await call("create", { id, components: { light: { intensity: 8 } } });
     ok(r.isError && /id/.test(T(r)), `AT5a create refuses a given id that isn't a non-empty string, in its own words: ${JSON.stringify(id)}`, T(r));
   }
-  await pause("refused creates have had their chance to mint something (they must not)", 300);
+  // G6-094: a barrier, not 300 ms: the authority answers the agent's requests in order, after logging (and sending) what each
+  // wrote, so a create one of them had sent would be in the agent's fold by this reply
+  { const b = await ag.request("wait", {}); ok(!!b && b.refused?.code !== "timeout", "(AT5a) the agent's round trip after the refused creates is answered", b); }
   ok([...ag.entities.keys()].length === before, "AT5a …and minted nothing for them", [...ag.entities.keys()].length - before);
   const b2 = [...ag.entities.keys()].length;
   const r = await call("create", { components: { light: { intensity: 8 } } });
