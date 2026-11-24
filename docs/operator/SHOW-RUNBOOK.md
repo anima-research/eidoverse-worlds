@@ -58,8 +58,8 @@ URL=wss://<host>/ws TOKEN=<door-key> WORLD=<show-world> PERFORMERS=24 SPECTATORS
 `WORLD` defaults to `loadtest`, which must already be founded; set it to the show world.
 
 All 200 sockets (and the reconnect churn's) come from the one box running the test, so the server counts them as one
-address: start the server with `WS_PER_ADDRESS=0` for the run (or above the test's socket count),
-then restart it at the defaults before doors.
+address; the default `WS_PER_ADDRESS` (512) holds them with room. Only a test past that many sockets needs it raised
+for the run (then restart at the defaults before doors).
 
 Gates: 200/200 join, join p95 < 3s, spectator frames ≥ 12/s median, frame
 latency p95 < 250ms, chat burst complete, reconnect churn survives.
