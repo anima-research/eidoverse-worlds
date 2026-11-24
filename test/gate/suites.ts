@@ -69,7 +69,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["water-preview", "water/preview-check.ts", 1], // preview.ts uploads the manifest's effects before its batch, as import.ts --apply does
   ["level-dive", "water/level-dive-check.ts", 1], // a real browser in the lake: C dives, looking down with W dives, surfacing hands back to the float
   ["water-cross", "water/crossing-pipelines-check.ts", 1], // #306: crossing the water level makes no new render pipeline after the first time (band, fog, background), and the sky's fog still reaches above it
-  ["toast-group", "protocol/toast-group-check.ts", 1],   // load failures of one kind are one toast counting the things; dismissed, that kind stays quiet
+  ["toast-group", "client/toast-group-test.ts", 1],   // load failures of one kind are one toast counting the things; dismissed, that kind stays quiet (happy-dom)
   ["avatar", "client/avatar-test.ts", 1], // the avatar rig: clip timing, seat-blend slot, a lowering clip under a limp body (upstream #282/#283)
   ["locomotion-clip", "client/locomotion-clip-test.mjs", 1], // the controller's clip-selection policy (#196), on the real module
   ["fp-view", "client/fp-view-test.ts", 1], // the first-person eye and exclusion contract (#75)
@@ -288,7 +288,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["predict-pending", "client/predict-pending-test.ts", 1], // bot #574/#575: a predicted release is presentation only: whereIs never reads the guess; a guess no entry confirms in PENDING_MS is dropped without a sim update
   ["eidomodel", "protocol/eidomodel-check.ts", 1], // review 10-07 H3: a translated world's models are eido:sha256 addresses; the index, /eido/, /library/eido/, the client's mapping
   ["party-probe", "protocol/party-probe.ts", 1], // the editor's party blockers (review 10-07 B1–B5, S1/S4/S5/S7, lock levels, moderation commands) with real mouse and keys
-  ["colour-picker", "client/colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click, in headless Chromium (one browser, guarded)
+  ["colour-picker", "client/colour-picker-bench.ts", 1], // the Inspector's colour field recolours the real light, in headless Chromium (one browser, guarded)
+  ["colour-picker-dom", "client/colour-picker-test.ts", 1], // the colour field is a picker of solid cells a headset quad can click: its cells, hex, recents and open/close (happy-dom)
   ["vrmic-exec", "client/vrmic-exec-test.mjs", 1], // vrmic.js's effects on a fake clock: the mic ask never blocks entering VR; a promise made in VR is kept after it
   ["xr-nullfb", "client/xr-nullfb-test.mjs", 1], // xr_nullfb.js on a fake renderer: installs only for a null-framebuffer (emulated) session, once, never on hardware
   ["alias", "mcpl/alias-test.ts", 1], // an old tool name is an old tool: exactly the unknown-tool (Mica 11-05); folded/removed tools name what does it now
@@ -472,7 +473,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // every suite that launches a Chromium (directly, through playwright, or through test/harness/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserLauncher), so a new browser suite can't hide in MAIN:
 // a host without Chromium would fail it there, and a host with one would run Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "world-card", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
+export const BROWSER = ["browser", "comps-parity", "world-card", "level-dive", "water-cross", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
 export const ORDER = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];
