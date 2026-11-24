@@ -118,14 +118,14 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
   const r = rankOf(n);
   return { ...n, rank: r.rank, rankName: TIER_NAMES[r.rank], worst: r.worst, v };
 }
-/** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
- *  server holds; each portrait is at most 400 KB). 0 = no limit. */
 /** The load beacon's file (POST /perflog), in MB, before it is rotated (PERFLOG_MB, default 5; one older file is kept;
  *  0: never rotated, the file grows as it will). */
 const PERFLOG_BYTES = envNumber("PERFLOG_MB", 5) * 1_000_000;
 /** New model parses GET /geom?lib= may start (GEOM_PER_ADDRESS a minute for one address, default 60; GEOM_PER_MINUTE in
  *  all, default 600; 0 turns either off): a world's models are read once and then cached, so a visitor reaches neither. */
 export const geomGate = windowLimiter(envNumber("GEOM_PER_ADDRESS", 60, (n) => Number.isInteger(n) && n >= 0), envNumber("GEOM_PER_MINUTE", 600, (n) => Number.isInteger(n) && n >= 0));
+/** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
+ *  server holds; each portrait is at most 400 KB). 0 = no limit. */
 export const thumbLimits = { max: envNumber("THUMBS_MAX", 5000, (n) => Number.isInteger(n) && n >= 0) };
 
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
@@ -864,7 +864,7 @@ const ROUTES: Route[] = [
       if (!existsSync(dest)) {
         let metaNow: Record<string, unknown> = {};
         try { const mp = join(dir, "meta.json"); if (existsSync(mp)) metaNow = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
-        if (!(safe in metaNow)) {
+        if (!Object.hasOwn(metaNow, safe)) {   // own keys only: "constructor" is a new name, not an inherited one
           const names = new Set([...readdirSync(dir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(metaNow)]);
           if (thumbLimits.max > 0 && names.size >= thumbLimits.max) return new Response(`the portrait store is full (${thumbLimits.max} names)`, { status: 507 });
           if (diskNearlyFull(400_000)) return new Response("the server's disk is nearly full", { status: 507 });

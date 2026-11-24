@@ -62,5 +62,8 @@ check("…and a fresh stamp for the new version shows", entry()?.perf?.tris === 
   check("T1 past THUMBS_MAX names, a new portrait is refused 507 and nothing is kept for it", a.status === 200 && b.status === 200 && c.status === 507 && cm.status === 507 && !meta()["t-three"] && !meta()["t-four"], [a.status, b.status, c.status, cm.status, Object.keys(meta())]);
   const again = await put("t-one", { force: "1", height: "1.4" });
   check("T1b ...a name already held still updates", again.status === 200 && meta()["t-one"]?.h === 1.4, [again.status, meta()["t-one"]]);
+  // a name the store doesn't hold is new even when it's an Object.prototype key ("constructor"): refused at the cap too
+  const proto = await put("constructor");
+  check("T1c ...a new name spelled like an object's own key (constructor) is refused at the cap too", proto.status === 507, proto.status);
   thumbLimits.max = was; }
 S.done();
