@@ -132,6 +132,8 @@ const MUTANTS: [string, string, string | string[], string | string[], string[]][
   ["the card is still Bob", "shared/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
   ["bob finds nothing", "shared/editschema.js", "Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine']", "Oscillate: ['float', 'hover', 'back and forth', 'piston', 'sine']", ["OS5"]],
   ["Add Component writes bob", "shared/editschema.js", "Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }", "Oscillate: { type: 'bob', amp: 0.3, period: 4 }", ["OS5"]],
+  ["a bob has a sock cycle", "client/lib/avatar/socksignals.js", "    case 'oscillate': {", "    case 'bob': case 'oscillate': {", ["OS4"]],
+  ["the editor gives a bob its motion card", "shared/editschema.js", "export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'oscillate', 'path'];", "export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'oscillate', 'path', 'bob'];", ["OS4"]],
   ["the translator keeps bob", "tools/import-v1/translate-v1.js", "  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };", "  const m = m0;", ["OS6"]],
   ["AGENTS.md says bob", "AGENTS.md", "`{type: pendulum\\|spin\\|orbit\\|oscillate\\|path, …}`", "`{type: pendulum\\|spin\\|orbit\\|bob\\|path, …}`", ["OS7"]],
   ["the history forgets oscillate", "spec/history/PRE-RELEASE-RENAMES.md", "was `bob`: the door takes the old spelling", "was the old word: the door takes the old spelling", ["OS7"]],
@@ -545,13 +547,14 @@ const cases: Case[] = [
       const n = sent.length; await call("anim", { stop: "live" }); ag.joined = false;
       const named = await call("anim", { name: "live" });
       const AD: any = await import(TREE + "shared/animdefs.js"); const side = AD.validateActionBar;
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      s.call("olive", "create-world", { title: s.name }); const made = [s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }), s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } })].map(show);
       const g = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "live" } });
       const st = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", anim: "live" } } });
       return { layers: (ag.anims ?? []).map((x: any) => x.name), stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), held: ag.heldPose != null, clip: ag.clip, mode: ag.bodyModeNow(), fade: sent.slice(n).some((m: any) => m.type === "anim" && m.stop === true),
-        named: named?.isError === true && /reserved/.test(named.content[0].text), def: (AD.validateAnimationDef?.("live", {}) ?? []).length > 0, bar: (side?.({ live: { clip: "dance" } }) ?? []).length > 0, g: show(g), st: show(st) }; },
-    good: (o) => JSON.stringify(o.layers) === '["sit"]' && JSON.stringify(o.stops) === '["live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade && o.named && o.def && o.bar && /^refused/.test(o.g) && /^refused/.test(o.st) },
-  { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name), and the spec gives the rest rule and the relay's anim {stop: true}", run() {
+        named: named?.isError === true && /reserved/.test(named.content[0].text), def: (AD.validateAnimationDef?.("live", {}) ?? []).length > 0, bar: (side?.({ live: { clip: "dance" } }) ?? []).length > 0, made, g: show(g), st: show(st) }; },
+    good: (o) => JSON.stringify(o.layers) === '["sit"]' && JSON.stringify(o.stops) === '["live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade && o.named && o.def && o.bar
+      && o.made.every((m: string) => m === "ok") && [o.g, o.st].every((r: string) => /^refused \S+: \S*anim "live" is reserved/.test(r)) },
+  { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name); the pose-wire doc (docs/reference/POSE-WIRE.md) gives the rest rule and the relay's anim {stop: true}, and the spec reserves \"live\"", run() {
       const t = readText("mcpl/tools.ts"); const i = t.indexOf('name: "anim", description: "'); const d = i < 0 ? "" : t.slice(i, t.indexOf("\n", i));
       const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
       const says = (x: string) => /rests in your body-mode's own anim \(stand: idle/.test(x) && /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
@@ -613,11 +616,12 @@ const cases: Case[] = [
       const ME: any = await import(TREE + "shared/motioneval.js"), SS: any = await import(TREE + "client/lib/avatar/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
-      const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
-      const groups = JSON.stringify(sch);
+      // the inspector's motion card (its type row) for each; a bob gets none: its component shows as written (raw JSON)
+      const typeRow = (type: string) => JSON.stringify(ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m(type) }, "d")).match(/"t":"enum","k":"type","label":"type","value":"[^"]*"/)?.[0] ?? null;
       return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
-        card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: "motionType" in NM || "OLD_MOTION_TYPES" in NM }; },
-    good: (o) => Array.isArray(o.now) && Math.abs(o.now[2] - 3) > 0.01 && JSON.stringify(o.now) !== JSON.stringify(o.old) && o.ch[0] === "z|" && o.ch[1] !== o.ch[0] && o.read === false },
+        rows: [typeRow("oscillate"), typeRow("bob")], read: "motionType" in NM || "OLD_MOTION_TYPES" in NM }; },
+    good: (o) => Array.isArray(o.now) && Math.abs(o.now[2] - 3) > 0.01 && JSON.stringify(o.now) !== JSON.stringify(o.old) && o.ch[0] === "z|" && o.ch[1] !== o.ch[0]
+      && o.cyc[0] !== o.cyc[1] && o.cyc[1] === '{"phase":0,"swing":0}' && /"value":"oscillate"$/.test(o.rows[0] ?? "") && o.rows[1] === null && o.read === false },
   { id: "OS5", what: "…Add Component offers Oscillate (bob, float, hover find it) and writes type oscillate", async run() {
       const ES: any = await import(TREE + "shared/editschema.js");
       const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");
