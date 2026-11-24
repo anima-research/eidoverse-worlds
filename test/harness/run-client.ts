@@ -57,7 +57,7 @@ const launchesBrowser = (f: string) => browserLauncher(f) !== null;
 
 // what the other runners reach
 const reached = new Set<string>();
-// a row's runner and each file argument it takes (bun-test.ts test/server/x-test.ts), as hygiene-check's ungatedTests reads them
+// a row's runner and each file argument it takes (bun-test.ts plus a test file), as hygiene-check's ungatedTests reads them
 const rowFiles = (file: string) => [rel(suitePath(file)), ...file.split(" ").slice(1).filter((a) => /\.(?:ts|mjs|js)$/.test(a)).map((a) => rel(join(ROOT, a)))];
 for (const [, file] of SUITES) for (const f of rowFiles(file)) reached.add(f);
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));

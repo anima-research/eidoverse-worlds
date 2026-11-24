@@ -7,8 +7,8 @@
 //   WORLD_URL=ws://127.0.0.1:8940/ws WORLD_TOKEN=<join token> \
 //   AGENT_NAME=phys-dummy WORLD_NAME=commons bun run test/harness/dummy.ts
 //
-// Ran as eidoverse-dummy.service on the show VPS as tools/dummy.ts (9ddc16c3a); the unit is not in deploy/, so a
-// live one may still name the old path.
+// Ran as eidoverse-dummy.service on the show VPS from its old tools/ location (9ddc16c3a); the unit is not in deploy/,
+// so a live one may still name the old path.
 
 import { WorldAgent } from "../../mcpl/agent.ts";
 
