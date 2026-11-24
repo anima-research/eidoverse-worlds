@@ -6,16 +6,18 @@ layout (checkout, state, library and bun under a `0750` home, units running as i
 
 ## The shape others use
 
-The layout is the FHS one that Gitea (`contrib/systemd/gitea.service`), Jellyfin and Vaultwarden (Arch's package) use:
-code where the deploy puts it (`/opt/eidoverse`, `/usr/local/bin/bun`), state in `/var/lib/<name>` owned by a
-dedicated system user, made by `StateDirectory=`. The one difference is that the checkout belongs to the deploy user,
-not the service user (`deploy-vps.sh` runs `git` and `bun install` as it), so the server cannot change its own code.
+Read 2026-11-24 from each project's own file:
 
-The directive block is the one Synapse ships as its optional `contrib/systemd/override-hardened.conf` and Mastodon
-(`dist/mastodon-*.service`) and Arch's Vaultwarden ship by default: `ProtectSystem=strict`, `ProtectHome=`, an empty
-capability set, `SystemCallFilter=@system-service` then `~@privileged @resources`, the `Protect*` and `Restrict*`
-options, `ProcSubset=pid`. Synapse leaves `MemoryDenyWriteExecute` off for the same reason as here (a JIT).
-`systemd-analyze security <unit>` checks it.
+| project | code | state | the parts this copies |
+|---|---|---|---|
+| Synapse, matrix.org's Debian package (`debian/matrix-synapse.service`) | `/opt/venvs/matrix-synapse` | `/var/lib/matrix-synapse` | code in `/opt` (FHS: add-on software), state in `/var/lib` |
+| Synapse, `contrib/systemd/override-hardened.conf` | | `StateDirectory=matrix-synapse` | the directive block nearly line for line: `ProtectSystem=strict`, empty capabilities, `@system-service` then `~@privileged @resources @obsolete`, `PrivateUsers=true`, no `MemoryDenyWriteExecute` (a JIT) |
+| Vaultwarden, Arch's package | `/usr/bin` | `/var/lib/vaultwarden` | the same block, `ProtectHome=yes`, `@system-service` then `~@privileged @resources` |
+| Gitea (`contrib/systemd/gitea.service`, release/v1.22), Jellyfin (`jellyfin-packaging`) | `/usr/local/bin`, `/usr/bin` | `/var/lib/gitea`, `/var/lib/jellyfin` | a dedicated user, state in `/var/lib/<name>`; no hardening |
+| Mastodon (`dist/mastodon-web.service`) | `/home/mastodon/live`, the service user's | the same | `ProtectSystem=strict`, `PrivateUsers=true`; its syscall filter is a deny list, not `@system-service` |
+
+The one difference: the checkout belongs to the deploy user, not the service user (`deploy-vps.sh` runs `git` and
+`bun install` as it), so the server cannot change its own code. `systemd-analyze security <unit>` checks the result.
 
 ## What the server needs at runtime (read from server/, mcpl/, services/chatbridge/)
 
@@ -24,11 +26,13 @@ options, `ProcSubset=pid`. Synapse leaves `MemoryDenyWriteExecute` off for the s
   rename), and `os.tmpdir()` for the KTX2 encoder's scratch (`PrivateTmp=` serves it). The door writes `MCPL_STATE` by
   rename too. All are env settings already; the units point them into `/var/lib/eidoverse` and `/var/lib/eidoverse-mcpl`.
   The chat bridge writes nothing.
-- **Reads:** the checkout, bun, the library (`../eidoverse-video`, so `/opt/eidoverse-video`), `mcpl/tokens.json`
-  (group `eidoverse`, `deploy-vps.sh` sets it).
-- **Children:** the optimizer (`bun run server/optimize.ts` under `/bin/sh`, which raises its `oom_score_adj` first),
-  buildcheck, the avatar importer, `toktx`/`ktx` when installed, and `git` (world provenance, `/version`), which refuses
-  a checkout another user owns unless it is named in `safe.directory` (the unit sets it by `GIT_CONFIG_*`; measured:
+- **Reads:** the checkout, bun, the library (`../eidoverse-video`, so `/opt/eidoverse-video`), the agents' tokens
+  (`/etc/eidoverse/agent-tokens.json`, root's, group `eidoverse`), the env files. Not a checkout `.env` it can't read:
+  bun skips that silently, so `deploy-vps.sh` refuses one.
+- **Children:** the optimizer (`bun run server/optimize.ts`), buildcheck, the avatar importer and one-shots, each under
+  `/bin/sh`, which raises its `oom_score_adj` first (`server/disposable.ts`); an encoder
+  it kills for memory kills the optimizer too, so the item is deferred. `toktx`/`ktx` when installed, and `git` (world
+  provenance, `/version`), which refuses a checkout another user owns unless it is named in `safe.directory` (the unit sets it by `GIT_CONFIG_*`; measured:
   "dubious ownership" without).
 - **Network:** listens on `PORT`; outbound STUN (`stun.l.google.com`, UDP) for the voice SFU; netlink for the interfaces
   werift offers. The bridge reaches Discord over HTTPS/WSS. So no `PrivateNetwork=` or `IPAddressDeny=`.
@@ -51,18 +55,23 @@ systemd only the estimate gate (`OPT_MEM_BUDGET_MB`) applies.
 | check | result |
 |---|---|
 | `systemd-analyze security`, before | 9.0 UNSAFE, all three |
-| after (offline and live) | 1.3 OK, all three |
+| after (offline and live) | 1.1 OK, all three (1.3 before `PrivateUsers=yes`) |
 | `MemoryDenyWriteExecute=yes` | bun runs, with the JIT off: a hot loop 857 ms → 2760 ms. Left off |
+| `PrivateUsers=yes` | git provenance (`/version`, a founded world), the tokens read through group `eidoverse`, the optimizer, the door and the bridge all unchanged; the child's `oom_score_adj` raise still works (uid 997 inside) |
+| the chat bridge under its unit, `DRY_RUN=1` | joins the world and mirrors its says; Discord itself was not reached (no bot token) |
 | `ProcSubset=pid` | `os.totalmem()`, `os.cpus()`, `os.networkInterfaces()` unchanged under it |
 | optimizer budget with `MemoryMax=2G` | before `cgroupMemoryMax()` 29483 MB (half of physical: the root cgroup reads `max`); after, 1073 MB |
 | the child's `oom_score_adj`, in the unit (`ProtectProc=invisible`, `ProcSubset=pid`) | 1000, data limit `unlimited` |
-| `MemoryMax=700M`, an `OPT_CMD` that allocates until killed | the kernel killed the child 51 times (`oom_score_adj:1000` in each kill line); the server kept its PID, `NRestarts=0`, every item deferred `child died (SIGKILL)` |
+| `MemoryMax=700M`, an `OPT_CMD` that allocates until killed | the kernel killed the child 51 times (22 again under `PrivateUsers=yes`) (`oom_score_adj:1000` in each kill line); the server kept its PID, `NRestarts=0`, every item deferred `child died (SIGKILL)` |
 | a hot loop under `ulimit -d` (bun 1.4.4) | 1086 ms uncapped, 3042 ms at 1000 MB, 2827 ms at 2000 MB, 923 ms at 2400 MB |
 
 ## Left out, and why
 
-- `PrivateUsers=`, `DynamicUser=`: operators' tools write the same state as the units (`sudo -u eidoverse`), so the
-  user is a real, stable one.
+- `DynamicUser=`: operators' tools write the same state as the units (`sudo -u eidoverse`), so the user is a real,
+  stable one. `PrivateUsers=` works with it (Synapse and Mastodon set both): the checkout's files read as `nobody`'s,
+  their permissions unchanged, so git still needs `safe.directory`.
+- A `sysusers.d` file for the user: that is how a package makes one (Arch's Vaultwarden); upstream install guides for a
+  box set up by hand (Gitea, Synapse's contrib, Mastodon) run `adduser`/`useradd`, as `deploy-vps.sh` does.
 - `MemoryMax=`/`TasksMax=` on the door and the bridge: no referent ships one and nothing here has needed one.
 - `LimitCORE=`: no referent sets one; `coredumpctl` keeps recording crashes.
 - `CPUQuota=`: on a box that runs only this, a quota only slows the server. A drop-in can set one.
