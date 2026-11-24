@@ -634,6 +634,8 @@ await bye(ann, bob, vic, spec);
   await tryUntil("the bot's held lines are written", () => !bot.pendingCount, { ms: 4000, step: 100 });
   bot.caption({ t0: 1, t1: 2, text: "and after" } as any);
   await tryUntil("the bot's held lines are written", () => !bot.pendingCount, { ms: 4000, step: 100 });
+  // G6-126: the bot's queue empties at its receipts; the owner's socket may not have the log yet: wait on what she holds
+  await tryUntil("the owner holds both lines", () => heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.n === 2, { ms: 4000, step: 20 });
   const bag = heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions;
   ok(bot.acked === 2 && bag?.n === 2 && bag?.line?.text === "and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
   const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
