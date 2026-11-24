@@ -23,7 +23,7 @@ const get = async (name: string) => { const t = performance.now();
   return { enc: r.headers.get("content-encoding"), ms: Math.round(performance.now() - t), status: r.status }; };
 
 const big = await get("big.vrm");
-S.check("Z1 at the default GZIP_MAX_MB a 40 MB avatar is served uncompressed, and the request doesn't hold the thread to gzip it", big.status === 200 && big.enc === null && big.ms < 200, big);
+S.check("Z1 at the default GZIP_MAX_MB a 40 MB avatar is served uncompressed, and the request doesn't hold the thread to gzip it", big.status === 200 && big.enc === null && big.ms < 800, big);   // gzipping it takes ~1.6 s: 800 ms leaves a busy gate room
 const small = await get("small.vrm");
 S.check("Z1b ...a body under it is gzipped as before", small.status === 200 && small.enc === "gzip", small);
 S.done();
