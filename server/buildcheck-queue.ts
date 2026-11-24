@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { OPT_DIR, ROOT } from "./config.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { windowLimiter } from "./ratewindow.ts";
+import { disposable } from "./disposable.ts";
 import { sha256Bytes as sha256 } from "../shared/protocol/hash.js";
 
 /** Bump when what a check finds changes (server/buildcheck.ts, the navgrid, the collider rules): stored reports from before are stale. */
@@ -185,7 +186,7 @@ async function drain(stream: ReadableStream<Uint8Array>, cap: number, tail = fal
 
 async function runWorker(file: string, scale: number): Promise<unknown> {
   const { runner, timeoutMs, graceMs, maxOut } = checkConfig;
-  const proc = Bun.spawn([process.execPath, runner, file, String(scale)], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn(disposable([process.execPath, runner, file, String(scale)]), { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
   const out = drain(proc.stdout as ReadableStream<Uint8Array>, maxOut);
   const err = drain(proc.stderr as ReadableStream<Uint8Array>, 8 << 10, true);
   let stopped = false;

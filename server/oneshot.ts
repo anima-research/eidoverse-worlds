@@ -10,6 +10,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { heapStats } from "bun:jsc";
 import { processTableAsync, suiteMembers, suiteMembersAsync, killSuiteAsync } from "./procgroup.ts";
+import { disposable } from "./disposable.ts";
 
 // ---- the child's side --------------------------------------------------------------------------------------------------
 // The event-loop handles this process holds, as Bun's heap sees them (process.getActiveResourcesInfo is a stub in Bun). Not seen: fs.watch and Worker.
@@ -45,7 +46,7 @@ const within = <T>(p: Promise<T>, ms: number, v: T) => { let t: any; return Prom
 
 export async function runOneShot(argv: string[], { cwd, env, guardMs, graceMs = 5_000, label }: OneShotOpts): Promise<OneShot> {
   const t0 = performance.now(), nonce = crypto.randomBytes(8).toString("hex"), win = process.platform === "win32";
-  const p = Bun.spawn(argv, { cwd, env: { ...env, EIDO_ONESHOT_FRAME: nonce }, stdin: "ignore", stdout: "pipe", stderr: "pipe", ...(win ? {} : { detached: true }) } as any);
+  const p = Bun.spawn(disposable(argv), { cwd, env: { ...env, EIDO_ONESHOT_FRAME: nonce }, stdin: "ignore", stdout: "pipe", stderr: "pipe", ...(win ? {} : { detached: true }) } as any);
   const g = groupOf(p.pid);
   let so = "", se = "", seen = () => {};
   const framedNow = () => { const a = frameIn(so.slice(-512), nonce), b = frameIn(se.slice(-512), nonce); return !!a && !!b && a[1] === b[1] && a[2] === b[2]; };

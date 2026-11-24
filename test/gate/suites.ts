@@ -37,6 +37,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["fetchbytes", "client/fetchbytes-test.mjs", 1], // fetchBytes retries 5xx and network failures, never a 4xx, and evicts a failure
   ["variant-status", "server/variant-status-test.ts", 1], // store-variants variantStatus/classifyVariant: every optimization's state for a model
   ["optimize-pump", "server/optimize-pump-test.ts", 1], // the optimizer pump with a fake child: estimate, defer, queue
+  ["disposable-children", "server/disposable-children-test.ts", 1], // a build check's worker and a one-shot run at oom_score_adj 1000
   ["rebuild", "server/rebuild-test.ts", 1], // a Build card's rebuild: rebuildAsset reruns one object's KTX2 + LOD passes; POST /rebuild takes a sign-in, refuses a key in the URL, 4 per address per minute
   ["ktx2-tf-purge", "server/ktx2-tf-purge-test.ts", 1], // the KTX2 purge tool's two detectors on synthetic headers
   ["image-lie", "server/image-lie-test.ts", 1], // the optimizer's output check (findImageLies) catches an image that is not what its mimeType says

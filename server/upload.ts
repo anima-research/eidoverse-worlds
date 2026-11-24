@@ -18,6 +18,7 @@ import { envNumber } from "./limits.ts";
 import { sha256Bytes } from "../shared/protocol/hash.js";
 import { avatarDefs } from "./defs.ts";
 import { resolveLibFile } from "./libfile.ts";
+import { disposable } from "./disposable.ts";
 
 /** What the handler needs from Bun's server object, structurally: the socket address behind the proxy. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
@@ -170,7 +171,7 @@ async function pumpOptimize() {
       if (OPT_MEM_BUDGET_MB && estMB > OPT_MEM_BUDGET_MB) { defer(dest, `estimated ${estMB}MB > budget ${OPT_MEM_BUDGET_MB}MB`); continue; }
       mkdirSync(dirname(dest), { recursive: true });
       // process.execPath = the running bun binary (PATH under systemd has no bun). The hard cap is the unit's cgroup
-      // (MemoryMax=, OOMPolicy=continue): on Linux the child raises its own oom_score_adj before exec, so when the cgroup
+      // (MemoryMax=, OOMPolicy=continue): on Linux the child raises its own oom_score_adj (disposable.ts), so when the cgroup
       // runs out the kernel kills it, not the server, and the death below defers the item. No rlimit: RLIMIT_DATA charges
       // bun's startup reservations, so bun aborts under some caps and runs without its JIT under most (docs/research/
       // service-hardening.md). The wrapper's own failures (126, 127) never read as a content verdict.
@@ -183,7 +184,7 @@ async function pumpOptimize() {
       try {
         // /bin/sh by absolute path: PATH may hold no shell (a harness's fake encoder), and a spawn that can't start
         // throws here, synchronously
-        proc = Bun.spawn(linux ? ["/bin/sh", "-c", 'echo 1000 2>/dev/null >/proc/self/oom_score_adj; exec "$@"', "sh", ...cmd] : cmd, { stdout: "pipe", stderr: "pipe" });
+        proc = Bun.spawn(disposable(cmd), { stdout: "pipe", stderr: "pipe" });
       } catch (e) {
         console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked`);
         optQueue.length = 0; break;
@@ -561,7 +562,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
         const spawnArgs = [process.execPath, "run", join(ROOT, "tools/assets/import-tripo-avatar.ts"),
           tmpIn, "--name", name, "--out", OPT_DIR];
         if (process.env.EW_AVATAR_DONOR) spawnArgs.push("--donor", process.env.EW_AVATAR_DONOR);
-        const proc = Bun.spawn(spawnArgs, { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+        const proc = Bun.spawn(disposable(spawnArgs), { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
         const killer = setTimeout(() => proc.kill(), 300_000);
         const code = await proc.exited;
         clearTimeout(killer);
