@@ -284,12 +284,15 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true });
     await tryUntil("both refusals are answered", () => fern.msgs.slice(kf).some((m) => m.type === "error") && vis.msgs.slice(kv).some((m) => m.type === "error"), { ms: 5000, step: 20 });
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    const why = (sk, k0) => sk.msgs.slice(k0).find((m) => m.type === "error")?.error ?? null;   // the refusal's cause, not just any error
+    const refusals = [why(fern, kf), why(vis, kv)];
     own.raw({ type: "voice-moderate", id: "Wren", muted: false });
     const owners = () => own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
     await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed pause
     const all = owners();
-    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
-      "voice-moderate (mute for everyone) needs the mute permission (an owner has it): a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1
+      && /^muting someone needs mute; you are builder/.test(refusals[0] ?? "") && /^muting someone needs mute; you are member/.test(refusals[1] ?? ""),
+      "voice-moderate (mute for everyone) needs the mute permission (an owner has it): a stranger (a builder, meadow's newcomer role) and a member are refused for it, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all, refusals]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
