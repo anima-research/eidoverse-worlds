@@ -30,6 +30,10 @@ function keyDef(k) {
   if (named) return { key: named[1].toLowerCase(), code: k, vk: named[1].charCodeAt(0), text: named[1].toLowerCase() };
   return { key: k, code: k, vk: 0 };
 }
+// playwright's console text (crExecutionContext renderPreview): an object or array prints its preview, null and undefined their names
+const renderArg = (o) => o.type === 'undefined' ? 'undefined' : 'value' in o ? String(o.value) : o.unserializableValue ? String(o.unserializableValue)
+  : o.description === 'Object' && o.preview ? `{${o.preview.properties.map((p) => `${p.name}: ${p.value}`).join(', ')}}`
+  : o.subtype === 'array' && o.preview ? `[${o.preview.properties.filter((p) => +p.name >= 0).map((p) => p.value).join(', ')}]` : o.description;
 const fnSource = (fn, arg) => typeof fn === 'function' ? `(${fn})(${arg === undefined ? '' : JSON.stringify(arg)})` : String(fn);
 
 /** A browser-level CDP connection with flat sessions: send(method, params, sessionId), on(event, fn). */
@@ -79,10 +83,13 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
   };
   // playwright's context: init scripts collected, then applied to each page it opens
   const newContext = async ({ viewport = null, permissions = [], hasTouch = false, isMobile = false, deviceScaleFactor = 1, userAgent = null } = {}) => {
-    const inits = [], pages = [];
+    // …and its routes, on each page it has opened and will open (a page's own route still added after them)
+    const inits = [], pages = [], routes = [];
     return {
       addInitScript: async (fn, arg) => { inits.push([fn, arg]); },
-      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); pages.push(p); return p; },
+      route: async (pattern, handler) => { routes.push([pattern, handler]); for (const p of pages) await p.route(pattern, handler); },
+      unroute: async (pattern, handler) => { for (let i = routes.length - 1; i >= 0; i--) if (routes[i][0] === pattern && (!handler || routes[i][1] === handler)) routes.splice(i, 1); for (const p of pages) await p.unroute(pattern, handler); },
+      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); for (const [pt, h] of routes) await p.route(pt, h); pages.push(p); return p; },
       close: async () => { for (const p of pages) await p.close(); },
     };
   };
@@ -98,7 +105,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     if (m.sessionId !== S) return;
     const p = m.params;
     if (m.method === 'Runtime.consoleAPICalled') {
-      const text = p.args.map((a) => a.value ?? a.description ?? '').join(' '); const type = p.type === 'warning' ? 'warning' : p.type;
+      const text = p.args.map(renderArg).join(' '); const type = p.type === 'warning' ? 'warning' : p.type;
       // playwright's ConsoleMessage has location() too: a probe that reads it on an error crashed here (xr-lifecycle, CI 42190828916)
       const at = p.stackTrace?.callFrames?.[0], location = { url: at?.url ?? '', lineNumber: at?.lineNumber ?? 0, columnNumber: at?.columnNumber ?? 0 };
       for (const f of handlers.console) f({ type: () => type, text: () => text, location: () => location });
@@ -127,22 +134,22 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
   });
   // as playwright does: an evaluation cut off by a navigation (the client reloading itself) runs again in the new document
   const LOST = /Inspected target navigated or closed|Execution context was destroyed|Cannot find context/;
-  const evaluateOnce = async (fn, arg) => {
-    const r = await send('Runtime.evaluate', { expression: fnSource(fn, arg), awaitPromise: true, returnByValue: true, userGesture: true });
+  const evaluateOnce = async (fn, arg, byValue = true) => {
+    const r = await send('Runtime.evaluate', { expression: fnSource(fn, arg), awaitPromise: true, returnByValue: byValue, userGesture: true });
     if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
-    return r.result.value;
+    return byValue ? r.result.value : r.result;
   };
-  const evaluate = async (fn, arg) => {
+  const evaluate = async (fn, arg, byValue = true) => {
     let out, err = null, lost = null;
     const done = await tryUntil('an evaluation outlives a navigation', async () => {
-      try { out = await evaluateOnce(fn, arg); return true; } catch (e) { if (LOST.test(String(e?.message))) { lost = e; return false; } err = e; return true; }
+      try { out = await evaluateOnce(fn, arg, byValue); return true; } catch (e) { if (LOST.test(String(e?.message))) { lost = e; return false; } err = e; return true; }
     }, { ms: 30_000, step: 100 });
     if (err) throw err;
     if (!done) throw lost;
     return out;
   };
-  const center = async (sel) => {
-    await until(`${sel} is on the page and visible`, () => evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }, sel), { ms: 30_000 });
+  const center = async (sel, timeout = 30_000) => {
+    await until(`${sel} is on the page and visible`, () => evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }, sel), { ms: timeout });
     return evaluate((s) => { const e = document.querySelector(s); e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
   };
   let mods = 0, mx = 0, my = 0, buttons = 0;
@@ -168,6 +175,28 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     type: async (text) => { for (const ch of text) await keyboard.press(ch); },
     insertText: (text) => send('Input.insertText', { text }),
   };
+  // playwright's JSHandle / ElementHandle over a CDP object id: an element's methods run on it (callFunctionOn), not on a selector
+  const callOn = async (objectId, fn, args = [], byValue = true) => {
+    const r = await send('Runtime.callFunctionOn', { objectId, functionDeclaration: String(fn), arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: byValue, userGesture: true });
+    if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
+    return byValue ? r.result.value : r.result;
+  };
+  const handleOf = (ro) => {
+    const id = ro.objectId, on = (fn, args, byValue) => callOn(id, fn, args, byValue);
+    const h = { jsonValue: async () => id ? on(function () { return this; }) : ro.value, dispose: async () => { if (id) await send('Runtime.releaseObject', { objectId: id }).catch(() => {}); }, asElement: () => null };
+    if (ro.subtype !== 'node') return h;
+    const el = Object.assign(h, { asElement: () => el,
+      evaluate: (fn, a) => on(`function (a) { return (${fn})(this, a); }`, [a]),
+      evaluateHandle: async (fn, a) => handleOf(await on(`function (a) { return (${fn})(this, a); }`, [a], false)),
+      $: async (s) => { const r = await on(function (s) { return this.querySelector(s); }, [s], false); return r.subtype === 'null' ? null : handleOf(r); },
+      click: async ({ button = 'left' } = {}) => { const { x, y } = await on(function () { this.scrollIntoView({ block: 'center', inline: 'center' }); const r = this.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); await mouse.click(x, y, { button }); },
+      focus: () => on(function () { this.focus(); }),
+      press: async (k) => { await el.focus(); await keyboard.press(k); },
+      getAttribute: (n) => on(function (n) { return this.getAttribute(n); }, [n]),
+      textContent: () => on(function () { return this.textContent; }),
+    });
+    return el;
+  };
   const touchscreen = { tap: async (x, y) => { await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }); await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); } };
   const pg = {
     _init: async ({ initScripts, permissions, viewport, touch, userAgent }) => {
@@ -180,7 +209,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     },
     evaluate,
     waitForTimeout: (ms) => pause("Playwright's waitForTimeout (the bare wait is counted at its caller)", ms),
-    evaluateHandle: async (fn, arg) => { const v = await evaluate(fn, arg); return { jsonValue: async () => v, dispose: async () => {} }; },
+    evaluateHandle: async (fn, arg) => handleOf(await evaluate(fn, arg, false)),
     waitForFunction: async (fn, arg, { timeout = 30_000, polling = 100 } = {}) => {
       // each poll is raced against what is left of the timeout: an evaluation that never settles (a hung import) ends the wait
       const end = performance.now() + timeout * WAIT_SCALE;   // until's own deadline, scaled the same
@@ -218,7 +247,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       for (let i = routes.length - 1; i >= 0; i--) if (routes[i].pattern === pattern && (!handler || routes[i].handler === handler)) routes.splice(i, 1);
       if (!routes.length) await send('Fetch.disable');
     },
-    click: async (sel, { button = 'left' } = {}) => { const { x, y } = await center(sel); await mouse.click(x, y, { button }); },
+    click: async (sel, { button = 'left', timeout } = {}) => { const { x, y } = await center(sel, timeout); await mouse.click(x, y, { button }); },
     hover: async (sel) => { const { x, y } = await center(sel); await mouse.move(x, y); },
     tap: async (sel) => { const { x, y } = await center(sel); await touchscreen.tap(x, y); },
     focus: async (sel) => { await center(sel); await evaluate((s) => document.querySelector(s).focus(), sel); },
@@ -237,7 +266,8 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     $: async (sel) => (await evaluate((s) => !!document.querySelector(s), sel)) ? { click: () => pg.click(sel), getAttribute: (n) => pg.getAttribute(sel, n), isVisible: () => pg.isVisible(sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), boundingBox: () => evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel),
       // playwright's element shot: the page's, clipped to the element's box
       screenshot: async (o = {}) => { const clip = await evaluate((s) => { const r = document.querySelector(s).getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; }, sel); return pg.screenshot({ ...o, clip }); } } : null,
-    locator: (sel) => ({ click: (o) => pg.click(sel, o), hover: () => pg.hover(sel), isVisible: () => pg.isVisible(sel), fill: (v) => pg.fill(sel, v), press: (k) => pg.press(sel, k), getAttribute: (n) => pg.getAttribute(sel, n), count: () => evaluate((s) => document.querySelectorAll(s).length, sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), waitFor: (o) => pg.waitForSelector(sel, o) }),
+    locator: (sel) => ({ click: (o) => pg.click(sel, o), pressSequentially: (t) => pg.type(sel, t),
+      evaluate: async (fn, arg) => { await pg.waitForSelector(sel, { state: 'attached' }); return evaluate(`(${fn})(document.querySelector(${JSON.stringify(sel)}), ${arg === undefined ? 'undefined' : JSON.stringify(arg)})`); }, hover: () => pg.hover(sel), isVisible: () => pg.isVisible(sel), fill: (v) => pg.fill(sel, v), press: (k) => pg.press(sel, k), getAttribute: (n) => pg.getAttribute(sel, n), count: () => evaluate((s) => document.querySelectorAll(s).length, sel), textContent: () => evaluate((s) => document.querySelector(s)?.textContent ?? null, sel), waitFor: (o) => pg.waitForSelector(sel, o) }),
     setViewportSize: async ({ width, height }) => { size = { width, height }; await send('Emulation.setDeviceMetricsOverride', { width, height, ...metrics }); },
     viewportSize: () => size,
     screenshot: async ({ path: out, fullPage = false, clip } = {}) => { const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: fullPage, ...(clip ? { clip: { scale: 1, ...clip } } : {}) }); const b = Buffer.from(data, 'base64'); if (out) fs.writeFileSync(out, b); return b; },

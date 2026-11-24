@@ -110,5 +110,38 @@ try {
       const s = (performance.now() - t0) / 1000; return [threw && s < 15, { threw, s }]; });
   } finally { await b.close(); srv.stop(true); }
 }
+{ // playwright's slice the ungated probes stalled on (#333 backlog G6-003/004/005, G4-108/110): each row names the probe
+  const { launchCdp } = await import('../harness/cdp-pw.mjs');
+  const PAGE = '<link rel="icon" href="data:,"><input id="in"><div id="box"><button id="b" onclick="this.dataset.n=(+(this.dataset.n||0))+1">b</button></div>';
+  const srv = Bun.serve({ port: 0, fetch: (r) => { const u = new URL(r.url); return new Response(u.pathname === '/' ? PAGE : 'server', { headers: { 'content-type': u.pathname === '/' ? 'text/html' : 'text/plain' } }); } });
+  const b = await launchCdp(), at = `http://127.0.0.1:${srv.port}/`, msgs: string[] = [];
+  const row = async (name: string, f: () => Promise<[boolean, unknown]>) => { try { const [ok, d] = await f(); check(name, ok, JSON.stringify(d)); } catch (e) { check(name, false, String(e)); } };
+  try {
+    const ctx = await b.newContext();
+    await row('cdp-pw: a context\'s route() applies to the pages it opens (logo-probe)', async () => {
+      await ctx.route('**/r.txt', (r: any) => r.fulfill({ body: 'ctx-routed' }));
+      const p = await ctx.newPage(); await p.goto(at); const got = await p.evaluate(() => fetch('/r.txt').then((r) => r.text()));
+      return [got === 'ctx-routed', { got }]; });
+    const pg = await b.page(); await pg.goto(at);
+    pg.on('console', (m: any) => msgs.push(m.text()));
+    await row('cdp-pw: console text renders an object, an array, null and undefined as playwright does (boot-check\'s body mark)', async () => {
+      await pg.evaluate(() => { console.log('[boot] ready in', 12, { body: 3, why: 'ok' }, [1, 'a'], null, undefined); });
+      await until('the console line arrives', () => msgs.some((t) => t.startsWith('[boot]')), { ms: 10_000 });
+      const t = msgs.find((x) => x.startsWith('[boot]')); return [t === "[boot] ready in 12 {body: 3, why: ok} [1, a] null undefined", t]; });
+    await row('cdp-pw: locator evaluate() hands the element and the arg (lite-banner-probe)', async () => {
+      const v = await pg.locator('#in').evaluate((el: any, a: string) => el.id + a, '!'); return [v === 'in!', v]; });
+    await row('cdp-pw: locator pressSequentially() types into the element (lite-banner-probe)', async () => {
+      await pg.locator('#in').pressSequentially('abc'); const v = await pg.evaluate(() => (document.getElementById('in') as any).value); return [v === 'abc', v]; });
+    await row('cdp-pw: click({timeout}) gives up at its timeout, not a fixed 30 s (picture-editor-probe)', async () => {
+      const t0 = performance.now(); let threw = false; try { await pg.click('#absent', { timeout: 1000 }); } catch { threw = true; }
+      const s = (performance.now() - t0) / 1000; return [threw && s < 15, { threw, s }]; });
+    await row('cdp-pw: evaluateHandle(...).asElement() is an element handle: $, click, evaluate (library-badge-probe)', async () => {
+      const box = (await pg.evaluateHandle(() => document.getElementById('box'))).asElement();
+      const btn = await box?.$('#b'); await btn?.click(); await btn?.click();
+      const n = await btn?.evaluate((e: any, k: string) => e.dataset[k], 'n');
+      const none = (await pg.evaluateHandle(() => 7)).asElement();
+      return [n === '2' && none === null && (await box.$('#nope')) === null, { n, none }]; });
+  } finally { await b.close(); srv.stop(true); }
+}
 console.log(`${tally.passed} passed, ${tally.failed} failed`);
 process.exit(tally.failed ? 1 : 0);
