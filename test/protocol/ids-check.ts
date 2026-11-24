@@ -213,9 +213,12 @@ await C("H4", "labelTwins marks only the things whose label another shares (the 
   const TR = await imp("shared/thingref.js");
   const t = TR.labelTwins([{ id: "a", label: "Chair" }, { id: "b", label: "chair " }, { id: "c", label: "table" }, { id: "d" }]);
   return [t.has("a") && t.has("b") && !t.has("c") && !t.has("d"), [...t]]; });
-await C("H5", "the editor's Hierarchy hides ids (an unlabelled row says what it is), marks only sibling twins with a short handle; the inspector's name line carries the same #handle (over every id but the world's), no 'show id' button", () => {
+await C("H5", "the editor's Hierarchy hides ids (an unlabelled row says what it is), marks only sibling twins with a short handle; the inspector's name line carries the same #handle (over every id but the world's), and the inspector has no 'show id' button (the Hierarchy's 'show ids' option is on purpose)", () => {
   const ep = read("client/lib/edit/panels.js");
-  return [/shownName = \(id\) => nameOnly\(id\) \?\? \(kindHint/.test(ep) && /handleOf\(id, all\)/.test(ep) && /badges\.unshift\(tw\)/.test(ep)
+  // the inspector's code (multiFields → inspectorDispatch) offers no id toggle; the Hierarchy's 'show ids' option is on purpose (G6-109)
+  const a = ep.indexOf("function multiFields("), b = ep.indexOf("const setWatching"), insp = a >= 0 && b > a ? ep.slice(a, b) : null;
+  return [insp !== null && !/k: 'showid'|showId|'show ids?'|[hH][oO][pP][tT][sS]\.ids/.test(insp)
+    && /shownName = \(id\) => nameOnly\(id\) \?\? \(kindHint/.test(ep) && /handleOf\(id, all\)/.test(ep) && /badges\.unshift\(tw\)/.test(ep)
     && /const idHandle = \(id\) => handleOf\(id, Object\.keys\(state\.st\.entities \?\? \{\}\)\.filter\(\(k\) => k !== WORLD_ID\)\)/.test(ep) && /k: 'copyid', label: `#\$\{idHandle\(id\)\}`/.test(ep) && /cls: 'sp-title'[^\n]*handleRow/.test(ep), "edit/panels"]; });
 
 await C("H6", "a person's lock question names the locked thing by what they call it (its label, or what it is), never its opaque id", async () => {
