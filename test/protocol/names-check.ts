@@ -44,6 +44,7 @@ import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "../../tools/import-v1/translate-v1.js";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
+import { editsOf, type Mutant } from "../gate/mutants.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 
 const BASE = "a6d05a6b";
@@ -52,7 +53,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 
 // [name, file under the tree, find, replace, rows]
-const MUTANTS: [string, string, string | string[], string | string[], string[]][] = [
+const MUTANTS: Mutant[] = [   // the shared shape (gate/mutants.ts): several edits are [find, repl, file?][]
   ["hold-limit is hands-full again", "shared/protocol/authority/bodyverbs.js", "refuse(\"hold-limit\",", "refuse(\"hands-full\",", ["N1", "N2"]],
   ["beneath is underfoot again", "shared/protocol/authority/manipulate.js", "refuse(\"beneath\",", "refuse(\"underfoot\",", ["N2"]],
   ["the door takes shove again", "shared/protocol/verbspec.js", "(occupied, or sliding into them)\" } }, was: {", "(occupied, or sliding into them)\" }, shove: { type: \"bool\", doc: \"old spelling of contact\" } }, was: {", ["P2", "P3"]],
@@ -78,8 +79,9 @@ const MUTANTS: [string, string, string | string[], string | string[], string[]][
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
   // two guards refuse a station's pose: its fields (sockbody's unknown key) and its dropped entry (checks.js); both go (G4-151)
-  ["the station takes pose again", "shared/protocol/componentspec.js", ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "               dropped: { pose: \"renamed anim (R 10-17): a write of pose is taken and stored as anim; a stored one is renamed by the world's maintenance command\" },\n"],
-    ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\",", ""], ["A5"]],
+  ["the station takes pose again", "shared/protocol/componentspec.js", [
+    ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\","],
+    ["               dropped: { pose: \"renamed anim: a write of pose is taken and stored as anim; a stored one is renamed by the world's maintenance command\" },\n", ""]], "", ["A5"]],
   ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
   ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
   ["the fence drops poses", "server/posecheck.ts", "if (\"poses\" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }", "delete p.poses;", ["A6"]],
@@ -161,12 +163,15 @@ function mutantTree(tag: string) { const d = scratch(tag);
   for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { linkInto(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = readLF(f);
-    const finds = [find].flat(), repls = [repl].flat();   // one edit, or several in one file (a fix held by two guards)
-    if (finds.some((x) => src.split(x).length !== 2)) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
-    fs.writeFileSync(f, finds.reduce((t, x, i) => t.replace(x, repls[i]), src));
+  let bad = 0, ran = 0; const oi = argv.indexOf("--only"), only = oi >= 0 ? (argv[oi + 1] ?? "").split(",") : null;   // as runMutants
+  for (const m of MUTANTS) {
+    const [name, , , , cases] = m;
+    if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
+    ran++; const d = mutantTree("namesmut");
+    const edits = editsOf(m).map(([f, a, b]) => [path.join(d, f), a, b] as const);   // the anchors gate reads rows the same way
+    const miss = edits.find(([f, a]) => readLF(f).split(a).length !== 2);
+    if (miss) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${path.relative(d, miss[0])} (the fix moved?)`); continue; }
+    for (const [f, a, b] of edits) fs.writeFileSync(f, readLF(f).replace(a, () => b));
     const r = await runSelf(d, cases.length ? cases : null);
     const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
     const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
