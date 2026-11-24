@@ -64,7 +64,8 @@ for (const [knob, body] of ROWS) {
   writeFileSync(file, `const r = await (async () => { ${body} })();\nconsole.log("RESULT " + JSON.stringify(r));\nprocess.exit(0);\n`);
   const env: Record<string, string> = { ...process.env as Record<string, string>, SKIP_OPT_SWEEP: "1", KTX2_TOKTX: "", JOIN_TOKEN: "", SCR: dir,
     WORLDS_DIR: join(dir, "worlds"), OPT_DIR: join(dir, "opt"), EIDOVERSE_DIR: join(dir, "lib"), [knob]: "0" };
-  const p = Bun.spawnSync(["bun", file], { env, cwd: R, stdout: "pipe", stderr: "pipe" });
+  // bounded: a probe whose socket never opens would otherwise hold the suite until the gate kills it (a row fails instead)
+  const p = Bun.spawnSync(["bun", file], { env, cwd: R, stdout: "pipe", stderr: "pipe", timeout: 60_000 });
   const out = p.stdout.toString(), err = p.stderr.toString();
   const line = out.split("\n").find((l) => l.startsWith("RESULT "));
   const r = line ? JSON.parse(line.slice(7)) : { ok: false, detail: (err || out).slice(-300) };
