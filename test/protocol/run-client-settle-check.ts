@@ -74,12 +74,13 @@ ok(rc3.exitCode === 0 && /^SLOW\s+\S*e-slow-test\.ts/m.test(rc3.stdout.toString(
 // a file that ran its checks and exited 1 is a red for the full run, still loaded here (#333 backlog G4-223)
 const dir6 = path.join(root, "toperr"); fs.mkdirSync(dir6);
 fs.writeFileSync(path.join(dir6, "g-top-typeerror-test.ts"), `const stubbed: any = {};\nstubbed.notExported();\n`);
-fs.writeFileSync(path.join(dir6, "h-red-checks-test.ts"), `console.log("  ✗ a row that failed"); process.exit(1);\n`);
+// …and throws a TypeError after its first check line: the crash comes too late to be an import failure
+fs.writeFileSync(path.join(dir6, "h-red-checks-test.ts"), `console.log("  ✗ a row that failed");\nconst late: any = {};\nlate.notExported();\n`);
 const rc6 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir6, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
   { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
 const out6 = rc6.stdout.toString() + rc6.stderr.toString();
 ok(/^DEAD\s+\S*g-top-typeerror-test\.ts\s+—\s+TypeError/m.test(out6) && rc6.exitCode === 1, "--import-only: a top-level uncaught TypeError is dead at import and fails the run", { code: rc6.exitCode, out: out6.slice(-400) });
-ok(/^ok\s+\S*h-red-checks-test\.ts/m.test(out6), "--import-only: …while a file that ran its checks and exited 1 still loaded", out6.slice(-400));
+ok(/^ok\s+\S*h-red-checks-test\.ts/m.test(out6), "--import-only: …while a file that ran a check and then threw a TypeError still loaded", out6.slice(-400));
 // the full run: a bun:test file (test() blocks) runs under `bun test`, as the gate's harness/bun-test.ts runs it; `bun <file>`
 // refuses test() outside the runner, so a passing file read red (#333 backlog G4-112)
 const dir7 = path.join(root, "buntest"); fs.mkdirSync(dir7);
