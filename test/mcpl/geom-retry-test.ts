@@ -11,14 +11,14 @@ import { tryUntil } from "../gate/wait.ts";
 const S = suite("geom-retry");
 const deck = { bbox: { min: [-1, 0, -1], max: [1, 1, 1], size: [2, 1, 2] }, topSurfaces: [] };
 let refuseLeft = 2, asked = 0; const askedFor = new Map<string, number>();
-// a model of its own: refused `refuse` times, each answer `delay` ms late (R3 orders two models' answers)
-const scripted = new Map<string, { refuse: number; delay: number }>();
+// a model of its own: refused `refuse` times, each answer held until `after` settles (R3 orders two models' answers)
+const scripted = new Map<string, { refuse: number; after?: Promise<unknown> }>();
 const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(req) {
   const u = new URL(req.url);
   if (u.pathname !== "/geom") return new Response("", { status: 404 });
   asked++; const lib = u.searchParams.get("lib") ?? ""; askedFor.set(lib, (askedFor.get(lib) ?? 0) + 1);
   const sc = scripted.get(lib);
-  if (sc) { if (sc.delay) await Bun.sleep(sc.delay);
+  if (sc) { if (sc.after) await sc.after.catch(() => {});
     if (sc.refuse > 0) { sc.refuse--; return new Response(JSON.stringify({ error: "geometry rate limit", retryAfter: 1 }), { status: 429, headers: { "retry-after": "1", "content-type": "application/json" } }); }
     return Response.json({ lib, ...deck }); }
   if (refuseLeft > 0) { refuseLeft--; return new Response(JSON.stringify({ error: "geometry rate limit", retryAfter: 1 }), { status: 429, headers: { "retry-after": "1", "content-type": "application/json" } }); }
@@ -56,9 +56,11 @@ try {
 
   // R3: re-modelled while the OLD model's ask is still out: the old sync's 429 lands first and must not take the id's retry
   // slot (it would see the new model and give up), or the new model's 429, landing next, schedules nothing
-  scripted.set("a.glb", { refuse: 1, delay: 0 }); scripted.set("b.glb", { refuse: 1, delay: 200 });
+  scripted.set("a.glb", { refuse: 1 });
   ag.entities.set("r3", { id: "r3", model: "a.glb", pos: [40, 0, 0], yaw: 0, actor: "x" });
   const oldSync = ag.ground.syncSupport("r3");
+  // the new model's first answer waits until the old sync has handled its 429 to the end: that order, every run
+  scripted.set("b.glb", { refuse: 1, after: oldSync });
   ag.entities.set("r3", { id: "r3", model: "b.glb", pos: [40, 0, 0], yaw: 0, actor: "x" });
   ag.ground.trackSupport(oldSync); ag.ground.trackSupport(ag.ground.syncSupport("r3"));
   await ag.ground.supportReady();
@@ -67,7 +69,7 @@ try {
 
   // R4: measure meeting the geometry limit tells the agent when to ask again (the server's retryAfter), not only the 429
   { const { HANDLERS } = await import("../../mcpl/tools.ts");
-    scripted.set("busy.glb", { refuse: 1, delay: 0 });
+    scripted.set("busy.glb", { refuse: 1 });
     const t = ((await HANDLERS.measure(ag, { lib: "busy.glb" }, {}, "measure")) as any).content?.[0]?.text ?? "";
     S.check("R4 measure refused by the geometry limit says when to try again", /429/.test(t) && /try again in 1 ?s/.test(t), t); }
 } finally { ag.close(); srv.stop(true); }
