@@ -6,7 +6,8 @@ const ownDir = process.env.WORLDS_DIR ? null : (process.env.WORLDS_DIR = require
 process.env.JOIN_TOKEN ??= "test-door";
 const { MESSAGES } = await import("../../server/messages.ts");
 const { sanePose } = await import("../../server/posecheck.ts");
-const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } };
+let passed = 0;
+const ok = (v: unknown, why: string) => { if (!v) { console.error("FAIL", why); process.exit(1); } passed++; };
 const sent: string[] = [];
 const dirty = new Map<string, unknown>();
 const c: any = { id: "c1", world: { name: "w", dirty }, lastPose: { p: [9, 9, 9] } };
@@ -43,6 +44,16 @@ ok(sanePose({ ...good, xr: { ...xr, h: [NaN, 0, 0, 1] } }) === null, "NaN head q
 ok(sanePose({ ...good, xr: { ...xr, r: [0, 1, 2] } }) === null, "short grip dropped");
 ok(sanePose({ ...good, xr: { h: [0, 0, 0, 1] } }) !== null, "xr with head only passes");
 ok(sanePose({ ...good, xr: null }) === null, "null xr dropped");
+// orientation and locomotion (moved from underwater-presence-test, #333 backlog G4-230): a unit q and any locomotion
+// object of finite values pass untouched, deep underwater included; anything else drops the pose
+{
+  const swim = { p: [12, -30, 8], yaw: 0, speed: 1.4, clip: "walk", q: [0, 0, 0, 1], locomotion: { mode: "swim", medium: "water", body: "diver" } };
+  ok(sanePose(swim) === swim, "a swimming pose (unit q, locomotion) passes untouched");
+  ok(sanePose({ p: [0, -1000, 0], yaw: 0, clip: "idle" }) !== null, "a pose 1000 m down passes");
+  for (const q of [[0, 0, 0, 0], [0, 0, 0, 2], [NaN, 0, 0, 1], [0, 0, 1], ["0", 0, 0, 1]]) ok(sanePose({ ...swim, q }) === null, `q ${JSON.stringify(q)} dropped`);
+  for (const locomotion of [null, [], { mode: 42 }, { medium: "x".repeat(33) }, { extra: Infinity }]) ok(sanePose({ ...swim, locomotion }) === null, `locomotion ${JSON.stringify(locomotion)} dropped`);
+  ok(sanePose({ ...swim, locomotion: { mode: "future-mode", extra: { value: 1 } } }) !== null, "an unknown locomotion mode with finite extras passes");
+}
 // the deep fence: held pose (bone quats), pins, reach — a NaN anywhere inside is the same fault
 const deep = { ...good, pose: { hips: [0, 0, 0, 1], head: [0.1, 0, 0, 0.99] }, pins: [{ bone: "leftHand", p: [1, 2, 3] }], reach: { right: { t: { p: [0, 1, 0] }, palm: 0.5 } } };
 ok(sanePose(deep) !== null, "deep pose/pins/reach pass");
@@ -80,5 +91,5 @@ ok(sanePose({ ...good, pins: wide }) === null, "a container wider than MAX_KEYS 
   ok(sanePose({ ...good, clip: "ragdoll", floor: 0 })?.floor === 0, "a floor at height 0 is kept");
   ok(sanePose({ ...good, clip: "ragdoll", floor: 3.3 })?.floor === 3.3, "a finite floor relays as sent");
 }
-console.log("pose-handler: 40 ok");
+console.log(`pose-handler: ${passed} ok`);
 if (ownDir) import("node:fs").then((fs) => { try { fs.rmSync(ownDir, { recursive: true, force: true }); } catch {} });

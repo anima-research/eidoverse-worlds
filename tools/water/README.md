@@ -169,8 +169,8 @@ bun test/protocol/zone-water-check.ts
 bun test/water/import-golden-check.ts
 bun test/water/fog-mask-check.ts
 bun test/client/models-field-test.ts
-bun test/server/underwater-presence-test.ts
-UNDERWATER_TEST_PORT=19348 bun test/server/underwater-wire-test.ts
+bun test/server/pose-handler-test.ts     # the pose fence: orientation q and locomotion
+bun test/protocol/presence-check.ts      # UW: a 3D pose on the wire, late join, spectators, nothing logged
 bun test/water/gpu-test.ts
 ```
 

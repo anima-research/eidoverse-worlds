@@ -60,7 +60,6 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["zone-water", "protocol/zone-water-check.ts", 1], // zone + water (either side) + water-exclusion: the door, shared/zone.js's bodies (the combine law), the client's rebuild rule
   ["water-lifecycle", "mcpl/water-lifecycle-test.ts", 1], // an agent's stature and float follow the current body and water; a late answer for an old body is dropped
   ["waterkind", "shared/waterkind-test.ts", 1], // still water, rivers and the sea, read from the shape a water level fills
-  ["underwater-presence", "server/underwater-presence-test.ts", 1], // underwater presence validation (3D orientation, bad q dropped)
   ["buoyancy", "shared/buoyancy-test.ts", 1], // a floating column on the water surface, and the clock the surface runs on
   ["climb-env", "protocol/climb-env-check.ts", 1], // collider.enabled (collision off), climb routes (shared/climb.js), arrivals and KillZ (shared/spawn.js), the sky gradient and the directional sun
   ["drive", "protocol/drive-check.ts", 1], // a hull driven from its helm: drive + station.input at the door, one driver, plausibility, the hull's own collision, the lease's commits and end (shared/drive.js, authority/drive.js)
