@@ -10,7 +10,8 @@
 // Every wait is on the page's own state (wait.ts until): the question on the quad, a promise settled, a quad shown.
 // Mutations (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch;
 // in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
-// instead of queueing (S2); drop the xr:state(true) closeCenter() and the desk card's aimedElsewhere guard (S3).
+// instead of queueing (S2); drop the xr:state(true) closeCenter() (S3a, alone: S3's later rows stay green, a headset
+// question closing the card too) and the desk card's aimedElsewhere guard (S3).
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until } from '../gate/wait.ts';
 const { check, done } = checker();
@@ -39,7 +40,7 @@ const install = () => pg.evaluate(async () => {
   };
   const btn = (id, re) => [...(dq.domQuadTexture(id)?.dom?.querySelectorAll('button') ?? [])].find((b) => re.test(b.textContent) && b.getBoundingClientRect().height > 0);
   const input = () => dq.domQuadTexture('ask')?.dom?.querySelector('input') ?? null;
-  globalThis.__r = {};
+  globalThis.__r ??= {};   // kept across a session start (S3 reads what entering VR did to a question asked before it)
   globalThis.__px = {
     dq, ask, pull, btn, input,
     press: (re) => { const b = btn('ask', re); return b ? pull('ask', b) != null : false; },
@@ -179,6 +180,10 @@ try {
   await fresh(); await startConsent();
   const s3card = await S('S3: the desk consent card is open', () => !!document.querySelector('#confirm-center')).catch(() => false);
   await inVR();
+  // (review #359 3) read before anything else is asked: a headset question closes the desk card too, so a row read after
+  // one can't tell whether entering VR did
+  const s3enter = await pg.evaluate(() => ({ card: !!document.querySelector('#confirm-center'), consent: globalThis.__r.cr }));
+  check('S3a entering VR dismisses the open desk card by itself (a dismissal: no for now, nothing stored)', s3card && !s3enter.card && s3enter.consent === false && (await stored()) === null, JSON.stringify(s3enter));
   await pg.evaluate(async () => globalThis.__px.track('w', (await import('./lib/edit/confirmcenter.js')).askCenter({ title: 'Name it', value: '' })));
   await asked(/Name it/, 'S3: the text question is on the ask quad');
   await S('S3: the VR keyboard is up for the field', () => globalThis.__px.dq.domQuadOpen('keyboard'));
