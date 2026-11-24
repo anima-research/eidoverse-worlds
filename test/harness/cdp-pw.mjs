@@ -148,10 +148,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     if (!done) throw lost;
     return out;
   };
-  const center = async (sel, timeout = 30_000) => {
-    // …and takes the pointer at its centre (playwright's hit-target check): an overlay over it, a splash, is waited out
-    await until(`${sel} is on the page, visible and not covered`, () => evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r0 = e.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(e).visibility !== 'hidden')) return false;
-      e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && e.contains(h); }, sel), { ms: timeout });
+  const center = async (sel, timeout = 30_000, hit = false) => {
+    // hit: …and takes the pointer at its centre (playwright's hit-target check, click/hover/tap only; focus/fill/press/type never do it)
+    await until(`${sel} is on the page, visible${hit ? ' and not covered' : ''}`, () => evaluate(([s, hit]) => { const e = document.querySelector(s); if (!e) return false; const r0 = e.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(e).visibility !== 'hidden')) return false; if (!hit) return true;
+      e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && e.contains(h); }, [sel, hit]), { ms: timeout });
     return evaluate((s) => { const e = document.querySelector(s); e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
   };
   let mods = 0, mx = 0, my = 0, buttons = 0;
@@ -249,9 +249,10 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       for (let i = routes.length - 1; i >= 0; i--) if (routes[i].pattern === pattern && (!handler || routes[i].handler === handler)) routes.splice(i, 1);
       if (!routes.length) await send('Fetch.disable');
     },
-    click: async (sel, { button = 'left', timeout } = {}) => { const { x, y } = await center(sel, timeout); await mouse.click(x, y, { button }); },
-    hover: async (sel) => { const { x, y } = await center(sel); await mouse.move(x, y); },
-    tap: async (sel) => { const { x, y } = await center(sel); await touchscreen.tap(x, y); },
+    // force: playwright's, skips the hit-target wait (the visible wait stays: cdp-pw needs a box to aim at)
+    click: async (sel, { button = 'left', timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.click(x, y, { button }); },
+    hover: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.move(x, y); },
+    tap: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await touchscreen.tap(x, y); },
     focus: async (sel) => { await center(sel); await evaluate((s) => document.querySelector(s).focus(), sel); },
     press: async (sel, key) => { await pg.focus(sel); await keyboard.press(key); },
     type: async (sel, text) => { await pg.focus(sel); await keyboard.type(text); },

@@ -167,6 +167,18 @@ if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe'
       await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'cover'; o.style.cssText = 'position:fixed;inset:0;background:#000'; document.body.append(o); setTimeout(() => o.remove(), 1000); });
       await pg.click('#b', { timeout: 10_000 }); const n = await pg.evaluate(() => (document.getElementById('b') as any).dataset.n ?? '0');
       await pg.evaluate(() => { delete (document.getElementById('b') as any).dataset.n; }); return [n === '1', n]; });
+    await row('cdp-pw: fill and focus reach an input under an opacity:0 overlay at once; only pointer actions hit-check, as playwright (cold review C2-1)', async () => {
+      await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'glass'; o.style.cssText = 'position:fixed;inset:0;opacity:0'; document.body.append(o); });
+      const t0 = performance.now(); let err = '';
+      try { await pg.fill('#in', 'xyz'); await pg.evaluate(() => (document.activeElement as any)?.blur()); await pg.focus('#in'); } catch (e) { err = String(e); }
+      const s = (performance.now() - t0) / 1000;
+      const st = await pg.evaluate(() => { document.getElementById('glass')?.remove(); const i = document.getElementById('in') as any; const r = { v: i.value, focused: document.activeElement === i }; i.value = ''; i.blur(); return r; });
+      return [!err && s < 5 && st.v === 'xyz' && st.focused, { err, s, ...st }]; });
+    await row('cdp-pw: click({force:true}) skips the hit-target wait, as playwright (it lands on what is on top)', async () => {
+      await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'glass'; o.style.cssText = 'position:fixed;inset:0;opacity:0'; o.onclick = () => { o.dataset.hit = '1'; }; document.body.append(o); });
+      const t0 = performance.now(); let err = ''; try { await pg.click('#b', { force: true, timeout: 3000 }); } catch (e) { err = String(e); }
+      const s = (performance.now() - t0) / 1000; const hit = await pg.evaluate(() => { const o = document.getElementById('glass'); const h = o?.dataset.hit ?? '0'; o?.remove(); return h; });
+      return [!err && s < 2 && hit === '1', { err, s, hit }]; });
     await row('cdp-pw: evaluateHandle(...).asElement() is an element handle: $, click, evaluate (library-badge-probe)', async () => {
       const box = (await pg.evaluateHandle(() => document.getElementById('box'))).asElement();
       const btn = await box?.$('#b'); await btn?.click(); await btn?.click();
