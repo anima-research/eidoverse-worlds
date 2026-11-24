@@ -50,6 +50,7 @@ ok(sanePose({ ...good, xr: null }) === null, "null xr dropped");
   const swim = { p: [12, -30, 8], yaw: 0, speed: 1.4, clip: "walk", q: [0, 0, 0, 1], locomotion: { mode: "swim", medium: "water", body: "diver" } };
   ok(sanePose(swim) === swim, "a swimming pose (unit q, locomotion) passes untouched");
   ok(sanePose({ p: [0, -1000, 0], yaw: 0, clip: "idle" }) !== null, "a pose 1000 m down passes");
+  ok(sanePose({ ...swim, p: [0, Infinity, 0] }) === null, "an Infinity position dropped");
   for (const q of [[0, 0, 0, 0], [0, 0, 0, 2], [NaN, 0, 0, 1], [0, 0, 1], ["0", 0, 0, 1]]) ok(sanePose({ ...swim, q }) === null, `q ${JSON.stringify(q)} dropped`);
   for (const locomotion of [null, [], { mode: 42 }, { medium: "x".repeat(33) }, { extra: Infinity }]) ok(sanePose({ ...swim, locomotion }) === null, `locomotion ${JSON.stringify(locomotion)} dropped`);
   ok(sanePose({ ...swim, locomotion: { mode: "future-mode", extra: { value: 1 } } }) !== null, "an unknown locomotion mode with finite extras passes");
