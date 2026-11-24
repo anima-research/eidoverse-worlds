@@ -243,15 +243,17 @@ ok(close.ok && removed && bob.closed === 4010 && bob.msgs.some((m) => m.type ===
     "A6 until is refused in the past, and on an owner", [past.refused, onOwner.refused]); }
 
 // ---- A5: a timed grant ----
-{ const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "member", until: Date.now() + 2500 } });
+{ // G6-091: Pip is listed and in before the grant is timed, so a slow join can't spend its 2.5 s
+  const pre = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "member" } });
   const p = await sock(srv.port); const jp = await p.join("keep", "Pip");
+  const set = await own.req("set", { id: "@world", component: `roles:${ids.Pip}`, value: { role: "member", until: Date.now() + 2500 } });
   const told = !!(await tryUntil("Pip is told the grant ends", () => p.msgs.some((m) => m.type === "notice" && /ends in/.test(m.text)), { ms: 2000, step: 50 }));
   const gone = !!(await tryUntil("Pip is removed when the grant ends", () => p.closed != null, { ms: 6000, step: 50 }));
   const log = fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8");
   const ended = log.split("\n").filter(Boolean).map((l) => JSON.parse(l)).find((e) => e.kind === "request" && e.verb === "expire-roles");
-  ok(set.ok && !!jp.snapshot && told && gone && p.closed === 4010 && ended?.actor === "system" && ended?.body?.ids?.includes(ids.Pip),
+  ok(pre.ok && set.ok && !!jp.snapshot && told && gone && p.closed === 4010 && ended?.actor === "system" && ended?.body?.ids?.includes(ids.Pip),
     "A5 a timed grant: its holder is told before it ends; the authority writes its end (expire-roles, the system's act) and the door removes them (4010)",
-    [set.ok, !!jp.snapshot, told, p.closed, ended?.body, p.msgs.filter((m) => m.type === "notice" || m.type === "error").map((m) => m.text ?? m.error)]); }
+    [pre.ok, set.ok, jp.errors, told, p.closed, ended?.body, p.msgs.filter((m) => m.type === "notice" || m.type === "error").map((m) => m.text ?? m.error)]); }
 
 // ---- A7: a reset keeps an invite-only world's door and the people it lists ----
 { const first = () => fs.readFileSync(path.join(W, "keep", "world.jsonl"), "utf8").split("\n")[0];   // the genesis: a reset writes a new one
