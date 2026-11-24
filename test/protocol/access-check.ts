@@ -740,7 +740,18 @@ const gonePid = await exitedPid();
   ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,
     "B14 in a world that can't log a grant's end (expire-roles writes nothing), the sweep still removes whoever's timed grant has passed; a live grant stays", o?.sweep);
   if (caseless) ok(o?.exists?.lower === true && o?.exists?.upper === false, "B17 on a case-insensitive filesystem a world is served in its own case only: keep exists, KEEP does not", o?.exists);
-  else na("B17 on a case-insensitive filesystem a world is served in its own case only", `${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`); }
+  else na("B17 on a case-insensitive filesystem a world is served in its own case only", `${PW} is case-sensitive, so "KEEP" can't open keep/ here (run with PROTOCOL_SCRATCH on a case-insensitive filesystem)`);
+  // B17u (G4-129): B17 on every filesystem: node:fs stubbed to fold case as Windows/macOS do (existsSync finds keep/ for
+  // "KEEP"), while the listing (readdirSync) spells names as they are; worldDirNamed must go by the listing
+  const stub = `const real = await import("node:fs"), pth = await import("node:path"), { mock } = await import("bun:test"); const P = ${JSON.stringify(PW)};
+    const fold = (p) => pth.dirname(String(p)) === P ? pth.join(P, pth.basename(String(p)).toLowerCase()) : p, realExists = real.existsSync;   // taken first: mock.module patches real's namespace too
+    const existsSync = (p) => realExists(fold(p)); mock.module("node:fs", () => ({ ...real, default: { ...real.default, existsSync }, existsSync }));
+    const Wd = await import(${JSON.stringify(new URL("../../server/world.ts", import.meta.url).href)});
+    console.log(JSON.stringify({ folds: existsSync(pth.join(P, "KEEP")), lower: Wd.worldDirNamed("keep"), upper: Wd.worldDirNamed("KEEP"), mixed: Wd.worldDirNamed("Keep"), exists: Wd.worldExists("KEEP") }));`;
+  const ru = Bun.spawnSync(["bun", "-e", stub], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, timeout: 30_000, stdout: "pipe", stderr: "pipe" });
+  let u = null; try { u = JSON.parse(ru.stdout.toString().trim().split("\n").pop()); } catch {}
+  ok(u?.folds === true && u.lower === true && u.upper === false && u.mixed === false && u.exists === false,
+    "B17u with node:fs folding case (as on Windows/macOS: existsSync finds keep/ for KEEP), worldDirNamed and worldExists answer for keep in its own case only", u ?? ru.stderr.toString().slice(-300)); }
 // ---- A13n (R 11-03 "b"): a ban or sanction file the server can't read LOCKS the door: the owner, an operator
 // and a role holder still join; a stranger and an unlisted account are refused with the plain reason; the operator's list says LOCKED
 { const BJ = path.join(W, ".bans.json"), SJ = path.join(W, ".addr-sanctions.json"), torn = '{"acct:u-aaaaaaaaaaaaaaaaaaaa": {"by": "op", "ts": 1, "acc';
