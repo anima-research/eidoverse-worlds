@@ -179,7 +179,7 @@ if (argv.includes("--mutants")) {
 /** Rows that read a file, module or agent method BASE doesn't have, so they throw there (red for the rule: the thing is new),
  *  each with what its throw must name; a row that throws for anything else is WRONG at base (G4-150). */
 const ABSENT_AT_BASE: Record<string, RegExp> = {
-  U1: /actionbar\.js/, E2: /actionbar\.js|animnames\.js|_actionbar\.json/, B2: /bodymode\.js/, B3: /bodymode\.js/, K5: /POSE-WIRE\.md/,
+  U1: /actionbar\.js/, B2: /bodymode\.js/, B3: /bodymode\.js/, K5: /POSE-WIRE\.md/,
   L1: /animStops|bodyModeNow/, K1: /animStops|bodyModeNow/, K2: /animStops|bodyModeNow/, K3: /animStops|bodyModeNow/, K4: /animStops|bodyModeNow/,
   OS1: /descriptors\.js/, OS4: /motioneval\.js/, OS7: /PRE-RELEASE-RENAMES\.md/, X1: /PRE-RELEASE-RENAMES\.md/, OLD: /onceanim\.js/,
 };
