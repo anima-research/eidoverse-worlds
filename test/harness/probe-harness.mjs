@@ -4,13 +4,15 @@
 // 2. `ownedWorld()` spawns a child bound to a per-run nonce in scratch state and REFUSES to proceed unless the responder
 //    proves it is ours (as boot-check), never an ambient fixed port. A LIVE deployment is explicit: pass its origin,
 //    identity checks skipped.
+// 3. Every probe's page() from launchBrowser reads two env knobs (not only boot-check's): BOOT_CHECK_VIEWPORT=390x844 (any
+//    WxH; default 1280x720) and BOOT_CHECK_TOUCH=1 (touch emulation, so body gets class 'touch').
 import { launchCdp } from './cdp-pw.mjs';
 import { freePort } from './harness.ts';
 import { suite } from '../gate/suite.ts';
 import { until, tryUntil, pause } from '../gate/wait.ts';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, constants as osConstants } from 'node:os';
 import { join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -45,9 +47,10 @@ function armSignals() {
   if (signalsArmed) return; signalsArmed = true;
   const onSignal = (sig) => {
     for (const c of LIVE_CHILDREN) { try { c.kill('SIGKILL'); } catch { /* gone */ } try { rmSync(scratchOf.get(c), { recursive: true, force: true }); } catch {} }
-    process.exit(sig === 'SIGINT' ? 130 : 143);
+    process.exit(128 + (osConstants.signals[sig] ?? 15));   // the shell's code for that signal: 130, 143, 129
   };
-  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+  // SIGHUP: a closed terminal (or console window on Windows) ends the probe as Ctrl-C does
+  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal); process.once('SIGHUP', onSignal);
   // an UNCAUGHT throw skips the signal handlers: the same sweep here, so every probe is covered with or without try/finally
   const onThrow = (err) => {
     for (const c of LIVE_CHILDREN) { try { c.kill('SIGKILL'); } catch { /* gone */ } try { rmSync(scratchOf.get(c), { recursive: true, force: true }); } catch {} }

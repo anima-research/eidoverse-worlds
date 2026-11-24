@@ -4,7 +4,8 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scratchBench, scratchSequencer, mkCheck, ROOT } from '../harness/harness.ts';
-import { until } from '../gate/wait.ts';
+import { until, tryUntil } from '../gate/wait.ts';
+import { spawnSync } from 'node:child_process';
 const mode = process.argv[2];
 if (mode === 'assertion') {
   const { evalJson, cleanup, SCRATCH } = await scratchBench('harness-assertion', { portFrom: 9010 });
@@ -17,6 +18,10 @@ if (mode === 'assertion') {
   check('intentional assertion failure', false);
   await cleanup(); // must preserve evidence even on this ordinary path
   process.exit(1);
+}
+if (mode === 'sighup') {   // an owned world, then wait: the parent hangs up on us
+  const { ownedWorld } = await import('../harness/probe-harness.mjs');
+  const w = await ownedWorld(); console.log(`ORIGIN ${w.origin}`); await new Promise(() => {});
 }
 if (mode === 'nonce') {
   await scratchSequencer('harness-nonce', { portFrom: 9010, preload: process.argv[3] });
@@ -75,6 +80,17 @@ try {
     const [o, e, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
     check('contact-mutation-preload: an LF anchor applies to a CRLF file', code === 0 && e.includes('CONTACT_MUTATION_APPLIED') && o.includes('sum 30'), (o + e).slice(-300));
   } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
+}
+if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctrl-C does (#333 backlog G2-087)
+  // win32: no process sends another SIGHUP there (bun's kill can't); its console-close event is the same handler
+  const p = Bun.spawn([process.execPath, import.meta.path, 'sighup'], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
+  let out = ''; void (async () => { for await (const c of p.stdout) out += new TextDecoder().decode(c); })();
+  const origin = await until('the owned world is up', () => /ORIGIN (\S+)/.exec(out)?.[1], { ms: 90_000 }).catch(() => null);
+  const kids = spawnSync('pgrep', ['-P', String(p.pid)], { encoding: 'utf8' }).stdout.split('\n').filter(Boolean).map(Number);
+  p.kill('SIGHUP'); const code = await p.exited;
+  const gone = !!origin && !!(await tryUntil('the owned world is gone', () => fetch(`${origin}/version`, { signal: AbortSignal.timeout(500) }).then(() => false, () => true), { ms: 5000 }));
+  for (const k of kids) try { process.kill(k, 'SIGKILL'); } catch { /* gone, as it should be */ }
+  check('probe-harness: a hangup (SIGHUP) kills the owned world and exits 129', gone && code === 129, JSON.stringify({ origin, code, gone, kids }));
 }
 { // cdp-pw (the probes' driver) gives a console message what playwright's does: type, text, location
   const { launchCdp } = await import('../harness/cdp-pw.mjs');
