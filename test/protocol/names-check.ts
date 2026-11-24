@@ -172,18 +172,29 @@ if (argv.includes("--mutants")) {
   console.log(`[names-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
 if (argv.includes("--control")) {
-  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);
+  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "defs", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);   // defs: E2 reads defs/animations
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   linkInto(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3; a link, so its ../../../shared imports still resolve in d
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
+/** Rows that read a file, module or agent method BASE doesn't have, so they throw there (red for the rule: the thing is new),
+ *  each with what its throw must name; a row that throws for anything else is WRONG at base (G4-150). */
+const ABSENT_AT_BASE: Record<string, RegExp> = {
+  U1: /actionbar\.js/, E2: /actionbar\.js|animnames\.js|_actionbar\.json/, B2: /bodymode\.js/, B3: /bodymode\.js/, K5: /POSE-WIRE\.md/,
+  L1: /animStops|bodyModeNow/, K1: /animStops|bodyModeNow/, K2: /animStops|bodyModeNow/, K3: /animStops|bodyModeNow/, K4: /animStops|bodyModeNow/,
+  OS1: /descriptors\.js/, OS4: /motioneval\.js/, OS7: /PRE-RELEASE-RENAMES\.md/, X1: /PRE-RELEASE-RENAMES\.md/, OLD: /onceanim\.js/,
+};
   for (const k of ["mcpl", "client"]) try { linkInto(path.join(ENGINE, k, "node_modules"), path.join(d, k, "node_modules")); } catch { /* none */ }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
   if (!lines.length) { console.log(`FAIL control: no row ran at base (exit ${r.code})\n${r.out.split("\n").slice(-8).join("\n")}`); process.exit(1); }
   const guard = (l: string) => /^(ok|FAIL)\s+G\d/.test(l);
   const missing = (l: string) => /Cannot find package/.test(l);   // red for this scratch tree's missing dependency, not for the rule
-  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l))));
-  console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 150)}`).join("\n"));
+  // a row that THREW at base is red for the rule only where base lacks what it reads (ABSENT_AT_BASE); any other throw is
+  // a broken row, not a red one (G4-150)
+  const threw = (l: string) => / — \{"threw":/.test(l);
+  const id = (l: string) => l.replace(/^(ok|FAIL)\s+/, "").split(" ")[0];
+  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l) || (threw(l) && !ABSENT_AT_BASE[id(l)]?.test(l.slice(l.indexOf('{"threw":')))))));
+  console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 150)}${threw(l) && wrong.includes(l) ? ` …threw: ${l.slice(l.indexOf('{"threw":') + 10, l.indexOf('{"threw":') + 170)}` : ""}`).join("\n"));
   console.log(`[names-check --control] at ${BASE}: ${lines.length} rows, ${wrong.length} wrong (every row red there but the guards, which stay green)`);
   process.exit(wrong.length ? 1 : 0);
 }
@@ -286,10 +297,10 @@ const cases: Case[] = [
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], shove: true });
       return { r: show(r), fix: r?.refused?.fix ?? "", args: Object.keys(VS.VERBSPEC.punt.args) }; },
     good: (o) => /^refused unknown-arg/.test(o.r) && /contact: true/.test(o.fix) && o.args.includes("contact") && !o.args.includes("shove") },
-  { id: "P3", what: "…with contact: true beside it, refused the same way (and a refused contact push stays unrecorded)", run(s) { cast(s);
+  { id: "P3", what: "…with contact: true beside it, refused the same way, naming shove (and a refused contact push stays unrecorded)", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const n = s.entries().length; const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true, shove: true });
       return { r: show(r), logged: s.entries().length - n }; },
-    good: (o) => /^refused unknown-arg/.test(o.r) && o.logged === 0 },
+    good: (o) => /^refused unknown-arg: punt has no argument 'shove'/.test(o.r) && o.logged === 0 },   // naming shove: at base contact was the unknown one (G4-003)
   { id: "P4", what: "…punt's words carry no feet and no kick: the verbspec row, the act tool's punt line, AGENTS.md", run() {
       const d = JSON.stringify(VS.VERBSPEC.punt), t = readText("mcpl/tools.ts"), a = readText("AGENTS.md");
       const punt = (t.match(/punt \{id, power\?\|v\?\} \([^)]*\)/) ?? [""])[0], ag = (a.match(/`punt \{id, power\? \| v\?\}`[^.]*\./) ?? [""])[0];
