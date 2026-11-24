@@ -18,8 +18,16 @@ const inHeadset = () => { try { return !!headset?.active(); } catch { return fal
 /** answer the open desk card with its cancel (a dismissal, never a yes): a headset session starting, or a question
  *  going to the headset, leaves nothing on the desk that a key meant for the headset could answer */
 export function closeCenter() { open?.settle(open.cancel); }
-// a key aimed at an element outside the card (the headset's text field, typed on the VR keyboard) is not for the card
-const aimedElsewhere = (e, root) => e.target?.nodeType === 1 && e.target !== document.body && e.target !== document.documentElement && !root.contains(e.target);
+// a synthetic key aimed at an element outside the card (the VR keyboard's ⏎ on the headset's text field) is not for the
+// card. A real key always is: wherever focus went, Esc still answers and a walking key never reaches the body behind
+const aimedElsewhere = (e, root) => !e.isTrusted && e.target?.nodeType === 1 && e.target !== document.body && e.target !== document.documentElement && !root.contains(e.target);
+// focus taken off the open card (another control, the canvas) comes back to `home`: Enter out of sight must not answer it.
+// Returns the release.
+function holdFocus(root, home) {
+  const back = (e) => { if (!root.contains(e.target)) home.focus(); };
+  document.addEventListener('focusin', back, true);
+  return () => document.removeEventListener('focusin', back, true);
+}
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
   if (inHeadset()) { closeCenter(); return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok'); }
@@ -46,10 +54,11 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); (e.target === okB ? noB : okB).focus(); }
       else e.stopPropagation();   // typing here is never walking or a hotkey
     };
+    let release = () => {};
     function settle(v) {
       if (open?.root !== root) return;
       open = null;
-      removeEventListener('keydown', onKey, true);
+      removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
       resolve(v);
@@ -60,7 +69,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
     open = { root, settle, cancel: false };   // cancel: what an interrupting ask answers it with
-    root.querySelector('.cc-ok').focus();
+    okB.focus(); release = holdFocus(root, okB);
   });
 }
 
@@ -89,12 +98,15 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
       if (aimedElsewhere(e, root)) return;
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(null); }
       else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); settle(e.target === noB ? null : answer()); }
+      // Tab walks the field and the two buttons, never off the card
+      else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const ring = [inp, noB, okB], i = ring.indexOf(e.target); ring[(i + (e.shiftKey ? ring.length - 1 : 1)) % ring.length].focus(); }
       else e.stopPropagation();   // typing a name is never walking or a hotkey
     };
+    let release = () => {};
     function settle(v) {
       if (open?.root !== root) return;
       open = null;
-      removeEventListener('keydown', onKey, true);
+      removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
       resolve(v);
@@ -105,7 +117,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
     open = { root, settle, cancel: null };
-    inp.focus(); inp.select();
+    inp.focus(); inp.select(); release = holdFocus(root, inp);
   });
 }
 
@@ -141,10 +153,11 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
       else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus(); }
       else e.stopPropagation();   // typing here is never walking or a hotkey
     };
+    let release = () => {};
     function settle(v) {
       if (open?.root !== root) return;
       open = null;
-      removeEventListener('keydown', onKey, true);
+      removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
       resolve(v);
@@ -155,6 +168,6 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
     open = { root, settle, cancel };
     // `focus`: the answer Enter gives at first — a destructive question focuses its safe answer
     const fi = focus != null ? choices.findIndex((c) => c.v === focus) : -1;
-    btns[fi >= 0 ? fi : 0].focus();
+    btns[fi >= 0 ? fi : 0].focus(); release = holdFocus(root, btns[fi >= 0 ? fi : 0]);
   });
 }

@@ -61,6 +61,32 @@ const inVR = async () => { await enterVR(pg); await install(); await S('the ask 
 try {
   await pg.goto(`${world.origin}/?world=staging&name=askprobe&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await visorShown(pg);
+
+  // D (review #359 1): the desk card keeps the keyboard. Focus sent elsewhere (another control, the canvas) comes back to
+  // the card, so a real Escape still answers it and a walking key never reaches the body behind it; Tab stays on the card
+  await install();
+  await pg.evaluate(async () => { const { bus } = await import('./lib/base.js'); globalThis.__keys = 0; bus.on('key', () => { globalThis.__keys++; }); return true; });
+  const d = {};
+  await pg.evaluate(async () => globalThis.__px.track('d1', (await import('./lib/edit/confirmcenter.js')).confirmCenter({ title: 'Desk question' })));
+  await S('D: the desk card is open', () => !!document.querySelector('#confirm-center'));
+  await pg.evaluate(() => { const b = document.createElement('button'); b.id = 'probe-elsewhere'; b.textContent = 'elsewhere'; document.body.append(b); b.focus(); return true; });   // another control takes focus
+  d.keys0 = await pg.evaluate(() => globalThis.__keys);
+  await pg.keyboard.press('KeyW');
+  d.keys1 = await pg.evaluate(() => globalThis.__keys);
+  await pg.keyboard.press('Escape');
+  await pg.evaluate(() => { document.querySelector('#probe-elsewhere')?.remove(); return true; });
+  d.d1 = await settledR('d1', 'D: Escape answers the desk card').then(() => R('d1'), () => 'unsettled');
+  await pg.evaluate(async () => globalThis.__px.track('d3', (await import('./lib/edit/confirmcenter.js')).askCenter({ title: 'Desk name' })));
+  await S('D: the desk text card is open', () => !!document.querySelector('#confirm-center input'));
+  d.tabs = [];
+  for (let i = 0; i < 4; i++) { await pg.keyboard.press('Tab'); d.tabs.push(await pg.evaluate(() => !!document.activeElement?.closest?.('#confirm-center'))); }
+  await pg.keyboard.press('Escape');
+  d.d3 = await settledR('d3', 'D: Escape answers the desk text card').then(() => R('d3'), () => 'unsettled');
+  console.log('  · D', JSON.stringify(d));
+  check('D1 a desk card whose focus was taken elsewhere: a real Escape still answers it (no)', d.d1 === false, JSON.stringify(d));
+  check('D2 …and a walking key pressed meanwhile never reaches the body', d.keys1 === d.keys0, JSON.stringify(d));
+  check('D3 Tab walks the desk text card (field, Cancel, Save) and never leaves it', d.tabs.every(Boolean) && d.d3 === null, JSON.stringify(d.tabs));
+
   await inVR();
 
   // C: the guarded action — turning on speech-to-text asks for consent first (audio/voiceconsent.js)
