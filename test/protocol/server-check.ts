@@ -369,8 +369,12 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     const k0 = db.msgs.length; da.send({ type: "drag", id: IDS.of("drg"), pos: [2.5, 0, 2], yaw: 0 });
     await tryUntil("Dev is sent the first sample", () => db.msgs.slice(k0).some((m) => m.type === "drag" && m.id === IDS.of("drg")), { ms: 2000, step: 20 }); da.send({ type: "drag", id: IDS.of("drg"), pos: [3, 0, 2], yaw: 0, end: true });
     await tryUntil("Dev is sent both drag samples", () => db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg")).length >= 2, { ms: 2000 });
-    await pause("a second copy would arrive within the old window", 400); const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
-    ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
+    // G6-125: a barrier, not the old 400 ms: the relay is synchronous, so a second copy of either sample would reach Dev before
+    // a later drag of Dana's does
+    da.send({ type: "drag", id: "dr1-barrier", pos: [0, 0, 0], yaw: 0, end: true });
+    const fenced = await tryUntil("Dev is sent Dana's later drag", () => db.msgs.slice(k0).some((m) => m.type === "drag" && m.id === "dr1-barrier"), { ms: 2000, step: 20 });
+    const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
+    ok(mk?.ok && !!fenced && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
     await ann.req("delete", { id: "@world", component: "default-role" });   // the later rows expect no default-role: a newcomer is a member (CM4's whois)
     await bye(da, db); }
   // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
@@ -602,8 +606,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.hand === "left" && a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
   const n = a.of("log").length; b.close();
   await tryUntil("Bob's leaving drops the ball (a launch, and nobody holds it)", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball")) && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, { ms: 2000 });
-  await pause("a second copy would arrive within the old window", 400); const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
-  ok(launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
+  // G6-125: a barrier, not the old 400 ms: Ann's own later say is a later log entry, so once she has it she has every entry before it
+  ok((await a.req("say", { text: "sp3 barrier" })).ok, "(SP3) Ann speaks after the drop");
+  const fenced = await tryUntil("Ann is sent her own later say", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "say" && e.body?.text === "sp3 barrier"), { ms: 2000, step: 20 });
+  const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
+  ok(!!fenced && launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
   // wait until the authority has it at rest: the authority's clock is the wall clock made monotonic (server/livehost.ts), so a
   // wall clock that steps back (seen under load) stalls physics time for as long (never reorders it)
   let wr = null; await tryUntil("the authority has it at rest", async () => { wr = await a.req("wait", {}); return !Object.keys(wr?.inFlight ?? {}).length; }, { ms: 10_000, step: 500 });
