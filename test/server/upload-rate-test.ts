@@ -116,4 +116,21 @@ const three = [pngOf(1), pngOf(2), pngOf(3)], threeBytes = three.reduce((n, b) =
     check("B3b ...and the upload tool tells the agent it was not stored", /not stored/.test(t) && !/isn't known/.test(t), t); }
   finally { srv.stop(true); }
   uploadBudget.minFreeBytes = was; }
+// ...and an upload that states no length (a stream) is held to the floor once its bytes are read: the check before the
+// body saw 0 bytes. A 16 MB picture (stored, not deflated: fast to make), the floor set half of it under the free space
+{ const was = uploadBudget.minFreeBytes;
+  const { PNG } = require("pngjs");
+  const p = new PNG({ width: 2048, height: 2048 }); for (let i = 0; i < p.data.length; i++) p.data[i] = (i * 2654435761) >>> 24;
+  const big = new Uint8Array(PNG.sync.write(p, { deflateLevel: 0 }));
+  const { statfsSync } = await import("node:fs");
+  const free = () => { const f = statfsSync(OPT); return Number(f.bavail) * Number(f.bsize); };
+  const url = new URL("http://x/upload?as=image&name=big.png"), before = stored();
+  const log = console.log; console.log = () => {};
+  let status = 0, text = "";
+  try { uploadBudget.minFreeBytes = free() - Math.floor(big.length / 2);
+    const body = new ReadableStream({ start(c) { c.enqueue(big); c.close(); } });
+    const r = await handleUpload(new Request(url, { method: "POST", headers: { authorization: "Bearer rate-bearer-pine" }, body }), url, { requestIP: () => ({ address: "192.0.2.85" }) });
+    status = r.status; text = await r.text(); }
+  finally { console.log = log; uploadBudget.minFreeBytes = was; }
+  check("B3c a streamed upload with no Content-Length that would take the disk under the floor is refused 507 once read, and not stored", status === 507 && /disk/.test(text) && stored() === before, { bytes: big.length, status, text: text.slice(0, 80), stored: stored() - before }); }
 S.done();

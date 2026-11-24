@@ -481,7 +481,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   // the disk's floor, then the uploader's bytes for the day (the stated length now; what was read once it is). The day is
   // charged only for bytes stored (charge, below)
   const stated = Math.max(0, Math.min(Number(req.headers.get("content-length")) || 0, UPLOAD_CAP));
-  if (diskNearlyFull(stated)) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 });
+  const diskFull = () => new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 });
+  if (diskNearlyFull(stated)) return diskFull();
   // held from the start: two first uploads at once share this one record, or the later charge would replace the earlier
   const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 }; uploadDay.set(uploader, day);
   if (Date.now() - day.t >= DAY_MS) { day.t = Date.now(); day.bytes = 0; }
@@ -491,6 +492,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   const body = await readCappedBytes(req, UPLOAD_CAP);
   if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
   if (uploadBudget.perDayBytes > 0 && day.bytes + body.length > uploadBudget.perDayBytes) return dayRefused();
+  // the floor again once the length is known: a stream that stated none was checked above as 0 bytes
+  if (diskNearlyFull(body.length)) return diskFull();
   // charged only for what is stored: a refusal, and bytes the store already holds (content-addressed), cost the day nothing
   const charge = () => { day.bytes += body.length; uploadDay.set(uploader, day); };
   if (JOIN_TOKEN && !who().ids.includes(stoodOn!))
