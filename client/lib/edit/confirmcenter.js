@@ -3,13 +3,15 @@
 //
 //   confirmCenter({ title, body, ok = 'OK', cancel = 'Cancel' }) → Promise<boolean>
 //
-// OK, or Enter (unless Cancel has focus), says yes; Esc, Cancel or the backdrop says no. One at a time: a new ask answers the open one with its
-// cancel. No imports: the lite client and the boot path use this too.
+// OK, or Enter (unless Cancel has focus), says yes; Esc, Cancel or the backdrop says no. One at a time: an ask made while a
+// card is open waits its turn and is shown when that one is answered, never answering it (a moderator's warning arriving
+// must not dismiss the speech-to-text consent question). No imports: the lite client and the boot path use this too.
 //
 // In a headset (a DOM card isn't drawn in an immersive session) every ask here goes to the headset's own quad instead:
 // xr/xrask.js registers itself with setHeadsetAsk() when it loads, so the lite client and the boot path never load it.
 
 let open = null;   // { root, settle, cancel }
+const waiting = [];   // asks made while a card was open, in order: { go, cancel, resolve }
 let headset = null;   // { active() → bool, choose(q) → Promise<v>, ask(q) → Promise<string|null> } — xr/xrask.js
 
 /** xr/xrask.js: while `active()`, the questions below are asked on the headset's quad, not on the desk */
@@ -17,7 +19,10 @@ export function setHeadsetAsk(h) { headset = h; }
 const inHeadset = () => { try { return !!headset?.active(); } catch { return false; } };
 /** answer the open desk card with its cancel (a dismissal, never a yes): a headset session starting, or a question
  *  going to the headset, leaves nothing on the desk that a key meant for the headset could answer */
-export function closeCenter() { open?.settle(open.cancel); }
+export function closeCenter() { for (const w of waiting.splice(0)) w.resolve(w.cancel); open?.settle(open.cancel); }
+// one card at a time: `ask(resolve)` builds the card now, or when the open one (and those before it) are answered
+const inTurn = (cancel, ask) => new Promise((resolve) => { if (open) waiting.push({ go: () => ask(resolve), cancel, resolve }); else ask(resolve); });
+const next = () => waiting.shift()?.go();
 // a synthetic key aimed at an element outside the card (the VR keyboard's ⏎ on the headset's text field) is not for the
 // card. A real key always is: wherever focus went, Esc still answers and a walking key never reaches the body behind
 const aimedElsewhere = (e, root) => !e.isTrusted && e.target?.nodeType === 1 && e.target !== document.body && e.target !== document.documentElement && !root.contains(e.target);
@@ -32,8 +37,7 @@ function holdFocus(root, home) {
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
   if (inHeadset()) { closeCenter(); return headset.choose({ title, body, choices: [{ v: 'ok', label: ok }, { v: 'cancel', label: cancel }], cancel: 'cancel' }).then((v) => v === 'ok'); }
   if (typeof document === 'undefined') return Promise.resolve(false);
-  open?.settle(open.cancel);
-  return new Promise((resolve) => {
+  return inTurn(false, (resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
     root.innerHTML = '<div class="cc-card panel" role="alertdialog" aria-modal="true" aria-labelledby="cc-title" aria-describedby="cc-body">'
@@ -61,14 +65,14 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
       removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
-      resolve(v);
+      resolve(v); next();
     }
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(false); });
     root.querySelector('.cc-ok').addEventListener('click', () => settle(true));
     root.querySelector('.cc-no').addEventListener('click', () => settle(false));
     addEventListener('keydown', onKey, true);
     document.body.appendChild(root);
-    open = { root, settle, cancel: false };   // cancel: what an interrupting ask answers it with
+    open = { root, settle, cancel: false };   // cancel: what a dismissal (closeCenter) answers it with
     okB.focus(); release = holdFocus(root, okB);
   });
 }
@@ -80,8 +84,7 @@ export const confirmOpen = () => !!open;
 export function askCenter({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
   if (inHeadset() && headset.ask) { closeCenter(); return headset.ask({ title, body, value, placeholder, ok, cancel, max }); }
   if (typeof document === 'undefined') return Promise.resolve(null);
-  open?.settle(open.cancel);
-  return new Promise((resolve) => {
+  return inTurn(null, (resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
     root.innerHTML = '<div class="cc-card panel" role="dialog" aria-modal="true" aria-labelledby="cc-title">'
@@ -109,7 +112,7 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
       removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
-      resolve(v);
+      resolve(v); next();
     }
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(null); });
     okB.addEventListener('click', () => settle(answer()));
@@ -124,12 +127,11 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
 /** The same centre card with more than two answers (the lock question: ✓ Move anyway / ✕ Cancel / 🔓 Unlock).
  *  choices: [{v, label, danger?}], in the order shown (danger: styled as destructive); `cancel` is the v that Esc and the backdrop answer (and Enter on it).
  *  The first choice has focus (the house yes) unless `focus` names another v; Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
- *  rule: asking again answers the open one with its cancel. */
+ *  rule: asked while a card is open, it waits its turn. */
 export function chooseCenter({ title, body = '', choices = [], cancel = null, focus = null } = {}) {
   if (inHeadset() && choices.length) { closeCenter(); return headset.choose({ title, body, choices, cancel }); }
   if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
-  open?.settle(open.cancel);
-  return new Promise((resolve) => {
+  return inTurn(cancel, (resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
     root.innerHTML = '<div class="cc-card panel" role="alertdialog" aria-modal="true" aria-labelledby="cc-title" aria-describedby="cc-body">'
@@ -160,7 +162,7 @@ export function chooseCenter({ title, body = '', choices = [], cancel = null, fo
       removeEventListener('keydown', onKey, true); release();
       root.remove();
       try { before?.focus?.(); } catch { /* gone */ }
-      resolve(v);
+      resolve(v); next();
     }
     root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(cancel); });
     addEventListener('keydown', onKey, true);
