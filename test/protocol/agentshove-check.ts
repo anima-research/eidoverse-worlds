@@ -63,6 +63,7 @@ const r0 = Bun.spawnSync(["bun", "tools/world.ts", "found", "yard", "--owner", "
 ok(r0.exitCode === 0, "(setup) found yard, Ann owns it", r0.stderr.toString().slice(-300));
 import { idAliases } from "../harness/idalias.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { TRACK } from "../../shared/mover.js";
 const IDS = idAliases();
 const srv = await startServer(env(), root, { from: 9640 }), { port, proc } = srv;
 let ag = null, ann = null;
@@ -242,14 +243,19 @@ try {
   // is spent (just after other walking; on a slow host, often) waits for it instead of ending refused. Spend it with two raw
   // steps out and back (net nowhere, ~3.9 m of allowance), then ask for an ordinary walk at once
   { const at = Array.isArray(ag.trackAt) ? ag.trackAt.slice() : null; ok(!!at, "(AS16 setup) the authority has the body somewhere", { at });
-    const out = [at[0] - 1.95, at[1], at[2]];
+    const out = [at[0] - 1.95, at[1], at[2]], t0 = performance.now();
     const s1 = await ag.request("move", { to: out }), s2 = await ag.request("move", { to: at });
     ok(s1?.ok && s2?.ok, "(AS16 setup) two steps out and back spend the track", { s1: s1?.refused, s2: s2?.refused });
     // G6-093: the walk's own move requests are watched, so the row shows the track WAS spent (a "not yet" came back first)
-    const slow: any[] = [], req1 = ag.request.bind(ag);
-    ag.request = (verb, args, ...rest) => { const r = req1(verb, args, ...rest); if (verb === "move") r.then((x) => { if (x?.refused?.code === "too-fast") slow.push(x.refused); }); return r; };
+    const slow: any[] = [], req1 = ag.request.bind(ag); let t1 = 0;
+    ag.request = (verb, args, ...rest) => { const r = req1(verb, args, ...rest); if (verb === "move") r.then((x) => { t1 ||= performance.now(); if (x?.refused?.code === "too-fast") slow.push(x.refused); }); return r; };
     const t = T(await call("move", { to: [at[0] - 3, at[2]] })); ag.request = req1;
-    ok(slow.length >= 1, "(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", { slow, t });
+    // the setup leaves the track ≤ cap − 3.9 m, refilling at its speed; the first permit (TRACK.cap / 2, agent.ts) is refused
+    // only while the refill is short of it. t1 − t0 bounds the authority's time from s1 to that permit: past it, none seen is n/a
+    const gapMs = Math.round(t1 - t0), refillMs = Math.floor((TRACK.cap / 2 - (TRACK.cap - 3.9)) / TRACK.speed * 1000);
+    console.log("   AS16:", JSON.stringify({ gapMs, refillMs, tooFast: slow.length }));
+    if (slow.length || (t1 && gapMs < refillMs)) ok(slow.length >= 1, "(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", { slow, t, gapMs, refillMs });
+    else S.na("(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", `the walk's first permit came ${gapMs} ms after the spend (the track refills its permit in ${refillMs} ms), so the not-yet path wasn't driven (too-fast seen: ${slow.length})`);
     ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
   // AS15 (review of #260): a rejoin resends what the agent chose with consent. The rejoin reads what the authority holds
   // and sets only what differs; the agent never sends the gate it closed open, and it is closed after. G4-216: the

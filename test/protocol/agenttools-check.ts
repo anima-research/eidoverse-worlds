@@ -587,5 +587,7 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   ag.onEvent = realOn;
   (globalThis as any).makeTerrain = realMk; }
 
+// G4-132 review: pacing hides a per-request slowdown, so a green run says how often it waited (a trend, not a row)
+console.log(`   pacing: paced ${paced}× (busy ${Math.round(BUSY_MS)} ms per 10 s); ag's longest round trip ${Math.round(Math.max(0, ...sent.map((e) => e.ms)))} ms across ${sent.length} requests`);
 ag.close(); ann.close();
 done();
