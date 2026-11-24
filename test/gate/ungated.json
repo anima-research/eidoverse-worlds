@@ -24,7 +24,7 @@
  "test/server/ktx2-transfer-test.ts": "needs a KTX2 encoder (toktx/ktx), which the gate hosts lack: it tests nothing",
  "test/client/landmarks-test.ts": "needs the host's optimized avatar store (assets/opt/…/vrms); no rig-fixture fallback yet",
  "test/client/library-badge-probe.mjs": "Chromium probe: 13 fixed waits to turn into conditions; red on the CDP harness: exit TIMEOUT",
- "test/client/lite-banner-probe.mjs": "Chromium probe: 10 fixed waits to turn into conditions; red on the CDP harness: exit 1",
+ "test/client/lite-banner-probe.mjs": "Chromium probe: 10 fixed waits to turn into conditions; green on the CDP harness on Linux since cdp-pw's locator evaluate/pressSequentially and click hit-target wait (11-23)",
  "test/server/lod-budget-test.ts": "needs a KTX2 encoder (toktx/ktx) for its texture rows, which the gate hosts lack",
  "test/client/logo-probe.mjs": "Chromium probe: 8 fixed waits to turn into conditions",
  "test/client/mic-hud-probe.mjs": "Chromium probe: red on the CDP harness: FAIL click ON reaches the SFU: slash gone, tooltip no longer \"mic off\" — {\"title\":\"mic off (V to talk)\\nmic and hearing on/off are visible to everyone",

@@ -82,7 +82,7 @@ try {
   } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
 }
 if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctrl-C does (#333 backlog G2-087)
-  // win32: no process sends another SIGHUP there (bun's kill can't); its console-close event is the same handler
+  // not run on win32: there a SIGHUP comes from closing the console window, not from another process
   const p = Bun.spawn([process.execPath, import.meta.path, 'sighup'], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
   let out = ''; void (async () => { for await (const c of p.stdout) out += new TextDecoder().decode(c); })();
   const origin = await until('the owned world is up', () => /ORIGIN (\S+)/.exec(out)?.[1], { ms: 90_000 }).catch(() => null);
@@ -163,6 +163,10 @@ if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe'
     await row('cdp-pw: click({timeout}) gives up at its timeout, not a fixed 30 s (picture-editor-probe)', async () => {
       const t0 = performance.now(); let threw = false; try { await pg.click('#absent', { timeout: 1000 }); } catch { threw = true; }
       const s = (performance.now() - t0) / 1000; return [threw && s < 15, { threw, s }]; });
+    await row('cdp-pw: click waits until the target, not an overlay over it, takes the pointer (lite-banner-probe: the splash)', async () => {
+      await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'cover'; o.style.cssText = 'position:fixed;inset:0;background:#000'; document.body.append(o); setTimeout(() => o.remove(), 1000); });
+      await pg.click('#b', { timeout: 10_000 }); const n = await pg.evaluate(() => (document.getElementById('b') as any).dataset.n ?? '0');
+      await pg.evaluate(() => { delete (document.getElementById('b') as any).dataset.n; }); return [n === '1', n]; });
     await row('cdp-pw: evaluateHandle(...).asElement() is an element handle: $, click, evaluate (library-badge-probe)', async () => {
       const box = (await pg.evaluateHandle(() => document.getElementById('box'))).asElement();
       const btn = await box?.$('#b'); await btn?.click(); await btn?.click();

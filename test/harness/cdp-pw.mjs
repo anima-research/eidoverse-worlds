@@ -149,7 +149,9 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     return out;
   };
   const center = async (sel, timeout = 30_000) => {
-    await until(`${sel} is on the page and visible`, () => evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden'; }, sel), { ms: timeout });
+    // …and takes the pointer at its centre (playwright's hit-target check): an overlay over it, a splash, is waited out
+    await until(`${sel} is on the page, visible and not covered`, () => evaluate((s) => { const e = document.querySelector(s); if (!e) return false; const r0 = e.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(e).visibility !== 'hidden')) return false;
+      e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && e.contains(h); }, sel), { ms: timeout });
     return evaluate((s) => { const e = document.querySelector(s); e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
   };
   let mods = 0, mx = 0, my = 0, buttons = 0;
