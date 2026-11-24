@@ -2,7 +2,7 @@
 // continuation, success (+ stale .deferred retired), 'not smaller' marker, child death → .deferred (its retry by a later
 // boot sweep isn't driven here), the child's memory standing (no data rlimit, the kernel's first pick), stale-marker
 // retirement when the variant exists already, and both boot sweeps skipped under SKIP_OPT_SWEEP (subprocess). Each case owns its store.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -83,6 +83,14 @@ if (process.platform === "linux") {
   const seen = existsSync(s7 + ".limits") ? JSON.parse(readFileSync(s7 + ".limits", "utf8")) : {};
   ok(existsSync(storeDest(s7)) && seen.data === own, `the child runs under no data limit of the pump's (${own}; saw ${JSON.stringify(seen)})`);
   ok(seen.oom === "1000", `the child is the kernel's first pick for an OOM kill (oom_score_adj; saw ${JSON.stringify(seen)})`);
+  // 6b. an encoder the kernel kills for memory (SIGKILL; the real optimizer, a fake toktx) kills the pass the same way,
+  //     so row 5's rule defers it: never a .failed "failure" for what the box couldn't afford
+  const killer = join(root, "toktx"); writeFileSync(killer, "#!/bin/sh\nkill -KILL $$\n"); chmodSync(killer, 0o755);
+  const { PNG } = await import("pngjs"); const png = new PNG({ width: 4, height: 4 }); png.data.fill(200);
+  const img = join(root, "src", "tile.png"); writeFileSync(img, PNG.sync.write(png));
+  const enc = spawnSync(process.execPath, ["run", "server/optimize.ts", "--ktx2-img", img, join(root, "tile.ktx2")],
+    { env: { ...process.env, KTX2_TOKTX: killer }, cwd: import.meta.dir + "/../..", encoding: "utf8" });
+  ok(enc.signal === "SIGKILL", `an encoder killed by SIGKILL kills --ktx2-img the same way (saw status ${enc.status}, signal ${enc.signal}: ${(enc.stderr ?? "").trim().split("\n").pop()})`);
 } else console.log("(non-Linux: child-death and oom cases skipped)");
 // 6b. the pump never waits forever on a child (it would hold optIdle and every pass behind it): one that never answers is
 //     killed at OPT_CHILD_TIMEOUT_MS and deferred; one whose grandchild keeps its stderr open is read up to a grace past
