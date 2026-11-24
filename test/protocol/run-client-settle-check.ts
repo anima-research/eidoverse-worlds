@@ -6,6 +6,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { ENGINE, scratch } from "../gate/common.ts";
 import { suite } from "../gate/suite.ts";
+import { SUITES } from "../gate/suites.ts";
 
 const { ok, done } = suite("run-client-settle");
 const root = scratch("rcsettle"), dir = path.join(root, "tests"); fs.mkdirSync(dir);
@@ -91,4 +92,14 @@ const rc7 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run
 const out7 = rc7.stdout.toString() + rc7.stderr.toString();
 ok(/^ok\s+\S*i-buntest-passes-test\.ts/m.test(out7), "full run: a passing bun:test file is a pass", out7.slice(-500));
 ok(/^RED\s+\S*j-buntest-fails-test\.ts/m.test(out7) && rc7.exitCode === 1, "full run: …and a failing one is red", { code: rc7.exitCode, out: out7.slice(-300) });
+// --skip-suites: a row's runner file argument (bun-test.ts test/server/screenshots-test.ts) is the gate's too, so
+// client-tools skips it rather than running its tests a second time (cold review of hep/pkg-test-infra F1)
+const argRows = SUITES.flatMap(([n, f]) => f.split(" ").slice(1).filter((a) => /\.(?:ts|mjs|js)$/.test(a)).map((a) => [n, a] as const));
+ok(argRows.length > 0, "some gate row passes its runner a test file (else this check has no subject)", argRows);
+for (const [n, a] of argRows) {
+  const rc8 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--import-only", "--skip-suites", "--strict-env", path.basename(a).replace(/\.\w+$/, "")],
+    { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+  const out8 = rc8.stdout.toString() + rc8.stderr.toString();
+  ok(new RegExp(`^skip\\s+\\S*${path.basename(a).replace(/[.]/g, "\\.")}\\s+—\\s+the gate runs it in full as ${n}$`, "m").test(out8) && /^\s*loaded: 0$/m.test(out8), `--skip-suites: ${a}, the ${n} row's runner argument, is skipped as gated, not loaded again`, out8.slice(-400));
+}
 done();

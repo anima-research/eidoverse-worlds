@@ -57,14 +57,16 @@ const launchesBrowser = (f: string) => browserLauncher(f) !== null;
 
 // what the other runners reach
 const reached = new Set<string>();
-for (const [, file] of SUITES) reached.add(rel(suitePath(file)));
+// a row's runner and each file argument it takes (bun-test.ts test/server/x-test.ts), as hygiene-check's ungatedTests reads them
+const rowFiles = (file: string) => [rel(suitePath(file)), ...file.split(" ").slice(1).filter((a) => /\.(?:ts|mjs|js)$/.test(a)).map((a) => rel(join(ROOT, a)))];
+for (const [, file] of SUITES) for (const f of rowFiles(file)) reached.add(f);
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 for (const s of Object.values(pkg.scripts ?? {}) as string[]) for (const m of s.matchAll(/(?:tools|test)\/[\w./-]+/g)) reached.add(m[0]);
 const unreached = files.map(rel).filter((p) => !reached.has(p));
 // --skip-suites: the gate runs each of its own suites in full (a load error fails that suite), so loading them here
 // again is the same check twice; on windows-latest those 26 files, each run to the 15 s cap, were what pushed the lane
 // past its budget (358 s, 478 s, then >1010 s on three runs, 10-23)
-const gateSuite = new Map<string, string>(); for (const [n, file] of SUITES) gateSuite.set(rel(suitePath(file)), n);
+const gateSuite = new Map<string, string>(); for (const [n, file] of SUITES) for (const f of rowFiles(file)) gateSuite.set(f, n);
 
 if (flag("--unreached")) {
   console.log(`${unreached.length} of ${files.length} test files are reached by no other runner (test/gate/run.ts, package.json):`);
