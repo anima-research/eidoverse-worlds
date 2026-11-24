@@ -104,7 +104,11 @@ try {
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
   const shoves = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.args?.id === N(id) && e.body?.args?.contact === true);
-  const anyPunt = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
+  // G4-131: a refused punt is logged with argNames only (authority.js R7), or not at all, so the log can't say what one was
+  // aimed at: anyPunt is every punt the agent SENT at it (its one route, request "punt") plus any logged by that id
+  const sentPunts: any[] = []; { const req0 = ag.request.bind(ag); ag.request = (verb, args, ...rest) => { if (verb === "punt") sentPunts.push(args); return req0(verb, args, ...rest); }; }
+  const anyPunt = (id) => [...sentPunts.filter((a) => a?.id === N(id)).map((a) => ({ sent: a })),
+    ...entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`)).map((e) => ({ logged: e.body }))];
   const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
   const settle = async (id) => { if (await tryUntil(`${id} comes to rest`, () => !ag.replica?.sim?.sim?.bodies?.[N(id)], { ms: 10_000 })) await ann.req("wait", {}); };
   const shaped = (ids) => tryUntil(`${ids.join(", ")} measured`, () => ids.every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), { ms: 4000, step: 50 });
@@ -118,7 +122,7 @@ try {
     const w = await call("move", { to: [0, 4.5] }); await settle("low");
     await tryUntil("the low crate's shove is logged and folded", () => shoves("low").length >= 1 && posOf("low")?.[2] > 2.2, { ms: 3000, step: 50 });
     const s = shoves("low"), p = posOf("low");
-    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {contact: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low").map((e) => e.body) });
+    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {contact: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low") });
     ok(Array.isArray(p) && p[2] > 2.2, "AS1 …and it moved along the walk (+z)", p);
     ok(!w.isError, "AS1 …and the walk arrived (the authority's body steps over a low crate)", T(w)); }
   // AS2
@@ -134,7 +138,7 @@ try {
   { const m0 = await call("move", { to: [10.5, 1.36] }); ok(!m0.isError, "(AS3 setup) the agent stands west of the third crate's face line", T(m0));
     const n0 = anyPunt("still").length;
     const w = await call("move", { to: [12, 1.36] }); await pause("standing beside it: no punt in this window", 2500);
-    ok(!w.isError && anyPunt("still").length === n0, "AS3 walking along its face, then standing beside it 2.5 s: no punt", { punts: anyPunt("still").map((e) => e.body), text: T(w) }); }
+    ok(!w.isError && anyPunt("still").length === n0, "AS3 walking along its face, then standing beside it 2.5 s: no punt", { punts: anyPunt("still"), text: T(w) }); }
   // AS4
   { const m0 = await call("move", { to: [18, 0] }); ok(!m0.isError, "(AS4 setup) the agent stands south of the locked crate", T(m0));
     // what the agent SENDS is watched too: a refused contact punt is counted, never written, so the log alone can't see one
@@ -144,7 +148,7 @@ try {
     await whileWalking(() => walking, () => { reach = Math.max(reach, ag.pos.z); });
     await wp; ag.request = req; await ag.request("wait", {});   // behind any punt on the agent's socket: logged before this reply
     ok(reach >= 0.9, "(AS4 setup) the walk reached the crate (the behaviour at it was exercised)", { reach });
-    ok(anyPunt("locked").length === 0 && sent.length === 0, "AS4 a locked crate in the path: the agent sends no punt at it, and none is in the log", { sent, logged: anyPunt("locked").map((e) => e.body) }); }
+    ok(anyPunt("locked").length === 0 && sent.length === 0, "AS4 a locked crate in the path: the agent sends no punt at it, and none is in the log", { sent, logged: anyPunt("locked") }); }
   // AS5
   { const r = await mk("fixed", { model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     ok(r.ok, "(AS5 setup) a static tall crate", r);
@@ -154,10 +158,13 @@ try {
     const w = call("move", { to: [-6, 5] }).finally(() => { walking = false; });
     await whileWalking(() => walking, () => { off = Math.max(off, Math.abs(ag.pos.x + 6)); });
     const t = T(await w), p = posOf("fixed");
-    ok(anyPunt("fixed").length === 0, "AS5 a static crate of the same size in the path: no punt", anyPunt("fixed").map((e) => e.body));
+    ok(anyPunt("fixed").length === 0, "AS5 a static crate of the same size in the path: no punt", anyPunt("fixed"));
     ok(JSON.stringify(p) === JSON.stringify(p0), "AS5 …it stays put", { p0, p });
     ok(/^arrived/.test(t), "AS5 …the walk arrives", t);
-    ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off }); }
+    ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off });
+    // the helper's control: a punt the authority refuses (a static thing) is still one anyPunt sees
+    const n0 = anyPunt("fixed").length, rp = await ag.request("punt", { id: N("fixed"), v: [0, 0, 1], contact: true });
+    ok(!rp?.ok && anyPunt("fixed").length > n0, "(AS5 control) a refused punt at it is seen by anyPunt, which AS3-AS5's \"no punt\" reads", { refused: rp?.refused, punts: anyPunt("fixed") }); }
   // AS6
   { const r = await crate("heavy", "test/tallcrate.glb", [-12, 0, 2], {}, 2000); ok(r.ok, "(AS6 setup) a 2000 kg dynamic tall crate", r);
     await shaped(["heavy"]); await fitted(["heavy"]);
