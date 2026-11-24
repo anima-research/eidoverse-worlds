@@ -862,15 +862,17 @@ const ROUTES: Route[] = [
       const dest = join(dir, `${safe}.png`);
       // a name not held yet is taken only while the store holds fewer than THUMBS_MAX names (portraits or meta entries)
       // and the disk has room (UPLOAD_MIN_FREE_MB): any name may be posted, so without these the names are unbounded
-      if (!existsSync(dest)) {
+      const newNameRefused = (): Response | null => {
+        if (existsSync(dest)) return null;
         let metaNow: Record<string, unknown> = {};
         try { const mp = join(dir, "meta.json"); if (existsSync(mp)) metaNow = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
-        if (!Object.hasOwn(metaNow, safe)) {   // own keys only: "constructor" is a new name, not an inherited one
-          const names = new Set([...readdirSync(dir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(metaNow)]);
-          if (thumbLimits.max > 0 && names.size >= thumbLimits.max) return new Response(`the portrait store is full (${thumbLimits.max} names)`, { status: 507 });
-          if (diskNearlyFull(400_000)) return new Response("the server's disk is nearly full", { status: 507 });
-        }
-      }
+        if (Object.hasOwn(metaNow, safe)) return null;   // own keys only: "constructor" is a new name, not an inherited one
+        const names = new Set([...readdirSync(dir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(metaNow)]);
+        if (thumbLimits.max > 0 && names.size >= thumbLimits.max) return new Response(`the portrait store is full (${thumbLimits.max} names)`, { status: 507 });
+        if (diskNearlyFull(400_000)) return new Response("the server's disk is nearly full", { status: 507 });
+        return null;
+      };
+      { const no = newNameRefused(); if (no) return no; }
       // the body's measured stature, kept beside the images for /avatars
       const height = Number(url.searchParams.get("height"));
       const hOk = Number.isFinite(height) && height > 0.2 && height < 20;
@@ -893,6 +895,9 @@ const ROUTES: Route[] = [
       if (body === null) return new Response("thumb too large", { status: 413 });
       if (body.length === 0 && perf) return new Response(JSON.stringify({ ok: true, meta: true, perf: true }), { headers: { "content-type": "application/json" } });
       if (body.length < 8 || body[0] !== 0x89 || body[1] !== 0x50) return new Response("not a PNG", { status: 415 });
+      // again at the write: posts for other new names may have landed while this body was read (check and write are
+      // both synchronous, so nothing lands between them)
+      { const no = newNameRefused(); if (no) return no; }
       writeFileSync(dest, body);
       console.log(`[thumb] ${safe} (${(body.length / 1000).toFixed(0)}KB${force ? ", forced" : ""})`);
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
