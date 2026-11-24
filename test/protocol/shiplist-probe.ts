@@ -174,6 +174,7 @@ try {
   check("V1 in a headset, a moderator's warning rides the XR quad (title and reason), with its button", await waitFor(`import('/lib/xr/xrask.js').then((m) => { const s = m.xrAskState(); return !!s && /^From a moderator of world ‹.+›, not from Eidoverse$/.test(s.title) && /Mod Rowan warned you: please keep the music down/.test(s.body) && s.choices.includes('ok'); })`, 4000),
     await evalJson(`import('/lib/xr/xrask.js').then((m) => m.xrAskState())`));
   check("V2 …and not the DOM card nobody could see", !(await evalJson(`!!document.querySelector('#confirm-center') && getComputedStyle(document.querySelector('#confirm-center')).display !== 'none' && /warned you/.test(document.querySelector('#confirm-center').textContent)`)));
+  await waitFor(`import('/lib/xr/xrask.js').then((m) => m.xrAskState()?.live === true)`, 4000);   // a press counts once the question can be answered (xrask.js, ARM_MS)
   await page(`const m = await import('/lib/xr/xrask.js'); m.xrAnswer('ok'); const c = await import('/lib/core.js'); delete c.renderer.xr.isPresenting; return true;`);
   check("V3 OK answers it", await evalJson(`import('/lib/xr/xrask.js').then((m) => m.xrAskState() === null)`));
   });
