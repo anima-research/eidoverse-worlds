@@ -482,7 +482,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   // charged only for bytes stored (charge, below)
   const stated = Math.max(0, Math.min(Number(req.headers.get("content-length")) || 0, UPLOAD_CAP));
   if (diskNearlyFull(stated)) return new Response("the server's disk is nearly full: uploads are paused (ask whoever runs this server)", { status: 507 });
-  const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 };
+  // held from the start: two first uploads at once share this one record, or the later charge would replace the earlier
+  const day = uploadDay.get(uploader) ?? { t: Date.now(), bytes: 0 }; uploadDay.set(uploader, day);
   if (Date.now() - day.t >= DAY_MS) { day.t = Date.now(); day.bytes = 0; }
   const dayRefused = () => { const wait = Math.max(1, Math.ceil((DAY_MS - (Date.now() - day.t)) / 1000));
     return new Response(`upload limit (${Math.round(uploadBudget.perDayBytes / 1e6)} MB a day) reached; try again in ${Math.ceil(wait / 3600)}h`, { status: 429, headers: { "retry-after": String(wait) } }); };

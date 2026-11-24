@@ -13,7 +13,7 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const tokensPath = join(root, "tokens.json"), OPT = join(root, "opt");
 mkdirSync(OPT);
 // the door key is ALSO enrolled as an agent's bearer here (a host may do that): it is still everyone's key, so it still proves no one
-writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "rate-bearer-elm": { id: "elm" }, "rate-bearer-oak": { id: "oak" }, "rate-bearer-pine": { id: "pine" }, "rate-bearer-fir": { id: "fir" }, "rate-bearer-yew": { id: "yew" }, "door-key": { id: "keeper" } }));
+writeFileSync(tokensPath, JSON.stringify({ "rate-bearer-ash": { id: "ash" }, "rate-bearer-birch": { id: "birch" }, "rate-bearer-elm": { id: "elm" }, "rate-bearer-oak": { id: "oak" }, "rate-bearer-pine": { id: "pine" }, "rate-bearer-fir": { id: "fir" }, "rate-bearer-yew": { id: "yew" }, "rate-bearer-larch": { id: "larch" }, "door-key": { id: "keeper" } }));
 Object.assign(process.env, {
   SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds"), OPT_DIR: OPT, EIDOVERSE_DIR: join(root, "lib"), JOIN_TOKEN: "door-key",
   AGENT_TOKENS_PATH: tokensPath, SESSIONS_PATH: join(root, "sessions.json"), KTX2_TOKTX: "",
@@ -93,6 +93,16 @@ const three = [pngOf(1), pngOf(2), pngOf(3)], threeBytes = three.reduce((n, b) =
   const same: number[] = []; for (let i = 0; i < 10; i++) same.push((await upload(yew, "192.0.2.83", pngOf(21))).status);
   const next: number[] = []; for (const b of [pngOf(22), pngOf(23)]) next.push((await upload(yew, "192.0.2.83", b)).status);
   check("B4b the same picture sent ten times is stored, and charged, once: two more different ones still land", same.every((x) => x === 200) && next.every((x) => x === 200), { same, next });
+  uploadBudget.perDayBytes = was; }
+// ---- a new uploader's first uploads at once share one day: each is charged (neither charge replaces the other) ----
+{ const was = uploadBudget.perDayBytes; const pair = [pngOf(31), pngOf(32)]; uploadBudget.perDayBytes = pair[0].length + pair[1].length;
+  const larch = { authorization: "Bearer rate-bearer-larch" };
+  const send = (b: Uint8Array) => { const url = new URL("http://x/upload?as=image&name=dot.png");
+    return handleUpload(new Request(url, { method: "POST", headers: larch, body: b }), url, { requestIP: () => ({ address: "192.0.2.84" }) }).then((r) => r.status); };
+  const log = console.log; console.log = () => {};
+  let both: number[], third: number;
+  try { both = await Promise.all(pair.map(send)); third = await send(pngOf(33)); } finally { console.log = log; }
+  check("B5 two first uploads at once are both charged to the day: a third past the day's bytes is refused", both.every((x) => x === 200) && third === 429, { both, third });
   uploadBudget.perDayBytes = was; }
 // ---- the disk's floor (UPLOAD_MIN_FREE_MB) ----
 { const was = uploadBudget.minFreeBytes; uploadBudget.minFreeBytes = Number.MAX_SAFE_INTEGER;
