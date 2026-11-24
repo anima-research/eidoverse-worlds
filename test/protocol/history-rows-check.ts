@@ -11,7 +11,7 @@ const entries = [
   { seq: 10, kind: "say", actor: "u-b", ts: 3, body: { text: "hi" } },
 ];
 const rows = worldHistoryRows(entries, nameOf);
-ok(rows.length === 2, "H1 only acts are rows (state/say are not)", rows.map((r: any) => r.seq));
+ok(rows.length === 2, "H1 only acts are rows (change/say are not)", rows.map((r: any) => r.seq));
 ok(rows[0].seq === 9 && rows[1].seq === 7, "H2 newest first", rows.map((r: any) => r.seq));
 const refused = rows.find((r: any) => r.seq === 9);
 ok(refused?.refused === "rights", "H3 a refused attempt is marked refused, with its code", refused);
