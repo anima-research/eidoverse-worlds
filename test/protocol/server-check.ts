@@ -72,10 +72,15 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
   const logf = path.join(root, `${tag}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "agent:token:opal", AGENT_TOKENS_PATH: OPTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
-  procs.push(p);
+  procs.push(p); started.push({ tag, log: logf });
   if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc: p, log: logf }; // bounded: on this host a closed local port can drop the SYN instead of refusing it
   throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
 }
+
+// G4-130: every server this suite starts; S* reads all their logs at the end (server.ts and requestwire.ts say "failed server-side")
+const started: { tag: string; log: string }[] = [];
+const serverFailures = () => started.flatMap(({ tag, log }) => [log, log + ".err"].filter((f) => fs.existsSync(f))
+  .flatMap((f) => fs.readFileSync(f, "utf8").split("\n").filter((l) => /failed server-side/.test(l)).map((l) => `${tag}: ${l.slice(0, 200)}`)));
 
 // ---- a client: joins, keeps every message, sends requests ----
 async function client(port: number, world: string, id: string, extra: any = {}) {
@@ -122,7 +127,7 @@ const srv = await startServer(ENGINE, W4, OPT, "main");
 { const ws0 = await (await fetch(`http://127.0.0.1:${srv.port}/worlds`)).json();
   ok(ws0.worlds?.some((w) => w.name === "garden" && w.loaded === false), "S1 /worlds lists the world on disk before anyone loads it (travel discovery)", ws0); }
 const ann = await client(srv.port, "garden", "Ann", REPLICA);
-ok(ann.snapshot?.dialect === "eidoverse-log" && ann.snapshot?.v === 4, "S1 the snapshot says which log this is and which protocol reads it: {dialect, v}", ann.snapshot?.cut);
+ok(ann.snapshot?.dialect === "eidoverse-log" && ann.snapshot?.v === 4, "S1 the snapshot says which log this is and which protocol reads it: {dialect, v}", { dialect: ann.snapshot?.dialect, v: ann.snapshot?.v, errors: ann.of("error") });
 ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the tool's account local:ann is the name Ann joins as on a TRUST_NAMES server)", ann.snapshot?.yourRights);
 const ANN = ann.snapshot?.actor;
 ok(/^u-[a-z2-7]{20}$/.test(ANN ?? ""), "S1 a joiner is told its identity: an opaque directory id, not its name (round-2 R1)", ann.snapshot?.actor);
@@ -187,7 +192,15 @@ await tryUntil("every client's fold has caught up with the log on disk", () => [
 const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")));
 const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk reads back strictly", st.diagnostics.slice(0, 3));
-ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "request").length >= 6, "S4 ts never decreases; at least six acts are logged (their pairing with results isn't checked here)");
+ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "request").length >= 6, "S4 ts never decreases; at least six acts are logged");
+{ // G4-130: each act and its result pair up: a change's cause is an earlier accepted act by the same actor; a refused act
+  // causes nothing; an accepted one causes at least one change (a log entry's seq is its index)
+  const causes = new Set(L.filter((e) => e.kind === "change").map((e) => e.cause));
+  const orphan = L.map((e, i) => [e, i]).filter(([e, i]) => e.kind === "change" && !(L[e.cause]?.kind === "request" && L[e.cause].actor === e.actor && !L[e.cause].body?.refused && e.cause < i)).map(([e, i]) => ({ i, cause: e.cause }));
+  const acts = L.map((e, i) => [e, i]).filter(([e]) => e.kind === "request");
+  const refusedWrote = acts.filter(([e, i]) => e.body?.refused && causes.has(i)).map(([e, i]) => `${i} ${e.verb}`), silent = acts.filter(([e, i]) => !e.body?.refused && !causes.has(i)).map(([e, i]) => `${i} ${e.verb}`);
+  ok(causes.size > 0 && !orphan.length && !refusedWrote.length && !silent.length && acts.some(([e]) => e.body?.refused),
+    "S4 each act pairs with its result: every change is caused by an earlier accepted act of its actor, a refused act (there are some) causes none, an accepted one causes at least one", { orphan, refusedWrote, silent }); }
 ok(L.filter((e) => e.kind === "request").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused) || (e.actor === "system" && e.verb === "repair-shapes")), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7; a system repair-shapes marker, where one is written, is the system's, review r8 M3)", [...new Set(L.map((e) => e.actor))]);
 for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
@@ -337,7 +350,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
   // ---- DR: a live drag is relayed with who is dragging, and its last sample says end (docs/reference/WIRE.md: a live drag is a claim) ----
   { const da = await client(srv.port, "garden", "Dana", REPLICA); const db = await client(srv.port, "garden", "Dev", REPLICA);
-    await ann.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+    // Dana builds as garden's newcomer role: a world founded since R 10-21 starts with builder (G4-130: setting it again was a no-op)
+    ok(heldBy(ann)?.st?.entities?.["@world"]?.c?.["default-role"]?.role === "builder", "(DR setup) garden's newcomers build (its founding default-role)", heldBy(ann)?.st?.entities?.["@world"]?.c?.["default-role"]);
     const mk = await da.req("create", { id: "drg", model: "test/cup.glb", place: { at: [2, 2] } });
     const k0 = db.msgs.length; da.send({ type: "drag", id: IDS.of("drg"), pos: [2.5, 0, 2], yaw: 0 });
     await tryUntil("Dev is sent the first sample", () => db.msgs.slice(k0).some((m) => m.type === "drag" && m.id === IDS.of("drg")), { ms: 2000, step: 20 }); da.send({ type: "drag", id: IDS.of("drg"), pos: [3, 0, 2], yaw: 0, end: true });
@@ -518,7 +532,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const seatC = replica[replica[enc("mug_1")].c.parent?.to]?.c;
   ok(seatC?.socket?.name === "seat" && seatC.parent?.to === enc("lamp_1") && JSON.stringify(seatC.transform.pos) === "[0.3,0.75,0.1]" && !("socket" in replica[enc("mug_1")].c.parent) && replica[enc("mug_1")].c.transform.pos.every((v) => Math.abs(v) < 1e-9),
     "S6 a translated mount is in the authority's shape once the world is loaded: the socket is lamp_1's child at the socket's pos, and the mug rides it (parent {to: <the socket>}, at its origin)", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform, seatC]);
-  ok(neu.snapshot.dialect === "eidoverse-log" && neu.snapshot.v === 4 && neu.snapshot.yourRights?.role === "owner", "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.cut]);
+  ok(neu.snapshot.dialect === "eidoverse-log" && neu.snapshot.v === 4 && neu.snapshot.yourRights?.role === "owner", "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.dialect, neu.snapshot.v, neu.snapshot.yourRights]);
   { const h = await neu.req("history", { verbs: ["say"], limit: 50 });   // arrival-only (R 10-18): no window on join; the owner reads the master log
     ok(JSON.stringify(neu.snapshot.chat.recentChat) === "[]" && (h.entries ?? []).some((e: any) => e.body?.text === "hello from v1"), "S6 the chat comes across into the log (its owner reads it back; nobody's join replays it)", [neu.snapshot.chat.recentChat, (h.entries ?? []).length]); }
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
@@ -528,7 +542,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 // ---- S8: clients that fold the log themselves (slice 3b): the cut at join, the log stream, no projection ----
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second world");
   const a = await client(srv.port, "meadow", "Ann", { replica: true });
-  ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.cut ?? {}));
+  ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot ?? {}));
   await a.req("set", { id: "@world", component: "default-role", value: { role: "member" } });   // meadow's newcomers play (R 10-21: a new world's build)
   const bv = await client(srv.port, "meadow", "Bob", { replica: true }); // Bob folds the log too: nobody reads the projection
   ok(bv.snapshot?.yourRights?.role === "member", "S8 Bob arrives a member", bv.snapshot?.yourRights);
@@ -619,8 +633,6 @@ await bye(ann, bob, vic, spec);
     "S7 joining a world name that doesn't exist is refused, and nothing is created on disk", [ghost.msgs.map((m) => m.type), fs.existsSync(path.join(W4, "nobodyhome"))]);
   ghost.close(); }
 
-const errlog = fs.existsSync(srv.log + ".err") ? fs.readFileSync(srv.log + ".err", "utf8") : "";
-ok(!/failed server-side|v1 '.*' write has no path/.test(errlog + fs.readFileSync(srv.log, "utf8")), "S* the server logged no server-side failure", errlog.slice(-600));
 srv.proc.kill();
 
 // ================= SH: chat history pages back through the whole log, across a restart (not only the 40-line chat
@@ -694,4 +706,5 @@ srv.proc.kill();
   ok(!Object.keys(c.snapshot?.holds ?? {}).length && bodies.includes(IDS.of("ball")) && bodies.includes(IDS.of("torch")), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 
+ok(started.length >= 5 && !serverFailures().length, `S* none of the ${started.length} servers this suite started logged a server-side failure`, serverFailures().slice(0, 5));
 done();
