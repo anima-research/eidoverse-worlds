@@ -30,8 +30,8 @@ const { lookup } = await import("../../server/worldindex.ts");
 const { UPGRADE_MESSAGES } = await import("../../server/upgrade.ts");
 const { runOneShot, FORCED } = await import("../../server/oneshot.ts");
 
-/** a main-era world with an owner */
 const T0 = 1790000000000;
+/** a main-era world with an owner */
 function v1(name: string) {
   const d = path.join(W, name); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), [["world", "grant", { id: "Ann", role: "owner", sub: "human:test:ann" }], ["Ann", "say", { text: "hi" }]]

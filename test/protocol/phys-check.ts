@@ -1,4 +1,4 @@
-// Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
+// Physics checks. Every scenario is built through the authority's ordinary tools, at pinned clock times.
 // usage: bun test/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)

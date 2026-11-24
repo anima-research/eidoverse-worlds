@@ -133,8 +133,8 @@ function copyTree(tag: string) {
   linkInto(path.join(ENGINE, "node_modules"), path.join(d, "node_modules"));
   return d;
 }
-// the red rows of a run: `FAIL <id> …` (most suites), `FAIL <id>` from settle's console.log("FAIL", name), `✗ <id> …` (the tools/ tests)
-const redRows = (out: string) => [...new Set([...out.replace(/\x1b\[[0-9;]*m/g, "").matchAll(/^\s*(?:FAIL|✗)\s+(\S+)/gm)].map((m) => m[1].replace(/[:,]$/, "")))];   // colours stripped (the tools/ tests paint ✗)
+// the red rows of a run: `FAIL <id> …` (suite.ts, reset-race-check), `✗ <id> …` (dismount-height-test, which paints it)
+const redRows = (out: string) => [...new Set([...out.replace(/\x1b\[[0-9;]*m/g, "").matchAll(/^\s*(?:FAIL|✗)\s+(\S+)/gm)].map((m) => m[1].replace(/[:,]$/, "")))];   // colours stripped first
 
 let bad = 0; const table: string[] = [];
 console.log(`[blockers-mutants]${group ? ` group ${group}:` : ""} ${todo.length} mutant(s): each applied to a scratch copy of the tree, then its one suite run`);

@@ -1,4 +1,4 @@
-// test/protocol/physlive-check.ts — physics as the RUNNING server holds it, and as a client folds it (design 20 on the client).
+// test/protocol/physlive-check.ts — physics as the RUNNING server holds it, and as a client folds it.
 // phys-check.ts runs the authority over the lab catalogue's colliders (simFold's default MODELS); the live server passes
 // simModels {} (geometry enters the sim only through the log, Covenant III), so a suite that only ever ran the lab
 // configuration never saw what a real world does. usage: bun test/protocol/physlive-check.ts

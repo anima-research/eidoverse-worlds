@@ -39,7 +39,7 @@
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
 //   CL7  the splash's words for each claim (client/lib/ui/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  claimed: an ownerless world's locks (a v1 lock and a guard) are lifted by a regular, who is builder (no lockout)
-//   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
+//   CL8-10 …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
 //   CL11 the translation writes no imported:ownerless: a builder granted after the claim, once the owner leaves, reads member
 //   CL6  …and operator-repair set of another owner keeps builder's generate (the translation's role-defs), in one write
 //   UW1  the splash says "nothing was changed" only for the CLI's own refusal; any other failure's outcome is unknown

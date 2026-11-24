@@ -525,7 +525,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(ed.ok, "S6 the translated world takes edits from its owner", ed);
   void old; neu.close(); }
 
-// ---- S8: clients that fold the log themselves (slice 3b): the cut at join, the log stream, no projection ----
+// ---- S8: clients that fold the log themselves: the cut at join, the log stream, no projection ----
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second world");
   const a = await client(srv.port, "meadow", "Ann", { replica: true });
   ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.cut ?? {}));
@@ -553,7 +553,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
   ok(a.snapshot.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { replica: true })).snapshot.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
-// ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
+// ---- SP: physics at the server: who holds what is sent to everyone; a joiner's cut carries it and the sim;
 // a person who leaves while holding something drops it into the world ----
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", REPLICA);
