@@ -39,7 +39,7 @@ if (mode === 'collision') {
   await run.cleanup(0);
   process.exit(0);
 }
-const { check, tally } = mkCheck();
+const { check, na, tally } = mkCheck();
 const scratch = mkdtempSync(join(tmpdir(), 'ew-harness-test-'));
 try {
   const preload = join(scratch, 'foreign.ts');
@@ -81,8 +81,8 @@ try {
     check('contact-mutation-preload: an LF anchor applies to a CRLF file', code === 0 && e.includes('CONTACT_MUTATION_APPLIED') && o.includes('sum 30'), (o + e).slice(-300));
   } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
 }
-if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctrl-C does (#333 backlog G2-087)
-  // not run on win32: there a SIGHUP comes from closing the console window, not from another process
+if (process.platform === 'win32') na('probe-harness: a hangup (SIGHUP) kills the owned world and exits 129', 'win32: a SIGHUP comes from closing the console window, not from another process');
+else { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctrl-C does (#333 backlog G2-087)
   const p = Bun.spawn([process.execPath, import.meta.path, 'sighup'], { cwd: ROOT, stdout: 'pipe', stderr: 'pipe' });
   let out = ''; void (async () => { for await (const c of p.stdout) out += new TextDecoder().decode(c); })();
   const origin = await until('the owned world is up', () => /ORIGIN (\S+)/.exec(out)?.[1], { ms: 90_000 }).catch(() => null);
@@ -193,5 +193,5 @@ if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe'
       return [n === '2' && none === null && (await box.$('#nope')) === null, { n, none }]; });
   } finally { await b.close(); srv.stop(true); }
 }
-console.log(`${tally.passed} passed, ${tally.failed} failed`);
+console.log(`${tally.passed} passed, ${tally.failed} failed${tally.nas ? `, ${tally.nas} not applicable` : ''}`);
 process.exit(tally.failed ? 1 : 0);
