@@ -290,7 +290,7 @@ export function ttsSection(host, onPaint = () => {}) {
   }
   async function addEndpoint() {
     // the house ask (edit/confirmcenter.js): the centre card, or in a headset the ask quad and the VR keyboard
-    const addr = await askCenter({ title: 'Add a speech server', body: 'The address of a speech server you are running (ws://… or http://…).', value: 'ws://127.0.0.1:8927', ok: 'Add', max: 300 });
+    const addr = await askCenter({ title: 'Add a speech server', body: 'The address of a speech server you are running (ws://… or http://…).', value: 'ws://127.0.0.1:8927', ok: 'Add', max: null });   // no limit: main's prompt() had none, and a signed URL is long
     if (!addr) return;
     const list = endpoints();
     if (!list.includes(addr)) { list.unshift(addr); saveEndpoints(list); }

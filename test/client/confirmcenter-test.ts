@@ -42,4 +42,11 @@ const press = (label: string) => [...document.querySelectorAll('#confirm-center 
   check('closeCenter answers the open card with its cancel (a dismissal, not a yes)', (await settled(q)) === 'dismissed' && !C.confirmOpen(), String(await settled(q)));
   field.remove();
 }
+{ // (review #359 10) max: null is no limit: the speech server's address (audio/ttsrow.js) was unlimited in main's prompt()
+  const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(400);
+  const a = C.askCenter({ title: 'Add a speech server', value: long, max: null });
+  const inp = document.querySelector('#confirm-center input') as HTMLInputElement | null;
+  const shown = inp?.value.length ?? -1; press('Save');
+  check('askCenter with max: null keeps a 425-character value whole, and answers it', shown === long.length && (await settled(a)) === long, `${shown} shown, ${String(await settled(a)).length} answered`);
+}
 console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

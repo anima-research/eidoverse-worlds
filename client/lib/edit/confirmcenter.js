@@ -79,7 +79,7 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
 
 export const confirmOpen = () => !!open;
 
-/** The same centre card asking for a few words (a name): {title, body, value, placeholder, ok, cancel, max} → the
+/** The same centre card asking for a few words (a name): {title, body, value, placeholder, ok, cancel, max (null: no limit)} → the
  *  trimmed text, or null (Esc, Cancel, the backdrop, or nothing typed). Enter in the field says OK. */
 export function askCenter({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
   if (inHeadset() && headset.ask) { closeCenter(); return headset.ask({ title, body, value, placeholder, ok, cancel, max }); }
@@ -92,7 +92,8 @@ export function askCenter({ title, body = '', value = '', placeholder = '', ok =
     root.querySelector('#cc-title').textContent = title;
     root.querySelector('#cc-body').textContent = body;
     if (!body) root.querySelector('#cc-body').remove();
-    const inp = root.querySelector('.cc-input'); inp.value = String(value ?? '').slice(0, max); inp.placeholder = placeholder; inp.maxLength = max;
+    const inp = root.querySelector('.cc-input'); inp.value = String(value ?? ''); inp.placeholder = placeholder;
+    if (max != null) { inp.value = inp.value.slice(0, max); inp.maxLength = max; }
     const okB = root.querySelector('.cc-ok'), noB = root.querySelector('.cc-no');
     okB.textContent = ok; noB.textContent = cancel;
     const before = document.activeElement;

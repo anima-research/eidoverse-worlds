@@ -88,6 +88,19 @@ try {
   check('D2 …and a walking key pressed meanwhile never reaches the body', d.keys1 === d.keys0, JSON.stringify(d));
   check('D3 Tab walks the desk text card (field, Cancel, Save) and never leaves it', d.tabs.every(Boolean) && d.d3 === null, JSON.stringify(d.tabs));
 
+  // D4 (review #359 10): the speech server's address, from the real caller (audio/ttsrow.js addEndpoint), is as long as
+  // it is: main's prompt() had no limit, and a signed URL runs past 300 characters
+  await pg.evaluate(async () => { const host = document.createElement('div'); host.id = 'probe-tts'; document.body.append(host); (await import('./lib/audio/ttsrow.js')).ttsSection(host); return true; });
+  await S('D4: the voice list offers "add a speech server"', () => [...document.querySelectorAll('#probe-tts .vl-add')].some((r) => /speech server/.test(r.textContent)));
+  await pg.evaluate(() => { [...document.querySelectorAll('#probe-tts .vl-add')].find((r) => /speech server/.test(r.textContent)).click(); return true; });
+  await S('D4: the speech server is asked on the desk card', () => /speech server/i.test(document.querySelector('#confirm-center #cc-title')?.textContent ?? ''));
+  const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(300);
+  await pg.evaluate(() => { const i = document.querySelector('#confirm-center input'); i.focus(); i.select(); return true; });
+  await pg.keyboard.insertText(long);
+  const typedLen = await pg.evaluate(() => document.querySelector('#confirm-center input')?.value.length ?? -1);
+  await pg.keyboard.press('Escape');
+  await pg.evaluate(() => { document.querySelector('#probe-tts')?.remove(); return true; });
+  check('D4 a speech server address longer than 300 characters is typed whole into the desk card', typedLen === long.length, `${typedLen} of ${long.length}`);
   await inVR();
 
   // C: the guarded action — turning on speech-to-text asks for consent first (audio/voiceconsent.js)

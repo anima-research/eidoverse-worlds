@@ -23,7 +23,8 @@ function paintFrame() {
   if (q.input) {
     // a few words: the VR keyboard (xrkeyboard.js) types into the last-focused text input and its ⏎ is an Enter keydown here
     const inp = document.createElement('input'); inp.type = 'text'; inp.className = 'ask-input'; inp.autocomplete = 'off'; inp.spellcheck = false;
-    inp.maxLength = q.input.max; inp.placeholder = q.input.placeholder; inp.value = q.input.value;
+    if (q.input.max != null) inp.maxLength = q.input.max;   // null: no limit
+    inp.placeholder = q.input.placeholder; inp.value = q.input.value;
     inp.addEventListener('input', () => { q.input.value = inp.value; });
     inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); dispatch('c:ok'); } });
     api.body.appendChild(inp);
@@ -93,11 +94,11 @@ export function chooseXR({ title, body = '', choices = [], cancel = null, focus 
   return new Promise((resolve) => show({ title, body, choices, cancel, focus, resolve }));
 }
 
-/** askCenter's contract ({title, body, value, placeholder, ok, cancel, max} → the trimmed text, or null), on the VR quad:
+/** askCenter's contract ({title, body, value, placeholder, ok, cancel, max (null: no limit)} → the trimmed text, or null), on the VR quad:
  *  a text field the VR keyboard types into, OK / ⏎ to answer. On the canvas-quad path (no text field) OK answers `value`. */
 export function askXR({ title, body = '', value = '', placeholder = '', ok = 'Save', cancel = 'Cancel', max = 80 } = {}) {
   return new Promise((resolve) => {
-    const input = { value: String(value ?? '').slice(0, max), placeholder, max };
+    const input = { value: max != null ? String(value ?? '').slice(0, max) : String(value ?? ''), placeholder, max };
     const q = { title, body, choices: [{ v: 'cancel', label: cancel }, { v: 'ok', label: ok }], cancel: 'cancel', input,
       resolve: (v) => { const t = input.value.trim(); resolve(v === 'ok' && t ? t : null); },
       // when it is asked (now, or when its turn comes): focus the field at once, so the VR keyboard comes up with the
