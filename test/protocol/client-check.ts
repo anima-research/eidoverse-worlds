@@ -82,7 +82,9 @@ const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 // the centre dialog and the Hierarchy, as a person sees them
 const dlgTitle = `(document.querySelector('#confirm-center #cc-title')?.textContent ?? null)`;
 const dlgBtns = `[...document.querySelectorAll('#confirm-center .cc-btns button')].map((b) => b.textContent)`;
-const dlgClick = (re: string) => evalJson(`[...document.querySelectorAll('#confirm-center .cc-btns button')].find((b) => /${re}/.test(b.textContent))?.click(), true`);
+// the card counts no press in its first moment (confirmcenter.js ARM_MS): a person's press comes once it can be answered
+const dlgArmed = () => waitFor(`document.querySelector('#confirm-center')?.dataset.armed !== undefined`);
+const dlgClick = async (re: string) => { await dlgArmed(); return evalJson(`[...document.querySelectorAll('#confirm-center .cc-btns button')].find((b) => /${re}/.test(b.textContent))?.click(), true`); };
 const hier = `document.querySelector('[data-frame="hierarchy"]')`;
 const lockBtn = (id: string) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === ${JSON.stringify(id)})?.querySelector('.sp-lock')`;
 const posX = (id: string) => `import('/lib/world.js').then((m) => m.entities.get('${id}')?.position.x)`;
@@ -298,6 +300,7 @@ try {
   await evalJson(`[...${bf}.querySelectorAll('.sp-btn')].find((b) => /save as blueprint/.test(b.textContent)).click(), true`);
   // it asks for a name (review 10-07 S5); the person types one and saves
   check("S1a it asks for a name first", await waitFor(`!!document.querySelector('#confirm-center input')`, 3000));
+  await dlgArmed();
   await evalJson(`(() => { const i = document.querySelector('#confirm-center input'); if (!i) return false; i.value = 'tbl'; document.querySelector('#confirm-center .cc-ok').click(); return true; })()`);
   check("S1 it is the authority's publish: ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "publish"), myActs().slice(n0).map((a) => a.e.verb));
   const libOf = () => Object.keys(disk().entities["@world"].c).find((k) => k.startsWith("blueprints:"));

@@ -7,14 +7,20 @@
 // (`open?.settle(open.cancel)` at the top of each ask, as before #359 5); settle a dismissed one with `cancel ?? false`.
 // Then (xr-confirm review S3): an Enter aimed at an element outside the card is not the card's (mutation: drop the
 // aimedElsewhere line in chooseCenter's onKey), and closeCenter() answers the open card with its cancel, never a yes.
+// Then (cold read of #359's fixes): no press or Enter counts in a card's first ARM_MS, and one then isn't kept for later
+// (mutation: `armed = () => true` in arm()). The page's clock is the test's: `later()` moves it past a card's arm time.
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register({ width: 800, height: 600 });
+let now = 1e6; performance.now = () => now;   // event timeStamps read it too
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
 const C = await import('../../client/lib/edit/confirmcenter.js');
 const settled = async (p: Promise<any>) => { let v: any = 'unsettled'; p.then((x) => { v = x; }); for (let i = 0; i < 20; i++) await Promise.resolve(); return v; };
 const title = () => document.querySelector('#confirm-center #cc-title')?.textContent ?? null;
-const press = (label: string) => [...document.querySelectorAll('#confirm-center button')].find((b) => b.textContent === label)?.click();
+const later = () => { now += C.ARM_MS; };   // a person's time to see the card: an answer counts from then on
+// a click on the open card's button `label`, by default once the card can be answered
+const press = (label: string, { early = false } = {}) => { if (!early) later(); [...document.querySelectorAll('#confirm-center button')].find((b) => b.textContent === label)?.click(); };
+const enter = (target: Element | null = document.activeElement) => target?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
 { const a = C.chooseCenter({ title: 'consent', choices: [{ v: 'yes', label: 'Turn on' }, { v: 'no', label: 'Not now' }], cancel: 'dismissed' });
   const b = C.confirmCenter({ title: 'A moderator warned you', ok: 'I understand', cancel: 'Close' });
   check('an ask made while a card is open waits: the open one stays, unanswered', (await settled(a)) === 'unsettled' && title() === 'consent', `${await settled(a)} / ${title()}`);
@@ -41,6 +47,28 @@ const press = (label: string) => [...document.querySelectorAll('#confirm-center 
   C.closeCenter();
   check('closeCenter answers the open card with its cancel (a dismissal, not a yes)', (await settled(q)) === 'dismissed' && !C.confirmOpen(), String(await settled(q)));
   field.remove();
+}
+{ // (cold read) the first ARM_MS of a card: a press or an Enter then was meant for what was there before, and counts for nothing
+  const a = C.chooseCenter({ title: 'consent', choices: [{ v: 'yes', label: 'Turn on' }, { v: 'no', label: 'Not now' }], cancel: 'dismissed', focus: 'no' });
+  press('Turn on', { early: true });
+  check('a click in a card\'s first ARM_MS answers nothing: the card stays open', (await settled(a)) === 'unsettled' && title() === 'consent', String(await settled(a)));
+  enter();
+  check('…nor does an Enter on its focused Not now (no remembered no)', (await settled(a)) === 'unsettled' && C.confirmOpen(), String(await settled(a)));
+  later();
+  check('…and neither is kept for later: once it can be answered, it is still open', (await settled(a)) === 'unsettled' && C.confirmOpen(), String(await settled(a)));
+  enter();
+  check('…and an Enter then answers it (Not now, its focused choice)', (await settled(a)) === 'no' && !C.confirmOpen(), String(await settled(a)));
+  const b = C.confirmCenter({ title: 'first' }), c = C.confirmCenter({ title: 'second' });
+  press('OK'); press('OK', { early: true });   // a double-press: the second lands on the next card, just shown where the first was
+  check('a double-press answers the first card and not the one shown in its place', (await settled(b)) === true && (await settled(c)) === 'unsettled' && title() === 'second', `${await settled(b)} / ${await settled(c)} / ${title()}`);
+  press('Cancel');
+  check('…which a press once it can be answered does answer', (await settled(c)) === false && !C.confirmOpen(), String(await settled(c)));
+  const d = C.askCenter({ title: 'name?', value: 'x' }); enter(document.querySelector('#confirm-center input'));
+  const dEarly = await settled(d); later(); enter(document.querySelector('#confirm-center input'));
+  check('an askCenter Enter in its first ARM_MS answers nothing; one after answers the field', dEarly === 'unsettled' && (await settled(d)) === 'x', `${dEarly} / ${await settled(d)}`);
+  const e = C.chooseCenter({ title: 'esc', choices: [{ v: 'go', label: 'Go' }], cancel: 'stay' });
+  document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  check('a dismissal (Esc) is never held back: it is no answer', (await settled(e)) === 'stay' && !C.confirmOpen(), String(await settled(e)));
 }
 { // (review #359 10) max: null is no limit: the speech server's address (audio/ttsrow.js) was unlimited in main's prompt()
   const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(400);

@@ -221,6 +221,7 @@ try {
   check('…the menu reopens through the ∃ and offers the row again', await pg.locator('#emenu .mrow[data-item="lite"]').isVisible());
   await pg.click('#emenu .mrow[data-item="lite"]'); await sleep(300);
   const nav = pg.waitForEvent('framenavigated', { timeout: 15000 }).catch(() => null);
+  await pg.waitForSelector('#confirm-center[data-armed]', { timeout: 5000 });   // no press counts in the card's first moment (confirmcenter.js ARM_MS)
   await pg.click('#confirm-center .cc-ok'); await nav;
   check('…Switch lands in the lite client, the choice saved and the address clean', await pg.waitForFunction(() => globalThis.__ewLite === true && localStorage.getItem('ew-lite') === '1' && !new URLSearchParams(location.search).has('lite'), null, { timeout: 30000, polling: 250 }).then(() => true, () => false));
   await ctx.close();

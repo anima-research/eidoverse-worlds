@@ -9,9 +9,9 @@ import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
 import { domQuadMesh, domQuadShow } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
-import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
+import { setHeadsetAsk, closeCenter, ARM_MS, inputAt } from '../edit/confirmcenter.js';
 
-let pending = null;   // {id, drawnAt, title, body, choices: [{v, label}], cancel, focus?, resolve, input?: {value, placeholder, max}, onShow?}
+let pending = null;   // {id, drawnAt, shownAt, title, body, choices: [{v, label}], cancel, focus?, resolve, input?: {value, placeholder, max}, onShow?}
 let asked = 0;        // each question's id: a press names the question it was aimed at
 const waiting = [];   // questions asked while one was open: each is asked in turn, none replaces another
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
@@ -28,15 +28,15 @@ function paintFrame() {
     if (q.input.max != null) inp.maxLength = q.input.max;   // null: no limit
     inp.placeholder = q.input.placeholder; inp.value = q.input.value;
     inp.addEventListener('input', () => { q.input.value = inp.value; });
-    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); answer(q, q.choices.findIndex((c) => c.v === 'ok')); } });
+    inp.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); answer(q, q.choices.findIndex((c) => c.v === 'ok'), e); } });
     api.body.appendChild(inp);
   }
   const row = document.createElement('div'); row.className = 'ask-row';
   q.choices.forEach((c, i) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = c.label; b.dataset.v = String(c.v);
-    b.addEventListener('click', () => answer(q, i));
+    b.addEventListener('click', (e) => answer(q, i, e));
     // a keyboard in the headset: Enter on a focused choice is that choice, Esc the question's cancel (as on the desk card);
     // neither goes on to open chat or walk
-    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); if (e.key === 'Enter') answer(q, i); else if (pending === q) settle(q.cancel); });
+    b.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Escape') return; e.preventDefault(); e.stopPropagation(); if (e.key === 'Enter') answer(q, i, e); else if (pending === q) settle(q.cancel); });
     row.appendChild(b); });
   api.body.appendChild(row);
   // the choice the asker wants Enter to give at first (a destructive question's safe answer), as the desk card focuses it
@@ -55,6 +55,7 @@ function fields() {
 function show(q) {
   if (pending) { waiting.push(q); return; }
   q.id = ++asked; q.drawnAt = perf.frameNo ?? 0;   // the frame loop's count now: this frame draws it, the next can answer it
+  q.shownAt = performance.now();                    // …once it has been up for ARM_MS (answer)
   pending = q; showXRPanel('ask', true); repaint(); q.onShow?.();
 }
 function settle(v) {
@@ -65,10 +66,12 @@ function settle(v) {
   const next = waiting.shift(); if (next) show(next);
 }
 // a press answers with the choice's own value (a number stays a number, as on the desk card), and only the question it
-// was aimed at, once that question has been drawn: two hands on one button in one frame answer the first question, never
-// the one that replaced it under them (the canvas path repaints its regions a frame later; the DOM path's new button sits
-// where the old one was)
-function answer(q, i) { if (pending === q && q.choices[i] && (perf.frameNo ?? 0) > q.drawnAt) settle(q.choices[i].v); }
+// was aimed at, once that question has been drawn and has been up for ARM_MS (edit/confirmcenter.js): the buttons sit in
+// the same bottom row whatever the question, so the next one's appear under a press meant for the one that just closed.
+// Two hands on one button in one frame, a double-press, a press at a notice going by itself: each answers only the first
+// question, never the one that replaced it under them. A press too soon is dropped, not kept for later
+const armed = (q, e) => (perf.frameNo ?? 0) > q.drawnAt && inputAt(e) - q.shownAt >= ARM_MS;
+function answer(q, i, e) { if (pending === q && q.choices[i] && armed(q, e)) settle(q.choices[i].v); }
 function dispatch(action) { const m = /^c:(\d+):(\d+)$/.exec(String(action)); if (m && pending && pending.id === Number(m[1])) answer(pending, Number(m[2])); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
 // the house centre card (edit/confirmcenter.js) asks here whenever a headset is presenting: confirmCenter, chooseCenter
@@ -158,7 +161,7 @@ bus.on('edit-warned', ({ text }) => {
   chooseXR({ title: 'done — with a warning', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
-/** for probes: the open question as a quad shows it (how many wait behind it; live once drawn, when a press counts), and
+/** for probes: the open question as a quad shows it (how many wait behind it; live once drawn and up for ARM_MS, when a press counts), and
  *  the same answer a button press gives */
-export const xrAskState = () => (pending ? { id: pending.id, title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length, live: (perf.frameNo ?? 0) > pending.drawnAt } : null);
+export const xrAskState = () => (pending ? { id: pending.id, title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length, live: armed(pending) } : null);
 export const xrAnswer = (v) => { const i = pending?.choices.findIndex((c) => String(c.v) === String(v)) ?? -1; if (i >= 0) answer(pending, i); };

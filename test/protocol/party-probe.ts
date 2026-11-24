@@ -202,6 +202,7 @@ try {
     const focus = await evalJson(`document.activeElement?.textContent ?? ''`);
     check("S1a 'Delete anyway' is not the focused answer", !/Delete anyway/.test(focus), focus);
     await shot("S1-locked-X");
+    await waitFor(`document.querySelector('#confirm-center')?.dataset.armed !== undefined`);   // the card counts no key in its first moment (confirmcenter.js ARM_MS)
     await press("Enter"); await sleep(1200);
     check("S1b Enter on the question deletes nothing", !!disk().entities[NODE.get("lockd")] && !(await evalJson(`!!document.querySelector('#confirm-center')`)));
   });
@@ -250,7 +251,7 @@ try {
     const dflt = asked ? await evalJson(`document.querySelector('#confirm-center input').value`) : null;
     check("S5a Save as blueprint asks for a name", asked);
     check("S5b …offering a person's word for it (its model's name), not a hex id", asked && /crate/i.test(dflt) && !/^[0-9a-f]{8}$/.test(dflt), dflt);
-    if (asked) { await evalJson(`(() => { const i = document.querySelector('#confirm-center input'); i.focus(); i.select(); return true; })()`); await type("Party stage"); await press("Enter"); }
+    if (asked) { await evalJson(`(() => { const i = document.querySelector('#confirm-center input'); i.focus(); i.select(); return true; })()`); await type("Party stage"); await waitFor(`document.querySelector('#confirm-center')?.dataset.armed !== undefined`); await press("Enter"); }
     check("S5c …and saves it under the name given", await waitDisk(() => Object.entries(disk().entities["@world"]?.c ?? {}).some(([k, v]: any) => k.startsWith("blueprints:") && v?.name === "Party stage"), 5000),
       Object.entries(disk().entities["@world"]?.c ?? {}).filter(([k]) => k.startsWith("blueprints:")).map(([, v]: any) => v?.name));
   });

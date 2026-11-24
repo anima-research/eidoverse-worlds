@@ -63,6 +63,13 @@ const asked = (re, what) => S(what, (src) => { const st = globalThis.__px.ask.xr
 // in the headset, with the quads mounted (on xr:domquads, after the session starts; each mesh is built when first shown)
 const inVR = async () => { await enterVR(pg); await install(); await S('the ask and keyboard quads are mounted', () => ['ask', 'keyboard'].every((id) => globalThis.__px.dq.domQuadIds().includes(id))); };
 
+const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
+const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
+  if (await pg.evaluate(async () => (await import('./lib/xr/xrask.js')).xrActive())) await exitVR(pg);
+  await pg.evaluate(() => localStorage.removeItem('eido.audio.prefs'));
+  await pg.reload({ waitUntil: 'domcontentloaded' }); await visorShown(pg); await install();
+};
+
 try {
   await pg.goto(`${world.origin}/?world=staging&name=askprobe&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await visorShown(pg);
@@ -105,6 +112,27 @@ try {
   await pg.keyboard.press('Escape');
   await pg.evaluate(() => { document.querySelector('#probe-tts')?.remove(); return true; });
   check('D4 a speech server address longer than 300 characters is typed whole into the desk card', typedLen === long.length, `${typedLen} of ${long.length}`);
+
+  // D5 (cold read of #359's fixes): a question can't be answered in its first moment (confirmcenter.js ARM_MS). An Enter
+  // that lands as the desk consent card appears was meant for what was there before (sending a chat line, a card that
+  // just closed): on its focused Not now it was a remembered no that nobody gave. Ignored, not queued: the card stays
+  // open, unanswered, and later answers only what is pressed then
+  await pg.evaluate(async () => { const vc = await import('./lib/audio/voiceconsent.js'); globalThis.__d5key = null;
+    addEventListener('keydown', (e) => { if (e.key === 'Enter' && globalThis.__d5key === null) globalThis.__d5key = Math.round(e.timeStamp - globalThis.__d5at); }, { capture: true, once: true });
+    globalThis.__d5at = performance.now(); return globalThis.__px.track('d5', vc.ensureSttConsent()); });
+  await pg.keyboard.press('Enter');   // at once: nothing waited on between the card appearing and the key
+  const d5 = { ms: await pg.evaluate(() => globalThis.__d5key), early: await R('d5'), open: await pg.evaluate(() => /speech-to-text/i.test(document.querySelector('#confirm-center #cc-title')?.textContent ?? '')), stored: await stored() };
+  if (d5.open) {
+    await S('D5: the desk consent card can be answered now', () => document.querySelector('#confirm-center')?.dataset.armed !== undefined).catch(() => {});
+    d5.armed = await R('d5');   // still unanswered once it can be: the early key was dropped, not kept for later
+    await pg.keyboard.press('Escape');   // a dismissal: no for now, nothing remembered
+    d5.after = await settledR('d5', 'D5: Escape answers the desk consent card').then(() => R('d5'), () => 'unsettled');
+  }
+  d5.storedAfter = await stored();
+  console.log('  · D5', JSON.stringify(d5));
+  check('D5 an Enter as the desk consent card appears answers nothing (the card stays open, sttConsent null)', d5.early === 'unsettled' && d5.open && d5.stored === null, JSON.stringify(d5));
+  check('…and is not kept for later: once the card can be answered it is still unanswered, and Escape then is no for now, nothing stored', d5.armed === 'unsettled' && d5.after === false && d5.storedAfter === null, JSON.stringify(d5));
+  if (d5.storedAfter !== null) await fresh();   // a remembered answer would skip every consent row below
   await inVR();
 
   // C: the guarded action — turning on speech-to-text asks for consent first (audio/voiceconsent.js)
@@ -194,12 +222,6 @@ try {
   check('…and the next one is answered by a press once it is drawn', q2.later === 'through', JSON.stringify(q2));
 
   // ---- the consent edges: a dismissed question is never a remembered answer ----
-  const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
-  const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
-    if (await pg.evaluate(async () => (await import('./lib/xr/xrask.js')).xrActive())) await exitVR(pg);
-    await pg.evaluate(() => localStorage.removeItem('eido.audio.prefs'));
-    await pg.reload({ waitUntil: 'domcontentloaded' }); await visorShown(pg); await install();
-  };
   const startConsent = () => pg.evaluate(async () => globalThis.__px.track('cr', (await import('./lib/audio/voiceconsent.js')).ensureSttConsent()));
 
   // S1: leave the headset while the consent question is open
@@ -384,6 +406,44 @@ try {
   check('S5 mic turned off while the consent question is open, then Turn on: the recognizer never starts',
     /speech-to-text/i.test(s5.q ?? '') && s5.liveAtAsk && !s5.liveAtPress && s5.pressed && s5.flipped === 'done' && s5.starts === 0, JSON.stringify(s5));
   check('…and the consent is still stored (true): that was a real press', s5.stored === true && s5.next === null, JSON.stringify(s5));
+
+  // X (cold read of #359's fixes): a press meant for the question that just closed never answers the one that took its
+  // place. The ask quad's buttons always sit in its bottom row, so the consent question's Turn on appears under a
+  // notice's OK. One frame (#16) is ~11 ms; a double-press, or a press aimed at a card closing by itself, comes
+  // 100–300 ms later. A question can't be answered until it has been shown for ARM_MS (confirmcenter.js), as browsers do
+  // for permission prompts; a press before then is dropped, not kept for later
+  await fresh(); await inVR();
+  await pg.evaluate(() => globalThis.__px.track('xn', globalThis.__px.ask.chooseXR({ title: 'refused — nothing changed', body: 'probe', choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' })));
+  await asked(/refused/, 'X: the notice is drawn');
+  await startConsent();   // the real ensureSttConsent question, in line behind the notice
+  await S('X: the consent question waits behind the notice', () => (globalThis.__px.ask.xrAskState()?.waiting ?? 0) > 0);
+  // in the page, in one task: OK pressed at its left quarter (where Turn on will be), then the same spot again a person's
+  // double-press later (120 ms); both through the laser. A headset draws ~11 frames in that time, so the consent question
+  // has been drawn and #16's gate is passed. This host's software loop blocks the main thread 1–2 s a frame, so any wait
+  // that yields to it is a second long: the row spins the 120 ms instead (the passing of time is what is under test) and
+  // counts the one frame a headset would have drawn meanwhile (perf.frameNo + 1, the value the loop writes on its next tick)
+  const x = await pg.evaluate(async () => {
+    const { btn, pull, dq } = globalThis.__px; const { perf } = await import('./lib/render/perf.js');
+    const r = btn('ask', /^ok$/i).getBoundingClientRect(), pt = { x: r.left + r.width * 0.25, y: r.top + r.height / 2 };
+    // the frame is laid out offscreen while presenting (domquad.js), so elementFromPoint can't see it: the button whose box holds the point
+    const under = () => [...dq.domQuadTexture('ask').dom.querySelectorAll('button')].find((b) => { const q = b.getBoundingClientRect(); return q.height > 0 && pt.x >= q.left && pt.x <= q.right && pt.y >= q.top && pt.y <= q.bottom; }) ?? null;
+    const pressAt = () => { const b = under(); return b ? pull('ask', b) != null : false; };
+    const t0 = performance.now(), x1 = pressAt(), f0 = perf.frameNo ?? 0;
+    perf.frameNo = f0 + 1;
+    while (performance.now() - t0 < 120) { /* a double-press's gap, with no frame able to run in it */ }
+    const label = under()?.textContent ?? null, ms = Math.round(performance.now() - t0), x2 = pressAt();
+    return { x1, label, ms, x2 };
+  });
+  Object.assign(x, { notice: await R('xn'), consent: await R('cr'), stored: await stored(), arm: await pg.evaluate(async () => (await import('./lib/edit/confirmcenter.js')).ARM_MS ?? null) });
+  console.log('  · X', JSON.stringify(x));
+  check('X a press at the notice\'s spot 120 ms and a frame after it went never answers the consent question under it (sttConsent null)',
+    x.x1 && x.notice === 'ok' && x.label === 'Turn on' && x.x2 && x.consent === 'unsettled' && x.stored === null && !(x.ms >= (x.arm ?? Infinity)), JSON.stringify(x));
+  // the press was dropped, not kept: once the question can be answered it is still open, and a press then is the answer
+  await asked(/speech-to-text/, 'X: the consent question can be answered').catch(() => {});
+  const xl = { still: await R('cr') };
+  xl.pressed = await pg.evaluate(() => globalThis.__px.press(/turn on/i));
+  xl.consent = await settledR('cr', 'X: the consent question answered').then(() => R('cr'), () => 'unsettled'); xl.stored = await stored();
+  check('…the dropped press is not kept for later, and a press once the question can be answered is its answer (true)', xl.still === 'unsettled' && xl.pressed && xl.consent === true && xl.stored === true, JSON.stringify(xl));
   check('no native dialogs at all', dialogs.length === 0, dialogs.join(' | '));
   check('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '));
 } catch (e) { check('probe ran', false, e.message); }
