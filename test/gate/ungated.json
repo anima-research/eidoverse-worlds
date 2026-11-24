@@ -6,7 +6,7 @@
  "test/client/avatar-perf-probe.mjs": "Chromium probe: 8 fixed waits to turn into conditions",
  "test/mcpl/body-state-mutation-test.ts": "MERGE into body-state as --mutants pending (its baseline is green again since body-state's touch-gate fix)",
  "test/mcpl/body-state-rigs-test.ts": "needs EIDOVERSE_DIR (a source avatar library: eidoverse/assets/vrms and an idle.vrma); MERGE into body-state as a corpus section pending",
- "test/client/boot-check.mjs": "Chromium probe: 3 fixed waits to turn into conditions; red on the CDP harness: FAIL — finished without a body mark (the splash lifted before the body settled): [boot] ready in 25991ms (ready) Object",
+ "test/client/boot-check.mjs": "Chromium probe: 3 fixed waits to turn into conditions; green on the CDP harness on Linux since cdp-pw prints an Object console arg as playwright does (its body mark, 11-23)",
  "test/client/camera-world-probe.mjs": "Chromium probe: waits converted; red last run when the client reloaded itself mid-evaluate (cdp-pw now re-runs such an evaluation, as playwright does): rerun, then gate",
  "test/client/capnotice-probe.mjs": "Chromium probe: 16 fixed waits to turn into conditions",
  "test/client/contact-mutation-test.ts": "MERGE into blockers-mutants pending; its baseline (reach-continuity) needs the host's avatar store",
