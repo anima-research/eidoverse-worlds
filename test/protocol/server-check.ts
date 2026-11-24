@@ -576,8 +576,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await tryUntil("the joiner that doesn't fold is closed", () => b.ws.readyState === 3, { ms: 2000, step: 50 });
   ok(!b.snapshot && /needs a client that folds its log/.test(b.of("error").at(-1)?.error ?? "") && b.ws.readyState === 3, "S8 a joiner that doesn't fold the log is refused, told why, and closed", [b.of("error").at(-1), b.ws.readyState]);
   const r2 = await a.req("set", { id: "box", component: "label", value: "after the refusal" });
-  await tryUntil("Ann is sent the label's entry", () => a.of("log").some((m: any) => JSON.stringify(m.entries).includes("after the refusal")), { ms: 3000, step: 20 });
-  ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
+  const sentLive = await tryUntil("Ann is sent the label's entry", () => a.of("log").some((m: any) => JSON.stringify(m.entries).includes("after the refusal")), { ms: 3000, step: 20 });   // G6-123: asserted below
+  ok(r2.ok && !!sentLive && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
   ok(a.snapshot.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { replica: true })).snapshot.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
 // ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
@@ -702,9 +702,9 @@ srv.proc.kill();
     ok(hb.ok && (hb.entries ?? []).length === 0 && !(hbAll.entries ?? []).some((e: any) => e.kind === "say") && (ha.entries ?? []).filter((e: any) => e.kind === "say").length === Math.min(200, N0 + lines),
       "SH5 the authority's history request: a non-admin reads no say body from before it arrived (by verbs or not); the owner reads them all", [(hb.entries ?? []).length, (hbAll.entries ?? []).filter((e: any) => e.kind === "say").length, (ha.entries ?? []).length]); }
   ok((await r.req("say", { text: "after bob came" })).ok, "SH6 (Ann speaks once Bob is here)");
-  await tryUntil("Bob is sent Ann's line", () => bob.of("log").some((m: any) => (m.entries ?? []).some((e: any) => e.kind === "say" && e.body?.text === "after bob came")), { ms: 3000, step: 50 });
+  const heardLive = await tryUntil("Bob is sent Ann's line", () => bob.of("log").some((m: any) => (m.entries ?? []).some((e: any) => e.kind === "say" && e.body?.text === "after bob came")), { ms: 3000, step: 50 });   // G6-123: asserted below
   { const { got } = await all(bob); const hb = await bob.req("history", { verbs: ["say"] });
-    ok(got.map((e) => e.args?.text).join("|") === "after bob came" && (hb.entries ?? []).map((e: any) => e.body?.text).join("|") === "after bob came",
+    ok(!!heardLive && got.map((e) => e.args?.text).join("|") === "after bob came" && (hb.entries ?? []).map((e: any) => e.body?.text).join("|") === "after bob came",
       "SH6 what was said while Bob was present reaches him live and reads back in his history (both routes), and nothing older", [got.map((e) => e.args?.text), (hb.entries ?? []).map((e: any) => e.body?.text)]); }
   bob.close(); r.close(); srvB.proc.kill(); }
 
