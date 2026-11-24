@@ -52,7 +52,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 
 // [name, file under the tree, find, replace, rows]
-const MUTANTS: [string, string, string, string, string[]][] = [
+const MUTANTS: [string, string, string | string[], string | string[], string[]][] = [
   ["hold-limit is hands-full again", "shared/protocol/authority/bodyverbs.js", "refuse(\"hold-limit\",", "refuse(\"hands-full\",", ["N1", "N2"]],
   ["beneath is underfoot again", "shared/protocol/authority/manipulate.js", "refuse(\"beneath\",", "refuse(\"underfoot\",", ["N2"]],
   ["the door takes shove again", "shared/protocol/verbspec.js", "(occupied, or sliding into them)\" } }, was: {", "(occupied, or sliding into them)\" }, shove: { type: \"bool\", doc: \"old spelling of contact\" } }, was: {", ["P2", "P3"]],
@@ -77,7 +77,9 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the registry keeps pose", "shared/protocol/componentspec.js", "hold: \"string\", anim: \"string\", grips:", "hold: \"string\", pose: \"string\", grips:", ["A1"]],
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
-  ["the station takes pose again", "shared/protocol/componentspec.js", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\",", ["A5"]],
+  // two guards refuse a station's pose: its fields (sockbody's unknown key) and its dropped entry (checks.js); both go (G4-151)
+  ["the station takes pose again", "shared/protocol/componentspec.js", ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "               dropped: { pose: \"renamed anim (R 10-17): a write of pose is taken and stored as anim; a stored one is renamed by the world's maintenance command\" },\n"],
+    ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\",", ""], ["A5"]],
   ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
   ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
   ["the fence drops poses", "server/posecheck.ts", "if (\"poses\" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }", "delete p.poses;", ["A6"]],
@@ -160,8 +162,9 @@ if (argv.includes("--mutants")) {
   let bad = 0, ran = 0;
   for (const [name, file, find, repl, cases] of MUTANTS) {
     ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = readLF(f);
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
+    const finds = [find].flat(), repls = [repl].flat();   // one edit, or several in one file (a fix held by two guards)
+    if (finds.some((x) => src.split(x).length !== 2)) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
+    fs.writeFileSync(f, finds.reduce((t, x, i) => t.replace(x, repls[i]), src));
     const r = await runSelf(d, cases.length ? cases : null);
     const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
     const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
@@ -402,14 +405,14 @@ const cases: Case[] = [
       const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
       return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
     good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
-  { id: "A5", what: "…a socket child's station holds anim, never pose; the old sockets map with a body block's pose is refused (schema: no such name)", async run(s) {
+  { id: "A5", what: "…a socket child's station holds anim, never pose (refused, naming pose); the old sockets map with a body block's pose is refused (schema: no such component)", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } }));
       const kid = (station: any) => s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station } });
       const old = show(kid({ action: "lie", pose: "lie" })), r = kid({ action: "lie", anim: "lie" });
       const E = s.w().state().entities; const k = Object.keys(E).find((x) => E[x].c.socket?.name === "bunk");
       return { door, old, r: show(r), st: k ? E[k].c.station : null }; },
-    good: (o) => /^refused schema/.test(o.door) && /^refused schema/.test(o.old) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) },
+    good: (o) => /^refused schema/.test(o.door) && /^refused schema: \S+\.station(: unknown key 'pose'|\.pose is gone: renamed anim)/.test(o.old) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) },
   { id: "A6", what: "(R 15:09) folded wings are the named pose wings-folded on the wire (poses: [names]; [] holds none); an older sample's wingsFolded still reads; the server's fence keeps a clean poses list", async run() {
       const WP = await import(TREE + "shared/wingpresence.js"); const PC = await import(TREE + "server/posecheck.ts");
       const keep = PC.sanePose({ p: [0, 0, 0], poses: ["wings-folded"] }), bad = PC.sanePose({ p: [0, 0, 0], poses: [1, 2] });
