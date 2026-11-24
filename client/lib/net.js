@@ -230,7 +230,12 @@ export function sendTyping(to, state) {
 }
 
 /** Transient, never-logged: a build drag in flight, so others see the object moving before the committed edit. */
+// how many drag poses this page has sent per thing: a newer gesture on it shows as a change (edit/writes.js, a lock
+// question answered after it waited)
+const dragsSent = new Map();
+export const dragsOf = (id) => dragsSent.get(id) ?? 0;
 export function sendDrag(id, pos, yaw, q = null, { end = false, scale = null } = {}) {
+  dragsSent.set(id, dragsOf(id) + 1);
   if (net.joined && net.ws?.readyState === 1) {
     net.ws.send(JSON.stringify({ type: 'drag', id, pos, yaw, ...(q ? { q } : {}), ...(scale ? { scale } : {}), ...(end ? { end: true } : {}) }));
   }

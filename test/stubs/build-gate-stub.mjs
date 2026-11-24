@@ -63,6 +63,7 @@ export const heightAt = () => 0;
 // as the real net.js leaves it before a snapshot.
 export const net = {};
 export const sendDrag = () => {};
+export const dragsOf = () => 0;   // net.js: drag poses sent per thing (edit/writes.js, a lock question that waited)
 
 export const myState = { pos: [0, 0, 0], yaw: 0 };
 export const mouse = { x: 0, y: 0 };

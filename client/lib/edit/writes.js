@@ -13,7 +13,7 @@
 //                          redoes what's untouched and says what it skipped (shared/protocol/authority/undo.js).
 //   del(ids), duplicate(id), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
 import { bus } from '../base.js';
-import { net, sendRequest, replica, replicaActive, sendDrag } from '../net.js';
+import { net, sendRequest, replica, replicaActive, sendDrag, dragsOf } from '../net.js';
 import { entities } from '../world.js';
 import { enc, actorName } from '../../../shared/protocol/names.js';
 import { idOut } from '../../../shared/protocol/view.js';
@@ -108,6 +108,10 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   //            to undo/redo, whose act isn't mine to stack under an unlock.
   // A refusal with mayLift: false (a lock above your rank) shows as words, no buttons. Another lock further up asks again.
   let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled
+  // the question can wait behind another (xr/xrask.js queues them) while a new drag of the same thing begins: a cancel
+  // then must not put it back under that hand (the revert snaps the preview and tells everyone)
+  const mine = [...new Set(writesOf(req).map(([i]) => i))], drags0 = mine.map(dragsOf);
+  const newerGesture = () => mine.some((i, n) => dragsOf(i) !== drags0[n]);
   for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift !== false && req.args?.throughLock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     // a delete or a replace through a lock is destructive: styled so, and not the answer Enter gives
@@ -130,7 +134,7 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     bus.emit('edit-done', { what, req, reply: r });
     showWarnings(what, r);
   } else {
-    try { revert?.(); } catch (e) { console.warn('[editwrites] revert', e); }
+    try { if (!(cancelled && newerGesture())) revert?.(); } catch (e) { console.warn('[editwrites] revert', e); }
     if (cancelled) { flashHint(lifted ? `cancelled — ${lifted === 1 ? 'a lock was' : `${lifted} locks were`} lifted, the ${what} not written` : 'cancelled — nothing written'); bus.emit('edit-cancelled', { what, refused: r.refused }); }
     else showRefusal(what, r);
   }

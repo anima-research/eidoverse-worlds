@@ -15,7 +15,7 @@
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until } from '../gate/wait.ts';
 const { check, done } = checker();
-const world = await ownedWorld({});
+const world = await ownedWorld({ owner: 'askprobe', env: { TRUST_NAMES: '1' } });   // the page owns staging: it may build, lock and close the door
 const { browser, page } = await launchBrowser(); const pg = await page();
 await iwerInit(pg);
 const errs = [], dialogs = [];
@@ -236,6 +236,33 @@ try {
   check('S4 two consent asks while one is open show one question: after Turn on nothing more is asked',
     s4pre.stored === null && !s4pre.open && /speech-to-text/i.test(s4.q1 ?? '') && s4.pressed && s4.afterYes.next === null, JSON.stringify({ s4pre, ...s4 }));
   check('…both callers get the one answer (true), and the stored value is that press', s4.end.a === true && s4.end.b === true && s4.end.stored === true, JSON.stringify(s4.end));
+
+  // ---- the lock question in line behind another (review #359 14, 15): it may be answered long after it was asked ----
+  const req = (verb, args) => pg.evaluate(async ([v, a]) => { const r = await (await import('./lib/net.js')).sendRequest(v, a); return { ok: r.ok, refused: r.refused?.code ?? null, ids: r.ids ?? null }; }, [verb, args]);
+  // the authority mints a thing's id: '$lkp' is the request's placeholder, and the page keeps the id it became (__lk)
+  const made = await req('create', { id: '$lkp', components: { transform: { pos: [3, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: 'lock probe' } });
+  const LK = made.ids?.$lkp ?? null;
+  await pg.evaluate((id) => { globalThis.__lk = id; return true; }, LK);
+  const lockedNow = () => pg.evaluate(async () => !!(await import('./lib/edit/writes.js')).compsOf(globalThis.__lk)?.lock);
+  const lk0 = await req('set', { id: LK, component: 'lock', value: true });
+  await S('L: the lock is in the fold', async () => !!(await import('./lib/edit/writes.js')).compsOf(globalThis.__lk)?.lock).catch(() => {});
+  const blocker = (name) => pg.evaluate((n) => globalThis.__px.track(n, globalThis.__px.ask.chooseXR({ title: 'Blocking question', choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' })), name);
+  const onQuad = async () => { const f = async () => pg.evaluate(async () => ({ f: (await import('./lib/render/perf.js')).perf.frameNo, xr: (await import('./lib/xr/xrask.js')).xrActive(), hidden: document.hidden, t: performance.now() })); const a = await f(); const b = await until('frames move', async () => { const x = await f(); return x.f > a.f + 2 ? x : null; }, { ms: 90000 }).catch(() => f()); return JSON.stringify({ a, b, q: await pg.evaluate(() => globalThis.__px.ask.xrAskState()) }); };
+  // a move of the locked thing, through edit/writes.js send (its revert counted: what a cancelled gesture runs)
+  const move = (name, x) => pg.evaluate(async ([n, px]) => { globalThis.__reverts = 0; const E = await import('./lib/edit/writes.js');
+    return globalThis.__px.track(n, E.sendOps([{ verb: 'set', args: { id: globalThis.__lk, component: 'transform', value: { pos: [px, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } }], { what: 'move the lock probe', expect: false, revert: () => { globalThis.__reverts++; E.revertPose(globalThis.__lk); } }).then((r) => r.ok)); }, [name, x]);
+  const inLine = () => S('L: the lock question waits behind the open one', () => (globalThis.__px.ask.xrAskState()?.waiting ?? 0) > 0);
+
+  // L1 (14): cancelled after a newer drag of the same thing began: the old revert must not yank it back under the hand
+  await blocker('b1'); await asked(/Blocking/, 'L1: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
+  await move('m1', 4); await inLine().catch(() => {});
+  await pg.evaluate(async () => { (await import('./lib/net.js')).sendDrag(globalThis.__lk, [5, 0, 3], 0); return true; });   // a newer drag of it (build.js, gizmo.js, inspect.js all send these)
+  await pg.evaluate(() => globalThis.__px.press(/^ok$/i));
+  await asked(/locked/, 'L1: the lock question is asked').catch(() => {});
+  await pg.evaluate(() => globalThis.__px.press(/cancel/i));
+  await settledR('m1', 'L1: the move settled').catch(() => {});
+  const l1 = { made, lk0, moved: await R('m1'), reverts: await pg.evaluate(() => globalThis.__reverts) };
+  check('L1 a queued lock question cancelled after a newer drag of the thing began leaves the thing to that drag (no revert)', l1.made.ok && l1.lk0.ok && l1.moved === false && l1.reverts === 0, JSON.stringify(l1));
 
   // S5: mic on → consent question opens → mic off → Turn on. The yes is a real press and is kept, but the mic is off now:
   // the recognizer (SpeechRecognition holds its own capture, audio to the vendor) must not start. A fake transport and a
