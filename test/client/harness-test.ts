@@ -64,6 +64,18 @@ try {
     } finally { try { rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); } catch { /* best effort: a Windows browser may still hold a log (EBUSY) */ } }
   }
 } finally { try { rmSync(scratch, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 }); } catch { /* best effort, as harness.ts */ } }
+{ // contact-mutation-preload reads a CRLF checkout (autocrlf) as LF: an anchor written with \n still applies (#333 backlog G4-111)
+  const dir = mkdtempSync(join(tmpdir(), 'ew-cm-crlf-'));
+  try {
+    writeFileSync(join(dir, 'crlf-target.js'), 'const a = 1;\r\nconst b = 2;\r\nconsole.log("sum", a + b);\r\n');
+    writeFileSync(join(dir, 'entry.js'), "import './crlf-target.js';\n");
+    const m = { file: 'crlf-target.js', from: 'const a = 1;\nconst b = 2;', to: 'const a = 10;\nconst b = 20;' };
+    const p = Bun.spawn([process.execPath, '--preload', join(import.meta.dir, '../harness/contact-mutation-preload.ts'), join(dir, 'entry.js')],
+      { cwd: ROOT, env: { ...process.env, CONTACT_MUTATION: JSON.stringify(m) }, stdout: 'pipe', stderr: 'pipe' });
+    const [o, e, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
+    check('contact-mutation-preload: an LF anchor applies to a CRLF file', code === 0 && e.includes('CONTACT_MUTATION_APPLIED') && o.includes('sum 30'), (o + e).slice(-300));
+  } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
+}
 { // cdp-pw (the probes' driver) gives a console message what playwright's does: type, text, location
   const { launchCdp } = await import('../harness/cdp-pw.mjs');
   const b = await launchCdp(); const msgs: any[] = [];
