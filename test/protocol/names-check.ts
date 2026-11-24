@@ -33,6 +33,8 @@
 //   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (bob refused),
 //       the readers (the type as written), the editor's card, the translator (@14, import-v1/shapes.js motionType), the docs
 //   X   the version history records it
+// 13 rows read source text only (P4, P5, W1–W4, O1, O3, S3, A1, A7, K5, OS7): kept by the test trim (M12) as post-PR work,
+// each held by its mutant. W1's behaviour (/worlds' agents list) is agenttools-check AT12's; W1 adds only the people-entry shape.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
