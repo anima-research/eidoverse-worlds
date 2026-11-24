@@ -13,26 +13,32 @@ cd "$(dirname "$0")/.."
 # once, by the box's owner, who can roll it back: docs/operator/RUNNING-A-SERVER.md, "Moving a box to /opt". This
 # script never moves it. It stops here, before fetching, so a refused deploy changes nothing.
 old_layout() { echo "deploy: $1; nothing deployed. See docs/operator/RUNNING-A-SERVER.md, \"Moving a box to /opt\"." >&2; exit 1; }
-case $PWD in /home/*) old_layout "this checkout is in a home ($PWD), not /opt/eidoverse";; esac
+here=$(pwd -P)   # a symlink from the old place to /opt/eidoverse is not the old layout
+case $here in /home/*) old_layout "this checkout is in a home ($here), not /opt/eidoverse";; esac
 for unit in deploy/*.service deploy/*.service.template; do
   name=$(basename "${unit%.template}" .service)
   [ -f "/etc/systemd/system/$name.service" ] || continue
   wd=$(systemctl show -p WorkingDirectory --value "$name")
-  [ -z "$wd" ] || [[ $wd == "$PWD" || $wd == "$PWD"/* ]] || old_layout "$name.service runs $wd, not this checkout ($PWD)"
+  [ -z "$wd" ] || [[ $wd == "$here" || $wd == "$here"/* ]] || old_layout "$name.service runs $wd, not this checkout ($here)"
 done
-# state the units now keep in /var/lib (WORLDS_DIR=… in their environment) but still here would be orphaned
+# state and secrets the units now keep in /var/lib and /etc (WORLDS_DIR=… in their environment) but still here
 for pair in eidoverse:WORLDS_DIR:worlds eidoverse:BACKUPS_DIR:backups eidoverse:OPT_DIR:assets/opt \
-    eidoverse:SESSIONS_PATH:.sessions.json eidoverse-mcpl:MCPL_STATE:mcpl/state.json; do
+    eidoverse:SESSIONS_PATH:.sessions.json eidoverse-mcpl:MCPL_STATE:mcpl/state.json eidoverse:AGENT_TOKENS_PATH:mcpl/tokens.json; do
   IFS=: read -r name var path <<<"$pair"
   [ -n "$(ls -A "$path" 2>/dev/null)" ] || continue   # absent, or an empty directory a tool made
   [[ " $(systemctl show -p Environment --value "$name") " != *" $var="* ]] || old_layout "$path is still here, but $name.service reads $var"
 done
+# bun loads a .env from its working directory and skips one it can't read without a word: a JOIN_TOKEN there would
+# leave the door open. What the units need goes in /etc/eidoverse/<unit>.env.
+if id -u eidoverse >/dev/null 2>&1; then
+  for f in .env* services/chatbridge/.env*; do
+    [ ! -e "$f" ] || sudo -u eidoverse test -r "$f" || old_layout "$f is not readable by eidoverse, so the units would run without it: move what it sets to /etc/eidoverse/<unit>.env"
+  done
+fi
 
 # bun is the box's, installed and upgraded by hand (docs/operator/RUNNING-A-SERVER.md, "Upgrading bun"), never here
 BUN=${BUN:-/usr/local/bin/bun}
 [ -x "$BUN" ] || { echo "deploy: no bun at $BUN (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\"); nothing deployed" >&2; exit 1; }
-want=$("$BUN" -e 'console.log(require("./package.json").engines.bun)')
-[ "$("$BUN" --version)" = "$want" ] || echo "bun: $BUN is $("$BUN" --version), package.json wants $want: upgrade it (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\")" >&2
 
 before=$(git rev-parse --short HEAD)
 # Installs are keyed to the last deploy that finished (.deploy-done, gitignored), not to the pre-reset HEAD,
@@ -53,6 +59,9 @@ done
 git reset --hard origin/main
 after=$(git rev-parse --short HEAD)
 echo "code: $before -> $after"
+# against the package.json just fetched: a bump warns on the deploy that brings it
+want=$("$BUN" -e 'console.log(require("./package.json").engines.bun)')
+[ "$("$BUN" --version)" = "$want" ] || echo "bun: $BUN is $("$BUN" --version), package.json wants $want: upgrade it (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\")" >&2
 # true when these paths moved since the last finished deploy, or there is none to compare with
 changed() { [ -n "$done_at" ] && git diff --quiet "$done_at" "$after" -- "$@" 2>/dev/null && return 1; return 0; }
 
@@ -94,11 +103,6 @@ done
 # the user each unit runs as (User=), also for one installed by hand from a .template: a system user, no login, no home
 ensure_user() { id -u "$1" >/dev/null 2>&1 || { sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1" && echo "user: made $1"; }; }
 for name in "${units[@]}" "${optional[@]}"; do user=$(systemctl show -p User --value "$name"); [ -z "$user" ] || ensure_user "$user"; done
-# agents' tokens stay the deploy user's file; the units' user reads them through the group
-group=$(systemctl show -p Group --value eidoverse)
-if [ -n "$group" ] && [ -f mcpl/tokens.json ] && [ "$(stat -c %G mcpl/tokens.json)" != "$group" ]; then
-  sudo chgrp "$group" mcpl/tokens.json && chmod 640 mcpl/tokens.json && echo "tokens: mcpl/tokens.json is readable by $group"
-fi
 
 # An in-place install keeps ndarray-pixels' own copy of sharp after the
 # lockfile stops listing it, and optimize.ts loads that copy whenever it

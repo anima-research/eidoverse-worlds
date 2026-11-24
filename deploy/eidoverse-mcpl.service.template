@@ -19,8 +19,9 @@ Restart=always
 RestartSec=5
 Environment=MCPL_PORT=8941
 Environment=WORLD_URL=ws://127.0.0.1:8940/ws
-# agents' tokens: mcpl/tokens.json (gitignored; mcpl/tokens.example.json shows the shape), or MCPL_TOKENS=<file>
-# (the world server reads AGENT_TOKENS_PATH, default mcpl/tokens.json: point both at the same file). Read-only here.
+# agents' tokens (mcpl/tokens.example.json shows the shape), the same file as the world server's AGENT_TOKENS_PATH:
+# root's, group eidoverse, 0640, edited with sudoedit
+Environment=MCPL_TOKENS=/etc/eidoverse/agent-tokens.json
 # what the door remembers between restarts, out of the checkout
 StateDirectory=eidoverse-mcpl
 StateDirectoryMode=0700
@@ -31,6 +32,7 @@ UMask=0027
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+PrivateUsers=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

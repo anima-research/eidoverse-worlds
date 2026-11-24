@@ -29,6 +29,8 @@ StateDirectory=eidoverse
 StateDirectoryMode=0700
 Environment=WORLDS_DIR=/var/lib/eidoverse/worlds BACKUPS_DIR=/var/lib/eidoverse/backups
 Environment=OPT_DIR=/var/lib/eidoverse/opt SESSIONS_PATH=/var/lib/eidoverse/sessions.json
+# agents' tokens, shared with the door: root's, group eidoverse, 0640 (sudoedit keeps that)
+Environment=AGENT_TOKENS_PATH=/etc/eidoverse/agent-tokens.json
 # git (world provenance, /version) refuses a checkout another user owns unless it is named safe
 Environment=GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/opt/eidoverse
 UMask=0027
@@ -37,6 +39,8 @@ UMask=0027
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# files of other users (the checkout's owner) read as nobody's; permissions are unchanged
+PrivateUsers=yes
 PrivateDevices=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
