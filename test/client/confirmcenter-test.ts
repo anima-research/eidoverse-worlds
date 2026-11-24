@@ -11,6 +11,8 @@
 // (mutation: `armed = () => true` in arm()). The page's clock is the test's: `later()` moves it past a card's arm time.
 // And a held key's auto-repeat answers nothing (mutation: drop `!e.repeat` from an onKey's Enter or Escape).
 // And a click counts from the press that began it (mutation: `clicked` returns `armed(e)` in arm()).
+// And Space held from before a card (its repeats on a button, its keyup's click) answers nothing, a mouse click meanwhile
+// still does (mutations: `spaced` returns on a repeat; `clicked` takes `key ?? down` whatever the click's detail).
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register({ width: 800, height: 600 });
 let now = 1e6; performance.now = () => now;   // event timeStamps read it too
@@ -113,6 +115,24 @@ const enter = (target: Element | null = document.activeElement) => target?.dispa
   check('Space pressed at 300 ms and let go at 470 answers nothing', (await settled(d)) === 'unsettled' && C.confirmOpen(), String(await settled(d)));
   C.closeCenter(); const e = consent(); later(); at(btn('Turn on'), 'click');
   check('…while a click with no press behind it (a script, assistive tech) still counts from when it lands', (await settled(e)) === 'yes', String(await settled(e)));
+  // (cold review of the press time) Space held from before the card (the jump key): its first keydown went to the page,
+  // its auto-repeat lands on the button the card focused, and Blink clicks that button at the keyup (detail 0). That
+  // click's press began before the card was there, and answers nothing
+  const space = (repeat: boolean) => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', repeat, bubbles: true, cancelable: true }));
+  const f = consent(); btn('Turn on')?.focus(); space(true); later(); space(true); at(btn('Turn on'), 'click');
+  check('Space held from before the card, its repeats on a button and its keyup\'s click once armed: answers nothing', (await settled(f)) === 'unsettled' && C.confirmOpen(), String(await settled(f)));
+  // …nor when a mouse press on the card came between (pressed once armed and let go off the button, which clicks
+  // nothing): Space's click is still that held press's, not the mouse's
+  C.closeCenter(); const g = consent(); btn('Turn on')?.focus(); space(true);
+  later(); at(btn('Turn on'), 'pointerdown', { pointerType: 'mouse' }); at(document.body, 'pointerup', { pointerType: 'mouse' });
+  space(true); at(btn('Turn on'), 'click');
+  check('…nor after a mouse press on the card let go off the button, Space still held', (await settled(g)) === 'unsettled' && C.confirmOpen(), String(await settled(g)));
+  // …while a mouse click once armed, Space still held (flying), is the mouse's and answers: only Space's own click is dropped
+  C.closeCenter(); const k = consent(); btn('Turn on')?.focus(); space(true); later(); hold('Turn on', 0, 10);
+  check('…and a mouse click on the card once armed, Space held from before it, still answers (yes)', (await settled(k)) === 'yes' && !C.confirmOpen(), String(await settled(k)));
+  // a Space begun on the card once armed keeps its first keydown's time through its repeats, and its click answers
+  C.closeCenter(); const h = consent(); btn('Turn on')?.focus(); later(); space(false); later(); space(true); at(btn('Turn on'), 'click');
+  check('…while a Space begun on the card once armed, held a while (repeats), answers at its keyup', (await settled(h)) === 'yes' && !C.confirmOpen(), String(await settled(h)));
 }
 { // (review #359 10) max: null is no limit: the speech server's address (audio/ttsrow.js) was unlimited in main's prompt()
   const long = 'ws://127.0.0.1:8927/?sig=' + 'a'.repeat(400);

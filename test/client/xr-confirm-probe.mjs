@@ -17,8 +17,9 @@
 // XH/DH (a press counts from when it began): in xr/xrask.js `pressedAt` returns inputAt(e) (XH, XH2); in
 // edit/confirmcenter.js arm()'s `clicked` returns armed(e) (DH, DH2). XS: in xrask.js show(), stamp shownAt = performance.now().
 // E3/E4: drop `!e.repeat` from Escape in confirmCenter's onKey (E3) and from the quad buttons' Escape (E4).
+// DS–DS4 (Space held from before a desk card): in confirmcenter.js arm()'s `spaced`, return on a repeat first.
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
-import { until } from '../gate/wait.ts';
+import { until, pause } from '../gate/wait.ts';
 const { check, done } = checker();
 const world = await ownedWorld({ owner: 'askprobe', env: { TRUST_NAMES: '1' } });   // the page owns staging: it may build, lock and close the door
 const { browser, page } = await launchBrowser(); const pg = await page();
@@ -67,6 +68,9 @@ const enterUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...ENTER
 const ESC = { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
 const escDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...ESC, autoRepeat: repeat });
 const escUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...ESC });
+const SP = { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 };
+const spDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...SP, text: ' ', autoRepeat: repeat });
+const spUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...SP });
 const R = (name) => pg.evaluate((n) => globalThis.__r[n], name);                            // a tracked promise's value
 const settledR = (name, what) => S(what, (n) => globalThis.__r[n] !== 'unsettled' && globalThis.__r[n] !== undefined, name);
 const askTitle = () => pg.evaluate(() => globalThis.__px.ask.xrAskState()?.title ?? null);
@@ -196,6 +200,65 @@ try {
   if (e3.b === 'unsettled') { await pg.keyboard.press('Escape'); await settledR('e3b', 'E3: Escape dismisses the second card').catch(() => {}); }
   console.log('  · E3', JSON.stringify(e3));
   check('E3 Escape held down dismisses the desk card it was pressed on (no), and its auto-repeat never the next one', e3.a === false && e3.b === 'unsettled', JSON.stringify(e3));
+
+  // DS (cold review of the press time): Space is the jump key, so it is often down as a card opens. Its first keydown
+  // went to the page; its auto-repeat lands on the button the card focused, and Blink clicks that button at the keyup
+  // (a trusted click, detail 0). That press began before the card was there: let go once the card can be answered, it
+  // answers nothing. Real keys (CDP), the three shapes of card: confirmCenter (OK focused), the consent question (Not now
+  // focused: a remembered no), the lock question (✓ Move anyway focused: a write through the lock).
+  // Mutation: confirmcenter.js arm()'s `spaced` ignores repeats (`if (e.repeat) return;` first)
+  const deskOpen = (kind) => pg.evaluate(async (k) => {
+    const C = await import('./lib/edit/confirmcenter.js'), vc = await import('./lib/audio/voiceconsent.js');
+    const p = k === 'confirm' ? C.confirmCenter({ title: 'Log out?' })
+      : k === 'lock' ? C.chooseCenter({ title: 'This thing is locked', choices: [{ v: 'through', label: '✓ Move anyway' }, { v: 'cancel', label: '✕ Cancel' }, { v: 'unlock', label: '🔓 Unlock, then Move' }], cancel: 'cancel' })
+      : vc.ensureSttConsent();
+    return globalThis.__px.track('ds', p);
+  }, kind);
+  const deskCanAnswer = () => pg.evaluate(() => document.querySelector('#confirm-center')?.dataset.armed !== undefined);
+  // the OS's auto-repeat (~30 a second) until the card can be answered, and one more
+  const repeatUntilArmed = async () => { let n = 0; for (; n < 600 && !(await deskCanAnswer()); n++) { await spDown(true); await pause('the OS auto-repeat cadence of a held key', 30); } await spDown(true); return n; };
+  const closeDesk = () => pg.evaluate(async () => { (await import('./lib/edit/confirmcenter.js')).closeCenter(); return true; });
+  for (const [tag, kind] of [['DS', 'confirm'], ['DS2', 'consent'], ['DS3', 'lock']]) {
+    await pg.evaluate(() => { document.activeElement?.blur?.(); return true; });
+    await spDown();   // the first keydown: the page's (a jump)
+    await deskOpen(kind);
+    const ds = { repeats: await repeatUntilArmed(), focused: await pg.evaluate(() => document.activeElement?.textContent ?? null) };
+    await spUp(); await pause('the row is that nothing answers: a click the keyup fired has had time to land', 150);
+    Object.assign(ds, { answer: await R('ds'), open: await pg.evaluate(() => !!document.querySelector('#confirm-center')), stored: await stored() });
+    console.log(`  · ${tag}`, JSON.stringify(ds));
+    check(`${tag} Space held from before a desk card (${ds.focused} focused) and let go once it can be answered answers nothing${kind === 'consent' ? ' (sttConsent null)' : ''}`,
+      ds.repeats > 0 && ds.answer === 'unsettled' && ds.open && (kind !== 'consent' || ds.stored === null), JSON.stringify(ds));
+    await closeDesk();
+    if ((await stored()) !== null) await fresh();   // each row starts never asked
+  }
+  // the control: a Space begun on a card once it can be answered, held a moment (repeats), is its answer
+  { await deskOpen('confirm');
+    await S('DS: the control card can be answered', () => document.querySelector('#confirm-center')?.dataset.armed !== undefined);
+    await spDown(); await spDown(true); await spDown(true); await spUp();
+    const dsc = await settledR('ds', 'DS: a Space begun on the card answers it').then(() => R('ds'), () => 'unsettled');
+    check('…while a Space begun on the card once it can be answered, held a moment, is its answer (yes)', dsc === true, JSON.stringify(dsc));
+    await closeDesk();
+  }
+  // DS4: the same held Space, and meanwhile a real mouse press on the consent card's Turn on, let go off it (the way a
+  // person takes back a click: nothing clicked). The press focused Turn on, so Space's keyup clicks it: the click is
+  // still the held Space's, begun before the card, not the mouse's
+  { await pg.evaluate(() => { document.activeElement?.blur?.(); return true; });
+    await spDown(); await deskOpen('consent');
+    const ds4 = { repeats: await repeatUntilArmed() };
+    const at = (sel) => pg.evaluate((s) => { const el = [...document.querySelectorAll('#confirm-center button, #confirm-center #cc-title')].find((b) => new RegExp(s, 'i').test(b.textContent)); const r = el?.getBoundingClientRect(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; }, sel);
+    const on = await at('^turn on$'), off = await at('speech-to-text');
+    await pg.mouse.move(on.x, on.y); await pg.mouse.down(); await pg.mouse.move(off.x, off.y); await pg.mouse.up();
+    ds4.afterMouse = await R('ds');
+    await spDown(true); await spDown(true);
+    ds4.focused = await pg.evaluate(() => document.activeElement?.textContent ?? null);
+    await spUp(); await pause('the row is that nothing answers: a click the keyup fired has had time to land', 150);
+    Object.assign(ds4, { answer: await R('ds'), stored: await stored() });
+    console.log('  · DS4', JSON.stringify(ds4));
+    check('DS4 Space held from before the consent card, a mouse press on Turn on let go off it, then Space let go: answers nothing (sttConsent null)',
+      ds4.afterMouse === 'unsettled' && ds4.answer === 'unsettled' && ds4.stored === null, JSON.stringify(ds4));
+    await closeDesk();
+    if ((await stored()) !== null) await fresh();   // a remembered answer would skip every consent row below
+  }
   await inVR();
 
   // C: the guarded action — turning on speech-to-text asks for consent first (audio/voiceconsent.js)
@@ -593,6 +656,7 @@ try {
   const xs2 = { pressed: await pg.evaluate(() => globalThis.__px.press(/turn on/i)) };
   xs2.consent = await settledR('cr', 'XS: the consent question answered').then(() => R('cr'), () => 'unsettled');
   check('…and once it has been up ARM_MS, a press is its answer (true)', xs2.pressed && xs2.consent === true, JSON.stringify(xs2));
+
 
   // DH: the same on the desk, with a mouse: a press begun inside the card's ARM_MS and let go after it answers nothing.
   // The notice's Close and consent's Turn on don't share a spot on the desk (the consent card is taller), so the press is
