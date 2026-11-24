@@ -40,7 +40,9 @@ const row = `${insp}?.querySelector('.sp-f-color')`;
 check('the Inspector shows the Light card\'s colour row', await waitFor(`!!${row}`, 8000));
 
 // the picker's own rows (cells, hex, recents, open/close) are test/client/colour-picker-test.ts under happy-dom (G4-050);
-// this keeps the one thing only a page shows: a cell in the real Inspector recolours the real light
+// this keeps what only a page shows: the real Inspector reads the lamp's colour into the swatch, and a cell recolours the light
+check('closed at first: a swatch in the lamp\'s colour', await evalJson(`getComputedStyle(${row}.querySelector('.sp-color-sw')).backgroundColor === 'rgb(255, 217, 160)'`),
+  await evalJson(`getComputedStyle(${row}.querySelector('.sp-color-sw')).backgroundColor`));
 await evalJson(`${row}.querySelector('.sp-color-sw').click(), true`);
 const pick = await evalJson(`(() => { const c = ${row}.querySelectorAll('.sp-pick-grid .sp-pick-cell')[12 + 12 * 2 + 4]; c.click(); return +c.dataset.c; })()`);
 check('a cell click in the Inspector recolours the light to that cell', await waitFor(`${lampColour}.then((c) => c === ${pick})`), String(pick));
