@@ -58,7 +58,11 @@ function show(q) {
   if (pending) { waiting.push(q); return; }
   q.id = ++asked; q.drawnAt = perf.frameNo ?? 0;   // the frame loop's count now: this frame draws it…
   q.shownAt = null;                                 // …and its ARM_MS starts on the next (xrAskTick)
-  pending = q; showXRPanel('ask', true); repaint(); q.onShow?.();
+  // painted into the frame BEFORE the quad is shown: showing it rasterises the frame there and then (HTMLMesh resume, or
+  // its build on a first show), so the texture that frame draws holds the question. Shown first, it rasterised the empty
+  // frame, and the question reached the texture only on HTMLMesh's ≥16 ms re-raster timer, which a long task can hold
+  // past the arm time: a press could answer a question that was never on the quad
+  pending = q; repaint(); showXRPanel('ask', true); q.onShow?.();
 }
 function settle(v) {
   const p = pending; if (!p) return;

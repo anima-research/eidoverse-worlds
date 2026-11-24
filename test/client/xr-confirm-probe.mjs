@@ -18,6 +18,7 @@
 // edit/confirmcenter.js arm()'s `clicked` returns armed(e) (DH, DH2). XS: in xrask.js show(), stamp shownAt = performance.now().
 // E3/E4: drop `!e.repeat` from Escape in confirmCenter's onKey (E3) and from the quad buttons' Escape (E4).
 // DS–DS4 (Space held from before a desk card): in confirmcenter.js arm()'s `spaced`, return on a repeat first.
+// XT (the question on the quad's texture before its arm time): in xrask.js show(), showXRPanel('ask', true) before repaint().
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until, pause } from '../gate/wait.ts';
 const { check, done } = checker();
@@ -657,6 +658,36 @@ try {
   xs2.consent = await settledR('cr', 'XS: the consent question answered').then(() => R('cr'), () => 'unsettled');
   check('…and once it has been up ARM_MS, a press is its answer (true)', xs2.pressed && xs2.consent === true, JSON.stringify(xs2));
 
+  // XT (cold review of the press time): "drawn" means the question is on the quad's texture. HTMLMesh rasterises the
+  // frame's DOM when the quad is shown, and again for a DOM change only on a ≥16 ms timer: had the quad been shown before
+  // the question was painted into its frame, the frame after showed an empty card, and a long task before the timer ran
+  // (a shader compiling) ate the arm time of a question nobody could read. In one task, as XS: the question asked, the
+  // next frame's tick, a 600 ms long task, a press at 700 ms. The row watches the quad's own texture: the question must
+  // be on it before the arm time starts. Mutation: in xrask.js show(), showXRPanel('ask', true) before repaint()
+  await fresh(); await inVR();
+  await pg.evaluate(() => globalThis.__px.track('xtn', globalThis.__px.ask.chooseXR({ title: 'probe notice', choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' })));
+  await asked(/probe notice/, 'XT: a notice first, so the ask quad is built and its texture can be watched');
+  await pg.evaluate(() => globalThis.__px.press(/^ok$/i)); await settledR('xtn', 'XT: the notice answered');
+  const xt = await pg.evaluate(async () => {
+    const { btn, pull, ask, dq, track } = globalThis.__px; const { perf } = await import('./lib/render/perf.js');
+    const vc = await import('./lib/audio/voiceconsent.js');
+    const map = dq.domQuadTexture('ask'), rasters = [], orig = map.update;
+    map.update = function () { rasters.push([performance.now(), /speech-to-text/i.test(this.dom.textContent)]); return orig.call(this); };
+    const t0 = performance.now(), f0 = perf.frameNo ?? 0;
+    track('cr', vc.ensureSttConsent());
+    perf.frameNo = f0 + 1; ask.xrAskTick();   // the next frame begins: the arm time starts here
+    const tickMs = performance.now() - t0;
+    const spin = (ms) => { while (performance.now() - t0 < ms) { /* a long task, before HTMLMesh's raster timer can run */ } };
+    spin(600); const b = btn('ask', /turn on/i); spin(700);
+    const hit = b ? pull('ask', b) != null : false, same = dq.domQuadTexture('ask') === map;
+    delete map.update;   // the prototype's again
+    const first = rasters.find(([, has]) => has);
+    return { same, hit, rasters: rasters.length, firstWithQuestionMs: first ? Math.round(first[0] - t0) : null, tickMs: Math.round(tickMs), title: ask.xrAskState()?.title ?? null };
+  });
+  Object.assign(xt, { consent: await R('cr'), stored: await stored() });
+  console.log('  · XT', JSON.stringify(xt));
+  check('XT the consent question is on the ask quad\'s texture before its arm time starts (a 600 ms long task before the re-raster timer), so a press at 700 ms answers only a question that could be read',
+    xt.same && xt.hit && xt.firstWithQuestionMs != null && xt.firstWithQuestionMs <= xt.tickMs, JSON.stringify(xt));
 
   // DH: the same on the desk, with a mouse: a press begun inside the card's ARM_MS and let go after it answers nothing.
   // The notice's Close and consent's Turn on don't share a spot on the desk (the consent card is taller), so the press is
