@@ -190,9 +190,16 @@ const sent: { after: string; verb: string; t: number; ms: number }[] = []; let a
 const last10 = (now = performance.now()) => { const by: Record<string, number[]> = {}; let ms = 0;
   for (const e of sent) if (now - e.t < 10_000) { const b = (by[`${e.after} ${e.verb}`] ??= [0, 0]); b[0]++; b[1] += Math.round(e.ms); ms += e.ms; }
   return { rttMs: Math.round(ms), by }; };
-{ const real = ag.request.bind(ag); ag.request = async (verb: string, args: any) => { const t0 = performance.now(), after = lastRow; const r = await real(verb, args); const t = performance.now();
+// G4-132: paced against the server's busy meter (requestwire.ts busy: 3000 ms of authority time per connection per 10 s, times
+// EIDO_METER_SCALE): a round trip takes at least its authority time, so while ag's last 10 s of round trips sum to 80% of that,
+// the next request waits for the oldest to leave the window. A fast runner never waits; a slow one is paced, not refused
+const BUSY_MS = 3000 * Math.max(1, Number(process.env.EIDO_METER_SCALE) || 1) * 0.8; let paced = 0;
+const pace = async () => { for (;;) { const now = performance.now(), win = sent.filter((e) => now - e.t < 10_000);
+  if (win.reduce((a, e) => a + e.ms, 0) < BUSY_MS) return; paced++;
+  await pause("the busy meter's 10 s window lets go of ag's oldest request", Math.max(20, 10_000 - (now - Math.min(...win.map((e) => e.t))) + 20)); } };
+{ const real = ag.request.bind(ag); ag.request = async (verb: string, args: any) => { await pace(); const t0 = performance.now(), after = lastRow; const r = await real(verb, args); const t = performance.now();
     sent.push({ after, verb, t, ms: t - t0 }); if (r?.refused?.code === "rate") atRate = { verb, reason: r.refused.reason, ...last10(t) }; return r; }; }
-const busyEvidence = () => atRate ?? { rate: "none on ag's connection", ...last10() };
+const busyEvidence = () => atRate ?? { rate: "none on ag's connection", paced, ...last10() };
 await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 3000, step: 50 });
 const HEP = ag.replica?.you;
 ok(/^u-/.test(HEP ?? "") && ag.replica?.active, "(setup) the agent joins and folds the world", ag.snapshot);
