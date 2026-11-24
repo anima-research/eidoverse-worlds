@@ -801,8 +801,8 @@ const ROUTES: Route[] = [
       try {
         const body = await readCapped(req, 100_000);
         if (body !== null) {
-          // past PERFLOG_MB the file becomes .perflogs.1.jsonl (replacing the one before) and a fresh one starts: at most
-          // twice the cap on disk, and the beacon is never full for good
+          // past PERFLOG_MB the file becomes .perflogs.1.jsonl (replacing the one before) and a fresh one starts: about
+          // twice the cap on disk (each file may pass it by the one beacon, at most 100 KB, that tipped it), never full for good
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
           if (PERFLOG_BYTES > 0 && existsSync(dest) && Bun.file(dest).size > PERFLOG_BYTES) renameSync(dest, join(WORLDS_DIR, ".perflogs.1.jsonl"));
           {
