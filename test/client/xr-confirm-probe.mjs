@@ -264,6 +264,21 @@ try {
   const l1 = { made, lk0, moved: await R('m1'), reverts: await pg.evaluate(() => globalThis.__reverts) };
   check('L1 a queued lock question cancelled after a newer drag of the thing began leaves the thing to that drag (no revert)', l1.made.ok && l1.lk0.ok && l1.moved === false && l1.reverts === 0, JSON.stringify(l1));
 
+  // L2 (15): while the question waits, the lock it names is lifted and a new one set: 🔓 Unlock must not lift the new one
+  await blocker('b2'); await asked(/Blocking/, 'L2: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
+  await move('m2', 4); await inLine().catch(() => {});
+  const relock = { off: await req('delete', { id: LK, component: 'lock' }), on: await req('set', { id: LK, component: 'lock', value: true }) };
+  await S('L2: the new lock is in the fold', async () => !!(await import('./lib/edit/writes.js')).compsOf(globalThis.__lk)?.lock).catch(() => {});
+  await pg.evaluate(() => globalThis.__px.press(/^ok$/i));
+  await asked(/locked/, 'L2: the lock question is asked').catch(() => {});
+  await pg.evaluate(async () => { const { bus } = await import('./lib/base.js'); globalThis.__unlocks = 0; bus.on('edit-done', (e) => { if (/^unlock /.test(e?.what ?? '')) globalThis.__unlocks++; }); return true; });
+  const hit = await pg.evaluate(() => globalThis.__px.press(/unlock/i));
+  // the right answer is the question again, about the lock there now; the wrong one deletes it and moves the thing
+  const again = await S('L2: asked again, or the move settled', () => /locked/i.test(globalThis.__px.ask.xrAskState()?.title ?? '') || globalThis.__r.m2 !== 'unsettled').catch(() => false);
+  const l2 = { relock, hit, again, askedAgain: /locked/i.test((await askTitle()) ?? ''), unlocks: await pg.evaluate(() => globalThis.__unlocks), moved: await R('m2'), locked: await lockedNow() };
+  if (l2.askedAgain) { await asked(/locked/, 'L2: the second lock question is drawn'); await pg.evaluate(() => globalThis.__px.press(/cancel/i)); await settledR('m2', 'L2: the move settled').catch(() => {}); }
+  check('L2 🔓 Unlock on a queued question whose lock was replaced asks again, and the new lock stays on', relock.off.ok && relock.on.ok && l2.hit && l2.askedAgain && l2.unlocks === 0 && l2.locked === true, JSON.stringify(l2));
+
   // S5: mic on → consent question opens → mic off → Turn on. The yes is a real press and is kept, but the mic is off now:
   // the recognizer (SpeechRecognition holds its own capture, audio to the vendor) must not start. A fake transport and a
   // fake recognizer stand in for the SFU bridge and the browser's engine, so the row counts start() calls exactly

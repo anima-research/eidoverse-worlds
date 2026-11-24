@@ -122,6 +122,11 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
     bus.emit('edit-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await sendRequest(req.verb, { ...req.args, throughLock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }
+    // the question may have waited (xr/xrask.js queues it): lift only the lock it named, as it stands. The refusal's reason
+    // names its setter and the act that set it, so a lock lifted and set again reads differently; then the request is
+    // tried again, and a lock still there is asked about afresh (or a lock gone lets it through)
+    const now = await sendRequest(req.verb, { ...req.args, dry: true });
+    if (now.refused?.code !== 'locked' || now.refused.lock !== r.refused.lock || now.refused.reason !== r.refused.reason) { r = now.ok ? await sendRequest(req.verb, req.args) : now; continue; }
     const k = r.refused.lock;
     const u = await sendRequest('delete', { id: k, component: 'lock' });
     if (!u.ok) { r = u; what = `unlock ${idOut(k)}`; break; }
