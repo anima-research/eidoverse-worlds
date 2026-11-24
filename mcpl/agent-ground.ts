@@ -405,11 +405,12 @@ export class AgentGround {
     // does mounted cargo, whose parent's transform this code doesn't track.
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
     const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
-    if (!g && this.geomRefused.has(before.model)) this.retrySupport(id, before.model, tries);
     // Re-read and re-CHECK: the id may have been removed and respawned as
     // something else while its geometry was in flight (hence the model comparison).
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
+    // a 429 asks again, only while the thing is still this model: an obsolete sync must not take the id's retry slot
+    if (!g && this.geomRefused.has(before.model) && e?.model === before.model) this.retrySupport(id, before.model, tries);
     if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
