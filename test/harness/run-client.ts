@@ -4,7 +4,7 @@
 //                                                                                 "Export named … not found", no missing module
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/harness/run-client.ts                  every file run to the end, sorted pass / red /
 //                                                                                 dead at import / timed out / env / skipped
-//                                                                                 (a bun:test file, test()/describe, runs only under `bun test`, not here)
+//                                                                                 (a bun:test file, test()/describe, runs under `bun test`, as the gate's harness/bun-test.ts)
 //   … --jobs 4  --timeout 90  --slow (run the SLOW table too)  --unreached (list only)  <name-fragment> … (only those)
 //
 // A test whose stub or import graph broke dies before its first check and says nothing a person reads (six "stub missing
@@ -90,7 +90,9 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   if (!importOnly && SLOW[name] && !flag("--slow")) return done({ file, kind: "skip", why: `slow: ${SLOW[name]} (--slow runs it)`, ms: 0 });
   if (importOnly && flag("--skip-suites") && gateSuite.has(rel(file))) return done({ file, kind: "skip", why: `the gate runs it in full as ${gateSuite.get(rel(file))}`, ms: 0 });
   if (needsMcpl(src) && !mcplDeps) return done({ file, kind: strictEnv ? "red" : "env", why: "mcpl/node_modules missing: ln -s <a checkout with deps>/mcpl/node_modules mcpl/", ms: 0 });
-  const ch = spawn(process.execPath, [file], { cwd: ROOT, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  // `bun <file>` refuses test() outside the runner: a bun:test file runs under `bun test` (a ./ path, else it is a name filter)
+  const bunTest = /\bfrom\s+["']bun:test["']/.test(src) && /^\s*(?:describe|test|it)\s*\(/m.test(src);
+  const ch = spawn(process.execPath, bunTest ? ["test", "./" + relative(ROOT, file).split("\\").join("/")] : [file], { cwd: ROOT, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   live.add(ch.pid!); inFlight.set(ch.pid!, [rel(file), t0]); let out = ""; let timedOut = false;
   ch.stdout.on("data", (d) => { out += d; }); ch.stderr.on("data", (d) => { out += d; });
   // killSuiteAsync, not process.kill(-pid): a negative pid throws on Windows, so a child past its budget was never killed,
@@ -119,6 +121,9 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     // a stub that never applied loaded the wrong module (stub.ts verifyStubs prints FAIL and exits 1): dead, not loaded
     const stub = /^FAIL stub (?:never applied|applied to a path that isn't there)[^\n]*/m.exec(out)?.[0];
     if (importOnly && stub) return done({ file, kind: "dead", why: stub.slice(5), ms, tail });
+    // an uncaught TypeError/ReferenceError (bun's crash trailer) before any check line: it died loading (an incomplete stub), not loaded
+    const crash = code ? /^(?:TypeError|ReferenceError): .+$/m.exec(out) : null, firstCheck = out.search(/^\s*(?:✓|✗|ok\s|FAIL\s)/m);
+    if (importOnly && crash && /^Bun v\d/m.test(out) && (firstCheck < 0 || firstCheck > crash.index)) return done({ file, kind: "dead", why: `${crash[0]} (uncaught, at ${(ms / 1000).toFixed(1)} s)`, ms, tail });
     if (importOnly) return done({ file, kind: "loaded", ms });
     if (code === 0) return done({ file, kind: "pass", ms });
     if (code === 2 && /no browser|no chrome|chromium|no gpu|webgpu/i.test(out)) return done({ file, kind: "env", why: tail.split("\n").pop(), ms, tail });

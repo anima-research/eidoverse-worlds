@@ -70,4 +70,24 @@ fs.writeFileSync(path.join(dir3, "e-slow-test.ts"), `await new Promise(() => {})
 const rc3 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir3, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
   { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
 ok(rc3.exitCode === 0 && /^SLOW\s+\S*e-slow-test\.ts/m.test(rc3.stdout.toString()), "--import-only: a file still running is reported SLOW but doesn't fail the run (it can't tell a long test from a hang)", { code: rc3.exitCode });
+// --import-only: an uncaught TypeError before the first check (an incomplete stub's missing function) is dead, not loaded;
+// a file that ran its checks and exited 1 is a red for the full run, still loaded here (#333 backlog G4-223)
+const dir6 = path.join(root, "toperr"); fs.mkdirSync(dir6);
+fs.writeFileSync(path.join(dir6, "g-top-typeerror-test.ts"), `const stubbed: any = {};\nstubbed.notExported();\n`);
+fs.writeFileSync(path.join(dir6, "h-red-checks-test.ts"), `console.log("  ✗ a row that failed"); process.exit(1);\n`);
+const rc6 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir6, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+const out6 = rc6.stdout.toString() + rc6.stderr.toString();
+ok(/^DEAD\s+\S*g-top-typeerror-test\.ts\s+—\s+TypeError/m.test(out6) && rc6.exitCode === 1, "--import-only: a top-level uncaught TypeError is dead at import and fails the run", { code: rc6.exitCode, out: out6.slice(-400) });
+ok(/^ok\s+\S*h-red-checks-test\.ts/m.test(out6), "--import-only: …while a file that ran its checks and exited 1 still loaded", out6.slice(-400));
+// the full run: a bun:test file (test() blocks) runs under `bun test`, as the gate's harness/bun-test.ts runs it; `bun <file>`
+// refuses test() outside the runner, so a passing file read red (#333 backlog G4-112)
+const dir7 = path.join(root, "buntest"); fs.mkdirSync(dir7);
+fs.writeFileSync(path.join(dir7, "i-buntest-passes-test.ts"), `import { test, expect } from "bun:test";\ntest("one", () => { expect(1).toBe(1); });\n`);
+fs.writeFileSync(path.join(dir7, "j-buntest-fails-test.ts"), `import { test, expect } from "bun:test";\ntest("one", () => { expect(1).toBe(2); });\n`);
+const rc7 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir7, "--jobs", "1", "--timeout", "20"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 60_000 });
+const out7 = rc7.stdout.toString() + rc7.stderr.toString();
+ok(/^ok\s+\S*i-buntest-passes-test\.ts/m.test(out7), "full run: a passing bun:test file is a pass", out7.slice(-500));
+ok(/^RED\s+\S*j-buntest-fails-test\.ts/m.test(out7) && rc7.exitCode === 1, "full run: …and a failing one is red", { code: rc7.exitCode, out: out7.slice(-300) });
 done();
