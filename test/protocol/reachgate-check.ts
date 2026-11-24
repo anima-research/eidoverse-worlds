@@ -13,7 +13,8 @@
 //   RG8  a hand toward someone who isn't here: stripped (it would land on whoever arrives under the name)
 //   RG9  the target opens touch: the reach verb's touch relays; closing it ends it again
 //   RG10 the target is never told about a stripped reach as a touch, and nothing is appended to the log
-// The asks (RG11–RG13, RG15–RG17, RL3) went with the ask (R 10-28; branch archive/consent-ask keeps them).
+// The asks (RG11–RG13, RG15–RG17 but RG16c, RL3) went with the ask (R 10-28; branch archive/consent-ask keeps them).
+// Retired, numbers not reused: RG3 (the friends tier is gone), AG3/AG4 (an allow is every class, so no one-limb split).
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -74,7 +75,6 @@ const head0 = w.log.seq;
   ok(out && !out.reach, "RG2 a stranger's hand on Vic's shoulder (Vic: touch off, move on) is stripped", out);
   ok(r.length === 1 && r[0].class === "touch" && r[0].fix === "leave it be: it is theirs to open" && !/ask/.test(JSON.stringify(r[0])), "RG2 …and Sly is told it is Vic's to open (nothing asks)", r); }
 
-// RG3 RETIRED (recut A2, 10-20): it tested the friends tier, which is gone.
 // RG4
 { const r = req(vic, "consent", { allow: sly.actorId });
   ok(r?.ok, "(RG4 setup) Vic puts Sly on her allow list (her touch gate stays off)", r);
@@ -474,8 +474,6 @@ let skipped = null; const SKIP = Symbol("skip");
     const r2 = await call("reach", { who: "Vic", point: "shoulder_l" }); await tryUntil("Vic receives the agent's hand on her shoulder", () => seenReach(k, "shoulder_l"), { ms: 3000 });
     ok(seenReach(k, "shoulder_l"), "AG2 allowed by name, the agent's hand on Vic's shoulder relays", msgs.slice(k).filter((m) => m.type === "frame" && m.poses?.Hep).map((m) => m.poses.Hep.reach).slice(-2));
     ok(!/not shown/.test(T(r2)) && ag.reaches.has("rightHand"), "AG2 …and the reply claims no refusal", T(r2));
-    // AG3, AG4 RETIRED (R 10-28): they held one limb refused (intimate) beside one allowed (touch) on the same body; an allow
-    // is now every class and both points are behind one gate, so one body can't refuse one hand and take the other
   } catch (e) { if (e !== SKIP) ok(false, "AG threw", String(e?.stack ?? e).slice(0, 600)); else console.log(`  SKIP AG1-AG2: the agent can't load here (${skipped}); NODE_PATH=<node_modules with it> runs them`); }
   try { ag?.close(); } catch {} try { vs?.close(); } catch {} try { proc.kill(); } catch {} }
 
