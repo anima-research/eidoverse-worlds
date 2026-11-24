@@ -678,5 +678,6 @@ fs.rmSync(tmp, { recursive: true, force: true });
   for (let i = 0; i < 20; i++) d.release(d.resolve({ name: `More${i}` }));
   ok(d.nameOf(acct) === "Held", "D41d release never touches an account's id");
   anonConfig.kept = kept; }
+fs.rmSync(tmp, { recursive: true, force: true });   // again: D41's account wrote its directory file after the first clean-up
 
 done();
