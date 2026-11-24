@@ -346,7 +346,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     "CM1 …not the reason (that's the person's, and the moderator log's); the person removed gets it, and no bystander line", kim.of("error").at(-1));
   // …and a kick the authority accepts for someone who isn't here (a raw id: the agent skips whois for one) tells nobody anything
   const nK = vic.of("moderated").length;
-  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)"); await pause("a kick that removed nobody has had its chance to be narrated (it must not)", 250);
+  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)");
+  // G6-124: a barrier, not a pause: the narration is sent in the kick's own turn, so a round trip of Vic's sent after Ann's
+  // reply comes back behind any line it sent him
+  ok((await vic.req("whois", { name: "Ann" })).ok, "(CM1) Vic's round trip after the kick is answered");
   ok(vic.of("moderated").length === nK, "CM1 …nobody is told \"Ann removed Kim\" when nobody was removed", vic.of("moderated").slice(nK));
   // CM2 role narration names the person: a role written for someone who never acted here carries their name to clients
   const nv = vic.of("log").length;
@@ -416,7 +419,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
   const ub = await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act");
   ok(!ub.isError && !!(await tryUntil("Vic is told Oz lifted the ban on Zed", () => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed"), { ms: 3000, step: 50 })), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
-  const nU = vic.of("moderated").length; ok(!(await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act")).isError, "CM4 (Oz unbans Zed again)"); await pause("a second unban has had its chance to be narrated (it must not)", 250);
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act")).isError, "CM4 (Oz unbans Zed again)");
+  ok((await vic.req("whois", { name: "Ann" })).ok, "(CM4) Vic's round trip after the second unban is answered");   // G6-124: CM1's barrier
   ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the authority's reason
   await vic.req("create", { id: "vics2", model: "test/cup.glb" });
