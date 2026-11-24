@@ -105,7 +105,7 @@ function heldBy(c: any) {
   }
   return k;
 }
-const REPLICA = { replica: true };   // every client in a world folds the log (slice 3c)
+const REPLICA = { replica: true };   // every client in a world folds the log
 
 // ================= the protocol =================
 const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
@@ -251,7 +251,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await HANDLERS.act(ag, { verb: "set", args: { id: IDS.of("agentcup"), component: "label", value: "mine", throughLock: true } }, {} as any, "act");
   const un = await HANDLERS.act(ag, { verb: "undo", args: { throughLock: true } }, {} as any, "act");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
-  // slice 3c: the agent folds the log stream itself (joined replica), never the v1 projection
+  // the agent folds the log stream itself (joined replica), never the v1 projection
   ok(ag.replica?.active === true && ag.entities.has(IDS.of("agentcup")), "S5b the agent folds the authority's own stream, and sees what it made there", [ag.replica?.active, [...ag.entities.keys()]]);
   // R 10-17: the agent names its plank with a placeholder and a label; the set reaches it by that label
   const mk = await HANDLERS.act(ag, { verb: "create", args: { id: "$plank", model: "test/table.glb", components: { label: "plank" }, place: { at: [6, 6] } } }, {} as any, "act");

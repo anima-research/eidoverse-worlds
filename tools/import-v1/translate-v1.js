@@ -35,7 +35,7 @@ import { ENGINES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 // "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
 // (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
 // it when the caller knows it (translate(…, {foldBuild}); build.ts beside this file computes it from the files).
-// @2 (slice 3a): a mounted thing comes out in the authority's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
+// @2: a mounted thing comes out in the authority's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
@@ -245,7 +245,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, model hashes, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
-// re-checks (design 20, P5/L3), the epoch is @world physics-engine and each collider's stamped box its physics.shape.
+// re-checks, the epoch is @world physics-engine and each collider's stamped box its physics.shape.
 // Before this, @9 kept a punt only as an imported act and left the thing where it was punted FROM. A log with no epoch
 // that her sim enters translates byte-for-byte as @9 did, so it keeps @9's name: the name says which output you got.
 // @11 (2026-10-09, R 04:18: "stomp the existing eidosim engine"): the runtime no longer carries her engine, so her

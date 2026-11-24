@@ -95,7 +95,7 @@ const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
   : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !/^(human|agent|aid1):/.test(k) && !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
 const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED: mounts, recentChat / chatTotal
-// translate-v1@2 (slice 3a): a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
+// translate-v1@2: a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
 // localOf (the client's own reading, not the translator's rideOf): offset, else its socket's pos; parent.q, else yaw,
 // else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
 // parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").

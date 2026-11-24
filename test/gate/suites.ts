@@ -42,7 +42,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["image-lie", "server/image-lie-test.ts", 1], // the optimizer's output check (findImageLies) catches an image that is not what its mimeType says
   ["glbperf-file", "server/glbperf-file-test.ts", 1], // glbPerfOfFile ranks a GLB on disk from its header, JSON chunk and image heads
   ["gaps", "protocol/gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
-  ["phys", "protocol/phys-check.ts", 1],         // design 20: launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
+  ["phys", "protocol/phys-check.ts", 1],         // launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physlive", "protocol/physlive-check.ts", 1],
   ["siminputs", "protocol/siminputs-check.ts", 1], // #144: the sim reads outside the log only through SIM_INPUTS; a client that lacks one refolds once it lands
   ["phystick", "protocol/phystick-check.ts", 1], // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded
@@ -195,7 +195,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["parity", "protocol/parity-check.ts", 1],     // one kind of participant — a status is declared at the door, never inferred from the credential or logged; move {client} gone; the spoken trio is anyone's; §6a, §8 by shape
   ["directory", "protocol/directory-check.ts", 1],
   ["keyhints", "client/keyhints-check.ts", 1], // R 10-04: no hidden keys in build mode (every modifier tagged and shown)
-  ["client", "protocol/client-check.ts", 1],     // slice 3b: build mode in headless Chromium against a scratch server (one browser, guarded)
+  ["client", "protocol/client-check.ts", 1],     // build mode in headless Chromium against a scratch server (one browser, guarded)
   ["upgrade", "protocol/upgrade-check.ts", 1], // an old-format world: the verified backup (CLI and server), the structured join refusal, the operator-only upgrade through the CLI
   ["hello-refused", "protocol/hello-refused-check.ts", 1], // §F F-3: a hello the server refuses (update-required, unsupported-feature) is said in words by every client, never a join timeout
   ["refusedjoin", "protocol/refusedjoin-check.ts", 1], // a refused join (old-format world, no such world) stays on the splash in the server's words — the early socket's refusal is honoured, no redial, no empty world
