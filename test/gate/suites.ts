@@ -105,6 +105,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["seatlab-measure", "client/seatlab-measure-test.ts", 1], // tools/seatlab measureSeat reports the seat's pose and anchor from its station
   ["msgrate", "server/msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
   ["upload-cap", "server/upload-cap-test.ts", 1], // /upload's whole-body cap bites at UPLOAD_CAP, with a length or chunked (MUTATION-SAMPLE S2)
+  ["request-body-cap", "server/request-body-cap-test.ts", 1], // the other capped reads: /seat-profile, /thumb and /perflog one byte over their caps, and exactly at them (#333 G4-027)
   ["clientlog", "server/clientlog-test.ts", 1], // the /clientlog tee's door and budget (server/clientlog.ts: rate, size, scrub, disk; no read path) and the client's side of it
   ["shape-render", "shared/shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the v1 importer's; ran only as an import before
   ["originof", "client/originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
