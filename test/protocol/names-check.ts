@@ -176,11 +176,6 @@ if (argv.includes("--mutants")) {
   }
   console.log(`[names-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
-if (argv.includes("--control")) {
-  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "defs", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);   // defs: E2 reads defs/animations
-  if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
-  linkInto(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3; a link, so its ../../../shared imports still resolve in d
-  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
 /** Rows that read a file, module or agent method BASE doesn't have, so they throw there (red for the rule: the thing is new),
  *  each with what its throw must name; a row that throws for anything else is WRONG at base (G4-150). */
 const ABSENT_AT_BASE: Record<string, RegExp> = {
@@ -188,6 +183,11 @@ const ABSENT_AT_BASE: Record<string, RegExp> = {
   L1: /animStops|bodyModeNow/, K1: /animStops|bodyModeNow/, K2: /animStops|bodyModeNow/, K3: /animStops|bodyModeNow/, K4: /animStops|bodyModeNow/,
   OS1: /descriptors\.js/, OS4: /motioneval\.js/, OS7: /PRE-RELEASE-RENAMES\.md/, X1: /PRE-RELEASE-RENAMES\.md/, OLD: /onceanim\.js/,
 };
+if (argv.includes("--control")) {
+  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "defs", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);   // defs: E2 reads defs/animations
+  if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
+  linkInto(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3; a link, so its ../../../shared imports still resolve in d
+  linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
   for (const k of ["mcpl", "client"]) try { linkInto(path.join(ENGINE, k, "node_modules"), path.join(d, k, "node_modules")); } catch { /* none */ }
   const r = await runSelf(d, null);
   const lines = r.out.split("\n").filter((l) => /^(ok|FAIL) /.test(l));
