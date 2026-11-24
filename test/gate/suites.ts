@@ -290,6 +290,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["colour-picker", "client/colour-picker-bench.ts", 1], // the Inspector's colour field is a picker of solid cells a headset quad can click, in headless Chromium (one browser, guarded)
   ["vrmic-exec", "client/vrmic-exec-test.mjs", 1], // vrmic.js's effects on a fake clock: the mic ask never blocks entering VR; a promise made in VR is kept after it
   ["xr-nullfb", "client/xr-nullfb-test.mjs", 1], // xr_nullfb.js on a fake renderer: installs only for a null-framebuffer (emulated) session, once, never on hardware
+  ["xr-confirm", "client/xr-confirm-probe.mjs", 1], // #359: the house's questions in a headset ride the ask quad (consent kept only as a press; the real callers), and the desk card keeps its keys and its turn
   ["alias", "mcpl/alias-test.ts", 1], // an old tool name is an old tool: exactly the unknown-tool (Mica 11-05); folded/removed tools name what does it now
   ["tool-replies", "mcpl/tool-replies-test.ts", 1], // what the agent's tools and body say and send (pure; #53 shortens the 8 s timeout, pinned)
   // socketteer's pathfinding stack (#235/#236/#239/#241, merged into the protocol 10-15): its own suites, as it ships them
@@ -468,7 +469,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // every suite that launches a Chromium (directly, through playwright, or through test/harness/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserLauncher), so a new browser suite can't hide in MAIN:
 // a host without Chromium would fail it there, and a host with one would run Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "world-card", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
+export const BROWSER = ["browser", "comps-parity", "world-card", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "xr-confirm", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
 export const ORDER = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];

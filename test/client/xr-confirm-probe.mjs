@@ -8,6 +8,8 @@
 // consent asks while one is open (mic on → off → on) are one question with one answer, S5 the mic turned off while the
 // consent question is open: a Turn on after that keeps the consent but never starts the recognizer.
 // Every wait is on the page's own state (wait.ts until): the question on the quad, a promise settled, a quad shown.
+// Review #359's rows carry its finding ids: D the desk card's keys, turn and limits; A4/A5 the VR keyboard; Q1/Q2 a
+// press and its question; L a lock question that waited; R the real callers (reverting one turns its row red).
 // Mutations (must go red): in client/lib/edit/confirmcenter.js confirmCenter, drop the `headset?.active()` branch;
 // in audio/voiceconsent.js ensureSttConsent, save a dismissal as false; in xr/xrask.js, settle the open question
 // instead of queueing (S2); drop the xr:state(true) closeCenter() (S3a, alone: S3's later rows stay green, a headset
@@ -17,7 +19,7 @@ import { until } from '../gate/wait.ts';
 const { check, done } = checker();
 const world = await ownedWorld({ owner: 'askprobe', env: { TRUST_NAMES: '1' } });   // the page owns staging: it may build, lock and close the door
 const { browser, page } = await launchBrowser(); const pg = await page();
-await iwerInit(pg);
+await iwerInit(pg, { cloud: 'off' });   // the sky guard: no cloud bake, whose shaders stall a software-rendered loop for minutes
 const errs = [], dialogs = [];
 pg.on('pageerror', (e) => errs.push(String(e)));
 // a native dialog in a headset is the bug: record it and dismiss it so the page doesn't hang on it
@@ -51,12 +53,13 @@ const install = () => pg.evaluate(async () => {
   };
   return true;
 });
+// a software-rendered XR loop can stall for minutes on a GPU-less host (a shader link): a wait that needs a frame drawn waits that out
 const S = (what, fn, arg, ms = 15000) => until(what, () => pg.evaluate(fn, arg), { ms });   // a page condition, polled
 const R = (name) => pg.evaluate((n) => globalThis.__r[n], name);                            // a tracked promise's value
 const settledR = (name, what) => S(what, (n) => globalThis.__r[n] !== 'unsettled' && globalThis.__r[n] !== undefined, name);
 const askTitle = () => pg.evaluate(() => globalThis.__px.ask.xrAskState()?.title ?? null);
 // …and drawn: a press in the frame that showed it doesn't count (xrask.js answer), as no person could have seen it yet
-const asked = (re, what) => S(what, (src) => { const st = globalThis.__px.ask.xrAskState(); return new RegExp(src, 'i').test(st?.title ?? '') && st.live !== false; }, re.source);
+const asked = (re, what) => S(what, (src) => { const st = globalThis.__px.ask.xrAskState(); return new RegExp(src, 'i').test(st?.title ?? '') && st.live !== false; }, re.source, 240000);
 // in the headset, with the quads mounted (on xr:domquads, after the session starts; each mesh is built when first shown)
 const inVR = async () => { await enterVR(pg); await install(); await S('the ask and keyboard quads are mounted', () => ['ask', 'keyboard'].every((id) => globalThis.__px.dq.domQuadIds().includes(id))); };
 
