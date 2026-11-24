@@ -31,7 +31,8 @@ try {
   r = await post("/seat-profile", chunked(json(MAX_PROPOSAL_BYTES + 1)), AGENT);
   check("…and chunked, with no length to trust: 413, the same cap", r.status === 413 && r.text.includes(`proposal exceeds ${MAX_PROPOSAL_BYTES} bytes`), `${r.status} ${r.text.slice(0, 120)}`);
   r = await post("/seat-profile", json(MAX_PROPOSAL_BYTES), AGENT);
-  check("…while exactly the cap is read (answered on its content, not 413)", r.status !== 413 && r.status !== 401, `${r.status} ${r.text.slice(0, 120)}`);
+  // "{ … }" parses to {}, which the store refuses on content: 422 (seats.ts propose), never the cap's 413 or a 5xx
+  check("…while exactly the cap is read (answered 422 on its content, not 413)", r.status === 422 && !r.text.includes("proposal exceeds"), `${r.status} ${r.text.slice(0, 120)}`);
 
   // /thumb: 400 000 bytes of PNG
   const thumb = join(env.OPT_DIR, "thumbs", "capthumb.png");
