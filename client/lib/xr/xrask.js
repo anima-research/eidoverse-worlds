@@ -4,13 +4,15 @@
 // in xrpanels.js; showXRPanel picks whichever is live. Refusals (toasts on the desk) and warnings (the desk's status bar)
 // show here too.
 import { renderer } from '../core.js';
+import { perf } from '../render/perf.js';
 import { bus } from '../base.js';
 import { registerXRPanel, showXRPanel } from './xrpanels.js';
 import { domQuadMesh, domQuadShow } from './domquad.js';
 import { makeFrame } from '../ui/windows.js';
 import { setHeadsetAsk, closeCenter } from '../edit/confirmcenter.js';
 
-let pending = null;   // {title, body, choices: [{v, label}], cancel, focus?, resolve, input?: {value, placeholder, max}, onShow?}
+let pending = null;   // {id, drawnAt, title, body, choices: [{v, label}], cancel, focus?, resolve, input?: {value, placeholder, max}, onShow?}
+let asked = 0;        // each question's id: a press names the question it was aimed at
 const waiting = [];   // questions asked while one was open: each is asked in turn, none replaces another
 let api = null;       // the DOM frame the default VR path mirrors onto a quad (domquad.js mounts every xr-flagged frame)
 export const xrActive = () => !!renderer?.xr?.isPresenting;
@@ -46,11 +48,13 @@ const repaint = () => { paintFrame(); bus.emit('xr:repaint'); };
 function fields() {
   if (!pending) return [{ t: 'info', label: '', value: 'nothing to answer' }];
   const f = [{ t: 'info', label: pending.title, value: pending.body }];
-  pending.choices.forEach((c, i) => f.push({ t: 'btn', k: `c:${i}`, label: c.label }));   // by place: a value needn't be a string
+  // by question and place (a value needn't be a string): a region painted for one question can't answer the next
+  pending.choices.forEach((c, i) => f.push({ t: 'btn', k: `c:${pending.id}:${i}`, label: c.label }));
   return f;
 }
 function show(q) {
   if (pending) { waiting.push(q); return; }
+  q.id = ++asked; q.drawnAt = perf.frameNo ?? 0;   // the frame loop's count now: this frame draws it, the next can answer it
   pending = q; showXRPanel('ask', true); repaint(); q.onShow?.();
 }
 function settle(v) {
@@ -60,9 +64,12 @@ function settle(v) {
   pending = null; keyboardBack(); if (p.input) domQuadShow('keyboard', false); showXRPanel('ask', false); repaint(); p.resolve(v);
   const next = waiting.shift(); if (next) show(next);
 }
-// a press answers with the choice's own value (a number stays a number, as on the desk card), and only the question it is on
-function answer(q, i) { if (pending === q && q.choices[i]) settle(q.choices[i].v); }
-function dispatch(action) { const m = /^c:(\d+)$/.exec(String(action)); if (m && pending) answer(pending, Number(m[1])); }
+// a press answers with the choice's own value (a number stays a number, as on the desk card), and only the question it
+// was aimed at, once that question has been drawn: two hands on one button in one frame answer the first question, never
+// the one that replaced it under them (the canvas path repaints its regions a frame later; the DOM path's new button sits
+// where the old one was)
+function answer(q, i) { if (pending === q && q.choices[i] && (perf.frameNo ?? 0) > q.drawnAt) settle(q.choices[i].v); }
+function dispatch(action) { const m = /^c:(\d+):(\d+)$/.exec(String(action)); if (m && pending && pending.id === Number(m[1])) answer(pending, Number(m[2])); }
 registerXRPanel({ id: 'ask', title: 'question', fields, dispatch });   // the canvas-quad path (?canvasquads=1)
 // the house centre card (edit/confirmcenter.js) asks here whenever a headset is presenting: confirmCenter, chooseCenter
 // and askCenter callers need no headset branch of their own
@@ -151,6 +158,7 @@ bus.on('edit-warned', ({ text }) => {
   chooseXR({ title: 'done — with a warning', body: text, choices: [{ v: 'ok', label: 'OK' }], cancel: 'ok' });
 });
 
-/** for probes: the open question as a quad shows it (and how many wait behind it), and the same answer a button press gives */
-export const xrAskState = () => (pending ? { title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length } : null);
+/** for probes: the open question as a quad shows it (how many wait behind it; live once drawn, when a press counts), and
+ *  the same answer a button press gives */
+export const xrAskState = () => (pending ? { id: pending.id, title: pending.title, body: pending.body, choices: pending.choices.map((c) => c.v), waiting: waiting.length, live: (perf.frameNo ?? 0) > pending.drawnAt } : null);
 export const xrAnswer = (v) => { const i = pending?.choices.findIndex((c) => String(c.v) === String(v)) ?? -1; if (i >= 0) answer(pending, i); };

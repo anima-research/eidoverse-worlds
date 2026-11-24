@@ -55,7 +55,8 @@ const S = (what, fn, arg, ms = 15000) => until(what, () => pg.evaluate(fn, arg),
 const R = (name) => pg.evaluate((n) => globalThis.__r[n], name);                            // a tracked promise's value
 const settledR = (name, what) => S(what, (n) => globalThis.__r[n] !== 'unsettled' && globalThis.__r[n] !== undefined, name);
 const askTitle = () => pg.evaluate(() => globalThis.__px.ask.xrAskState()?.title ?? null);
-const asked = (re, what) => S(what, (src) => new RegExp(src, 'i').test(globalThis.__px.ask.xrAskState()?.title ?? ''), re.source);
+// …and drawn: a press in the frame that showed it doesn't count (xrask.js answer), as no person could have seen it yet
+const asked = (re, what) => S(what, (src) => { const st = globalThis.__px.ask.xrAskState(); return new RegExp(src, 'i').test(st?.title ?? '') && st.live !== false; }, re.source);
 // in the headset, with the quads mounted (on xr:domquads, after the session starts; each mesh is built when first shown)
 const inVR = async () => { await enterVR(pg); await install(); await S('the ask and keyboard quads are mounted', () => ['ask', 'keyboard'].every((id) => globalThis.__px.dq.domQuadIds().includes(id))); };
 
@@ -175,6 +176,20 @@ try {
   const q1 = await R('q1');
   check('Q1 a headset choice of value 1 answers 1 (a number), not "1"', q1 === 1, JSON.stringify(q1));
 
+  // Q2 (review #359 16): two questions in line, the same buttons in the same place. Both hands on "Move anyway" in one
+  // frame: the first press answers the first question; the second must not answer the next one, which nobody has seen yet
+  await pg.evaluate(async () => { const ask = globalThis.__px.ask; const q = () => ask.chooseXR({ title: 'Same place', choices: [{ v: 'through', label: 'Move anyway' }, { v: 'cancel', label: 'Cancel' }], cancel: 'cancel' });
+    globalThis.__px.track('q2a', q()); globalThis.__px.track('q2b', q()); return true; });
+  await asked(/Same place/, 'Q2: the first question is on the ask quad');
+  const q2 = await pg.evaluate(() => { const a = globalThis.__px.press(/move anyway/i), b = globalThis.__px.press(/move anyway/i); return { a, b }; });   // one frame: no await between
+  await settledR('q2a', 'Q2: the first question answered').catch(() => {});
+  Object.assign(q2, { first: await R('q2a'), second: await R('q2b'), next: await askTitle() });
+  await asked(/Same place/, 'Q2: the second question is drawn').catch(() => {});
+  await pg.evaluate(() => globalThis.__px.press(/move anyway/i));
+  q2.later = await settledR('q2b', 'Q2: the second question answered').then(() => R('q2b'), () => 'unsettled');
+  check('Q2 two presses in one frame on two queued questions answer only the one that was drawn', q2.first === 'through' && q2.second === 'unsettled' && /Same place/.test(q2.next ?? ''), JSON.stringify(q2));
+  check('…and the next one is answered by a press once it is drawn', q2.later === 'through', JSON.stringify(q2));
+
   // ---- the consent edges: a dismissed question is never a remembered answer ----
   const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
   const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
@@ -280,10 +295,12 @@ try {
   await pg.evaluate(() => globalThis.__px.press(/^ok$/i));
   await asked(/locked/, 'L2: the lock question is asked').catch(() => {});
   await pg.evaluate(async () => { const { bus } = await import('./lib/base.js'); globalThis.__unlocks = 0; bus.on('edit-done', (e) => { if (/^unlock /.test(e?.what ?? '')) globalThis.__unlocks++; }); return true; });
+  const id0 = await pg.evaluate(() => globalThis.__px.ask.xrAskState()?.id ?? null);
   const hit = await pg.evaluate(() => globalThis.__px.press(/unlock/i));
   // the right answer is the question again, about the lock there now; the wrong one deletes it and moves the thing
   const again = await S('L2: asked again, or the move settled', () => /locked/i.test(globalThis.__px.ask.xrAskState()?.title ?? '') || globalThis.__r.m2 !== 'unsettled').catch(() => false);
-  const l2 = { relock, hit, again, askedAgain: /locked/i.test((await askTitle()) ?? ''), unlocks: await pg.evaluate(() => globalThis.__unlocks), moved: await R('m2'), locked: await lockedNow() };
+  const l2 = { relock, hit, again, askedAgain: /locked/i.test((await askTitle()) ?? '') && (await pg.evaluate(() => globalThis.__px.ask.xrAskState()?.id ?? null)) !== id0,   // a new question, not the old one left open
+    unlocks: await pg.evaluate(() => globalThis.__unlocks), moved: await R('m2'), locked: await lockedNow() };
   if (l2.askedAgain) { await asked(/locked/, 'L2: the second lock question is drawn'); await pg.evaluate(() => globalThis.__px.press(/cancel/i)); await settledR('m2', 'L2: the move settled').catch(() => {}); }
   check('L2 🔓 Unlock on a queued question whose lock was replaced asks again, and the new lock stays on', relock.off.ok && relock.on.ok && l2.hit && l2.askedAgain && l2.unlocks === 0 && l2.locked === true, JSON.stringify(l2));
 
