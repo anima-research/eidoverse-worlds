@@ -245,7 +245,11 @@ try {
     const out = [at[0] - 1.95, at[1], at[2]];
     const s1 = await ag.request("move", { to: out }), s2 = await ag.request("move", { to: at });
     ok(s1?.ok && s2?.ok, "(AS16 setup) two steps out and back spend the track", { s1: s1?.refused, s2: s2?.refused });
-    const t = T(await call("move", { to: [at[0] - 3, at[2]] }));
+    // G6-093: the walk's own move requests are watched, so the row shows the track WAS spent (a "not yet" came back first)
+    const slow: any[] = [], req1 = ag.request.bind(ag);
+    ag.request = (verb, args, ...rest) => { const r = req1(verb, args, ...rest); if (verb === "move") r.then((x) => { if (x?.refused?.code === "too-fast") slow.push(x.refused); }); return r; };
+    const t = T(await call("move", { to: [at[0] - 3, at[2]] })); ag.request = req1;
+    ok(slow.length >= 1, "(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", { slow, t });
     ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
   // AS15 (review of #260): a rejoin resends what the agent chose with consent. The rejoin reads what the authority holds
   // and sets only what differs; the agent never sends the gate it closed open, and it is closed after (the authority's
