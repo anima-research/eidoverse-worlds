@@ -1,4 +1,5 @@
-// Sweep the verlet ragdoll's TUNING (ragdoll.js) against the whole shipped fleet. Verlet is the fallback
+// Sweep the verlet ragdoll's TUNING (ragdoll.js) against the rigs assets/opt holds (rig-load.mjs rigs()). The library's
+// own rigs, the default claude body among them, are left out (libraryRigs() is opt-in there). Verlet is the fallback
 // while Ammo warms or if it fails (bodysim.js); the default Bullet engine (ammodoll.js) is not measured here.
 //
 //   bun test/labs/rag-tune.mjs           # the candidate grid
