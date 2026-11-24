@@ -281,7 +281,7 @@ time.
 | 100 | seatlab-measure | main | `test/client/seatlab-measure-test.ts` | bun | 1 s | 180 s |
 | 101 | msgrate | main | `test/server/msgrate-test.ts` | bun | 2.8 s | 180 s |
 | 102 | upload-cap | main | `test/server/upload-cap-test.ts` | bun | 0.6 s | 180 s |
-| 103 | request-body-cap | main | `test/server/request-body-cap-test.ts` | bun | ? | 300 s |
+| 103 | request-body-cap | main | `test/server/request-body-cap-test.ts` | bun | 1.2 s | 180 s |
 | 104 | clientlog | main | `test/server/clientlog-test.ts` | bun | 3.5 s | 180 s |
 | 105 | shape-render | main | `test/shared/shape-render-test.ts` | bun | ? | 300 s |
 | 106 | originof | main | `test/client/originof-test.ts` | bun | ? | 300 s |
@@ -638,5 +638,5 @@ time.
 | 457 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
 | 458 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 419 (~2404 s), browser 21 (~1228 s); 458 suites in all.
+Lanes: core 18 suites (~79 s), main 419 (~2405 s), browser 21 (~1228 s); 458 suites in all.
 <!-- END GENERATED -->
