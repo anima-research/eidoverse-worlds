@@ -108,5 +108,12 @@ const three = [pngOf(1), pngOf(2), pngOf(3)], threeBytes = three.reduce((n, b) =
 { const was = uploadBudget.minFreeBytes; uploadBudget.minFreeBytes = Number.MAX_SAFE_INTEGER;
   const r = await upload({ authorization: "Bearer rate-bearer-pine" }, "192.0.2.81");
   check("B3 with less free disk than the floor, an upload is refused 507 before its body is stored", r.status === 507 && /disk/.test(r.text), `${r.status} ${r.text}`);
+  // …and the agent's upload tool, meeting that refusal, says nothing was stored (not "whether it was stored isn't known")
+  const { HANDLERS } = await import("../../mcpl/tools.ts");
+  const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req, s) => handleUpload(req, new URL(req.url), s) });
+  try { const ag: any = { httpBase: `http://127.0.0.1:${srv.port}`, readHeaders: { authorization: "Bearer rate-bearer-pine" } };
+    const t = ((await HANDLERS.upload(ag, { data: Buffer.from(pngOf(41)).toString("base64"), as: "image" }, {}, "upload")) as any).content?.[0]?.text ?? "";
+    check("B3b ...and the upload tool tells the agent it was not stored", /not stored/.test(t) && !/isn't known/.test(t), t); }
+  finally { srv.stop(true); }
   uploadBudget.minFreeBytes = was; }
 S.done();
