@@ -36,10 +36,10 @@ const refuser = () => Bun.serve({ port: 0, fetch(req, srv) { return srv.upgrade(
   const p = Bun.spawn(["bun", ENGINE + "tools/tend.ts", "w"], { cwd: ENGINE, env: { ...process.env, PORT: String(server.port), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
   const code = await p.exited, err = (await new Response(p.stderr).text()).trim(); server.stop(true);
   check("HR3 tend refused at the hello exits non-zero with refusalWords' answer, not its timeout", code === 1 && err.includes(WORDS) && !/timeout/.test(err) && Date.now() - t0 < 9000, [code, err.slice(0, 200)]); }
-{ const server = refuser(); const { WorldClient } = await import("../../services/captionbot/world.ts"); const said: string[] = [];
+{ const server = refuser(); const { WorldClient } = await import("../../services/captionbot/world.ts"); const { tryUntil } = await import("../gate/wait.ts"); const said: string[] = [];
   const bot = new WorldClient({ url: `ws://127.0.0.1:${server.port}/ws`, token: "", world: "w", actor: "captions", screenId: "screen", log: (m) => said.push(m) });
-  bot.connect(); const t0 = Date.now();
-  while (!said.some((m) => m.includes(WORDS)) && Date.now() - t0 < 3000) await Bun.sleep(20);
+  bot.connect();
+  await tryUntil("the bot says the refusal", () => said.some((m) => m.includes(WORDS)), { ms: 3000, step: 20 });
   server.stop(true); bot.close();
   check("HR3 the caption bot refused at the hello says refusalWords' answer", said.some((m) => m === `world error: ${WORDS}`), said.slice(0, 4)); }
 { const net = read("client/lib/net.js"); const live = net.slice(net.indexOf("case 'refused':"), net.indexOf("break;", net.indexOf("case 'refused':")));
