@@ -143,6 +143,17 @@ try {
     const typed = globalThis.__px.key('x'); return { words: globalThis.__r.a4, kbOpen: globalThis.__px.dq.domQuadOpen('keyboard'), typed, chatBefore: before, chatAfter: chat?.value ?? null }; }));
   check('A4 a text question answered by its OK button takes the VR keyboard with it (nothing typed into chat after)', a4.pressed && a4.words === 'o' && !a4.kbOpen && !a4.typed && a4.chatAfter === a4.chatBefore, JSON.stringify(a4));
 
+  // A5 (review #359 9): the headset field keeps the desk's limit (askCenter's max): the VR keyboard's keys stop at it
+  await pg.evaluate(async () => globalThis.__px.track('a5', (await import('./lib/edit/confirmcenter.js')).askCenter({ title: 'Three letters', value: '', max: 3 })));
+  await asked(/Three letters/, 'A5: the text question is on the ask quad');
+  await pg.evaluate(() => globalThis.__px.pull('ask', globalThis.__px.input()));
+  await S('A5: the VR keyboard is up for the field', () => globalThis.__px.dq.domQuadOpen('keyboard'));
+  for (const k of ['h', 'i', 'x', 'y']) await pg.evaluate((x) => globalThis.__px.key(x), k);
+  const a5typed = await pg.evaluate(() => globalThis.__px.input()?.value ?? null);
+  await pg.evaluate(() => globalThis.__px.key('⏎'));
+  await settledR('a5', 'A5: the text question answered').catch(() => {});
+  check('A5 a headset text question with max 3: four VR keys type three letters, and the answer is those', a5typed === 'hix' && (await R('a5')) === 'hix', JSON.stringify({ typed: a5typed, words: await R('a5') }));
+
   // ---- the consent edges: a dismissed question is never a remembered answer ----
   const stored = () => pg.evaluate(() => { try { return JSON.parse(localStorage.getItem('eido.audio.prefs') || '{}').sttConsent ?? null; } catch { return 'unreadable'; } });
   const fresh = async () => {   // never asked: no remembered consent, the page reloaded so voiceconsent.js reads that
