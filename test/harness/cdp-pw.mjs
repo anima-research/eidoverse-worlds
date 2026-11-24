@@ -87,9 +87,10 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
     const inits = [], pages = [], routes = [];
     return {
       addInitScript: async (fn, arg) => { inits.push([fn, arg]); },
-      route: async (pattern, handler) => { routes.push([pattern, handler]); for (const p of pages) await p.route(pattern, handler); },
-      unroute: async (pattern, handler) => { for (let i = routes.length - 1; i >= 0; i--) if (routes[i][0] === pattern && (!handler || routes[i][1] === handler)) routes.splice(i, 1); for (const p of pages) await p.unroute(pattern, handler); },
-      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); for (const [pt, h] of routes) await p.route(pt, h); pages.push(p); return p; },
+      // each installed as its own wrapper w, so unroute removes only the context's routes, never a page's own for that pattern
+      route: async (pattern, handler) => { const w = (...a) => handler(...a); routes.push([pattern, handler, w]); for (const p of pages) await p.route(pattern, w); },
+      unroute: async (pattern, handler) => { for (let i = routes.length - 1; i >= 0; i--) if (routes[i][0] === pattern && (!handler || routes[i][1] === handler)) { const [, , w] = routes.splice(i, 1)[0]; for (const p of pages) await p.unroute(pattern, w); } },
+      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); for (const [pt, , w] of routes) await p.route(pt, w); pages.push(p); return p; },
       close: async () => { for (const p of pages) await p.close(); },
     };
   };

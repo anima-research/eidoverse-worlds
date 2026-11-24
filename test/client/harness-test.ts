@@ -150,6 +150,12 @@ if (process.platform !== 'win32') { // a closed terminal (SIGHUP) takes a probe'
       await ctx.route('**/r.txt', (r: any) => r.fulfill({ body: 'ctx-routed' }));
       const p = await ctx.newPage(); await p.goto(at); const got = await p.evaluate(() => fetch('/r.txt').then((r) => r.text()));
       return [got === 'ctx-routed', { got }]; });
+    await row('cdp-pw: a context\'s unroute(pattern) leaves a page\'s own route for that pattern, as playwright (cold review C2 nit)', async () => {
+      await ctx.route('**/u.txt', (r: any) => r.fulfill({ body: 'ctx' }));
+      const p = await ctx.newPage(); await p.goto(at); await p.route('**/u.txt', (r: any) => r.fulfill({ body: 'page' }));
+      const fetchU = () => p.evaluate(() => fetch('/u.txt').then((r) => r.text()));
+      const before = await fetchU(); await ctx.unroute('**/u.txt'); const after = await fetchU();
+      return [before === 'ctx' && after === 'page', { before, after }]; });
     const pg = await b.page(); await pg.goto(at);
     pg.on('console', (m: any) => msgs.push(m.text()));
     await row('cdp-pw: console text renders an object, an array, null and undefined as playwright does (boot-check\'s body mark)', async () => {
