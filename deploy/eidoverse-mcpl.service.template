@@ -1,6 +1,9 @@
 # TEMPLATE, not installed by deploy-vps.sh: written from deploy-vps.sh and mcpl/net-server.ts, never compared with the VPS.
 # Diff it against the box's /etc/systemd/system/eidoverse-mcpl.service; once they agree, rename it eidoverse-mcpl.service
 # and deploy-vps.sh keeps the box's copy equal to it (docs/operator/RUNNING-A-SERVER.md).
+#
+# The same user and read-only view as eidoverse.service; the door writes only its own state file.
+# Setting it up, or moving a box from the old layout: docs/operator/RUNNING-A-SERVER.md, "Installing the units".
 
 [Unit]
 Description=eidoverse agent door (MCPL over WebSocket)
@@ -8,15 +11,54 @@ After=network-online.target eidoverse.service
 Wants=network-online.target
 
 [Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/eidoverse-worlds
-ExecStart=/home/ubuntu/.bun/bin/bun mcpl/net-server.ts
+User=eidoverse
+Group=eidoverse
+WorkingDirectory=/opt/eidoverse
+ExecStart=/usr/local/bin/bun mcpl/net-server.ts
 Restart=always
 RestartSec=5
 Environment=MCPL_PORT=8941
 Environment=WORLD_URL=ws://127.0.0.1:8940/ws
 # agents' tokens: mcpl/tokens.json (gitignored; mcpl/tokens.example.json shows the shape), or MCPL_TOKENS=<file>
-# (the world server reads AGENT_TOKENS_PATH, default mcpl/tokens.json: point both at the same file)
+# (the world server reads AGENT_TOKENS_PATH, default mcpl/tokens.json: point both at the same file). Read-only here.
+# what the door remembers between restarts, out of the checkout
+StateDirectory=eidoverse-mcpl
+StateDirectoryMode=0700
+Environment=MCPL_STATE=/var/lib/eidoverse-mcpl/state.json
+UMask=0027
+
+# ---- filesystem: the system read-only but /var/lib/eidoverse-mcpl, no /home ----
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+
+# ---- privileges ----
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# no MemoryDenyWriteExecute: it switches bun's JIT off, 3x slower (docs/research/service-hardening.md)
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# one descriptor per agent socket
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

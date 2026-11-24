@@ -1,15 +1,38 @@
 #!/usr/bin/env bash
 # Deploy eidoverse-worlds on the show VPS (eidoverse.animalabs.ai).
-# Run ON the VPS:   ~/eidoverse-worlds/deploy/deploy-vps.sh
-# Or from anywhere: ssh ubuntu@eidoverse.animalabs.ai eidoverse-worlds/deploy/deploy-vps.sh
+# Run ON the VPS:   /opt/eidoverse/deploy/deploy-vps.sh
+# Or from anywhere: ssh ubuntu@eidoverse.animalabs.ai /opt/eidoverse/deploy/deploy-vps.sh
 #
 # Code comes from git (origin/main). Everything the working tree accumulates
-# at runtime — worlds/, mcpl/tokens.json, mcpl/state.json, assets/ — is
-# gitignored and survives untouched. Assets travel by rsync, not git.
+# at runtime is gitignored and survives untouched; under the units in deploy/
+# the state is in /var/lib/eidoverse, not here. Assets travel by rsync, not git.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUN="$HOME/.bun/bin/bun"
+# A box in the old layout (the checkout and its state under a home, the units running as its owner) is moved by hand,
+# once, by the box's owner, who can roll it back: docs/operator/RUNNING-A-SERVER.md, "Moving a box to /opt". This
+# script never moves it. It stops here, before fetching, so a refused deploy changes nothing.
+old_layout() { echo "deploy: $1; nothing deployed. See docs/operator/RUNNING-A-SERVER.md, \"Moving a box to /opt\"." >&2; exit 1; }
+case $PWD in /home/*) old_layout "this checkout is in a home ($PWD), not /opt/eidoverse";; esac
+for unit in deploy/*.service deploy/*.service.template; do
+  name=$(basename "${unit%.template}" .service)
+  [ -f "/etc/systemd/system/$name.service" ] || continue
+  wd=$(systemctl show -p WorkingDirectory --value "$name")
+  [ -z "$wd" ] || [[ $wd == "$PWD" || $wd == "$PWD"/* ]] || old_layout "$name.service runs $wd, not this checkout ($PWD)"
+done
+# state the units now keep in /var/lib (WORLDS_DIR=… in their environment) but still here would be orphaned
+for pair in eidoverse:WORLDS_DIR:worlds eidoverse:BACKUPS_DIR:backups eidoverse:OPT_DIR:assets/opt \
+    eidoverse:SESSIONS_PATH:.sessions.json eidoverse-mcpl:MCPL_STATE:mcpl/state.json; do
+  IFS=: read -r name var path <<<"$pair"
+  [ -n "$(ls -A "$path" 2>/dev/null)" ] || continue   # absent, or an empty directory a tool made
+  [[ " $(systemctl show -p Environment --value "$name") " != *" $var="* ]] || old_layout "$path is still here, but $name.service reads $var"
+done
+
+# bun is the box's, installed and upgraded by hand (docs/operator/RUNNING-A-SERVER.md, "Upgrading bun"), never here
+BUN=${BUN:-/usr/local/bin/bun}
+[ -x "$BUN" ] || { echo "deploy: no bun at $BUN (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\"); nothing deployed" >&2; exit 1; }
+want=$("$BUN" -e 'console.log(require("./package.json").engines.bun)')
+[ "$("$BUN" --version)" = "$want" ] || echo "bun: $BUN is $("$BUN" --version), package.json wants $want: upgrade it (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\")" >&2
 
 before=$(git rev-parse --short HEAD)
 # Installs are keyed to the last deploy that finished (.deploy-done, gitignored), not to the pre-reset HEAD,
@@ -68,6 +91,14 @@ for unit in deploy/*.service; do
   sudo install -m 644 "$unit" "$dest"; reload=1; echo "unit: re-installed $name.service"
 done
 [ "$reload" = 0 ] || sudo systemctl daemon-reload
+# the user each unit runs as (User=), also for one installed by hand from a .template: a system user, no login, no home
+ensure_user() { id -u "$1" >/dev/null 2>&1 || { sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1" && echo "user: made $1"; }; }
+for name in "${units[@]}" "${optional[@]}"; do user=$(systemctl show -p User --value "$name"); [ -z "$user" ] || ensure_user "$user"; done
+# agents' tokens stay the deploy user's file; the units' user reads them through the group
+group=$(systemctl show -p Group --value eidoverse)
+if [ -n "$group" ] && [ -f mcpl/tokens.json ] && [ "$(stat -c %G mcpl/tokens.json)" != "$group" ]; then
+  sudo chgrp "$group" mcpl/tokens.json && chmod 640 mcpl/tokens.json && echo "tokens: mcpl/tokens.json is readable by $group"
+fi
 
 # An in-place install keeps ndarray-pixels' own copy of sharp after the
 # lockfile stops listing it, and optimize.ts loads that copy whenever it
@@ -80,6 +111,7 @@ if [ -d node_modules/ndarray-pixels/node_modules/sharp ] \
   sudo systemctl stop eidoverse
   rm -rf node_modules/ndarray-pixels/node_modules/sharp
 fi
+
 sudo systemctl restart eidoverse eidoverse-mcpl
 [ "${#optional[@]}" = 0 ] || sudo systemctl try-restart "${optional[@]}"
 sleep 2
