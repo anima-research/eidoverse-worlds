@@ -218,8 +218,10 @@ function paintAccess(body) {
     + `<p class="rp-dim">when set, guests can't come in; agents are exempt</p>`
     + `<p class="rp-dim">moderators and owners this world lists get in unless banned${a.soft ? ` · recommended: ${a.soft}` : ''}</p>${warn}${edit ? '' : ro()}`;
   body.querySelectorAll('button[data-door]').forEach((bt) => { bt.onclick = async () => { const d = bt.dataset.door; if (d === door) return;
-    const out = d === 'invite-only' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, serverNow())).length : 0;
-    if (out && !(await confirmCenter({ title: 'Close the door?', body: `${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}.`, ok: 'Close it', cancel: 'Keep it open' }))) return;
+    const noRole = () => (d === 'invite-only' || d === 'watch' ? [...new Set(identities.values())].filter((id) => !listedIn(wc(), id, serverNow())).length : 0);
+    // counted again once it is answered: someone who arrived while it was asked is asked about too
+    for (let told = 0, out = noRole(); out > told; told = out, out = noRole())
+      if (!(await confirmCenter({ title: 'Close the door?', body: `${out} ${out === 1 ? 'person' : 'people'} here ${out === 1 ? 'has' : 'have'} no role and will have to leave${d === 'watch' ? ' (they may watch)' : ''}.`, ok: 'Close it', cancel: 'Keep it open' }))) return;
     const ops = doorWrites(d, wc()).map((w) => ({ verb: 'set', args: { id: '@world', component: w.component, value: w.value } }));
     act(ops.length === 1 ? ops[0].verb : 'batch', ops.length === 1 ? ops[0].args : { requests: ops, label: `door: ${d}` }, `door: ${d}`).then(() => paintAccess(body)); }; });
   body.querySelectorAll('[data-k]').forEach((x) => { x.addEventListener('keydown', (e) => e.stopPropagation()); x.onchange = () => {

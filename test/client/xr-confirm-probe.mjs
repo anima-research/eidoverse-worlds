@@ -316,7 +316,7 @@ try {
   check('R1 in a headset, adding a speech server asks for its address on the ask quad', r1, dialogs.slice(nDialogs).join(' | '));
 
   // closing the door with people here who have no role (ui/rolespanels.js → confirmCenter's headset branch); two stand-ins
-  // for people present, as net.js identities holds them.
+  // for people present, as net.js identities holds them. (review #359 6) one more arrives while it is asked: asked again
   await pg.evaluate(async () => { const n = await import('./lib/net.js'); n.identities.set('probe-peer-1', 'u-probe-guest-1');
     const host = document.createElement('div'); host.id = 'probe-door'; document.body.append(host); (await import('./lib/ui/rolespanels.js'))._test.paintAccess(host); return true; });
   const door0 = await pg.evaluate(async () => JSON.stringify((await import('./lib/net.js')).replica.st?.entities?.['@world']?.c?.access ?? null));
@@ -325,8 +325,16 @@ try {
   const r2body = await pg.evaluate(() => globalThis.__px.ask.xrAskState()?.body ?? null);
   const r2why = r2 ? null : await pg.evaluate(async () => { const n = await import('./lib/net.js'); const b = document.querySelector('#probe-door button[data-door="invite-only"]'); return { rights: n.net.myRights, you: n.net.you, ids: [...n.identities], btn: b ? { disabled: b.disabled, on: b.className } : null }; });
   check('R2 in a headset, closing the door on someone with no role asks on the ask quad, counting them', r2 && /^1 person /.test(r2body ?? ''), JSON.stringify({ r2body, r2why, dialogs: dialogs.slice(nDialogs) }));
-  if (r2) await pg.evaluate(() => globalThis.__px.press(/keep it open/i));
-  await pg.evaluate(async () => { const n = await import('./lib/net.js'); n.identities.delete('probe-peer-1'); document.querySelector('#probe-door')?.remove(); return true; });
+  let r2again = null;
+  if (r2) {
+    await pg.evaluate(async () => { (await import('./lib/net.js')).identities.set('probe-peer-2', 'u-probe-guest-2'); return true; });
+    await pg.evaluate(() => globalThis.__px.press(/close it/i));
+    r2again = await S('R2: asked again, or the door question gone', () => { const st = globalThis.__px.ask.xrAskState(); return st ? (st.live !== false && st.body) : 'gone'; }).catch(() => null);
+    if (r2again && r2again !== 'gone') await pg.evaluate(() => globalThis.__px.press(/keep it open/i));
+  }
+  const door1 = await pg.evaluate(async () => JSON.stringify((await import('./lib/net.js')).replica.st?.entities?.['@world']?.c?.access ?? null));
+  await pg.evaluate(async () => { const n = await import('./lib/net.js'); n.identities.delete('probe-peer-1'); n.identities.delete('probe-peer-2'); document.querySelector('#probe-door')?.remove(); return true; });
+  check('…and a second person arriving while it was asked is asked about again (2 people), the door still open after Keep it open', /^2 people /.test(r2again ?? '') && door1 === door0, JSON.stringify({ r2again, door0, door1 }));
 
   // log out (ui/ui-menu.js logOut → confirmCenter): the menu's own action, as a signed-in person has it
   await pg.evaluate(async () => { (await import('./lib/base.js')).CONFIG.authed = true; (await import('./lib/ui/actions.js')).get('menu:login').run(); return true; });
