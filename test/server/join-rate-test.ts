@@ -6,11 +6,19 @@ import { suite } from "../gate/suite.ts";
 import { scratchSequencer } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 import { until, tryUntil, pause } from "../gate/wait.ts";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join as join_ } from "node:path";
 
 const S = suite("join-rate");
 const W = "joinrate", W2 = "joinrate-b";
-const h = await scratchSequencer("join-rate", { worlds: [W, W2], owner: "keeper",
-  serverEnv: { JOIN_RATE: "1", JOIN_BURST: "3", WS_PER_ADDRESS: "2", SKIP_OPT_SWEEP: "1" } });
+// the worlds' owner is an enrolled agent (keeper, below), so the suite can moderate while everyone else stays a guest
+const toks = mkdtempSync(join_(tmpdir(), "join-rate-tok-")); process.on("exit", () => rmSync(toks, { recursive: true, force: true }));
+writeFileSync(join_(toks, "tokens.json"), JSON.stringify({ "tok-keeper": { id: "keeper" } }));
+const h = await scratchSequencer("join-rate", { worlds: [W, W2], owner: "agent:token:keeper", preload: join_(import.meta.dir, "anon-stats-preload.ts"),
+  serverEnv: { JOIN_RATE: "1", JOIN_BURST: "3", WS_PER_ADDRESS: "2", SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: join_(toks, "tokens.json") } });
+// the server's guest ids, {held, departed} (anon-stats-preload.ts writes them into the scratch dir)
+const anonStats = (): { held: number; departed: number } | null => { try { return JSON.parse(readFileSync(join_(h.SCRATCH, "anon-stats.json"), "utf8")); } catch { return null; } };
 const WS = h.BASE.replace("http", "ws") + "/ws";
 // a second server at the shipped defaults: what a household or a venue behind one NAT meets
 const hd = await scratchSequencer("join-rate-defaults", { worlds: [W], owner: "keeper", serverEnv: { SKIP_OPT_SWEEP: "1" } });
@@ -98,6 +106,36 @@ try {
     const heard = o.msgs.filter((m) => m.type === "leave").map((m) => m.id);
     S.check("J8 a refused travel under another's name broadcasts no leave for them: the world hears only the traveller leave", heard.length === 1 && heard[0] === malId && !heard.includes(aliceId) && !heard.includes("Alice"), { heard, aliceId, malId });
     for (const x of [alice, o]) try { x.ws.close(); } catch { /* gone */ } }
+  // J9: a guest's id is let go (directory.ts release) on every way its socket leaves, or ANON_IDS_KEPT never forgets it.
+  // A kick (expel) unmaps the socket before closing it, so its close finds no client: the kick itself must let it go. The
+  // refusals after the id is minted (a client that doesn't fold the log, an aux leg with no primary) close before they
+  // unmap, and one guest leaves normally (the control). Every id these five guests were given is departed afterwards
+  { await until("the server's guest ids are readable", () => anonStats(), { ms: 5000, step: 50 });
+    const keeper = connect(); await keeper.open;
+    keeper.ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: "keeper", agentToken: "tok-keeper", replica: true }));
+    await until("the owner is in", () => snapshots(keeper), { ms: 5000, step: 50 });
+    await pause("the earlier sections' closes have landed", 300);
+    const before = anonStats()!;
+    const g = [connect(), connect(), connect(), connect(), connect()]; await Promise.all(g.map((x) => x.open));
+    g[0].ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: "nofold1" }));   // no replica: refused at the fold check
+    g[1].ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: "nofold2" }));
+    g[2].ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: "nobody-here", surface: "voice", replica: true }));   // aux, no primary
+    join(g[3], "leaves-normally"); join(g[4], "kicked-guest");
+    await until("the control and the kicked guest are in", () => snapshots(g[3]) && snapshots(g[4]), { ms: 5000, step: 50 });
+    g[3].ws.close();
+    const kicked = g[4].msgs.find((m) => m.type === "snapshot")?.actor;
+    keeper.ws.send(JSON.stringify({ type: "request", id: "k1", verb: "kick", args: { who: kicked } }));
+    const kick = await tryUntil("the kick is answered", () => keeper.msgs.find((m) => m.type === "reply" && m.id === "k1"), { ms: 5000, step: 20 });
+    await until("every guest's socket closes", () => g.every((x) => x.ws.readyState === WebSocket.CLOSED), { ms: 5000, step: 20 });
+    const after = await tryUntil("the server counts five more departed guests", () => { const s = anonStats(); return s && s.departed - before.departed >= 5 ? s : null; }, { ms: 3000, step: 50 }) ?? anonStats()!;
+    S.check("J9 a kicked guest, the refused ones (no fold, aux with no primary) and one that leaves all let their ids go: every new guest id is departed",
+      kick?.reply?.ok === true && after.held - before.held === 5 && after.departed - before.departed === 5,
+      { kick: kick?.reply, before, after, refusals: g.map((x) => x.msgs.find((m) => m.type === "error")?.error?.slice(0, 50) ?? null) });
+    keeper.ws.close(); }
+  // J9b: the class, not the sites: nothing in server.ts takes a socket off the map but unmap (which lets a guest's id go)
+  { const src = readFileSync(join_(import.meta.dir, "../../server/server.ts"), "utf8").split("\n");
+    const raw = src.map((l, i) => [i + 1, l] as const).filter(([, l]) => /(?<![\w.])clients\.delete\(/.test(l) && !/^function unmap\(/.test(l));
+    S.check("J9b server.ts unmaps sockets only through unmap()", raw.length === 0, raw); }
   // J4: at the defaults, a person changes avatar six times, 150 ms apart (the browser re-sends join on the same socket for
   // each, mybody.js): none is refused, and the world sees the last body
   { const o = connect(undefined, WSD), p = connect("198.51.100.8", WSD); await Promise.all([o.open, p.open]);

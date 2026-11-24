@@ -153,7 +153,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
       screenshots.retire(t);
-      w.clients.delete(t); clients.delete(t.ws);
+      w.clients.delete(t); unmap(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
     }
@@ -176,7 +176,7 @@ function expel(w: World, target: Client, why: string, until?: number | null, cod
   if (wasEmbodied && target.lastPose && target.actorId && !target.anonymous) w.rememberPose(target.actorId, target.lastPose); // they may be back (remembered by identity, never by name)
   target.superseded = true;   // the close path must not double-handle this body
   w.clients.delete(target);
-  clients.delete(target.ws);
+  unmap(target.ws);
   target.world = null;
   target.ws.close?.(code, code === 4010 ? "access ended" : "removed by moderation");
   if (wasEmbodied) { w.broadcast({ type: "leave", id: target.id }); w.scripts.onPresence("leave", target.id, target.actorId); }
@@ -258,6 +258,9 @@ try { await warmIndex((n) => worlds.has(n)); } catch (err) { console.error("[boo
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
+/** Every path that takes a socket off the map goes through here: a close that finds no client can't let a guest's
+ *  anonymous id go (directory.ts release), so the unmapping does, or ANON_IDS_KEPT never forgets it. Releasing twice is harmless. */
+function unmap(ws: unknown) { const c = clients.get(ws); if (c?.actorId && c.anonymous) directoryFor(WORLDS_DIR).release(c.actorId); clients.delete(ws); }
 screenshots.setClients(() => clients.values());   // roaming renderers are found across worlds
 // …and sent only where they will be let in (a roamer with the renderers' credential goes anywhere — access.ts)
 screenshots.setAdmission((w, c) => entryFor(doorOfWorld(w), whoOf(c), "watch") === null);
@@ -359,7 +362,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       if (!c.surface) {
         ws.send(JSON.stringify({ type: "error", error: `unusable surface name — letters, digits, - and _ only` }));
         ws.close(4005, "bad surface");
-        clients.delete(ws);
+        unmap(ws);
         return null;
       }
     }
@@ -513,7 +516,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
         ws.close(4008, "aux without primary");
         // (c is not in w.clients yet: only the global map needs cleaning)
-        clients.delete(ws);
+        unmap(ws);
         return null;
       }
       // an aux leg binds to the primary's identity, or it does not attach (a same display name is presence, not authority).
@@ -526,7 +529,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         console.log(`[world:${w.name}] aux refused: "${c.id}"/${c.surface} has no binding to the primary's identity authority`);
         ws.send(JSON.stringify({ type: "error", error: `a ${c.surface} leg for "${c.id}" must present that identity's credential (agent bearer, or the primary's own login)` }));
         ws.close(4009, "unbindable aux");
-        clients.delete(ws);
+        unmap(ws);
         return null;
       }
       // bounded legs per identity (takeover replaces, so 4 distinct surfaces is generous). Counted before the takeover kick,
@@ -537,7 +540,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
         ws.send(JSON.stringify({ type: "error", error: "too many auxiliary legs for this identity" }));
         ws.close(4008, "aux cap");
         // (c is not in w.clients yet: only the global map needs cleaning)
-        clients.delete(ws);
+        unmap(ws);
         return null;
       }
     }
@@ -560,7 +563,7 @@ function installJoin(c: Client, w: World) {
           screenshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
-          clients.delete(other.ws);
+          unmap(other.ws);
           other.ws.close?.(4002, "session takeover");
           console.log(`[world:${w.name}] ${c.id}/${c.surface} takeover — gen ${other.gen} retired`);
           // a world-surface takeover retires the predecessor's relay leg, under its own id: its credential is bound to the
@@ -742,9 +745,8 @@ const server = Bun.serve({
         const c = clients.get(ws);
         if (!c) return;
         screenshots.retire(c);
-        clients.delete(ws);
+        unmap(ws);   // lets a guest's id go
         if (c.heldRejoinTimer) { clearTimeout(c.heldRejoinTimer); c.heldRejoinTimer = undefined; }
-        if (c.actorId && c.anonymous) directoryFor(WORLDS_DIR).release(c.actorId);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
         if (c.bcRing?.length) {
@@ -850,13 +852,13 @@ const server = Bun.serve({
           if (w.log && msg.replica !== true && (c.surface ?? "world") === "world") {
             ws.send(JSON.stringify({ type: "error", error: noFoldRefusal(w.name, !!auth && isNativeSession(auth)) }));
             ws.close(4005, "this client doesn't fold the log");
-            clients.delete(ws);
+            unmap(ws);
             return;
           }
           // only after access is granted, the world's required features against the client's
           if (msg.hello !== undefined) {
             const r = missingFeatures(featureDecision(w.log?.live?.entries ?? [], KNOWN_FEATURES).requires, msg.hello.features);
-            if (r) { ws.send(JSON.stringify(r)); ws.close(4005, "unsupported-feature"); clients.delete(ws); return; }
+            if (r) { ws.send(JSON.stringify(r)); ws.close(4005, "unsupported-feature"); unmap(ws); return; }
           }
           c.replica = msg.replica === true;
           installJoin(c, w);
