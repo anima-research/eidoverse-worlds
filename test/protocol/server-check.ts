@@ -444,8 +444,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!whk.isError && seqs(T(whk)).length > 0 && T(whk).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => /: change /.test(l)), "CM6g world_history {kinds: ['change']} shows what acts wrote", T(whk).slice(0, 400));
   const whw = await HANDLERS.world_history(oz, { after: first - 6, before: first, limit: 50 }, {} as any, "world_history");
   ok(!whw.isError && seqs(T(whw)).length > 0 && seqs(T(whw)).every((n) => n > first - 6 && n < first), "CM6g before and after together read the window between them", T(whw).slice(0, 400));
-  const whd = await HANDLERS.world_history(oz, {}, {} as any, "world_history");
-  ok(seqs(T(whd)).length > 30 || !/more before/.test(T(whd)), "CM6g a page is 50 by default (more than 30 rows, or the whole log)", `${seqs(T(whd)).length} rows`);
+  // G4-167: the page is 50 ENTRIES (an act's results print with it, so it shows fewer rows): read the request the tool sends and
+  // what came back, not a row count ("> 30 rows" passed for any page over 30). garden's log is longer by now: there is more
+  let asked: any = null, whd: any = null; { const req = oz.request.bind(oz); oz.request = async (verb: string, args: any) => { const r = await req(verb, args); if (verb === "history") asked = { limit: args?.limit, got: r?.entries?.length }; return r; };
+    whd = await HANDLERS.world_history(oz, {}, {} as any, "world_history"); oz.request = req; }
+  ok(asked?.limit === 50 && asked?.got === 50 && /more before/.test(T(whd)), "CM6g a page is 50 by default (the tool asks the authority for 50 entries, gets 50, and says there are more before)", { asked, rows: seqs(T(whd)).length });
   // SWEEP-3 G1a: body_state still says posture (main's name for the clip), beside bodyMode and clip
   const bst = JSON.parse(T(await HANDLERS.body_state(oz, {}, {} as any, "body_state")));
   ok("posture" in bst && bst.posture === bst.clip && "bodyMode" in bst, "CM6p body_state carries posture, a twin of clip", JSON.stringify({ posture: bst.posture, clip: bst.clip, bodyMode: bst.bodyMode }));
