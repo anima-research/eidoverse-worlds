@@ -256,7 +256,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "garden", avatar: "" });
   await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 2000, step: 50 });
   ok(ag.snapshot?.dialect === "eidoverse-log" && ag.snapshot?.v === 4 && !("minor" in (ag.snapshot ?? {})), "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
-  ag.verb = () => { throw new Error("a world's building tool must not fire-and-forget"); };
+  // G4-166: WorldAgent has no verb() (a stub of one could never fire). The guard that can: every request frame the agent
+  // sends must have a waiter for its answer (request() registers one first); one without is a fire-and-forget
+  const sentReqs: string[] = [], unwaited: string[] = [];
+  { const send = ag.ws.send.bind(ag.ws); ag.ws.send = (d: any) => { try { const m = JSON.parse(String(d)); if (m?.type === "request") { sentReqs.push(m.verb); if (!ag.pendingRequests?.has(m.id)) unwaited.push(m.verb); } } catch {} return send(d); }; }
   // R 10-17: the agent names what it makes with a placeholder; the reply says the handle and the id it became
   const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "$agentcup" }, {} as any, "create");
   { const m = / id ([a-z2-7]{26})/.exec(sp.content[0].text); if (m) IDS.map.set("agentcup", m[1]); }
@@ -323,6 +326,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(up.isError && wk.isError && ag.myOccupancy?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
   const hop = await HANDLERS.attach(ag, { to: IDS.of("carriage"), socket: "rumble" }, {} as any, "attach");
   ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.myOccupancy?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
+  ok(sentReqs.includes("create") && sentReqs.includes("place") && !unwaited.length, "S5 every request the agent's tools sent waited for the authority's answer (none fire-and-forget)", { sent: sentReqs.length, unwaited });
   ag.close(); }
 
 // (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)
