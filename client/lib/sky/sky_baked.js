@@ -89,6 +89,10 @@ function ensureEnvRig() {
   blitCam.position.z = 0.5;
   blitScene = new THREE.Scene();
   blitGeo = new THREE.PlaneGeometry(2, 2);
+  // three samples a render-target texture top-down on both backends: uv v reads what was drawn at clip y = 1 − 2v. A
+  // texel drawn at clip y must sample its source at that v, or the copy is upside down (test/client/sky-env-upright-test.mjs)
+  const uv = blitGeo.attributes.uv;
+  for (let j = 0; j < uv.count; j++) uv.setY(j, 1 - uv.getY(j));
   blitMat = new THREE.MeshBasicNodeMaterial();
   blitMat.toneMapped = false;              // environment must stay linear HDR
   blitTexNode = TSL.texture(envRT.texture); // real source set per blit
