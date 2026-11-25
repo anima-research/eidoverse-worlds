@@ -21,6 +21,7 @@
 // XT (the question on the quad's texture before its arm time): in xrask.js show(), showXRPanel('ask', true) before repaint().
 import { launchBrowser, ownedWorld, checker, iwerInit, visorShown, enterVR, exitVR } from '../harness/probe-harness.mjs';
 import { until, pause } from '../gate/wait.ts';
+import { nativeKey } from '../harness/cdp-pw.mjs';   // a held key's native code as the harness sends it (none on macOS)
 const { check, done } = checker();
 const world = await ownedWorld({ owner: 'askprobe', env: { TRUST_NAMES: '1' } });   // the page owns staging: it may build, lock and close the door
 const { browser, page } = await launchBrowser(); const pg = await page();
@@ -63,13 +64,13 @@ const install = () => pg.evaluate(async () => {
 // a software-rendered XR loop can stall for minutes on a GPU-less host (a shader link): a wait that needs a frame drawn waits that out
 const S = (what, fn, arg, ms = 15000) => until(what, () => pg.evaluate(fn, arg), { ms });   // a page condition, polled
 // a key held down, as the OS sends it: its first keydown, then (repeat) more keydowns with no keyup between
-const ENTER = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 };
+const ENTER = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, ...nativeKey(13) };
 const enterDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...ENTER, text: '\r', autoRepeat: repeat });
 const enterUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...ENTER });
-const ESC = { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, nativeVirtualKeyCode: 27 };
+const ESC = { key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27, ...nativeKey(27) };
 const escDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...ESC, autoRepeat: repeat });
 const escUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...ESC });
-const SP = { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 };
+const SP = { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, ...nativeKey(32) };
 const spDown = (repeat = false) => pg.cdp('Input.dispatchKeyEvent', { type: 'keyDown', ...SP, text: ' ', autoRepeat: repeat });
 const spUp = () => pg.cdp('Input.dispatchKeyEvent', { type: 'keyUp', ...SP });
 const R = (name) => pg.evaluate((n) => globalThis.__r[n], name);                            // a tracked promise's value

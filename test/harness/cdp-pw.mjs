@@ -17,6 +17,18 @@ const KEYS = {
   Shift: [16, 'ShiftLeft'], Control: [17, 'ControlLeft'], Alt: [18, 'AltLeft'], Meta: [91, 'MetaLeft'],
 };
 const MOD = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+// nativeVirtualKeyCode is the OS's own number for the key, and the VK codes here are Windows'. macOS reads the field as a
+// Mac key code (kVK_*), where VK 87 (W) is the keypad's 5 and VK 13 (Enter) is W: Chrome for Testing there then floods
+// the page with keydowns of a key nobody released, until it navigates (#359's xr-confirm on macos-latest: one KeyW press
+// typed "wwww…" into every field after it, CI 45283313249 45523929491 45632526876). Omitted on macOS, Chrome derives it
+// from `code`, as Puppeteer never sends it; elsewhere it is sent as before (Windows: it is the native code).
+/** `{ nativeVirtualKeyCode }` for Windows virtual key `vk` on `platform`, or nothing where that number isn't native (macOS) */
+export const nativeKey = (vk, platform = process.platform) => (platform === 'darwin' ? {} : { nativeVirtualKeyCode: vk });
+/** Input.dispatchKeyEvent's params for key `d` ({ key, code, vk, text }) with modifier bits `mods` on `platform` */
+export function keyParams(type, d, mods = 0, platform = process.platform) {
+  return { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, ...nativeKey(d.vk, platform), modifiers: mods,
+    ...(type === 'keyDown' && d.text && !(mods & ~MOD.Shift) ? { text: d.text } : {}) };
+}
 function keyDef(k) {
   if (KEYS[k]) { const [code, c, text] = KEYS[k]; return { key: k === 'Space' ? ' ' : k, code: c, vk: code, text }; }
   if (/^F\d+$/.test(k)) return { key: k, code: k, vk: 111 + Number(k.slice(1)) };
@@ -155,7 +167,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
   };
   // Shift held turns a letter's key and text upper case, as playwright's keyboard does
   const shifted = (d) => (mods & MOD.Shift) && /^[a-z]$/.test(d.key) ? { ...d, key: d.key.toUpperCase(), text: d.text && d.text.toUpperCase() } : d;
-  const keyEvent = async (type, d0) => { const d = shifted(d0); return send('Input.dispatchKeyEvent', { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, nativeVirtualKeyCode: d.vk, modifiers: mods, ...(type === 'keyDown' && d.text && !(mods & ~MOD.Shift) ? { text: d.text } : {}) }); };
+  const keyEvent = async (type, d0) => send('Input.dispatchKeyEvent', keyParams(type, shifted(d0), mods));
   const keyboard = {
     down: async (k) => { if (MOD[k]) mods |= MOD[k]; await keyEvent('keyDown', keyDef(k)); },
     up: async (k) => { await keyEvent('keyUp', keyDef(k)); if (MOD[k]) mods &= ~MOD[k]; },
