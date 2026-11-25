@@ -1,16 +1,12 @@
 // waves — the water surface's height, everywhere it is computed: the shader that draws it (client/lib/water.js,
 // from these constants) and the bodies that float on it (shared/buoyancy.js, from these functions).
 //
-// ONE CLOCK. A wave a swimmer rises on must be the wave everyone else sees, so the surface runs on the
-// world's synced clock (serverNow), not each page's own load time. A shader cannot hold epoch seconds
-// (float32 has ~2 minutes of precision there), so the clock wraps every WAVE_PERIOD seconds, and every wave
-// frequency is rounded to a whole number of cycles in that period: at the wrap, every wave is exactly where
-// it began, and nothing jumps.
+// ONE CLOCK. The surface runs on the world's synced clock (serverNow) so everyone sees the same wave. A float32
+// shader can't hold epoch seconds, so the clock wraps every WAVE_PERIOD seconds and every frequency is rounded to a
+// whole number of cycles per period: at the wrap nothing jumps.
 //
-// The sea: two swells rolling in along `toShore`, deep-water dispersion ω = √(g·k), a touch of second
-// harmonic for a peaked crest, height growing with depth (0.2 m of swash at the shore → 0.6 m offshore).
-// Rivers and still water carry centimetre ripples, which a floating body barely notices — included so the
-// law is the whole surface, not just the sea's.
+// The sea: two swells along `toShore`, deep-water dispersion ω = √(g·k), a second harmonic for peaked crests, height
+// growing with depth (0.2 m at the shore → 0.6 m offshore). Rivers and still water carry centimetre ripples.
 
 export const WAVE_PERIOD = 600;   // seconds
 const TAU = 2 * Math.PI;
@@ -27,9 +23,8 @@ export const OCEAN = {
   ampShore: 0.2, ampDeep: 0.6, ampFrom: -1.0, ampTo: 5.0,   // metres, by depth
 };
 export const RIVER = { amp: 0.025, k: 1.4 };
-// A river's chop runs at speed·k, and the shader adds two more trains at 0.6 and 0.4 of that (shared with
-// its streaks). Rounding the speed to a multiple of this step makes all three a whole number of cycles per
-// WAVE_PERIOD: 5 base cycles (0.6·5 and 0.4·5 are whole) → 0.037 m/s, finer than anyone can see.
+// A river's chop runs at speed·k, with two more shader trains at 0.6 and 0.4 of that; speeds snap to this step so all
+// three are whole cycles per WAVE_PERIOD (0.037 m/s, finer than anyone can see).
 export const RIVER_SPEED_STEP = (5 * TAU) / (WAVE_PERIOD * RIVER.k);
 /** A river speed (m/s) rounded so its ripples wrap with the clock. */
 export const riverSpeed = (v) => RIVER_SPEED_STEP * Math.max(1, Math.round(v / RIVER_SPEED_STEP));
@@ -41,7 +36,7 @@ export const waveClock = (serverMs) => ((serverMs % (WAVE_PERIOD * 1000)) + WAVE
 const sm = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /** How far above (or below) the still level the surface stands at (x, z) at wave time `t`.
- *  `w` is shared/waterkind.js's sample there ({kind, depth, flow, speed, toShore}), or null on dry ground. */
+ *  `w` is shared/waterkind.js's sample there (it reads {kind, depth, flow, waveSpeed, toShore}), or null on dry ground. */
 export function surfaceOffset(w, x, z, t) {
   if (!w) return 0;
   if (w.kind === 'ocean' && w.toShore) {

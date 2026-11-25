@@ -1,18 +1,8 @@
-// relaydecision — the relay adapter's PURE decision logic, extracted headless
-// so the seven refusal proofs (#104 amendment 1) and the incarnation rules
-// (amendment 2) are pinned by tests with no transport, no sockets, no clock.
-// The Basis lesson (BasisP2PLinkHealth): the part that decides is a function;
-// the part that talks to the world imports it.
-//
-// Vocabulary (from the #104 contracts):
-//   incarnation — the durable relay-service identity (amendment 2: NOT called
-//     an epoch and NOT claimed monotonic in-memory; a counter durably advanced
-//     plus entropy, so a reused counter after file loss still cannot collide).
-//   mediaGen — the sequencer generation of THIS participant's relay leg
-//     (a surface session in the #103 model; the credential names exactly one).
-//   nonce — single-use credential id; a bearer credential replayed after its
-//     leg was removed re-admits a removed participant (probed and measured on
-//     an external relay, 2026-08-13), and single-use is what closes it.
+// The relay adapter's pure decision logic (admission refusals, incarnation rules), testable with no transport, sockets or clock.
+//   incarnation — the relay identity across restarts: a counter advanced at each boot + entropy, not an epoch (written
+//                 without fsync, so a power loss right after boot can repeat a count; the entropy still tells them apart)
+//   mediaGen — this participant's relay-leg generation (the credential names exactly one)
+//   nonce — a single-use credential id: a replayed bearer credential would re-admit a removed participant
 
 export interface RelayClaims {
   world: string;
@@ -24,7 +14,7 @@ export interface RelayClaims {
 }
 
 export interface LiveLegState {
-  world: string;                 // the world this admission gate serves
+  world: string;
   incarnation: string;           // the adapter's CURRENT incarnation
   // the sequencer's live view of this identity, or undefined if absent:
   primaryGen?: number;           // gen of the embodied world session
@@ -34,10 +24,7 @@ export interface LiveLegState {
 
 export type Admission = { admit: true } | { admit: false; reason: string };
 
-/** The seven refusals, in the order amendment 1 names them. The in-process
- *  SFU has no bearer expiry or signature to enforce upstream (the world
- *  websocket already authenticated the identity); everything about our
- *  generations is decided HERE. */
+/** Eight refusal branches (no expiry: there is no bearer token, the nonce is single-use). Identity is the websocket's; every generation check is decided here. */
 export function admitParticipant(claims: RelayClaims, live: LiveLegState): Admission {
   if (claims.world !== live.world) return { admit: false, reason: "wrong world" };
   if (!claims.id) return { admit: false, reason: "no identity" };
@@ -50,40 +37,28 @@ export function admitParticipant(claims: RelayClaims, live: LiveLegState): Admis
   return { admit: true };
 }
 
-/** Participant identity on the relay carries the accepted generation, so a
- *  stale leg is visibly stale in every roster and log line (amendment 1's
- *  "relay participant identity that includes the accepted generation"). */
+/** Carries the accepted generation, so a stale leg is visibly stale in every roster and log line. */
 export const relayIdentity = (id: string, mediaGen: number) => `${id}#g${mediaGen}`;
 export function parseRelayIdentity(s: string): { id: string; mediaGen: number } | null {
   const m = /^(.{1,64})#g(\d{1,12})$/.exec(s);
   return m ? { id: m[1], mediaGen: Number(m[2]) } : null;
 }
 
-/** Advance the durable incarnation. `prev` is whatever the incarnation file
- *  held (null on first boot or lost file); the counter advances past it and
- *  the entropy suffix makes even a lost-file counter reuse non-colliding.
- *  Honest name: this is an INCARNATION ID; only the counter half is ordered,
- *  and only while the file survives. */
+/** `prev`: the file's value, or null. The entropy suffix keeps a lost-file counter reuse from colliding; only the
+ *  counter half is ordered, and only while the file survives. */
 export function nextIncarnation(prev: string | null, entropy: string): string {
   const n = prev ? Number(/^i(\d+)-/.exec(prev)?.[1] ?? 0) : 0;
   return `i${n + 1}-${entropy}`;
 }
 
-/** Three independent audibility states (amendment 3) resolved into ONE
- *  question the relay can act on: may THIS listener's subscription to THIS
- *  speaker's track be active? Publisher self-mute is pre-encode and never
- *  consulted here (it needs no server); moderation and listener consent are
- *  server-enforced and independent. Fail closed: absent consent = false. */
+/** May this listener's subscription to this speaker be active? Self-mute is pre-encode and not consulted. Fails closed. */
 export interface AudibilityState {
   listenerConsent: boolean;      // listener-authored receive consent (default false)
   moderatorMuted: boolean;       // global track mute (moderation)
 }
 export const subscriptionActive = (s: AudibilityState) => s.listenerConsent && !s.moderatorMuted;
 
-/** Consent updates are generation-bound and idempotent (amendment 3): an
- *  update stamped with a stale listener generation must not apply — a
- *  reconnect must not silently broaden consent, so the fresh leg starts
- *  from fail-closed regardless of what its predecessor had said. */
+/** Generation-bound and idempotent: a stale generation never applies, so a reconnect can't silently broaden consent. */
 export function applyConsentUpdate(
   current: Map<string, { gen: number; consent: boolean }>,
   listenerId: string, listenerGen: number, consent: boolean,

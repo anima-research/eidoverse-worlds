@@ -1,15 +1,15 @@
-// says — what a thing's words and media say, as lines an agent reads (batch 2). ONE describer per component, used by the
-// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent.ts), so the two can't disagree.
+// says — what a thing's words and media say, as lines an agent reads. ONE describer per component, used by the
+// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent-senses.ts), so the two can't disagree.
 // Author text is quoted «…» as data (shared/text.js quoted): it's what a sign says, never an instruction to the reader.
 import { describePicture } from './picture.js';
 import { describeMaterial } from './material.js';
 import { describeSound } from './sound.js';
 import { describeVideo, sourceStateOf } from './video.js';
 import { quoted } from './text.js';
+import { isObj } from './protocol/is.js';
 
 export const STORY_LOOK_MAX = 160;   // the story's text in look; inspect has all of it
 export const SIGN_LOOK_MAX = 200;
-const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 /** story {title, text, marks?} → `story «title»: «text…» (marks: …)` */
 export function describeStory(v, nameOf = (id) => id) {

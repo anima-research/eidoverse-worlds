@@ -1,6 +1,6 @@
 // shared/protocol/authority/capacity.js — how much a world holds: this server's CAPACITY defaults and the CAPACITY_CEILING
 // an owner may raise them to, the world's own @world.capacity, the guests' shared budget, and the check a write that adds
-// entities meets (refactor split, 2026-10-17; moved from authority.js's gate section unchanged).
+// entities meets.
 import { resolveVersioned } from "../componentspec.js";
 import { CTX } from "./ctx.js";
 import { refuse } from "./refuse.js";
@@ -8,14 +8,12 @@ import { isE, opsQuiet } from "./storage.js";
 import { SOCKETS_PER_HOST, isSocketC } from "./sockets.js";
 import { RESERVED, entryBy } from "./rights.js";
 
-// How much a world holds (review 10-06 S0-2, security pass 2; ONE budget since R 10-15 22:48): at most
-// @world.capacity.entities entities, every one but @world, sockets included (a socket is a child entity); and the world's
-// account-less people TOGETHER at most capacity.guestEntities standing entities they made: a guest is a fresh identity
-// per connection, so no per-identity budget stopped one from filling a world. Only a write that adds entities is refused
-// (full); deleting, and every other change, stay open at the cap. capacity.avatar isn't enforced (no avatar trees yet).
-// CAPACITY is this server's default for each absent field, and CAPACITY_CEILING the most an owner may set: server policy
-// (PROTOCOL §9.2), reported by schema, never pinned in the registry. entities 10 000 is what scale-check C2 fills under
-// budget; 50 000 is the owner's ceiling, not measured.
+// How much a world holds: at most @world.capacity.entities entities (all but @world, sockets included), and the world's
+// account-less people TOGETHER at most capacity.guestEntities (a guest is a fresh identity per connection, so a
+// per-identity budget can't hold). Only a write that adds entities, or sockets past SOCKETS_PER_HOST to one host (a
+// reparent too), is refused (full). capacity.avatar isn't enforced.
+// CAPACITY is this server's default per absent field, CAPACITY_CEILING the most an owner may set: server policy
+// (PROTOCOL §9.2), reported by schema. entities 10 000 is what test/protocol/scale-check.ts fills under budget.
 export const CAPACITY = { entities: 10000, guestEntities: 500, avatar: 2000 };
 export const CAPACITY_CEILING = { entities: 50000, guestEntities: 50000, avatar: 5000 };
 const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
@@ -23,16 +21,11 @@ const capacityOf = (st) => { const ok = (x) => Number.isInteger(x) && x >= 0;
   const { name, value: v } = resolveVersioned(st.entities["@world"]?.c, "capacity"); const D = CAPACITY;
   return { ...Object.fromEntries(Object.keys(D).map((k) => [k, ok(v?.[k]) ? v[k] : D[k]])), name }; };   // name: the registry key the world is read under, for refusals to cite
 // Whose rights made a thing count in the guests' pool: an identity the directory calls anonymous, or one it doesn't know
-// at all. The directory writes every account and imported identity (a translated world's are written with it) and never
-// an anonymous one, which lives only in the process that minted it. So after a restart an earlier guest is an id nobody
-// here knows, and what it made still counts. The rule rests on every other actor having a directory entry here: a
-// creator from before the directory, or from a world made on another server, counts too (said apart in the refusal).
-// The authority's own identities and an unknown author (a purged cause: null) are nobody's guest; with no directory,
-// nobody is. → "anon" | "unknown" | null
+// at all (the directory never writes a guest, so after a restart an earlier guest is unknown and still counts). The
+// authority's own identities and a purged cause (null) are nobody's guest; with no directory, nobody is.
+// → "anon" | "unknown" | null
 const guestKind = (w, id) => { if (typeof id !== "string" || !w.kindOf || RESERVED.has(id)) return null; const k = w.kindOf(id);
   return k === "anon" ? "anon" : k == null ? "unknown" : null; };
-// how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
-// them the write's state s no longer holds (a log view, kept incrementally like everIds)
 /** The scan behind guestMade: made (id → its creator's rights, while it stands) and the ids whose kind isn't read yet
  *  (pending). A host seeds {n, made} from its fold cache (server/foldviews.ts), every id pending, as a scan from genesis has it. */
 export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pending: new Map(), ids: new Map() })) {
@@ -40,6 +33,8 @@ export function guestScan(w, G = (w.__guests ??= { n: 0, made: new Map(), pendin
     for (const o of opsQuiet(e)) { if (o.op === "create") { if (rights === undefined) rights = entryBy(w, e).rights; G.made.set(o.id, rights); G.pending.set(o.id, rights); } else if (o.op === "delete" && o.comp === undefined) { G.made.delete(o.id); G.pending.delete(o.id); G.ids.delete(o.id); } } }
   return G;
 }
+// how many entities in the guests' pool still stand in st, how many of those an unknown creator made, and how many of
+// them the write's state s no longer holds (a log view, kept incrementally like everIds)
 function guestMade(w, st, s = st) {
   const G = guestScan(w); G.seeded = false;
   for (const [id, r] of G.pending) { const kind = guestKind(w, r); if (kind) G.ids.set(id, kind); } G.pending.clear();   // a kind is read once, at the first call after its create

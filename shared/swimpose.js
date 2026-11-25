@@ -1,5 +1,5 @@
 // swimpose — the procedural swim stroke and treading pose, one law for every reader: the browser draws it
-// (client/lib/avatar.js _swimLayer, blended in by weight over the idle clip) and the headless body reader
+// (client/lib/avatar/avatar.js _swimLayer, blended in by weight over the idle clip) and the headless body reader
 // evaluates it (mcpl/body-state.ts), so a swimmer's read joints are the drawn ones. No rig ships a swim
 // clip; the clips 'swim' and 'tread' name this pose.
 //
@@ -31,10 +31,8 @@ export function swimTargets(m, t) {
   ];
 }
 
-// The volume swimmer's pose (watervolumes.js oceans and pools; a body in a water VOLUME, not the level).
-// Absolute normalized-humanoid rotations, radians (XYZ Euler). VRM's neutral
-// arms point sideways: adding a Z twist to a relaxed idle folds them behind
-// the torso. Own the shoulders, upper/lower arms and hands during the stroke.
+// The volume swimmer's pose (client/lib/realize/watervolumes.js oceans and pools, not the water level): absolute
+// normalized-humanoid rotations, radians (XYZ Euler). Owns shoulders, arms and hands during the stroke.
 export function swimPose(time, surface=false){
  const stroke=.5+.5*Math.sin(time*2.5),kick=Math.sin(time*4);
  const pose={};

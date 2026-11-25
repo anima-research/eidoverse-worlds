@@ -1,6 +1,5 @@
-// shared/protocol/authority/refuse.js — how the authority says no (refactor C11, 2026-10-12; moved from authority.js's
-// "the authority" section unchanged). A leaf below every other seam: the spatial index's work budget, storage's version
-// check and the rights views all refuse through here, and none of them may reach the gate.
+// shared/protocol/authority/refuse.js — how the authority says no. A leaf below every other seam: the spatial index's
+// work budget, storage's version check and the rights views all refuse through here, and none of them may reach the gate.
 import { dec } from "../names.js";
 import { CTX } from "./ctx.js";
 class Refusal extends Error { constructor(code, reason, fix, extra = {}) { super(reason); Object.assign(this, { code, reason, fix, ...extra }); } }

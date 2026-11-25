@@ -1,18 +1,13 @@
-// server/ownerrecognise.ts — is this signed-in account one of an old-format world's owners (R 10-28)? One pure rule over the
-// owners the old log names (tools/protocol/import-v1/world.ts oldOwners), read by the translation's --claim and by the
-// access index (worldindex.ts), so a join, /access or upgrade request never reads the old log to answer it.
-// Watch for deletion: operators usually choose which engine is served; see WISHLIST 'Owner self-upgrade of old worlds'.
+// server/ownerrecognise.ts — is this signed-in account one of an old-format world's owners? One pure rule over the owners the
+// old log names (tools/import-v1/world.ts oldOwners), shared by the translation's --claim and the access index (worldindex.ts).
 import { foldName } from "./directory.ts";
 
-/** One owner of an old world: its name, the account main's records bind it to (null: none), how main bound it, and the
- *  accounts main's records give that name (mainSubs). */
+/** One owner of an old world: its name, the account main's records bind it to (null: none), how, and every account main gave that name. */
 export type OldOwner = { name: string; account: string | null; unbound: string; mainSubs: string[] };
 export type Recognised = { recognised: "bound" | "name" | null; owner?: string; ownerless: boolean; why?: string };
 
-/** "bound": main's records bind an owner to exactly this account; "name": an owner main recorded NO account for has this
- *  name, as the directory folds names (provisional: an alpha risk the owner accepted, until durable accounts), when main
- *  never bound that name to another account and only one account here holds it; else null, and why. `accountsNamed`: the
- *  directory's accounts holding a name. `ownerless`: the world has no owner at all (the upgrader claims it). */
+/** "bound": main binds an owner to this very account; "name": an owner main recorded no account for has this name (directory
+ *  folding) and only this account here holds it; else null, with why. `ownerless`: no owner at all (the upgrader claims it). */
 export function recogniseOwner(owners: OldOwner[], account: string | null, name: string | null, accountsNamed: (name: string) => string[]): Recognised {
   const ownerless = owners.length === 0;
   if (!account) return { recognised: null, ownerless, why: "not signed in" };

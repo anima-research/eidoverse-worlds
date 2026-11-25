@@ -1,6 +1,5 @@
-// Horizontal centerline routing over a griddled structure. Outdoor cells are
-// navigable too; indoor ROOM derivation remains the floor-only graph.
-// This is topology, not capsule clearance or terrain/mesh navigation.
+// structure-route — horizontal centreline routing over a griddled structure (shared/structure.js plans): cell topology
+// only, not capsule clearance or terrain navigation. Outdoor cells are navigable too.
 import { edgeBetween, nodeAtPoint, nodeOnSide, diagOf,
   halfTriangle, halfFloored, segmentEnds, APERTURES, cellKey, edgeKey } from './structure.js';
 
@@ -65,11 +64,8 @@ const cellRange = (lo, hi, tile) => [Math.floor(lo / tile - BUCKET_MARGIN), Math
 // Weak keys retain neither replaced component revisions nor discarded plans.
 const routeGeometry = new WeakMap();
 
-/** What routing needs from one plan, derived once: every level's wall spans,
- * filed by the cells they touch so a check reads only the walls near its
- * segment; each cell's diagonals, which a terrain walker's graph chooses
- * among per walk (see terrainCells); and the bounds of all authored
- * geometry, which a terrain walker's search covers. */
+/** What routing needs from one plan, derived once: every level's wall spans filed by the cells they touch, each
+ * cell's diagonals (a terrain walker picks among them per walk: terrainCells), and the bounds of all authored geometry. */
 export function routeGeometryFor(plan) {
   let prepared = routeGeometry.get(plan);
   if (prepared) return prepared;
@@ -167,16 +163,9 @@ export function prepareWallCheck(plan, basis) {
   };
 }
 
-/** The cell graph a terrain walker searches: the diagonals that cut its
- * cells, chosen for this walk. Levels can cut one cell along different
- * diagonals, and the one that matters is the one a walker meets: the
- * diagonal whose span meets the feet-to-step band at the cell centre's
- * terrain height. When both do, the cell is cut both ways, which two halves
- * can't represent; ↘ is taken, and legs that would cross ↗ fail the wall check
- * and route elsewhere. A diagonal no level's band meets leaves the cell
- * whole. Only diagonals are carried: the node helpers read nothing else of a
- * level for a terrain walker (openings are in the spans, and half floors
- * don't bound one), and the search's bounds come from all levels. */
+/** The diagonals a terrain walker meets this walk: per cell, the level's diagonal whose span meets the feet-to-step
+ * band at the cell centre's terrain height. When both diagonals do, ↘ is taken and legs crossing ↗ fail the wall check
+ * and route elsewhere. Only diagonals are carried; openings are in the spans. */
 export function terrainCells(plan, heightAt, band) {
   const { diagonals } = routeGeometryFor(plan), g = plan.grid, walls = new Map();
   for (const [cell, options] of diagonals) {

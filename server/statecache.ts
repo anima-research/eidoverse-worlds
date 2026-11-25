@@ -1,9 +1,8 @@
-// server/statecache.ts — a DERIVED cache of a world's strict fold beside its log, so a boot folds only the tail (WISHLIST "State
-// snapshots", step 1). The log is the truth: on any doubt the caller folds from genesis. Never served; backups, forks, resets and
-// rollbacks never carry it (the destination derives its own). The later signed in-log checkpoint (§2) is a different thing.
+// server/statecache.ts — a derived cache of a world's strict fold beside its log, so a boot folds only the tail. The log is
+// the truth: on any doubt the caller folds from genesis. Never served or carried by backups, forks, resets or rollbacks.
 import fs from "node:fs";
 import path from "node:path";
-import { REDACTED, checkEntry, opsOf, applyInPlace, cloneState, worldIdOf, jcs, sha256, Malformed } from "../shared/protocol/fold.js";
+import { REDACTED, checkEntry, opsOf, applyInPlace, cloneState, worldIdOf, jcs, sha256, isE } from "../shared/protocol/fold.js";
 import { replaceDurable } from "./durable.ts";
 import { VIEW_FILES } from "./foldviews.ts";
 
@@ -13,13 +12,15 @@ export const CACHE_FILE = "fold.cache.json";
 export const isCacheFile = (f: string) => f === CACHE_FILE || f.startsWith(`${CACHE_FILE}.`);
 const FORMAT = 2;   // this file's encoding (2: the views and byte offsets, server/foldviews.ts); also in the foldKey through these bytes
 
-const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
 let key: string | Error | null = null;
-/** hash(fold.js + its one import + registry-pin.json + this file + every file shaping a view + the runtime): any change and every
+/** fold.js and every module it imports, transitively (test/protocol/statecache-check.ts SC3c holds the list to the imports). */
+export const FOLD_FILES = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../shared/sha256.js", "../shared/protocol/features.js",
+  "../shared/protocol/provenance.js"];
+/** hash(FOLD_FILES + registry-pin.json + this file + every file shaping a view + the runtime): any change and every
  *  cache is refused. Throws (memoised) when a source can't be read: the caller then neither reads nor writes a cache. */
 export function foldKey(): string {
   if (key === null) try {
-    const files = ["../shared/protocol/fold.js", "../shared/protocol/hash.js", "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
+    const files = [...FOLD_FILES, "../spec/registry-pin.json", "./statecache.ts", ...VIEW_FILES]
       .map((f) => fs.readFileSync(new URL(f, import.meta.url), "utf8"));
     key = sha256(jcs([FORMAT, process.versions.bun ?? process.version, ...files]));
   } catch (x) { key = new Error(`the fold's sources can't be read for its key (${(x as Error).message})`); }
@@ -27,7 +28,7 @@ export function foldKey(): string {
   return key;
 }
 
-/** The fold as JSON: a purged value is {purged: true}, a value {v} (canonicalView's shape, plus born and the diagnostics). */
+/** The fold as JSON: a purged value is {redacted: true}, a value {v} (canonicalView's shape, plus born and the diagnostics). */
 export function encodeState(st: Any) {
   const entities: Any = {};
   for (const id of Object.keys(st.entities)) { const e = st.entities[id], c: Any = {};

@@ -1,9 +1,8 @@
-// server/custodycheck.ts — custody at startup and in backups (docs/DESIGN-log-vocabulary.md §F F-5): the live sequencer key is
-// verified against genesis (or the latest governance handoff) without minting; a mismatch serves the world read-only; a backup
-// manifest records the key fingerprints and the custody file's hash, and is checked from its written bytes when the backup is
-// made. No restore path reads it yet (notes WISHLIST, restore-path custody check): restoration is not verified by this.
+// server/custodycheck.ts — custody at startup and in backups (docs/decisions/LOG-VOCABULARY.md §F F-5): the live sequencer key is
+// checked against genesis (or the latest governance handoff) without minting, and a mismatch serves the world read-only. A
+// backup manifest records key fingerprints and the custody file's hash. No restore path reads the manifest yet.
 import fs from "node:fs";
-import crypto from "node:crypto";
+import { sha256, sha256Bytes } from "../shared/protocol/hash.js";
 
 type Key = { pub: string; priv?: string };
 type CustodyFile = { sequencer?: Key; operator?: Key; holders?: Record<string, Key> };
@@ -33,12 +32,12 @@ export function readOnlyCustody(file: string, why: string) {
 }
 
 export const MANIFEST = "CUSTODY.json";
-const fp = (pub: string | undefined) => pub ? crypto.createHash("sha256").update(pub).digest("hex") : null;
+const fp = (pub: string | undefined) => pub ? sha256(pub) : null;
 export type BackupManifest = { sequencer: string | null; operator: string | null; custodySha256: string | null };
 /** What a backup records of the keys that governed the world: fingerprints (never the keys) and the custody file's hash. */
 export function backupManifestOf(custodyFile: string): BackupManifest {
   const c = readCustody(custodyFile);
-  return { sequencer: fp(c.sequencer?.pub), operator: fp(c.operator?.pub), custodySha256: fs.existsSync(custodyFile) ? crypto.createHash("sha256").update(fs.readFileSync(custodyFile)).digest("hex") : null };
+  return { sequencer: fp(c.sequencer?.pub), operator: fp(c.operator?.pub), custodySha256: fs.existsSync(custodyFile) ? sha256Bytes(fs.readFileSync(custodyFile)) : null };
 }
 /** Why `m` is not a complete backup manifest, or (with the live custody file) why it is not this custody's; null when it checks.
  *  The custody comparison reads the file itself, never through backupManifestOf: a builder defect (a swapped or wrong
@@ -49,8 +48,7 @@ export function checkBackupManifest(m: unknown, custodyFile?: string): string | 
   if (!hex(x.sequencer) || !hex(x.operator)) return `${MANIFEST} records no sequencer/operator fingerprints`;
   if (!hex(x.custodySha256)) return `${MANIFEST} records no custody file hash`;
   if (custodyFile) { const bytes = fs.readFileSync(custodyFile); const c = JSON.parse(bytes.toString("utf8")) as CustodyFile;
-    const sha = (s: string | Buffer) => crypto.createHash("sha256").update(s).digest("hex");
-    if (sha(String(c.sequencer?.pub ?? "")) !== x.sequencer || sha(String(c.operator?.pub ?? "")) !== x.operator) return `${MANIFEST} names other keys than the live custody file`;
-    if (sha(bytes) !== x.custodySha256) return `${MANIFEST} records another custody file's hash than the live one`; }
+    if (sha256(String(c.sequencer?.pub ?? "")) !== x.sequencer || sha256(String(c.operator?.pub ?? "")) !== x.operator) return `${MANIFEST} names other keys than the live custody file`;
+    if (sha256Bytes(bytes) !== x.custodySha256) return `${MANIFEST} records another custody file's hash than the live one`; }
   return null;
 }

@@ -1,12 +1,10 @@
 // render-health — the verdict render-watchdog.ts passes on a renderer page, apart from the
 // devtools plumbing that asks the questions, so it can be tested without a browser
-// (tools/render-health-test.ts).
+// (test/server/render-health-test.ts).
 //
-// The verdict is the watchdog's whole job, and it has been wrong before. It scraped "NNfps" from
-// #hud, and when the client moved fps into the debug panel it read 0 forever: every healthy
-// renderer was killed on schedule, for a week, before anyone noticed (docs/INCIDENTS.md,
-// 2026-10-24). Each probe below asks the page something that depends on nothing the client
-// displays.
+// Each probe below asks the page something that depends on nothing the client displays: a verdict
+// scraped from #hud read 0 forever once the client moved its fps line, and every healthy renderer
+// was killed on schedule (docs/history/INCIDENTS.md, 2026-10-24).
 
 export const TIMEOUT = Symbol("timeout");
 /** Evaluate an expression in the page (awaiting a promise), or TIMEOUT after `ms`. */
@@ -26,7 +24,7 @@ export const PROBES = {
    *  on a roamer, so up to about 0.5% of a renderer's time, and a /snap arriving during one waits that
    *  long. It is the only probe that sees a world pass that throws every frame, so it stays; a
    *  larger CHECK_SEC makes it rarer. */
-  capture: "import('/lib/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))",
+  capture: "import('/lib/render/capture.js').then(m => m.captureFrame().length).catch(e => 'ERR ' + (e?.message ?? e))",
 } as const;
 
 /** Judge a renderer page by asking it four things, in order. Each one gates the next. */
@@ -53,7 +51,7 @@ export async function judge(evaluate: Evaluate): Promise<Health> {
 export const rendererPage = (url: string) => url.includes("renderer");
 
 /** Attach to a page in the Chrome whose devtools listen on `port`, and judge it. This is the
- *  watchdog's whole check. tools/roaming-renderer-check.ts runs it over real devtools against a real
+ *  watchdog's whole check. test/client/roaming-renderer-check.ts runs it over real devtools against a real
  *  renderer page, so the probes and this plumbing are tested together. */
 export async function health(port: number, match: (url: string) => boolean = rendererPage): Promise<Health> {
   let list: any;

@@ -1,5 +1,5 @@
 // video — what a `video` component MEANS. Shared verbatim between the browser
-// host (client/lib/videos.js), the authority (its door check and the look
+// host (client/lib/realize/videos.js), the authority (its door check and the look
 // line) and the mcpl agent (text-tier perception), so no two of them can
 // describe a different screen.
 //

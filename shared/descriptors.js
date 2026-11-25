@@ -5,32 +5,33 @@
 // records (shared/components.js RECORDS) and the agent's `edit` tool use where they differ from the wire's:
 //   an axis is a letter to the editor (x, -y) and a unit vector on the wire ([1, 0, 0]);
 //   a spin's or an orbit's rate is one number to the editor (°/s) and degPerSec | period | rpm on the wire;
-//   a light's `burns at noon` (address light.daytime, a check: on = the wire's daytime: 'full', off = 'dim'; R 10-17: was light.noon); a uniform scale is one number to the editor, [s, s, s] on the wire;
+//   a light's `burns at noon` (address light.daytime, a check: on = the wire's daytime: 'full', off = 'dim');
+//   a uniform scale is one number to the editor, [s, s, s] on the wire;
 //   a Grabbable, a Reactions card is its whole value ({spec: {}}): the wire bag is the editor's own.
 // A descriptor is {key, card, type?, fields: [{k, param, t, path, wire?: {to, from}, ui?}], extra}: key is the registry name
 // the value lives under (comp.<key>), card the record name (RECORDS[card]), type the motion type when the key is shared,
 // k the inspector's address inside its group, param the record's parameter name (k when they agree), t the registry's
 // field type, path the key inside the wire value (null = the whole value), wire the translation (to: editor → wire,
 // from: wire → editor; both take (value, bag)). materialize(key, {type}) through `from` is what a field's default IS;
-// tools/descriptor-defaults-test.ts holds RECORDS and editschema to it.
+// test/shared/descriptor-defaults-test.ts holds RECORDS and editschema to it.
 //
-// `ui` is the row's widget facts (C8): t the widget (num, check, enum, color, text), step/dp/softMin/softMax/deg as
-// panels.js reads them. A row's HARD limits (min, max) and its unit are never written here: build() reads them from the
-// registry's `ranges` and `units` (schema layers, 10-14: one description), and a soft slider end a card wants below or
+// `ui` is the row's widget facts: t the widget (num, check, enum, color, text), step/dp/softMin/softMax/deg as
+// edit/fieldpanels.js reads them. A row's HARD limits (min, max) and its unit are never written here: build() reads them from the
+// registry's `ranges` and `units` (one description), and a soft slider end a card wants below or
 // above them is softMin/softMax (never enforced; the door's range is). def: false = the row offers no reset (the inspector never did); absent = what an UNWRITTEN value is
 // drawn as where it differs from the registry's default (a pendulum written before the authority materialized a period
-// swings at the first protocol's 3.5 s: client/lib/motioneval.js); sparse = written only off its default (a light's
+// swings at the first protocol's 3.5 s: shared/motioneval.js); sparse = written only off its default (a light's
 // important/day); clears = the wire's other spellings a write retires (degPerSec retires rpm and period); own = the card's
 // own code writes it (an axis: validated against the letters the authority takes, written as a letter). The prose
 // (labels, hints, option words) stays in shared/editschema.js, which builds every engine card's rows from this table
 // (rowOf) and claims a card's addresses from it (claims): a row no descriptor names is in no card, which
-// tools/components-inspector-test.ts reports. `extra` names the card's own derived rows (openable's `by`, text's `plate`).
+// test/shared/components-inspector-test.ts reports. `extra` names the card's own derived rows (openable's `by`, text's `plate`).
 //
-// The seven fields where RECORDS states a default the registry never writes (C5's yellows) are decided here, per field,
-// as `absent` on the descriptor (`absentMeans` prose: the record's `default` is a READING of absence, to become prose when
-// RECORDS is generated from this table) or as a registered default (none yet: each would be a registry change and a pin
-// regeneration, spec/fixtures/registry-pin.json D8). See DECIDED below.
+// Where RECORDS states a default the registry never writes, the descriptor says so as `absent` prose (a READING of
+// absence), never as a registered default: registering one is a registry change and a pin regeneration
+// (spec/registry-pin.json). See DECIDED below.
 
+import { rateOf } from './protocol/names.js';
 import { COMPONENTS, materialize } from './protocol/componentspec.js';
 import { AXES } from './axes.js';
 
@@ -43,12 +44,10 @@ export function axisLetter(a) {
 }
 /** A letter's vector; a vector as itself; anything else null. */
 export const axisVector = (a) => (typeof a === 'string' ? (Object.hasOwn(AXES, a.toLowerCase()) ? AXES[a.toLowerCase()] : null) : Array.isArray(a) && a.length === 3 ? a : null);
-/** The editor's rate (°/s) of a motion bag: degPerSec, else 360 / period (seconds a turn), else an old rpm × 6. */
-export const rateOf = (m) => (Number.isFinite(m?.degPerSec) ? m.degPerSec : Number.isFinite(m?.period) && m.period > 0 ? 360 / m.period : Number.isFinite(m?.rpm) ? m.rpm * 6 : undefined);
 
 const AXIS = { to: (v) => axisVector(v) ?? v, from: (v) => axisLetter(v) ?? v };
 const RATE = { to: (v) => v, from: (_, m) => rateOf(m) };
-const NOON = { to: (b) => (b ? 'full' : 'dim'), from: (d) => d === 'full' };   // daytime (shape audit 10-16: was day: false)
+const NOON = { to: (b) => (b ? 'full' : 'dim'), from: (d) => d === 'full' };   // daytime (an older value's day: false)
 const UNIFORM = { to: (s) => (typeof s === 'number' ? [s, s, s] : s), from: (v) => (Array.isArray(v) && v[0] === v[1] && v[1] === v[2] ? v[0] : v) };
 const AMP = { to: (v) => v, from: (v, m) => v ?? m?.amplitude };   // the first protocol spelled a pendulum's amp `amplitude`
 
@@ -58,11 +57,11 @@ const DEG = { t: 'num', step: 5, deg: true };
 const SEC = { t: 'num', step: 0.1, dp: 2, softMin: 0.05 };
 const RATE_UI = { t: 'num', step: 5, dp: 1 };
 
-/** The seven yellows (C5): where RECORDS states a default the registry never writes. Each decided as `absent` prose — the
- *  record's number is what a reader DOES when the key is absent, not what the authority writes — and none registered:
- *  registering one changes what every new component carries on the wire (a pin regeneration), and no reader needs it. */
+/** Where RECORDS states a default the registry never writes: `absent` prose — the record's number is what a reader DOES
+ *  when the key is absent, not what the authority writes. None registered: that would change what every new component
+ *  carries on the wire, and no reader needs it. */
 const DECIDED = {
-  // the registry states these two now (shape audit 10-16): read from it, never restated
+  // the registry states these two: read from it, never restated
   'Pivot.pos': COMPONENTS.pivot.absentMeans.pos,
   'Collider.shape': COMPONENTS.collider.absentMeans.shape,
   'Pendulum.pivot': 'a whole thing swings about its Pivot component, else its origin [0, 0, 0] (before 10-16: [0, 2, 0], written as its pivot by a stored world\'s maintenance command); a part about its own origin',
@@ -94,16 +93,16 @@ const MOTION = {
 const MOTION_EDITOR = { axis: { wire: AXIS, ui: { t: 'enum', def: false, own: true } }, degPerSec: { param: 'rate', wire: RATE, ui: { ...RATE_UI, clears: ['rpm', 'period'] } } };
 const CARDS = {
   Transform: { key: 'transform', hand: true, show: ['pos', 'q', 'scale'], editor: { scale: { wire: UNIFORM } } },
-  Pivot: { key: 'pivot', extra: ['x', 'y', 'z'] },   // pivot.pos is a registered field (shape audit 10-16)
+  Pivot: { key: 'pivot', extra: ['x', 'y', 'z'] },   // pivot.pos is a registered field
   Collider: { key: 'collider', editor: { shape: { ui: { t: 'enum', def: false } } } },
-  // a mesh thing (primitives, R 10-12): its shape from the table; its size's three channels are the card's own rows (extra),
+  // a mesh thing: its shape from the table; its size's three channels are the card's own rows (extra),
   // one vec3 on the wire, as a pivot's are
   Mesh: { key: 'mesh', show: ['shape'], extra: ['size.x', 'size.y', 'size.z'], editor: { shape: { ui: { t: 'enum' } } } },
   Light: { key: 'light', show: ['color', 'intensity', 'range', 'decay', 'important', 'daytime'], writeDp: null,
     editor: { color: { ui: { t: 'color' } }, intensity: { ui: { t: 'num', step: 1, dp: 0, softMax: 64 } }, range: { ui: { t: 'num', step: 1, dp: 0, softMin: 1, softMax: 40 } },
       decay: { ui: { t: 'num', step: 0.1, dp: 2 } },
       important: { ui: { t: 'check', sparse: true } }, daytime: { k: 'daytime', param: 'burnsAtNoon', wire: NOON, ui: { t: 'check', sparse: true } } } },
-  // a motion's part is its KEY (motion:<part>), never a field of the value (shape audit 10-16): the card's own row
+  // a motion's part is its KEY (motion:<part>), never a field of the value: the card's own row
   ...Object.fromEntries(Object.entries(MOTION).map(([card, m]) => [card, { key: 'motion', type: m.type, show: m.show, extra: ['part'], writeDp: 4, editor: { ...MOTION_EDITOR, ...m.editor } }])),
   // the hand-written (hand: true): Transform, Grabbable and Material (a draft, unregistered: no descriptor) keep
   // read/write hooks in editschema.js (HAND); Grabbable's registry fields still draw and write through the table
@@ -134,9 +133,9 @@ const CARDS = {
     editor: { text: { ui: { t: 'text' } }, size: { ui: { t: 'num', step: 0.01, dp: 2 } }, width: { ui: { t: 'num', step: 0.1, dp: 2 } },
       align: { ui: { t: 'enum' } }, color: { ui: { t: 'color' } }, outline: { ui: { t: 'check' } }, outlineColor: { ui: { t: 'color' } }, background: { ui: { t: 'color', def: false } }, billboard: { ui: { t: 'enum' } }, lit: { ui: { t: 'enum' } } } },
   LookAt: { key: 'look-at', show: ['target', 'mode', 'forward', 'up', 'yaw', 'pitch', 'speed', 'range'], writeDp: 3, extra: ['target@'],
-    editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } },
-      speed: { ui: { t: 'num', step: 30, dp: 0, deg: true } }, /* stored rad/s (shape audit 10-16), shown in degrees */ range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
-  Lock: { key: 'lock', whole: 'value', show: [] },   // true: the whole value is the row (recut B2: no levels)
+    editor: { target: { ui: { t: 'ref' } }, mode: { ui: { t: 'enum' } }, forward: { ui: { t: 'enum' } }, up: { ui: { t: 'enum' } },
+      speed: { ui: { t: 'num', step: 30, dp: 0, deg: true } }, /* stored rad/s, shown in degrees */ range: { ui: { t: 'num', step: 1, dp: 1, softMin: 0.1 } } } },
+  Lock: { key: 'lock', whole: 'value', show: [] },   // true: the whole value is the row (no levels)
   Hidden: { key: 'hidden', whole: 'value' },
   Label: { key: 'label', whole: 'text' },
   Description: { key: 'description', whole: 'text' },

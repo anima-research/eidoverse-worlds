@@ -1,6 +1,5 @@
-// shared/protocol/authority/math.js — rotation, frames, boxes and surfaces (refactor C11, 2026-10-12; moved from
-// authority.js's "math" section unchanged). A leaf: it reads a thing's geometry through the catalogue and rounds a
-// rotation through storage's qr3, and nothing here reaches the index or the gate.
+// shared/protocol/authority/math.js — rotation, frames, boxes and surfaces. A leaf: it reads a thing's geometry through
+// the catalogue and rounds a rotation through storage's qr3, and nothing here reaches the index or the gate.
 import { COMPONENTS } from "../componentspec.js";
 import { r3 } from "../round.js";
 import { boxOfM, geomE } from "./catalogue.js";
@@ -52,7 +51,7 @@ function solids(st, id) {
     for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) { const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]); cs.push(p.map((v, i) => v + t.pos[i])); }
     return { min: [0, 1, 2].map((i) => Math.min(...cs.map((c) => c[i]))), max: [0, 1, 2].map((i) => Math.max(...cs.map((c) => c[i]))) }; });
 }
-// Oriented boxes + the separating-axis test (F21): world-AABBs of rotated solids fatten into false overlaps.
+// Oriented boxes + the separating-axis test: world-AABBs of rotated solids fatten into false overlaps.
 function obbs(st, id) {
   const e = st.entities[id]; const m = geomE(e); if (!m) return [];
   const t = worldT(st, id); const boxes = m.solids ?? [boxOfM(m)];
@@ -92,7 +91,7 @@ const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.paren
 // A surface is where something can stand. The model's measured surfaces are in its own frame with its own up, so they
 // hold while the thing stands (its up within UPRIGHT of the world's); a thing a tumbling engine laid on its side or upside
 // down has instead the face of each oriented box that now faces up (none, balanced on an edge). Heights and footprints
-// come from the full rotation (yaw-only reading put a tumbled crate's top half its height off).
+// come from the full rotation, never yaw alone.
 const UPRIGHT = Math.cos(10 * Math.PI / 180);
 function surfacesOf(st, id) {
   const e = st.entities[id]; const m = geomE(e); const b = aabb(st, id); if (!m || !b) return [];
@@ -101,7 +100,7 @@ function surfacesOf(st, id) {
   // A surface off the world's axes also carries its own rectangle on the ground, rect {c, u, hx, hz} (centre, its x axis, half
   // extents after the inset): min/max stay the axis-aligned box of its corners, the broad phase (near(), the index), and what
   // supports a point or a footprint is read against the rectangle (inRect, rectMeets). A tilted surface (not yaw-only) is
-  // projected onto the ground the same way, an approximation, with y its highest corner's as before.
+  // projected onto the ground the same way, an approximation, with y its highest corner's.
   const rectOf = (cs, k) => { const ex = [cs[2][0] - cs[0][0], cs[2][2] - cs[0][2]], ez = [cs[1][0] - cs[0][0], cs[1][2] - cs[0][2]];
     const lx = Math.hypot(...ex); if (!(lx > 1e-9)) return null; const u = [ex[0] / lx, ex[1] / lx];
     if (Math.abs(u[0]) < 1e-9 || Math.abs(u[1]) < 1e-9) return null;   // on the world's axes: the box is the rectangle
@@ -118,14 +117,14 @@ function surfacesOf(st, id) {
       if (buried([top[0] + n[0] * 0.002, top[1] + n[1] * 0.002, top[2] + n[2] * 0.002], bi)) continue;
       const [a, c] = [0, 1, 2].filter((k) => k !== j);
       const cs = [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([sa, sc]) => [0, 2].map((i) => top[i] + o.ax[a][i] * o.h[a] * sa + o.ax[c][i] * o.h[c] * sc));
-      // its own rectangle when it's off the world's axes, as a standing thing's top has (house 6340433633)
+      // its own rectangle when it's off the world's axes, as a standing thing's top has
       const rect = rectOf(cs.map(([x, z]) => [x, 0, z]), 0);
       out.push({ id, level: 0, y: top[1], ar: 4 * o.h[a] * o.h[c], min: [Math.min(...cs.map((p) => p[0])), Math.min(...cs.map((p) => p[1]))], max: [Math.max(...cs.map((p) => p[0])), Math.max(...cs.map((p) => p[1]))], ...(rect ? { rect } : {}) });
     }
     // levels go bottom to top, as standing ones do (place's default, the last level, is the top)
     // Faces within 1e-6 of each other are one height (float noise): each group takes its highest y, so the levels stay
     // bottom to top however they're rounded, and orders by the face's own area (not its footprint, which grows with
-    // yaw), larger last: a shelf face-down offers its back, not its 3 cm side strips (reviews r7, r8)
+    // yaw), larger last: a shelf face-down offers its back, not its 3 cm side strips
     out.sort((p, q) => p.y - q.y);
     for (let i = 0; i < out.length;) { let k = i + 1; while (k < out.length && out[k].y - out[i].y <= 1e-6) k++;
       const y = out[k - 1].y; const g = out.slice(i, k).map((x) => ({ ...x, y })).sort((p, q) => p.ar - q.ar); out.splice(i, k - i, ...g); i = k; }

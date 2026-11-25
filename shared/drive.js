@@ -1,31 +1,30 @@
-// shared/drive.js — a hull driven from its helm (componentspec drive; DESIGN.md env-components "Drive"): the spec read with
-// its defaults, the helm found, the kinematic step (port of upstream main's client/lib/vehicles.js updateVehicle), and the
-// plausibility the authority holds a streamed pose to. Pure; the browser, the agent and the authority ask the same questions.
+// shared/drive.js — a hull driven from its helm (componentspec drive): the spec read with its defaults, the helm found,
+// the kinematic step (a port of upstream's arcade vehicle step), and the plausibility the authority holds a streamed pose to. Pure; the browser, the agent and the authority ask the same questions.
 import { qFromYaw, qHeading, qMul, qConj, qNorm, qRotate } from "./rot.js";
+import { isObj } from "./protocol/is.js";
 
 const fin = (x, d) => (typeof x === "number" && Number.isFinite(x) ? x : d);
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const v3 = (a) => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite);
-const bag = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 
-/** The slack the authority gives a streamed step: a fraction over the spec's rates, plus a fixed allowance (m, rad) that is a
- *  budget (per message it compounded: 60 msg/s turned 4 m/s into ~19; review L26), refilled only by what a step leaves of its
- *  rates unused. */
+/** The slack the authority gives a streamed step: a fraction over the spec's rates, plus a fixed allowance (m, rad) that is
+ *  a BUDGET refilled only by what a step leaves of its rates unused (granted per message it compounds: 60 msg/s would turn
+ *  4 m/s into ~19). */
 export const SLACK = Object.freeze({ rate: 0.25, metres: 0.25, radians: 0.05, maxDt: 1 });
 /** A lease with no accepted step for this long has lost its driver (ms); a held lease commits at least this often (ms). */
 export const LEASE = Object.freeze({ heartbeatMs: 3000, commitMs: 5000 });
 
 /** A thing's `drive`, with its defaults: {maxSpeed, turnRate, climbRate, response, throttle}, or null. */
 export function driveOf(c) {
-  const d = c?.drive; if (!bag(d)) return null;
+  const d = c?.drive; if (!isObj(d)) return null;
   return { maxSpeed: clamp(fin(d.maxSpeed, 4), 0.1, 50), turnRate: clamp(fin(d.turnRate, 0.45), 0.1, 4), climbRate: clamp(fin(d.climbRate, 0), 0, 50),
     response: clamp(fin(d.response, 1 / 1.5), 0.05, 10), throttle: d.throttle === true };
 }
 
 /** Is this component bag a helm (a socket's station that drives its host)? */
-export const isHelmC = (c) => bag(c?.socket) && bag(c?.station) && c.station.action === "drive" && c.station.input?.move === "drive";
+export const isHelmC = (c) => isObj(c?.socket) && isObj(c?.station) && c.station.action === "drive" && c.station.input?.move === "drive";
 
-/** The helm of `host`: the id of its socket child whose station drives it, or null (one per host: the door's rule). */
+/** The helm of `host`: the id of its socket child whose station drives it, or null (one per host: shared/protocol/authority/sockets.js enforces it). */
 export function helmOf(st, host) {
   for (const id of Object.keys(st?.entities ?? {}).sort()) { const c = st.entities[id].c; if (c.parent?.to === host && isHelmC(c) && c.disabled !== true) return id; }
   return null;

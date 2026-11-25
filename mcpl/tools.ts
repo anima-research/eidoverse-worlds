@@ -1,13 +1,7 @@
-// mcpl/tools.ts — the agent tool surface, ONE table and ONE dispatcher
-// (survey §B3/§C, ruled §24r: "unify stdio door", the stdio MCP server).
+// mcpl/tools.ts — the agent tool surface, ONE table and ONE dispatcher.
 //
-// Two MCP servers front the same embodied agent: the MCPL server (net-server.ts,
-// sessions + channels + capabilities) and the plain-MCP stdio server
-// (server.ts). The stdio server used to carry a hand-copied 16-tool subset of
-// this table — drifted descriptions, a stale searchLibrary with the
-// hardcoded-Mac-path bug R0 fixed on only one side, and a "shared schema"
-// comment that had stopped being true. Now both servers register from TOOLS
-// and dispatch through handleTool; what differs between hosts rides ToolCtx:
+// Both MCP servers (net-server.ts, MCPL; server.ts, plain-MCP stdio) register from TOOLS and dispatch through
+// handleTool; what differs between hosts rides ToolCtx:
 //
 //   - rememberAvatar / rememberActivity — per-identity persistence (the WS
 //     server writes state.json; the stdio server, one agent per process, may
@@ -18,18 +12,27 @@
 //   - travel — session machinery (channel epochs, join gates); a door
 //     without the hook does not list the tool.
 //
-// Everything else in here talks only to the WorldAgent and the sequencer's
-// HTTP surface, which is exactly what makes it transport-agnostic.
+// Everything else talks only to the WorldAgent and the sequencer's HTTP surface: transport-agnostic.
 
 import { bodyOf } from "../shared/components.js";
 import { describeBody, socketRole } from "../shared/sockbody.js";
 import { dec as decName, enc as encId } from "../shared/protocol/names.js";
 import { actorName } from "../shared/protocol/names.js";
 import { refusalText, warningText, touchWords } from "../shared/protocol/refusal.js";
+import { shapeable } from "../shared/terrainshape.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose, puppetPose } from "../shared/humanoid.js";
 import { rigBonesFor } from "./rigbones.ts";
+/** How long the door waits on one world-server read before the tool answers as failed (a hung server never holds a turn). */
+export const HTTP_READ_MS = 10_000;
+const READ = () => ({ signal: AbortSignal.timeout(HTTP_READ_MS) });
+/** A read's JSON, only when the server answered ok: a 503's body (even `[]`) is no answer about what was asked. */
+const okJson = async (r: Response) => { if (!r.ok) throw new Error(`the world server answered ${r.status}`); return r.json(); };
+/** A failed world-server read in words: AbortSignal.timeout's own message is a bare "The operation timed out." */
+const readWhy = (e: unknown, what: string) => (e as Error)?.name === "TimeoutError"
+  ? `the world's server didn't send ${what} within ${HTTP_READ_MS / 1000} s; calling again may work`
+  : `couldn't read ${what} from the world's server (${(e as Error)?.message || "no reason given"}); calling again may work`;
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { inspectSchema, editOps, describeSchema } from "../shared/editschema.js";
 import * as OP from "../shared/requests.js";
@@ -44,19 +47,17 @@ const foldWorld = (ag: any): Record<string, any> => {
   return out;
 };
 import { type ActResult, type WorldAgent, WALK_ARGS_REASON } from "./agent.ts";
-import type { Destination } from "./places.ts";
+import type { Destination } from "../shared/places.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
 import { shown } from "../shared/shown.js";
 import { partHint } from "./effective.ts";
-/** A world's read door refusing this body (house 6340433633: 401 and 403 both said it "didn't take this body's read key"):
- *  401, it didn't take the key (none, or not one it knows: the host's operator issues it); 403, it read the key and doesn't
- *  let this body in (the world's owners decide that). Either way calling again won't change it. */
+/** A world's read door refusing this body: 401, it didn't take the key (the host's operator issues it); 403, it read
+ *  the key and doesn't let this body in (the world's owners decide). Either way calling again won't change it. */
 const keyRefused = (status: number) => status === 403
   ? "this world shows its state only to the people it lets in; it read this body's key and doesn't let this body in (403). Calling again won't change that: the world's owners decide who comes in"
   : "this world shows its state only to the people it lets in, and it didn't take this body's read key (401). Calling again won't change that: the host's operator issues this body's key, and the world's owners decide who comes in";
 
-/** The slice of WorldAgent the tools touch — typed loosely on purpose: the
- *  agent's surface is the contract, not this file's re-declaration of it. */
+/** The agent the tools drive: WorldAgent's own surface is the contract, not a re-declaration of it here. */
 type ToolAgent = WorldAgent;
 
 export type ToolCtx = {
@@ -74,57 +75,56 @@ export type ToolCtx = {
   rememberActivity?: (cfg: { pulseSec?: number; radiusM?: number }) => void;
   /** session-machinery travel; absent = the authority does not offer it */
   travel?: (world: string) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
-  /** the authority's RFC-005 join policy for THIS credential, so `worlds` can say
-   *  which of the listed worlds the agent may actually travel to — the same
-   *  gate travel itself applies, asked before the move instead of after.
-   *  Absent = the authority has no policy vocabulary (stdio fronts one world). */
+  /** the authority's RFC-005 join policy for THIS credential (travel's own gate), so `worlds` can say where the
+   *  agent may go. Absent = no policy vocabulary (stdio fronts one world). */
   worldPolicy?: { canJoin: (world: string) => boolean; canFound: boolean };
 };
 
-// ---- tools (shared schema with the stdio server, minus retina by default) --
+/** The longest message a tool call may be, at either door. The websocket door (net-server.ts) takes a message of at most
+ *  16 MiB: Bun's own cap, since the `ws` it gives a server has no maxPayload. The stdio door (server.ts) is given the same
+ *  (the sdk's own default is 10 MiB a line). Past it either door closes the connection, so the call is never answered. */
+export const TOOL_MESSAGE_BYTES = 16 * 1024 * 1024;
+/** The largest file upload {data} carries: its base64 rides one tool call. 64 KiB of the message is kept for everything
+ *  but the data, as the screenshot path keeps it (server/screenshots.ts MAX_PNG). The world server's own caps
+ *  (UPLOAD_CAP_MB, IMAGE_CAP_MB) are its to say: its refusal is relayed. */
+export const UPLOAD_DATA_BYTES = Math.floor((TOOL_MESSAGE_BYTES - 64 * 1024) / 4) * 3;
+const UPLOAD_DATA_MB = Math.floor(UPLOAD_DATA_BYTES / 1e6);
 
-// THE SURFACE (REPOINT-PLAN 2026-10-14 §4; R's standard, 09:47): an engine tool must pass BOTH tests — its name is
-// intuitive to everyone who might use the action, AND the action is useful in general situations — or it is an alias,
-// not an engine tool. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose
-// modes carry what used to be bespoke verbs: the flight nine are move {mode: "fly"} + act land (and body_state says
-// where the sky left you); fold/unfold wings and clear_pose are anim's (R 10-17 15:31: pose, animate, posture and the action bar's old tool are anim too);
-// clear_reach is reach {release}; ragdoll is anim {ragdoll} (and the push on someone else is act shove); kick/ban/unban/list_bans are act's; three library tools are one; light is create
-// {components: {light}}, remove is act delete, blueprint_place is create {from}. The old names still answer, teaching
-// where they went (TOOL_FOLDS). High-volume social/perception sugar (look, say, face, stop…) stays on the
-// MUD argument. The flight REHEARSAL hooks (trusted DOWN/RECOVER seams) are no longer tools at all: a bench calls
-// the agent's flightBodyDown / flightBodyRecovered directly (tools/flight-test.ts).
+// ---- tools (one schema for both servers) --
+
+// THE SURFACE: a tool's name must be intuitive to anyone who'd use the action AND the action generally useful, else it
+// is an alias. So the table holds GENERAL SHAPES (act, create, edit, inspect, move, anim, reach, library…) whose modes
+// carry the old bespoke verbs (flight is move {mode: "fly"} + act land; poses and wings are anim; kick/ban are act);
+// the old names in TOOL_FOLDS answer by teaching where they went (pose and animate aren't among them). High-volume sugar (look, say, face, stop…) stays.
+// Flight rehearsal hooks are not tools: a bench calls flightBodyDown / flightBodyRecovered (test/mcpl/flight-exit-test.ts,
+// door-is-error-test.ts).
 
 const TOOL_ROWS = [
   { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports body-mode, the clip playing, the named poses held (wings-folded), position, held poses/reaches and freshness; for yourself it also carries flight: where the sky has left you (altitude, heading, airspeed, stamina, how far your best glide reaches, which layer is flying) — or that you are falling, or on the ground. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry evaluates the shared VRMA posture clips, published bone rotations and dependent limb reaches. Missing clips or unresolved/cyclic reach dependencies return incomplete geometry. Contacts are bone-bound anatomical estimates; full renderer blending, gestures and springbones are not reproduced. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked. When the world offers a guide, a line names it and its content version when you joined, to compare with the copy you last read.", inputSchema: { type: "object", properties: {} } },
   { name: "screenshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed. at: a placed thing's id frames THAT thing instead — seen from where you stand, fitted to its bounds (to check what you built without walking to it). Optional framing (#226): pitch (first only) tilts your gaze in degrees, + up / − down (default ≈ −4; try −60 to see what's at your feet); dist and height (third/selfie) set the camera's flat distance from you and its height above your feet in metres (defaults third 3.4/2.1, selfie 2.6/1.6). renderer: 'auto' (default) prefers a native Unreal renderer serving this world, else a browser one; 'browser' or 'unreal' asks for that one only. A world that admits only people listed answers its own people only.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, at: { type: "string", description: "id of a placed thing to frame (overrides view)" }, renderer: { type: "string", enum: ["auto", "browser", "unreal"] }, pitch: { type: "number", minimum: -85, maximum: 85, description: "view first: your gaze's tilt in degrees, + up / − down" }, dist: { type: "number", minimum: 0.5, maximum: 30 }, height: { type: "number", minimum: 0, maximum: 30 } } } },
-  { name: "move", description: "Move your body somewhere. to is a point ([x, y, z]: y picks the floor there — the place to stand nearest that height, no more than a step (the mover's, 0.8 m) above it, so 0 is a ground floor and an upper storey's floor height is that storey; a y no floor matches arrives on the nearest floor and the reply says which; [x, z]: your own storey if the destination has one, else its lowest floor) or a NAME, tried in this order: \"thing/place\" (e.g. \"lookout/balcony\"; \"@world/<place>\" for a place on no thing), a placed thing's id alone (its entrance or door, when it names one; else you walk up to it and stop beside it), a place's name or label alone (\"reading room\": the nearest one), a thing's label (the same as its id), then a person here (you stop just short of them, on your side) — so a person named like a thing or a place never captures the walk. Places are a model's own (its file's rooms, doors, seats, arrivals) and its places component (name_place writes it); look lists the nearest, and to: \"?\" lists them all, nearest 200 (no move; \"?<text>\" lists only those whose name or label holds the text). mode: \"walk\" (default; run: true runs): the authority's move {to} — your body is the authority's body: it walks there in steps the authority accepts (about 6 m/s, not through what it calls solid), so a wall stops you where it stands and the reply is an error saying why; placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and the walk routes through them (round furniture, through doorways, up and down stairs, onto other storeys); griddled structures route through their doors and arches; a destination with nowhere to stand, or no way there (sealed, oversized, conflicting), is refused before a step, with the reason, and a walk something unexpected stops ends early and says where; after a flight, a seat or a drag it re-arrives you where you are (a teleport, on the record). Things you hold come with you. Default arrival tolerance is 0.01m, so short positioning moves are honored; tolerance (0–0.4 metres) changes how close to the requested point counts as arrived (destination accuracy, not distance from another body). mode: \"fly\" (behind the world's fly grant and a winged rig): with nothing else, you take off (refused with folded wings — anim {stop: \"wings-folded\"} opens them — or a limp body; the launch costs stamina); altitude climbs to that many metres (THE expensive verb: 1 stamina per metre, refilled only on the ground at 0.5/s; an empty pool stops you where it ran out and the world hears 'winded'); to glides there, free, trading altitude for distance on the published polar — short of range you land SHORT, honestly, where the polar runs out, and the reply says by how much. Landing is act {verb: \"land\", args: {to}}; body_state reports altitude, heading, airspeed and stamina. READ THE REPLY: it is your only feedback on where you are.", inputSchema: { type: "object", properties: { to: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "string", description: "a named place (\"thing/place\", a place's name or label), a thing's id or label, a person's name, or \"?\" for the list of named places (\"?<text>\" narrows it)" }] }, mode: { type: "string", enum: ["walk", "fly"] }, altitude: { type: "number", description: "fly: climb to this many metres" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
+  { name: "move", description: "Move your body somewhere. to is a point ([x, y, z]: y picks the floor there — the place to stand nearest that height, no more than a step (the mover's, 0.8 m) above it, so 0 is a ground floor and an upper storey's floor height is that storey; a y no floor matches arrives on the nearest floor and the reply says which; [x, z]: your own storey if the destination has one, else its lowest floor) or a NAME, tried in this order: \"thing/place\" (e.g. \"lookout/balcony\"; \"@world/<place>\" for a place on no thing), a placed thing's id alone (its entrance or door, when it names one; else you walk up to it and stop beside it), a place's name or label alone (\"reading room\": the nearest one), a thing's label (the same as its id), then a participant here (you stop just short of them, on your side) — so a person named like a thing or a place never captures the walk. Places are a model's own (its file's rooms, doors, seats, arrivals) and its places component (name_place writes it); look lists the nearest, and to: \"?\" lists them all, nearest 200 (no move; \"?<text>\" lists only those whose name or label holds the text). mode: \"walk\" (default; run: true runs): the authority's move {to} — your body is the authority's body: it walks there in steps the authority accepts (about 6 m/s, not through what it calls solid), so a wall stops you where it stands and the reply is an error saying why; placed models are solid, as they are to people: you stand on their floors, climb their stairs and are stopped by their walls and furniture — and the walk routes through them (round furniture, through doorways, up and down stairs, onto other storeys); griddled structures route through their doors and arches; a destination with nowhere to stand, or no way there (sealed, oversized, conflicting), is refused before a step, with the reason, and a walk something unexpected stops ends early and says where; after a flight, a seat or a drag it re-arrives you where you are (a teleport, on the record). Things you hold come with you. Default arrival tolerance is 0.01m, so short positioning moves are honored; tolerance (0–0.4 metres) changes how close to the requested point counts as arrived (destination accuracy, not distance from another body). mode: \"fly\" (behind the world's fly grant and a winged rig): with nothing else, you take off (refused with folded wings — anim {stop: \"wings-folded\"} opens them — or a limp body; the launch costs stamina); altitude climbs to that many metres (THE expensive verb: 1 stamina per metre, refilled only on the ground at 0.5/s; an empty pool stops you where it ran out, and the reply says winded); to glides there, free, trading altitude for distance on the published polar — short of range you land SHORT, honestly, where the polar runs out, and the reply says by how much. Landing is act {verb: \"land\", args: {to}}; body_state reports altitude, heading, airspeed and stamina. READ THE REPLY: it is your only feedback on where you are.", inputSchema: { type: "object", properties: { to: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "string", description: "a named place (\"thing/place\", a place's name or label), a thing's id or label, a person's name, or \"?\" for the list of named places (\"?<text>\" narrows it)" }] }, mode: { type: "string", enum: ["walk", "fly"] }, altitude: { type: "number", description: "fly: climb to this many metres" }, run: { type: "boolean" }, tolerance: { type: "number", minimum: 0, maximum: 0.4 } } } },
   { name: "name_place", description: "Give a spot a name, so you and everyone else can move {to} it by name. Names where you stand (or x/z, with y optional: the floor there nearest your height), on the thing you are in or the nearest placed thing (or `on`), in that thing's own frame — it moves with it. Written to the thing's `places` component as an ordinary set through the authority (builder rights, undo; answers once the world accepts or refuses it): a name can be added, re-pointed or retired any time, and covers places the model itself declares. remove: true retires a name.", inputSchema: { type: "object", properties: { name: { type: "string" }, label: { type: "string", description: "how it reads, e.g. \"the window seat\"" }, on: { type: "string", description: "the thing's id; default: the thing you are in, else the nearest within 15m" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, remove: { type: "boolean" } }, required: ["name"] } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the server refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, to: { type: "string", description: "a participant id or name: the say is addressed to them (the client sends this too; it is logged)" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
   { name: "catch_up", description: "What was said here while you were not thinking. Speech is arrival-only: it returns chat said since you arrived (a `since` earlier than your arrival gives nothing older; only the owner and readChat holders read further back); omit `since` to continue from where you last caught up. Use when a conversation refers to something said while you were here that you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
-  { name: "anim", description: "Play an anim on your body — a pose (one frame, only the bones it names) or a clip (more than one key): you never need to know which. By NAME: anim {name, mode?} — the built-in names are the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and the pose wings-folded (the folded-wing silhouette, which grounds you; it holds); a name your body doesn't know plays its default, never an error. LIVE, for ad-lib: anim {joints} sets bones now (a sparse map of bone name to [x,y,z,w] or {q, t, s}: humanoid bones by VRM name, any other bone your rig has by its own; replace:true makes it the whole pose; hold:true keeps it through walking; call anim with joints: {} to list your rig's bones), or anim {tracks, dur} plays keys (bone → [{t, q}], dur seconds; replace:true ends your held pose first). mode (default: the anim's own): once (plays, then you're back to normal) | loop (until something else happens) | hold (freezes on a frame — at seconds in, default its last — and holds until something else happens). The reply says {playing: name or \"live\", mode}. Anims are layers: a clip (a named loop or hold), a live pose (joints), the folded wings and a tracks loop each play at once, and a new one replaces only the one in its own layer (a pose struck over a sit leaves the sit playing). A loop or a hold ends when another in its layer starts, you move (a held joints pose is the exception), anim {stop} or you're knocked over — and you're told: stopped {name, why} (a once anim ends silently). anim {stop: true} stops every one of them, each layer, and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie: lie, swim: tread, fly: soar) — never the bind pose; the body-mode is unchanged (to stand up, declare bodyMode stand, or walk; on a seat, detach: a declaration never takes you off it). stop: \"<name>\" stops only that layer, the rest going on (stop: \"wings-folded\" opens your wings; a name that isn't playing is a note, not an error); stop: \"live\" stops only the ad-libbed ones (joints, tracks), which replies call \"live\" — a reserved name no anim may have. ragdoll: true goes limp (walking, or anim {stop: true}, stands you back up). target plays it on SOMEONE ELSE (joints, tracks, stop or ragdoll; their consent decides). Presence only — never written to the world log. bodyMode declares your body-mode (stand | sit | lie | swim | fly | fall), for looks — e.g. fly plays the hover set while you walk; the mover sets it itself on real transitions (water, a take-off, a fall, a landing), and a declaration holds until the next one; it grants nothing (a take-off still needs the fly permission). (its old tool names say so and run nothing.)", inputSchema: { type: "object", properties: { name: { type: "string", description: "an anim by name (a pose or a clip)" }, bodyMode: { type: "string", enum: ["stand", "sit", "lie", "swim", "fly", "fall"], description: "declare your body-mode, for looks (it grants nothing)" }, mode: { type: "string", enum: ["once", "loop", "hold"], description: "default: the anim's own" }, at: { type: "number", description: "mode hold: seconds into the anim to freeze at (default its last frame)" }, joints: { type: "object", description: "live: bone → [x,y,z,w] or {q, t, s}" }, tracks: { type: "object", description: "live: bone → [{t, q}]" }, dur: { type: "number", description: "with tracks: seconds" }, replace: { type: "boolean" }, hold: { type: "boolean", description: "with joints: keep them through walking" }, target: { type: "string" }, stop: { description: "true: stop every anim, each layer, and rest in your body-mode's own anim (never the bind pose; the body-mode is unchanged); a name: stop only that layer; \"live\": only the ad-libbed ones" }, ragdoll: { type: "boolean" } } } },
+  { name: "anim", description: "Play an anim on your body — a pose (one frame, only the bones it names) or a clip (more than one key): you never need to know which. By NAME: anim {name, mode?} — the built-in names are the action bar's (wave, cheer, clap, point, salute, flail, talk play once; dance, sit, sitchair, lie, stand loop) and the pose wings-folded (the folded-wing silhouette, which grounds you; it holds); a name your body doesn't know plays its default, never an error. LIVE, for ad-lib: anim {joints} sets bones now (a sparse map of bone name to [x,y,z,w] or {q, t, s}: humanoid bones by VRM name, any other bone your rig has by its own; replace:true makes it the whole pose; hold:true keeps it through walking; call anim with joints: {} to list your rig's bones), or anim {tracks, dur} plays keys (bone → [{t, q}], dur seconds; replace:true ends your held pose first). mode (default: the anim's own): once (plays, then you're back to normal) | loop (until something else happens) | hold (freezes on a frame — at seconds in, default its last — and holds until something else happens). The reply says {playing: name or \"live\", mode}. Anims are layers: a clip (a named loop or hold), a live pose (joints), the folded wings and a tracks loop each play at once, and a new one replaces only the one in its own layer (a pose struck over a sit leaves the sit playing). A loop or a hold ends when another in its layer starts, you move (joints held with hold: true are the exception), anim {stop} or you're knocked over — and you're told: stopped {name, why} (a once anim ends silently). anim {stop: true} stops every one of them, each layer, and rests in your body-mode's own anim (stand: idle, sit: the sit loop, lie: lie, swim: tread, fly: soar) — never the bind pose; the body-mode is unchanged (to stand up, declare bodyMode stand, or walk; on a seat, detach: a declaration never takes you off it). stop: \"<name>\" stops only that layer, the rest going on (stop: \"wings-folded\" opens your wings; a name that isn't playing is a note, not an error); stop: \"live\" stops only the ad-libbed ones (joints, tracks), which replies call \"live\" — a reserved name no anim may have. ragdoll: true goes limp (walking, or anim {stop: true}, stands you back up). target plays it on SOMEONE ELSE (joints, tracks, stop or ragdoll; their consent decides). Presence only — never written to the world log. bodyMode declares your body-mode (stand | sit | lie | swim | fly | fall), for looks — e.g. fly plays the hover set while you walk; the mover sets it itself on real transitions (water, a take-off, a fall, a landing), and a declaration holds until the next one; it grants nothing (a take-off still needs the fly permission). (its old tool names, pose, animate and posture, are unknown tools now: nothing runs.)", inputSchema: { type: "object", properties: { name: { type: "string", description: "an anim by name (a pose or a clip)" }, bodyMode: { type: "string", enum: ["stand", "sit", "lie", "swim", "fly", "fall"], description: "declare your body-mode, for looks (it grants nothing)" }, mode: { type: "string", enum: ["once", "loop", "hold"], description: "default: the anim's own" }, at: { type: "number", description: "mode hold: seconds into the anim to freeze at (default its last frame)" }, joints: { type: "object", description: "live: bone → [x,y,z,w] or {q, t, s}" }, tracks: { type: "object", description: "live: bone → [{t, q}]" }, dur: { type: "number", description: "with tracks: seconds" }, replace: { type: "boolean" }, hold: { type: "boolean", description: "with joints: keep them through walking" }, target: { type: "string" }, stop: { description: "true: stop every anim, each layer, and rest in your body-mode's own anim (never the bind pose; the body-mode is unchanged); a name: stop only that layer; \"live\": only the ad-libbed ones" }, ragdoll: { type: "boolean" } } } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until you release it, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). A hand on SOMEONE ELSE is shown only if their consent allows it (class touch; intimate for chest_front, waist and hips — both behind their touch gate, which is off unless they turned it on or allow you by name): otherwise the world strips it from your pose, nobody sees it, and the reply says it was refused (never why: that is theirs). Nothing asks: if they want you to, they open it. (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses. If YOU (the reacher) are knocked over, your outgoing reaches are cleared. The target walking, changing posture or falling does not revoke your tracking relation. The target ends someone's reach toward them by closing their consent to it (act {verb: "consent", args: {block: <who>}} for that person, or {touch: false} for everyone not allowed by name): the reach ends then, and its reacher hears body-revoked. Presence-only, never logged. release: true lets go — one limb, or all of YOUR reaching limbs when no limb is named — easing back to normal animation; anyone you were touching sees the hand withdraw (it clears your outgoing reaches, never someone's reach toward you).`, inputSchema: { type: "object", properties: { release: { type: "boolean", description: "let go (of `limb`, or every limb)" }, limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
   { name: "attach", description: "Get on a thing at one of its sockets (look says what each does: sit, ride, drive, stand at…): your body occupies it — swings with the swing, holds the station's anim — until you detach (or walk; a socket may only let you go a certain way, which look and the reply say). to is the thing; pick the socket by `socket` or by `action`. The seat must be within reach (3.5 m across the ground, 1.6 m up, 1 m down: walk up first; farther is refused out-of-reach), free (one occupant each) and yours to take (its station.who); detach first to change seats. Presence only: nothing is logged, exactly like a person's /sit.", inputSchema: { type: "object", properties: { to: { type: "string" }, socket: { type: "string" }, action: { type: "string" } }, required: ["to"] } },
   { name: "detach", description: "Get off the thing you're attached to (the reverse of attach). A socket may hold you until the world lets you go (its leaveBy); the reply says so. escape: true gets you off any seat whatever it says (the one exit no seat can take away, like a person holding X).", inputSchema: { type: "object", properties: { escape: { type: "boolean" } } } },
   { name: "set_avatar", description: "Change your body. Pass `avatar` as a roster name (see it with no arguments) or a full vrm path. Takes effect immediately — everyone sees you change; your position and held pose carry over. library {kind: \"avatars\"} shows the roster as a contact sheet.", inputSchema: { type: "object", properties: { avatar: { type: "string" } } } },
   { name: "library", description: "The catalog: models to place and bodies to wear. query searches the model library by keywords and returns library paths for create {model}. kind ('models' | 'avatars') with page is a contact sheet — one grid image with names under each tile, 12 per page: the placeable object library, or the wearable roster (portraits exist once a body has been worn; set_avatar puts one on). preview is one item at full size: an avatar's portrait (roster name) or a model's preview render (library filename or path). Pass one of the three.", inputSchema: { type: "object", properties: { query: { type: "string", description: "search the model library" }, kind: { type: "string", enum: ["avatars", "models"], description: "a contact sheet of this catalog" }, page: { type: "number" }, preview: { type: "string", description: "one item at full size: a roster name or a model path" } } } },
-  { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}, yaw in radians: 0 faces +Z, Math.PI/2 = 1.5708 a quarter turn). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity?, range?, important?: true}}} (left out, each takes the registry's default: intensity 25.93, range 10) — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. Leave id out: the authority mints every id (opaque, never renamed; the reply gives its short handle, which every tool takes, as it takes a thing's label or any unique id prefix of 4+ characters). An id you choose is refused; a placeholder '$name' is accepted (refs to it in the same request resolve; act {op: 'batch'} makes several things that refer to each other). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q} (yaw in radians)" }, place: { type: "object" }, dry: { type: "boolean" } } } },
+  { name: "upload", description: `Put something in the world's store and get its address back. A file: upload {data, as?, name?, catalog?}, where data is the file's bytes as base64 (a host that can pass files substitutes one into this argument, so its bytes never pass through your context) and as says what it is: "model" (default; a .glb: the reply's store/<hash>.glb is a library path, so create {model: "store/<hash>.glb"} places it, and the reply carries its build check, as measure {lib, check: true} gives it. A model is a one-off unless you say otherwise: it is stored and placed by its path, and kept out of the catalog; catalog: true lists it there for reuse, where library finds it) | "avatar" (a .vrm body, kept on the roster under name: set_avatar {avatar: name} wears it; a body already there under that name is replaced) | "image" (a PNG, JPEG or WebP: a picture component's src, or a material component's texture) | "audio" (an MP3, Ogg, WAV, WebM or M4A: a sound component's src) | "heightmap" (a grayscale PNG: the terrain component's heightmap.grid). name is the name the store keeps for it. Every kind but an avatar is stored by its content: the same bytes get the same address. A file of up to ${UPLOAD_DATA_MB} MB fits in one call; a larger one goes to the world server's POST /upload. Text: upload {text} stores a script's source and upload {effect} a particle effect document, both as act {verb: "upload"} does, with the authority's own answer (its src goes in a script:<name> component, its effect in a particles component). A refusal from the store comes back in the store's own words.`, inputSchema: { type: "object", properties: { data: { type: "string", description: "the file's bytes as base64" }, as: { type: "string", enum: ["model", "avatar", "image", "audio", "heightmap"], description: "what the file is (default model: a .glb)" }, name: { type: "string", description: "the name the store keeps for the file (an avatar's roster name)" }, catalog: { type: "boolean", description: "a model only: true lists it in the catalog for reuse (default false: a one-off, placed by its path)" }, text: { type: "string", description: "instead of data: a script's JavaScript source" }, effect: { type: "object", description: "instead of data: a particle effect document" } } } },
+  { name: "create", description: "Make a new thing: the authority's create, with its exact args. model is a library path (library {query} finds one); components sets any component values in the same act; place {on|beside|hang|against|near|at, …} puts it somewhere in the same step (the authority solves where; see place); at is a point, [x, z] on the ground or [x, y, z] exactly (or the authority's {pos, yaw|q}, yaw in radians: 0 faces +Z, Math.PI/2 = 1.5708 a quarter turn). With no place, at or transform, it goes on the ground 2 m in front of you. A light is a thing with a light component and no model: create {components: {light: {color: 0xffd9a0, intensity?, range?, important?: true}}} (left out, each takes the registry's default: intensity 25.93, range 10) — with nowhere said it hangs just in front of you at about eye height; color is a hex integer (0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), important: true means it ALWAYS casts (outside the per-client point-light budget; every casting light has real GPU cost — save it for lights that matter); a small glowing sphere marks it; edit {id, set: {\"light.intensity\": 24, \"pos.y\": \"+=1\"}} dims or moves it later and act {verb: \"delete\", args: {id}} removes it. from copies: a blueprint hash (sha256:… — a unique prefix will do; blueprints lists them) places a copy of one of this world's blueprints (2 m in front of you, facing the way you face, or at; the whole tree in one act), and a thing's id duplicates it with everything attached to it, beside it or at a point: create {from: \"crate-1\", at: [4, 2]} ([x, z] keeps its height; or [x, y, z], or {pos: [x, y, z], yaw}). A duplicate stays a sibling of its source, so when the source has a parent the point is in that parent's frame. Leave id out: the authority mints every id (opaque, never renamed; the reply gives its short handle, which every tool takes, as it takes a thing's label or any unique id prefix of 4+ characters). An id you choose is refused; a placeholder '$name' is accepted (refs to it in the same request resolve; act {verb: 'batch', args: {requests: [{verb, args}…]}} makes several things that refer to each other). dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, model: { type: "string" }, components: { type: "object" }, from: { type: "string", description: "a blueprint hash (sha256:…, a unique prefix will do) or a thing's id to duplicate" }, at: { anyOf: [{ type: "array", items: { type: "number" }, minItems: 2, maxItems: 3 }, { type: "object" }], description: "where it goes: [x, z], [x, y, z] or {pos, yaw|q} (yaw in radians)" }, place: { type: "object" }, dry: { type: "boolean" } } } },
   { name: "place", description: "Put a thing somewhere by saying where it goes: the authority's place, with its exact args. One of on (a thing's surface), beside (next to a thing on the same support), hang (below a frame or beam; height), against (back to a wall; height, along, side), near (on the floor near a thing), at ([x, z]); then facing (a thing or [x, z]; away: true turns its back), level (which surface of an `on` target), offset ([dx, dz] on the surface), side, gap, height, along, lying (rest it on its largest face), attach (ride what it's placed on). The authority solves the numbers and says where it went. dry: true asks without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, on: { type: "string" }, beside: { type: "string" }, hang: { type: "string" }, against: { type: "string" }, near: { type: "string" }, at: { type: "array", items: { type: "number" } }, facing: {}, away: { type: "boolean" }, level: { type: "integer" }, offset: { type: "array", items: { type: "number" } }, side: {}, gap: { type: "number" }, height: { type: "number" }, along: { type: "number" }, lying: { type: "boolean" }, attach: { type: "boolean" }, dry: { type: "boolean" } }, required: ["id"] } },
-  { name: "act", description: `One request, by verb — the escape hatch for verbs that have no tool of their own; answered by the world's authority itself: {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, fix}}. A few verbs are answered by YOUR BODY (same reply shape, {ok, text}) before anything reaches the authority: land {to: [x, z]} descends, flares and lands there — landing is an EVENT the world sees, and afterwards your body is walking again (a fly-mode move gets you up); shove {target, strength?} knocks another body over — a physics ragdoll, directed from where YOU stand through them (walk to the right side of someone before pushing; strength 0.5–4 m/s, default 2.2), simulated by THEM on their own body and settled into a held pose everyone sees; whether a body can be knocked over is ITS owner's call (their move gate, or their allow/block list naming you), the same for every body, and the server forwards it ${bodyRangeWords()} — a refusal comes back as an error saying why. MODERATION rides here too, by NAME: kick {who, reason?} removes someone now (who is their name or identity u-…; they may come straight back — a kick interrupts, a ban {days} excludes; needs the kick permission and a rank above theirs; an owner can't be kicked); ban {who, days?, reason?, global?} disconnects them and refuses their joins (including spectating) until unban or for days — someone absent is found among the people this world has seen (whois); global: true bans them from every world on this server (server operators only); give a reason, it is shown to them and kept in the moderator's record; unban {who, global?} lifts a ban; bans {global?} lists what is in force now — bans and mutes (people who hold a moderation power may ask; the whole server's with global: true, operator only). The authority's own verbs: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} (a timed grant: {id: "@world", component: "roles:<id>", value: {role, for: "2h"}}; for is "30m", "2h", "1d" or "1w", up to a year) | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the authority solves where it goes) | turn {id, axis, deg, space?, about?} | batch {ops: [{verb, args}…]} | use {id, action?} | say {text} | caption {id, session, n, t0, t1, text, speaker?, title?} (one line of a screen's captions, if its captioners {ids} name you) | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (send a loose thing beside your body into flight) | force {at: [x, y, z], radius?, power?} (a blast, builders and up, cast from anywhere: each body in radius 0.5–30 m, default 4, is knocked over by its own consent, each loose thing punted outward; power 0.2–12 m/s, default 3, falling off to the rim) | wait (your tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.physics-engine runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | lint {id?} | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {verb?} | consent (your body's consent: bare reads it; move: true|false is your Allow being moved gate — being shoved, dragged, carried, seated; touch: true|false is your Allow being posed and touched gate — being touched or posed; allow|block|unlist: <who> puts one person on your always-yes or never list, or takes them off; a list beats the gates, block beats allow) | body {to, kind: pose|anim|shove|drag|occupy|carry, spec?} (act on another body: their consent decides) | reach {who, point} (touch, if their consent allows) | inbox. A write whose verb takes dry (help {verb} lists each verb's arguments) may add dry: true to preview it; every write may add expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and throughLock: true. undo {act: <your undo>} is redo. create/place/edit are tools of their own, and wait for the authority's answer too; delete {id} removes a thing (with its children). whois {name} finds a person's identity (u-…) here, present or not.`, inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb"] } },
-  // Description narrowed to what the implementation actually does (antra
-  // review, #3). It previously promised "held pose and posture survive", which
-  // joinWorld does NOT transfer — and which contradicts the existing pose
-  // contract ("vanishes when you leave"). Carrying a world-local pose across
-  // worlds is a product decision nobody has made, so the honest move is to
-  // stop promising it rather than to implement it by inference. Identity,
-  // avatar and the activity dial ARE carried, and are named because they are.
+  { name: "act", description: `One request, by verb — the escape hatch for verbs that have no tool of their own; answered by the world's authority itself: {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, fix}}. A few verbs are answered by YOUR BODY (same reply shape, {ok, text}) before anything reaches the authority: land {to: [x, z]} descends, flares and lands there — everyone sees you come down, and afterwards your body is walking again (a fly-mode move gets you up); shove {target, strength?} knocks another body over — a physics ragdoll, directed from where YOU stand through them (walk to the right side of someone before pushing; strength 0.5–4 m/s, default 2.2), simulated by THEM on their own body and settled into a held pose everyone sees; whether a body can be knocked over is ITS owner's call (their move gate, or their allow/block list naming you), the same for every body, and the server forwards it ${bodyRangeWords()} — a refusal comes back as an error saying why. MODERATION rides here too, by NAME: kick {who, reason?} removes someone now (who is their name or identity u-…; they may come straight back — a kick interrupts, a ban {days} excludes; needs the kick permission and a rank above theirs; an owner can't be kicked); ban {who, days?, reason?, global?} disconnects them and refuses their joins (including spectating) until unban or for days — someone absent is found among the people this world has seen (whois); global: true bans them from every world on this server (server operators only); give a reason, it is shown to them and kept in the moderator's record; unban {who, global?} lifts a ban; bans {global?} lists what is in force now — bans and mutes (people who hold a moderation power may ask; the whole server's with global: true, operator only). The authority's own verbs: create {id?, model?, components?, place?} | create {from: <blueprint hash, or a thing's id to duplicate it>, at?} | set {id, component, value, merge?, base?} (a timed grant: {id: "@world", component: "roles:<id>", value: {role, for: "2h"}}; for is "30m", "2h", "1d" or "1w", up to a year) | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the authority solves where it goes) | turn {id, axis, deg, space?, about?} | batch {requests: [{verb, args}…], label?} | use {id, action?} | say {text} | caption {id, session, n, t0, t1, text, speaker?, title?} (one line of a screen's captions, if its captioners {ids} name you) | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move {to} | grab {id, hand?, grip?} (a thing with a grabbable component, or physics {kind: 'dynamic'}; look says who may and how it's held) | put {id, pos?} | throw {id, v, pos?} | drop {id, hand?} (its grabbable may send it home, into a socket that accepts it, or leave it where you let go) | use {id} while holding it fires its grabbable.use (args {phase: 'up'}: the release) | punt {id, power?|v?} (send a loose thing beside your body into flight) | force {at: [x, y, z], radius?, power?} (a blast, builders and up, cast from anywhere: each body in radius 0.5–30 m, default 4, is knocked over by its own consent, each loose thing punted outward; power 0.2–12 m/s, default 3, falling off to the rim) | wait (your tracked body; physics: things with physics {kind: 'dynamic'} fly when @world.physics-engine runs; grabbable makes a thing carryable, physics makes it fall) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | lint {id?} | history {id?, limit?, before?, after?, verbs?} | schema {component?} | help {verb?} | consent (your body's consent: bare reads it; move: true|false is your Allow being moved gate — being shoved, dragged, carried, seated; touch: true|false is your Allow being posed and touched gate — being touched or posed; allow|block|unlist: <who> puts one person on your always-yes or never list, or takes them off; a list beats the gates, block beats allow) | body {to, kind: pose|anim|shove|drag|occupy|carry, spec?} (act on another body: their consent decides) | reach {who, point} (touch, if their consent allows) | inbox. A write whose verb takes dry (help {verb} lists each verb's arguments) may add dry: true to preview it; every write may add expect: [{id, component, value?}] (refused 'changed' if any isn't what you started from) and throughLock: true. undo {act: <your undo>} is redo. create/place/edit are tools of their own, and wait for the authority's answer too; delete {id} removes a thing (with its children). whois {name} finds a person's identity (u-…) here, present or not.`, inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb"] } },
   { name: "worlds", description: "Which worlds this server fronts that you may see, and who is embodied in each — the map for `travel`. Marks the world you are in now, each world's door (open: anyone comes in and builds; public: anyone comes in, newcomers don't build; signed-in: people with an account; watch: anyone may watch, only people listed come in; invite-only: only people listed, and invisible to everyone else), and whether you may enter or only watch: each world's owners decide who comes in (@world.access, and roles:<you>). Joining never founds a world here. Everyone embodied is in one list, by the ids you see in `look`, each with the word they declared for themselves at join, if any (nothing is inferred); spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
+  // travel carries identity, avatar and the activity dial only; a held pose is world-local (joinWorld doesn't move it)
   { name: "travel", description: "Walk to another world this server fronts, keeping your identity, avatar and attention settings — no reconnect. The world you name decides whether you may come in (its owners' access and roles), and a credential limited to certain worlds keeps you to them; you are asked about before anything moves, so a refusal leaves you where you are. Joining never founds a world: a name that doesn't exist is refused. The anims you hold do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
-  { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (candidates for a station, a table, a deck), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket's pos (the body's root goes there; anchor: 'hips' puts the hips joint there instead): a socket is a child entity, made with create {components: {parent: {to: id}, transform: {pos: [cx, y, cz]}, socket: {name: 'seat'}, station: {anim: 'sitchair'}}} (station makes it a place a body occupies: sit, ride, stand…; without one it is an attach point for things). Use this to find where a body can go before declaring the station; verify by attaching to it yourself (attach {to: <the socket's id>}) and taking a selfie screenshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally. check: true asks the build check instead (#241): what the model is like to walk into, measured with the walking body's own rules before or after it is placed — whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. With id it is checked as placed (its scale, its collider); with lib at its own size, or at scale (0.05–20). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { check: { type: "boolean", description: "the build check: walk-in, reachable floors, why not, suggested places" }, scale: { type: "number", description: "with lib and check: as if placed at this scale (0.05–20)" },  id: { type: "string" }, lib: { type: "string" } } } },
-  { name: "inspect", description: "The inspector, for you: every editable field on a placed thing with its current value, units, limits, and the verb that changes it — the same declaration the browser's Inspector panel renders (shared/editschema.js). Fields are addressed group.field: pos.x pos.yaw (heading, degrees) pos.scale · rot.x rot.y rot.z (Rotate in degrees, read from q in the thing's rotation order) rot.qx…rot.qw rot.order · flags.lock flags.hidden flags.label flags.description (how it is described; flags.reads is how it reads: name, description, what it can do, its state) · light.color light.intensity light.range light.important light.daytime (on: daytime full, burns at noon) · motion.type motion.axis motion.amp motion.period … (a part's motion as motion.<part>|amp) · sockets.del (a host's socket children by name; each is a thing of its own: edit its pos, rot, comp.socket and comp.station by its id) · particles.effect particles.playing particles.at|0..2 particles.param|<name> (the effect's own knobs) · comp.<type> (raw JSON for any component no group speaks for; comp.+ adds one) · parent.to (its parent; set an id to parent it where it stands, \"\" or null to make it a root) · parent.unparent. Says its parent and children; a child's Transform is LOCAL to its parent. Read-only fields say why (locked, guarded, riding a moving part). id \"@world\" is the world entity: its Sky (sky.tz sky.hours sky.rate sky.clouds …; sky.tz empty is the authored clock), Weather (weather.state), Terrain (terrain.amplitude terrain.color …) and Grass (grass.density … grass.mow) — the world's sky/terrain/grass, edited with edit {id: \"@world\", …} (owner rank). Pass json:true for the raw schema.", inputSchema: { type: "object", properties: { id: { type: "string" }, json: { type: "boolean" } }, required: ["id"] } },
+  { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (candidates for a station, a table, a deck), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket's pos (the body's root goes there; anchor: 'hips' puts the hips joint there instead): a socket is a child entity, made with create {components: {parent: {to: id}, transform: {pos: [cx, y, cz]}, socket: {name: 'seat'}, station: {anim: 'sitchair'}}} (station makes it a place a body occupies: sit, ride, stand…; without one it is an attach point for things). Use this to find where a body can go before declaring the station; verify by attaching to it yourself (attach {to: <the socket's id>}) and taking a selfie screenshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally. check: true asks the build check instead (#241): what the model is like to walk into, measured with the walking body's own rules before or after it is placed — whether it is walk-in at all, its floors and how much of each can be reached from outside, why any part can't (a passage narrower than a body, a rise too high to step, a climb an overhanging floor blocks, no way in), the render budget — and suggested rooms, doors and stairs, ready to name as places. Advisory: nothing is refused. With id it is checked as placed (its scale, clamped to 0.05–20; its collider); with lib at its own size, or at scale (0.05–20). The first check of a model at a scale takes a few seconds.", inputSchema: { type: "object", properties: { check: { type: "boolean", description: "the build check: walk-in, reachable floors, why not, suggested places" }, scale: { type: "number", description: "with lib and check: as if placed at this scale (0.05–20)" },  id: { type: "string" }, lib: { type: "string" } } } },
+  { name: "inspect", description: "The inspector, for you: every editable field on a placed thing with its current value, units, limits, and the verb that changes it — the same declaration the browser's Inspector panel renders (shared/editschema.js). Fields are addressed group.field: pos.x pos.yaw (heading, degrees) pos.scale · rot.x rot.y rot.z (Rotate in degrees, read from q in the thing's rotation order) rot.qx…rot.qw rot.order · flags.lock flags.hidden flags.label flags.description (how it is described; flags.reads is how it reads: name, description, what it can do, its state) · light.color light.intensity light.range light.important light.daytime (on: daytime full, burns at noon) · motion.type motion.axis motion.amp motion.period … (a part's motion as motion.<part>|amp) · sockets.del (a host's socket children by name; each is a thing of its own: edit its pos, rot, comp.socket and comp.station by its id) · particles.effect particles.playing particles.at|0..2 particles.param|<name> (the effect's own knobs) · comp.<type> (raw JSON for any component no group speaks for; comp.+ adds one) · parent.to (its parent; set an id to parent it where it stands, \"\" or null to make it a root) · parent.unparent. Says its parent and children; a child's Transform is LOCAL to its parent. Read-only fields say why (locked, guarded, riding a moving part). id \"@world\" is the world entity: its Sky (sky.tz sky.hours sky.rate sky.clouds …; sky.tz empty is the authored clock), Weather (weather.state), Terrain (terrain.amplitude terrain.color …) and Grass (grass.density … grass.mow) — the world's sky/terrain/grass, edited with edit {id: \"@world\", …} (the editWorld permission; the terrain takes build). Pass json:true for the raw schema.", inputSchema: { type: "object", properties: { id: { type: "string" }, json: { type: "boolean" } }, required: ["id"] } },
   { name: "edit", description: "Change fields on a placed thing by address (see inspect) — ONE request for the whole edit (one act; undo {act} takes it back), exactly what a person's edit sends: the transform channels become one whole `set transform` (local to its parent for a child). Numbers take Maya's relative math: \"+=1\", \"-=0.5\", \"*=-1\", \"+=10%\". Angles are typed in DEGREES. Edits that can't be planned (unknown field, a cycle, bad JSON) are reported by name and the rest still go; a locked thing is refused by the authority with the way through (throughLock: true, if you may lift locks). \"parent.to\": \"lamp\" parents it under lamp where it stands (null = make it a root); a child's pos/rot are local to its parent. set: {\"pos.x\": \"+=1\", \"light.intensity\": 24, \"flags.label\": \"the good chair\", \"comp.recipe\": \"{...}\"}. id \"@world\" edits the world entity: {\"sky.hours\": 17.5, \"weather.state\": \"rain\", \"terrain.amplitude\": \"+=1\"}. Pass dry:true to have the authority check it without writing.", inputSchema: { type: "object", properties: { id: { type: "string" }, set: { type: "object" }, dry: { type: "boolean" }, throughLock: { type: "boolean" } }, required: ["id", "set"] } },
   { name: "hierarchy", description: "The scene tree, as the browser's Hierarchy panel shows it: every placed thing, mounted things indented under their carrier, seated people as occupants, with each thing's label, lib, components and lock state. filter narrows to ids/labels/libs/component types containing the text (matches keep their ancestors). Cheaper than look() when you want structure, not surroundings.", inputSchema: { type: "object", properties: { filter: { type: "string" } } } },
   { name: "blueprints", description: "This world's blueprints: every published blueprint (a thing and everything under it, saved as one content-hashed record) with its short hash, name, part count and the copies placed from it. Pass hash for one. Publish with act {verb: \"publish\", args: {from, name}}; place a copy with create {from: \"sha256:<hash>\", at?}.", inputSchema: { type: "object", properties: { hash: { type: "string" } } } },
@@ -133,8 +133,7 @@ const TOOL_ROWS = [
   { name: "whois", description: "Who goes by a name here: their identity (u-…, what roles and bans name), the word they declare for themselves if they declared one while here (nothing is inferred), whether they are a guest (no account), their role in this world, whether they're here now and whether they're banned. Only people this world has seen (present, in its log, its roles or its moderator record), never the whole server. An identity (u-…) works as the name too.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
 ];
 
-// ---- MCP annotations (spec 2025-06-18 ToolAnnotations; tools audit 10-07 §3: none were set, so every tool read as
-// "destructive, open-world" to a host). [title, readOnly, destructive, idempotent, openWorld], said honestly:
+// ---- MCP annotations (spec 2025-06-18 ToolAnnotations): [title, readOnly, destructive, idempotent, openWorld]:
 //   readOnly: it changes nothing in the world or in anyone's body (a read may still advance this session's own cursor:
 //     look and catch_up mark chat as seen);
 //   destructive: it can remove or overwrite something someone made, or remove a person (edit overwrites values in place
@@ -159,6 +158,9 @@ const ANNOTATIONS: Record<string, Ann> = {
   detach: ["Get off", false, false, true, false],
   set_avatar: ["Change your body", false, false, true, false],
   library: ["The catalog: search, contact sheet, preview", true, false, true, false],
+  // destructive and open-world for one of its kinds: an avatar is stored by name, so it replaces the roster body of that
+  // name, on everyone wearing it; every other kind only adds (the store is keyed by content)
+  upload: ["Put a file, a script's source or an effect in the world's store", false, true, true, true],
   create: ["Make a thing", false, false, false, false],
   place: ["Place a thing", false, false, true, false],
   act: ["Any verb (escape hatch; land, shove, moderation)", false, true, false, true],
@@ -181,7 +183,6 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 });
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
-import { readdirSync } from "node:fs";
 import { recordComponents } from "../shared/protocol/view.js";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
@@ -190,47 +191,46 @@ import { BODY_MODES, isBodyMode } from "../shared/bodymode.js";
 import { bodyRangeWords } from "../shared/protocol/physconst.js";
 import { durationMs } from "../shared/protocol/access.js";
 import { isReservedAnimName } from "../shared/animdefs.js";
-// §24k R0 (survey A5): this fallback used to be a hardcoded developer home
-// directory — the SAME bug mcpl/server.ts:120 fixed with an incident note
-// ("hardcoded Mac path threw for everyone else"); this copy never got the
-// fix, and its readdirSync sat OUTSIDE the try, so any box without
-// EIDOVERSE_DIR where the route failed threw ENOENT with someone else's
-// $HOME in the message. Local scan only when a checkout is actually named;
-// otherwise the sequencer's catalog is the one source of truth and its
-// unreachability is a soft, honest miss.
+// Local scan only when a checkout is named (EIDOVERSE_DIR); otherwise the sequencer's catalog is the one source, and
+// a search it can't answer is said (library-fetch-test).
 const MODELS_DIR = process.env.EIDOVERSE_DIR
   ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/models`
   : null;
 /** Search the catalog through the sequencer (one source of truth — includes
  *  the content-addressed store, so conjured/orrery-delivered objects are
  *  findable), falling back to a local dir scan only when a checkout exists. */
-async function searchLibrary(httpBase: string, query: string): Promise<{ path: string; name?: string }[]> {
+async function searchLibrary(httpBase: string, query: string): Promise<{ hits: { path: string; name?: string }[]; failed?: string; retry?: boolean }> {
+  let failed: string, retry = true;   // calling again may work, as library {preview}'s rule: not after a 4xx other than 408 or 429, nor after a 200 body that isn't a list
   try {
-    const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
-    if (r.ok) return ((await r.json()) as { path: string; name?: string }[]).slice(0, 24);
-  } catch { /* sequencer route unreachable — scan what we can see, if anything */ }
-  if (!MODELS_DIR) return [];
+    const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`, READ());
+    if (!r.ok) { failed = `it answered ${r.status}`; retry = r.status >= 500 || r.status === 408 || r.status === 429; }
+    else {   // a body that isn't a list (an HTML login page, say) won't change on a retry; one that stalls or resets might
+      const body = await r.json().catch((e) => { if (!(e instanceof SyntaxError)) throw e; return undefined; });
+      if (Array.isArray(body) && body.every((h) => typeof h?.path === "string")) return { hits: (body as { path: string; name?: string }[]).slice(0, 24) };
+      failed = "it answered with something that isn't a list of models"; retry = false;   // valid JSON or not
+    }
+  } catch (e) {   // unreachable or timed out: scan what we can see, if anything, and say the search failed
+    failed = (e as Error)?.name === "TimeoutError" ? `no answer within ${HTTP_READ_MS / 1000} s` : `the request failed: ${(e as Error).message || "no reason given"}`;
+  }
+  if (!MODELS_DIR) return { hits: [], failed, retry };
   try {
     const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
-    return readdirSync(MODELS_DIR)
+    return { failed, retry, hits: readdirSync(MODELS_DIR)
       .filter((f) => f.endsWith(".glb"))
       .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
       .filter((r) => r.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, 12)
-      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` }));
-  } catch { return []; }
+      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` })) };
+  } catch { return { hits: [], failed, retry }; }
 }
 
 // ---- contact sheets ---------------------------------------------------------
-// The library's previews and the roster's portraits, composed into ONE grid
-// image per page — an agent flipping through a catalog, not drowning in a
-// dozen separate image blocks. Layout is SVG (labels for free), sharp
-// rasterizes it.
+// Library previews and roster portraits composed into ONE grid image per page (SVG layout, rasterized by sharp).
 
 const SHEET = { tile: 200, label: 26, cols: 4, perPage: 12 };
 
-async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null }[]): Promise<Buffer> {
+async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mime: string; h?: number | null; failed?: string }[]): Promise<Buffer> {
   const { tile, label, cols } = SHEET;
   const rows = Math.ceil(tiles.length / cols);
   const W = cols * tile, H = rows * (tile + label);
@@ -245,7 +245,7 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
     const side = (tile - 8) * frac;
     const img = t.data
       ? `<image x="${x + (tile - side) / 2}" y="${y + 4 + (tile - 8 - side)}" width="${side}" height="${side}" preserveAspectRatio="xMidYMax meet" xlink:href="data:${t.mime};base64,${Buffer.from(t.data).toString("base64")}"/>`
-      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">no preview yet</text>`;
+      : `<text x="${x + tile / 2}" y="${y + tile / 2}" text-anchor="middle" fill="#667" font-size="15" font-family="DejaVu Sans, sans-serif">${t.failed ? "preview failed" : "no preview yet"}</text>`;
     const tag = t.h ? ` ${t.h.toFixed(1)}m` : "";
     const room = 26 - tag.length;
     const name = t.name.length > room ? `${t.name.slice(0, room - 1)}…` : t.name;
@@ -256,18 +256,14 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
 }
 
 
-/** The tool list an MCP server should advertise: travel only exists where the host wired the session machinery for it.
- *  (No whisper: removed with world chat's private channel, R 10-18.) */
+/** The tool list an MCP server should advertise: travel only exists where the host wired the session machinery for it. */
 export function toolList({ travel = false }: { travel?: boolean } = {}) {
   return TOOLS.filter((t) => travel || t.name !== "travel");
 }
 
-/** How long one snapshot call may take in all, retries included: SNAP_CALL_BUDGET_MS on the door's own service, 57 s
- *  by default (under a Connectome host's 60 s per-call deadline, over the world server's own 55 s request deadline);
- *  0 asks once. The tool sends what is left of it with each ask (?budget=), and the world server never holds an ask
- *  longer, so its frame window (SNAP_TIMEOUT_SEC, a setting of the world server's service) is honoured within this
- *  budget. An operator who wants longer calls for a slow renderer raises this too. A bad value is said once and
- *  ignored. */
+/** Total time for one snapshot call, retries included: SNAP_CALL_BUDGET_MS, default 57 s (under a 60 s host per-call
+ *  deadline, over the world server's 55 s); 0 asks once, with no deadline on that fetch. Each ask sends what's left (?budget=), so the server's
+ *  SNAP_TIMEOUT_SEC fits inside it. A bad value is said once and ignored. */
 let warnedSnapBudget = false;
 export const snapCallBudgetMs = () => {
   const raw = process.env.SNAP_CALL_BUDGET_MS;
@@ -277,26 +273,22 @@ export const snapCallBudgetMs = () => {
   if (!warnedSnapBudget) { warnedSnapBudget = true; console.warn(`[snapshot] SNAP_CALL_BUDGET_MS=${JSON.stringify(raw).slice(0, 40)} is not a number of ms from 0 to 600000; using 57000`); }
   return 57_000;
 };
-// A FIRST CALL SHOULD COME BACK WITH A PICTURE (owner, 2026-10-24). The world server marks the refusals that pass in
-// seconds with Retry-After: the renderer still loading the world, renderers busy, a frame that did not come in time, a
-// renderer gone mid-shot (server/screenshots.ts retryAfter). The tool asks again exactly then, after that many seconds,
-// within one budget, and tells the server what is left of it (?budget=), so no try outlasts the call. A refusal without
-// Retry-After (no renderer and no roamer to send, invite-only, an Unreal-only ask with none serving, a bad argument)
-// is answered at once. A world server that cannot be reached, or a proxy in front answering 502 for it with its own
-// HTML page (both are what a restarting server looks like), is tried once more and then answered: a server that is
-// down should not hold an agent for a minute. The world server's own 502 (a renderer that sent no valid image)
-// carries no Retry-After and is not asked again.
+// A first call should come back with a picture: refusals the server marks Retry-After (server/screenshots.ts
+// retryAfter: loading, busy, late frame) are retried then, within one budget. Others are answered at once. An
+// unreachable server or a proxy's own 502 page (a restart) is tried once more; the world server's own 502 is not.
 const SNAP_UNREACHABLE_RETRY_MS = 2_000, SNAP_MIN_TRY_MS = 5_000;
 // The fetch is not cut at the budget: the server's own deadline (sent with ?budget=, which it answers half a second
 // inside) ends a try. This backstop only catches a server that never answers at all, and says so, rather than calling
 // it unreachable: at what is left of the budget plus 1.5 s, so the default call still answers inside a host's 60 s.
 const SNAP_NO_ANSWER_GRACE_MS = 1_500;
+/** The retry loop's clock and pause; a test swaps in a virtual one (door-wording-test). */
+export const snapClock = { now: () => Date.now(), pause: (ms: number) => new Promise<void>((res) => setTimeout(res, ms)) };
 export async function screenshotTool(ag: ToolAgent, view = "first", at?: string, renderer = "auto", frame: { dist?: unknown; height?: unknown; pitch?: unknown } = {},
   { budgetMs = snapCallBudgetMs(), noAnswerGraceMs = SNAP_NO_ANSWER_GRACE_MS }: { budgetMs?: number; noAnswerGraceMs?: number } = {}) {
-  const started = Date.now();
-  const left = () => budgetMs - (Date.now() - started);
+  const started = snapClock.now();
+  const left = () => budgetMs - (snapClock.now() - started);
   let tries = 0, flakyTries = 0;
-  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((Date.now() - started) / 1000)} s` : "";
+  const after = () => tries > 1 ? ` after ${tries} tries over ${Math.round((snapClock.now() - started) / 1000)} s` : "";
   for (;;) {
     tries++;
     const r = await screenshotOnce(ag, view, at, renderer, frame, budgetMs > 0 ? Math.max(1_000, left()) : undefined, noAnswerGraceMs);
@@ -309,7 +301,7 @@ export async function screenshotTool(ag: ToolAgent, view = "first", at?: string,
       if (r.kind === "unreachable") return fail(`screenshot failed: no picture arrived from the world server (${r.message})${after()}; try again in a moment`);
       return fail(`screenshot: no picture was taken; the world server answered ${r.status}${r.said ? ` (${r.said})` : ""}${after()}, so ${r.remedy}`);
     }
-    await new Promise((res) => setTimeout(res, pause));
+    await snapClock.pause(pause);
   }
 }
 type SnapTry = { kind: "ok"; result: any } | { kind: "final"; result: any } | { kind: "unreachable"; message: string } | { kind: "no-answer"; waitedMs: number }
@@ -323,7 +315,7 @@ async function screenshotOnce(ag: ToolAgent, view: string, at: string | undefine
   try {
     const norm = normalizeSnapFrame(frame);
     const extra = Object.entries(norm).map(([k, v]) => `&${k}=${v}`).join("");
-    // Name any framing field the chosen view does not use, rather than ignoring it silently (#226): pitch is first-only,
+    // Name any framing field the chosen view does not use, rather than ignoring it silently: pitch is first-only,
     // dist/height third/selfie-only; `at` frames the thing itself, so none of them apply
     const posed = view === "third" || view === "selfie";
     const ignored = at ? (Object.keys(norm) as string[]) : posed ? (norm.pitch !== undefined ? ["pitch"] : []) : (["dist", "height"] as const).filter((k) => norm[k] !== undefined);
@@ -366,11 +358,8 @@ async function screenshotOnce(ag: ToolAgent, view: string, at: string | undefine
 }
 
 // ---- the dispatcher --------------------------------------------------------
-// One handler per tool, keyed to TOOLS by NAME — the verbs.ts/messages.ts
-// treatment (survey §B3, deferred until the table had one home): bodies moved
-// VERBATIM from the 26-case switch. The load-time assertion below makes
-// advertise/handle drift a boot failure on BOTH servers instead of an
-// "Unknown tool" a caller meets at runtime.
+// One handler per tool, keyed to TOOLS by NAME. The load-time assertion below makes advertise/handle drift a boot
+// failure on both servers, not a runtime "Unknown tool".
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 /** A call that didn't do what it was asked: a host shows the result as failed. */
@@ -387,20 +376,20 @@ const act = (r: ActResult) => (r.ok ? text(r.text) : fail(r.text));
 /** The most speech say sends in one call, as it always has: 4000 UTF-16 units. A cut never ends in half of a
  *  surrogate pair. */
 const SPEECH_MAX = 4000;
-const cutSpeech = (t: string) => {
+export const cutSpeech = (t: string) => {
   if (t.length <= SPEECH_MAX) return t;
   const end = /[\uD800-\uDBFF]/.test(t[SPEECH_MAX - 1]!) ? SPEECH_MAX - 1 : SPEECH_MAX;
   return t.slice(0, end);
 };
+/** A coordinate as a number; null is no value (NaN, refused), never Number(null)'s 0. */
+const coord = (v: unknown) => (v == null ? NaN : Number(v));
 /** An altitude the call can't fly to: not a number. A number flies, and so does a string that reads as one, as
  *  `Number()` always took "5"; a boolean, a blank, a list or an object doesn't. */
 const notANumber = (v: unknown) => typeof v === "number" ? !Number.isFinite(v)
   : typeof v !== "string" || v.trim() === "" || !Number.isFinite(Number(v));
-/** The authority's refusal as a tool error: the code, why, and what to do instead. */
-// the same words a person in build mode sees for the same refusal (shared/protocol/refusal.js)
 /** One line of a world's history, as an agent reads it: who did what, with what arguments. An entry imported from an
  *  old log (an act `imported`) shows the verb and args it was written with, not `imported {}`; a refused request says it
- *  was refused, and never reads as a thing that happened (Commons audit, agents #3). */
+ *  was refused, and never reads as a thing that happened. */
 export function historyLine(e: any): string {
   const who = actorName(String(e.actor)); const when = e.ts ? `${new Date(e.ts).toISOString()} ` : "";
   const args = (v: any) => { const j = JSON.stringify(v ?? {}); return j.length > 300 ? `${j.slice(0, 300)}…` : j; };
@@ -416,7 +405,7 @@ export function historyLine(e: any): string {
  *  Wait briefly for one sent after t0 and return its words, or null. */
 async function presenceRefusal(ag: ToolAgent, t0: number, target: string, ms = 700): Promise<string | null> {
   const end = Date.now() + ms;
-  // only a refusal that names the target: every bodyRefusal does, and an unrelated error meanwhile isn't this one's (bot #462)
+  // only a refusal that names the target: every bodyRefusal does, and an unrelated error meanwhile isn't this one's
   const names = (t: string) => t.startsWith(`${target} `) || t.startsWith(`${target}'s `) || t.includes(` ${target} `);
   while (Date.now() < end) { const r = ag.lastRefusal; if (r && r.ts >= t0 && names(r.text)) return r.text; await new Promise((res) => setTimeout(res, 25)); }
   return null;
@@ -424,11 +413,11 @@ async function presenceRefusal(ag: ToolAgent, t0: number, target: string, ms = 7
 // a script activation's statuses that mean it ran (or, dry, would run): authority/scriptrun.js activate's out(); anything else
 // (refused, failed, unavailable, paused, stopped, suspended, not-installed) means it didn't
 const SCRIPT_RAN = new Set(["ran", "nothing", "would-run"]);
+/** The authority's refusal as a tool error: the code, why, and what to do instead, in the words a person in build mode
+ *  sees for the same refusal (shared/protocol/refusal.js). */
 const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: refusalText(what, r) }], isError: true });
-// R 10-17 (ID HARDENING (5)): every tool argument that names a thing takes its id, its label or a unique id prefix (4+,
-// git-style; look prints each thing's short handle). A label two things share is refused with the candidates — never
-// resolved by picking one. One resolver (WorldAgent.thingRef; destination() asks it too); a name that matches nothing is
-// passed on as typed, for the authority's own not-found words.
+// Every argument naming a thing takes its id, label or unique id prefix (4+, git-style). A shared label is refused with
+// the candidates, never picked. One resolver (WorldAgent.thingRef); no match passes on as typed for the authority.
 const THING_KEYS = ["id", "on", "beside", "hang", "against", "near", "facing", "from", "copy", "to", "target"];
 function namedThings(ag: any, a: Record<string, any>, keys: string[] = THING_KEYS): { args: Record<string, any> } | { err: any } {
   const out: Record<string, any> = { ...a };
@@ -440,10 +429,8 @@ function namedThings(ag: any, a: Record<string, any>, keys: string[] = THING_KEY
 /** Is this body in the air? (the flight integrator's phases; GROUND/LANDED are feet on the ground, and so are RAGDOLL and
  *  RECOVER, a body down on the ground after a cut, which a fly-mode move launches afresh, as the agent's down refusals say) */
 const airborne = (ag: ToolAgent) => !!ag.flight && !["GROUND", "LANDED", "RAGDOLL", "RECOVER"].includes(ag.flight.phase);
-/** A name move {to} takes that destination() doesn't: a place in the older upstream shape (`places:<name>` on @world or
- *  a thing's `places` entry given as a bare [x, y, z] / {pos}, world coordinates). Things, labels, people and places in the
- *  current shape are destination()'s alone (review r5 F3: one resolver, so a person never captures a walk here and of
- *  several things the nearest is taken). */
+/** A name move {to} takes that destination() doesn't: a place in the older upstream shape (`places:<name>` on @world
+ *  or a bare [x, y, z] / {pos} entry, world coordinates). Everything else is destination()'s alone (one resolver). */
 function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what: string } | null {
   const st: any = ag.replica?.st ?? {};
   const places: Record<string, any> = { ...(st.places ?? {}), ...(st.entities?.[WORLD_ID]?.c?.places ?? {}) };
@@ -453,8 +440,8 @@ function legacyPlace(ag: ToolAgent, name: string): { x: number; z: number; what:
   return pp && pp.every(Number.isFinite) && pp.length >= 2 ? { x: pp[0], z: pp.length === 3 ? pp[2] : pp[1], what: `the place "${name}"` } : null;
 }
 
-/** measure {check: true}: #241's check_model, a mode of measure (it reads a model's geometry as data; check_model is an alias). */
-const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
+/** measure {check: true}: the build check (server/buildcheck.ts), a mode of measure since it reads a model's geometry as data. */
+const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP_READ_MS) => {
   const e = a.id ? ag.entities.get(String(a.id)) : null;
   if (a.id && !e) return fail(`no thing called "${a.id}" here`);
   const lib = String(e?.model ?? a.lib ?? "");
@@ -462,8 +449,9 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
   let r: any;
   // a placed thing is checked as placed: at its scale (the body is not scaled)
   const scale = e ? (e.scale && e.scale > 0 ? e.scale : 1) : (typeof a.scale === "number" && a.scale > 0 ? a.scale : 1);
-  try { r = await (await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`)).json(); }
-  catch (err) { return fail(`the check could not be reached: ${String((err as Error)?.message ?? err)}`); }
+  try { r = await okJson(await fetch(`${ag.httpBase}/check?lib=${encodeURIComponent(lib)}${scale !== 1 ? `&scale=${scale}` : ""}`, { signal: AbortSignal.timeout(ms) })); }
+  catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${ms / 1000} s; calling again may work`
+    : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
 };
@@ -471,14 +459,39 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>) => {
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
 
+// ---- upload ----------------------------------------------------------------
+/** How long upload waits on the world server's POST /upload: with the build check's wait after it (HTTP_READ_MS), the
+ *  call answers inside a host's 60 s. */
+const UPLOAD_MS = 45_000;
+const UPLOAD_SHAPE = `upload {data: "<a file's bytes as base64>", as?: "model" | "avatar" | "image" | "audio" | "heightmap", name?, catalog?}, or upload {text: "<a script's source>"}, or upload {effect: {<a particle effect document>}}`;
+/** The bytes a base64 string names (either alphabet, padded or not, with the line breaks an encoder may write), or null
+ *  when it isn't base64: Buffer.from skips what it can't read and answers with whatever is left. */
+function fromBase64(s: unknown): Buffer | null {
+  if (typeof s !== "string") return null;
+  const t = /\s/.test(s) ? s.replace(/\s+/g, "") : s;
+  if (!/^[A-Za-z0-9+/_-]+={0,2}$/.test(t) || t.replace(/=+$/, "").length % 4 === 1) return null;
+  return Buffer.from(t, "base64");
+}
+/** upload {data}'s kinds, which are the world server's (server/upload.ts: POST /upload?as=, a model with none), each with
+ *  the words for its answer: where the file went and the call that uses it. null: an answer this tool can't read. */
+const UPLOAD_KINDS: Record<string, (j: any) => string | null> = {
+  model: (j) => typeof j.path === "string" ? `stored as ${j.path}${j.catalog === false ? ", a one-off kept out of the catalog (upload it again with catalog: true to list it)" : j.catalog === true ? ", in the catalog" : ""}; create {model: "${j.path}"} places it` : null,
+  avatar: (j) => typeof j.path === "string" && typeof j.name === "string" ? `stored as ${j.path}; set_avatar {avatar: "${j.name}"} wears it` : null,
+  image: (j) => typeof j.path === "string" ? `stored as ${j.path}; it is a picture's src: act {verb: "set", args: {id: "<a thing>", component: "picture", value: {src: "${j.path}"}}} hangs it there (a material component's texture takes it too)` : null,
+  audio: (j) => typeof j.path === "string" ? `stored as ${j.path}; it is a sound's src: act {verb: "set", args: {id: "<a thing>", component: "sound", value: {src: "${j.path}"}}} plays it there` : null,
+  heightmap: (j) => { if (typeof j.grid !== "string") return null;
+    // the range the image carries, when it is one this world exported (GET /heightmap); else the caller's to say
+    const m = Number.isFinite(j.meta?.min) && Number.isFinite(j.meta?.max) ? j.meta : null;
+    return `stored as ${j.grid} (${j.w}×${j.h} px, ${j.bits}-bit); it is the terrain's heightmap.grid: act {verb: "set", args: {id: "@world", component: "terrain", merge: true, value: {heightmap: {grid: "${j.grid}", min: ${m ? m.min : "<metres at black>"}, max: ${m ? m.max : "<metres at white>"}}}}} shapes the ground from it`; },
+};
+
 // ---- act's body verbs ------------------------------------------------------
 // Verbs `act` answers before the authority: the body's own (land, shove — presence, like a person's /push) and
 // moderation by NAME (kick/ban/unban resolve a name to an identity through whois, then ask the authority; bans
 // reads what's in force). Each answers in act's shape: {ok, text} as text, isError on a refusal.
-// One answer to "who": a person's identity (u-…) as given, a present person's by the name they arrived with, anyone the
-// world has seen by name through the directory (whois) — so an absent person can be banned, unbanned or warned. Every
-// verb that takes a `who` resolves through here (the kick family and `act`), so there is one way to say who, not two.
-// Returns {who} or {err: <tool result>}; `verb` only shapes the words (a kick needs them here).
+// One answer to "who" for every world verb that takes one (a global ban/unban sends `who` to server moderation as
+// given): an identity (u-…) as given, else a name via the directory
+// (whois), so an absent person can be banned too. Returns {who} or {err: <tool result>}; `verb` only shapes words.
 async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: string } | { err: any }> {
   const id = String(raw ?? "").trim();
   if (!id) return { err: fail(`${verb} needs who — their name or identity (u-…)`) };
@@ -496,7 +509,7 @@ async function resolveWho(ag: any, raw: unknown, verb: string): Promise<{ who: s
 
 const BODY_VERBS: Record<string, ToolHandler> = {
   land: async (ag, a) => {
-    const num = (v: unknown) => (typeof v === "number" ? v : NaN);   // Number(null) is 0 (bot #458)
+    const num = (v: unknown) => (typeof v === "number" ? v : NaN);   // Number(null) is 0
     const to = Array.isArray(a.to) ? a.to.map(num) : [num(a.x), num(a.z)];
     const x = to[0], z = to.length === 3 ? to[2] : to[1];
     if (![x, z].every(Number.isFinite)) return { content: [{ type: "text", text: "land needs to: [x, z] (or [x, y, z]) — where to come down" }], isError: true };
@@ -505,10 +518,9 @@ const BODY_VERBS: Record<string, ToolHandler> = {
   },
   shove: async (ag, a, ctx, name) => {
       if (!a.target) return { content: [{ type: "text", text: "shove needs a `target` — the body that falls simulates it" }], isError: true };
-      // the shove is directed: from where THIS body stands, through the
-      // target — the same line a browser /push uses. No known position for
-      // them = an undirected knock-over, the old wire.
-      const to = String(a.target).trim();   // main's absent(): spaces name nobody; someone not here is refused before anything is sent
+      // directed from where THIS body stands through the target (the browser's /push line); no known position for
+      // them = an undirected knock-over
+      const to = String(a.target).trim();   // spaces name nobody; someone not here is refused before anything is sent
       if (!to) return fail("the target is only spaces, so nobody was shoved");
       if (ag.joined && to !== ag.name && !ag.people.has(to)) return fail(`${to} isn't here, so nobody was shoved; look lists who is around you`);
       const tp = ag.people.get(to)?.pose?.p;
@@ -521,16 +533,15 @@ const BODY_VERBS: Record<string, ToolHandler> = {
       }
       const t0 = Date.now();
       ag.puppet(to, { ragdoll: lean ? { lean } : true });
-      // the server checks the target's consent (class shove) and range before it forwards a shove, and answers a refusal
-      // with an error (server/messages.ts bodyRefusal); silence is the only yes it gives (parity audit 10-07 F2)
+      // the server checks the target's consent (class shove) and range, and answers a refusal with an error
+      // (server/messages.ts bodyRefusal); silence is the only yes it gives
       const no = await presenceRefusal(ag, t0, to);
       if (no) return { content: [{ type: "text", text: `shove refused (consent class: shove): ${no}` }], isError: true };
       return text(`you shove ${to}${lean ? " — they go down the way you pushed" : " — asked them to go limp"} (the server passed it on; their body has the last word)`);
 
   },
   kick: async (ag, a, ctx, name) => {
-      // Moderation deserves a real answer, not fire-and-forget: wait for
-      // the world's echo (success) or refusal and hand THAT back.
+      // wait for the world's echo or refusal and hand that back, not fire-and-forget
       const id = String(a.who ?? "").trim();
       if (!id) return fail(`${name} needs who — their name or identity (u-…)`);
       const reason = a.reason != null ? String(a.reason) : undefined;
@@ -555,8 +566,7 @@ const BODY_VERBS: Record<string, ToolHandler> = {
         if (answer == null || answer.startsWith("refused: ")) return fail(answer ?? "no reply from the world (timeout)");
         return text(answer);
       }
-      // this world: the authority's `bans` (what the Moderation panel reads): bans and mutes in force.
-      // The legacy world-bans message listed bans only, so a mute in force read "nobody is banned" (audit 10-07)
+      // this world: the authority's `bans` (what the Moderation panel reads): bans and mutes in force
       const r: any = await ag.request("bans", {});
       if (!r?.ok) return { content: [{ type: "text", text: r?.refused?.reason ?? "couldn't read what's in force here" }], isError: true };
       const until = (t: any) => (Number.isFinite(t) ? `until ${new Date(t).toISOString()}` : "until lifted");
@@ -573,6 +583,15 @@ const BODY_VERBS: Record<string, ToolHandler> = {
 };
 BODY_VERBS.ban = BODY_VERBS.kick; BODY_VERBS.unban = BODY_VERBS.kick;
 
+/** What shapes the ground beside its terrain card: the named features (each a component of its own) and how much of it is
+ *  sculpted. One line, or none on a ground that has neither. */
+function groundPieces(ag: any): string {
+  const st = ag.st ?? {}, names = Object.keys(st.terrainFeatures ?? {}).sort(), tiles = Object.keys(st.terrainTiles ?? {}).length;
+  if ((!names.length && !tiles) || !shapeable(st.terrain)) return "";   // a level ground reads neither
+  const said = names.map((n) => `${n} (${st.terrainFeatures[n]?.type ?? "?"})`).join(", ");
+  return `\nthe ground is also shaped by ${[names.length ? `${names.length} named feature${names.length === 1 ? "" : "s"}: ${said} (each is @world's terrain-feature:<name>: act set changes one, act delete removes it)` : "",
+    tiles ? `sculpting over ${tiles} tile${tiles === 1 ? "" : "s"} of 16 m (act {verb: "sculpt", args: {brush, path?, radius, strength?}} is one more stroke)` : ""].filter(Boolean).join("; and by ")}`;
+}
 export const HANDLERS: Record<string, ToolHandler> = {
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
   body_state: async (ag, a) => {
@@ -589,7 +608,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
     return await screenshotTool(ag, typeof a.view === "string" ? a.view : "first", at,
     typeof a.renderer === "string" ? a.renderer : "auto", { dist: a.dist, height: a.height, pitch: a.pitch }); },
   set_avatar: async (ag, a, ctx, name) => {
-      const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];
+      let roster: { name: string; path: string }[];
+      try { roster = await okJson(await fetch(`${ag.httpBase}/avatars`, READ())); }
+      catch (e) { return fail(`set_avatar: ${readWhy(e, "the avatar roster")}. You're still wearing your current body.`); }
       const want = String(a.avatar ?? "").trim();
       if (!want) return text(`bodies on the roster: ${roster.map((r) => r.name).join(", ")}`);
       const path = want.includes("/") ? want : roster.find((r) => r.name === want)?.path;
@@ -600,11 +621,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   attach: async (ag, a) => {
-      // a body on a seat is PRESENCE (bodies aren't entities; nothing is logged): my frames carry {to: <socket id>} while
-      // I sit. A seat is a socket child with a body block (PLAN-sockets-entities; shared/sockbody.js). `to` is the thing
-      // (pick by `socket` name or by `action`), or a socket's own id. The authority is asked first (use {id: <socket>,
-      // action}): it checks who may, and that nobody sits there. The seat's leaveBy decides how I get off, and fromSeat
-      // whether I may move to it without standing.
+      // sitting is PRESENCE (frames carry {to: <socket id>}; nothing logged). `to`: the thing (pick by `socket` or
+      // `action`) or a socket id. The authority is asked first (use), and checks who may and that the seat is free.
       let want = String(a.to ?? "").trim();
       if (want && !ag.socketRec(want)) { const t = ag.thingRef(want); if ("refusal" in t) return { content: [{ type: "text", text: `attach: ${t.refusal}` }], isError: true }; if ("id" in t) want = t.id; }
       const mine = ag.myOccupancy;
@@ -627,23 +645,24 @@ export const HANDLERS: Record<string, ToolHandler> = {
       }
       { const r = await ag.request("use", { id: sid, action: body.action });
         if (!r?.ok) return { content: [{ type: "text", text: `attach: the authority refused (${r?.refused?.code}): ${r?.refused?.reason ?? ""}${r?.refused?.fix ? ` — ${r.refused.fix}` : ""}` }], isError: true }; }
-      ag.setOccupant({ to: sid });   // (no pose menu: a station's poses are reserved in the alpha, review r11 claims R4)
+      ag.setOccupant({ to: sid });   // (no pose menu: a station's poses are reserved in the alpha)
       return text(`you ${body.action} on ${on} — ${describeBody(slot, body, { door: true })}`);
   },
   detach: async (ag, a) => {
       const mine = ag.myOccupancy;
       if (!mine) return text("you're not attached to anything");
-      // the escape (review r9 scars M1): a seat may make leaving deliberate, never impossible
+      // the escape: a seat may make leaving deliberate, never impossible
       if (!ag.mayVacate(a?.escape === true ? "escape" : "menu")) return { content: [{ type: "text", text: `${ag.socketName(mine.to)} lets you go when the world does (a script, or the seat being taken away); detach {escape: true} gets you up anyway` }], isError: true };
       ag.setOccupant(null); return text(a?.escape === true ? "you get up (the escape: no seat can hold you)" : "you get off");
   },
   library: async (ag, a, ctx, name) => {
       // one catalog tool: query (search), kind + page (a contact sheet), preview (one item)
       if (typeof a.query === "string" && a.query.trim()) {
-        const hits = await searchLibrary(ag.httpBase, String(a.query));
-        return text(hits.length
-          ? hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
-          : "no matches");
+        const { hits, failed, retry } = await searchLibrary(ag.httpBase, String(a.query));
+        const why = failed && `the world's catalog couldn't be searched (${failed})`;
+        if (!hits.length) return failed ? fail(`${why}, so this says nothing about what's in it; ${retry ? "calling again may work" : "calling again won't change that"}`) : text("no matches");
+        return text(hits.map((h) => h.name && !h.path.includes(h.name) ? `${h.path}  — ${h.name}` : h.path).join("\n")
+          + (failed ? `\n(${why}: these are from this door's local checkout only${retry ? "; calling again may find the catalog's" : ""})` : ""));
       }
       if (typeof a.preview === "string" && a.preview.trim()) {
         const want = String(a.preview).trim();
@@ -651,25 +670,22 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (!want.includes("/") && !/\.(glb|jpg)$/i.test(want)) tries.push(`${ag.httpBase}/thumb/${encodeURIComponent(want)}.png`);
         const stem = (want.includes("/") ? want : `eidoverse/assets/models/${want}`).replace(/(_preview\.jpg|\.jpg|\.glb)$/i, "");
         tries.push(`${ag.httpBase}/library/${stem}_preview.jpg`);
-        // Only a 404 is the sequencer's answer that a candidate has no preview.
-        // A fetch that throws, any other status that isn't ok, or a body that
-        // can't be read never got that answer, so "no preview" is said only
-        // when every candidate answered 404. Calling again may work after a
-        // failed fetch, a 408, a 429, a 5xx or a preview that couldn't be read,
-        // at any candidate. Each reason is named once, so two candidates that
-        // failed alike read as one.
+        // "no preview" only when every candidate answered 404; any other failure is named (once per reason) as
+        // possibly worth a retry
         const whys: string[] = [];
         let retry = false;
         const miss = (reason: string, mayRetry: boolean) => { if (!whys.includes(reason)) whys.push(reason); retry ||= mayRetry; };
         for (const url of tries) {
           let r: Response;
-          try { r = await fetch(url); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
+          try { r = await fetch(url, READ()); } catch (e) { miss((e as Error).message || "the request failed", true); continue; }
           if (r.status === 404) continue;
           if (!r.ok) { miss(`it answered ${r.status}`, r.status >= 500 || r.status === 408 || r.status === 429); continue; }
+          const type = r.headers.get("content-type")?.split(";")[0].trim().toLowerCase();   // media types are case-insensitive
+          if (type && !type.startsWith("image/")) { miss(`it sent ${type}, not an image`, false); continue; }   // an HTML error page, say
           let data: string;
           try { data = Buffer.from(await r.arrayBuffer()).toString("base64"); }
           catch (e) { miss(`a preview it sent couldn't be read: ${(e as Error).message || "no reason given"}`, true); continue; }
-          return { content: [{ type: "image", data, mimeType: r.headers.get("content-type")?.split(";")[0] ?? "image/jpeg" }] };
+          return { content: [{ type: "image", data, mimeType: type ?? "image/jpeg" }] };
         }
         if (whys.length) return fail(`couldn't get a preview of "${want}" from the world's server (${whys.join("; ")})${retry ? "; calling again may work" : "; calling again won't change that"}`);
         return fail(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
@@ -678,18 +694,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const kind = a.kind === "models" ? "models" : "avatars";
       const page = Math.max(1, Math.floor(Number(a.page) || 1));
       let items: { name: string; url: string | null; h?: number | null }[];
-      if (kind === "avatars") {
-        const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; height?: number | null }[];
+      try { if (kind === "avatars") {
+        const roster = (await okJson(await fetch(`${ag.httpBase}/avatars`, READ()))) as { name: string; height?: number | null }[];
         items = roster.map((r) => ({ name: r.name, url: `${ag.httpBase}/thumb/${encodeURIComponent(r.name)}.png`, h: r.height ?? null }));
       } else {
-        const hits = (await (await fetch(`${ag.httpBase}/library-models`)).json()) as { path: string; name: string; preview: string | null }[];
+        const hits = (await okJson(await fetch(`${ag.httpBase}/library-models`, READ()))) as { path: string; name: string; preview: string | null }[];
         items = hits.map((h) => ({
           // library files: the filename IS the spawnable identity; store
           // items: the hash filename means nothing — show the given name
           name: h.path.startsWith("store/") ? h.name : h.path.split("/").pop()!.replace(/\.glb$/i, ""),
           url: h.preview ? `${ag.httpBase}/library/${h.preview}` : null,
         }));
-      }
+      } } catch (e) { return fail(`library: ${readWhy(e, kind === "avatars" ? "the avatar roster" : "the model list")}`); }
       const pages = Math.max(1, Math.ceil(items.length / SHEET.perPage));
       const slice = items.slice((page - 1) * SHEET.perPage, page * SHEET.perPage);
       // A page past the end asked for something that isn't there. An empty
@@ -697,32 +713,73 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!slice.length) return items.length
         ? fail(`no page ${page}: there are ${items.length} ${kind} on ${pages} page${pages === 1 ? "" : "s"}, so pass a page from 1 to ${pages}`)
         : text(`there are no ${kind} to show yet`);
+      // a preview that exists but couldn't be fetched (`failed`) is drawn and said apart from one there is none of
       const tiles = await Promise.all(slice.map(async (it) => {
         if (!it.url) return { name: it.name, data: null, mime: "", h: it.h };
         try {
-          const r = await fetch(it.url);
-          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h };
-          return { name: it.name, data: await r.arrayBuffer(), mime: r.headers.get("content-type")?.split(";")[0] ?? "image/png", h: it.h };
-        } catch { return { name: it.name, data: null, mime: "", h: it.h }; }
+          const r = await fetch(it.url, READ());
+          if (r.status === 404) return { name: it.name, data: null, mime: "", h: it.h };
+          if (!r.ok) return { name: it.name, data: null, mime: "", h: it.h, failed: `answered ${r.status}` };
+          const type = r.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+          if (type && !type.startsWith("image/")) return { name: it.name, data: null, mime: "", h: it.h, failed: `sent ${type}, not an image` };
+          return { name: it.name, data: await r.arrayBuffer(), mime: type ?? "image/png", h: it.h };
+        } catch (e) { return { name: it.name, data: null, mime: "", h: it.h, failed: (e as Error).message || "the request failed" }; }
       }));
       const png = await contactSheet(tiles);
+      const missed = tiles.filter((t) => t.failed).map((t) => `${t.name} (${t.failed})`);
       return { content: [
-        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}` },
+        { type: "text", text: `${kind} — page ${page}/${pages}: ${slice.map((t) => t.name).join(", ")}${page < pages ? `. More: library {kind:"${kind}", page:${page + 1}}` : ""}`
+          + (missed.length ? `. Previews that couldn't be fetched: ${missed.join(", ")}` : "") },
         { type: "image", data: png.toString("base64"), mimeType: "image/png" },
       ] };
 
   },
+  upload: async (ag, a, ctx) => {
+      // one word for "put it in the world's store and get its address back": text and effect are the authority's upload
+      // verb, sent as act sends it; a file goes to the world server's POST /upload as this body (its key), and the answer
+      // says where it went and the call that uses it
+      const forms = ["data", "text", "effect"].filter((k) => a[k] !== undefined);
+      if (forms.length !== 1) return fail(`upload takes one of data, text or effect${forms.length ? ` (got ${forms.join(" and ")})` : ""}, so nothing was sent: ${UPLOAD_SHAPE}`);
+      if (a.data === undefined) return HANDLERS.act(ag, { verb: "upload", args: a }, ctx, "act");
+      const as = a.as == null ? "model" : String(a.as);
+      if (!Object.hasOwn(UPLOAD_KINDS, as)) return fail(`upload: as is one of ${Object.keys(UPLOAD_KINDS).join(", ")} (got ${JSON.stringify(a.as)}), so nothing was sent: ${UPLOAD_SHAPE}`);
+      const bytes = fromBase64(a.data);
+      if (!bytes) return fail(`upload: data isn't base64, so nothing was sent: ${UPLOAD_SHAPE}`);
+      const q = new URLSearchParams();
+      if (as !== "model") q.set("as", as);
+      else if (a.catalog !== true) q.set("catalog", "0");   // a model is a one-off unless its maker says it is for reuse
+      if (a.name != null) q.set("name", String(a.name));
+      let r: Response, said: string;
+      try { r = await fetch(`${ag.httpBase}/upload${q.size ? `?${q}` : ""}`, { method: "POST", headers: ag.readHeaders, body: bytes, signal: AbortSignal.timeout(UPLOAD_MS) });
+        said = (await r.text()).trim(); }
+      catch (e) { return fail((e as Error)?.name === "TimeoutError"
+        ? `upload: the world's server didn't answer within ${UPLOAD_MS / 1000} s, so whether the file was stored isn't known; ${as === "avatar" ? "sending it again stores it under that name again, replacing whatever body holds the name by then" : "sending the same bytes again is safe (they get the same address)"}`
+        : `upload: the world's server couldn't be reached (${(e as Error)?.message || "no reason given"}), so nothing is known to be stored; calling again may work`); }
+      // the store's refusal, in the store's words (401, 409, 413, 415, 422, 429…): this tool adds no reason of its own
+      // …except that a 5xx may come after the file was written: then what is known is only that the store failed
+      // (a 503 is the door saying it is busy, before it reads anything: not stored)
+      if (!r.ok) return fail(r.status >= 500 && r.status !== 503 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
+        : `upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
+      let j: any = null;
+      try { j = JSON.parse(said); } catch { /* not JSON: passed on as it came, below */ }
+      const where = j && typeof j === "object" ? UPLOAD_KINDS[as](j) : null;
+      if (!where) return text(`stored; the world's store answered: ${said.slice(0, 400)}`);
+      if (as !== "model" || typeof j.check !== "string") return text(where);
+      // a model's build check started with the upload and waits at the address the store gave: asked for briefly here
+      const c: any = await CHECK_MODEL(ag, { lib: j.path }, HTTP_READ_MS);
+      return text(`${where}\n${c.isError ? `its build check isn't in yet (${c.content[0].text}): measure {lib: "${j.path}", check: true} asks for it` : c.content[0].text}`);
+  },
   move: async (ag, a, ctx, name) => {
-      // to: "?" is a listing, no move: it answers from a seat that holds you too (bot #454)
+      // to: "?" is a listing, no move: it answers from a seat that holds you too
       if (typeof a.to === "string" && a.to.trim().startsWith("?")) return text(ag.placeList(a.to.trim().slice(1)));
       if (ag.myOccupancy && !ag.mayVacate("menu")) return { content: [{ type: "text", text: `you're held on ${ag.socketName(ag.myOccupancy.to)}: it lets you go when the world does (detach {escape: true} gets you up anyway)` }], isError: true };
       const mode = a.mode == null ? "walk" : String(a.mode);
       if (mode !== "walk" && mode !== "fly") return { content: [{ type: "text", text: `move: mode is "walk" (default) or "fly"` }], isError: true };
-      // to: [x, y, z] (y picks the floor there, #236) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
-      // NAME: a named place (#239: "thing/place", a place's name or label, a thing's entrance), a thing, a person
+      // to: [x, y, z] (y picks the floor there) or [x, z] (no y: the walk's own storey, else the lowest floor), or a
+      // NAME: a named place ("thing/place", a place's name or label, a thing's entrance), a thing, a person
       let x: number, z: number, y: number | undefined, what = "", label: string | null = null;
       let near: { reach?: number; above?: number; below?: number; inside?: (x: number, z: number) => boolean; bodyAt?: { x: number; z: number } } = {};
-      let orBeside: Destination | undefined;   // a thing on another's top: the spot beside what holds it up (review r6 L1)
+      let orBeside: Destination | undefined;   // a thing on another's top: the spot beside what holds it up
       const tolerance = a.tolerance ?? 0.01;
       if (typeof a.to === "string") {
         const q = a.to.trim();
@@ -737,7 +794,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         }
       } else if (a.to != null || mode === "walk") {
         // a null coordinate is no value, not 0: Number(null) would pick the floor at height 0
-        const to = Array.isArray(a.to) ? a.to.map((v: unknown) => v == null ? NaN : Number(v)) : [];
+        const to = Array.isArray(a.to) ? a.to.map(coord) : [];
         x = to[0]; z = to.length === 3 ? to[2] : to[1];
         if (to.length === 3) y = a.to[1] == null ? undefined : to[1];
         if (to.length !== 2 && to.length !== 3)
@@ -748,7 +805,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (((a.to != null || mode === "walk") && ![x, z].every(Number.isFinite)) || !Number.isFinite(tolerance) || tolerance < 0 || tolerance > 0.4)
         return { content: [{ type: "text", text: WALK_ARGS_REASON }], isError: true };
       if (mode === "fly") {
-        // FLIGHT (upstream's flight arc, merged 2026-09-02; behind the world's `fly` grant). The integrator is the agent's
+        // FLIGHT (behind the world's `fly` grant). The integrator is the agent's
         // (shared/flight.js); this is only its door: take off if on the ground, climb if asked, glide if sent somewhere.
         const L: string[] = [];
         // the arguments are checked before the launch, so a refusal moves nothing
@@ -765,7 +822,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         L.push(ag.flightStatus());
         return text(L.join("\n"));
       }
-      // this request's own refusal (receipt): its plan may wait for placed geometry still loading (#235), so walkRefusal,
+      // this request's own refusal (receipt): its plan may wait for placed geometry still loading, so walkRefusal,
       // read straight after the call, could belong to a later walk
       let receipt = { refusal: null as string | null };
       const attempt = async () => {
@@ -781,10 +838,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         return ok;
       };
       let arrived = await attempt();
-      // refused before a step, and the thing stands on another's top (a cup on a table, a walk that can't climb onto it):
-      // beside what holds it up instead, on its floor; the first refusal is the one said if none of them is walked
-      // A walk stopped or replaced while it waited for geometry (agent.ts walkTo's receipt) isn't a route refused: the
-      // fallback would start the walk that was just cancelled, so it ends the tries and is the one said
+      // refused before a step on another thing's top (a cup on a table): try beside what holds it up; the first refusal
+      // is said if none is walked. A superseded walk (agent.ts walkTo's receipt) ends the tries.
       const superseded = () => /^superseded by /.test(receipt.refusal ?? "");
       const firstRefusal = receipt.refusal;
       for (let alt = orBeside; !arrived && receipt.refusal && !superseded() && alt; alt = alt.orBeside) {
@@ -796,13 +851,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // no route (a sealed room, a structure over the search limit, two that conflict): refused before a step, and why
       if (!arrived && planned) return { content: [{ type: "text", text: `move refused before a step: ${planned}\nyou stand at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)})${what}` }], isError: true };
       const note = ag.lastWalkNote ? ` (${ag.lastWalkNote})` : "";
-      // E1: the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
+      // the authority walks this body too; a stretch it refused (a wall, out of bounds) stopped it, and says why
       const no = ag.lastWalkRefusal;
       if (!arrived && no) return { content: [{ type: "text", text: `${refusalText("move", { refused: no })}\nyou stopped at (${ag.pos.x.toFixed(3)}, ${ag.pos.z.toFixed(3)}), ${Math.hypot(ag.pos.x - x, ag.pos.z - z).toFixed(3)}m short${note}${what}` }], isError: true };
-      if (!arrived) return fail(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // main #241: the stride's own stop reason first
-      // which floor it chose, when the y asked for wasn't one (#236 y, owner 22:40)
+      if (!arrived) return fail(ag.walkStopReason ?? ag.walkStall ?? "walk interrupted or timed out");   // the stride's own stop reason first
+      // which floor it chose, when the y asked for wasn't one
       const floorNote = y != null && Math.abs(ag.pos.y - y) > 0.1 ? `; no floor at ${y.toFixed(2)} m there — you're on the floor at ${ag.pos.y.toFixed(2)} m` : "";
-      // which named room you're in now (#239)
+      // which named room you're in now
       const here = ag.placesAt([ag.pos.x, ag.pos.y, ag.pos.z])[0];
       const inRoom = here ? `, in ${here.place.label ?? here.place.name} (${ag.refName(here.entity.id)}/${here.place.name})` : "";
       return text(label
@@ -837,57 +892,23 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   stop: async (ag, a, ctx, name) => { ag.stop(); return text("stopped"); },
-  // say args ride through whole (spoken-say protocol: a voice aux leg
-  // performs says marked spoken:true; utt/t0 are author-controlled
-  // display/continuation metadata — NOT proof of performance, which only
-  // the attest/performed receipt path establishes). ag.say rebuilt {text}
-  // bare and silently stripped them —
-  // which forced voice agents onto a raw world-ws side door (2026-08-10).
+  // say forwards the spoken-say keys (spoken/utt/t0: author-controlled metadata, NOT proof of performance; only the
+  // attest/performed receipt path establishes that)
   say: async (ag, a, ctx, name) => {
-      // Spoken-say protocol keys ride through; anything else stays at the
-      // door. The server validates these (bounded utt window, clamped t0)
-      // and strips them from ordinary says — the authority's job is to forward
-      // the protocol, not arbitrary metadata.
-      // THE TRIO IS A UNIT (r3 review). The world server deletes all three
-      // keys unless spoken===true AND utt is a safe non-negative integer —
-      // so forwarding keys independently let a spoken:true say with a bad
-      // utt ride to the server and silently degrade to ordinary chat, the
-      // voice agent none the wiser. Validate the same unit here and refuse
-      // LOUDLY: a door that must drop the protocol should say so, not shrug
-      // the say into text. (r5 tightened this to TYPE-EXACT rather than the
-      // server's Number() coercion — see the next block: the authority refuses
-      // null/bool/"5" outright so a coerced value can never be laundered into
-      // a fabricated utterance.)
-      // text is REQUIRED and must be a real string (Opus-5 review): the schema
-      // says required:["text"], but a schema is not a boundary here (same
-      // reason "5" is refused for utt) — so validate it, or a call with the
-      // trio but no text lands a FABRICATED spoken say whose body is the
-      // literal "undefined"/"[object Object]".
+      // Only the spoken-say keys ride through. THE TRIO IS A UNIT: the world server drops all three unless spoken===true
+      // and utt is a safe non-negative integer, so validate the same unit here and refuse LOUDLY rather than let a
+      // spoken say silently degrade to chat. text must be a real string (a schema is not a boundary).
       if (typeof a.text !== "string" || a.text.length === 0) {
         return { content: [{ type: "text", text: `say refused: \`text\` is required and must be a non-empty string, so nothing was said; you sent ${shown(a.text)}` }], isError: true };
       }
-      // "Wants spoken" means the caller is ASSERTING a performance: spoken:true,
-      // or a trio partner (utt/t0) present. An explicit spoken:false (or spoken
-      // absent) is an ordinary say — degrade to plain chat exactly as the world
-      // server does, never an error (Opus-5 review: refusing spoken:false muted
-      // a voice leg doing the natural `spoken: leg.isActive`).
+      // "wants spoken": spoken:true or utt/t0 present. spoken:false alone is an ordinary say; with utt or t0 it is refused.
       const wantsSpoken = a.spoken === true || a.utt !== undefined || a.t0 !== undefined;
-      // TYPE-EXACT, not coerced (adversarial review): Number(null)===0 and
-      // Number(true)===1 let a null/boolean utt or a null t0 pass the old
-      // guard and forward a FABRICATED value — violating this server's own
-      // "malformed refuses, never silently drops" invariant. The schema
-      // declares utt:integer>=0 and t0:number; require exactly those raw
-      // JSON types. (The world server tolerates numeric strings elsewhere;
-      // the authority does not launder them into the protocol.)
+      // TYPE-EXACT, not coerced (Number(null)===0 would forward a fabricated utt): utt integer >= 0, t0 a finite number
       const uttOk = typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0;
       const t0Ok = a.t0 === undefined || (typeof a.t0 === "number" && Number.isFinite(a.t0));
       const trioOk = a.spoken === true && uttOk && t0Ok;
       if (wantsSpoken && !trioOk) {
-        // Machine-legible failure (r6 review): the same {content, isError:true}
-        // contract every malformed tool call returns. A prose-only refusal let a
-        // schema client that inspects result.isError read this as a successful
-        // say — the authority must mark the refusal as an error, not just describe
-        // one in text.
+        // isError, so a client reading result.isError doesn't take this for a successful say
         return { content: [{ type: "text", text: `spoken-say refused, so nothing was said: a spoken line needs spoken: true and utt a non-negative integer, and t0, if given, a finite number (you sent spoken ${shown(a.spoken)}, utt ${shown(a.utt)}, t0 ${shown(a.t0)}). Sent as plain text it would lose its performance link. For an ordinary say, send only text.` }], isError: true };
       }
       const extra = trioOk
@@ -920,7 +941,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
           if (no) return { content: [{ type: "text", text: `anim {ragdoll} refused (consent class: shove): ${no}` }], isError: true };
           return text(`asked ${to} to go limp (the server passed it on; their body has the last word)`);
         }
-        ag.knockDown(ag.name, null, "(you go limp)");
+        ag.knockDown(ag.name, null, "goes limp");
         return text("you go limp and fall — walking, or anim {stop: true}, stands you back up");
       }
       if (a.posture != null) {
@@ -930,7 +951,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ag.setPosture(clip);
         return text(kind === "stand" ? "you stand up" : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
       }
-      // a pose by name (R 10-17 15:09): one frame the body holds by name. The one every winged rig knows is wings-folded;
+      // a pose by name: one frame the body holds by name. The one every winged rig knows is wings-folded;
       // a name the body doesn't know leaves it as it is (its default), said, never an error
       if (a.name != null) {
         if (a.bones != null) return { content: [{ type: "text", text: "pose: a name OR bones, not both" }], isError: true };
@@ -943,13 +964,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (w !== "fold" && w !== "open") return { content: [{ type: "text", text: `pose: wings is "fold" or "open"` }], isError: true };
         return act(await ag.foldWings(w === "fold"));
       }
-      // Validate and SAY what happened. A pose is authored blind — the only
-      // other feedback is a snapshot through a GPU host — so a bone name that
-      // does not exist, a three-component quaternion, or two names folding
-      // onto one bone must come back as words, not as a body that silently
-      // did not move. (See shared/humanoid.js.) Checked against the rig of
-      // the body being posed: arbitrary bones exist only on the rigs that
-      // have them.
+      // Validate and SAY what happened: a pose is authored blind, so an unknown bone, a bad quaternion or two names
+      // folding onto one bone come back as words (shared/humanoid.js), checked against the posed body's own rig.
       const target = a.target ? String(a.target) : null;
       const avatar = target ? ag.people.get(target)?.avatar : ag.avatar;
       const rig = avatar ? await rigBonesFor(ag.httpBase, avatar) : null;
@@ -977,7 +993,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (target) {
         const t0 = Date.now();
         ag.puppet(target, puppetPose(v.pose, replace));
-        const no = await presenceRefusal(ag, t0, target);   // consent class pose and range, at the server (F2)
+        const no = await presenceRefusal(ag, t0, target);   // consent class pose and range, at the server
         if (no) return { content: [{ type: "text", text: `anim refused (consent class: pose): ${no}` }], isError: true };
         return text(`asked ${target} to ${replace ? "hold a pose (replacing theirs)" : "pose"} ${what}`
           + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
@@ -1021,7 +1037,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   },
   animate: async (ag, a, ctx, name) => {
-      // a clip by name (R 10-17 15:09): once rides the presence one-shot every receiver already plays; looped holds the clip
+      // a clip by name: once rides the presence one-shot every receiver already plays; looped holds the clip
       // (it loops until another action replaces it: a walk, a posture, another animation). A name the body doesn't know
       // plays the body's default on every receiver, never an error here.
       const looped = a.looped === true || a.loop === true;
@@ -1069,12 +1085,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (opts.pulseSec != null || opts.radiusM != null) {
         ctx.rememberActivity?.(cur); // what was APPLIED, not what was asked
       }
-      // A push-less host cannot receive the stream — saying "delivered on
-      // the world channel" to a session with no channels would set an agent
-      // waiting forever for pushes that structurally cannot arrive
-      // (external integrator find #5b, digi/FC). Tell the truth, and hand
-      // over whatever digests accumulated since the last call: the same
-      // sense, in the polling model this host lives in anyway.
+      // a push-less host can't receive the stream: say so, and hand over the digests held since the last call
       if (!ctx.canPush()) {
         const held = ctx.heldActivity.splice(0);
         const status = cur.pulseSec === 0
@@ -1104,8 +1115,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   create: async (ag, a, ctx, name) => {
       // the authority's create, its args as they are; one default: with nowhere said, 2 m in front of you, on the ground
       // (a light — no model — at eye height, since it has no size for place to solve)
-      // #216: an id, when given, is a non-empty string; null/omitted means a minted one. The wire doesn't refuse a bad id —
-      // it ESCAPES it (x--…), so "" and {} used to mint junk with no word said.
+      // an id, when given, is a non-empty string (null/omitted mints one): the wire would ESCAPE a bad one into junk
       if (a.id !== undefined && a.id !== null && (typeof a.id !== "string" || !a.id.trim()))
         return { content: [{ type: "text", text: "create's id, when given, is a placeholder ('$lamp'); omit it (or pass null) and the authority mints one" }], isError: true };
       const args: Record<string, unknown> = { ...a }; if (a.id == null) delete args.id;
@@ -1117,19 +1127,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const ahead = [ag.pos.x + Math.sin(ag.yaw) * 2, ag.pos.z + Math.cos(ag.yaw) * 2];
       const bodiless = a.model == null && comps?.model == null && comps?.mesh == null;   // a light, an empty: nothing for place to size
       if (a.from == null && bodiless && comps?.light && !a.place && !comps?.transform) {
-        // the old light tool's default: just in front of you, at about eye height (or exactly at)
-        const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
+        // with nowhere said: just in front of you, at about eye height (or exactly at)
+        const pt = Array.isArray(a.at) ? a.at.map(coord) : null;
         if (pt && ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite))) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z], or {pos: [x, y, z], yaw}" }], isError: true };
         const x = pt ? pt[0] : ahead[0], z = pt ? (pt.length === 3 ? pt[2] : pt[1]) : ahead[1];
         const y = pt && pt.length === 3 ? pt[1] : ag.heightAt(x, z) + 1.6;
         args.components = { ...comps, light: { ...comps.light }, transform: { pos: [x, y, z] } };
         // at's object form ({pos, yaw}) goes on to the authority, which lays it over this transform and checks its shape
-        // (it was read only as an array, then deleted, and the light went ahead of you at eye height)
         if (pt) delete args.at;
       } else if (a.from == null && Array.isArray(a.at)) {
         // at without from: a point. On the ground ([x, z]) it is place {at} — the authority seats a model's bottom; a
         // bodiless thing, or an exact [x, y, z], goes straight into its transform
-        const pt = a.at.map(Number);
+        const pt = a.at.map(coord);
         if ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite)) return { content: [{ type: "text", text: "create: at is a point [x, z] or [x, y, z] (or, with from, the authority's {pos, yaw})" }], isError: true };
         delete args.at;
         // at sets the position only: a rotation or scale given in components.transform stays
@@ -1139,19 +1148,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (bodiless) args.components = { ...(comps ?? {}), transform: { pos: [ahead[0], ag.heightAt(ahead[0], ahead[1]), ahead[1]] } };
         else args.place = { at: ahead };
       } else if (a.from != null) {
-        // a blueprint by a unique PREFIX of its hash (the old blueprint_place's courtesy)
+        // a blueprint by a unique PREFIX of its hash
         if (/^sha256:/.test(String(a.from))) { const want = String(a.from).slice(7).toLowerCase(); const lib = ag.worldBlueprints();
           const hits = Object.keys(lib).filter((h) => h.startsWith(want));
           if (!hits.length) return { content: [{ type: "text", text: `create: no blueprint here whose hash starts "${want}" (the blueprints tool lists them)` }], isError: true };
           if (hits.length > 1) return { content: [{ type: "text", text: `create: "${want}" matches ${hits.length} blueprints — give more of the hash` }], isError: true };
           args.from = `sha256:${hits[0]}`; }
-        // create {from}'s `at` is the authority's {pos, yaw|q} (verbspec create.at). The tool also takes a point, [x, z] or
-        // [x, y, z] (audit 10-07: it sent [x, z] and every duplicate was refused `shape`). A duplicate stays a sibling of its
-        // source, so its point is in the source's parent's frame when it has one; [x, z] keeps the source's height. With no
-        // at, a duplicate goes where the authority puts it (beside its source), a blueprint copy 2 m in front of you.
+        // create {from}'s `at` is the authority's {pos, yaw|q} (verbspec create.at); the tool also takes [x, z] or
+        // [x, y, z], in the source's parent's frame (a duplicate is its sibling; [x, z] keeps its height). No at: a
+        // duplicate goes beside its source, a blueprint copy 2 m in front of you.
         const blueprint = String(a.from).startsWith("sha256:");
         const src: any = blueprint ? null : ag.foldRecord(String(a.from));
-        const pt = Array.isArray(a.at) ? a.at.map(Number) : null;
+        const pt = Array.isArray(a.at) ? a.at.map(coord) : null;
         if (pt) {
           if ((pt.length !== 2 && pt.length !== 3) || !pt.every(Number.isFinite)) return { content: [{ type: "text", text: "create: with from, at is a point [x, z] or [x, y, z] (or the authority's {pos: [x, y, z], yaw})" }], isError: true };
           const y = pt.length === 3 ? pt[1] : Number.isFinite(src?.pos?.[1]) ? Number(src.pos[1]) : ag.heightAt(pt[0], pt[1]);   // a fold record's pos is its LOCAL transform (shared/protocol/view.js)
@@ -1163,7 +1171,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const made = (r.notes ?? []).find((n: any) => n?.copied)?.as ?? r.refs?.[0]?.id ?? (r.would ?? []).find((o: any) => o?.op === "create")?.id ?? Object.keys(r.after ?? {})[0];
       const id = (typeof a.id === "string" ? r.ids?.[a.id] : null) ?? made ?? "?";
       const pos = r.after?.[id]?.transform?.pos;
-      // its handle (the short id look prints: tools take it, or its label), and its full id once (R 10-17)
+      // its handle (the short id look prints: tools take it, or its label), and its full id once
       return text(`${a.dry ? "would create" : "created"} [${a.dry ? id : ag.handle(id)}]${a.model ? ` ${modelWord(a.model)}` : ""}${Array.isArray(pos) ? ` at (${pos.map((v: number) => (+v).toFixed(2)).join(", ")})` : ""} — id ${id}${r.notes?.length ? `\nnotes: ${JSON.stringify(r.notes).slice(0, 600)}` : ""}`);
 
   },
@@ -1178,13 +1186,24 @@ export const HANDLERS: Record<string, ToolHandler> = {
   },
   act: async (ag, a, ctx) => {
       const verb = String(a.verb ?? ""), args = (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, any>;
-      { const bad = grantsFor(ag, verb, args); if (bad) return { content: [{ type: "text", text: bad }], isError: true }; }   // main's for: "2h" (decision table row 14)
+      { const bad = grantsFor(ag, verb, args); if (bad) return { content: [{ type: "text", text: bad }], isError: true }; }   // a timed grant's for: "2h"
       if (Object.hasOwn(BODY_VERBS, verb)) return BODY_VERBS[verb](ag, args, ctx, verb);   // answered by this body, or moderation by name
       if (typeof args.who === "string") { const rw = await resolveWho(ag, args.who, verb); if ("err" in rw) return rw.err; args.who = rw.who; }   // warn/mute/…: a name works here too
       // a thing by id, label or prefix. No authority verb takes a thing in to or target: move's to is a point, say's and
       // body's name a person, update's is a blueprint's hash (verbspec.js), so a person who shares a thing's label is
       // still the one addressed
-      const named = namedThings(ag, args, THING_KEYS.filter((k) => k !== "to" && k !== "target")); if ("err" in named) return named.err;
+      const keys = THING_KEYS.filter((k) => k !== "to" && k !== "target");
+      const named = namedThings(ag, args, keys); if ("err" in named) return named.err;
+      // a batch's requests name things the same way (a handle create just returned, a label)
+      if (verb === "batch" && Array.isArray(named.args.requests)) {
+        const reqs = [];
+        for (const q of named.args.requests) {
+          if (!q || typeof q !== "object" || !q.args || typeof q.args !== "object") { reqs.push(q); continue; }
+          const n = namedThings(ag, q.args, keys); if ("err" in n) return n.err;
+          reqs.push({ ...q, args: n.args });
+        }
+        named.args = { ...named.args, requests: reqs };
+      }
       const r = await ag.request(verb, named.args);
       const reply = r ?? { ok: false };
       // a use's own act can stand (ok) while the script it set off didn't run: refused, failed, unavailable, paused… The
@@ -1193,19 +1212,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok && !scriptFell ? {} : { isError: true }) };
   },
   travel: async (ag, a, ctx, name) => {
-      // Travel is SESSION machinery — channel epochs, join gates, the
-      // fatal-join teardown — so the shared table hands it to the host
-      // through the ctx hook. A server with no hook (stdio fronts exactly one
-      // WORLD_URL) does not list the tool; answering anyway teaches.
+      // session machinery, through the ctx hook; a server without one doesn't list the tool, and answering teaches
       if (!ctx.travel) return { content: [{ type: "text", text: "travel isn't available on this server: it fronts a single world, so you stayed where you are; its operator chooses that world (WORLD_NAME)" }], isError: true };
       return await ctx.travel(String(a.world ?? "").trim());
 
   },
   worlds: async (ag, a, ctx, name) => {
-      // Discovery only — this reads the sequencer's /worlds and never moves
-      // the body. The policy column is the authority's own joinAllowed, asked
-      // here so an agent learns "may I?" from the map rather than from a
-      // refused travel.
+      // discovery only (never moves the body); the policy column is the authority's own joinAllowed
       let r: Response;
       // AS THIS IDENTITY (readHeaders): the map is per caller — a world that admits only people listed is invisible to
       // everyone it doesn't list, so an anonymous ask would hide the private worlds this agent belongs to
@@ -1221,7 +1234,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const here = w.name === ag.world;
         const who = (w.people ?? []).map((p) => (typeof p === "string" ? p : p.declares ? `${p.id} (${p.declares})` : p.id));   // one list; a declared word, if any, as a tag
         const nA = Array.isArray(w.agents) ? w.agents.length : 0, n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
-        const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart (decision table row 21)
+        const occupancy = who.length ? `${n(who.length - nA, "human")}, ${n(nA, "agent")}: ${who.join(", ")}` : (w.loaded ? "empty" : "empty, not loaded");   // counted apart
         const door = w.access === "invite-only" ? "invite-only" : w.access === "watch" ? "watch only" : w.access === "signed-in" ? "signed-in only" : w.access === "open" ? "open to guests" : "";
         const may = here ? "you are here"
           : pol && !pol.canJoin(w.name) ? "outside the worlds your credential is limited to"
@@ -1230,41 +1243,31 @@ export const HANDLERS: Record<string, ToolHandler> = {
         return `- ${w.name}${here ? " ←" : ""}${door ? ` (${door})` : ""}: ${occupancy}${may ? ` — ${may}` : ""}`;
       });
       const foot = pol
-        ? "`travel` goes to worlds that exist: joining never founds one here (any signed-in account founds a world with world-found)."
+        ? "`travel` goes to worlds that exist: joining never founds one here (founding a world is a browser action today; no MCPL tool does it)."
         : ctx.travel ? "" : "This server fronts a single world; there is no travel from here.";
       return text(`Worlds on this server (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },
   measure: async (ag, a, ctx, name) => {
       { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       if (a.check === true) return CHECK_MODEL(ag, a);
-      // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
-      // base by string surgery on WORLD_URL — the exact form agent.ts:297
-      // replaced with real URL parsing, for a reason its comment records: a
-      // WORLD_URL carrying a query string (…/ws?token=…) defeats the `/\/ws$/`
-      // replace and produces a malformed URL (reported by digi/FC). The bug was
-      // fixed in one place and left standing in the other, which is what a
-      // duplicated derivation always eventually does.
-      //
-      // It also ignored the authority's actual connection: WORLD_URL is the boot
-      // env, but `connect()` re-reads its target on every dial, so after a
-      // travel this could point at the world we LEFT and measure a different
-      // world's geometry than the one the agent is standing in.
+      // the agent's own httpBase: never re-derive it from WORLD_URL (a query string breaks that, and after travel it
+      // names the world we left)
       const base = ag.httpBase;
       const q = a.id
         ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
         : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
       if (!q) return fail("measure wants {id} (a placed thing) or {lib} (a library model)");
       // What the world server did, as far as the door can see it: no answer,
-      // an answer that isn't geometry, or its own error.
+      // an answer that isn't geometry (a body that stalls past the read bound says so), or its own error.
       // as this identity (readHeaders): an invite-only world's geometry answers only the people it lists. One request
       let d: any;
       let status = 0;
-      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders }); status = r.status;
+      try { const r = await fetch(`${base}/geom?${q}`, { headers: ag.readHeaders, ...READ() }); status = r.status;
         // who this body is, which calling again doesn't change: say who can
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
-        try { d = await r.json(); } catch { return fail(`measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
-      catch (e) { return fail(`measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
-      if (d.error) return fail(`measure: the world server answered ${status} (${d.error}), so nothing was measured`);
+        try { d = await r.json(); } catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
+      catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
+      if (d.error || status < 200 || status > 299) return fail(`measure: the world server answered ${status}${d.error ? ` (${d.error})` : ""}, so nothing was measured`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
@@ -1289,19 +1292,20 @@ export const HANDLERS: Record<string, ToolHandler> = {
       { const t = namedThings(ag, a, ["id"]); if ("err" in t) return t.err; a = t.args; }
       const id = String(a.id ?? "");
       if (id === WORLD_ID) {
-        // the world entity (design §3): the fold's sky / terrain / grass read as one
+        // the world entity (shared/worldentity.js): the fold's sky / terrain / grass read as one
         // entity's components — the same declaration the browser's World cards render
         const schema = worldSchema(ag.worldFold(), { now: Date.now() });
         if (a.json) return text(JSON.stringify(schema));
         return text(`[${WORLD_ID}] the world entity — ${describeWorld(ag.worldFold(), Date.now())}`
-          + `\ncomponents: ${schema.sections.list.map((c: any) => `${c.title}${c.present ? "" : " (default)"}`).join(", ")} — an alias of the world's sky, terrain and grass: edits go out as one request setting @world's sky / terrain / grass (owner rank)`
+          + `\ncomponents: ${schema.sections.list.map((c: any) => `${c.title}${c.present ? "" : " (default)"}`).join(", ")} — an alias of the world's sky, terrain and grass: edits go out as one request setting @world's sky / terrain / grass (the editWorld permission; the terrain takes build)`
           + `\n${describeSchema(schema, { verbsHint: false })}`
+          + groundPieces(ag)
           + `\nedit {id: "${WORLD_ID}", set: {"sky.hours": 17.5, "sky.clouds": "cirrus", "weather.state": "rain", "terrain.amplitude": "+=1", "grass.density": 1.4, "grass.mow": true}} — relative math works on every number.`);
       }
       // the FOLDED record, not the perception view (which thins a light to
       // its position): the schema wants every field the fold keeps
       const rec = ag.foldRecord(id) as any;
-      // a call that did nothing answers failed (as #269 has it)
+      // a call that did nothing answers failed
       if (!rec) return fail(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const world = foldWorld(ag);
       const schema = inspectSchema(rec, id, { world, box: rec.model ? await ag.modelBox(String(rec.model)) : null });
@@ -1324,7 +1328,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const id = String(a.id ?? "");
       const rec = id === WORLD_ID ? null : ag.foldRecord(id) as any;
       if (!rec && id !== WORLD_ID) return fail(`edit: no placed thing "${id}" here, so nothing was sent (ids are in look() and hierarchy)`);
-      // what the plan reads, taken before it awaits the model's box: the write is pinned to it (expect, §3a), so a change
+      // what the plan reads, taken before it awaits the model's box: the write is pinned to it (expect, PROTOCOL §3a), so a change
       // that lands meanwhile is refused as changed, not overwritten (a person's edit pins the same way)
       const wireId = id === WORLD_ID ? id : encId(id);   // the authority's own id, as the ops carry it (requests.js)
       const base = ag.componentsOf(wireId);
@@ -1333,7 +1337,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : editOps(rec, id, (a.set ?? {}) as Record<string, unknown>, { world: foldWorld(ag), box: rec.model ? await ag.modelBox(String(rec.model)) : null });   // pivot.centre / pivot.base snap to it, as a person's do
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
-      // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
+      // a component's needs (shared/editschema.js editOps): a choice to make or a remove-both to confirm sends nothing and says how to answer
       for (const q of (asks ?? []) as any[]) if (q.kind === 'confirm' || q.options.length) L.push(q.kind === 'choice'
         ? `asks: ${q.prompt} — answer with ${q.options.map((o: any) => `"${q.key}": "${o.v}" (${o.label})`).join(' or ')}`
         : `asks: ${q.prompt} — answer with "${q.key}": "both"`);
@@ -1349,7 +1353,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       L.push(`${a.dry ? "would send" : "sent"} ${req.verb} ${JSON.stringify(req.args)}`);
       if (r && !r.ok) L.push(refusalText("edit", r));   // the words a person sees (shared/protocol/refusal.js)
       else if (r) {
-        // the authority's own words on what it did (agent lab round 2, Hazel): its notes, warnings, and an undo's account
+        // the authority's own words on what it did: its notes, warnings, and an undo's account
         for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
         for (const nt of (r.notes ?? []) as any[]) if (!nt.placed) L.push(`  note: ${nt.why ?? JSON.stringify(nt)}`);
         if (!a.dry) L.push(`the authority accepted it${r.act != null ? ` (act ${r.act}; undo {act: ${r.act}} takes it back)` : ""}`);
@@ -1411,10 +1415,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
 
   world_history: async (ag, a, ctx, name) => {
       // the world's log is read through the authority (its history request: verbs, before and after reach it)
-      // SWEEP-3 G2 (main's shape): kinds (default act + say), a window with before AND after (read forward from after, cut at before), 50 a page
+      // kinds (default request + say), a window with before AND after (read forward from after, cut at before), 50 a page
       const kinds = Array.isArray(a.kinds) && a.kinds.length ? new Set(a.kinds.map(String)) : new Set(["request", "say"]);
       const both = typeof a.before === "number" && typeof a.after === "number";
-      const h = await ag.request("history", { limit: Math.min(200, Math.max(1, Number(a.limit ?? 50))),
+      const n = Number(a.limit ?? 50);   // 1–200; a non-number is the default
+      const h = await ag.request("history", { limit: Number.isFinite(n) ? Math.min(200, Math.max(1, n)) : 50,
         ...(Array.isArray(a.verbs) && a.verbs.length ? { verbs: a.verbs.map(String) } : {}),
         ...(typeof a.before === "number" && !both ? { before: Math.floor(a.before) } : {}), ...(typeof a.after === "number" ? { after: Math.floor(a.after) } : {}) });
       if (!h?.ok) return refusedBy(h, "world_history");
@@ -1429,16 +1434,18 @@ export const HANDLERS: Record<string, ToolHandler> = {
         + `\n(the world log: ${said}${kinds.size === 2 && kinds.has("request") && kinds.has("say") ? "; kinds: ['change', 'physics'] shows what requests wrote and the physics" : ""}; act {verb: 'history', args: {id}} reads one thing's own acts)`);
   },
   world_debug: async (ag, a, ctx, name) => {
-      // main's names teach, and nothing unknown is silently dropped (Mica 10-31, matrix #10)
+      // old names teach, and nothing unknown is silently dropped
       const WAS: Record<string, string> = { behavior: "script", behaviors: "scripts" }, TAKES = ["limit", "kinds", "script", "scripts"];
       for (const k of Object.keys(a ?? {})) if (!TAKES.includes(k))
         return fail(`world_debug has no argument '${k}'${WAS[k] ? `: ${k} is now ${WAS[k]}` : ""} (it takes ${TAKES.join(", ")}) — nothing ran`);
+      const n = Number(a.limit ?? 30);   // 1–300; a non-number is the default
       const r = await ag.worldDebug({
-        limit: Math.min(300, Math.max(1, Number(a.limit ?? 30))),
+        limit: Number.isFinite(n) ? Math.min(300, Math.max(1, n)) : 30,
         kinds: Array.isArray(a.kinds) && a.kinds.length ? a.kinds.map(String) : undefined,
         ...(a.script != null ? { script: String(a.script) } : {}),
         ...(a.scripts ? { scripts: true } : {}),
       } as any);
+      if (r.failed) return fail("world_debug: the world didn't answer (this body isn't joined, or nothing came back within 8 s), so the flight recorder wasn't read — call again");
       const status = (r as any).status ? `status: ${(r as any).status}\n` : "";
       if (!r.events.length) return text(status || "flight recorder is empty — nothing has bounced recently");
       const lines = r.events.map((e: any) => {
@@ -1460,12 +1467,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
 };
 
 
-// ---------------- anim (R 10-17 15:31/15:32): ONE tool for a pose or a clip, by name or live ----------------
-// The old pose / animate handlers are its live and by-name halves now (LEGACY below): they keep their words; the old
-// tool names are unknown tools (Mica 11-05).
+// ---------------- anim: ONE tool for a pose or a clip, by name or live ----------------
+// The old pose / animate handlers are its live and by-name halves (LEGACY below); the old tool names are unknown tools.
 const LEGACY: Record<string, ToolHandler> = { pose: HANDLERS.pose, animate: HANDLERS.animate };
 delete HANDLERS.pose; delete HANDLERS.animate;
-/** Each built-in anim's own mode (R 15:32): what plays when the call says none. A one-frame pose holds. A name not
+/** Each built-in anim's own mode: what plays when the call says none. A one-frame pose holds. A name not
  *  here plays once (the body plays its default for a name it doesn't know). When anim-clip has a shape, its mode is a
  *  field of it. */
 export const ANIM_MODES: Record<string, "once" | "loop" | "hold"> = {
@@ -1480,9 +1486,9 @@ async function clipLength(base: string, clip: string): Promise<number | null> {
     const d = Number(a?.duration ?? a?.clip?.duration); return Number.isFinite(d) && d > 0 ? d : null; } catch { return null; }
 }
 const ANIM_CLIP: Record<string, string> = { stand: "idle" };   // the presence clip a built-in name holds as
-/** The body-mode a built-in anim asks for while it plays (R 15:34; an anim-clip's data may carry bodyMode once it has a shape). */
+/** The body-mode a built-in anim asks for while it plays (an anim-clip's data may carry bodyMode once it has a shape). */
 const ANIM_BODY: Record<string, "stand" | "sit" | "lie"> = { sit: "sit", sitchair: "sit", lie: "lie", stand: "stand" };
-/** Where a name resolves (R 15:34): the avatar's own anim, then the world's, then the built-in ones. Neither of the first two
+/** Where a name resolves: the avatar's own anim, then the world's, then the built-in ones. Neither of the first two
  *  exists yet (anim-pose / anim-clip are reserved; avatars carry no anim list): every name is built in today. */
 function animFrom(_ag: any, _name: string): "avatar" | "world" | "builtin" { return "builtin"; }
 const MODES = ["once", "loop", "hold"];
@@ -1498,7 +1504,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (mode0 != null && !MODES.includes(mode0)) return { content: [{ type: "text", text: `anim: mode is once, loop or hold (got ${JSON.stringify(a.mode)})` }], isError: true };
   const at = a.at == null ? null : Number(a.at);
   if (at != null && !(Number.isFinite(at) && at >= 0)) return { content: [{ type: "text", text: "anim: at is seconds into the anim (0 or more)" }], isError: true };
-  // the call's shape first: a bad shape declares no body-mode (bot #459)
+  // the call's shape first: a bad shape declares no body-mode
   const forms = ["name", "joints", "tracks", "stop", "ragdoll"].filter((k) => a[k] != null && a[k] !== false);
   if (a.name != null && (a.joints != null || a.tracks != null)) return { content: [{ type: "text", text: "anim: a name OR live keys (joints, or tracks), not both — a named anim plays as it is; nothing was guessed and nothing played" }], isError: true };
   if (forms.length > 1) return { content: [{ type: "text", text: `anim: one of name, joints, tracks, stop or ragdoll at a time (got ${forms.join(", ")})` }], isError: true };
@@ -1509,19 +1515,20 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
     if (isReservedAnimName(n)) return { content: [{ type: "text", text: `anim: "${n}" is reserved — it names every ad-libbed anim (joints, tracks), so no anim can be called it; stop: "${n}" stops those` }], isError: true };
     if (a.target) return { content: [{ type: "text", text: "anim {name} plays on your own body; to animate someone else, send joints or tracks (they decide)" }], isError: true };
   }
-  // a body-mode declaration (R 15:45): any of the six, for looks; it holds until the mover's next real transition or the
+  // a body-mode declaration: any of the six, for looks; it holds until the mover's next real transition or the
   // next declaration, and grants nothing. Alone, or beside a name (the anim then plays in that mode)
+  const declaredBefore = ag.modeTracker?.declared;   // a refused call below puts it back (a refused call changes nothing)
   if (a.bodyMode != null) { if (!isBodyMode(a.bodyMode)) return { content: [{ type: "text", text: `anim: bodyMode is ${BODY_MODES.join(" | ")} (got ${JSON.stringify(a.bodyMode)})` }], isError: true };
     if (a.target) return { content: [{ type: "text", text: "anim {bodyMode} declares your own body's mode" }], isError: true };
     ag.bodyMode = String(a.bodyMode);
-    // alone, it rests the body in the new mode's own anim (declaring stand stands you up, R 16:26), unless a clip anim plays
+    // alone, it rests the body in the new mode's own anim (declaring stand stands you up), unless a clip anim plays
     // or a walk is under way (the walk's clip is the mover's)
     if (a.name == null && a.joints == null && a.tracks == null && (a.stop == null || a.stop === false) && a.ragdoll !== true && !ag.target && ag.clip !== "ragdoll" && !ag.anims.some((x: any) => x.kind === "clip")) { const rest = ag.restClip(ag.bodyModeNow()); if (rest) ag.clip = rest; }
-    // on a seat (review r11 L1): body-mode grants nothing, so a declaration never moves you off it; the reply says how
+    // on a seat: body-mode grants nothing, so a declaration never moves you off it; the reply says how
     const seated = ag.myOccupancy ? `; you're still attached to ${ag.socketName?.(ag.myOccupancy.to) ?? "your seat"}, and rest in its anim — detach to get off` : "";
     // with stop or ragdoll beside it, that runs too, in the mode just declared (the declaration returned first)
     if (a.name == null && a.joints == null && a.tracks == null && (a.stop == null || a.stop === false) && a.ragdoll !== true) return text(`${JSON.stringify({ bodyMode: String(a.bodyMode) })} — declared, for looks: it holds until a real transition (water, a take-off, a fall, a landing) or your next declaration, and grants nothing${seated}`); }
-  // stop (R 10-17 16:26/16:27): true stops every anim this body plays or holds, each layer, and rests in the CURRENT
+  // stop: true stops every anim this body plays or holds, each layer, and rests in the CURRENT
   // body-mode's own anim (never the bind pose; the body-mode is unchanged); a name stops only that layer ("live": every
   // ad-libbed one). With target: their held pose
   if (a.stop != null && a.stop !== false) {
@@ -1568,9 +1575,9 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
   if (a.name != null) {
     const n = String(a.name);
     const from = animFrom(ag, n);
-    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) return fail(t.text); if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
+    if (ANIM_POSES.has(n)) { const t = await ag.foldWings(true); if (!t.ok) { ag.modeTracker?.declare(declaredBefore ?? null); return fail(t.text); } if (ag.wingsFolded) ag.animBegan({ name: n, mode: "hold", kind: "pose" }); return playing(n, "hold", t.text, from); }
     const mode = (mode0 ?? ANIM_MODES[n] ?? "once") as "once" | "loop" | "hold";
-    // once overlays what is held and returns to it (R 15:34: sit + wave is still sitting): the held anim goes on, unstopped
+    // once overlays what is held and returns to it (sit + wave is still sitting): the held anim goes on, unstopped
     if (mode === "once") { ag.playOnce(n); return playing(n, "once", `everyone sees it${ag.anim ? `, over ${ag.anim.name}, which goes on` : ""}`, from); }
     const clip = ANIM_CLIP[n] ?? n;
     // hold: at, else its last frame (a hair before its end: receivers take clipTime modulo the clip's length), when this
@@ -1598,7 +1605,7 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   // spawned with collide: the world fits it that way whatever its size
   if (collide === "exact" || collide === "box") {
     r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
-    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "exact" (edit {id, set: {"collider.shape": "exact"}})` });
+    if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "mesh" (edit {id, set: {"collider.shape": "mesh"}})` });
   }
   const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
   L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
@@ -1619,8 +1626,9 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   return L.join("\n");
 }
 
-/** Tools that FOLDED into a general tool's mode (10-14): the old name is refused with the call that does it now. Not an
- *  alias — the arguments changed shape, so running the new tool on the old args would do the wrong thing quietly. */
+/** Old tool names that FOLDED into a general tool's mode: an old name runs nothing and is refused naming the call that
+ *  does it now (for one release; test/mcpl/alias-test.ts holds the list). Not an alias: the arguments changed shape, so
+ *  running the new tool on the old args would do the wrong thing quietly. */
 export const TOOL_FOLDS: Record<string, string> = {
   take_off: 'move {mode: "fly"}', climb_to: 'move {mode: "fly", altitude}', glide_to: 'move {mode: "fly", to: [x, z]}', land_at: 'act {verb: "land", args: {to: [x, z]}}',
   rehearse_down: "no tool: a bench calls the agent's flightBodyDown directly", rehearse_recover: "no tool: a bench calls the agent's flightBodyRecovered directly",
@@ -1630,18 +1638,15 @@ export const TOOL_FOLDS: Record<string, string> = {
   light: 'create {components: {light: {…}}, at?} (edit {id, set: {"light.intensity": …}} updates one; main\'s keep: true is the light component\'s important: true (create {components: {light: {important: true}}} or edit {id, set: {"light.important": true}}))', remove: 'act {verb: "delete", args: {id}}',
   blueprint_place: 'create {from: "sha256:<hash>", at?}', kick: 'act {verb: "kick", args: {who, reason?}}', ban: 'act {verb: "ban", args: {who, days?, reason?, global?}}',
   unban: 'act {verb: "unban", args: {who, global?}}', list_bans: 'act {verb: "bans", args: {global?}}',
-  // main's world_access left without a pointer
   world_access: 'the world\'s own components on @world: worlds shows each door; owners change it with act {verb: "set", args: {id: "@world", component: "access" | "roles:<id>", value}} (a timed grant: value {role, for: "2h"})',
 };
-/** Main's tools that left with what they did, and why: refused with a pointer, never "no such tool" (#260 r3 I3; whisper
- *  fell through to a did-you-mean of whois). */
+/** Tools that left with what they did, and why: refused with a pointer, never "no such tool". */
 export const TOOL_REMOVED: Record<string, string> = {
-  // its verb set was main's: act {verb, args} takes this authority's, and refuses an old one by name (R 10-27)
   world_verb: "act {verb, args} sends a verb to the world's authority (help lists them); an old verb is refused with the call that does it now",
   whisper: "world chat has no private channel (the maintainers' speech ruling: speech is logged, whisper stays disabled); say speaks aloud to everyone here",
 };
-/** A timed grant's duration, main's world_access `for: "2h"`: each set of @world roles:<id> carrying `for` gets until = the
- *  server's now + it, in place (decision table row 14). A refusal's words, or null. */
+/** A timed grant's duration (the old world_access `for: "2h"`): each set of @world roles:<id> carrying `for` gets
+ *  until = the server's now + it, in place. A refusal's words, or null. */
 export function grantsFor(ag: { serverNow(): number }, verb: string, args: Record<string, any>): string | null {
   const sets = verb === "set" ? [args] : verb === "batch" && Array.isArray(args.requests) ? args.requests.filter((o: any) => o?.verb === "set").map((o: any) => o.args ?? {}) : [];
   for (const s of sets) {
@@ -1663,11 +1668,11 @@ export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
-  // the same words for a tool this server doesn't serve, hidden or never there (#247), with the nearest name when one is close
   if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
+  // any other name this server has no tool for: said so, with the nearest name when one is close
   if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // A tool's failure belongs in its result, where the model reads it: a
-  // handler that throws, such as verb()'s refusal while the link is down,
+  // handler that throws, such as puppet()'s refusal while the link is down,
   // answers as a failed call rather than as a protocol error.
   let out: Record<string, unknown>;
   try { out = await HANDLERS[r.name](ctx.agent, a, ctx, r.name); }

@@ -1,4 +1,4 @@
-// worldentity — the world entity `@world` (design §3), as an ALIAS both ways.
+// worldentity — the world entity `@world` as an ALIAS both ways.
 //
 // A world's sky, ground and grass are the world entity's components (the view shows them as state.sky,
 // state.terrain, state.grass; weather is part of the sky). This file reads them as ONE entity whose components are
@@ -6,17 +6,15 @@
 // door's `sky` and `weather` tools (they stamp the clock), and set/delete of @world's `terrain` and `grass`:
 //
 //   worldComponents(st)       → { id: '@world', components, stamps }
-//   worldOf(view)             → { sky, terrain, grass }   (the inverse)
+//   worldOf({components, stamps}) → { sky, terrain, grass }   (the inverse)
 //   worldSchema(st, live)     → the inspector's schema (shared/editschema.js shape),
 //                               so the desktop cards, the VR quad and an agent's
 //                               `inspect @world` read one declaration
 //   worldEditOps(st, edits)   → { ops, errors } — `edit @world`, as requests
 //   worldPick(st, kind, v)    → the Build tab's World tiles: a preset pick as one request
 //
-// "One sky per world" is not a rule here: Sky is one-per-entity, and there is
-// one world entity. Picking a sky preset REPLACES the Sky component's params
-// (pickSky); the Weather component is a different component and is carried
-// across the sky verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
+// Picking a sky preset REPLACES the Sky component's params (pickSky); the Weather component is carried across the sky
+// verb's wholesale fold. Pure: no DOM, no I/O, `now` passed in.
 
 import * as OP from './requests.js';
 import { RECORDS } from './components.js';
@@ -88,15 +86,13 @@ export function worldOf({ components = [], stamps = {} } = {}) {
 
 // ---------------------------------------------------------------- re-issuing the existing verbs
 
-/** sky-verb args that re-author `sky` with `patch` applied (undefined in the
- *  patch deletes a key). The sky verb folds WHOLESALE, so everything standing
- *  rides along — the Weather component included — minus what the fold stamps
- *  itself (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is
- *  re-anchored at `now` (unless the patch sets hours) so the day doesn't snap
- *  back to the hour it was last authored at — the weather fold's own rule. */
-// a tz present is the wall clock (shape audit 10-16)
+// a tz present is the wall clock; an older value said so with clock: 'real'
 const realClock = (sky) => isBag(sky) && typeof sky.tz === 'string';
 const DEG = 180 / Math.PI;
+/** sky-verb args that re-author `sky` with `patch` applied (undefined in the patch deletes a key). The sky verb folds
+ *  WHOLESALE, so everything standing rides along (the Weather component included), minus what the fold stamps itself
+ *  (ts/seq/by, the override, a forecast's epoch/seq/by). A rated clock is re-anchored at `now` (unless the patch sets
+ *  hours), so the day doesn't snap back to the hour it was last authored at: the weather fold's own rule. */
 export function skyReissue(sky, patch = {}, now = 0) {
   const base = isBag(sky) ? omit(sky, [...SKY_STAMPS, 'override']) : {};
   if (isBag(base.forecast)) base.forecast = omit(base.forecast, ['epoch', 'seq', 'by']);
@@ -114,13 +110,13 @@ export function skyPresetOf(sky, presets) {
   for (const [name, p] of Object.entries(presets)) {
     if (name === 'doc' || !isBag(p)) continue;
     const keys = Object.keys(p).filter((k) => !WEATHER_KEYS.includes(k));
-    // a key the preset doesn't name may still stand at the registry's default (the door writes every default: shape audit 10-16)
+    // a key the preset doesn't name may still stand at the registry's default (the door writes every default)
     if (keys.every((k) => own[k] === p[k]) && Object.keys(own).every((k) => keys.includes(k) || own[k] === SPEC.sky.defaults?.[k])) return name;
   }
   return null;
 }
 
-/** Picking a sky REPLACES the Sky (design §3): the new Sky's params are the
+/** Picking a sky REPLACES the Sky: the new Sky's params are the
  *  preset's and nothing else. The Weather component is carried (the sky verb
  *  would otherwise wipe it); a preset that names weather itself wins. */
 export function pickSky(sky, preset) {
@@ -138,9 +134,9 @@ const grassOp = (args) => (args == null ? OP.unset(WORLD_ID, 'grass') : OP.set(W
 
 // ---------------------------------------------------------------- the schema
 
-const SKY_NUMS = [   // the sky panel's sliders (client/lib/skypanel.js SLIDERS): key, label, min, softMax, step, default, unit
+const SKY_NUMS = [   // the sky panel's sliders (client/lib/edit/skypanel.js SLIDERS): key, label, min, softMax, step, default, unit
   ['hours', 'time of day', 0, 24, 0.1, 12, 'h'], ['rate', 'rate', 0, 48, 0.5, 0, '×'],
-  // azimuth is stored in radians (shape audit 10-16) and shown in degrees; sun and fill are sky fields again (10-31), with sliders in the sky panel, not here
+  // azimuth is stored in radians and shown in degrees; sun and fill are sky fields too, with sliders in the sky panel, not here
   ['azimuth', 'sun azimuth', 0, 360, 5, 180, '°'], ['ambient', 'ambient', 0, 2.5, 0.05, 1],
   ['exposure', 'exposure', 0.3, 1.8, 0.05, 1], ['fog', 'fog', 0, 3, 0.05, 1],
 ];
@@ -166,23 +162,25 @@ export function describeWorld(st, now = 0, { presets = null, clock = true } = {}
 }
 
 /** The world entity's inspector schema — the same shape inspectSchema returns
- *  ({ id, groups, sections }), so editpanels' cards, the VR quad, describeSchema
+ *  ({ id, groups, sections }), so edit/panels.js' cards, the VR quad, describeSchema
  *  and fieldAt all read it unchanged. Addresses: sky.* weather.state terrain.*
  *  grass.* (grass.mow mows).
- *  @param live { now?: number, mayShape?: boolean } — mayShape false = this viewer
- *  is known not to hold owner rank (sky/terrain/grass/weather are owner verbs);
+ *  @param live { now?: number, mayShape?: boolean, mayGround?: boolean } — mayShape false = this viewer
+ *  is known not to hold editWorld (an owner's always; an owner may grant it to a role: client/lib/edit/inspect.js mayShape);
+ *  mayGround false = known not to hold build, which is what the ground takes (the terrain is a builder's to shape);
  *  undefined = unknown: nothing is disabled on its account and the authority decides. */
 export function worldSchema(st, live = {}) {
   const { sky, terrain, grass } = worldState(st);
   const now = live.now ?? 0;
-  const ro = live.mayShape === false ? { disabled: true, hint: 'shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank' } : {};
+  const ro = live.mayShape === false ? { disabled: true, hint: 'the world\'s look is the owner\'s: sky, weather and grass take the editWorld permission' } : {};
+  const rg = live.mayGround === false ? { disabled: true, hint: 'shaping the ground takes the build permission' } : {};   // the terrain card's
   const groups = [];
 
   // Sky
   const real = realClock(sky);
   const s = isBag(sky) ? sky : {};
   const skyFields = [
-    // the sky's own field (R 10-17: the editor's old `clock` enum is gone, as the wire's is): a timezone means the hour IS
+    // the sky's own field (no `clock` enum): a timezone means the hour IS
     // its wall hour; empty is the authored clock (the hour and rate below)
     { t: 'text', k: 'tz', label: 'timezone', value: real ? (s.tz ?? DEFAULT_TZ) : '', ...ro,
       hint: ro.hint ?? `a timezone (e.g. ${DEFAULT_TZ}): the hour IS its wall hour; empty: the hour and rate below` },
@@ -198,8 +196,7 @@ export function worldSchema(st, live = {}) {
   if (sky != null) skyFields.push({ t: 'btn', k: 'remove', label: 'remove the sky', danger: true, hint: 'back to a plain clear sky (weather goes with it)', ...ro });
   groups.push({ group: 'sky', label: 'Sky', fields: skyFields });
 
-  // Weather — state.sky's weather half; under a forecast a pick is a manual
-  // override that holds until the segment boundary (AGENTS.md "Weather")
+  // Weather — state.sky's weather half; under a forecast a pick is a manual override that holds until the segment boundary
   const eff = isBag(sky) ? effectiveSky(sky, now) : null;
   const f = isBag(sky?.forecast) ? sky.forecast : null;
   const wxFields = [
@@ -213,19 +210,19 @@ export function worldSchema(st, live = {}) {
 
   // Terrain
   const t = isBag(terrain) ? terrain : null;
-  const lc = Array.isArray(t?.layers) ? t.layers[0]?.color : null; const layerColor = Number.isInteger(lc) ? lc : colorInt(lc);   // an int (shape audit 10-16), or an older hex string
+  const lc = Array.isArray(t?.layers) ? t.layers[0]?.color : null; const layerColor = Number.isInteger(lc) ? lc : colorInt(lc);   // an int, or an older hex string
   // hard limits and units are the registry's (componentspec terrain / grass, through limitsOf); the slider's soft ends are this card's
   const T = (k) => limitsOf('terrain', k), G = (k) => limitsOf('grass', k), TD = materialize('terrain', { kind: 'noise' }).value;
   const terrainFields = t?.kind === 'flat' ? [{ t: 'info', label: 'flat ground', value: `level at ${t.height ?? 0} m` }] : t ? [
     // an absent number is the sim's (componentspec terrain defaults = shared/terrainmath.js), never this card's own
-    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...ro },
-    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'size', label: 'size', value: t.size ?? TD.size, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...ro },
-    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...ro },
-    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? TD.flatRadius, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...ro },
-    ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...ro }] : []),
+    { t: 'num', k: 'amplitude', label: 'relief', value: t.amplitude ?? TD.amplitude, def: TD.amplitude, ...T('amplitude'), softMin: 0, softMax: 12, step: 0.1, dp: 1, ...rg },
+    { t: 'num', k: 'seed', label: 'seed', value: t.seed ?? TD.seed, step: 1, dp: 0, ...rg },
+    { t: 'num', k: 'size', label: 'size', value: t.size ?? TD.size, ...T('size'), softMin: 1, softMax: 1000, step: 10, dp: 0, ...rg },
+    { t: 'num', k: 'segments', label: 'segments', value: t.segments ?? 200, ...T('segments'), step: 1, dp: 0, ...rg },
+    { t: 'num', k: 'flatRadius', label: 'flat within', value: t.flatRadius ?? TD.flatRadius, ...T('flatRadius'), softMax: 200, step: 1, dp: 0, ...rg },
+    ...(layerColor != null ? [{ t: 'color', k: 'color', label: 'colour', value: layerColor, ...rg }] : []),
   ] : [{ t: 'info', label: '', value: 'no terrain authored: the default flat ground. Pick a shape in Build ▸ World' }];
-  if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...ro });
+  if (terrain != null) terrainFields.push({ t: 'btn', k: 'remove', label: 'remove the terrain', danger: true, hint: 'back to the default flat ground', ...rg });
   groups.push({ group: 'terrain', label: 'Terrain', fields: terrainFields });
 
   // Grass
@@ -240,7 +237,7 @@ export function worldSchema(st, live = {}) {
   ] : [{ t: 'info', label: '', value: 'nothing growing. Pick a planting in Build ▸ World' }];
   groups.push({ group: 'grass', label: 'Grass', fields: grassFields });
 
-  // Trusted components (docs/COMPONENT-LADDER.md, the second rung; R 10-12): the drafts this world's owner trusts here,
+  // Trusted components (docs/contributing/COMPONENT-LADDER.md, the second rung): the drafts this world's owner trusts here,
   // @world.trusted-components — live.trusted is the list as the client read it (mayTrust: this viewer is the owner)
   const trusted = Array.isArray(live.trusted) ? live.trusted : [];
   const trustedFields = trusted.length ? trusted.flatMap((n) => [{ t: 'info', label: 'trusted', value: n, hint: 'a draft used and trusted in this world: a blue chip, offered in the main Add Component list. The engine still doesn\'t read it' },
@@ -248,7 +245,7 @@ export function worldSchema(st, live = {}) {
     : [{ t: 'info', label: '', value: 'none: every draft here is unproven. An owner trusts one from its card on a thing' }];
   groups.push({ group: TRUSTED, label: 'Trusted components', fields: trustedFields });
 
-  // the cards (design §5): one per component, in the inspector's order
+  // the cards: one per component, in the inspector's order
   const have = new Set(worldComponents(st).components.map((c) => c.type));
   const list = groups.map(({ group, fields }) => {
     const type = { sky: 'Sky', weather: 'Weather', terrain: 'Terrain', grass: 'Grass' }[group];
@@ -308,7 +305,7 @@ export function worldEditOps(st, edits, live = {}) {
       case 'terrain':
         if (k === 'remove') { noGround = true; break; }
         ground ??= {};
-        if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: v }));   // an int (shape audit 10-16)
+        if (k === 'color') ground.layers = (Array.isArray(terrain?.layers) ? terrain.layers : [{ repeat: 16 }]).map((l, i) => (i ? l : { ...l, color: v }));   // an int
         else ground[k] = v;
         break;
       case 'grass': if (k === 'mow') mow = true; else (grassPatch ??= {})[k] = v; break;
@@ -316,8 +313,8 @@ export function worldEditOps(st, edits, live = {}) {
     }
   }
   const ops = [];
-  // R 10-11: "no way to get rid of the weather, sky, or terrain once created": remove is a plain component delete
-  // removing the weather (house review I95): a clear pick under a forecast is an override its next segment undoes, so the
+  // remove is a plain component delete
+  // removing the weather: a clear pick under a forecast is an override its next segment undoes, so the
   // forecast goes too; that is the sky's to say, in the same re-authored sky as any sky edit in this gesture
   const dropForecast = noWeather && !noSky && isBag(sky?.forecast);
   if (noWeather) weather = dropForecast || noSky ? null : 'clear';
@@ -340,11 +337,12 @@ export function worldEditOps(st, edits, live = {}) {
  *    kind 'weather' v = one of WEATHERS                                          → weather
  *    kind 'shape' | 'tint'  v = a ground-palette name (ctx.pal)                  → terrain (only that dial changes)
  *    kind 'plant'   v = a planting name                                           → grass (height/density/tint kept)
- *    kind 'mow'                                                                   → grass {clear:true}
- *  ctx: { pal, presets, now, mayShape } */
+ *    kind 'mow'                                                                   → delete @world's grass
+ *  ctx: { pal, presets, now, mayShape, mayGround } */
 export function worldPick(st, kind, v, ctx = {}) {
   const { sky, terrain, grass } = worldState(st);
-  if (ctx.mayShape === false) return { ops: [], errors: ['shaping the world is the owner\'s: sky, weather, terrain and grass are owner-rank'] };
+  if (kind === 'shape' || kind === 'tint') { if (ctx.mayGround === false) return { ops: [], errors: ['shaping the ground takes the build permission'] }; }
+  else if (ctx.mayShape === false) return { ops: [], errors: ['the world\'s look is the owner\'s: sky, weather and grass take the editWorld permission'] };
   const pal = ctx.pal; const def = paletteDefaults(pal);
   let op = null;
   switch (kind) {

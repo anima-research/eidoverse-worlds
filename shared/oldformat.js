@@ -1,10 +1,10 @@
-// shared/oldformat.js — what a world saved in an older format is called, on every surface (the join refusal, the splash, agents).
-// The upgrade is a server operator's or the world's owner's (docs/TRANSLATING-OLD-WORLDS.md, "Upgrading from the browser").
-export const OLD_FORMAT_DOC = "docs/TRANSLATING-OLD-WORLDS.md";
+// oldformat — the words for a world saved in an older format, on every surface (the join refusal, the splash, agents).
+// The upgrade is a server operator's or the world's owner's: docs/operator/TRANSLATING-OLD-WORLDS.md.
+export const OLD_FORMAT_DOC = "docs/TRANSLATING-OLD-WORLDS.md";   // the URL server/routes.ts serves that doc at
 export const OLD_FORMAT_SPLASH = "This world was saved by an older version of the engine. It needs a one-time upgrade before anyone can enter.";
-/** For someone who may not upgrade it (R 10-28): the server's runner has a way in (server/setup.ts), everyone else asks. */
+/** For someone who may not upgrade it: the server's runner has a way in (server/setup.ts), everyone else asks. */
 export const IF_YOU_RUN_IT = "If you run this server, open the setup link printed in its console (or add your account to SERVER_OPERATORS). Otherwise ask whoever runs it.";
-/** The same for an agent, whose tools have no setup link and no world-upgrade (mcpl/agent.ts): ask, with the doc. */
+/** The same for an agent, whose tools can't upgrade a world. */
 export const AGENT_ASKS = "Ask them: the operator upgrades it from the server, the owner from the browser.";
 
 /** An agent's words for a refused old-format join (`refused` as the join's error carries it). */

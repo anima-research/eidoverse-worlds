@@ -1,17 +1,9 @@
-// server/solids.ts — a model's solid parts, measured from its triangles (review 10-06 S0-3: nobody could walk into a
-// building, because the authority took each model's ONE bounding box as solid).
-//
-// The authority already reads a catalogue entry's `solids` (boxes in the model's frame; shared/protocol/authority.js obbs): the lab's
-// shelf and swing frame are hand-written that way. This measures them for a library model, from the same triangles the
-// client renders:
-//   1. surface voxels: every triangle is sampled (3 vertices + centroid of sub-step pieces) to within a corner sliver smaller than half a cell; each cell keeps the
-//      tight bounds of the geometry inside it (a floor slab's cell ends at the floor's top, not the cell's);
-//   2. the outside: empty cells reachable from the box's boundary (6-connected) are outside. Empty cells NOT reachable
-//      are enclosed (a crate's inside, a closed hut's) and count as solid: an authority can't take a body into a closed box.
-//      A house with a doorway is reached through it, so its rooms stay open;
+// server/solids.ts — a model's solid parts, measured from its triangles, so a body can walk into a building rather than
+// the whole bounding box being solid. The authority reads them as a catalogue entry's `solids` (shared/protocol/authority.js obbs).
+//   1. surface voxels: every triangle is sampled to within half a cell; each cell keeps the tight bounds of the geometry in it;
+//   2. the outside: empty cells reachable from the boundary (6-connected). Unreachable empty cells (a crate's inside) count as solid;
 //   3. the solid cells are merged greedily into boxes (x, then z, then y), each the union of its cells' bounds.
-// Only models with room for a body inside them are measured (at least minHeight tall and minSpan across): furniture
-// and props keep their bounding box, as does anything past the limits (null): conservative, and what the authority did before.
+// Only models with room for a body inside (minHeight tall, minSpan across) are measured; the rest keep their bounding box (null).
 type V3 = [number, number, number];
 export const SOLIDS = { minHeight: 2, minSpan: 2, maxBoxes: 128, maxCells: 160_000, maxSamples: 6_000_000, cellsAcross: 32, minCell: 0.08 };
 
@@ -37,8 +29,7 @@ function attempt(soup: ArrayLike<number>, min: number[], size: number[], cell: n
     const i = Math.min(nx - 1, Math.max(0, Math.floor((x - min[0]) / cell))), j = Math.min(ny - 1, Math.max(0, Math.floor((y - min[1]) / cell))), k = Math.min(nz - 1, Math.max(0, Math.floor((z - min[2]) / cell)));
     const c = idx(i, j, k); occ[c] = 1; const b = c * 3;
     if (x < lo[b]) lo[b] = x; if (x > hi[b]) hi[b] = x; if (y < lo[b + 1]) lo[b + 1] = y; if (y > hi[b + 1]) hi[b + 1] = y; if (z < lo[b + 2]) lo[b + 2] = z; if (z > hi[b + 2]) hi[b + 2] = z; };
-  // 1. surface cells: each triangle split at its longest edge until every piece is under half a cell, and every piece's
-  // corners and centre sampled (a sliver costs its length, not its length squared)
+  // 1. surface cells: each triangle split at its longest edge until under half a cell, corners and centre sampled
   let samples = 0; const step = cell / 2, step2 = step * step; const tri: number[] = [];
   for (let t = 0; t + 8 < soup.length; t += 9) {
     tri.length = 0; for (let q = 0; q < 9; q++) tri.push(soup[t + q]);
@@ -54,8 +45,7 @@ function attempt(soup: ArrayLike<number>, min: number[], size: number[], cell: n
       else { const mx = (cx + ax) / 2, my = (cy + ay) / 2, mz = (cz + az) / 2; tri.push(ax, ay, az, bx, by, bz, mx, my, mz, mx, my, mz, bx, by, bz, cx, cy, cz); }
     }
   }
-  // samples land up to a step short of a cell's face; where the geometry carries on into the next cell, the face is its
-  // bound (so a floor's cells abut exactly and merge). A bound further from the face than a step is the geometry's own.
+  // where the geometry carries on into the next cell, the face is the bound (so a floor's cells abut exactly and merge)
   for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) { const c = idx(i, j, k); if (!occ[c]) continue; const b = c * 3; const g = [i, j, k];
     for (let a = 0; a < 3; a++) { const f0 = min[a] + g[a] * cell, f1 = f0 + cell;
       const nb = (d: number) => { const h = g.slice(); h[a] += d; return h[a] >= 0 && h[a] < n[a] && occ[idx(h[0], h[1], h[2])] === 1; };
@@ -71,9 +61,7 @@ function attempt(soup: ArrayLike<number>, min: number[], size: number[], cell: n
   // an enclosed (unreached, empty) cell is solid through and through
   for (let c = 0; c < N; c++) if (!occ[c] && !out[c]) { const i = c % nx, j = Math.floor(c / nx) % ny, k = Math.floor(c / (nx * ny)); const b = c * 3;
     lo[b] = min[0] + i * cell; hi[b] = min[0] + (i + 1) * cell; lo[b + 1] = min[1] + j * cell; hi[b + 1] = min[1] + (j + 1) * cell; lo[b + 2] = min[2] + k * cell; hi[b + 2] = min[2] + (k + 1) * cell; }
-  // 3. greedy boxes (x, then z, then y). Cells merge only where their bounds line up, so a box stays as tight as its cells:
-  // a floor's cells (ending at the floor's top) never merge with the foot of a wall (the whole cell high), which would
-  // lift the floor's box a cell above the floor
+  // 3. greedy boxes (x, then z, then y); cells merge only where their bounds line up, so a floor never merges with a wall's foot
   const used = new Uint8Array(N); const boxes: number[][][] = [];
   const free = (i: number, j: number, k: number) => { const c = idx(i, j, k); return solid(c) && !used[c]; };
   const eq = (a: number, b: number) => Math.abs(a - b) <= 1e-3;

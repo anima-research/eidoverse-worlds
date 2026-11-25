@@ -1,7 +1,7 @@
 # The projector appliance
 
 mediamtx, configured as the transport for the eidoverse screen — layer 2,
-route A of `anima_dev/eidoverse_projector_design.md`. It is an appliance you
+route A of `anima_dev/eidoverse_projector_design.md` (outside this repo). It is an appliance you
 plug in for an event, not an organ of the world. A screen's stream reaches a
 viewer through the sequencer, which holds the read key and brokers each WHEP
 session (`server/videosources.ts`): the browser never learns the appliance's
@@ -9,13 +9,14 @@ address or key. The caption bot reads audio from it on loopback.
 
 ```
 OBS ──WHIP/RTMP──▶ mediamtx ──WHEP (read key)──▶ the sequencer ──brokered offer──▶ the screen comp
-                      └──RTSP (loopback)──▶ tools/captionbot ──caption──▶ the world
+                      └──RTSP (loopback)──▶ services/captionbot ──caption──▶ the world
 ```
 
 ## Run
 
 ```
 brew install mediamtx ffmpeg
+mkdir -p /tmp/projector
 deploy/projector/mkconfig.sh /tmp/projector/mediamtx.yml   # renders the config; prints the publish key, and the VIDEO_SOURCES entry
 (cd /tmp/projector && mediamtx mediamtx.yml)
 deploy/projector/smoke.sh                                    # no OBS needed: a test pattern exercises every face
@@ -62,7 +63,7 @@ does, not from the repository.
 | RTMP publish | `rtmp://host:1935/screen?user=publisher&pass=<key>` | OBS "Custom" (server + key as query), any encoder |
 | WHEP read | `http://host:8889/screen/whep` | the sequencer, with the read key (it brokers each viewer's session) |
 | HLS read | `http://host:8888/screen/index.m3u8` | a reader with the read key; anonymous on this machine only |
-| RTSP read | `rtsp://127.0.0.1:8554/screen` | `tools/captionbot` — loopback only |
+| RTSP read | `rtsp://127.0.0.1:8554/screen` | `services/captionbot` — loopback only |
 | API | `http://127.0.0.1:9997` | the sequencer on this machine (is a publisher there; are bytes arriving) — loopback only |
 
 Publishing needs the key `mkconfig.sh` rendered (`publisher` / the key it
@@ -83,7 +84,7 @@ viewer's browser never plays an appliance URL itself.
 
 ## The captioner
 
-`tools/captionbot` reads the RTSP face and turns each final line of speech
+`services/captionbot` reads the RTSP face and turns each final line of speech
 into a caption for the screen: one door `caption` request per line
 (`{id, session, n, t0, t1, text, speaker?, title?}`, or `{id, session, end}`),
 which writes the screen's `captions` component by `shared/captions.js`'s rules.

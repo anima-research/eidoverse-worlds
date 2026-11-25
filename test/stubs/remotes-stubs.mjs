@@ -1,0 +1,98 @@
+// Substitutes for the modules remotes.js/net.js touch, so the participant
+// lifecycle (#95) can be executed without a GPU, a socket, or a DOM. Same
+// doctrine as voice-stubs.mjs: only what the code under test uses. THREE is
+// real — remotes.js allocates quaternions at module scope and the math must
+// be the shipping math.
+import * as THREE_REAL from '../../client/node_modules/three/build/three.module.js';
+export const THREE = THREE_REAL;
+
+const handlers = new Map();
+export const bus = {
+  on(t, f) { if (!handlers.has(t)) handlers.set(t, []); handlers.get(t).push(f); },
+  emit(t, p) { for (const f of [...(handlers.get(t) ?? [])]) f(p); },
+};
+export const CONFIG = { name: 'tester', world: 'testworld', params: new URLSearchParams() };
+export const camera = { position: new THREE_REAL.Vector3(0, 1.6, 0) };
+export const scene = { add() {}, remove() {} };
+export const renderer = {};
+export const canvas = { addEventListener() {} };
+export const report = (...a) => { reports.push(a); };
+export const reports = [];
+export const parallelMap = (xs, fn) => Promise.all([...xs].map(fn));
+export const angleDelta = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+
+// assets
+export const fetchBytes = async () => new ArrayBuffer(0);
+export const forgetBytes = () => {};
+
+// world
+export const avatarMounts = new Map();
+// #101: occupants.js (real, unmocked) pulls the clip digest from the assets
+// module — null here means every stub seat reads declared-approximate,
+// which is exactly the truthful state for a world with no clip bytes
+export const vrmaShaLoaded = () => null;
+export const pendingMounts = new Map();
+export const mountTransform = () => null;
+// world.js's seat surface (presence seats): remotes.js sets a body's seat from its frames, and occupybody.js reads the
+// thing's components, objects and parts. Empty here — the lifecycle under test is bodies, not seats
+export const seatCalls = [];   // remotes-lifecycle-test: a dropped body's seat is cleared (house review I15)
+export const setBodySeat = (id, seat) => { seatCalls.push([id, seat]); };
+export const comps = new Map();
+export const entityMeta = new Map();
+export const bagOf = (id) => comps.get(id) ?? null;
+export function* bags() { yield* comps; }
+export const metaOf = (id) => entityMeta.get(id) ?? null;
+export const entities = new Map();
+export const findPart = () => null;
+/* world.js grew these in the sockets merge (10-14); occupybody.js imports seatSocket, so the shared stub must offer it (headless: no sockets) */
+export const seatSocket = () => null;
+export const socketsOn = () => [];
+export const parentIdOf = () => null;
+
+// chat / ui / boot / fp_view
+export const logChat = () => {};
+export const noteTyping = () => {};
+export const noteHistoryContext = () => {};
+export const resyncCalls = [];   // chat-resync-wire-test reads what net.js asked for
+export const resyncChatAfter = async (seq) => { resyncCalls.push(seq); };
+export const moderatorHeader = (w) => `From a moderator of world ‹${w}›, not from Eidoverse`;
+export const composeFirstPerson = () => {};
+export const markPhase = () => {};
+export const refuseBoot = () => {};
+export const waitBoot = () => {};
+export const toast = () => {};
+export const flashHint = () => {};
+
+// ---- the avatar factory, instrumented --------------------------------------
+// makeAvatar receives the RESOLVED path (remotes.js substitutes its default
+// for null), so `avatarCalls` is a direct detector for "a default-avatar
+// body was constructed" — the sunflower, in a list.
+export const avatarCalls = [];
+export let disposeCount = 0;
+export const resetAvatarLog = () => { avatarCalls.length = 0; disposeCount = 0; pendingLoads.length = 0; };
+/** while > 0, makeAvatar returns promises the TEST resolves — the door for
+ *  forcing delayed-load races deterministically */
+export const pendingLoads = [];
+export let holdLoads = false;
+export const setHoldLoads = (v) => { holdLoads = v; };
+
+const fakeAvatar = () => ({
+  root: { position: Object.assign(new THREE_REAL.Vector3(), { set() {}, copy() {} }), rotation: { y: 0 } },
+  dispose() { disposeCount++; },
+  transientResets: 0,
+  resetTransients() { this.transientResets++; },   // the generation-end seam (#97)
+  setTyping() {}, playAnimation() {}, setClip() {}, setPose() {}, clearPose() {},
+  setLimp() {}, playOnce() {}, setGazeTarget() {}, update() {},
+});
+
+export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playOnce() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
+export const makeAvatar = (id, path) => {
+  avatarCalls.push({ id, path });
+  if (!holdLoads) return Promise.resolve(fakeAvatar());
+  return new Promise((resolve) => pendingLoads.push({ id, path, resolve: () => resolve(fakeAvatar()) }));
+};
+
+// xrbody.js (VR PR): remotes.js drives a remote's VR pose through these; no-ops here — the lifecycle under test is bodies, not arms
+export const applyRemoteXR = () => {};
+export const xrHandWorld = () => null;   // occupybody.js asks where a tracked hand is (a socket's vr policy): never tracked here
+export const resetFingers = () => {};

@@ -1,53 +1,17 @@
-// seats — the server side of seat profiles (#101): storage, judgment, push.
-//
-// One judge, three readers. This module owns the profile store
-// (assets/opt/seats/profiles.json + an append-only provenance log), computes
-// the serve-time verdict against the CURRENT bytes on disk (via seatcore,
-// the same file every consumer evaluates), and tells the server when to
-// broadcast `avatar-profile-updated`. Consumers never rehash a VRM and can
-// never read a stale value as fresh — the verdict ships pre-judged.
-//
-// Write authority (design round, B4): HTTP proposals require a NAMED actor
-// (a tokens.json bearer or a home-node-verified aid1 identity — the same two
-// legs /upload trusts); the anonymous door token may not write here, because
-// a seat profile moves every wearer of an avatar and "?by=" is self-asserted.
-// The countersign that makes a profile load-bearing has NO HTTP path at all:
-// tools/seat-accept.ts is run by the operator on the box, edits the store
-// through this module's own functions, and the running server notices via an
-// mtime watch — reloading, diffing, and pushing the update event. Bearer
-// tokens are never logged and never echoed.
-//
-// Integrity boundaries (#105 review, B2/B3 — each rule is that review):
-//  - the maps are NULL-PROTOTYPE and the keys are schema-refused reserved
-//    names besides: "__proto__" cannot reach an inherited slot here even if
-//    a future validator regresses;
-//  - proposals name a ROSTER avatar (the bytes must exist to judge against);
-//    the operator-import lane may explicitly carry an unrostered name, and
-//    the flag is provenance;
-//  - every write is PROVENANCE-FIRST: the log line is appended before the
-//    snapshot renames, the in-memory store swaps only after both, and no
-//    caller reports success (or broadcasts) before the swap. A crash between
-//    log and snapshot leaves the log AHEAD — startup folds it forward. A
-//    snapshot ahead of its log is a state with no receipt: quarantined,
-//    served as missing, said loudly. Provenance ⊇ applied state, always;
-//  - writes are SERIALIZED across processes (#105 review round 2): the store
-//    has two real writers — the live server and the offline operator tool —
-//    and a check-then-act freshen was provably interleavable (two contradictory
-//    records at one revision, forced by the reviewer on the prior head). Every
-//    mutation now runs whole under one shared on-disk lock: acquire → forced
-//    reload (never mtime trust) → precondition re-check → provenance append →
-//    snapshot rename → in-memory swap → release in finally. Lock acquisition
-//    is bounded and explicit — a timeout changes nothing anywhere and says
-//    so; a lock older than its liveness window is declared stale, broken,
-//    and noted. The countersign additionally requires the revision the
-//    operator REVIEWED — under the lock, an interleaved proposal moves the
-//    revision and the acceptance refuses rather than bless the unseen.
+// seats — the server side of seat profiles (docs/reference/SEATS.md): storage, judgment, push.
+// This module owns the profile store (assets/opt/seats/profiles.json + an append-only provenance log), computes the
+// serve-time verdict against the current bytes on disk (via seatcore), and tells the server when to broadcast
+// `avatar-profile-updated`, so consumers never rehash a VRM. HTTP proposals need a named actor; the countersign has no
+// HTTP path (tools/operator/seat-accept.ts, noticed by an mtime watch). Every write is provenance-first under one on-disk
+// lock shared by every process. Rationale: docs/research/seat-store-integrity.md.
 
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, statSync, openSync, closeSync, writeSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { validateProfile, profileStatus } from "../client/lib/seatcore.js";
+import { validateProfile, profileStatus } from "../shared/seatcore.js";
 import { OPT_DIR, LIBRARY_DIR, PATCH_DIR } from "./config.ts";
 import { worlds } from "./world.ts";
+import { sha256Bytes } from "../shared/protocol/hash.js";
+import { atomicWrite } from "./fsutil.ts";
 import { avatarDefs } from "./defs.ts";
 import { resolveLibFile } from "./libfile.ts";
 
@@ -110,12 +74,8 @@ export class SeatStore {
     this.file = join(this.dir, "profiles.json");
     this.logFile = join(this.dir, "profiles.log.jsonl");
     this.lockFile = join(this.dir, ".write-lock");
-    // The clip ladder must match what /library actually SERVES, patched fork
-    // first — the same order routes.ts resolves. Hash the library's copy while
-    // a fork in upstream-patched/ is the one every client animates from and
-    // every profile is judged against bytes nobody plays: the verdict reads
-    // "stale (clip bytes changed)" forever, and the reason it gives is a lie.
-    // (Live as of 2026-08-19: sitting_normal_chair.vrma IS forked there.)
+    // overlay wins, like the avatar roster scan. The clip ladder matches what /library SERVES, patched fork first (the
+    // order routes.ts resolves): hashing a copy nobody plays would read "stale" forever.
     this.clipBases = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, CLIP_REL));
     // every body the avatar roster lists, which scans the same three
     this.vrmDirs = [patchDir, optDir, libraryDir].filter(Boolean).map((d) => join(d!, "eidoverse/assets/vrms"));
@@ -126,29 +86,8 @@ export class SeatStore {
 
   // ---- the write lock (one per store directory, shared by every process) ---
 
-  /** Exclusive-create is the atom: openSync(…, "wx") either mints the lock
-   *  file or throws EEXIST, on Windows and POSIX alike. The file carries
-   *  {pid, nonce, ts} and the holder retains its nonce — ownership is the
-   *  nonce, never the path.
-   *
-   *  Liveness is PID-verified, never inferred from age (#105 round 3: a live
-   *  writer delayed past any age threshold had its lock stolen and history
-   *  forked — age is not proof of death). `process.kill(pid, 0)` answers on
-   *  this single-host design: ESRCH = no such process = the lock is orphaned;
-   *  anything else (alive, or EPERM) = a holder we must WAIT for, however old
-   *  its stamp — if liveness is unknown, we time out rather than violate
-   *  exclusion. PID reuse cannot resurrect a broken claim: a reused pid is a
-   *  LIVE process, so the lock is simply waited on, and the nonce keeps its
-   *  release from ever touching a lock it did not mint.
-   *
-   *  Breaking a dead lock is a RENAME-steal, not an unlink: rename is the
-   *  atomic claim, so two breakers cannot both succeed, and the tomb's nonce
-   *  is verified against the record that was judged dead — if the rename
-   *  caught a newer (live) lock instead, it is restored and the breaker
-   *  retries. Acquisition is a bounded spin: timing out is an ANSWER (the
-   *  caller refuses with no state touched), not a hang. The lock rides the
-   *  REAL fs even under fault injection — injected faults are the
-   *  transaction's to survive, not the lock's. */
+  /** Exclusive create (openSync "wx") is the atom; ownership is the nonce in {pid, nonce, ts}. Liveness is PID-verified
+   *  (ESRCH = orphaned), never inferred from age; a dead lock is broken by rename-steal. docs/research/seat-store-integrity.md#the-write-lock */
   private lockNonce: string | null = null;
 
   private static pidAlive(pid: number): boolean {
@@ -205,7 +144,7 @@ export class SeatStore {
   }
 
   private releaseLock() {
-    // release only what we minted — never a successor's lock (#105 round 3)
+    // release only what we minted — never a successor's lock
     if (this.lockNonce !== null) {
       if (this.readLockRecord()?.nonce === this.lockNonce) {
         try { unlinkSync(this.lockFile); } catch { /* vanished: nothing ours remains */ }
@@ -214,10 +153,9 @@ export class SeatStore {
     this.lockNonce = null;
   }
 
-  /** Every mutation runs WHOLE under the lock: forced reload (mtime is a
-   *  hint, not a guarantee), precondition re-check, provenance append,
-   *  snapshot rename, in-memory swap. Two writers can no longer both build
-   *  rev N+1 from rev N — the second waits or refuses. */
+  /** Every mutation runs WHOLE under the lock (forced reload, re-check, append, rename, swap), so two writers don't
+   *  both build rev N+1 from rev N: the second waits or refuses. Narrowed, not closed: in the dead-lock rename/restore race
+   *  a writer can lose the lock between ownsLock() and its append (docs/research/seat-store-integrity.md). */
   private withLock<T>(fn: () => T): T | { ok: false; status: number; why: string } {
     if (!this.acquireLock())
       return { ok: false, status: 503, why: `another writer holds the seat-profile lock (waited ${this.lockTimeoutMs}ms) — nothing was written; retry after it releases` };
@@ -231,11 +169,8 @@ export class SeatStore {
 
   // ---- store I/O -----------------------------------------------------------
 
-  /** All valid log entries, in file order — and the monotonicity verdict.
-   *  Two records at one revision is what the write lock exists to prevent;
-   *  finding them on disk means a pre-lock writer (or hand edit) forked the
-   *  history, and no fold order is defensible — quarantine (#105 round 2,
-   *  vector 5). */
+  /** All valid log entries, in file order, and the monotonicity verdict: two records at one revision mean a forked
+   *  history with no defensible fold order (quarantine). */
   private readLog(): { entries: any[]; monotonic: boolean } {
     const entries: any[] = [];
     let monotonic = true, prev = 0;
@@ -304,26 +239,19 @@ export class SeatStore {
 
   private persistSnapshotOnly() {
     mkdirSync(this.dir, { recursive: true });
-    this.fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(this.store));
-    this.fs.renameSync(`${this.file}.tmp`, this.file);
+    atomicWrite(this.file, JSON.stringify(this.store), { fs: this.fs });
     try { this.fileMtime = statSync(this.file).mtimeMs; } catch { /* next poll reloads harmlessly */ }
   }
 
-  /** Provenance-first write. Builds the next state WITHOUT touching the live
-   *  one; appends the log line; renames the snapshot; only then swaps memory.
-   *  Any failure leaves the live store exactly as it was — and a failure
-   *  after the append leaves the log AHEAD, which reload() folds forward:
-   *  the write becomes durable WITH its receipt or not at all. */
+  /** Provenance-first write: build the next state aside, append the log line, rename the snapshot, then swap memory.
+   *  A failure after the append leaves the log AHEAD, which reload() folds forward: durable with its receipt or not at all. */
   private persist(action: string, actor: string, name: string, pose: string, record: ProfileRec, prior: ProfileRec | null,
     mutate: (s: Store) => void): { ok: true; rev: number } | { ok: false; why: string } {
     const next: Store = { rev: this.store.rev + 1, profiles: inertProfiles(JSON.parse(JSON.stringify(this.store.profiles))) };
     mutate(next);
     mkdirSync(this.dir, { recursive: true });
-    // COMMIT GATE (#105 round 3): the on-disk lock must still be the one we
-    // minted immediately before each irreversible step. A liveness-verified
-    // lock cannot be stolen from a live holder, but if any pathological path
-    // ever takes it anyway, the transaction ABORTS here — an exclusion breach
-    // becomes a refused write, never a forked history.
+    // COMMIT GATE: the on-disk lock must still be ours before each irreversible step; a breach seen here is a refused
+    // write (check and step are separate calls, so this narrows a fork rather than ruling it out)
     if (!this.ownsLock())
       return { ok: false, why: "lock ownership lost before commit — nothing was written; retry" };
     try {
@@ -333,18 +261,12 @@ export class SeatStore {
       return { ok: false, why: `provenance append failed — nothing was written: ${(e as Error).message}` };
     }
     if (!this.ownsLock())
-      // the log line stands (receipted); the snapshot must not race a
-      // successor's writes. Recovery folds the receipt forward — or, if a
-      // successor also appended, the monotonicity check quarantines rather
-      // than guess at a fold order.
+      // the receipt stands; the snapshot must not race a successor (recovery folds it forward, or quarantines)
       return { ok: false, why: "lock ownership lost after provenance append — snapshot withheld; recovery will reconcile the receipt" };
     try {
-      this.fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(next));
-      this.fs.renameSync(`${this.file}.tmp`, this.file);
+      atomicWrite(this.file, JSON.stringify(next), { fs: this.fs });
     } catch (e) {
-      // the log holds the receipt; the snapshot lags. The live store stays
-      // unchanged, this call reports failure, and the NEXT load folds the
-      // receipted write forward — never an applied state without a receipt.
+      // the log holds the receipt; the live store stays unchanged and the next load folds it forward
       return { ok: false, why: `snapshot write failed (receipted in the log; recovery will fold it forward): ${(e as Error).message}` };
     }
     this.store = next;
@@ -379,7 +301,7 @@ export class SeatStore {
     const hit = this.shaCache.get(path);
     if (hit && hit.mtime === st.mtimeMs && hit.size === st.size) return hit.sha;
     try {
-      const sha = new Bun.CryptoHasher("sha256").update(readFileSync(path)).digest("hex");
+      const sha = sha256Bytes(readFileSync(path));
       this.shaCache.set(path, { mtime: st.mtimeMs, size: st.size, sha });
       return sha;
     } catch { return null; }
@@ -390,8 +312,7 @@ export class SeatStore {
     return null;
   }
 
-  /** This slice profiles bodies the roster can serve — the bytes must exist
-   *  to be judged against (#105 review B2). */
+  /** This slice profiles bodies the roster can serve: the bytes must exist to be judged against. */
   rosterHas(name: string): boolean {
     const vrm = avatarDefs()[name]?.vrm;   // a def's vrm first, as avatarRoster resolves it (#326)
     if (vrm && resolveLibFile(vrm)) return true;
@@ -444,19 +365,16 @@ export class SeatStore {
     });
   }
 
-  /** Operator countersign (tools/seat-accept.ts — no HTTP path reaches this).
+  /** Operator countersign (tools/operator/seat-accept.ts — no HTTP path reaches this).
    *  `expectedRev` is the revision the operator LISTED and reviewed: if the
    *  store has moved since, the acceptance refuses rather than countersign a
-   *  record nobody looked at (#105 review B3). */
+   *  record nobody looked at. */
   accept(name: string, pose: string, receipt: string, by: string, expectedRev: number):
     { ok: true; rev: number } | { ok: false; why: string; status?: number } {
     if (!Number.isInteger(expectedRev)) return { ok: false, why: "expectedRev required — accept what you reviewed (run `list`, pass --expect-rev)" };
     return this.withLock(() => {
       if (this.quarantined) return { ok: false as const, why: `store quarantined: ${this.quarantined}` };
-      // the reload above happened UNDER the lock: this comparison is against
-      // the disk's truth at commit time, so a proposal that interleaved
-      // anywhere before this moment moves the revision and refuses the
-      // countersign — the operator never blesses a record nobody reviewed
+      // the reload happened UNDER the lock: an interleaved proposal moves the revision and refuses the countersign
       if (this.store.rev !== expectedRev)
         return { ok: false as const, why: `store moved (rev ${this.store.rev} ≠ reviewed ${expectedRev}) — re-list and re-review before countersigning` };
       const slot = this.store.profiles[name]?.[pose];
@@ -492,16 +410,12 @@ export class SeatStore {
 
 // ---- the server's one store + the update push -------------------------------
 
-/** The live sequencer's store. One instance, importable by the route table
- *  (which never imports server.ts) and the tick systems alike; the operator
- *  tool and the tests construct their own stores over the same directory —
- *  the on-disk lock is what serializes them, never this reference. */
+/** The live server's store (importable by routes, which never import server.ts). The operator tool and tests build
+ *  their own over the same directory; the on-disk lock serializes them. */
 export const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR, {}, { patchDir: PATCH_DIR });
 
-/** Announce one profile change to every connected client — the same
- *  generation-bearing event whether the write came through the live door
- *  (POST /seat-profile) or from the operator tool (whose external write the
- *  5s poll notices). One copy, so the two paths cannot drift. */
+/** Announce one profile change to every connected client: one event for both paths (POST /seat-profile, and the
+ *  operator tool's write the 5 s poll notices), so they cannot drift. */
 export function announceProfileUpdate(name: string, pose: string, rev: number): number {
   const update = JSON.stringify({ type: "avatar-profile-updated", name, pose, rev });
   let notified = 0;
