@@ -4,6 +4,7 @@ import type { HnSession } from "./auth.ts";
 import { readCapped } from "./request-body.ts";
 
 // A session issued to a native client: `native`, or `nativeWorld` on an older pairing (auth.ts). It may not approve another pairing. Kept here, so loading the handler runs nothing of auth.ts.
+const originOf = (v: string) => { try { return new URL(v).origin; } catch { return null; } };
 export const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
 
 type Options = {
@@ -36,8 +37,9 @@ export function createNativeLogin(o: Options) {
     // browser mutations must be same-origin; a native client's start/poll has no Origin and no browser authority. One rule with
     // the socket guard (auth.ts crossSiteUpgrade): Sec-Fetch-Site decides when sent, so a browser behind a TLS proxy (an https
     // Origin, an http request) is same-origin as it says; without it, an Origin must be this server's own exactly
-    const site = req.headers.get("sec-fetch-site"), origin = req.headers.get("origin"), own = typeof o.origin === "string" ? o.origin : o.origin(req);
-    if (site !== null ? site !== "same-origin" : origin !== null && origin !== own) return json(403, { error: "wrong_origin" });
+    const site = req.headers.get("sec-fetch-site"), sent = req.headers.get("origin"), own = typeof o.origin === "string" ? o.origin : o.origin(req);
+    const origin = sent === null ? null : originOf(sent);   // normalised as crossSiteUpgrade does; "null" (an opaque origin) is no origin of ours
+    if (site !== null ? site !== "same-origin" : sent !== null && origin !== own) return json(403, { error: "wrong_origin" });
     if (!req.headers.get("content-type")?.startsWith("application/json")) return json(415, { error: "json_required" });
     let body: any;
     try {
@@ -89,7 +91,7 @@ export function createNativeLogin(o: Options) {
       const seconds = Math.max(1, Math.floor((exp - t) / 1000));
       // world_scope "*" for native clients from before native sessions became ordinary ones, which read a missing scope as one world
       return json(200, { name: s.name, expires_in: seconds, world_scope: "*" }, {
-        "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${own.startsWith("https:") ? "; Secure" : ""}`,
+        "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${own.startsWith("https:") || req.headers.get("x-forwarded-proto") === "https" ? "; Secure" : ""}`,   // as routes.ts's /auth cookie: behind a TLS proxy too
       });
     }
     return json(404, { error: "not_found" });

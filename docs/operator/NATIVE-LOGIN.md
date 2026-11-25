@@ -37,8 +37,9 @@ its own origin, never another site's. `GET /native` serves the login page with n
 follows the socket guard's rule: `Sec-Fetch-Site` decides when sent (only `same-origin` passes, so a browser behind a
 TLS proxy passes as the browser says); without it, an Origin must equal `ownOrigin` exactly. Forwarded headers are
 never read. Approve and deny need one of the two (a browser on this server's page). A POST with neither (a native
-client) is not checked. Behind a proxy, set `HN_NATIVE_ORIGIN` to the public origin anyway: an older browser that
-sends no `Sec-Fetch-Site` is refused without it, and the native session cookie is `Secure` only on an https origin.
+client) is not checked. The native session cookie is `Secure` on an https origin, or when the proxy sends
+`X-Forwarded-Proto: https` (as the browser's `/auth` cookie). Behind a proxy, set `HN_NATIVE_ORIGIN` to the public
+origin anyway: an older browser that sends no `Sec-Fetch-Site` is refused without it.
 
 The signed-in WebSocket guard (server/auth.ts `crossSiteUpgrade`):
 - `Sec-Fetch-Site` sent: it decides, and only `same-origin` passes.
