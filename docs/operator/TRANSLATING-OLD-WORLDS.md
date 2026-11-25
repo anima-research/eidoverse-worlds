@@ -22,8 +22,8 @@ authorize translating any world.
    If it refuses because the world has no owner, run it again with `--claim` added and
    `EIDO_UPGRADER_ACCOUNT=<your account> EIDO_UPGRADER_NAME=<your name>` in front (every translation ends with an owner:
    *An ownerless world is claimed*, below). Read the report. If its `refused` isn't `null`, stop and read it. It names
-   either a feature this protocol can't carry yet (ask the maintainers before translating) or a change to make on the
-   old server first, such as a person main let only watch (make the change it names, then run the dry run again). Its
+   what this protocol can't carry (a feature it doesn't carry yet, or a person main let only watch) and the change to
+   make on the old server first: make it and run the dry run again, or ask the maintainers. Its
    last lines are `report-hash <hash>` and the arguments for step 3. (Use the `report-hash`, not the `sha256` inside
    the report: that one is the old log's.) Approving the report accepts the trial period it states.
 3. **Translate in place:**
