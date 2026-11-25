@@ -15,7 +15,7 @@
 // The real appliance (mediamtx + a synthetic OBS feed, two browsers) is test/protocol/video-probe.ts: this file is what can be
 // checked without a browser, exactly.
 // @ts-nocheck
-import "./fixture-ids.ts";
+import "../harness/fixture-ids.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
@@ -292,18 +292,20 @@ const cases: Case[] = [
       return { defs, locked: code(locked), off: code(off), needs: off.refused?.needs, crew, booth: comp(s, "booth", "video") ?? null }; },
     good: (o) => o.defs === "ok" && o.locked === "locked" && o.off === "rights" && o.needs === "build" && o.crew === "ok" && o.booth === null },
 
-  { id: "K2", what: "a screen round-trips through componentsOf and entityOf as a sound does, and a published blueprint holding one copies it (create {from})", run(s) {
+  { id: "K2", what: "a screen round-trips through componentsOf and entityOf as a sound does", run() {
       const bag = { video: { source: "solstice", volume: 0.5, description: "the solstice stage" } };
       let back: any; try { back = CO.entityOf?.(CO.componentsOf?.(bag)); } catch (e) { back = { threw: String(e?.message ?? e) }; }
-      // the door's own blueprints (shared/protocol/authority/blueprints.js): publish a screen, place a copy of it
+      return { back: back?.video ?? back }; },
+    good: (o) => o.back?.source === "solstice" && o.back.volume === 0.5 && o.back.description === "the solstice stage" },
+  { id: "M11", what: "a published blueprint holding a screen places a copy that keeps it (the door's blueprints: publish, create {from})", run(s) {
+      const video = { source: "solstice", volume: 0.5, description: "the solstice stage" };
       admit(["solstice"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });
-      const set = show(s.call("olive", "set", { id: "screen", component: "video", value: bag.video }));
+      const set = show(s.call("olive", "set", { id: "screen", component: "video", value: video }));
       const pub = s.call("olive", "publish", { from: "screen", name: "a screen" }); const h = pub.notes?.find((n: any) => n.record)?.record;
       const made = h ? show(s.call("olive", "create", { from: h, at: { pos: [3, 0, 3] } })) : "no record";
       const st = s.w().state(); const copy = Object.keys(st.entities).find((x) => st.entities[x].c["copy-of"]?.from === h);
-      return { back: back?.video ?? back, set, pub: show(pub), made, copied: copy ? st.entities[copy].c.video ?? null : "no copy" }; },
-    good: (o) => o.back?.source === "solstice" && o.back.volume === 0.5 && o.back.description === "the solstice stage"
-      && o.set === "ok" && o.pub === "ok" && o.made === "ok" && o.copied?.source === "solstice" && o.copied.description === "the solstice stage" },
+      return { set, pub: show(pub), made, copied: copy ? st.entities[copy].c.video ?? null : "no copy" }; },
+    good: (o) => o.set === "ok" && o.pub === "ok" && o.made === "ok" && o.copied?.source === "solstice" && o.copied.description === "the solstice stage" },
 
   // ---------------- B: the broker ----------------
   { id: "B1", what: "the registry: a credential inside a URL, a bad id, an api without a path, a non-http WHEP are dropped by id; a good entry is admitted", run() {
