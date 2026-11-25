@@ -31,11 +31,14 @@ behind multiple workers would need sticky routing or a shared atomic grant store
 The current single sequencer needs no additional storage. Native sessions use the
 existing private session persistence. Re-login is required after native expiry.
 
-`HN_NATIVE_ORIGIN` (empty is unset) defaults to `https://eidoverse.animalabs.ai` (server/native-login.ts nativeOriginOf). Staging/local
-servers must set their exact public origin. `GET /native` serves the login page
-with no Origin check. A native-login POST carrying an Origin is compared with that
-configured or default origin only; it does not trust Host or forwarded headers
-(server/native-login.ts). A POST with no Origin (a native client) is not checked.
+The pairing page's origin is `ownOrigin` (server/auth.ts), as for the socket guard below: `HN_NATIVE_ORIGIN`
+(empty is unset) when set, else the request's own scheme and `Host`. A self-hosted server with none configured pairs on
+its own origin, never another site's. `GET /native` serves the login page with no Origin check. A native-login POST
+follows the socket guard's rule: `Sec-Fetch-Site` decides when sent (only `same-origin` passes, so a browser behind a
+TLS proxy passes as the browser says); without it, an Origin must equal `ownOrigin` exactly. Forwarded headers are
+never read. Approve and deny need one of the two (a browser on this server's page). A POST with neither (a native
+client) is not checked. Behind a proxy, set `HN_NATIVE_ORIGIN` to the public origin anyway: an older browser that
+sends no `Sec-Fetch-Site` is refused without it, and the native session cookie is `Secure` only on an https origin.
 
 The signed-in WebSocket guard (server/auth.ts `crossSiteUpgrade`):
 - `Sec-Fetch-Site` sent: it decides, and only `same-origin` passes.

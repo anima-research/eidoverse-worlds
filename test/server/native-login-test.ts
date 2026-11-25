@@ -66,6 +66,12 @@ console.log("NATIVE LOGIN — the handler");
   await status("approve from a pre-10-17 native session", post("/native/approve", { user_code: limited.user_code }, approveHeaders), 403);
   await status("an oversize start", post("/native/start", { oversize: "x".repeat(2048) }), 413);
   await status("a start from origin null", post("/native/start", {}, { origin: "null" }), 403);
+  // Sec-Fetch-Site decides when sent, as for the socket guard (auth.ts crossSiteUpgrade)
+  browser = { sub: "human:test", name: "Test", scopes: ["worlds:join"], exp: time + 3600_000 }; const fm = await start();
+  await status("approve, Sec-Fetch-Site cross-site with this server's Origin", post("/native/approve", { user_code: fm.user_code }, { ...approveHeaders, "sec-fetch-site": "cross-site" }), 403);
+  await status("approve, Sec-Fetch-Site same-site (a sibling subdomain)", post("/native/approve", { user_code: fm.user_code }, { ...approveHeaders, "sec-fetch-site": "same-site" }), 403);
+  await status("a start with Sec-Fetch-Site none", post("/native/start", {}, { "sec-fetch-site": "none" }), 403);
+  await status("approve, Sec-Fetch-Site same-origin with a proxy's https Origin", post("/native/approve", { user_code: fm.user_code }, { origin: "https://proxied.test", cookie: "browser", "sec-fetch-site": "same-origin" }), 200);
   await status("GET /native/approve", handler(new Request(origin + "/native/approve")), 405);
   const page = await handler(new Request(origin + "/native")); const html = await page.text();
   check("the /native page refuses framing", /frame-ancestors 'none'/.test(page.headers.get("content-security-policy") ?? ""));
@@ -93,7 +99,7 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     HOST: "127.0.0.1", PORT: String(port), JOIN_TOKEN: "native-test-door", WORLDS_DIR: join(scratch, "worlds"),
     OPT_DIR: join(scratch, "opt"), RELAY_STATE_DIR: join(scratch, "opt"), SKIP_OPT_SWEEP: "1", RECORD_FRAMES: "0",
     HN_SESSIONS_FILE: join(scratch, "sessions.json"), AGENT_TOKENS_PATH: join(scratch, "tokens.json"),
-    HN_ISSUER_KEY: issuer, HN_ISS: "id.test", HN_AUD: "eidoverse", HN_NATIVE_ORIGIN: origin, HN_REQUIRE_LOGIN: "0",   // a local server sets its exact origin (docs/operator/NATIVE-LOGIN.md)
+    HN_ISSUER_KEY: issuer, HN_ISS: "id.test", HN_AUD: "eidoverse", HN_NATIVE_ORIGIN: "", HN_REQUIRE_LOGIN: "0",   // unset, as a self-hoster runs it: the pairing page is this server's own origin, never the public show's
   }, stdout: "ignore", stderr: "pipe" });
   const sockets: WebSocket[] = [];
   const post = (path: string, body: object, headers: Record<string, string> = {}) =>
@@ -123,7 +129,16 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     const p = await (await post("/native/start", {})).json();
     check("W3a a poll before approval is pending (202)", (await post("/native/poll", { device_code: p.device_code })).status === 202);
     const foreign = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin: "https://evil.test" });
-    check("W3b approval from a foreign Origin is refused on the real route ", foreign.status === 403, foreign.status);
+    check("W3b approval from a foreign Origin is refused on the real route (HN_NATIVE_ORIGIN unset)", foreign.status === 403, foreign.status);
+    const show = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin: "https://eidoverse.animalabs.ai" });
+    check("W3c ...and so is one from the public show's origin: a self-hosted server's pairing is its own, not someone else's site's", show.status === 403, show.status);
+    const crossSite = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin, "sec-fetch-site": "cross-site" });
+    check("W3d Sec-Fetch-Site decides when sent: cross-site is refused even with this server's Origin", crossSite.status === 403, crossSite.status);
+    const startCross = await post("/native/start", {}, { "sec-fetch-site": "same-site", origin: "https://sib.127.0.0.1.test" });
+    check("W3e a browser start from a sibling site is refused (403)", startCross.status === 403, startCross.status);
+    const proxied = await (await post("/native/start", {})).json();
+    const viaProxy = await post("/native/approve", { user_code: proxied.user_code }, { cookie: browser, origin: "https://public.example", "sec-fetch-site": "same-origin" });
+    check("W3f behind a TLS proxy (the browser's Origin is the public https one, the request http): Sec-Fetch-Site same-origin approves (200)", viaProxy.status === 200, viaProxy.status);
     const approved = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin });
     check("W3 approval through auth.ts's real session store: 200, and it sets no cookie on the browser", approved.status === 200 && approved.headers.get("set-cookie") === null, approved.status);
     await pause("the poll interval: a poll inside 2 s of the last is a 429", 2100);
