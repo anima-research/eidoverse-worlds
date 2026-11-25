@@ -31,15 +31,17 @@ behind multiple workers would need sticky routing or a shared atomic grant store
 The current single sequencer needs no additional storage. Native sessions use the
 existing private session persistence. Re-login is required after native expiry.
 
-The pairing page's origin is `ownOrigin` (server/auth.ts), as for the socket guard below: `HN_NATIVE_ORIGIN`
-(empty is unset) when set, else the request's own scheme and `Host`. A self-hosted server with none configured pairs on
-its own origin, never another site's. `GET /native` serves the login page with no Origin check. A native-login POST
-follows the socket guard's rule: `Sec-Fetch-Site` decides when sent (only `same-origin` passes, so a browser behind a
-TLS proxy passes as the browser says); without it, an Origin must equal `ownOrigin` exactly. Forwarded headers are
-never read. Approve and deny need one of the two (a browser on this server's page). A POST with neither (a native
+The pairing page's origin is `ownOrigin` (server/auth.ts), as for the socket guard below: `HN_NATIVE_ORIGIN` (empty is
+unset) when set, else the request's own scheme and `Host`. A self-hosted server with none configured pairs on its own
+origin, never another site's. `GET /native` serves the login page with no Origin check. A native-login POST follows the
+socket guard's rule: `Sec-Fetch-Site` decides when sent (only `same-origin` passes, so a browser behind a TLS proxy
+passes as the browser says); without it, an Origin must equal `ownOrigin` exactly. No forwarded header takes part in the
+origin check. Approve and deny need one of the two (a browser on this server's page). A POST with neither (a native
 client) is not checked. The native session cookie is `Secure` on an https origin, or when the proxy sends
-`X-Forwarded-Proto: https` (as the browser's `/auth` cookie). Behind a proxy, set `HN_NATIVE_ORIGIN` to the public
-origin anyway: an older browser that sends no `Sec-Fetch-Site` is refused without it.
+`X-Forwarded-Proto: https` (as the browser's `/auth` cookie; deploy/nginx-show.conf sends it, overwriting a client's).
+That header is the only forwarded one read, and only for this flag: a client that sends it itself only makes its own
+cookie stricter. Behind a proxy, set `HN_NATIVE_ORIGIN` to the public origin anyway: an older browser that sends no
+`Sec-Fetch-Site` is refused without it.
 
 The signed-in WebSocket guard (server/auth.ts `crossSiteUpgrade`):
 - `Sec-Fetch-Site` sent: it decides, and only `same-origin` passes.

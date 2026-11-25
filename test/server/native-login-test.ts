@@ -4,7 +4,7 @@
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/native-login-test.ts
 import { generateKeyPairSync, createPublicKey, sign, randomBytes } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNativeLogin } from "../../server/native-login.ts";
@@ -142,6 +142,9 @@ console.log("NATIVE LOGIN — over a real server's HTTP + WS");
     await pause("the poll interval", 2100);
     const proxGrant = await post("/native/poll", { device_code: proxied.device_code }, { "x-forwarded-proto": "https" });
     check("W3g ...and behind it the native cookie is Secure (x-forwarded-proto https, as routes.ts's /auth cookie reads it)", proxGrant.status === 200 && /; Secure/.test(proxGrant.headers.get("set-cookie") ?? ""), proxGrant.headers.get("set-cookie"));
+    // ...so the repository's own TLS front must say so (bot review #364 1): every block that reaches /native or /auth sets it, overwriting a client's
+    const conf = readFileSync(join(ROOT, "deploy/nginx-show.conf"), "utf8"), root = /location \/ \{[^}]*\}/.exec(conf)?.[0] ?? "";
+    check("W3h deploy/nginx-show.conf's `location /` sets X-Forwarded-Proto $scheme (the native and /auth cookies are Secure on the show)", /proxy_set_header X-Forwarded-Proto \$scheme;/.test(root), root);
     const approved = await post("/native/approve", { user_code: p.user_code }, { cookie: browser, origin });
     check("W3 approval through auth.ts's real session store: 200, and it sets no cookie on the browser", approved.status === 200 && approved.headers.get("set-cookie") === null, approved.status);
     await pause("the poll interval: a poll inside 2 s of the last is a 429", 2100);
