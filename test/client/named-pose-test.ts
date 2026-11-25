@@ -298,7 +298,7 @@ async function browserOwnerPart() {
   }));
   mock.module(base + "base.js", () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {}, tee() {} }));
   mock.module(base + "terrain.js", () => ({ heightAt: () => 0, setWaterField() {}, rainSurfaceAt: () => 0 }));
-  mock.module(base + "colliders.js", () => ({ resolveColliders: () => {}, lastBlockedTop: 0, findSeat: () => null, raySegment: () => null,
+  mock.module(base + "colliders.js", () => ({ resolveColliders: () => 0, lastBlockedTop: () => 0, findSeat: () => null, raySegment: () => null,
     frameOf: () => null, lastContacts: () => [], colliders: new Map() }));
   mock.module(base + "arrivalhold.js", () => ({ heightHeld: () => false, holdHeightUntilSolid() {} }));   // the arrival hold reads the models realizer, which is not under test
   mock.module(base + "assets.js", () => ({ forgetBytes() {}, primeFiles: async () => {} }));
@@ -380,7 +380,8 @@ async function browserOwnerPart() {
   pressG();
   check("G on the wingless body then has nothing to fold or release", hints.length === said && controller.folded() === false, hints.at(-1));
   controller.setFolded(true);   // a fold restored on rejoin (main.js) onto the wingless body
-  check("a fold restored onto a known wingless body is released where it is set", controller.folded() === false && owner.wingsFolded === false);
+  check("a fold restored onto a known wingless body is released where it is set, and says so", controller.folded() === false && owner.wingsFolded === false &&
+    hints.at(-1) === "folded-wing posture released — this body has no wings", hints.at(-1));
   controller.armFlight(WING_BONES, "owner");
   pressG();
   check("G on a winged body folds again", controller.folded() === true && /wings folded/.test(hints.at(-1) ?? ""), hints.at(-1));
@@ -390,7 +391,12 @@ async function browserOwnerPart() {
   bus.emit("key", { code: "KeyF", repeat: false });
   const up = controller.flying();
   controller.armFlight([], "owner");   // a swap mid-flight, to a wingless body
-  check("a swap never ends a flight (lead 11-12): the wingless body flies on", up === true && controller.flying() === true, `took off ${up}; flying ${controller.flying()}; ${hints.at(-1)}`);
+  said = hints.length;
+  owner.root ??= new THREE.Object3D(); owner.setClip ??= () => {}; owner.update ??= () => {};   // updateMe places and animates the body on screen
+  for (let i = 0; i < 10; i++) controller.updateMe(1 / 60, owner);   // the frames whose re-resolve once grounded a swapped body
+  const state = controller.flightReport();
+  check("a swap never ends a flight (lead 11-12): the wingless body flies on, frames later, still piloting",
+    up === true && /state: PILOT/.test(state) && !hints.slice(said).some((h) => /withdrawn/.test(h)), `took off ${up}; ${state.split("\n")[1]}; ${hints.slice(said)}`);
   bus.emit("key", { code: "KeyF", repeat: false });   // land
 
   console.log("\nWINGS: ARMING FROM THE BODY ON SCREEN (mybody.js setMe -> controller.armFlightForBody)");
@@ -412,6 +418,16 @@ async function browserOwnerPart() {
   check("...and, its flight unchanged, says nothing new", bareSay === "", String(bareSay));
   const beeSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base", "Wing_Left_High1"]));
   check("a mis-named wing rig is told why its wings won't move", /^flight available on this body — press F; its wings won't animate/.test(beeSay ?? ""), String(beeSay));
+  let live: any = { role: "member", can: [] };   // net.myRights as main.js's hook reads it: live, not copied
+  controller.setRightsHook(() => live);
+  const quietSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base"]));   // no grant yet: the toast says nothing
+  live = { role: "member", fly: true };   // granted mid-session
+  bus.emit("key", { code: "KeyF", repeat: false });
+  check("a mis-named rig armed before its grant is told why at its first take-off", quietSay === "" && controller.flying() && /its wings won't animate/.test(hints.at(-1) ?? ""), hints.at(-1));
+  bus.emit("key", { code: "KeyF", repeat: false });   // land
+  bus.emit("key", { code: "KeyF", repeat: false });
+  check("...once", controller.flying() && !/won't animate/.test(hints.at(-1) ?? ""), hints.at(-1));
+  bus.emit("key", { code: "KeyF", repeat: false });
 }
 
 // ---------------------------------------------------------------- the remote renderer: mounted and not

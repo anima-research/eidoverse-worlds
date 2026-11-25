@@ -756,7 +756,8 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
-              this.wingsFolded = this.foldFits(foldedIn(msg.restore) === true);   // the named pose wings-folded (or an older wingsFolded), if this body can hold it
+              this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
+              this.fitFold();   // ...if this body can hold it
               if (this.wingsFolded) void this.loadBodyBones();   // bones unread (a first join): the read fits the fold, as on a swap
               this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
@@ -1707,20 +1708,27 @@ export class WorldAgent {
    *  read failed, and from an avatar change until the new body is read. */
   bodyBoneNames: string[] | null = null;
   private bodyBonesFor: string | null = null;
-  private bodyBonesFailedFor: string | null = null;
+  /** The body whose last bone read failed (a 503, a timeout): take_off doesn't wait on it again (agent-flight.ts). It
+   *  remembers the failure, never the result: the next read still asks the library. */
+  bodyBonesFailedFor: string | null = null;
+  /** A fold fitFold released that no reply has said yet (take_off says it). */
+  foldReleaseUnsaid = false;
 
-  /** A fold this body can hold: released on a body known to have no wings; kept on wings, or on bones not yet known. */
-  private foldFits(fold: boolean): boolean {
-    return fold && !(this.bodyBoneNames && this.bodyBonesFor === this.avatar && !inspectBody(this.bodyBoneNames).canAnimateWings);
+  /** A fold this body can hold: released on a body known to have no wings; kept on wings, or on bones not yet known.
+   *  A release is said at once in the inbox, and by the next take_off. */
+  private fitFold() {
+    const known = this.bodyBoneNames && this.bodyBonesFor === this.avatar;
+    if (!this.wingsFolded || !known || inspectBody(this.bodyBoneNames!).canAnimateWings) return;
+    this.wingsFolded = false; this.foldReleaseUnsaid = true;
+    const ts = Date.now(), text = "folded-wing posture released — this body has no wings";
+    this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
   }
 
-  /** Read the worn VRM's bone list, once per avatar. A failed read keeps nothing (still unknown), and isn't tried
-   *  again for this body unless `retry` (fold_wings, whose refusal says "calling again reads the model again"); a read
-   *  landing after an avatar change is dropped. */
-  async loadBodyBones({ retry = false } = {}): Promise<string[] | null> {
+  /** Read the worn VRM's bone list, once per avatar. A failed read keeps nothing (still unknown; the next read asks
+   *  again); a read landing after an avatar change is dropped. */
+  async loadBodyBones(): Promise<string[] | null> {
     const avatar = this.avatar;
     if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
-    if (!retry && this.bodyBonesFailedFor === avatar) return null;
     try {
       const res = await fetch(`${this.httpBase}/library/${avatar}`, { signal: AbortSignal.timeout(WORLD_READ_MS) });
       if (!res.ok) throw new Error(String(res.status));
@@ -1733,11 +1741,11 @@ export class WorldAgent {
         this.bodyBoneNames = names;
         this.bodyBonesFor = avatar;
         this.bodyBonesFailedFor = null;
-        this.wingsFolded = this.foldFits(this.wingsFolded);
+        this.fitFold();
       }
     } catch (e) {
       // Nothing is kept: a list another read stored for this body stands, and
-      // an unknown list stays unknown (and isn't refetched for this body).
+      // an unknown list stays unknown.
       if (this.avatar === avatar && this.bodyBonesFor !== avatar) this.bodyBonesFailedFor = avatar;
       console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
     }

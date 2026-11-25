@@ -52,8 +52,9 @@ let flightBones = null;
  *  grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? null;   // null: not read (a failed read, a capsule) -- unknown, which keeps a fold
+  deadUntold = null;   // the last body's note isn't this one's (armFlightForBody sets this body's)
   // a fold carried from a winged body is released by one known to have no wings (agent.ts foldFits, the twin)
-  if (wingsFolded && knownWingless()) { setFolded(false); flashHint?.('folded-wing posture released — this body has no wings'); }
+  if (wingsFolded && knownWingless()) setFolded(true);   // setFolded fits it, and says the release
   flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
   return resolveFlight(flightProv, { identity }).enabled;
 }
@@ -61,7 +62,7 @@ const knownWingless = () => Array.isArray(flightBones) && !inspectBody(flightBon
 
 /** Arm flight for the body on screen (mybody.js setMe, every swap): its skeleton, or null (unknown) for a capsule or a
  *  read that throws. Returns the toast to show, '' when it would repeat the last (flight available; dead wings). */
-let toldFlight = '';
+let toldFlight = '', deadUntold = null;
 export function armFlightForBody(av, identity = 'me') {
   let bones = null;
   try { if (av?.vrm?.scene) { bones = []; av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } }
@@ -70,6 +71,9 @@ export function armFlightForBody(av, identity = 'me') {
   const dead = bones ? deadWingsNote(inspectBody(bones)) : null;
   const say = ok && av ? `flight available on this body — press F${dead ? `; ${dead}` : ''}` : '';
   const fresh = say !== toldFlight; toldFlight = say;
+  // a note the toast didn't carry (no grant yet: it may come mid-session) is said at this body's first take-off, as
+  // the agent's take_off does
+  deadUntold = ok && av ? null : dead;
   return fresh ? say : '';
 }
 
@@ -113,7 +117,9 @@ export function capSpeed(v, ms) { if (Number.isFinite(v) && ms > 0) speedCap = {
 let wingsFolded = false;
 export const folded = () => wingsFolded;
 export function setFolded(fold, me = meRef()) {
-  wingsFolded = applyOwnedWingFold(myState, me, fold && !knownWingless());   // a restored fold fits the body, or is released
+  const fits = !(fold && knownWingless());   // a restored fold fits the body, or is released, and says so
+  wingsFolded = applyOwnedWingFold(myState, me, fold && fits);
+  if (!fits) flashHint?.('folded-wing posture released — this body has no wings');
 }
 
 function toggleFold(me) {
@@ -134,7 +140,7 @@ export function flightReport() {
     ? resolveFlight(flightProv, { identity: 'me' })
     : { enabled: false, reason: 'flight not armed for this body' };
   const L = [];
-  L.push(`rig: ${flightBones?.length ?? 0} bones, ` +
+  L.push(`rig: ${flightBones ? `${flightBones.length} bones` : 'bones not read'}, ` +
          (v.enabled ? `granted (${inspectBody(flightBones ?? []).wingCount} wing bones)` : `DENIED — ${v.reason}`));
   if (flight) {
     L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
@@ -150,7 +156,7 @@ export function flightReport() {
   }
   return L.join('\n');
 }
-// console probe: "F did nothing" is no provider, a refused rig, or a toggle the movement loop overwrote
+// console probe: "F did nothing" is no provider, no grant, or a toggle the movement loop overwrote
 if (typeof globalThis !== 'undefined') {
   globalThis.__flightDebug = () => ({
     armed: !!flightProv, bones: flightBones?.length ?? 0,
@@ -193,7 +199,8 @@ function toggleFlight() {
     return `cannot take off: ${why}`;
   }
   flight = next;
-  return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
+  const dead = deadUntold; deadUntold = null;
+  return `flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land${dead ? `; ${dead}` : ''}`;
 }
 
 export const myState = {

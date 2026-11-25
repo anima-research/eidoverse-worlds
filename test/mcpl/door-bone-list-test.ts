@@ -143,7 +143,7 @@ vig.setAvatar('wingless.vrm');
 await vig.loadBodyBones();
 check('a swap to a wingless body releases the fold once its bones are read', vig.wingsFolded === false);
 r = await vig.takeOff();
-check("...so take_off isn't refused for wings it doesn't have", /took off/.test(text(r)) && !/folded/.test(text(r)), text(r));
+check("...so take_off isn't refused for wings it doesn't have (and says the swap released the fold)", /^took off/.test(text(r)) && !/wings are folded|fold is held/.test(text(r)) && /posture released/.test(text(r)), text(r));
 const keep: any = new WorldAgent({ url: noWorldUrl(), name: 'keep', world: 'bone-bench' });
 keep.avatar = 'mythos-wings.vrm';
 serve = async () => new Response(glb(WINGED));
@@ -223,6 +223,35 @@ console.log('\nA FRESH JOIN FITS A RESTORED FOLD');
   const released = await tryUntil('the restore reads the body and releases the fold', () => fresh.wingsFolded === false, { ms: 2000, step: 5 });
   check('a fold restored with the bones not yet read (first join) is released once they are, by one read', released && fresh.wingsFolded === false && fetches === asked + 1, `folded ${fresh.wingsFolded}; ${fetches - asked} reads`);
 }
+
+console.log('\nA RELEASE IS SAID, WHEREVER IT HAPPENS');
+{
+  const RealWS = globalThis.WebSocket;
+  class FakeWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = FakeWS;
+  const quiet: any = new WorldAgent({ url: noWorldUrl(), name: 'quiet', world: 'bone-bench' });
+  quiet.avatar = 'wingless.vrm';
+  serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+  await quiet.loadBodyBones();
+  quiet.connect().catch(() => {});
+  await quiet.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
+  (globalThis as any).WebSocket = RealWS;
+  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => /folded-wing posture released — this body has no wings/.test(e.text ?? '')),
+    JSON.stringify(quiet.inbox.map((e: any) => e.text)));
+}
+const raced: any = new WorldAgent({ url: noWorldUrl(), name: 'raced', world: 'bone-bench' });
+raced.avatar = 'mythos-wings.vrm'; raced.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await raced.loadBodyBones(); await raced.foldWings(true);
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+raced.setAvatar('wingless.vrm');
+await tryUntil("the swap's own read releases the fold", () => raced.wingsFolded === false, { ms: 2000, step: 5 });
+r = await raced.takeOff();
+check("a take_off after the swap's read already released the fold still says the release", /^took off/.test(text(r)) && /folded-wing posture released/.test(text(r)), text(r));
+const nogrant: any = new WorldAgent({ url: noWorldUrl(), name: 'nogrant', world: 'bone-bench' });
+nogrant.avatar = 'wingless.vrm'; nogrant.myRights = { role: 'builder', fly: false }; nogrant.wingsFolded = true;
+r = await nogrant.takeOff();
+check('a take_off refused after its read released a fold says the release too', /cannot fly here/.test(text(r)) && /folded-wing posture released/.test(text(r)) && nogrant.wingsFolded === false, text(r));
 
 console.log('\nA TAKE-OFF THAT RELEASES A FOLD SAYS SO');
 const said_: any = new WorldAgent({ url: noWorldUrl(), name: 'said', world: 'bone-bench' });

@@ -470,7 +470,7 @@ console.log('\nPILOT -- a human flies the same integrator an agent does');
 }
 
 // ---------------------------------------------------------------- body contract
-console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
+console.log('\nBODY -- wings are found by bone NAMES, and only for flapping');
 {
   // The bone list is DERIVED from the shipped artifact, not typed by hand --
   // an array in a test file cannot go stale against an asset, which is exactly
@@ -663,7 +663,7 @@ console.log('\nDEAD WINGS ARE SAID, ONCE (flightbody.js: "says so, loudly")');
 }
 
 // ------------------------------------------------- default-deny, for real
-console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
+console.log('\nDEFAULT-DENY -- the grant is the permission, whatever the body');
 {
   // mica, Blocker 1 at cea3c3c: both shipped entry points constructed
   // `devFlightProvider({allow:[identity]})`, so wearing a winged rig authorized itself. "That collapses provenance ('is
