@@ -488,6 +488,26 @@ try {
   check('L1g a queued lock question on a group move, cancelled after a newer drag took one of its things: the others go back, that one stays',
     l1g.mate && l1g.moved === false && l1g.putBack.includes('mate') && !l1g.putBack.includes('held'), JSON.stringify(l1g));
 
+  // L1h: a multi-select edit's revert puts back the whole selection (edit/panels.js, inspect.js commitMany:
+  // ids.forEach(revertPose)), and a delta edit may write only some of it. Selected {lk, mate, third}, the write sets lk
+  // and third; a newer drag takes lk and mate. mate is in no write of the request, yet that drag holds it: it stays too
+  const third = await req('create', { id: '$lkr', components: { transform: { pos: [1, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: 'lock probe third' } });
+  await pg.evaluate((id) => { globalThis.__lk3 = id; return true; }, third.ids?.$lkr ?? null);
+  await blocker('b1h'); await asked(/Blocking/, 'L1h: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
+  await pg.evaluate(async () => { const E = await import('./lib/edit/writes.js');
+    globalThis.__putBack = [];
+    const sel = [globalThis.__lk, globalThis.__lk2, globalThis.__lk3], op = (id, x) => ({ verb: 'set', args: { id, component: 'transform', value: { pos: [x, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+    return globalThis.__px.track('m1h', E.sendOps([op(sel[0], 4), op(sel[2], 0)], { what: 'pos.x on 3 things', expect: false, revert: () => sel.forEach((i) => E.revertPose(i)) }).then((r) => r.ok)); });
+  await inLine().catch(() => {});
+  await pg.evaluate(async () => { const N = await import('./lib/net.js'); N.sendDrag(globalThis.__lk, [5, 0, 3], 0); N.sendDrag(globalThis.__lk2, [6, 0, 3], 0); return true; });   // a newer group drag of lk + mate
+  await pg.evaluate(() => globalThis.__px.press(/^ok$/i));
+  await asked(/locked/, 'L1h: the lock question is asked').catch(() => {});
+  await pg.evaluate(() => globalThis.__px.press(/cancel/i));
+  await settledR('m1h', 'L1h: the multi edit settled').catch(() => {});
+  const l1h = { third: third.ok, moved: await R('m1h'), putBack: await pg.evaluate(() => globalThis.__putBack.map((i) => (i === globalThis.__lk ? 'held' : i === globalThis.__lk2 ? 'mate' : i === globalThis.__lk3 ? 'third' : i))) };
+  check('L1h a cancelled multi-select edit that wrote only some of its selection: a thing a newer drag took stays under the hand even outside the write; the untaken one goes back',
+    l1h.third && l1h.moved === false && l1h.putBack.includes('third') && !l1h.putBack.includes('held') && !l1h.putBack.includes('mate'), JSON.stringify(l1h));
+
   // L2 (15): while the question waits, the lock it names is lifted and a new one set: 🔓 Unlock must not lift the new one
   await blocker('b2'); await asked(/Blocking/, 'L2: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
   await move('m2', 4); await inLine().catch(() => {});

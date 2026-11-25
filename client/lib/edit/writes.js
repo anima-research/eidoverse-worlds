@@ -13,7 +13,7 @@
 //                          redoes what's untouched and says what it skipped (shared/protocol/authority/undo.js).
 //   del(ids), duplicate(id), lock(id, on), publish(ids, name), copyBlueprint(hash, at)
 import { bus } from '../base.js';
-import { net, sendRequest, replica, replicaActive, sendDrag, dragsOf } from '../net.js';
+import { net, sendRequest, replica, replicaActive, sendDrag, dragsOf, dragsSnapshot } from '../net.js';
 import { entities } from '../world.js';
 import { enc, actorName } from '../../../shared/protocol/names.js';
 import { idOut } from '../../../shared/protocol/view.js';
@@ -60,10 +60,10 @@ export function writesOf(req) {
 export const mayLift = () => { const r = net.myRights; if (!r) return false;
   return Array.isArray(r.permissions) ? r.permissions.includes('build') : isOwner(r); };
 
-let withheld = null;   // while a cancelled write's revert runs: the things a newer drag took since it was sent (sendNow)
+let withheld = null;   // while a cancelled write's revert runs: (id) → a newer drag took it since the write was sent (sendNow)
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {
-  if (withheld?.has(id)) return;   // that drag holds it now
+  if (withheld?.(id)) return;   // that drag holds it now
   bus.emit('pose-revert', { id });
   const o = entities.get(id); if (!o) return;
   const q = o.quaternion; const yaw = Math.atan2(2 * (q.w * q.y + q.x * q.z), 1 - 2 * (q.x * q.x + q.y * q.y));
@@ -112,9 +112,12 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   let cancelled = false, lifted = 0;   // lifted: the unlocks already written when a later lock's question is cancelled
   // the question can wait behind another (xr/xrask.js queues them) while a new drag of the same thing begins: a cancel
   // then must not put it back under that hand (the revert snaps the preview and tells everyone). Per thing: a group's
-  // other members, which no newer drag took, still go back
-  const mine = [...new Set(writesOf(req).map(([i]) => i))], drags0 = mine.map(dragsOf);
-  const takenSince = () => new Set(mine.filter((i, n) => dragsOf(i) !== drags0[n]));
+  // other members, which no newer drag took, still go back. Every thing's count, not only the ones the request sets: a
+  // multi-select edit's revert puts back its whole selection (edit/panels.js, inspect.js), and a delta edit may write
+  // only some of it. Taken after the first reply: a group drag's release (multimove.js) sends its end samples right
+  // after its sendOps, and those are this gesture's own, not a newer one's
+  const mine = [...new Set(writesOf(req).map(([i]) => i))], drags0 = dragsSnapshot();
+  const takenSince = (id) => dragsOf(id) !== (drags0.get(id) ?? 0);
   for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && r.refused?.mayLift !== false && req.args?.throughLock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     // a delete or a replace through a lock is destructive: styled so, and not the answer Enter gives
@@ -144,9 +147,8 @@ async function sendNow(req, { what = req.verb, revert = null, record = true } = 
   } else {
     // a cancel after newer drags took every one of its things puts back nothing; after they took some, revertPose
     // passes over those (the revert runs, its other things go back)
-    const taken = cancelled ? takenSince() : null;
-    if (!(taken && mine.length && taken.size === mine.length)) {
-      withheld = taken?.size ? taken : null;
+    if (!(cancelled && mine.length && mine.every(takenSince))) {
+      withheld = cancelled ? takenSince : null;
       try { revert?.(); } catch (e) { console.warn('[editwrites] revert', e); } finally { withheld = null; }
     }
     if (cancelled) { flashHint(lifted ? `cancelled — ${lifted === 1 ? 'a lock was' : `${lifted} locks were`} lifted, the ${what} not written` : 'cancelled — nothing written'); bus.emit('edit-cancelled', { what, refused: r.refused }); }

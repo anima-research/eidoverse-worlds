@@ -235,6 +235,8 @@ export function sendTyping(to, state) {
 // question answered after it waited)
 const dragsSent = new Map();
 export const dragsOf = (id) => dragsSent.get(id) ?? 0;
+/** Every thing's count at once: a later dragsOf that differs is a newer gesture, on any thing, not only the ones asked about. */
+export const dragsSnapshot = () => new Map(dragsSent);
 export function sendDrag(id, pos, yaw, q = null, { end = false, scale = null } = {}) {
   dragsSent.set(id, dragsOf(id) + 1);
   if (net.joined && net.ws?.readyState === 1) {
