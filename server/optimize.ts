@@ -98,6 +98,14 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
 // GPU-native compressed textures: no createImageBitmap decode, no raw RGBA uploads, 4-8× less VRAM. The store recipe minus
 // webp plus a per-texture KTX2 pass before draco. Serves only on ?ktx2=1: KHR_texture_basisu is in extensionsRequired.
 
+/** An encoder the kernel killed for memory (SIGKILL: the unit's cgroup ran out, docs/research/service-hardening.md) kills
+ *  this pass the same way, so the pump defers the item (upload.ts) instead of marking it failed. Its scratch goes first:
+ *  the kill skips every `finally`, and under PrivateTmp a leaked one is charged to the cgroup that just ran out. */
+function dieWithEncoder(proc: { signalCode: string | null }, tmp: string) {
+  if (proc.signalCode !== "SIGKILL") return;
+  rmSync(tmp, { recursive: true, force: true });
+  process.kill(process.pid, "SIGKILL");
+}
 // findKtx2Encoder lives in tools-stamp.ts (the verdict stamp names the encoder it finds)
 
 // baseColor/emissive are eye-facing sRGB → ETC1S (~4-8× smaller, block noise hides in shading). Every other slot
@@ -197,6 +205,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string, caps?: Map<T
       const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath, isToktx ? resize : null);
       const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
       const code = await proc.exited;
+      dieWithEncoder(proc, tmp);
       const err = (await new Response(proc.stderr).text()).trim();
       if (code !== 0 || !existsSync(outPath)) {
         console.error(`[optimize] ktx2: encode failed on ${label} (${err.split("\n")[0] || `exit ${code}`}) — texture kept as-is`);
@@ -807,6 +816,7 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
       const outPath = join(tmp, `${i}.ktx2`);
       const proc = Bun.spawn(ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath), { stdout: "ignore", stderr: "pipe" });
       const code = await proc.exited;
+      dieWithEncoder(proc, tmp);
       const err = (await new Response(proc.stderr).text()).trim();
       if (code !== 0 || !existsSync(outPath)) {
         console.error(`[optimize] ktx2-vrm: encode failed on ${label} (${err.split("\n")[0] || `exit ${code}`}) — image kept as-is`);
@@ -953,6 +963,7 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
     const isToktx = basename(encoder).toLowerCase().includes("toktx");
     const proc = Bun.spawn(ktx2EncodeArgs(encoder, isToktx, cls.srgb, cls.uastc, inPath, outPath), { stdout: "ignore", stderr: "pipe" });
     const code = await proc.exited;
+    dieWithEncoder(proc, tmp);
     const err = (await new Response(proc.stderr).text()).trim();
     if (code !== 0 || !existsSync(outPath))
       throw new Error(`ktx2-img: encode failed (${err.split("\n")[0] || `exit ${code}`})`);
@@ -969,6 +980,7 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
 //   3  any --ktx2* mode (or --lod with textures): no KTX2 encoder — environmental, env-skip, never a .failed marker.
 //   4  an output image failed the container check — retryable, not marked failed.
 //   5  --ktx2/--lod: an encoder answered but not every texture converted — refused, no marker, retried next boot.
+//   SIGKILL: an encoder was killed for memory (dieWithEncoder) — the pump defers it, retried next boot.
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);

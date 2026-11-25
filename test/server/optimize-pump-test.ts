@@ -1,8 +1,8 @@
 // bun test/server/optimize-pump-test.ts — the optimizer pump with a FAKE child (OPT_CMD): estimate defer with queue
-// continuation, success (+ stale .deferred retired), 'not smaller' marker, capped child death → .deferred (its retry
-// by a later boot sweep isn't driven here), wrapper 126 → environmental (no marker, queue dropped), stale-marker retirement when the variant
-// exists already, and both boot sweeps skipped under SKIP_OPT_SWEEP (subprocess). Each case owns its store.
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
+// continuation, success (+ stale .deferred retired), 'not smaller' marker, child death → .deferred (its retry by a later
+// boot sweep isn't driven here), the child's memory standing (no data rlimit, the kernel's first pick), stale-marker
+// retirement when the variant exists already, and both boot sweeps skipped under SKIP_OPT_SWEEP (subprocess). Each case owns its store.
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync, readdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -15,6 +15,10 @@ import { dirname } from "node:path";
 const [src, dest] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 let v = "0"; try { v = readFileSync(src + ".verdict", "utf8").trim(); } catch { /* none: success */ }
 if (process.env.OPT_RECEIPTS) appendFileSync(process.env.OPT_RECEIPTS, dest + "\\n");   // every invocation leaves a receipt the harness can count
+if (v === "limits") {   // what it runs under (6), beside its source; then a success
+  writeFileSync(src + ".limits", JSON.stringify({ data: readFileSync("/proc/self/limits", "utf8").match(/^Max data size\\s+(\\S+)/m)?.[1], oom: readFileSync("/proc/self/oom_score_adj", "utf8").trim() }));
+  v = "0";
+}
 const err = (s: string) => writeSync(2, s + "\\n");
 if (v === "sig") process.kill(process.pid, "SIGKILL");   // a signal death; SIGSEGV made bun dump core (~13 s a run). Linux-only row
 if (v === "hang") { setInterval(() => {}, 1 << 30); await new Promise(() => {}); }   // never answers
@@ -32,7 +36,7 @@ err("fake verdict " + v); process.exit(Number(v));
 `);
 process.env.SKIP_OPT_SWEEP = "1";   // the parent's own boot timers must not sweep the real library through the fake
 process.env.WORLDS_DIR = join(root, "worlds"); process.env.OPT_DIR = join(root, "opt"); process.env.JOIN_TOKEN = "t"; process.env.OPT_CMD = fake;   // OPT_DIR: NEVER the checkout's store
-process.env.OPT_MEM_BUDGET_MB = "4000"; process.env.OPT_COST_FACTOR = "1000";   // a cap bun itself starts under (the fake is a bun)
+process.env.OPT_MEM_BUDGET_MB = "4000"; process.env.OPT_COST_FACTOR = "1000";   // the estimate gate: 4 MB of source and up is deferred
  process.env.KTX2_TOKTX = "";
 // the verdict names the tools it was measured with (tools-stamp.ts) — THIS process's, the stamp the pump reads verdicts by
 const { toolsStamp } = await import("../../server/tools-stamp.ts");
@@ -66,25 +70,30 @@ ok(r3b?.kind === "size" && r3b.recipe === "texel1024" && r3b.tail.trimEnd().ends
 const s4 = src("s4.glb", 1000, "0"); mkdirSync(STORE_MIN, { recursive: true }); writeFileSync(storeDest(s4), "done-elsewhere"); writeFileSync(storeDest(s4) + ".deferred", "stale");
 queueOptimize(s4); await optIdle();
 ok(!existsSync(storeDest(s4) + ".deferred") && readFileSync(storeDest(s4), "utf8") === "done-elsewhere", "existing variant: stale .deferred retired, variant untouched");
-// 5. capped child death (Linux only: the cap wrapper) → .deferred with 'child died', queue continues
+// 5. child death (Linux only: a signal) → .deferred with 'child died', queue continues
 if (process.platform === "linux") {
   const s5 = src("s5.glb", 1000, "sig"), s6 = src("s6.glb", 1000, "0"); queueOptimize(s5); queueOptimize(s6); await optIdle();
-  ok(existsSync(storeDest(s5) + ".deferred") && /died/.test(readFileSync(storeDest(s5) + ".deferred", "utf8")), "signalled child under the cap → .deferred 'child died'");
+  ok(existsSync(storeDest(s5) + ".deferred") && /died/.test(readFileSync(storeDest(s5) + ".deferred", "utf8")), "signalled child → .deferred 'child died'");
   ok(existsSync(storeDest(s6)), "queue continued after the death");
-  // 6. wrapper 126 (a hard RLIMIT_DATA below the budget) → environmental: no marker, queue dropped
-  // a 2 GB HARD data limit (soft first — dash refuses to drop the hard limit below the soft one) makes the wrapper's
-  // `ulimit -d <budget>` fail: the 126 path. bun itself must still start under it, or the case is skipped.
-  const canLimit = spawnSync("/bin/sh", ["-c", "ulimit -S -d 2000000 && ulimit -H -d 2000000 && /bin/sh -c 'ulimit -d 4000000000' 2>/dev/null; echo $?"], { encoding: "utf8" }).stdout.trim();   // a 2 GB hard limit (bun starts) that a 4 TB budget cannot raise
-  if (canLimit !== "0") {
-    const sh = spawnSync("/bin/sh", ["-c", `ulimit -S -d 2000000 && ulimit -H -d 2000000; exec "${process.execPath}" -e 'process.env.OPT_MEM_BUDGET_MB="4000000000"; const {queueOptimize,optIdle}=await import("./server/upload.ts"); const {STORE_MIN}=await import("./server/config.ts"); const fs=await import("node:fs"); const p=${JSON.stringify(join(root, "src", "s8.glb"))}; fs.writeFileSync(p, Buffer.alloc(1000,1)); fs.writeFileSync(p+".verdict","0"); queueOptimize(p); await optIdle(); console.log(JSON.stringify({variant:fs.existsSync(STORE_MIN+"/s8.glb"), deferred:fs.existsSync(STORE_MIN+"/s8.glb.deferred"), failed:fs.existsSync(STORE_MIN+"/s8.glb.failed")}))'`],
-      { env: { ...process.env, OPT_MEM_BUDGET_MB: "4000000000" }, cwd: import.meta.dir + "/../..", encoding: "utf8" });
-    const line = sh.stdout.split("\n").find((l) => l.startsWith("{")) ?? "{}";   // the boot-sweep timers log after the JSON
-    try { const v = JSON.parse(line); const loud = /cap wrapper failed/.test(sh.stderr + sh.stdout);
-      if (v.variant || v.deferred || v.failed || !loud) console.error("126 case saw", JSON.stringify(v), "loud=" + loud, "| tail:", (sh.stderr + sh.stdout).trim().split("\n").slice(-3).join(" // ").slice(0, 400));
-      ok(!v.variant && !v.deferred && !v.failed && loud, "wrapper 126: no variant, no marker, loud"); console.log("(126 case ran: wrapper refused under the hard limit, nothing marked)"); }
-    catch { console.log("(126 case: bun could not start under the hard limit — skipped: " + (sh.stderr + sh.stdout).split("\n").pop() + ")"); }
-  } else console.log("(126 case: cannot set a hard data limit here — skipped)");
-} else console.log("(non-Linux: capped-death and 126 cases skipped)");
+  // 6. the child's memory is capped by the unit's cgroup (MemoryMax=), not an rlimit: it runs under this process's own
+  //    data limit (RLIMIT_DATA charges bun's startup reservations and turns its JIT off, docs/research/service-hardening.md),
+  //    and at oom_score_adj 1000, so the kernel kills it, not the server, when the cgroup runs out
+  const s7 = src("s7.glb", 1000, "limits"); queueOptimize(s7); await optIdle();
+  const own = readFileSync("/proc/self/limits", "utf8").match(/^Max data size\s+(\S+)/m)?.[1];
+  const seen = existsSync(s7 + ".limits") ? JSON.parse(readFileSync(s7 + ".limits", "utf8")) : {};
+  ok(existsSync(storeDest(s7)) && seen.data === own, `the child runs under no data limit of the pump's (${own}; saw ${JSON.stringify(seen)})`);
+  ok(seen.oom === "1000", `the child is the kernel's first pick for an OOM kill (oom_score_adj; saw ${JSON.stringify(seen)})`);
+  // 6b. an encoder the kernel kills for memory (SIGKILL; the real optimizer, a fake toktx) kills the pass the same way,
+  //     so row 5's rule defers it: never a .failed "failure" for what the box couldn't afford
+  const killer = join(root, "toktx"); writeFileSync(killer, "#!/bin/sh\nkill -KILL $$\n"); chmodSync(killer, 0o755);
+  const { PNG } = await import("pngjs"); const png = new PNG({ width: 4, height: 4 }); png.data.fill(200);
+  const img = join(root, "src", "tile.png"); writeFileSync(img, PNG.sync.write(png));
+  const scratch = join(root, "enc-tmp"); mkdirSync(scratch);   // its TMPDIR: the pass's scratch must not outlive the kill
+  const enc = spawnSync(process.execPath, ["run", "server/optimize.ts", "--ktx2-img", img, join(root, "tile.ktx2")],
+    { env: { ...process.env, KTX2_TOKTX: killer, TMPDIR: scratch }, cwd: import.meta.dir + "/../..", encoding: "utf8" });
+  ok(enc.signal === "SIGKILL", `an encoder killed by SIGKILL kills --ktx2-img the same way (saw status ${enc.status}, signal ${enc.signal}: ${(enc.stderr ?? "").trim().split("\n").pop()})`);
+  ok(readdirSync(scratch).length === 0, `…and removes its scratch first: under PrivateTmp a leaked one sits in the cgroup that just ran out (left ${readdirSync(scratch).join(", ")})`);
+} else console.log("(non-Linux: child-death and oom cases skipped)");
 // 6b. the pump never waits forever on a child (it would hold optIdle and every pass behind it): one that never answers is
 //     killed at OPT_CHILD_TIMEOUT_MS and deferred; one whose grandchild keeps its stderr open is read up to a grace past
 //     its exit; one that cannot start marks nothing. Each settles, and the item queued behind it runs.

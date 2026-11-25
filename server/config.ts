@@ -24,11 +24,22 @@ export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
 // TRUST_NAMES=1: a private server takes a typed name as an account, `local:<name>`. Never set it where strangers can reach:
 // anyone typing the owner's name would be the owner.
 export const TRUST_NAMES = process.env.TRUST_NAMES === "1";
-// OPT_MEM_BUDGET_MB: each optimize child runs under RLIMIT_DATA of this many MB (Linux only), and an item whose estimated
-// cost exceeds it is deferred (a `.deferred` marker). Default: half the usable memory (cgroup limit, else physical). 0 = no cap.
+/** The tightest cgroup v2 memory.max over this process's own cgroup and its parents, or 0 for none. A systemd unit's
+ *  MemoryMax= is its own cgroup's file, not the root's; in a container's cgroup namespace the root is the container's. */
+export function cgroupMemoryMax(read: (path: string) => string = (path) => readFileSync(path, "utf8")): number {
+  let own = "", tightest = 0;
+  try { own = /^0::(\/.*)$/m.exec(read("/proc/self/cgroup"))?.[1] ?? ""; } catch { /* no cgroup v2 */ }
+  for (let at = own; ; at = at.slice(0, at.lastIndexOf("/"))) {
+    try { const m = Number(read(`/sys/fs/cgroup${at === "/" ? "" : at}/memory.max`).trim()); if (m > 0 && (!tightest || m < tightest)) tightest = m; } catch { /* none at this level */ }
+    if (at === "" || at === "/") return tightest;
+  }
+}
+// OPT_MEM_BUDGET_MB: an optimize item whose estimated cost exceeds this many MB is deferred (a `.deferred` marker), not run.
+// Default: half the usable memory (cgroup limit, else physical). 0 = no gate. Outside systemd it is the only cap; under the
+// units in deploy/ the hard one is the cgroup's MemoryMax=, which kills the child first (upload.ts).
 function usableMemory(): number {
-  try { const m = Number(readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim()); if (m > 0) return Math.min(m, totalmem()); } catch { /* no cgroup v2 */ }
-  return totalmem();
+  const m = cgroupMemoryMax();
+  return m > 0 ? Math.min(m, totalmem()) : totalmem();
 }
 export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usableMemory() / 2_000_000), (n) => n >= 0);
 // Peak RSS of an optimize pass as a multiple of the source bytes (measured 259 MB for a 5.4 MB GLB).

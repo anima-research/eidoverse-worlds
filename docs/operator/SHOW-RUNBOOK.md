@@ -85,6 +85,6 @@ One instance per world (PORT=9224 etc. for a second). Keep the Mac awake
 ## After
 
 - Archive: the world's directory `worlds/<world>/` (its signed log `world.jsonl`, the moderator log `world.mod.jsonl`,
-  `frames-<ts>.jsonl`) + the server's custody key `worlds/.custody.json` (it signs the log) + its identity directory `worlds/.directory.json` (who each actor id is) + `assets/opt/store/` = the complete record on this box (poses, never audio); the spoken performance lives in the Discord voice channel, so record the stage separately. Copy all four off-box same night.
+  `frames-<ts>.jsonl`) + the server's custody key `worlds/.custody.json` (it signs the log) + its identity directory `worlds/.directory.json` (who each actor id is) + `assets/opt/store/` = the complete record on this box (poses, never audio; under the units in `deploy/`, `worlds/` and `assets/opt/` are `/var/lib/eidoverse/worlds/` and `/var/lib/eidoverse/opt/`, readable with `sudo`); the spoken performance lives in the Discord voice channel, so record the stage separately. Copy all four off-box same night.
 - Replay/machinima: frames file is `{roster|frame}` JSONL at ~15Hz — feed to
   the eidoverse batch renderer (retroactive filming, DESIGN.md).

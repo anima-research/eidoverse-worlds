@@ -1,15 +1,54 @@
 #!/usr/bin/env bash
 # Deploy eidoverse-worlds on the show VPS (eidoverse.animalabs.ai).
-# Run ON the VPS:   ~/eidoverse-worlds/deploy/deploy-vps.sh
-# Or from anywhere: ssh ubuntu@eidoverse.animalabs.ai eidoverse-worlds/deploy/deploy-vps.sh
+# Run ON the VPS:   /opt/eidoverse/deploy/deploy-vps.sh
+# Or from anywhere: ssh ubuntu@eidoverse.animalabs.ai /opt/eidoverse/deploy/deploy-vps.sh
 #
 # Code comes from git (origin/main). Everything the working tree accumulates
-# at runtime — worlds/, mcpl/tokens.json, mcpl/state.json, assets/ — is
-# gitignored and survives untouched. Assets travel by rsync, not git.
+# at runtime is gitignored and survives untouched; under the units in deploy/
+# the state is in /var/lib/eidoverse, not here. Assets travel by rsync, not git.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-BUN="$HOME/.bun/bin/bun"
+# A box in the old layout (the checkout and its state under a home, the units running as its owner) is moved by hand,
+# once, by the box's owner, who can roll it back: docs/operator/RUNNING-A-SERVER.md, "Moving a box to /opt". This
+# script never moves it. It stops here, before fetching, so a refused deploy changes nothing.
+refuse() { echo "deploy: $1; nothing deployed." >&2; exit 1; }
+old_layout() { refuse "$1. See docs/operator/RUNNING-A-SERVER.md, \"Moving a box to /opt\""; }
+here=$(pwd -P)   # a symlink from the old place to /opt/eidoverse is not the old layout
+case $here in /home/*) old_layout "this checkout is in a home ($here), not /opt/eidoverse";; esac
+for unit in deploy/*.service deploy/*.service.template; do
+  name=$(basename "${unit%.template}" .service)
+  [ -f "/etc/systemd/system/$name.service" ] || continue
+  wd=$(systemctl show -p WorkingDirectory --value "$name")
+  [ -z "$wd" ] || wd=$(realpath -m "$wd")   # both physical: /opt may be a symlink to a data volume
+  [ -z "$wd" ] || [[ $wd == "$here" || $wd == "$here"/* ]] || old_layout "$name.service runs $wd, not this checkout ($here)"
+done
+# state and secrets the units now keep in /var/lib and /etc (WORLDS_DIR=… in their environment) but still here
+for pair in eidoverse:WORLDS_DIR:worlds eidoverse:BACKUPS_DIR:backups eidoverse:OPT_DIR:assets/opt \
+    eidoverse:SESSIONS_PATH:.sessions.json eidoverse-mcpl:MCPL_STATE:mcpl/state.json eidoverse:AGENT_TOKENS_PATH:mcpl/tokens.json; do
+  IFS=: read -r name var path <<<"$pair"
+  [ -n "$(ls -A "$path" 2>/dev/null)" ] || continue   # absent, or an empty directory a tool made
+  [[ " $(systemctl show -p Environment --value "$name") " != *" $var="* ]] || old_layout "$path is still here, but $name.service reads $var"
+done
+# bun loads a .env from its working directory and skips one it can't read without a word: a JOIN_TOKEN there would
+# leave the door open. What the units need goes in /etc/eidoverse/<unit>.env.
+if id -u eidoverse >/dev/null 2>&1; then
+  for f in .env .env.* services/chatbridge/.env services/chatbridge/.env.*; do
+    [ ! -e "$f" ] || sudo -u eidoverse test -r "$f" || old_layout "$f is not readable by eidoverse, so the units would run without it: move what it sets to /etc/eidoverse/<unit>.env"
+  done
+  # the agents' tokens are read by the units themselves, not by systemd: through a 0700 /etc/eidoverse they would see
+  # no enrolments, and say nothing
+  for pair in eidoverse:AGENT_TOKENS_PATH eidoverse-mcpl:MCPL_TOKENS; do
+    IFS=: read -r name var <<<"$pair"
+    tok=$(systemctl show -p Environment --value "$name" | tr ' ' '\n' | sed -n "s/^$var=//p")
+    [ -z "$tok" ] || ! sudo test -e "$tok" || sudo -u eidoverse test -r "$tok" \
+      || refuse "$tok is not readable by eidoverse ($name.service reads it): /etc/eidoverse must be 755, the file root:eidoverse 0640"
+  done
+fi
+
+# bun is the box's, installed and upgraded by hand (docs/operator/RUNNING-A-SERVER.md, "Upgrading bun"), never here
+BUN=${BUN:-/usr/local/bin/bun}
+[ -x "$BUN" ] || { echo "deploy: no bun at $BUN (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\"); nothing deployed" >&2; exit 1; }
 
 before=$(git rev-parse --short HEAD)
 # Installs are keyed to the last deploy that finished (.deploy-done, gitignored), not to the pre-reset HEAD,
@@ -30,6 +69,9 @@ done
 git reset --hard origin/main
 after=$(git rev-parse --short HEAD)
 echo "code: $before -> $after"
+# against the package.json just fetched: a bump warns on the deploy that brings it
+want=$("$BUN" -e 'console.log(require("./package.json").engines.bun)')
+[ "$("$BUN" --version)" = "$want" ] || echo "bun: $BUN is $("$BUN" --version), package.json wants $want: upgrade it (docs/operator/RUNNING-A-SERVER.md, \"Upgrading bun\")" >&2
 # true when these paths moved since the last finished deploy, or there is none to compare with
 changed() { [ -n "$done_at" ] && git diff --quiet "$done_at" "$after" -- "$@" 2>/dev/null && return 1; return 0; }
 
@@ -68,6 +110,9 @@ for unit in deploy/*.service; do
   sudo install -m 644 "$unit" "$dest"; reload=1; echo "unit: re-installed $name.service"
 done
 [ "$reload" = 0 ] || sudo systemctl daemon-reload
+# the user each unit runs as (User=), also for one installed by hand from a .template: a system user, no login, no home
+ensure_user() { id -u "$1" >/dev/null 2>&1 || { sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$1" && echo "user: made $1"; }; }
+for name in "${units[@]}" "${optional[@]}"; do user=$(systemctl show -p User --value "$name"); [ -z "$user" ] || ensure_user "$user"; done
 
 # An in-place install keeps ndarray-pixels' own copy of sharp after the
 # lockfile stops listing it, and optimize.ts loads that copy whenever it
@@ -80,6 +125,7 @@ if [ -d node_modules/ndarray-pixels/node_modules/sharp ] \
   sudo systemctl stop eidoverse
   rm -rf node_modules/ndarray-pixels/node_modules/sharp
 fi
+
 sudo systemctl restart eidoverse eidoverse-mcpl
 [ "${#optional[@]}" = 0 ] || sudo systemctl try-restart "${optional[@]}"
 sleep 2

@@ -464,6 +464,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} the gate doesn't run as its own row loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
   ["help-words", "shared/help-words-test.ts", 1], // help lists and refusals say what the code holds: role-defs' permissions, undo's roles, the Light note; no review tags
+  ["disposable-children", "server/disposable-children-test.ts", 1], // a build check's worker and a one-shot run at oom_score_adj 1000
 ];
 
 // ---- lanes ----

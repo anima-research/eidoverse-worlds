@@ -1,6 +1,12 @@
 # TEMPLATE, not installed by deploy-vps.sh: written from deploy-vps.sh and README.md, never compared with the VPS.
 # Diff it against the box's /etc/systemd/system/eidoverse.service; once they agree, rename it eidoverse.service
 # and deploy-vps.sh keeps the box's copy equal to it (docs/operator/RUNNING-A-SERVER.md).
+#
+# Runs as its own system user, eidoverse, in a read-only view of the box: the checkout in /opt/eidoverse (the deploy
+# user's: git, bun install), /usr/local/bin/bun and the library beside the checkout are read-only, and what the server
+# writes lives in /var/lib/eidoverse. Setting it up, or moving a box from the old layout in ~ubuntu:
+# docs/operator/RUNNING-A-SERVER.md, "Installing the units". What differs on your box (limits, env) goes in a drop-in,
+# `sudo systemctl edit eidoverse`, so deploys keep it.
 
 [Unit]
 Description=eidoverse world server (the sequencer)
@@ -8,15 +14,68 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/eidoverse-worlds
-ExecStart=/home/ubuntu/.bun/bin/bun server/server.ts
+User=eidoverse
+Group=eidoverse
+WorkingDirectory=/opt/eidoverse
+ExecStart=/usr/local/bin/bun server/server.ts
 Restart=always
 RestartSec=5
 Environment=PORT=8940
-# EIDOVERSE_DIR defaults to ../eidoverse-video beside the checkout (server/config.ts).
+# EIDOVERSE_DIR defaults to ../eidoverse-video beside the checkout, /opt/eidoverse-video (server/config.ts).
 # JOIN_TOKEN, HN_NATIVE_ORIGIN and the like (README.md): one per line, never in git
 EnvironmentFile=/etc/eidoverse/eidoverse.env
+# everything the server writes, out of the checkout
+StateDirectory=eidoverse
+StateDirectoryMode=0700
+Environment=WORLDS_DIR=/var/lib/eidoverse/worlds BACKUPS_DIR=/var/lib/eidoverse/backups
+Environment=OPT_DIR=/var/lib/eidoverse/opt SESSIONS_PATH=/var/lib/eidoverse/sessions.json
+# agents' tokens, shared with the door: root's, group eidoverse, 0640 (sudoedit keeps that)
+Environment=AGENT_TOKENS_PATH=/etc/eidoverse/agent-tokens.json
+# git (world provenance, /version) refuses a checkout another user owns unless it is named safe
+Environment=GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0=/opt/eidoverse
+UMask=0027
+
+# ---- filesystem: the system read-only but /var/lib/eidoverse, no /home ----
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# files of other users (the checkout's owner) read as nobody's; permissions are unchanged
+PrivateUsers=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+
+# ---- privileges ----
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# no MemoryDenyWriteExecute: it switches bun's JIT off, 3x slower (docs/research/service-hardening.md)
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# outbound stays open (STUN for voice); netlink lists the interfaces WebRTC offers
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# ---- limits: rails a drop-in can move, not quotas ----
+# a runaway server stops before the box runs out of memory and takes ssh with it; this is also the optimizer's hard
+# cap: its child asks to be the kernel's first pick (server/upload.ts), and the pump defers what was killed
+MemoryMax=80%
+OOMPolicy=continue
+TasksMax=1024
+# one descriptor per client socket: the default 1024 is a real ceiling for a busy server
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

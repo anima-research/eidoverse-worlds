@@ -1,5 +1,5 @@
 # Two-way chat mirror: commons say verbs ↔ one Discord text channel.
-# deploy-vps.sh keeps the box's copy equal to this file once it is installed:
+# deploy-vps.sh keeps the box's copy equal to this file once it is installed (and makes the eidoverse user it runs as):
 #   sudo install -D -m 600 /dev/null /etc/eidoverse/eido-chatbridge.env
 #   sudoedit /etc/eidoverse/eido-chatbridge.env   # WORLD_TOKEN=…, DISCORD_TOKEN=…, CHANNEL_ID=…, one per line
 #   sudo cp deploy/eido-chatbridge.service /etc/systemd/system/
@@ -7,6 +7,9 @@
 #
 # The bot's Discord application needs the MESSAGE CONTENT privileged intent
 # (dev portal → Bot → Message Content Intent) or every message arrives empty.
+#
+# It writes nothing: the checkout (/opt/eidoverse) and bun are read-only, the rest of the system too
+# (docs/operator/RUNNING-A-SERVER.md).
 
 [Unit]
 Description=eidoverse chat bridge (commons <-> Discord)
@@ -14,9 +17,10 @@ After=network-online.target eidoverse.service
 Wants=network-online.target
 
 [Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/eidoverse-worlds/services/chatbridge
-ExecStart=/home/ubuntu/.bun/bin/bun index.ts
+User=eidoverse
+Group=eidoverse
+WorkingDirectory=/opt/eidoverse/services/chatbridge
+ExecStart=/usr/local/bin/bun index.ts
 Restart=always
 RestartSec=5
 Environment=WORLD_URL=ws://127.0.0.1:8940/ws
@@ -24,6 +28,39 @@ Environment=WORLD_NAME=commons
 Environment=BRIDGE_ID=discord
 # WORLD_TOKEN, DISCORD_TOKEN, CHANNEL_ID: secrets, never in git
 EnvironmentFile=/etc/eidoverse/eido-chatbridge.env
+UMask=0077
+
+# ---- filesystem: the system read-only, no /home ----
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateUsers=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RemoveIPC=yes
+
+# ---- privileges ----
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+# no MemoryDenyWriteExecute: it switches bun's JIT off, 3x slower (docs/research/service-hardening.md)
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+# out to Discord, in to the world: no netlink, no raw sockets
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 [Install]
 WantedBy=multi-user.target
