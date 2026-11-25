@@ -2761,6 +2761,7 @@ export class WorldAgent {
     this.bodyBoneNames = null;
     this.bodyBonesFor = null;
     this.bodyBonesFailedFor = null;
+    this.foldReleaseUnsaid = false;   // the last body's release isn't this one's to say (a swap's own lands with its read)
     if (this.wingsFolded) void this.loadBodyBones();
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);

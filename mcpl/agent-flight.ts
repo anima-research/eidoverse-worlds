@@ -574,7 +574,6 @@ export class AgentFlight {
       `${f.phase.toLowerCase()} at ${f.pos.y.toFixed(1)}m, heading ${((f.yaw * 180 / Math.PI + 360) % 360).toFixed(0)}deg, ${f.airspeed.toFixed(1)} m/s`,
       `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s; perches are not implemented)`,
       `from here best glide reaches ${glideRange(cfg, f.pos.y).toFixed(0)}m at ${bg.speed.toFixed(1)} m/s`,
-      // a body known to have no wings isn't told their state
       // a body known to have no wings isn't told their state, nor one whose bones aren't read (as take_off's refusal)
       `${this.a.bodyBoneNames && inspectBody(this.a.bodyBoneNames).canAnimateWings ? `wings ${f.wings} - ` : ""}mode ${f.mode}`,
     ].join("\n");

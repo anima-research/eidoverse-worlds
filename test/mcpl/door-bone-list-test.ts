@@ -261,6 +261,31 @@ r = await said_.takeOff();
 check('take_off on a wingless body carrying a fold flies, and says the fold was released, as the browser does',
   /^took off/.test(text(r)) && /folded-wing posture released — this body has no wings/.test(text(r)) && said_.wingsFolded === false, text(r));
 check("flight_status of a wingless flier doesn't report wings it hasn't got", !/\bwings (OPEN|FOLDED|LIMP)\b/.test(said_.flightStatus()), said_.flightStatus());
+r = await said_.takeOff();
+check('...and a second take_off says no release: the first one said it', !/released/.test(text(r)), text(r));
+const told: any = new WorldAgent({ url: noWorldUrl(), name: 'told', world: 'bone-bench' });
+told.avatar = 'wingless.vrm'; told.myRights = { role: 'builder', fly: true }; told.wingsFolded = true;
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+await told.loadBodyBones();   // the read releases the fold
+r = await told.foldWings(false);
+r = await told.takeOff();
+check('a release fold_wings has answered for is not said again by take_off', /^took off/.test(text(r)) && !/released/.test(text(r)), text(r));
+const back_: any = new WorldAgent({ url: noWorldUrl(), name: 'back', world: 'bone-bench' });
+back_.avatar = 'mythos-wings.vrm'; back_.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await back_.loadBodyBones(); await back_.foldWings(true);
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+back_.setAvatar('wingless.vrm'); await back_.loadBodyBones();
+serve = async () => new Response(glb(WINGED));
+back_.setAvatar('mythos-wings.vrm'); await back_.loadBodyBones();
+r = await back_.takeOff();
+check("a release on a body since swapped away isn't said on the next one (it isn't wingless)", /^took off/.test(text(r)) && !/this body has no wings/.test(text(r)), text(r));
+const unread: any = new WorldAgent({ url: noWorldUrl(), name: 'unread', world: 'bone-bench' });
+unread.avatar = 'unread.vrm'; unread.myRights = { role: 'builder', fly: true };
+serve = DOWN;
+r = await unread.takeOff();
+await tryUntil('the take-off read fails', () => warned.some((l) => /bones of unread\.vrm/.test(l)), { ms: 2000, step: 5 });
+check("flight_status of a flier whose bones aren't read doesn't claim wings either", /^took off/.test(text(r)) && unread.bodyBoneNames === null && !/\bwings (OPEN|FOLDED|LIMP)\b/.test(unread.flightStatus()), unread.flightStatus());
 
 console.log('\nEVERY READER OF A BODY FILE: a failed download is never remembered, a good read is');
 // (a model that downloads but can't be used IS remembered for its version: body-state-test.ts)

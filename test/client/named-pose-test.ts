@@ -418,6 +418,9 @@ async function browserOwnerPart() {
   check("...and, its flight unchanged, says nothing new", bareSay === "", String(bareSay));
   const beeSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base", "Wing_Left_High1"]));
   check("a mis-named wing rig is told why its wings won't move", /^flight available on this body — press F; its wings won't animate/.test(beeSay ?? ""), String(beeSay));
+  bus.emit("key", { code: "KeyF", repeat: false });
+  check("...and, told at arming, isn't told again at take-off", controller.flying() && !/won't animate/.test(hints.at(-1) ?? ""), hints.at(-1));
+  bus.emit("key", { code: "KeyF", repeat: false });   // land
   let live: any = { role: "member", can: [] };   // net.myRights as main.js's hook reads it: live, not copied
   controller.setRightsHook(() => live);
   const quietSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base"]));   // no grant yet: the toast says nothing
