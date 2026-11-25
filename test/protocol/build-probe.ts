@@ -57,6 +57,9 @@ const MY = () => entries().find((e: any) => e?.kind === "request" && e.verb === 
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "request" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
+// a lock question's card counts no press in its first moment once confirmcenter.js has ARM_MS (#359): it wears data-armed
+// when a press can answer it, and a person's press comes then. A client without the rule answers a press at once
+const cardArmed = () => waitFor(`import('/lib/edit/confirmcenter.js').then((m) => !('ARM_MS' in m) || document.querySelector('#confirm-center')?.dataset.armed !== undefined)`);
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); ms *= WAIT_SCALE; while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
   return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
@@ -460,6 +463,7 @@ try {
       const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
       await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`); await frames(3);
       const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await cardArmed();
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]').click(), true)`);
       await frames(3); await caughtUp();
       const reverts = await evalJson(`__reverts.slice(${rv0})`);
@@ -547,6 +551,7 @@ try {
       check("MM24 (setup) the table locked, the group release asks the lock question, and the gizmo is on the box alone", !!atL && lk && asked && on);
       await gizmoDrag("mm-box", 0.5); await frames(2);
       const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await cardArmed();
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
       await frames(3); await caughtUp();
       const reverts = await evalJson(`__reverts.slice(${rv0})`), backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
@@ -577,6 +582,7 @@ try {
         dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atM?.[0] + 6}, clientY: ${atM?.[1]} })); return a; })`);
       check("MM27 (setup) the table locked, the group release asks the lock question, the box left moved, and a newer drag of the box arms",
         !!atN && lk && asked && !near(held?.[0], B0) && armed, { asked, held, B0, armed });
+      await cardArmed();
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
       await frames(3); await caughtUp();
       const local = await localOf(["mm-box", "mm-tbl"]);
@@ -720,6 +726,7 @@ try {
         !!atO && lk && asked && on && sel17 === 17 && !near(held?.[0], B0), { asked, on, sel17, held, B0 });
       // the gesture's key hints outrank a flash on the status bar, so a drag that never starts must not claim them
       check("MM28 …and while it is held the status bar says why nothing moves (at most 16)", await waitFor(`document.body.innerText.includes('at most 16')`, 3000));
+      await cardArmed();
       await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
       await frames(3); await caughtUp();
       const local = await localOf(["mm-box", "mm-tbl"]);
