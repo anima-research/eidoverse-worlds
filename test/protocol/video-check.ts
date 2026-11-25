@@ -21,6 +21,7 @@ import path from "node:path";
 import { ENGINE, scratch, copyTree, archiveTo, linkInto } from "../gate/common.ts";
 import { pin } from "../gate/clock.ts";
 import { pause, until } from "../gate/wait.ts";
+import { suite } from "../gate/suite.ts";
 import { readLogBytes, appendDurable, putBlobFile } from "../../server/durable.ts";
 import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
@@ -124,7 +125,6 @@ const V = await import(TREE + "shared/video.js").catch(none);
 const VS = await import(TREE + "server/videosources.ts").catch(none);
 const ES = await import(TREE + "shared/editschema.js").catch(none);
 const CO = await import(TREE + "shared/components.js").catch(none);
-const ONLY = opt("only")?.split(",") ?? null;
 const root = scratch("vid");
 
 function openWorld(name: string) {
@@ -491,14 +491,13 @@ const cases: Case[] = [
 function await_sound() { return SOUND; }
 const SOUND = await import(TREE + "shared/sound.js");
 
-let pass = 0, fail = 0;
+// rows counted by the gate's one scaffold (test/gate/suite.ts): `ok   `/`FAIL ` lines, --only, the summary and the exit
+const S = suite("video-check", { cap: 600 });
 for (const c of cases) {
-  if (ONLY && !ONLY.includes(c.id)) continue;
+  if (!S.runs(c.id)) continue;
   let o: any, ok = false;
   try { o = await c.run(session()); ok = !!c.good(o); } catch (e) { o = { threw: String(e?.message ?? e).slice(0, 200) }; }
-  ok ? pass++ : fail++;
-  console.log(`${ok ? "ok  " : "FAIL"} ${c.id} ${c.what}${ok ? "" : `\n     ${JSON.stringify(o).slice(0, 600)}`}`);
+  S.check(`${c.id} ${c.what}`, ok, o);
 }
 fake.stop(true); foreignServer.stop(true);
-console.log(`[video-check] ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+S.done();
