@@ -279,6 +279,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sound-editor", "client/sound-editor-test.ts", 1], // the sound editor block (its clock, t0, no guard); 32 world sounds at once, the radius field to 200 m
   ["skypanel", "client/skypanel-state-test.ts", 1], // the sky panel's state lines; R 10-28: every shared select commits what it shows (the world select saved nothing)
   ["sky-bakelock", "client/sky-bakelock-test.mjs", 1], // the sky's one-bake-at-a-time lock (sky_bakelock.js): a queued prebuild waits, BAKE_AFTER runs inside the lock, no deadlock
+  ["sky-env-upright", "client/sky-env-upright-test.mjs", 1], // scene.environment is the right way up: the env blit copies the bake upright for three's equirect lookup (v = 1 at the zenith), on both backends
   ["sky-swapchain", "client/sky-swapchain-test.mjs", 1], // the sky's tier swaps (sky_swapchain.js): a superseded swap records nothing shown, a return after one acts, a stand-down keeps the dome
   ["sky-lifecycle", "client/sky-lifecycle-test.mjs", 1], // the sky's quality lifecycle on a scaled clock: held in the headset and applied once at exit, the cap takes the pending choice, a failed bake puts the live clouds back
   ["sky-degrade", "client/sky-degrade-test.mjs", 1], // 333-cm b2: a storage-texture build failure retries with the light cache off (degrade 1), even at quality high
