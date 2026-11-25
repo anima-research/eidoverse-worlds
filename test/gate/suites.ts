@@ -277,6 +277,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["replica-hierarchy", "shared/replica-hierarchy-test.ts", 1], // the replica's parent/child index agrees with a scan after every write, a carrier-to-carrier move among them (client-check B4b has none)
   ["audioctx", "client/audioctx-test.ts", 1], // one AudioContext per page
   ["sound-editor", "client/sound-editor-test.ts", 1], // the sound editor block (its clock, t0, no guard); 32 world sounds at once, the radius field to 200 m
+  ["video", "protocol/video-check.ts", 1],       // the video component: its meaning, the door, look, and the sequencer's broker against a fake appliance (#332 review 15); the real appliance and browsers are test/protocol/video-probe.ts, run by hand
   ["skypanel", "client/skypanel-state-test.ts", 1], // the sky panel's state lines; R 10-28: every shared select commits what it shows (the world select saved nothing)
   ["sky-bakelock", "client/sky-bakelock-test.mjs", 1], // the sky's one-bake-at-a-time lock (sky_bakelock.js): a queued prebuild waits, BAKE_AFTER runs inside the lock, no deadlock
   ["sky-swapchain", "client/sky-swapchain-test.mjs", 1], // the sky's tier swaps (sky_swapchain.js): a superseded swap records nothing shown, a return after one acts, a stand-down keeps the dome

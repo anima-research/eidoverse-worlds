@@ -53,6 +53,9 @@ registerHandler('light', (id, _obj, k, value, opts) => {
   return Number.isFinite(n) && previewLight(id, { [k]: n });
 });
 export function registerEditor(fn) { htmlEditors.push(fn); }
+// a host adds what only it knows about a thing to the inspector's live view (realize/videos.js: this viewer's own playback state)
+const liveExtras = [];
+export function registerLive(fn) { liveExtras.push(fn); }
 /** panels.js installs hooks at init (casting: lightgizmo.js lightCasting); importing it here would close an import loop. */
 export function setEditHooks(h) { hooks = { ...hooks, ...h }; }
 
@@ -90,6 +93,7 @@ export function liveFor(id) {
     effects: effectLookup,
     // what this world trusts (@world.trusted-components), and whether this viewer may change it (the owner)
     trusted: trustedHere(), mayTrust: mayTrust(),
+    ...Object.assign({}, ...liveExtras.map((f) => { try { return f(id) ?? {}; } catch { return {}; } })),
   };
 }
 const trustedHere = () => trustedOf(replica.st?.entities?.['@world']?.c);

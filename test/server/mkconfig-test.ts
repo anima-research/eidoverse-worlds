@@ -26,7 +26,13 @@
 //      becomes 127.0.0.1, and an IPv4 bind is left as it is;
 //   G. a user of `any`, or a path of `all_others` or its aliases `all` and
 //      `~^.*$`, names the template already holds, is refused with exit 2
-//      (mediamtx would refuse the file).
+//      (mediamtx would refuse the file);
+//   H. the read key (the video sequencer's): a network bind without one is
+//      refused, a loopback one mints it; it lands as the reader's password,
+//      is checked as the publish key is, and the VIDEO_SOURCES entry printed
+//      for the operator names the API only where the sequencer can reach it
+//      (a loopback appliance), its source id checked before any file is
+//      written, and a path that makes no valid id still renders, saying so.
 //
 //   bun test/server/mkconfig-test.ts   (E and F parse with Bun.YAML, Bun 1.2.21 or later)
 import { fileURLToPath } from "node:url";
@@ -58,11 +64,12 @@ console.log('— A. the defaults render —');
   S.mode('mode 600', r.out, 0o600);
 }
 
-const base = { PROJECTOR_BIND: '0.0.0.0', PROJECTOR_PUBLISH_KEY: '0123456789abcdef' };
+const READ = 'fedcba9876543210';
+const base = { PROJECTOR_BIND: '0.0.0.0', PROJECTOR_PUBLISH_KEY: '0123456789abcdef', PROJECTOR_READ_KEY: READ };
 
 console.log('— B. an explicit key of the allowed set lands verbatim —');
 for (const key of ['0123456789abcdef', 'Ab0/=._-9xyz12Qr', 'dGhpcyBpcyBhIHRlc3Q=', 'url-safe_key.v2/ok']) {
-  const r = render({ PROJECTOR_BIND: '0.0.0.0', PROJECTOR_PUBLISH_KEY: key });
+  const r = render({ ...base, PROJECTOR_PUBLISH_KEY: key });
   check(`${JSON.stringify(key)} renders`, r.code === 0 && !!r.yaml && r.yaml.includes(`pass: "${key}"\n`) && r.stdout === key, `exit=${r.code} ${r.stderr}`);
 }
 
@@ -77,9 +84,11 @@ const hostile: Array<[string, string, Record<string, string>]> = [];
 for (const [label, bad] of Object.entries({ ampersand: '&', pipe: '|', backslash: '\\', newline: '\n', quote: '"', hash: '#', space: ' ' })) {
   hostile.push([`PROJECTOR_PUBLISH_KEY with ${label}`, 'PROJECTOR_PUBLISH_KEY', { ...base, PROJECTOR_PUBLISH_KEY: `abcdefgh${bad}ijklmnop` }]);
   hostile.push([`PROJECTOR_PUBLISH_USER with ${label}`, 'PROJECTOR_PUBLISH_USER', { ...base, PROJECTOR_PUBLISH_USER: `pub${bad}lisher` }]);
+  hostile.push([`PROJECTOR_READ_KEY with ${label}`, 'PROJECTOR_READ_KEY', { ...base, PROJECTOR_READ_KEY: `abcdefgh${bad}ijklmnop` }]);
+  hostile.push([`PROJECTOR_READ_USER with ${label}`, 'PROJECTOR_READ_USER', { ...base, PROJECTOR_READ_USER: `rea${bad}der` }]);
   hostile.push([`PROJECTOR_BIND with ${label}`, 'PROJECTOR_BIND', { ...base, PROJECTOR_BIND: `0.0.0.0${bad}` }]);
 }
-for (const port of ['PROJECTOR_RTSP_PORT', 'PROJECTOR_RTMP_PORT', 'PROJECTOR_HLS_PORT', 'PROJECTOR_WEBRTC_PORT', 'PROJECTOR_WEBRTC_UDP_PORT']) {
+for (const port of ['PROJECTOR_API_PORT', 'PROJECTOR_RTSP_PORT', 'PROJECTOR_RTMP_PORT', 'PROJECTOR_HLS_PORT', 'PROJECTOR_WEBRTC_PORT', 'PROJECTOR_WEBRTC_UDP_PORT']) {
   hostile.push([`${port} = 99999`, port, { ...base, [port]: '99999' }]);
   hostile.push([`${port} = 0`, port, { ...base, [port]: '0' }]);
   hostile.push([`${port} = 8554|x`, port, { ...base, [port]: '8554|x' }]);
@@ -123,13 +132,13 @@ else {
     check(`user ${JSON.stringify(user)} is the string ${JSON.stringify(user)}`, c?.authInternalUsers?.[0]?.user === user, JSON.stringify(c?.authInternalUsers?.[0]?.user));
   }
   const zeros = '0000000000000000';
-  const k = parsed(render({ PROJECTOR_BIND: '0.0.0.0', PROJECTOR_PUBLISH_KEY: zeros }));
+  const k = parsed(render({ ...base, PROJECTOR_PUBLISH_KEY: zeros }));
   check('a 16-zero key is the string, not the number 0', k?.authInternalUsers?.[0]?.pass === zeros, JSON.stringify(k?.authInternalUsers?.[0]?.pass));
   for (const path of ['123', 'true']) {
     const c = parsed(render({ ...base, PROJECTOR_PATH: path }));
-    const perms = (c?.authInternalUsers ?? []).flatMap((u: any) => u.permissions ?? []).map((x: any) => x.path);
+    const perms = (c?.authInternalUsers ?? []).flatMap((u: any) => u.permissions ?? []).filter((x: any) => x.action !== 'api').map((x: any) => x.path);
     check(`path ${JSON.stringify(path)} is the string, as the paths key and in each permission`,
-      !!c && Object.keys(c.paths ?? {}).includes(path) && perms.length === 2 && perms.every((x: unknown) => x === path), JSON.stringify({ paths: Object.keys(c?.paths ?? {}), perms }));
+      !!c && Object.keys(c.paths ?? {}).includes(path) && perms.length === 3 && perms.every((x: unknown) => x === path), JSON.stringify({ paths: Object.keys(c?.paths ?? {}), perms }));
   }
   // mediamtx's YAML reader also takes YAML 1.1's yes/no/on/off, unquoted, as
   // booleans, keys included; a YAML 1.2 parser like Bun's reads them as
@@ -137,7 +146,7 @@ else {
   for (const word of ['on', 'yes']) {
     const r = render({ ...base, PROJECTOR_PUBLISH_USER: word, PROJECTOR_PATH: word });
     check(`user and path ${JSON.stringify(word)} are written quoted, as the paths key too`,
-      !!r.yaml && r.yaml.includes(`user: "${word}"\n`) && r.yaml.includes(`\n  "${word}":\n`) && (r.yaml.match(new RegExp(`path: "${word}"\n`, 'g')) ?? []).length === 2,
+      !!r.yaml && r.yaml.includes(`user: "${word}"\n`) && r.yaml.includes(`\n  "${word}":\n`) && (r.yaml.match(new RegExp(`path: "${word}"\n`, 'g')) ?? []).length === 3,
       r.yaml?.split('\n').filter((l) => l.includes(word)).join(' | ') ?? `exit=${r.code}`);
   }
   const d = parsed(render({}));
@@ -151,7 +160,7 @@ for (const bind of ['0.0.0.0:1935', 'localhost:8554']) {
     hp.code === 2 && /PROJECTOR_BIND is a host or an IPv6 address, not host:port/.test(hp.stderr) && hp.yaml === null, `exit=${hp.code} ${hp.stderr}`);
 }
 if (YAML) {
-  const v6 = render({ PROJECTOR_BIND: 'fe80::1', PROJECTOR_PUBLISH_KEY: '0123456789abcdef' });
+  const v6 = render({ ...base, PROJECTOR_BIND: 'fe80::1' });
   const c = parsed(v6);
   check('fe80::1 renders', v6.code === 0, v6.stderr);
   check('each address on the bind is [fe80::1]:port',
@@ -173,6 +182,40 @@ for (const [variable, value, why] of [['PROJECTOR_PUBLISH_USER', 'any', /'any' i
 for (const [variable, value] of [['PROJECTOR_PUBLISH_USER', 'anyone'], ['PROJECTOR_PATH', 'all_others2'], ['PROJECTOR_PATH', 'All']] as const) {
   const r = render({ ...base, [variable]: value });
   check(`…but ${variable}=${value} renders`, r.code === 0, r.stderr);
+}
+
+console.log('— H. the read key, and the VIDEO_SOURCES entry printed for the operator —');
+{
+  const entry = (r: ReturnType<typeof render>) => {
+    const line = r.stderr.split('\n').find((l) => /^\s*"[^"]+": \{ "whep"/.test(l));
+    try { return line ? JSON.parse(`{${line.trim()}}`) : null; } catch { return null; }
+  };
+  const lo = render({});
+  const reader = parsed(lo)?.authInternalUsers?.find((u: any) => u.user === 'reader');
+  check('a loopback appliance mints a read key, the reader\'s password', /^[0-9a-f]{48}$/.test(reader?.pass ?? ''), JSON.stringify(reader?.pass));
+  const le = entry(lo);
+  check('a loopback appliance\'s entry names the API and the path, on loopback', le?.screen?.api === 'http://127.0.0.1:9997' && le?.screen?.path === 'screen' && le?.screen?.whep === 'http://127.0.0.1:8889/screen/whep', JSON.stringify(le));
+  check('…and carries the read key', le?.screen?.pass === reader?.pass && le?.screen?.user === 'reader', JSON.stringify(le));
+  const net = render({ PROJECTOR_BIND: '0.0.0.0', PROJECTOR_PUBLISH_KEY: '0123456789abcdef' });
+  check('a network bind without a read key is refused with exit 2, naming it, and leaves no file', net.code === 2 && /PROJECTOR_READ_KEY/.test(net.stderr) && net.yaml === null, `exit=${net.code} ${net.stderr}`);
+  const n = render(base);
+  const ne = entry(n);
+  check('a network appliance\'s entry carries the read key and no API (the API answers on loopback only)', ne?.screen?.pass === READ && ne?.screen && !('api' in ne.screen) && !('path' in ne.screen), JSON.stringify(ne));
+  check('…and says a sequencer on the same machine may add the API', /same machine.*"api": "http:\/\/127\.0\.0\.1:9997", "path": "screen"/.test(n.stderr), n.stderr);
+  const plus = render({ ...base, PROJECTOR_READ_KEY: 'abcdefgh+ijklmnop' });
+  check('a read key with `+` is refused and leaves no file, without showing the key', plus.code === 2 && /PROJECTOR_READ_KEY may not contain '\+'/.test(plus.stderr) && plus.yaml === null && !/abcdefgh|ijklmnop/.test(plus.stderr), `exit=${plus.code} ${plus.stderr}`);
+  const badId = render({ ...base, PROJECTOR_SOURCE_ID: 'Bad_Id' });
+  check('an explicit source id that isn\'t a source id is refused before any file is written', badId.code === 2 && /PROJECTOR_SOURCE_ID/.test(badId.stderr) && badId.yaml === null, `exit=${badId.code} ${badId.stderr} file=${badId.yaml === null ? 'absent' : 'PRESENT'}`);
+  const digits = render({ ...base, PROJECTOR_PATH: '123' });
+  check('a path that makes no source id still renders, and says to set PROJECTOR_SOURCE_ID', digits.code === 0 && !!digits.yaml && /set PROJECTOR_SOURCE_ID/.test(digits.stderr) && entry(digits) === null, `exit=${digits.code} ${digits.stderr}`);
+  const long = render({ ...base, PROJECTOR_SOURCE_ID: 'a'.repeat(41) });
+  check('a source id longer than the registry reads (40) is refused before any file is written', long.code === 2 && /PROJECTOR_SOURCE_ID/.test(long.stderr) && long.yaml === null, `exit=${long.code} ${long.stderr}`);
+  const longPath = render({ ...base, PROJECTOR_PATH: 'p'.repeat(65) });
+  check('a path longer than the registry reads (64) is refused before any file is written', longPath.code === 2 && /PROJECTOR_PATH is at most 64/.test(longPath.stderr) && longPath.yaml === null, `exit=${longPath.code} ${longPath.stderr}`);
+  const at64 = entry(render({ ...base, PROJECTOR_PATH: 'p'.repeat(64) }));
+  check('…and one of exactly 64 renders, its derived id cut to 40', at64?.['p'.repeat(40)]?.path === undefined && !!at64?.['p'.repeat(40)], JSON.stringify(at64).slice(0, 120));
+  const named = entry(render({ ...base, PROJECTOR_PATH: '123', PROJECTOR_SOURCE_ID: 'lobby-feed' }));
+  check('…and with one set, the entry is under it', named?.['lobby-feed']?.whep === 'http://127.0.0.1:8889/123/whep', JSON.stringify(named));
 }
 
 rmSync(dir, { recursive: true, force: true });

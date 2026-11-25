@@ -4,6 +4,7 @@
 import { describePicture } from './picture.js';
 import { describeMaterial } from './material.js';
 import { describeSound } from './sound.js';
+import { describeVideo, sourceStateOf } from './video.js';
 import { quoted } from './text.js';
 import { isObj } from './protocol/is.js';
 
@@ -46,6 +47,10 @@ export function saysOf(c, { nameOf = (id) => id, now = null } = {}) {
   if (isObj(c.picture)) out.push(describePicture(c.picture));
   if (isObj(c.material)) out.push(describeMaterial(c.material));
   if (isObj(c.sound)) out.push(describeSound(c.sound, now));
+  // a video says what the APPLIANCE last observed of its source (shared/video.js), never what any viewer's player shows.
+  // Its freshness is judged on this process's wall clock, the clock the observation was stamped on: the world's
+  // authority clock (`now`) can run ahead of it, and a state judged on a different clock is a guess
+  if (isObj(c.video)) out.push(describeVideo(c.video, sourceStateOf(c.video.source), Date.now()));
   for (const k of Object.keys(c).sort()) if ((k === 'look-at' || k.startsWith('look-at:')) && isObj(c[k])) out.push(describeLookAt(c[k], k, nameOf));
   return out;
 }

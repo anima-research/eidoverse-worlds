@@ -740,7 +740,7 @@ export class AgentSenses {
       // drawn only, so a walk can pass through them, and saying so saves planning round one that isn't there.
       const many = describeInstances(c[INSTANCES]);
       if (many) aff.push(`${many} (the copies are drawn only: not solid)`);
-      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "video", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("copy-of");
       if (many) spoken.push(INSTANCES);
       if (lit) spoken.push("light");   // described above; a malformed one stays listed

@@ -31,6 +31,7 @@ import './lib/realize/emitters.js';
 import './lib/realize/pictures.js';
 import './lib/realize/material.js';   // the material component: an image on a named node of the model
 import { tickSounds } from './lib/realize/sounds.js';   // the sound comp: positional audio from an entity
+import { tickVideos } from './lib/realize/videos.js';   // the video comp: a live stream on a quad, its sound positional
 import { tickMotion } from './lib/motion.js';
 import { tickLookAt } from './lib/realize/lookats.js';
 import { tickTexts } from './lib/realize/texts.js';      // signs (the text component)
@@ -510,6 +511,7 @@ registerSystem('sky', (dt, t, now) => { updateSky(now, t); applyEnvLight(); }); 
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
+registerSystem('videos', () => tickVideos(), { every: 2 });      // stall checks, the distance gain, panners follow screens
 setWaterObjects(() => entities);
 setClimbObjects(() => entities);   // climb routes resolve through their hosts' live objects (client/lib/player/climb.js)
 setWaterClock(serverNow);

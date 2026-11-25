@@ -80,5 +80,6 @@
  "test/server/object-lod-test.ts": "green (0 failed in 76 s, no encoder needed) but 8 fixed waits and 1 own poll loop to move onto wait.ts before it can be a row (#333 trim: hygiene counts them once gated)",
  "test/server/store-variants-test.ts": "green (0 failed in 30 s, no encoder needed) but 6 fixed waits and 1 own poll loop to move onto wait.ts before it can be a row (#333 trim)",
  "test/services/captionbot-test.ts": "green (46 ok) but 8 fixed waits onto wait.ts and its own ok() onto suite.ts before it can be a row (#333 trim)",
- "test/services/captionbot-cli-test.ts": "green (21 ok) but 1 fixed wait onto wait.ts and its own ok() onto suite.ts before it can be a row (#333 trim)"
+ "test/services/captionbot-cli-test.ts": "green (21 ok) but 1 fixed wait onto wait.ts and its own ok() onto suite.ts before it can be a row (#333 trim)",
+ "test/protocol/video-probe.ts": "Chromium probe with the real appliance: needs mediamtx and ffmpeg on the host, which the gate hosts lack; run by hand (#332 follow-up: a row once the runners have both)"
 }

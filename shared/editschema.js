@@ -26,6 +26,7 @@ import { LAYERS, LAYER_KEY, defaultLayer } from './layers.js';
 import * as OP from './requests.js';
 import { normalizePicture, PICTURE_LIT, PICTURE_DESCRIPTION_MAX, DESCRIPTION_HINT } from './picture.js';
 import { normalizeSound, SOUND_DESCRIPTION_MAX, SOUND_DESCRIPTION_HINT, SOUND_MAX_RADIUS } from './sound.js';
+import { normalizeVideo, VIDEO_DESCRIPTION_MAX, VIDEO_DESCRIPTION_HINT, VIDEO_MAX_RADIUS } from './video.js';
 import { mediaTier, tierWords } from './mediasrc.js';
 import { graphemes } from './text.js';
 import { AXES, POSITIVE_AXES } from './axes.js';
@@ -722,6 +723,29 @@ export function inspectSchema(ent, id, live = {}) {
     groups.push({ group: 'sound', label: 'sound', types: ['sound'], fields });
   }
 
+  // video (shared/video.js): a live stream on a quad of its own, its sound sound's law. The source is an id the
+  // operator admitted, never a URL. What this viewer's own screen is doing (live.videoState) is shown as theirs alone
+  if (isBag(c.video)) {
+    const d = c.video;
+    const VI = (k, over) => rowOf('Video', k, d, over);
+    const fields = [
+      ...(live.videoState ? [{ t: 'info', label: 'on your screen', value: live.videoState }] : []),
+      VI('source', { label: 'source', value: d.source ?? '', placeholder: 'an id this server admits, like solstice', hint: 'a stream this server\'s operator admitted: its id, never a URL' }),
+      VI('description', { label: 'description', value: d.description ?? '', placeholder: 'what the screen is for, in words', hint: `${VIDEO_DESCRIPTION_HINT} (≤${VIDEO_DESCRIPTION_MAX})` }),
+      VI('width', { label: 'width' }),
+      VI('lit', { label: 'light' }),
+      VI('volume', { label: 'volume' }),
+      VI('near', { label: 'full volume within', max: VIDEO_MAX_RADIUS }),
+      VI('radius', { label: 'silent beyond', max: VIDEO_MAX_RADIUS, hint: 'nobody further than this hears it at all' }),
+      VI('spatial', { label: 'positional', hint: 'off: heard evenly everywhere inside its radius' }),
+      ...(live.mutedForMe !== undefined ? [{ t: 'check', k: 'mute', label: 'mute for me', value: !!live.mutedForMe, client: true, hint: 'only you stop hearing it; nobody else is affected, and nothing is recorded' }] : []),
+    ];
+    const n = normalizeVideo(d, { clip: true });   // read as it plays (realize/videos.js)
+    if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
+    fields.push({ t: 'btn', k: 'off', label: 'take down', danger: true });
+    groups.push({ group: 'video', label: 'video', types: ['video'], fields });
+  }
+
   // story: why it's here, a museum label. Shown on Inspect and read by agents
   if (isBag(c.story)) {
     const st = c.story;
@@ -812,7 +836,7 @@ const NOT_OFFERED = new Set();
 export const ADD_WORDS = Object.freeze({
   Sockets: ['seat', 'chair', 'sit', 'bench', 'stool', 'saddle', 'swing'], Reactions: ['button', 'switch', 'lever', 'trigger', 'press'],
   Text: ['sign', 'label', 'words', 'caption', 'write'], Picture: ['image', 'poster', 'photo', 'painting', 'decal'],
-  Sound: ['music', 'audio', 'speaker', 'song'], Openable: ['door', 'gate', 'lid', 'hatch'], Grabbable: ['pick up', 'carry', 'hold', 'item', 'pickup'],
+  Sound: ['music', 'audio', 'speaker', 'song'], Video: ['screen', 'stream', 'projector', 'movie', 'tv', 'livestream'], Openable: ['door', 'gate', 'lid', 'hatch'], Grabbable: ['pick up', 'carry', 'hold', 'item', 'pickup'],
   Light: ['lamp', 'bulb', 'torch', 'glow'], LookAt: ['face', 'turn to', 'track', 'follow', 'watch'], Collider: ['solid', 'collide', 'walk on'],
   Particles: ['fire', 'smoke', 'sparks', 'fx', 'effect'], Spin: ['rotate', 'turn'], Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine'], Story: ['description', 'info', 'plaque'],
   Lock: ['pin', 'nail down', 'freeze'], Pivot: ['hinge', 'origin'],
@@ -897,6 +921,7 @@ function componentSections(ent, groups, live = {}, id = '?') {
       case 'Particles': sec.fields = claims('Particles', 'particles', (f) => f.k !== 'out'); sec.removable = true; break;
       case 'Picture': sec.fields = claims('Picture', 'picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = claims('Sound', 'sound', (f) => f.k !== 'silence'); sec.removable = true; break;
+      case 'Video': sec.fields = claims('Video', 'video', (f) => f.k !== 'off'); sec.removable = true; break;
       case 'LookAt': { const pre = inst.key === 'look-at' ? '' : `${inst.key.slice(8)}|`;
         sec.fields = claims('LookAt', 'look-at', (f) => f.t !== 'json' ? (pre ? f.k.startsWith(pre) : !f.k.includes('|')) : f.k === `json|${inst.key}`); sec.removable = true;
         if (pre) sec.title = `LookAt · ${partLabel(inst.key.slice(8), live.parts)}`; break; }
@@ -1121,6 +1146,15 @@ function addOwnOps(ent, id, name, value) {
     return { ops: [OP.set(id, 'openable', { open: false, locked: false, angle: round(Math.PI / 2, 6), time: 1 }),
       ...(rx.open ? [] : [OP.set(id, 'reactions', { ...rx, open: { kind: 'toggle', unless: 'locked' } })])], errors: [] };
   }
+  // a Video is a source id (shared/video.js): added by value ({source} or the id itself), with no upload gesture. The
+  // authority still decides whether this server admits that source; normalizeVideo only checks its shape
+  if (name === 'Video') {
+    if (c.video != null) return { ops: [], errors: [`${id} already has a video`] };
+    const bag = typeof value === 'string' ? { source: value.trim() } : isBag(value) ? value : null;
+    if (!bag) return { ops: [], errors: ['a video names its source: an id this server admits, like {source: "solstice"}'] };
+    const n = normalizeVideo(bag); if (!n.ok) return { ops: [], errors: [`video: ${n.why}`] };
+    return { ops: [OP.set(id, 'video', n.video)], errors: [] };
+  }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { ops: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { ops: [], errors: [`${id} already has ${type}`] };
     // PROTOCOL §4: a bare name is the registry's; your own carries a namespace (local/recipe, example.org/recipe)
     if (!type.split(':')[0].includes('/') && !registered(type.split(':')[0])) return { ops: [], errors: [type === 'physics-area' ? "'physics-area' is called physics-volume" : `'${type}' isn't a registered component: a component of your own carries a namespace, e.g. local/${type}`] };
@@ -1303,7 +1337,7 @@ export function editOps(ent, id, edits, live = {}) {
     // actions and creations that have no field row: comp.<any>, sockets.del (any other sockets.<k>|… reaches the
     // Sockets card, which refuses it: a socket is a thing of its own), a picture or sound being made
     const known = f || group === 'parent' || (group === 'pivot' && ['x', 'y', 'z', 'centre', 'base', 'reset'].includes(k)) || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
-      || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
+      || ((group === 'picture' || group === 'sound' || group === 'video') && !['upload'].includes(k));   // creation needs no row
     if (key === 'flags.guard') { errors.push('flags.guard: `guard` is merged into `lock` (PROTOCOL §5): set flags.lock'); return; }   // an old habit, taught
     if (!known) { errors.push(`${key}: no such field on ${id}`); return; }
     if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); return; }
@@ -1476,6 +1510,16 @@ export function editOps(ent, id, edits, live = {}) {
         else errors.push(`${key}: no such field`);
         break;
       }
+      case 'video': {
+        if (k === 'off') { bags.set('video', null); break; }
+        const b = bag('video', () => ({})); if (!b) { errors.push('video: taken down in this same edit'); break; }
+        if (writeField('Video', k, key, f, raw, b)) { /* written */ }
+        else if (['volume', 'radius', 'near', 'width'].includes(k)) { const was = { volume: 0.8, radius: 12, near: 1.5, width: 4 }[k];   // no row yet: the screen is being made
+          const n = num({ value: b[k] ?? was }, raw); if (n == null || outOfDoor('video', k, round(n), key)) break; b[k] = round(n); }
+        else if (k === 'source' || k === 'description' || k === 'lit') { const v = String(raw ?? '').trim(); if (v) b[k] = v; else if (k === 'description') delete b.description; else b[k] = v; }
+        else errors.push(`${key}: no such field`);
+        break;
+      }
       case 'collider': {
         if (k !== 'shape') { errors.push(`${key}: no such field`); break; }
         const why = compRefusal('collider', { shape: raw });
@@ -1541,10 +1585,10 @@ export function editOps(ent, id, edits, live = {}) {
         // the drafts this module has cards for: a value their readers would treat as absent is said here, not sent
         if (k === INSTANCES && data != null && !countInstances(data)) { errors.push(`comp.${k}: ${INSTANCES_NOTHING}`); break; }
         if ((k === SHADER_KEY || k.startsWith(`${SHADER_KEY}:`)) && data != null) { const r = compileShader(data?.code); if (!r.ok) { errors.push(`comp.${k}: its code: line ${r.error.line}, column ${r.error.col}: ${r.error.message}`); break; } }
-        if ((k === 'picture' || k === 'sound') && data != null) {
-          const n = k === 'picture' ? normalizePicture(data) : normalizeSound(data);
+        if ((k === 'picture' || k === 'sound' || k === 'video') && data != null) {
+          const n = k === 'picture' ? normalizePicture(data) : k === 'video' ? normalizeVideo(data) : normalizeSound(data);
           if (!n.ok) { errors.push(`${k}: ${n.why}`); break; }
-          data = k === 'picture' ? n.picture : n.sound;
+          data = k === 'picture' ? n.picture : k === 'video' ? n.video : n.sound;
         }
         comps.set(k, data);
         break;
@@ -1580,9 +1624,9 @@ export function editOps(ent, id, edits, live = {}) {
     if (b === null) { comps.set(type, null); continue; }
     if (type === 'light') { const why = compRefusal('light', b, ent); if (why) errors.push(`light: ${why}`); else comps.set('light', b); continue; }
     if (type === 'mesh') { const why = compRefusal('mesh', b, ent); if (why) errors.push(`mesh: ${why}`); else comps.set('mesh', b); continue; }
-    const n = type === 'picture' ? normalizePicture(b) : normalizeSound(b);
+    const n = type === 'picture' ? normalizePicture(b) : type === 'video' ? normalizeVideo(b) : normalizeSound(b);
     if (!n.ok) { errors.push(`${type}: ${n.why}`); continue; }   // the rule, before any round-trip
-    comps.set(type, type === 'picture' ? n.picture : n.sound);
+    comps.set(type, type === 'picture' ? n.picture : type === 'video' ? n.video : n.sound);
   }
   // the pivot (Maya's channel box): a rotate or scale edit goes ABOUT the pivot, so the position moves to
   // keep the pivot where it was (so 'edit rot.y +=90' turns a gate about its hinge, not its origin). A typed

@@ -7,6 +7,7 @@ import { bodyOf } from "../shared/components.js";
 import { CLASSES } from "../shared/protocol/consent.js";
 import { helloOf, refusalWords } from "../shared/protocol/hello.js";
 import { mayLeave, socketsUnder, vacatedFromMine, vacatedAt } from "../shared/sockbody.js";
+import { applyStateFrame } from "../shared/video.js";
 import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
@@ -933,6 +934,12 @@ export class WorldAgent {
             break;
           case "pose":
             this.senses.notePose(msg.id, msg.pose);
+            break;
+          case "video-state":
+            // what the projector observed of each video source (server/videosources.ts), as an AGE: look's video line
+            // (shared/says.js) reads it on this process's own clock, so another machine's clock can't freshen it
+            // (shared/video.js applyStateFrame); a source the latest frame doesn't list is forgotten (#332 review 22)
+            applyStateFrame(msg as { states?: unknown[] });
             break;
           case "clock":
             // the server's time, sent just before each snapshot to a join
