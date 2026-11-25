@@ -14,24 +14,32 @@ owners and inhabitants the agreed notice before translating it. Deploying a new 
 authorize translating any world.
 
 1. **Back up** `<dir>/<world>/` somewhere off the host. (The tool makes a verified backup in `BACKUPS_DIR` and keeps
-   the old log, but both are on this host: a copy you hold elsewhere is the real undo.)
+   the old log, but both are on this host: a copy you hold elsewhere is the real undo.) No old-protocol server may still
+   be serving the world: the translation refuses a log that changed since its dry run. A server on this protocol may
+   run meanwhile (it doesn't serve the world until it is translated).
 2. **Dry run** (writes no world):
    `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --dry-run --no-founder-key`
-   Read the report. If its `refused` isn't `null`, stop: it names what this protocol can't carry yet, so ask the
-   maintainers before translating. If it says the world has no owner, run it again with `--claim` added and
-   `EIDO_UPGRADER_ACCOUNT=<your account>` in front (every translation ends with an owner: *An ownerless world is
-   claimed*, below). Its last lines are `report-hash <hash>` and the exact command for step 3. (Use the `report-hash`,
-   not the `sha256` inside the report: that one is the old log's.) Approving the report accepts the trial period it states.
+   If it refuses because the world has no owner, run it again with `--claim` added and
+   `EIDO_UPGRADER_ACCOUNT=<your account> EIDO_UPGRADER_NAME=<your name>` in front (every translation ends with an owner:
+   *An ownerless world is claimed*, below). Read the report. If its `refused` isn't `null`, stop: it names what this
+   protocol can't carry yet, so ask the maintainers before translating. Its last lines are `report-hash <hash>` and the
+   arguments for step 3. (Use the `report-hash`, not the `sha256` inside the report: that one is the old log's.)
+   Approving the report accepts the trial period it states.
 3. **Translate in place:**
    `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --no-founder-key --approved <report-hash> --operator-only-no-owner`
-   (with `--claim` and `EIDO_UPGRADER_ACCOUNT` again if step 2 needed them). It backs the world up to `BACKUPS_DIR`,
-   builds and verifies the new world beside the old one, and swaps it in under the same name only if every check
-   passes; the old log stays as `log.original.jsonl`, and the output names the backup. On any failure the original is
-   untouched and it says why.
-4. **Check it:** `WORLDS_DIR=<dir> bun tools/world.ts info <world>`, then boot the server, join, and look around. For
-   each owner the report listed with no account yet, ask for theirs and bind it with the `operator-repair.ts bind`
-   command the report printed, with `WORLDS_DIR=<dir>` in front (*Binding an imported owner*, below).
-5. **If anything is wrong:** `WORLDS_DIR=<dir> bun tools/world.ts rollback <world>` puts the old files back.
+   (with `--claim` and the same `EIDO_UPGRADER_…` in front again if step 2 needed them: the claim is in the hash). It
+   backs the world up to `BACKUPS_DIR`, builds and verifies the new world beside the old one, and swaps it in under the
+   same name only if every check passes; the old log stays as `log.original.jsonl`, and the output names the backup.
+   On a failure the original is untouched and it says why (in the rare case that the swap can't put files back, it
+   exits 2 and lists what to move by hand). Each try makes a backup; delete the ones you don't need.
+4. **Check it:** `WORLDS_DIR=<dir> bun tools/world.ts info <world>`, then start the server if it isn't running, join,
+   and look around. For each owner the report listed with no account yet, ask for theirs and bind it with the
+   `operator-repair.ts bind` command the report printed, with `WORLDS_DIR=<dir>` in front (*Binding an imported owner*,
+   below).
+5. **If anything is wrong:** stop the server (one still serving the world would write the translated files back), then
+   `WORLDS_DIR=<dir> bun tools/world.ts rollback <world>` puts the old files back. Once anything has been written to the
+   translated world (a join, a bind), rollback refuses until you add `--discard-changes`, which drops that history; a
+   bind made since stays bound.
 
 **Deploy and translate in the same sitting.** A server on this protocol doesn't serve an untranslated world: its
 operator and owner see the upgrade splash, and everyone else is told the world is unavailable. So a world is closed
