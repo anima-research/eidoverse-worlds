@@ -102,6 +102,21 @@ try {
     namejack.seen.some((m) => m.type === "error" && /reserved/i.test(m.error ?? "")),
     JSON.stringify(namejack.seen[0])?.slice(0, 80));
 
+  // 5. The same account's second socket, refused at the fold check (an old client), never installed a body: its close
+  //    must not announce the live body's leave, reap that body's aux legs, or drop what it holds
+  rennet.seen.length = 0; agentAux.seen.length = 0;
+  const oldTab = await dial({ id: "hesp2", agentToken: "surf-lab-hesp2", replica: false });
+  check("setup: the same account's non-folding second socket is refused 4005",
+    await closedWith(oldTab) === 4005 && oldTab.seen.some((m) => m.type === "error"), { code: oldTab.code, first: JSON.stringify(oldTab.seen[0])?.slice(0, 80) });
+  // the barrier: a later arrival rennet hears. A leave from the refused socket's close would have come before it
+  const later = await dial({ id: "latecomer" });
+  const heardLater = await tryUntil("rennet hears the latecomer arrive", () => rennet.seen.some((m) => JSON.stringify(m).includes('"latecomer"')), { ms: 5000 });
+  check("P1 the refused second socket's close announces no leave for the account's body, which is still here",
+    heardLater && !rennet.seen.some((m) => m.type === "leave" && m.id === "hesp2"), rennet.seen.map((m) => `${m.type}:${m.id ?? ""}`).join(","));
+  check("P1b ...and the body's primary and its voice leg stay open",
+    agentPrimary.code === null && agentAux.code === null, { primary: agentPrimary.code, aux: agentAux.code });
+  later.ws.close();
+
   for (const s of [rennet, agentPrimary, agentAux]) s.ws.close();
 } catch (e) {
   check(`FATAL ${(e as Error).message}`, false);

@@ -757,8 +757,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         : `upload: the world's server couldn't be reached (${(e as Error)?.message || "no reason given"}), so nothing is known to be stored; calling again may work`); }
       // the store's refusal, in the store's words (401, 409, 413, 415, 422, 429…): this tool adds no reason of its own
       // …except that a 5xx may come after the file was written: then what is known is only that the store failed
-      // (a 503 is the door saying it is busy, before it reads anything: not stored)
-      if (!r.ok) return fail(r.status >= 500 && r.status !== 503 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
+      // (a 503 is the door saying it is busy, a 507 the disk's floor, both before it reads anything: not stored)
+      if (!r.ok) return fail(r.status >= 500 && r.status !== 503 && r.status !== 507 ? `upload: the world's store failed (${r.status}: ${said || "no words"}), so whether the file was stored isn't known`
         : `upload: not stored. The world's store answered ${r.status}: ${said || "(no words)"}`);
       let j: any = null;
       try { j = JSON.parse(said); } catch { /* not JSON: passed on as it came, below */ }
@@ -1267,7 +1267,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         if (r.status === 401 || r.status === 403) return fail(`measure: nothing was measured; ${keyRefused(r.status)}`);
         try { d = await r.json(); } catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server answered ${r.status} with something that isn't geometry, so nothing was measured`); } }
       catch (e) { return fail((e as Error)?.name === "TimeoutError" ? `measure: nothing was measured; ${readWhy(e, "the geometry")}` : `measure: the world server didn't answer (${String((e as Error)?.message ?? e)}), so nothing was measured; try again in a moment`); }
-      if (d.error || status < 200 || status > 299) return fail(`measure: the world server answered ${status}${d.error ? ` (${d.error})` : ""}, so nothing was measured`);
+      if (d.error || status < 200 || status > 299) return fail(`measure: the world server answered ${status}${d.error ? ` (${d.error})` : ""}, so nothing was measured${status === 429 && Number(d.retryAfter) > 0 ? `; try again in ${Number(d.retryAfter)}s` : ""}`);
       const g = d.geometry ?? d;
       if (!g?.bbox) return fail("no geometry available for that (parsing offline, or a light)");
       const L: string[] = [];
@@ -1664,13 +1664,15 @@ export function resolveTool(name: string): { name: string } | null {
 }
 const edits = (x: string, y: string) => { const d: number[][] = Array.from({ length: x.length + 1 }, (_, i) => [i, ...Array(y.length).fill(0)]); for (let j = 1; j <= y.length; j++) d[0][j] = j;
   for (let i = 1; i <= x.length; i++) for (let j = 1; j <= y.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1)); return d[x.length][y.length]; };
-export const nearestTool = (name: string) => Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
+// the table is length × length per tool, on the thread every session shares: a name longer than any tool's gets no suggestion
+const NEAREST_MAX = 64;
+export const nearestTool = (name: string) => name.length > NEAREST_MAX ? undefined : Object.keys(HANDLERS).map((n) => [n, edits(name, n)] as const).sort((p, q) => p[1] - q[1])[0];
 export async function handleTool(ctx: ToolCtx, name: string, a: Record<string, any>) {
   const r = resolveTool(name);
   if (!r && TOOL_FOLDS[name]) return { content: [{ type: "text", text: `${name} folded into a general tool: ${TOOL_FOLDS[name]} — nothing ran` }], isError: true };
   if (!r && TOOL_REMOVED[name]) return { content: [{ type: "text", text: `${name} was removed: ${TOOL_REMOVED[name]} — nothing ran` }], isError: true };
   // any other name this server has no tool for: said so, with the nearest name when one is close
-  if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
+  if (!r) { const near = nearestTool(name); return { content: [{ type: "text", text: `there's no tool named "${name.length > NEAREST_MAX ? `${name.slice(0, NEAREST_MAX)}…` : name}" on this server, so nothing ran${near && near[1] <= 4 ? ` (did you mean ${near[0]}?)` : ""}; your tool list has the ones it serves` }], isError: true }; }
   // A tool's failure belongs in its result, where the model reads it: a
   // handler that throws, such as puppet()'s refusal while the link is down,
   // answers as a failed call rather than as a protocol error.

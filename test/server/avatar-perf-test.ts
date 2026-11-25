@@ -2,7 +2,7 @@
 // picture) validates the client-written numbers, RECOMPUTES the rank (a client-sent rank is ignored), MERGES into
 // thumbs/meta.json (a height stamp and a perf stamp never erase each other), and the roster (/avatars) shows the rank
 // only while `v` is the body's current version (a re-export withholds it). Real route(), temp dirs.
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, utimesSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, utimesSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { suite } from "../gate/suite.ts";
@@ -14,7 +14,7 @@ Object.assign(process.env, { SKIP_OPT_SWEEP: "1", WORLDS_DIR: join(root, "worlds
 const vdir = join(root, "lib", "eidoverse/assets/vrms"); mkdirSync(vdir, { recursive: true });
 const body = join(vdir, "bee.vrm"); writeFileSync(body, "not really a vrm");
 const t0 = new Date(1_700_000_000_000); utimesSync(body, t0, t0);
-const { route, avatarPerfParam, avatarRoster } = await import("../../server/routes.ts");
+const { route, avatarPerfParam, avatarRoster, thumbLimits } = await import("../../server/routes.ts");
 const vNow = () => String(Math.round(Bun.file(body).lastModified));
 const post = (q: Record<string, string>) => route(new Request(`http://x/thumb?${new URLSearchParams({ name: "bee", ...q })}`, { method: "POST", headers: { authorization: "Bearer t0k" } }), {} as any);
 const meta = () => { try { return JSON.parse(readFileSync(join(root, "opt", "thumbs", "meta.json"), "utf8")); } catch { return {}; } };
@@ -54,4 +54,31 @@ const t1 = new Date(1_700_000_500_000); utimesSync(body, t1, t1);   // a re-expo
 check("roster: after a re-export the old stamp is withheld", entry()?.perf === null, entry()?.perf);
 await post({ perf: JSON.stringify({ ...good, tris: 20_000 }), v: vNow() });
 check("…and a fresh stamp for the new version shows", entry()?.perf?.tris === 20_000, entry()?.perf);
+// 4. the store is bounded: past THUMBS_MAX distinct names a new name is refused; a name already held still updates
+{ const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
+  const put = (name: string, q: Record<string, string> = {}) => route(new Request(`http://x/thumb?${new URLSearchParams({ name, ...q })}`, { method: "POST", headers: { authorization: "Bearer t0k" }, body: png }), {} as any);
+  const was = thumbLimits.max; thumbLimits.max = 3;   // bee holds one already
+  const a = await put("t-one"), b = await put("t-two"), c = await put("t-three"), cm = await put("t-four", { height: "1.5" });
+  check("T1 past THUMBS_MAX names, a new portrait is refused 507 and nothing is kept for it", a.status === 200 && b.status === 200 && c.status === 507 && cm.status === 507 && !meta()["t-three"] && !meta()["t-four"], [a.status, b.status, c.status, cm.status, Object.keys(meta())]);
+  const again = await put("t-one", { force: "1", height: "1.4" });
+  check("T1b ...a name already held still updates", again.status === 200 && meta()["t-one"]?.h === 1.4, [again.status, meta()["t-one"]]);
+  // a name the store doesn't hold is new even when it's an Object.prototype key ("constructor"): refused at the cap too
+  const proto = await put("constructor");
+  check("T1c ...a new name spelled like an object's own key (constructor) is refused at the cap too", proto.status === 507, proto.status);
+  // T2: two new names posted at once with one name left: both pass the check before their bodies are read, so the cap is
+  // held again at the write. Each body is held open until both posts are waiting on it (a pull = the route is reading)
+  const held = () => { let reached!: () => void, release!: () => void;
+    const r = new Promise<void>((res) => { reached = res; }), go = new Promise<void>((res) => { release = res; });
+    let sent = false;
+    const body = new ReadableStream<Uint8Array>({ async pull(c) { if (sent) { c.close(); return; } reached(); await go; sent = true; c.enqueue(png); } }, { highWaterMark: 0 });
+    return { body, reached: r, release }; };
+  const names = () => new Set([...readdirSync(join(root, "opt", "thumbs")).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(meta())]);
+  thumbLimits.max = names().size + 1;
+  const pa = held(), pb = held();
+  const post2 = (name: string, b: ReadableStream<Uint8Array>) => route(new Request(`http://x/thumb?name=${name}`, { method: "POST", headers: { authorization: "Bearer t0k" }, body: b }), {} as any);
+  const ra = post2("race-a", pa.body), rb = post2("race-b", pb.body);
+  await Promise.all([pa.reached, pb.reached]); pa.release(); pb.release();
+  const both = [(await ra).status, (await rb).status].sort();
+  check("T2 two new names posted at once with one name left under THUMBS_MAX: one is kept, the other refused 507 at the write", both[0] === 200 && both[1] === 507 && names().size === thumbLimits.max, { both, names: names().size, max: thumbLimits.max });
+  thumbLimits.max = was; }
 S.done();

@@ -14,6 +14,7 @@ import { toldOf, unavailable } from "./access.ts";
 import { OLD_FORMAT_DOC } from "../shared/oldformat.js";
 import type { Client } from "./world.ts";
 import { runOneShot, FORCED } from "./oneshot.ts";
+import { detach } from "./detach.ts";
 
 type Any = any;
 type Ctx = { c: Client; ws: { send(d: string): void } };
@@ -76,21 +77,21 @@ const claimEnv = (a: { account: string; name: string }) => ({ EIDO_UPGRADER_ACCO
 
 export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "world-upgrade-review": (ctx, msg) => {
-    const type = "world-upgrade-review"; void takeUpgrade(ctx, msg, type).then((a) => { if (!a) return;
-    void runCli(["translate", "--dry-run", "--no-founder-key", "--claim", "--json", "--", a.world], claimEnv(a), `review ${a.world}`).then((r) => {
+    const type = "world-upgrade-review"; detach(takeUpgrade(ctx, msg, type).then((a) => { if (!a) return;
+    return runCli(["translate", "--dry-run", "--no-founder-key", "--claim", "--json", "--", a.world], claimEnv(a), `review ${a.world}`).then((r) => {
       const got = r.accepted ? tagged(r.out, "report-json") : null;
       if (!got) { a.refuse("failed", `the dry run didn't finish${r.accepted ? "" : ` (${r.why})`}: ${(r.err || r.out).trim().slice(-1200)}`); return; }
       console.log(`[upgrade] ${a.world}: reviewed by ${a.account} as ${a.as} (report ${got.hash}${got.report?.refused ? ", refused" : ""})${r.receipt ? `; ${FORCED}` : ""}`);
       if (got.report?.ownerWarning) console.log(`[upgrade] WARNING ${a.world}: ${got.report.ownerWarning}`);
       ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, report: got.report, hash: got.hash, ...(a.owner ? { owner: a.owner } : {}), ...(got.report?.ownerWarning ? { warning: got.report.ownerWarning } : {}) }));
-    }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world)); });
+    }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world)); }), type);
   },
   "world-upgrade": (ctx, msg) => {
     const type = "world-upgrade";
     const approved = String(msg.approved ?? "");
     const shape = (): [string, string] | null => /^[0-9a-f]{64}$/.test(approved) ? null : ["approved must be the reviewed report's hash (64 hex)", "review the upgrade first"];
-    void takeUpgrade(ctx, msg, type, shape).then((a) => { if (!a) return;
-    void runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--claim", "--approved", approved, "--json", "--", a.world], claimEnv(a), `apply ${a.world}`).then((r) => {
+    detach(takeUpgrade(ctx, msg, type, shape).then((a) => { if (!a) return;
+    return runCli(["translate", "--no-founder-key", "--operator-only-no-owner", "--claim", "--approved", approved, "--json", "--", a.world], claimEnv(a), `apply ${a.world}`).then((r) => {
       const got = r.accepted && r.code === 0 ? tagged(r.out, "result-json") : null;
       const said = `${r.err}\n${r.out}`.trim();
       // a CLI the timer stopped may have been mid-swap: its outcome is unknown, never "refused"
@@ -104,6 +105,6 @@ export const UPGRADE_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if (got.ownerWarning) console.log(`[upgrade] WARNING ${a.world}: ${got.ownerWarning}`);
       ctx.ws.send(JSON.stringify({ type, id: a.id, ok: true, world: a.world, backup: got.backup, report: got.report, rollback: got.rollback, people: got.people ?? [],
         ...(a.owner ? { owner: a.owner } : {}), ...(got.claimed ? { claimed: true, owned: "You're now this world's owner." } : {}), ...(got.ownerWarning ? { warning: got.ownerWarning } : {}) }));
-    }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world)); });
+    }).catch((x) => a.refuse("failed", String(x?.message ?? x))).finally(() => running.delete(a.world)); }), type);
   },
 };

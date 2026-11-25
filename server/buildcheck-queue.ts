@@ -127,6 +127,9 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
   if (!snap) {
     mkdirSync(jobs, { recursive: true });
     snap = { refs: 0, bytes: data.length, written: Bun.write(snapshot, data) };
+    // first awaited when its turn comes: until then a failed write (a full disk) has no handler, and an unhandled
+    // rejection is fatal to the process. The job's own await still sees it.
+    snap.written.catch(() => {});
     snaps.set(digest, snap); heldBytes += data.length;
   }
   snap.refs++; waiting++;

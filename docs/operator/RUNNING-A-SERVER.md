@@ -19,6 +19,10 @@ On first boot a server with no operator prints `No operator yet. Open …/setup#
 browser to become the operator (an agent POSTs the token to `/setup`). `bun tools/world.ts found <name> --owner <you>`
 founds a world.
 
+**A small disk.** Uploads pause while the store's disk has less than 2048 MB free, so world logs keep room to grow
+(`UPLOAD_MIN_FREE_MB`). On a small disk (a Raspberry Pi's card, a 10 GB VPS) set it lower, e.g. `UPLOAD_MIN_FREE_MB=256`,
+or `0` to turn the floor off. The other upload and connection limits are in docs/operator/SHOW-RUNBOOK.md, with the list of the ones that read `0` as no limit (not all do: `UPLOAD_CAP_MB=0` refuses every upload).
+
 **Which library.** Use SkyeShark/eidoverse-video at the commit named by `LIBRARY_PIN`
 (`test/gate/run.ts`). Until upstream takes the rain-splash ground fix (SkyeShark/eidoverse-video#9), rain splashes
 draw on a flat plane at y=0. The anima-research fork's `prod-serving` has that fix but lacks the sunflower maps and
@@ -27,7 +31,9 @@ everything upstream added since July; don't start new servers on it.
 ## Behind a reverse proxy
 
 The client's address rides `X-Real-IP`; the server believes that header only from loopback or the peers named in
-`TRUSTED_PROXIES=<addr,addr>` (`server/peer.ts`), else it uses the socket's own. A proxy that writes `X-Forwarded-For`
+`TRUSTED_PROXIES=<addr,addr>` (`server/peer.ts`), else it uses the socket's own. A proxy that isn't on loopback (in a
+Docker bridge network, on another host) must be listed, or every visitor counts as the proxy's one address and the
+per-address limits (`WS_PER_ADDRESS`, uploads, bans) treat them all as one guest. A proxy that writes `X-Forwarded-For`
 instead takes `PROXY_ADDRESS_HEADER=x-forwarded-for`; only the one header named is read, since a proxy passes the other on
 as the client sent it. Set `HN_NATIVE_ORIGIN=https://<public host>`: a signed-in socket from an older browser opens only
 from that exact origin.

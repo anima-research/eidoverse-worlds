@@ -41,4 +41,10 @@ for (const [n, call] of Object.entries(TOOL_FOLDS)) { const first = call.match(/
   ok(said.length > 0 && said.every((v) => v in REMOVED_VERBS), "AGENTS.md lists only removed verbs as refused (REMOVED_VERBS)", said.filter((v) => !(v in REMOVED_VERBS)));
   const calls = OLD.filter((old) => new RegExp("`" + old + " \\{").test(read("docs/operator/REMOTE-SCREENSHOTS.md")));
   ok(calls.length === 0, "docs/operator/REMOTE-SCREENSHOTS.md calls no renamed tool (screenshot, not snapshot)", calls); }
+// a long name is not compared letter by letter against every tool (the suggestion table is length × length per tool,
+// on the thread every session shares), and the refusal doesn't echo it back whole  (2 s: the regression is 200k × 200k, minutes; a busy gate is not)
+{ const huge = "x".repeat(200_000); const s = stubAll(); const t0 = performance.now(); const out: any = await handleTool(ctx, huge, {}); const ms = performance.now() - t0; s.restore();
+  const t = out.content?.[0]?.text ?? "";
+  ok(out.isError && !s.ran.length && ms < 2000 && t.length < 400 && /no tool named/.test(t), "a 200 KB tool name is refused at once, quoted short, and nothing ran", { ms: Math.round(ms), len: t.length });
+  ok(nearestTool("y".repeat(65)) === undefined && nearestTool("screenshoot")?.[0] === "screenshot", "no suggestion is computed for a name longer than any tool's could be"); }
 console.log(`alias-test: ${fails ? `${fails} failed` : "all ok"}`); process.exit(fails ? 1 : 0);

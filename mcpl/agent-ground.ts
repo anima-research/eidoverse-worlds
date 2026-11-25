@@ -292,6 +292,12 @@ export class AgentGround {
   // slabs (floors, not architecture).
 
   private geomCache = new Map<string, Promise<any | null>>();
+  /** Models whose last /geom ask met the server's rate limit (429), with the wait it named, in ms. */
+  private geomRefused = new Map<string, number>();
+  /** A support sync waiting to ask again after a 429, by entity id: a join's replay asks for every model at once, which is
+   *  just when the limit is met, and a floor refused then must not stay missing until the thing happens to change. */
+  private supportRetry = new Map<string, ReturnType<typeof setTimeout>>();
+  static readonly RETRY_TRIES = 8;
   supportIds = new Map<string, string[]>();
   /** This agent's claim token on shared support boxes, per INSTANCE: two agents
    *  can share a name across a reconnect, and must not release each other's floors. */
@@ -375,10 +381,14 @@ export class AgentGround {
     let p = this.geomCache.get(lib);
     if (!p) {
       // no geometry is a soft state, never a crash; a read that threw, timed out or met a 5xx (the server's own trouble)
-      // isn't kept, so the next one asks again (a 4xx is kept as no geometry)
+      // isn't kept, so the next one asks again (a 4xx is kept as no geometry; a 429, the server's rate limit, is not)
       const q: Promise<any | null> = fetch(`${this.a.httpBase}/geom?lib=${encodeURIComponent(lib)}`,
         { signal: AbortSignal.timeout(WORLD_READ_MS) })
-        .then((r) => (r.ok ? r.json() : r.status >= 500 ? Promise.reject(new Error(`HTTP ${r.status}`)) : null))
+        .then((r) => {
+          if (r.status === 429) this.geomRefused.set(lib, 1000 * (Number(r.headers.get("retry-after")) || 1));
+          else this.geomRefused.delete(lib);
+          return r.ok ? r.json() : r.status >= 500 || r.status === 429 ? Promise.reject(new Error(`HTTP ${r.status}`)) : null;
+        })
         .then((g) => (g && !g.error && g.bbox ? g : null))
         .catch(() => { if (this.geomCache.get(lib) === q) this.geomCache.delete(lib); return null; });
       this.geomCache.set(lib, p = q);
@@ -386,7 +396,8 @@ export class AgentGround {
     return p;
   }
 
-  async syncSupport(id: string) {
+  async syncSupport(id: string, tries = 0) {
+    { const t = this.supportRetry.get(id); if (t) { clearTimeout(t); this.supportRetry.delete(id); } }   // this sync supersedes a waiting one
     const before = this.a.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
     if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
@@ -398,6 +409,8 @@ export class AgentGround {
     // something else while its geometry was in flight (hence the model comparison).
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
+    // a 429 asks again, only while the thing is still this model: an obsolete sync must not take the id's retry slot
+    if (!g && this.geomRefused.has(before.model) && e?.model === before.model) this.retrySupport(id, before.model, tries);
     if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
@@ -488,6 +501,20 @@ export class AgentGround {
       }
     }                                                   // room-scale with no readable decks: browser-only, declared
     if (ids.length) this.supportIds.set(id, ids);
+  }
+
+  /** Ask again for `id`'s support after a 429: at the wait the server named, doubling each time (at most a minute), for
+   *  RETRY_TRIES tries. A thing removed or re-modelled meanwhile, or a closed body, is not asked about. */
+  private retrySupport(id: string, model: string, tries: number) {
+    if (tries >= AgentGround.RETRY_TRIES || this.a.closed || this.supportRetry.has(id)) return;
+    const wait = Math.min(60_000, Math.max(this.geomRefused.get(model) ?? 1000, 1000 * 2 ** tries));
+    const t = setTimeout(() => {
+      this.supportRetry.delete(id);
+      if (this.a.closed || this.a.entities.get(id)?.model !== model) return;
+      this.trackSupport(this.syncSupport(id, tries + 1));
+    }, wait);
+    (t as { unref?: () => void }).unref?.();
+    this.supportRetry.set(id, t);
   }
 
   dropSupport(id: string) {

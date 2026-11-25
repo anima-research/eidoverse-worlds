@@ -8,12 +8,13 @@ export function windowLimiter(perAddress: number, perWindow: number, windowMs = 
   let granted: number[] = [];                       // every granted ask's start time, this window
   return {
     perAddress, perWindow, windowMs,
-    grant(address: string, now = Date.now()): Grant {
+    /** `address` null: an ask counted toward the total only (the box's own loopback). A limit of 0 is no limit. */
+    grant(address: string | null, now = Date.now()): Grant {
       granted = granted.filter((t) => now - t < windowMs);
-      const mine = (byAddress.get(address) ?? []).filter((t) => now - t < windowMs);
-      if (mine.length >= perAddress) return { ok: false, which: "address", retryAfter: Math.ceil((windowMs - (now - mine[0])) / 1000) };
-      if (granted.length >= perWindow) return { ok: false, which: "all", retryAfter: Math.ceil((windowMs - (now - granted[0])) / 1000) };
-      mine.push(now); granted.push(now); byAddress.set(address, mine);
+      const mine = address === null ? [] : (byAddress.get(address) ?? []).filter((t) => now - t < windowMs);
+      if (perAddress > 0 && mine.length >= perAddress) return { ok: false, which: "address", retryAfter: Math.ceil((windowMs - (now - mine[0])) / 1000) };
+      if (perWindow > 0 && granted.length >= perWindow) return { ok: false, which: "all", retryAfter: Math.ceil((windowMs - (now - granted[0])) / 1000) };
+      granted.push(now); if (address !== null) { mine.push(now); byAddress.set(address, mine); }
       if (byAddress.size > 1024) for (const [a, ts] of byAddress) if (!ts.some((t) => now - t < windowMs)) byAddress.delete(a);
       return { ok: true };
     },

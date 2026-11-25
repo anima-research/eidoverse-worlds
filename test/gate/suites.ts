@@ -464,6 +464,14 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["lod-normals", "server/lod-normals-test.ts", 1], // a simplify keeps hard edges and UV seams (simplifyAttributes): an LOD keeps its shading, no encoder needed
   ["client-tools", "harness/run-client.ts --import-only --skip-suites --strict-env", 14], // refactor plan 2 D5: every test/**/*-{test,check} the gate doesn't run as its own row loads (a stub missing an export, a moved module); a hung import reads SLOW, not red (run-client-settle pins it); the full run is `bun test/harness/run-client.ts`
   ["help-words", "shared/help-words-test.ts", 1], // help lists and refusals say what the code holds: role-defs' permissions, undo's roles, the Light note; no review tags
+  ["detach", "server/detach-test.ts", 1], // server/detach.ts: a fire-and-forget promise's rejection is logged, never left unhandled (which exits the server)
+  ["gzcache", "server/gzcache-test.ts", 1], // server/gzcache.ts: gzip copies stay under GZIP_CACHE_MB, least recently served out first; a file over GZIP_MAX_MB is served plain
+  ["join-rate", "server/join-rate-test.ts", 1], // joins per connection (JOIN_RATE, JOIN_BURST) and sockets per address (WS_PER_ADDRESS), on a scratch server; loopback is not counted
+  ["perflog", "server/perflog-test.ts", 1], // the load beacon's file is rotated past PERFLOG_MB, never left full for good
+  ["geom-gate", "server/geom-gate-test.ts", 1], // GET /geom?lib= new parses are rate-limited (a cached answer never is) and a failed parse is remembered by mtime
+  ["zero-off", "server/zero-off-test.ts", 1], // every DoS rail takes 0 as no limit (R: rails are settings), one fresh process per setting; the runbook's one sentence names exactly these
+  ["geom-retry", "mcpl/geom-retry-test.ts", 1], // an agent's support sync that meets /geom's 429 asks again on a timer, backing off (a join replay is when the limit is met), and not for a thing removed meanwhile
+  ["gz-stall", "server/gz-stall-test.ts", 1], // a body over GZIP_MAX_MB (32) is served uncompressed, by design: gzip runs on the serving thread (the cold review's 2.4 s stalls at 128)
 ];
 
 // ---- lanes ----

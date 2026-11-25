@@ -2,7 +2,7 @@
 //
 // A route table: one row per endpoint, first match wins, so ORDER matters (the catch-all
 // last serves the browser client); server.ts's fetch() is a one-line delegate. Also home to
-// the static-file machinery (serveFrom/contentType/gzCache) and the avatar/animation rosters.
+// the static-file machinery (serveFrom/contentType; gzip copies in gzcache.ts) and the avatar/animation rosters.
 // Imports are one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
@@ -16,9 +16,12 @@ import { randomBytes } from "node:crypto";
 import { agentGuideResponse } from "./briefing.ts";
 import { creditsFor } from "../shared/libcredits.js";
 import { libraryCredits } from "./modelcatalogue.ts";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN, WS_PER_ADDRESS } from "./config.ts";
+import { socketKeyOf, takeSocket, releaseSocket } from "./sockcount.ts";
 import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
 import { glbPerfOfFile } from "./glbperf.ts";
+import { gzipOf, gzipsAt } from "./gzcache.ts";
+import { envNumber } from "./limits.ts";
 import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { normalizeSnapFrame } from "../shared/snapframe.js";
@@ -32,12 +35,13 @@ const nativeLogin = createNativeLogin({
   issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
 });
 import { resolveLibFile, libraryFile, libraryRel } from "./libfile.ts";
-import { summarizeGlb } from "./geometry.ts";
+import { summarizeGlb, geomCached } from "./geometry.ts";
+import { windowLimiter } from "./ratewindow.ts";
 import { vrmHeightFor } from "./vrmheight.ts";
 import { checkFile, checkScale, CheckRefused } from "./buildcheck-queue.ts";
 import { worlds, getWorld, worldDirNamed, type World } from "./world.ts";
 import { screenshots } from "./screenshots.ts";
-import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
+import { handleUpload, optStatus, rebuildAsset, diskNearlyFull } from "./upload.ts";
 import { serveHeightmapExport, heightRange } from "./heightmap.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats, registerSystem } from "./tick.ts";
@@ -114,6 +118,17 @@ export function avatarPerfParam(raw: string | null, v: string | null): AvatarPer
   const r = rankOf(n);
   return { ...n, rank: r.rank, rankName: TIER_NAMES[r.rank], worst: r.worst, v };
 }
+/** The load beacon's file (POST /perflog), in MB, before it is rotated (PERFLOG_MB, default 5; one older file is kept;
+ *  0: never rotated, the file grows as it will). */
+const PERFLOG_BYTES = envNumber("PERFLOG_MB", 5) * 1_000_000;
+/** New model parses GET /geom?lib= may start (GEOM_PER_ADDRESS a minute for one address, default 60; GEOM_PER_MINUTE in
+ *  all, default 600; 0 turns either off): parsed models are cached (geometry.ts, the last 256), so a visitor to a world
+ *  of fewer models reaches neither. */
+export const geomGate = windowLimiter(envNumber("GEOM_PER_ADDRESS", 60, (n) => Number.isInteger(n) && n >= 0), envNumber("GEOM_PER_MINUTE", 600, (n) => Number.isInteger(n) && n >= 0));
+/** Distinct avatar names POST /thumb keeps a portrait or measurements for (THUMBS_MAX, default 5000: far more bodies than a
+ *  server holds; each portrait is at most 400 KB). 0 = no limit. */
+export const thumbLimits = { max: envNumber("THUMBS_MAX", 5000, (n) => Number.isInteger(n) && n >= 0) };
+
 export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
   const seen = new Map<string, { url: string; file: string; v: string }>();
   for (const base of [...LADDER].reverse()) {   // /library's precedence, lowest first: ?v= and height describe the bytes served
@@ -238,8 +253,6 @@ const BUILD = (() => {
     ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}) };
 })();
 
-const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
-
 // What may cache for a day without asking: heavy, rarely-edited art. Not things we iterate on, where a stale copy
 // costs a debugging session: avatars and animations (.vrm/.vrma) and library code and data sidecars.
 // Those get no-cache, which still rides the ETag (a 304, not a re-download).
@@ -273,7 +286,8 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // cache-control too (it refreshes the stored response's lifetime)
   // gzip text and uncompressed binaries (three.webgpu.js 2.1MB → ~500KB; VRMs ~0.50, VRMA ~0.44); GLBs (~0.99, already
   // packed) are left out. Such a file varies by Accept-Encoding whichever it gets, and each encoding has its own ETag
-  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000, gz = gzippable && acceptsGzip(req);
+  // A file over GZIP_MAX_MB is never gzipped (server/gzcache.ts), so it names one encoding and carries no Vary.
+  const gzippable = /\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && f.size > 10_000 && gzipsAt(f.size), gz = gzippable && acceptsGzip(req);
   if (gzippable) headers["vary"] = "accept-encoding";
   if (f.size > 0) {
     const etag = `"${f.size}-${f.lastModified}${gz ? "-gz" : ""}"`;
@@ -281,13 +295,9 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     if (req?.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
   }
   if (gz) {
-    let entry = gzCache.get(path);
-    if (!entry || entry.mtime !== f.lastModified) {
-      entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
-      gzCache.set(path, entry);
-    }
+    const body = gzipOf(path, f.lastModified, f.size, () => new Uint8Array(readFileSync(path)))!;   // gzipsAt held above
     headers["content-encoding"] = "gzip";
-    return new Response(entry.gz, { headers });
+    return new Response(body, { headers });
   }
   return new Response(f, { headers });
 }
@@ -366,7 +376,11 @@ const ROUTES: Route[] = [
       if (session && crossSiteUpgrade(req)) return new Response("a signed-in socket opens only from this server's own page", { status: 403 });   // CSWSH
       // the connection's address, HASHED (never kept raw): what a guest's ban names, since a guest has no account
       const addr = hashedAddress(req, srv);
-      if (srv.upgrade(req, { data: { session, addr } })) return undefined as unknown as Response;
+      // an address holds at most WS_PER_ADDRESS sockets (server/sockcount.ts); the close handler gives this one back
+      const sockKey = socketKeyOf(addressOf(req, srv));
+      if (!takeSocket(sockKey, WS_PER_ADDRESS)) return new Response(`too many connections from your address (${WS_PER_ADDRESS})`, { status: 429, headers: { "retry-after": "10" } });
+      if (srv.upgrade(req, { data: { session, addr, sockKey } })) return undefined as unknown as Response;
+      releaseSocket(sockKey);
       return new Response("expected websocket", { status: 400 });
     },
   },
@@ -523,6 +537,15 @@ const ROUTES: Route[] = [
         const lib = url.searchParams.get("lib") ?? "";
         const file = resolveLibFile(lib);
         if (!file) return j({ error: `no such asset: ${lib}` }, 404);
+        // a parse holds the serving thread: new ones are rate-limited (a cached answer never is; the box's own loopback,
+        // where the agent door asks from, only counts toward the total)
+        if (!geomCached(file)) {
+          const g = geomGate.grant(socketKeyOf(addressOf(req, srv)));
+          if (!g.ok) return new Response(JSON.stringify({ error: g.which === "address"
+            ? `geometry rate limit (${geomGate.perAddress} new models a minute); a model already read is answered at once`
+            : `the server is busy reading models (${geomGate.perWindow} a minute in all)`, retryAfter: g.retryAfter }),
+            { status: 429, headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": String(g.retryAfter) } });
+        }
         const sum = await summarizeGlb(file);
         return sum ? j({ lib, ...sum }) : j({ error: "geometry parsing unavailable" }, 503);
       }
@@ -778,9 +801,11 @@ const ROUTES: Route[] = [
       try {
         const body = await readCapped(req, 100_000);
         if (body !== null) {
+          // past PERFLOG_MB the file becomes .perflogs.1.jsonl (replacing the one before) and a fresh one starts: about
+          // twice the cap on disk (each file may pass it by the one beacon, at most 100 KB, that tipped it), never full for good
           const dest = join(WORLDS_DIR, ".perflogs.jsonl");
-          const big = existsSync(dest) && Bun.file(dest).size > 5_000_000;
-          if (!big) {
+          if (PERFLOG_BYTES > 0 && existsSync(dest) && Bun.file(dest).size > PERFLOG_BYTES) renameSync(dest, join(WORLDS_DIR, ".perflogs.1.jsonl"));
+          {
             // the address HASHED, like everywhere else this server keeps one: enough to tell one
             // visitor's lines from another's, never the address itself; and the beacon can't write its own ts/addr/ip
             const ip = addressOf(req, srv);
@@ -835,6 +860,19 @@ const ROUTES: Route[] = [
       const dir = join(OPT_DIR, "thumbs");
       mkdirSync(dir, { recursive: true });
       const dest = join(dir, `${safe}.png`);
+      // a name not held yet is taken only while the store holds fewer than THUMBS_MAX names (portraits or meta entries)
+      // and the disk has room (UPLOAD_MIN_FREE_MB): any name may be posted, so without these the names are unbounded
+      const newNameRefused = (): Response | null => {
+        if (existsSync(dest)) return null;
+        let metaNow: Record<string, unknown> = {};
+        try { const mp = join(dir, "meta.json"); if (existsSync(mp)) metaNow = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
+        if (Object.hasOwn(metaNow, safe)) return null;   // own keys only: "constructor" is a new name, not an inherited one
+        const names = new Set([...readdirSync(dir).filter((f) => f.endsWith(".png")).map((f) => f.slice(0, -4)), ...Object.keys(metaNow)]);
+        if (thumbLimits.max > 0 && names.size >= thumbLimits.max) return new Response(`the portrait store is full (${thumbLimits.max} names)`, { status: 507 });
+        if (diskNearlyFull(400_000)) return new Response("the server's disk is nearly full", { status: 507 });
+        return null;
+      };
+      { const no = newNameRefused(); if (no) return no; }
       // the body's measured stature, kept beside the images for /avatars
       const height = Number(url.searchParams.get("height"));
       const hOk = Number.isFinite(height) && height > 0.2 && height < 20;
@@ -857,6 +895,9 @@ const ROUTES: Route[] = [
       if (body === null) return new Response("thumb too large", { status: 413 });
       if (body.length === 0 && perf) return new Response(JSON.stringify({ ok: true, meta: true, perf: true }), { headers: { "content-type": "application/json" } });
       if (body.length < 8 || body[0] !== 0x89 || body[1] !== 0x50) return new Response("not a PNG", { status: 415 });
+      // again at the write: posts for other new names may have landed while this body was read (check and write are
+      // both synchronous, so nothing lands between them)
+      { const no = newNameRefused(); if (no) return no; }
       writeFileSync(dest, body);
       console.log(`[thumb] ${safe} (${(body.length / 1000).toFixed(0)}KB${force ? ", forced" : ""})`);
       return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });

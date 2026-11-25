@@ -85,7 +85,19 @@ export type GeomSummary = {
 };
 
 const cache = new Map<string, { mtime: number; sum: GeomSummary; solids?: boolean }>();
-const CACHE_MAX = 64;
+/** Parsed models kept (least recently used out first): 256, a world's worth of distinct models with room, each summary a
+ *  few KB. A model evicted is parsed again, on the serving thread and against GEOM_PER_ADDRESS. */
+export const geomCacheConfig = { max: 256 };
+// files that failed to parse, by the mtime that failed: not parsed again until they change (the last FAILED_MAX of them)
+const failed = new Map<string, number>();
+const FAILED_MAX = 256;
+/** Whether summarizeGlb would answer `absPath` without parsing it (a summary or a failure remembered for its mtime). */
+export function geomCached(absPath: string, opts: { solids?: boolean } = {}): boolean {
+  let mtime = 0;
+  try { mtime = statSync(absPath).mtimeMs; } catch { return true; }   // no file: answered at once
+  const hit = cache.get(absPath);
+  return (!!hit && hit.mtime === mtime && (!!hit.solids || !opts.solids)) || failed.get(absPath) === mtime;
+}
 const SAMPLE_ABOVE_TRIS = 500_000;
 const SOLIDS_MAX_TRIS = 200_000;   // past this the bbox stands as the model's solid (measuring would hold the thread too long)
 
@@ -95,12 +107,18 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   let mtime = 0;
   try { mtime = statSync(absPath).mtimeMs; } catch { return null; }
   const hit = cache.get(absPath);
-  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) return hit.sum;
+  if (hit && hit.mtime === mtime && (hit.solids || !opts.solids)) { cache.delete(absPath); cache.set(absPath, hit); return hit.sum; }   // most recently used last
+  if (failed.get(absPath) === mtime) return null;
   const io = await getIO();
   if (!io) return null;
   let doc: any;
   try { doc = await io.read(absPath); } catch (err) {
     console.warn(`[geometry] unreadable ${absPath}:`, String(err).slice(0, 200));
+    // remembered only when the FILE is at fault: a system error (EMFILE, EACCES, a missing .bin: it has a code) may pass
+    if (typeof (err as { code?: unknown })?.code !== "string") {
+      failed.delete(absPath); failed.set(absPath, mtime);
+      if (failed.size > FAILED_MAX) failed.delete(failed.keys().next().value!);
+    }
     return null;
   }
 
@@ -372,8 +390,8 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
     ...(orphans.length ? { orphans } : {}),
     ...(solids ? { solids } : {}),
   };
-  cache.set(absPath, { mtime, sum, solids: !!opts.solids });
-  if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+  cache.delete(absPath); cache.set(absPath, { mtime, sum, solids: !!opts.solids });
+  while (cache.size > geomCacheConfig.max) cache.delete(cache.keys().next().value!);
   return sum;
 }
 
