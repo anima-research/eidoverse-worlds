@@ -297,6 +297,17 @@ const cases: Case[] = [
       let back: any; try { back = CO.entityOf?.(CO.componentsOf?.(bag)); } catch (e) { back = { threw: String(e?.message ?? e) }; }
       return { back: back?.video ?? back }; },
     good: (o) => o.back?.source === "solstice" && o.back.volume === 0.5 && o.back.description === "the solstice stage" },
+  { id: "M12", what: "an over-long description is refused on a write and clipped on a read, as sound's and picture's (main ef068a45a, #175): the inspector shows a stored one, and an edit past the cap sends nothing", run() {
+      const long = "x".repeat(201), E = (c: any) => ({ transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, ...c });
+      const w = V.normalizeVideo?.({ source: "solstice", description: long }), r = V.normalizeVideo?.({ source: "solstice", description: long }, { clip: true });
+      const sc = ES.inspectSchema?.(E({ video: { source: "solstice", description: long } }), "t1", {});
+      const warned = (sc?.groups?.find((x: any) => x.group === "video")?.fields ?? []).some((f: any) => /not shown/.test(String(f.value ?? "")));
+      const ed = ES.editOps?.(E({ video: { source: "solstice" } }), "t1", { "video.description": long });
+      // the browser host reads a stored bag the same way (as main pins its realizers: shape-render-test DS7), so a screen written before the cap isn't taken down
+      let host = ""; try { host = fs.readFileSync(TREE + "client/lib/realize/videos.js", "utf8"); } catch {}
+      return { write: w?.ok, why: w?.why, read: r?.ok, len: r?.video?.description?.length, warned, edErrors: ed?.errors?.length ?? null, edOps: ed?.ops?.length ?? null,
+        hostClips: /normalizeVideo\(data, \{ clip: true \}\)/.test(host) }; },
+    good: (o) => o.write === false && /201 characters \(at most 200\)/.test(o.why ?? "") && o.read === true && o.len === 200 && o.warned === false && o.edErrors > 0 && o.edOps === 0 && o.hostClips },
   { id: "M11", what: "a published blueprint holding a screen places a copy that keeps it (the door's blueprints: publish, create {from})", run(s) {
       const video = { source: "solstice", volume: 0.5, description: "the solstice stage" };
       admit(["solstice"]); cast(s); s.call("olive", "create", { id: "screen", model: "crate", place: { at: [0, 0] } });

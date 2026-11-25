@@ -740,7 +740,7 @@ export function inspectSchema(ent, id, live = {}) {
       VI('spatial', { label: 'positional', hint: 'off: heard evenly everywhere inside its radius' }),
       ...(live.mutedForMe !== undefined ? [{ t: 'check', k: 'mute', label: 'mute for me', value: !!live.mutedForMe, client: true, hint: 'only you stop hearing it; nobody else is affected, and nothing is recorded' }] : []),
     ];
-    const n = normalizeVideo(d);
+    const n = normalizeVideo(d, { clip: true });   // read as it plays (realize/videos.js)
     if (!n.ok) fields.unshift({ t: 'info', label: '', value: `⚠ not shown: ${n.why}` });
     fields.push({ t: 'btn', k: 'off', label: 'take down', danger: true });
     groups.push({ group: 'video', label: 'video', types: ['video'], fields });

@@ -249,7 +249,7 @@ function takeDown(id) {
   queueMicrotask(reconsider);
 }
 function applyFrom(id, data, { fresh = false, why = 'comp' } = {}) {
-  const n = data == null ? null : normalizeVideo(data);
+  const n = data == null ? null : normalizeVideo(data, { clip: true });   // stored: an over-long description is clipped, not torn down
   const prev = screens.get(id);
   // a volume, distance or description change: the same stream on the same quad, adjusted in the tick (no new intent, no bump)
   if (!fresh && prev && n?.ok && prev.video.source === n.video.source && prev.video.width === n.video.width && prev.video.lit === n.video.lit && prev.video.spatial === n.video.spatial) { prev.video = n.video; return; }

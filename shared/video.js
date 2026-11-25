@@ -139,8 +139,9 @@ export function sourceIdProblem(id) {
   return null;
 }
 
-/** Validate an authored bag. `ok:false` carries WHY; `ok:true` carries the normalized video plus notes. */
-export function normalizeVideo(data) {
+/** Validate an authored bag. `ok:false` carries WHY; `ok:true` carries the normalized video plus notes.
+ *  `clip`: a stored bag being read, so an over-long description is clipped with a note; a write refuses it (as normalizeSound's). */
+export function normalizeVideo(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, why: 'video data must be an object {source, volume?, near?, radius?, spatial?, width?, lit?, description?}' };
   }
@@ -167,6 +168,7 @@ export function normalizeVideo(data) {
   }
   if (data.description != null) {
     const description = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(description) > VIDEO_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(description).toLocaleString('en')} characters (at most ${VIDEO_DESCRIPTION_MAX})` };
     if (graphemes(description) > VIDEO_DESCRIPTION_MAX) { notes.push(`description clipped to ${VIDEO_DESCRIPTION_MAX} characters`); video.description = graphemeList(description).slice(0, VIDEO_DESCRIPTION_MAX).join(''); }
     else if (description) video.description = description;
   }
