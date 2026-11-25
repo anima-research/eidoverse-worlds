@@ -8,6 +8,7 @@ import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource }
 import { setEndpointVoice } from './browservoice.js';
 import { report, bus } from '../base.js';
 import { micOn } from './micstate.js';
+import { askCenter } from '../edit/confirmcenter.js';
 let _selected = null;      // the marked voice's id; null when nothing is loaded (a real state)
 let _needVoice = false, _needVoiceTimer = 0;   // transient "add a voice first" note after a tick with nothing loaded
 let _busy = null;          // a phase string while loading, else null
@@ -287,8 +288,9 @@ export function ttsSection(host, onPaint = () => {}) {
       build(); setTimeout(() => { _busy = null; repaint(); }, 3000);
     }
   }
-  function addEndpoint() {
-    const addr = prompt('Address of a speech server you are running:\n(ws://… or http://…)', 'ws://127.0.0.1:8927');
+  async function addEndpoint() {
+    // the house ask (edit/confirmcenter.js): the centre card, or in a headset the ask quad and the VR keyboard
+    const addr = await askCenter({ title: 'Add a speech server', body: 'The address of a speech server you are running (ws://… or http://…).', value: 'ws://127.0.0.1:8927', ok: 'Add', max: null });   // no limit: main's prompt() had none, and a signed URL is long
     if (!addr) return;
     const list = endpoints();
     if (!list.includes(addr)) { list.unshift(addr); saveEndpoints(list); }

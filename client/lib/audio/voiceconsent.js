@@ -7,6 +7,7 @@
 // ambience is taste, set once on a settings slider.
 
 import { bus } from '../base.js';
+import { chooseCenter } from '../edit/confirmcenter.js';   // the house question: the centre card, or the ask quad in a headset
 
 const KEY = 'eido.audio.prefs';
 // sttConsent is tri-state: null = never asked, true = accepted, false = refused (a refusal
@@ -99,22 +100,35 @@ export function setSttConsent(on) {
 }
 
 /** Ask once; a remembered answer, yes or no, is returned without asking again (the audio panel
- *  is where it changes). */
-export async function ensureSttConsent(ask = defaultAsk) {
-  if (sttAsked()) return prefs.sttConsent === true;
-  const yes = await ask();
-  setSttConsent(yes);
-  return prefs.sttConsent === true;
+ *  is where it changes). Only a pressed answer is remembered: `ask` resolves true (yes), false (no), or anything else
+ *  for a question nobody answered (Esc, the backdrop, another question replacing it, leaving the headset). That one
+ *  says no for now and saves nothing, so the next mic-on asks again. Asked again while the question is open, it
+ *  returns the open question's answer (asking it once). */
+let asking = null;   // the question in flight: a second ask while it is open (mic on → off → on) shares its answer
+export function ensureSttConsent(ask = defaultAsk) {
+  if (sttAsked()) return Promise.resolve(prefs.sttConsent === true);
+  // one question, one answer: a second copy would be asked again after the first was answered, and its answer would
+  // overwrite the one the person just gave
+  if (asking) return asking;
+  asking = (async () => {
+    const yes = await ask();
+    if (yes !== true && yes !== false) return false;   // dismissed: not an answer
+    setSttConsent(yes);
+    return prefs.sttConsent === true;
+  })().finally(() => { asking = null; });
+  return asking;
 }
 
 function defaultAsk() {
-  return Promise.resolve(confirm(
-    'Turn on speech-to-text?\n\n' +
-    'Your microphone audio will be sent to your browser vendor\'s speech ' +
-    'service (a third party outside this world) to be transcribed. The text ' +
-    'is then posted as your chat message and stored in the world log.\n\n' +
-    'Voice chat itself does NOT require this — you can talk without it.',
-  ));
+  // its own dismissal value: confirmCenter folds "dismissed" into "no", and a remembered no would never ask again
+  return chooseCenter({
+    title: 'Turn on speech-to-text?',
+    body: 'Your microphone audio will be sent to your browser vendor\'s speech ' +
+      'service (a third party outside this world) to be transcribed. The text ' +
+      'is then posted as your chat message and stored in the world log. ' +
+      'Voice chat itself does NOT require this — you can talk without it.',
+    choices: [{ v: 'yes', label: 'Turn on' }, { v: 'no', label: 'Not now' }], cancel: 'dismissed', focus: 'no',
+  }).then((v) => (v === 'yes' ? true : v === 'no' ? false : null));
 }
 
 // The gate threshold is a dB position (Discord's model), not a multiplier over the room: the level

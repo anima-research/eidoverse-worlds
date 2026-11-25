@@ -38,7 +38,6 @@ import { offIn } from '../realize/models_field.js';
 import { schemaFor, commitEdit, commitMany, planEdit, keepView, setEditHooks, endGesture, foldRecord, mayShape, mayGround } from './inspect.js';
 import { channels, fieldAt, ADD_WORDS, libLabel } from '../../../shared/editschema.js';
 import { askCenter, confirmCenter } from './confirmcenter.js';
-import { xrActive } from '../xr/xrask.js';
 import { frontOf, addOnFace } from '../facemedia.js';
 import { lightCasting } from '../render/lightgizmo.js';
 import { myState, frameOn } from '../player/controller.js';
@@ -1099,7 +1098,8 @@ function buildDispatch(action, payload) {
       // the name is asked for, never a hash: offer its label, else its model's name (the inspector's header), else its id
       const one = ids.length === 1 ? foldRecord(ids[0]) : null;
       const offer = ids.length === 1 ? String(one?.label ?? (one?.model != null ? modelName(one.model) : ids[0])) : `${ids.length} things`;
-      (xrActive() ? Promise.resolve(offer) : askCenter({ title: 'Save as blueprint', body: 'A name for it in Blueprints › saved here, where you place copies of it.', value: offer, ok: 'Save' }))
+      // in a headset askCenter asks on the ask quad, typed on the VR keyboard (xr/xrask.js askXR)
+      askCenter({ title: 'Save as blueprint', body: 'A name for it in Blueprints › saved here, where you place copies of it.', value: offer, ok: 'Save' })
         .then((name) => { if (!name) return;
           Edits.publish(ids, name).then((r) => { if (r.ok) flashHint(html`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); });
       break; }

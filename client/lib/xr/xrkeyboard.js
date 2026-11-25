@@ -17,6 +17,8 @@ const targetEl = () => (isText(target) && target.isConnected ? target : document
 function type(ch) {
   const el = targetEl(); if (!el) return;
   const s = el.selectionStart ?? el.value.length, e = el.selectionEnd ?? s;
+  // setRangeText ignores maxlength, which the browser's own typing keeps: a field's limit holds for these keys too
+  if (el.maxLength >= 0 && el.value.length - (e - s) + ch.length > el.maxLength) return;
   el.setRangeText(ch, s, e, 'end');
   el.dispatchEvent(new InputEvent('input', { bubbles: true, data: ch, inputType: 'insertText' }));
 }

@@ -237,7 +237,7 @@ function loginItem() {
   return { id: 'login', icon: 'sign-in', label: 'Log in', dead: NO_LOGIN };
 }
 async function logOut() {
-  if (!confirm(`Log out of ${location.host}? You will leave "${CONFIG.world}".`)) return;
+  if (!(await confirmCenter({ title: `Log out of ${location.host}?`, body: `You will leave "${CONFIG.world}".`, ok: 'Log out', cancel: 'Stay' }))) return;
   try { await fetch('/logout', { credentials: 'same-origin' }); } catch { /* the reload below still drops the session's page */ }
   // net.js bounces a browser that USED to be signed in straight back through the login (silent while Discord still
   // authorizes) — forget that, or logging out would log you back in

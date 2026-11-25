@@ -186,10 +186,11 @@ try {
     const onNo = await p.evaluate(() => document.activeElement?.classList.contains('cc-no'));
     await p.keyboard.press('Tab');
     const backOk = await p.evaluate(() => document.activeElement?.classList.contains('cc-ok'));
-    await p.keyboard.press('Tab'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
+    await p.keyboard.press('Tab'); await p.waitForSelector('#confirm-center[data-armed]', { timeout: 5000 });   // no key counts in the card's first moment (confirmcenter.js ARM_MS)
+    await p.keyboard.press('Enter'); await p.waitForTimeout(500);
     ok('confirm: Tab cycles OK ↔ Cancel inside the card; Enter on Cancel cancels', onNo && backOk && await p.evaluate(() => !document.getElementById('confirm-center') && globalThis.__ewLite === false));
     ok('…and again before the final Switch', await menuRow()); await p.locator('#emenu .mrow[data-item=lite]').click();
-    ok('…Switch lands in the lite client and REMEMBERS it (ew-lite=1), address clean', await landedAfter(p, true, () => p.locator('#confirm-center .cc-ok').click()) && await p.evaluate(() => localStorage.getItem('ew-lite') === '1'));
+    ok('…Switch lands in the lite client and REMEMBERS it (ew-lite=1), address clean', await landedAfter(p, true, async () => { await p.waitForSelector('#confirm-center[data-armed]', { timeout: 5000 }); await p.locator('#confirm-center .cc-ok').click(); }) && await p.evaluate(() => localStorage.getItem('ew-lite') === '1'));
     ok('no page errors on the desktop retry', errs.length === 0, errs.join(' | ').slice(0, 200)); await ctx.close();
   }
 } catch (e) { fail++; console.log('PROBE FAILED', e.message); } finally { await b.close(); await world.close(); }

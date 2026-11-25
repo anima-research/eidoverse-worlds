@@ -207,7 +207,7 @@ export function domQuadsPick(handRay, click = false) {
     const data = { x: hit.uv.x, y: 1 - hit.uv.y };
     // witness: which element the click lands on, teed
     try { const el = hit.object.material.map.elementAt?.(data.x, data.y); tee(`[xr] quad click ${quads.find((q) => q.mesh === hit.object)?.id ?? '?'} → ${el ? `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${(el.textContent || '').trim().slice(0, 24)}"` : 'nothing'}`); } catch {}
-    for (const type of ['mousedown', 'mouseup', 'click']) hit.object.dispatchEvent({ type, data });
+    fire(hit.object, data);   // pressed and clicked at once
   }
   return hit.distance;
 }
@@ -225,7 +225,14 @@ function aim(handRay) {
   _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
   _rc.far = 3;
 }
-const fire = (mesh, data) => { for (const type of ['mousedown', 'mouseup', 'click']) mesh.dispatchEvent({ type, data }); };
+let firing = null;   // while a quad click is dispatched: when the trigger press behind it began
+/** while a quad click is being dispatched (synchronously): when its trigger press began (performance.now), else null.
+ *  The click comes at the release; a question's arm time (xrask.js) counts from the press */
+export const quadPressAt = () => firing;
+function fire(mesh, data, t = performance.now()) {
+  const was = firing; firing = t;
+  try { for (const type of ['mousedown', 'mouseup', 'click']) mesh.dispatchEvent({ type, data }); } finally { firing = was; }
+}
 
 /** Trigger down on the quads: {dist, press} (press is null when it already clicked), or null when no quad is hit. */
 export function domQuadsPress(handRay) {
@@ -237,7 +244,7 @@ export function domQuadsPress(handRay) {
   const data = { x: hit.uv.x, y: 1 - hit.uv.y };
   const el = hit.object.material.map.elementAt?.(data.x, data.y);
   if (!el || el.closest?.(NEEDS_PRESS)) { domQuadsPick(handRay, true); return { dist: hit.distance, press: null }; }
-  return { dist: hit.distance, press: { mesh: hit.object, el, data, lastY: data.y, travel: 0, dragging: false } };
+  return { dist: hit.distance, press: { mesh: hit.object, el, data, lastY: data.y, travel: 0, dragging: false, t: performance.now() } };
 }
 
 /** Trigger held after a press: the panel's content scrolls with the laser once it has moved DRAG_PX. */
@@ -261,7 +268,7 @@ export function domQuadsRelease(press, cancel = false) {
   // element there now is something else, and a release over it is no click (as a mouse up off its button isn't)
   const now = press.mesh.material.map?.elementAt?.(press.data.x, press.data.y);
   if (press.el && now !== press.el && !press.el.contains?.(now)) return;
-  fire(press.mesh, press.data);
+  fire(press.mesh, press.data, press.t);
 }
 
 // A control = anything a click acts on (incl. labels, and a pointer cursor its parent lacks). The laser sticks
