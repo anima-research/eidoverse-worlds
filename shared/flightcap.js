@@ -52,8 +52,9 @@ export function devFlightProvider({ allow = [], label = 'local-dev' } = {}) {
  *
  *  This exists because an earlier cut shipped `devFlightProvider` in both entry points, so wearing a winged rig
  *  authorized itself. mica, reviewing cea3c3c: "That collapses provenance ('is this a flier?') into permission ('may
- *  this person fly here?')." rights.fly is server-authoritative, per-world, default-off even in an open world and
- *  even for its owner; a URL cannot forge it. (That review also required a rig check; 11-12 retired it, see the PR.)
+ *  this person fly here?')." rights.fly is server-authoritative and per-world: a role's fly permission (owners have it
+ *  while shared/protocol/roles.js OWNERS_FLY is on; anyone else is given it); a URL cannot forge it. (That review also
+ *  required a rig check; 11-12 retired it, see the PR.)
  *
  *  `rights` is read through a THUNK, not captured: grants change live.
  *

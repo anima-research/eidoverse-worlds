@@ -38,7 +38,7 @@ import {
 } from '../../../shared/flight.js';
 import { pilotInput } from '../../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../../shared/flightcap.js';
-import { deadWingsNote, inspectBody } from '../../../shared/flightbody.js';
+import { FOLD_RELEASED, inspectBody } from '../../../shared/flightbody.js';
 import { applyOwnedWingFold } from '../../../shared/wingpresence.js';
 import { nearbyClimb, startClimb, stepOnClimb, climbing, cancelClimb, climbPresence } from './climb.js';   // climb routes (componentspec climb)
 import { spawnOf, fallBackOf, belowWorld, FELL } from '../../../shared/spawn.js';
@@ -52,29 +52,21 @@ let flightBones = null;
  *  grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? null;   // null: not read (a failed read, a capsule) -- unknown, which keeps a fold
-  deadUntold = null;   // the last body's note isn't this one's (armFlightForBody sets this body's)
-  // a fold carried from a winged body is released by one known to have no wings (agent.ts foldFits, the twin)
+  // a fold carried from a winged body is released by one known to have no wing bones (agent.ts fitFold, the twin)
   if (wingsFolded && knownWingless()) setFolded(true);   // setFolded fits it, and says the release
   flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
   return resolveFlight(flightProv, { identity }).enabled;
 }
 const knownWingless = () => Array.isArray(flightBones) && !inspectBody(flightBones).canAnimateWings;
 
-/** Arm flight for the body on screen (mybody.js setMe, every swap): its skeleton, or null (unknown) for a capsule or a
- *  read that throws. Returns the toast to show, '' when it would repeat the last (flight available; dead wings). */
-let toldFlight = '', deadUntold = null;
+/** Arm flight for the body on screen (mybody.js setMe, every swap): its node names (the renderer moves any node named
+ *  L_/R_Wing_*, wings.js _findWings, and the agent reads every glTF node), or null (unknown) for a capsule or a read
+ *  that throws. Returns the toast to show. */
 export function armFlightForBody(av, identity = 'me') {
-  let bones = null;
-  try { if (av?.vrm?.scene) { bones = []; av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); }); } }
-  catch { bones = null; }
-  const ok = armFlight(bones, identity);
-  const dead = bones ? deadWingsNote(inspectBody(bones)) : null;
-  const say = ok && av ? `flight available on this body — press F${dead ? `; ${dead}` : ''}` : '';
-  const fresh = say !== toldFlight; toldFlight = say;
-  // a note the toast didn't carry (no grant yet: it may come mid-session) is said at this body's first take-off, as
-  // the agent's take_off does
-  deadUntold = ok && av ? null : dead;
-  return fresh ? say : '';
+  let names = null;
+  try { if (av?.vrm?.scene) { names = []; av.vrm.scene.traverse((o) => { if (o.name) names.push(o.name); }); } }
+  catch { names = null; }
+  return armFlight(names, identity) && av ? 'flight available on this body — press F' : '';
 }
 
 /** Hand the wings back to the idle; every exit from flight goes through here. */
@@ -119,7 +111,7 @@ export const folded = () => wingsFolded;
 export function setFolded(fold, me = meRef()) {
   const fits = !(fold && knownWingless());   // a restored fold fits the body, or is released, and says so
   wingsFolded = applyOwnedWingFold(myState, me, fold && fits);
-  if (!fits) flashHint?.('folded-wing posture released — this body has no wings');
+  if (!fits) flashHint?.(FOLD_RELEASED);
 }
 
 function toggleFold(me) {
@@ -129,7 +121,7 @@ function toggleFold(me) {
   if (!wingsFolded && !winged) return null;
   setFolded(!wingsFolded, me);
   if (wingsFolded) return 'wings folded — the vigil posture costs the sky (G to unfold)';
-  if (!winged) return flightBones ? 'folded-wing posture released — this body has no wings' : "folded-wing posture released — this body's bones aren't known";
+  if (!winged) return flightBones ? FOLD_RELEASED : "folded-wing posture released — this body's bones aren't known";
   const cap = flightProv && resolveFlight(flightProv, { identity: 'me' });
   return cap?.enabled ? 'wings open' : 'wings open — propulsion is still not granted here';
 }
@@ -140,8 +132,8 @@ export function flightReport() {
     ? resolveFlight(flightProv, { identity: 'me' })
     : { enabled: false, reason: 'flight not armed for this body' };
   const L = [];
-  L.push(`rig: ${flightBones ? `${flightBones.length} bones` : 'bones not read'}, ` +
-         (v.enabled ? `granted (${inspectBody(flightBones ?? []).wingCount} wing bones)` : `DENIED — ${v.reason}`));
+  L.push(`rig: ${flightBones ? `${flightBones.length} nodes` : 'bones not read'}, ` +
+         (v.enabled ? `granted (${flightBones ? `${inspectBody(flightBones).wingCount} wing bones` : 'wing bones not read'})` : `DENIED — ${v.reason}`));
   if (flight) {
     L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
            `y=${flight.pos.y.toFixed(2)} (ground ${flightGround(flight.pos.x, flight.pos.z).toFixed(2)})`);
@@ -199,8 +191,7 @@ function toggleFlight() {
     return `cannot take off: ${why}`;
   }
   flight = next;
-  const dead = deadUntold; deadUntold = null;
-  return `flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land${dead ? `; ${dead}` : ''}`;
+  return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
 }
 
 export const myState = {

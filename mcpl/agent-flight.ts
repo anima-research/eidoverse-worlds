@@ -12,7 +12,7 @@ import {
   bestGlide, glideRange, ceilingOf,
 } from "../shared/flight.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
-import { deadWingsNote, inspectBody } from "../shared/flightbody.js";
+import { FOLD_RELEASED, inspectBody } from "../shared/flightbody.js";
 
 /** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
  *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
@@ -51,8 +51,6 @@ export class AgentFlight {
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
   /** Numbers each command put in `flight.course`, the one course the autopilot flies (setCourse; #290). */
   private courseSeq = 0;
-  /** The body whose dead wings take_off has already said (once per body). */
-  private deadWingsToldFor: string | null = null;
 
   /** Install one server-folded effective-rights answer. If flight was
    * withdrawn while aloft, ownership passes to the visible falling-leaf
@@ -222,9 +220,13 @@ export class AgentFlight {
     // only a fold waits on the body's bones (it may not fit), and only once per body: after a failed read (a stalled
     // library) the read runs alongside, as it does with no fold. Bounded (WORLD_READ_MS) and cached once read.
     if (this.a.wingsFolded && this.a.bodyBonesFailedFor !== this.a.avatar) await this.a.loadBodyBones(); else void this.a.loadBodyBones();
+    return this.withRelease(this.takeOffNow());
+  }
+
+  /** An answer that also says a fold release a bone read made and no answer has said yet (fitFold), whatever it is. */
+  private withRelease(r: ActResult): ActResult {
     const released = this.a.foldReleaseUnsaid; this.a.foldReleaseUnsaid = false;
-    const r = this.takeOffNow();
-    return released ? { ...r, text: `${r.text}; folded-wing posture released — this body has no wings` } : r;
+    return released ? { ...r, text: `${r.text}; ${FOLD_RELEASED}` } : r;
   }
 
   private takeOffNow(): ActResult {
@@ -256,10 +258,7 @@ export class AgentFlight {
       { groundY: this.a.groundAt(this.a.pos.x, this.a.pos.z, feetY) });
     const ev = this.a.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return refused(`still standing — ${flightFixInOurTools(ev.reason)}`); }
-    // dead wings are said once per body (flightbody.js deadWingsNote)
-    const dead = this.a.bodyBoneNames && this.deadWingsToldFor !== this.a.avatar ? deadWingsNote(inspectBody(this.a.bodyBoneNames), "your") : null;
-    if (dead) this.deadWingsToldFor = this.a.avatar;
-    return done(`took off — ${this.a.flight.pos.y.toFixed(1)}m, stamina ${this.a.flight.stamina.toFixed(0)}/100${dead ? `; ${dead}` : ""}`);
+    return done(`took off — ${this.a.flight.pos.y.toFixed(1)}m, stamina ${this.a.flight.stamina.toFixed(0)}/100`);
   }
 
   // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE: it must never be
@@ -271,7 +270,10 @@ export class AgentFlight {
    *  A GROUND posture: it needs no flight state and doesn't make one. */
   async foldWings(fold: boolean): Promise<ActResult> {
     await this.a.loadBodyBones();
-    this.a.foldReleaseUnsaid = false;   // this answer says what the wings are now
+    return this.withRelease(this.foldNow(fold));
+  }
+
+  private foldNow(fold: boolean): ActResult {
     // Folding is body autonomy, not propulsion authority: no `fly` grant needed.
     // The rig decides a fold (a wingless body can't claim the silhouette); an
     // unfold never needs it, and unfolding nothing is the no-op it is on any rig.
@@ -282,7 +284,9 @@ export class AgentFlight {
         // As below: wings found as asked leave the posture so too, and the answer says when that changed it.
         const changed = !this.a.wingsFolded;
         this.a.wingsFolded = true;
-        return done(changed ? `wings are already folded; the posture now shows them folded` : `wings are already folded`);
+        // on the ground it is only the posture that is known to be folded: this body's wings weren't read
+        return done(changed ? `wings are already folded; the posture now shows them folded`
+          : this.a.flight ? `wings are already folded` : `a fold is already held (this body's wings weren't read)`);
       }
       return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
@@ -319,7 +323,7 @@ export class AgentFlight {
     this.a.wingsFolded = fold;
     if (fold) return done("wings folded — the vigil posture; a fly-mode move refuses until you open them (anim {stop: \"wings-folded\"})");
     if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
-    if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
+    if (!body.canAnimateWings) return done(FOLD_RELEASED);
     const cap = this.flightAllowed();
     return done(cap.ok ? "wings open — the sky is available again"
                        : "wings open — propulsion is still not granted here");

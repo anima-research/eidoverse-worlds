@@ -37,7 +37,7 @@ import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavT
 import { names } from "../shared/places.js";
 import { colliderOf } from "../shared/components.js";
 import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
-import { inspectBody } from "../shared/flightbody.js";
+import { FOLD_RELEASED, inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
 import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
@@ -1714,13 +1714,13 @@ export class WorldAgent {
   /** A fold fitFold released that no reply has said yet (take_off says it). */
   foldReleaseUnsaid = false;
 
-  /** A fold this body can hold: released on a body known to have no wings; kept on wings, or on bones not yet known.
+  /** A fold this body can hold: released on a body known to have no wing bones; kept on wings, or on bones not yet known.
    *  A release is said at once in the inbox, and by the next take_off. */
   private fitFold() {
     const known = this.bodyBoneNames && this.bodyBonesFor === this.avatar;
     if (!this.wingsFolded || !known || inspectBody(this.bodyBoneNames!).canAnimateWings) return;
     this.wingsFolded = false; this.foldReleaseUnsaid = true;
-    const said = { ts: Date.now(), kind: "act" as const, who: this.name, text: "folded-wing posture released — this body has no wings" };
+    const said = { ts: Date.now(), kind: "act" as const, who: this.name, text: FOLD_RELEASED };
     this.inbox.push(said); this.onEvent?.(said);
   }
 
@@ -2756,12 +2756,13 @@ export class WorldAgent {
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
     // a swap never ends a flight: flight is the world's grant plus physics, not appearance (lead, 11-12)
+    // the last body's unsaid release isn't the next one's to say (a swap's own lands with its read); the same body's is
+    if (path !== this.avatar) this.foldReleaseUnsaid = false;
     this.avatar = path;
     // The new body's bones are read when a fold needs them, and now if a fold is carried (it may not fit this body).
     this.bodyBoneNames = null;
     this.bodyBonesFor = null;
     this.bodyBonesFailedFor = null;
-    this.foldReleaseUnsaid = false;   // the last body's release isn't this one's to say (a swap's own lands with its read)
     if (this.wingsFolded) void this.loadBodyBones();
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);

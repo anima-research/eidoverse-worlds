@@ -764,7 +764,7 @@ check('a fold while the bones are unknown is failed', failed(r) && /^wings uncha
 unread.wingsFolded = true;
 r = await callU('fold_wings');
 check('a fold of wings already folded, while the bones are unknown, changes nothing, and is done',
-  ok(r) && said(r) === 'wings are already folded', said(r));
+  ok(r) && said(r) === "a fold is already held (this body's wings weren't read)", said(r));
 r = await callU('unfold_wings');
 check('releasing a folded posture while the bones are unknown is done',
   ok(r) && /^folded-wing posture released — /.test(said(r)) && unread.wingsFolded === false, said(r));

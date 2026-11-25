@@ -37,7 +37,7 @@ import {
   takeOff, LEAF_PRESETS, foldDown, unfold,
 } from '../../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../../shared/flightpilot.js';
-import { inspectBody, deadWingsNote } from '../../shared/flightbody.js';
+import { inspectBody } from '../../shared/flightbody.js';
 import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
@@ -643,24 +643,6 @@ console.log('\nPERMISSION IS THE GRANT -- no body shape gates flight (R 11-12: c
   }
 }
 
-console.log('\nDEAD WINGS ARE SAID, ONCE (flightbody.js: "says so, loudly")');
-{
-  const note = (bones: string[]) => deadWingsNote(inspectBody(bones));
-  const TIGERBEE = ['Hips', 'Spine', 'Head', 'Wings', 'Wing_Left_High_Base', 'Wing_Left_High1', 'Wing_Right_High_Base', 'Wing_Right_High1'];
-  const WINGS = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
-  check('a mis-named wing rig (tigerbee.vrm) is told its wings will not animate, and why',
-        /won't animate/.test(note(TIGERBEE) ?? '') && /Wing_Left_High_Base/.test(note(TIGERBEE) ?? '') && /L_Wing_Upper/.test(note(TIGERBEE) ?? ''), note(TIGERBEE));
-  check('so is an all-lowercase one', /won't animate/.test(note(WINGS.map((b) => b.toLowerCase())) ?? ''), note(WINGS.map((b) => b.toLowerCase())));
-  check('so is one with too few chains, in those words',
-        /1 chain/.test(note(['Hip', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3']) ?? ''));
-  const TAILED = ['Hips', 'Spine', 'Head', 'Swing_Tail', 'Swing_Tail_1', 'Drawing', 'Skirt_Flowing'];
-  check('a bone that merely contains "wing" (Swing_Tail, Drawing, Skirt_Flowing) is not a wing',
-        inspectBody(TAILED).strays.length === 0 && note(TAILED) === null, `${inspectBody(TAILED).strays}; ${note(TAILED)}`);
-  const WINGY = ['LeftWing', 'WING_L', 'Wings', 'LWing', 'RWing', 'leftwing', 'wing_r'];
-  check('...while LeftWing, WING_L, Wings, LWing, RWing, leftwing and wing_r are', inspectBody(WINGY).strays.length === WINGY.length, String(inspectBody(WINGY).strays));
-  check('a body with no wings has no dead wings to mention', note(['Hips', 'Spine', 'Head']) === null, String(note(['Hips', 'Spine', 'Head'])));
-  check('a properly rigged one has nothing to say', note(WINGS) === null, String(note(WINGS)));
-}
 
 // ------------------------------------------------- default-deny, for real
 console.log('\nDEFAULT-DENY -- the grant is the permission, whatever the body');
@@ -1095,14 +1077,15 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
   }
 
   // WING NAMES ARE EXACT-CASE, and this pins it so the decision is explicit; a mis-cased rig still flies (the grant
-  // decides) and is told why its wings stay still.
+  // decides), its wings still.
   {
     const proper = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper',
                     'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
     check('a properly-cased wing rig animates its wings', inspectBody(proper).canAnimateWings);
     const lower = inspectBody(proper.map(b => b.toLowerCase()));
-    check('KNOWN ASYMMETRY: an all-lowercase wing rig is not found to flap, and the note says so',
-          !lower.canAnimateWings && /won't animate/.test(deadWingsNote(lower) ?? ''));
+    check('KNOWN ASYMMETRY: an all-lowercase wing rig is not found to flap', !lower.canAnimateWings);
+    check('one wing node is a wing: the renderer moves any node named L_/R_Wing_* (wings.js _findWings)',
+          inspectBody(['Hips', 'L_Wing_Upper']).canAnimateWings && inspectBody(['Hips', 'L_Wing_Upper']).wingCount === 1);
   }
 
   // 6. And the whole reason this took three rounds: every report was a
