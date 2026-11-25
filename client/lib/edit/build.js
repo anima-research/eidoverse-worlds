@@ -200,9 +200,11 @@ export function refreshOutline() {
 // ONE selection: edit/selection.js is the truth; `selected` is its primary resolved to an object, re-resolved on its
 // event and each edit-mode frame (a model swapped under it, a thing gone), the box re-measured. editHolds keeps the
 // residency sweep from demoting what someone is editing (id-based: promotion swaps the object).
+/** Does the selection still hold the gesture: `lead` first, and every one of `ids`? */
+function selectionHolds(lead, ids) { const s = Sel.selection(); return s.kind === 'things' && s.ids[0] === lead && ids.every((x) => s.ids.includes(x)); }
 function followSelection() {
   // the drag never outlives its captured lead: a selection without it first, or without a follower, cancels it
-  if (dragging?.armed) { const s = Sel.selection(); if (s.kind !== 'things' || s.ids[0] !== dragging.id || !MM.idsOf(dragging.id, dragging.multi).every((x) => s.ids.includes(x))) cancelDrag(); }
+  if (dragging?.armed && !selectionHolds(dragging.id, MM.idsOf(dragging.id, dragging.multi))) cancelDrag();
   const sid = buildMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
   if (obj) {
     if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
@@ -645,9 +647,10 @@ addEventListener('mousemove', (e) => {
       else select(dragging.id);
       dragging.shiftPick = false;
     }
-    // the press's thing must still be the selected one: a selection changed under a press not yet armed (a reply selecting what
-    // it placed, the Hierarchy) drops the press, as a change mid-drag cancels the drag; nothing has moved yet (bot #352 `4`)
-    if (selected?.id !== dragging.id) { dragging = null; return; }
+    // the selection must still hold the press: its thing first and every follower it picked. A selection changed under a press
+    // not yet armed (a reply selecting what it placed, the Hierarchy) drops the press, by the check that cancels an armed drag
+    // (followSelection); nothing has moved yet (bot #352 `4`)
+    if (selected?.id !== dragging.id || !selectionHolds(dragging.id, [dragging.id, ...dragging.follow])) { dragging = null; return; }
     dragging.multi = MM.begin(dragging.id, dragging.follow);
     dragging.gen = MM.hold(MM.idsOf(dragging.id, dragging.multi));   // a late refusal of an older drag leaves these to this one
     if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, dragging.mode), 3500);

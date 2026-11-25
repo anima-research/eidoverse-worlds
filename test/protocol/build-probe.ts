@@ -23,7 +23,7 @@
 //       drag (which holds nothing, and lets its hint show while held); a gizmo release writes a follower whose object was
 //       swapped mid-drag where the drag put it; a follower whose object goes away mid-drag makes either release write
 //       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30); a gizmo drag held still keeps
-//       relaying (MM31); a selection change before the travel drops the press (MM32); a planar group drag goes no further
+//       relaying (MM31); a selection change before the travel drops the press, a dropped follower too (MM32, MM36); a planar group drag goes no further
 //       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
 //       nothing there (MM12), and not where a ray first meets it beyond reach (MM35); a press
 //       on a large thing's end far from its origin takes hold at once (MM37)
@@ -849,6 +849,29 @@ try {
         !!atS && armed === false && myActs().length === n0 && refused?.length === 0 && near(local?.[0], B0) && near(local?.[1], H0) && near(pose("mm-chair"), H0), { atS, armed, refused, local, B0, H0, acts: actsSince(n0) });
       if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-chair"), H0)); }
       await onRecord("mm-chair"); await onRecord("mm-box"); await frames(3);
+    }
+
+    // …and so does one that keeps the pressed thing but drops a follower the press picked (the table, deselected in the
+    // Hierarchy): the arm checks the whole selection, as followSelection does for an armed drag (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atF = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, r0 = await evalJson(`__refused.length`), d0 = bobDrags.length;
+      let armed = null, picked = null;
+      if (atF) {
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atF[0]}, clientY: ${atF[1]} })), true))`);
+        await frames(2); picked = await evalJson(`globalThis.__buildDrag?.()?.follow ?? null`);
+        await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`); await frames(2);
+        armed = await evalJson(`(() => { dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atF[0] + 30}, clientY: ${atF[1] + 10} })); const a = globalThis.__buildDrag?.()?.armed === true;
+          dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atF[0] + 30}, clientY: ${atF[1] + 10} })); return a; })()`);
+      }
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]), refused = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code ?? r.text)`);
+      const sent = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-tbl") || m.id === NODE.get("mm-box")).length;
+      check("MM36 a follower the press picked, dropped from the selection before the travel, drops the press: it never arms, nothing moves, nothing is sent",
+        !!atF && picked?.includes(NODE.get("mm-tbl")) && armed === false && myActs().length === n0 && refused?.length === 0 && sent === 0 && near(local?.[0], B0) && near(local?.[1], T0),
+        { atF, picked, armed, refused, sent, local, B0, T0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
 
     // a planar group drag whose ray runs out toward the horizon meets the plane hundreds of metres out: the lot goes no further
