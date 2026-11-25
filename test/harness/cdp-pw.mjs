@@ -17,16 +17,14 @@ const KEYS = {
   Shift: [16, 'ShiftLeft'], Control: [17, 'ControlLeft'], Alt: [18, 'AltLeft'], Meta: [91, 'MetaLeft'],
 };
 const MOD = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
-// nativeVirtualKeyCode is the OS's own number for the key, and the VK codes here are Windows'. macOS reads the field as a
-// Mac key code (kVK_*), where VK 87 (W) is the keypad's 5 and VK 13 (Enter) is W: Chrome for Testing there then floods
-// the page with keydowns of a key nobody released, until it navigates (#359's xr-confirm on macos-latest: one KeyW press
-// typed "wwww…" into every field after it, CI 45283313249 45523929491 45632526876). Omitted on macOS, Chrome derives it
-// from `code`, as Puppeteer never sends it; elsewhere it is sent as before (Windows: it is the native code).
-/** `{ nativeVirtualKeyCode }` for Windows virtual key `vk` on `platform`, or nothing where that number isn't native (macOS) */
-export const nativeKey = (vk, platform = process.platform) => (platform === 'darwin' ? {} : { nativeVirtualKeyCode: vk });
-/** Input.dispatchKeyEvent's params for key `d` ({ key, code, vk, text }) with modifier bits `mods` on `platform` */
-export function keyParams(type, d, mods = 0, platform = process.platform) {
-  return { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, ...nativeKey(d.vk, platform), modifiers: mods,
+// No key event sends nativeVirtualKeyCode, as Puppeteer and Playwright never do: Chrome derives it from `code`. The VK
+// codes here are Windows', and macOS reads that field as a Mac key code (kVK_*), where VK 87 (W) is the keypad's 5 and
+// VK 13 (Enter) is W: Chrome for Testing there then floods the page with keydowns of a key nobody released, until it
+// navigates (#359's xr-confirm on macos-latest: one KeyW press typed "wwww…" into every field after it, CI 45283313249
+// 45523929491 45632526876). Even a correct Mac code has given trouble elsewhere, so it is left out on every host.
+/** Input.dispatchKeyEvent's params for key `d` ({ key, code, vk, text }) with modifier bits `mods`: the one builder */
+export function keyParams(type, d, mods = 0) {
+  return { type, key: d.key, code: d.code, windowsVirtualKeyCode: d.vk, modifiers: mods,
     ...(type === 'keyDown' && d.text && !(mods & ~MOD.Shift) ? { text: d.text } : {}) };
 }
 function keyDef(k) {
@@ -102,7 +100,9 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
 }
 
 function makePage(C, S, { targetId, browserContextId, metrics }) {
-  const send = (m, p) => C.send(m, p, S);
+  // `_sent` (tests only): the last 64 key events this page sent, as sent, whichever path built them (keyboard or cdp)
+  const sentKeys = [];
+  const send = (m, p) => { if (m === 'Input.dispatchKeyEvent') { sentKeys.push(p); if (sentKeys.length > 64) sentKeys.shift(); } return C.send(m, p, S); };
   const handlers = { console: new Set(), pageerror: new Set(), dialog: new Set(), request: new Set(), requestfinished: new Set(), requestfailed: new Set(), framenavigated: new Set() };
   const routes = [], reqs = new Map();
   let size = { width: 1280, height: 720 };
@@ -254,7 +254,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     viewportSize: () => size,
     screenshot: async ({ path: out, fullPage = false, clip } = {}) => { const { data } = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: fullPage, ...(clip ? { clip: { scale: 1, ...clip } } : {}) }); const b = Buffer.from(data, 'base64'); if (out) fs.writeFileSync(out, b); return b; },
     mouse, keyboard, touchscreen,
-    cdp: send,
+    cdp: send, _sent: sentKeys,
     // the page's own session: send, and playwright's on/once for its events (a probe written for a CDPSession listens)
     context: () => ({ newCDPSession: async () => {
       const listen = (ev, fn, one) => { const off = C.listen((m) => { if (m.sessionId === S && m.method === ev) { if (one) off(); fn(m.params); } }); return off; };

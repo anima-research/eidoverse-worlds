@@ -178,7 +178,7 @@ export async function visorShown(pg, { timeout = 90000, me = false } = {}) {
       let xr = null; try { xr = navigator.xr ? await Promise.race([navigator.xr.isSessionSupported('immersive-vr'), new Promise((r) => setTimeout(() => r('pending'), 2000))]) : 'no navigator.xr'; } catch (err) { xr = `threw ${err}`; }
       const b = document.querySelector('#xrbtn');
       // a GPU-less windows-latest gives launchBrowser pages no WebGL context (notes: #333's CI): a fresh canvas says so
-      let gl = null; try { const c = document.createElement('canvas').getContext('webgl2'); gl = c ? (c.getParameter(c.RENDERER) ?? 'webgl2') : 'null context'; } catch (err) { gl = `threw ${err}`; }
+      let gl = null; try { const c = document.createElement('canvas').getContext('webgl2'); if (!c) gl = 'null context'; else { const dbg = c.getExtension('WEBGL_debug_renderer_info'); gl = (dbg ? c.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : c.getParameter(c.RENDERER)) ?? 'webgl2'; } } catch (err) { gl = `threw ${err}`; }
       return { url: location.href, gl, ready: document.readyState, iwer: !!globalThis.__iwerDevice, xr, btn: b ? getComputedStyle(b).display : 'absent',
         renderer: !!globalThis.EW?.renderer, backend: globalThis.EW?.renderer?.backend?.isWebGLBackend ? 'webgl' : globalThis.EW?.renderer ? 'other' : null, me: !!globalThis.EW?.me?.(),
         splash: document.querySelector('#splash, .splash')?.textContent?.trim().slice(0, 120) ?? null };

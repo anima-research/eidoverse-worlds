@@ -112,21 +112,26 @@ try {
 }
 { // cdp-pw's keys: macOS reads nativeVirtualKeyCode as a Mac key code, where the Windows VK codes cdp-pw has are other
   // keys, and Chrome there floods the page with keydowns of a key never released (#359's xr-confirm: one KeyW typed
-  // "wwww…" into every later field, on macos-latest only). The params row holds on every host; the press row is the
-  // flood itself, red only where Chrome floods (macOS) — mutation: send nativeVirtualKeyCode on darwin in nativeKey
+  // "wwww…" into every later field, on macos-latest only). So no key event sends it: the builder row, the row on what a
+  // real press sent (page._sent, every Input.dispatchKeyEvent as sent: red if keyEvent builds its own params again), and
+  // the press row, which is the flood itself (red only where Chrome floods: macOS). Mutation: add the field in keyParams
   const { launchCdp, keyParams } = await import('../harness/cdp-pw.mjs');
   const W = { key: 'w', code: 'KeyW', vk: 87, text: 'w' };
-  const mac = keyParams('keyDown', W, 0, 'darwin'), win = keyParams('keyDown', W, 0, 'win32');
-  check('cdp-pw: a key sent on macOS carries no nativeVirtualKeyCode (a Windows VK there is another key), and on Windows its own VK',
-    !('nativeVirtualKeyCode' in mac) && mac.windowsVirtualKeyCode === 87 && mac.code === 'KeyW' && win.nativeVirtualKeyCode === 87, JSON.stringify({ mac, win }));
-  const b = await launchCdp(); let got: any = null;
+  const built = [keyParams('keyDown', W), keyParams('keyUp', W)];
+  check('cdp-pw: a key event carries no nativeVirtualKeyCode (a Windows VK on macOS is another key), and its code and Windows VK',
+    built.every((p: any) => !('nativeVirtualKeyCode' in p) && p.windowsVirtualKeyCode === 87 && p.code === 'KeyW'), JSON.stringify(built));
+  const b = await launchCdp(); let got: any = null, sent: any[] = [];
   try {
     const pg = await b.page();
     await pg.evaluate(() => { document.body.innerHTML = '<input id="f">'; (globalThis as any).__downs = 0; addEventListener('keydown', () => { (globalThis as any).__downs++; }, true); document.getElementById('f')!.focus(); return true; });
+    pg._sent.length = 0;
     await pg.keyboard.press('KeyW');
+    sent = [...pg._sent];
     await pause('the row is that nothing more arrives: a flood is thousands of keydowns a second, so 750 ms after the keyup shows it', 750);
     got = await pg.evaluate(() => ({ value: (document.getElementById('f') as HTMLInputElement).value, downs: (globalThis as any).__downs }));
   } catch (e) { got = { threw: String(e) }; } finally { await b.close(); }
+  check('cdp-pw: a real press sends a keyDown and a keyUp, neither with nativeVirtualKeyCode',
+    sent.length === 2 && sent[0].type === 'keyDown' && sent[1].type === 'keyUp' && sent.every((p) => !('nativeVirtualKeyCode' in p)), JSON.stringify(sent));
   check(`cdp-pw: one press of KeyW is one keydown and one "w" (${process.platform})`, got?.value === 'w' && got?.downs === 1, JSON.stringify(got));
 }
 console.log(`${tally.passed} passed, ${tally.failed} failed`);
