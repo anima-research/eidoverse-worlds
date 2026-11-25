@@ -21,10 +21,11 @@ authorize translating any world.
    `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --dry-run --no-founder-key`
    If it refuses because the world has no owner, run it again with `--claim` added and
    `EIDO_UPGRADER_ACCOUNT=<your account> EIDO_UPGRADER_NAME=<your name>` in front (every translation ends with an owner:
-   *An ownerless world is claimed*, below). Read the report. If its `refused` isn't `null`, stop: it names what this
-   protocol can't carry yet, so ask the maintainers before translating. Its last lines are `report-hash <hash>` and the
-   arguments for step 3. (Use the `report-hash`, not the `sha256` inside the report: that one is the old log's.)
-   Approving the report accepts the trial period it states.
+   *An ownerless world is claimed*, below). Read the report. If its `refused` isn't `null`, stop and read it. It names
+   either a feature this protocol can't carry yet (ask the maintainers before translating) or a change to make on the
+   old server first, such as a person main let only watch (make the change it names, then run the dry run again). Its
+   last lines are `report-hash <hash>` and the arguments for step 3. (Use the `report-hash`, not the `sha256` inside
+   the report: that one is the old log's.) Approving the report accepts the trial period it states.
 3. **Translate in place:**
    `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --no-founder-key --approved <report-hash> --operator-only-no-owner`
    (with `--claim` and the same `EIDO_UPGRADER_…` in front again if step 2 needed them: the claim is in the hash). It
