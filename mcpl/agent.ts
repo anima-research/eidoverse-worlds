@@ -1720,8 +1720,8 @@ export class WorldAgent {
     const known = this.bodyBoneNames && this.bodyBonesFor === this.avatar;
     if (!this.wingsFolded || !known || inspectBody(this.bodyBoneNames!).canAnimateWings) return;
     this.wingsFolded = false; this.foldReleaseUnsaid = true;
-    const ts = Date.now(), text = "folded-wing posture released — this body has no wings";
-    this.inbox.push({ ts, kind: "act", who: this.name, text }); this.onEvent?.({ ts, kind: "act", who: this.name, text });
+    const said = { ts: Date.now(), kind: "act" as const, who: this.name, text: "folded-wing posture released — this body has no wings" };
+    this.inbox.push(said); this.onEvent?.(said);
   }
 
   /** Read the worn VRM's bone list, once per avatar. A failed read keeps nothing (still unknown; the next read asks
