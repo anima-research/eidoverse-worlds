@@ -637,6 +637,9 @@ addEventListener('mousemove', (e) => {
       else select(dragging.id);
       dragging.shiftPick = false;
     }
+    // the press's thing must still be the selected one: a selection changed under a press not yet armed (a reply selecting what
+    // it placed, the Hierarchy) drops the press, as a change mid-drag cancels the drag; nothing has moved yet (bot #352 `4`)
+    if (selected?.id !== dragging.id) { dragging = null; return; }
     dragging.multi = MM.begin(dragging.id, dragging.follow);
     dragging.gen = MM.hold(MM.idsOf(dragging.id, dragging.multi));   // a late refusal of an older drag leaves these to this one
     if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, dragging.mode), 3500);

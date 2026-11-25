@@ -809,6 +809,28 @@ try {
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
+
+    // a selection change between the press and the travel (a placement's reply selecting what it made, the Hierarchy) drops the
+    // press: the drag never arms on the newly selected thing with the pressed one's start and expect (bot #352 `4`). An armed
+    // drag whose lead left the selection is cancelled on the next frame (followSelection), so the travel and the release come
+    // in one turn, no frame between: the window a quick flick-and-release leaves
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const atS = await evalJson(`__mmPress('mm-box', null)`);
+      const B0 = pose("mm-box"), H0 = pose("mm-chair"), n0 = myActs().length, r0 = await evalJson(`__refused.length`);
+      let armed = null;
+      if (atS) {
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atS[0]}, clientY: ${atS[1]} })), true))`);
+        await frames(2); await page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`); await frames(2);
+        armed = await evalJson(`(() => { dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atS[0] + 30}, clientY: ${atS[1] + 10} })); const a = globalThis.__buildDrag?.()?.armed === true;
+          dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atS[0] + 30}, clientY: ${atS[1] + 10} })); return a; })()`);
+      }
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-chair"]), refused = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code ?? r.text)`);
+      check("MM32 a selection change between the press and the travel (the chair selected elsewhere) drops the press: it never arms, nothing moves, nothing is sent (no act, no refusal)",
+        !!atS && armed === false && myActs().length === n0 && refused?.length === 0 && near(local?.[0], B0) && near(local?.[1], H0) && near(pose("mm-chair"), H0), { atS, armed, refused, local, B0, H0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-chair"), H0)); }
+      await onRecord("mm-chair"); await onRecord("mm-box"); await frames(3);
+    }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();
