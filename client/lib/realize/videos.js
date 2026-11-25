@@ -38,7 +38,7 @@
 //      AudioContext is the shared unlock queue's business (audiounlock.js), as every placed sound's is.
 import { THREE, camera } from '../core.js';
 import { bus } from '../base.js';
-import { net } from '../net.js';
+import { sendJoined } from '../net.js';
 import { entities, bagOf } from '../world.js';
 import { audioContext } from '../audio/audioctx.js';
 import { worldBusNode } from './sounds.js';
@@ -113,7 +113,7 @@ function setState(s, state, why = null) {
 // ---- the connection ----
 function closeConn(s, { tell = true } = {}) {
   clearTimeout(s.timer); s.timer = null;
-  if (tell && s.session && net.ws?.readyState === 1) { try { net.ws.send(JSON.stringify({ type: 'video-close', session: s.session })); } catch { /* gone */ } }
+  if (tell && s.session) { try { sendJoined({ type: 'video-close', session: s.session }); } catch { /* gone */ } }
   s.session = null; s.req = null;
   try { s.pc?.close(); } catch { /* closed */ } s.pc = null;
   if (s.audio) { try { s.audio.src.disconnect(); s.audio.gain.disconnect(); s.audio.panner.disconnect(); } catch { /* fine */ } s.audio = null; }
@@ -164,8 +164,8 @@ async function connect(s, rev) {
   }
   nextOfferAt = performance.now() + OFFER_GAP_MS + 50;
   s.req = `v${++reqN}`;
-  if (net.ws?.readyState !== 1) { retry(s, rev, 'not connected to the world'); return; }
-  net.ws.send(JSON.stringify({ type: 'video-offer', id: s.id, sdp: pc.localDescription.sdp, req: s.req }));
+  // the world socket is written through net.js's senders (one-binding-test): false when not joined
+  if (!sendJoined({ type: 'video-offer', id: s.id, sdp: pc.localDescription.sdp, req: s.req })) { retry(s, rev, 'not connected to the world'); return; }
   clearTimeout(s.timer);
   s.timer = setTimeout(() => { if (current(s.id, rev) && s.pc === pc && !s.frames) retry(s, rev, 'no picture arrived'); }, CONNECT_WATCHDOG_MS);
 }
@@ -217,7 +217,7 @@ bus.on('video-answer', async (m) => {
   const s = [...screens.values()].find((x) => x.req && m.req === x.req && m.id === x.id && x.pc);
   // an answer for an offer whose screen was taken down, demoted or re-offered since: its session holds a slot at the
   // sequencer and an appliance session nobody will use, so it is closed now (#332 review 16)
-  if (!s) { if (typeof m.session === 'string' && net.ws?.readyState === 1) { try { net.ws.send(JSON.stringify({ type: 'video-close', session: m.session })); } catch { /* gone */ } } return; }
+  if (!s) { if (typeof m.session === 'string') { try { sendJoined({ type: 'video-close', session: m.session }); } catch { /* gone */ } } return; }
   const rev = revision.get(s.id); s.session = m.session;
   try { await s.pc.setRemoteDescription({ type: 'answer', sdp: m.sdp }); } catch (e) { retry(s, rev, 'the answer was not usable'); }
 });

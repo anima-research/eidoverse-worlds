@@ -22,6 +22,7 @@ const TABLES: [string, string, string][] = [
   ["test/protocol/scars-check.ts", "MUTANTS", "shared"], ["test/protocol/scripts-check.ts", "MUTANTS", "shared/protocol"],
   ["test/protocol/shiplist-check.ts", "MUTANTS", ""], ["test/protocol/shove-check.ts", "MUTANTS", "shared"],
   ["test/protocol/txn-check.ts", "MUTANTS", ""], ["test/protocol/zone-water-check.ts", "MUTANTS", "shared"],
+  ["test/protocol/video-check.ts", "MUTANTS", ""],
   // object rows ({file, find} or {file, from}), all from the root
   ["test/protocol/modserver-mutants.ts", "M", ""], ["test/protocol/blockers-mutants.ts", "M", ""],
   ["test/mcpl/body-state-mutation-test.ts", "cases", ""], ["test/server/voice-wire-mutation-test.ts", "cases", ""],
