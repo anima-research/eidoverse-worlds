@@ -99,11 +99,14 @@ async function join_(br: any, name: string) {
   const pg = await br.page();
   pg.on('pageerror', (e: any) => errs.push(`${name}: ${e.message}`));
   pg.on('console', (m: any) => { const x = m.text(); if (/\[gpu\]|\[renderer\]|context lost|reloading/i.test(x)) console.log(`   ${name} console: ${x.slice(0, 200)}`); });
-  pg.on('framenavigated', (f: any) => { if (f === pg.mainFrame()) console.log(`   ${name} navigated: ${f.url().slice(0, 120)}`); });
+  pg.on('framenavigated', (f: any) => console.log(`   ${name} navigated: ${f.url().slice(0, 120)}`));   // the harness fires it for the main frame only
+  // the page's websocket frames, from its own CDP session (the harness's page has no 'websocket' event, and its on()
+  // accepts an unknown name silently: a counter that never fires would make K's "offers nothing" pass on nothing)
+  const cdp = await pg.context().newCDPSession();
   // what this page sends: its video offers, counted (K: a waiting screen offers nothing, by any path)
-  pg.on('websocket', (ws: any) => ws.on('framesent', (f: any) => { if (typeof f.payload === 'string' && f.payload.includes('"type":"video-offer"')) offersSent.set(name, (offersSent.get(name) ?? 0) + 1); }));
+  cdp.on('Network.webSocketFrameSent', (p: any) => { const d = p?.response?.payloadData; if (typeof d === 'string' && d.includes('"type":"video-offer"')) offersSent.set(name, (offersSent.get(name) ?? 0) + 1); });
   // every frame, not only those that mention video: a leak would be in any of them (#332 review 25)
-  pg.on('websocket', (ws: any) => ws.on('framereceived', (f: any) => { if (typeof f.payload === 'string') wsIn.push(f.payload); }));
+  cdp.on('Network.webSocketFrameReceived', (p: any) => { const d = p?.response?.payloadData; if (typeof d === 'string') wsIn.push(d); });
   pg.on('dialog', (d: any) => d.dismiss().catch(() => {}));
   await pg.goto(`${world.origin}/?world=vprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   // Joined, not just open: sendRequest refuses until the snapshot has landed (net.joined). Polled with evaluate, which
@@ -226,7 +229,8 @@ try {
   const sentBefore = offersSent.get('owner') ?? 0;
   await sleep(8000);
   const waiting = await Promise.all(live.map((id) => st(pa, id))); const sentWhileGone = (offersSent.get('owner') ?? 0) - sentBefore;
-  check('K. …and offer nothing while it is gone (no video-offer leaves the page)', sentWhileGone === 0 && waiting.every((x) => x?.state === 'error'), JSON.stringify({ sentWhileGone, states: waiting.map((x) => x?.state) }));
+  // sentBefore > 0: the counter saw this page's offers while the screens played, so its zero below is a reading, not silence
+  check('K. …and offer nothing while it is gone (no video-offer leaves the page)', sentBefore > 0 && sentWhileGone === 0 && waiting.every((x) => x?.state === 'error'), JSON.stringify({ sentBefore, sentWhileGone, states: waiting.map((x) => x?.state) }));
   writeFileSync(join(SCR, 'sources.json'), JSON.stringify({ sources: entry }, null, 2));
   const back = await Promise.all(live.map((id) => until(pa, id, (x) => x.state === 'playing', 60000)));
   const kBuilds = await pa.evaluate((ids) => import('/lib/realize/videos.js').then((v: any) => v._builds.filter((b: any) => ids.includes(b.id)).slice(-12).map((b: any) => `${b.id.slice(0, 4)}:${b.why}@${b.at}`)), live);
