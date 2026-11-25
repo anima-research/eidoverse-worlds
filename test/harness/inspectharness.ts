@@ -60,6 +60,7 @@ export function inspectHarness(tag = "inspect", { actor = "olive" } = {}) {
             export const replica = H.replica; export const replicaActive = () => true;
             export const sendDrag = (...a) => { H.drags.push(a); };
             export const dragsOf = (id) => H.drags.filter((a) => a[0] === id).length;
+            export const dragsSnapshot = () => { const m = new Map(); for (const [id] of H.drags) m.set(id, (m.get(id) ?? 0) + 1); return m; };
             export const sendRequest = async (verb, args) => { H.sent.push({ verb, args: JSON.parse(JSON.stringify(args ?? {})) }); const r = H.W.call(verb, args, H.actor); H.sync(); return r; };
             ${noop(["requestDebug", "requestHistory", "say", "sendAnim", "sendBodyDrag", "sendLease", "sendRelayCredRequest", "sendTyping", "sendVoiceConsent"])}`,
           panels: `export const SCRUB_SPEEDS = {}; ${noop(["renderDOM", "getScrubFeel", "hitRegion", "makeSchemaFrame", "renderCanvas", "resolveDelta", "setScrubFeel"])}`,
