@@ -206,6 +206,10 @@ export function initGizmo() {
   setEscapeHook(cancelDrag);
   onDragCancel(() => { if (!cancelled) cancelDrag(); });   // a deselect or an undo mid-drag (build.js deselect)
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
+  // a drag in hand is posed and relayed every frame, as the mesh drag is (updateBuild): TransformControls sends objectChange
+  // only when the pointer moves, and a handle held still must keep its claims (the lead's and the followers' round-robin)
+  // fresh on everyone else's screen (bot #352 `3`)
+  registerSystem('gizmo-held', () => { if (start && !cancelled) onChange(); });
   bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('build-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }

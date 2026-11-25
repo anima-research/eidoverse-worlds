@@ -37,7 +37,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter, tryUntil, until, WAIT_SCALE } from "../gate/wait.ts";
+import { pageWaiter, tryUntil, until, pause, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -793,6 +793,21 @@ try {
         if (m.replica.st.entities['mm-box']?.c?.pivot) await m.sendRequest('delete', { id: 'mm-box', component: 'pivot' }); return true;`);
       await waitFor(`import('/lib/net.js').then((m) => !m.replica.st.entities['mm-box']?.c?.pivot)`);
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a gizmo group drag whose handle is held still keeps its claims: TransformControls sends objectChange only when the pointer
+    // moves, so the drag relays every frame on its own; bob keeps getting samples of the lead and the follower (bot #352 `3`)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), n0 = myActs().length;
+      await gizmoDrag("mm-box", 0.5); await frames(2); await caughtUp();
+      const d1 = bobDrags.length; await pause("the handle held still past CLAIM_MS: the elapsed time is what MM31 tests", 1800); await caughtUp();
+      const live = Object.fromEntries(["mm-box", "mm-tbl"].map((n) => [n, bobDrags.slice(d1).filter((m) => m.id === NODE.get(n) && m.end !== true).length]));
+      check("MM31 a gizmo group drag held still past CLAIM_MS (1.5 s) keeps relaying: bob gets fresh samples of the box and of the table while it is held",
+        on && live["mm-box"] > 0 && live["mm-tbl"] > 0, { on, live });
+      await gizmoUp(); await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
