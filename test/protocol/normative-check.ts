@@ -6,7 +6,9 @@
 //   N5 PROTOCOL.md never calls a code file normative (code is informative: NORMATIVE.md says so)
 //   N6–N9 (recut C12) the refusal codes and the readback table are PINNED in spec/ (refusal-codes.json, readback.json): the
 //   pins equal the code, a removal or a changed meaning re-pins only with --ack (a REGISTRY-CHANGELOG line), an addition freely
-//   N10 that line is in the record: a break between an earlier pin (the base's, the previous version) and now has a changelog line
+//   N10 that line is in the record: a break between an earlier pin and now has a changelog line. The earlier pin is the base's
+//   (on a branch whose base is an ancestor of HEAD, only it: the branch's net change); on main itself, with no base, or with
+//   a base that isn't an ancestor of HEAD, the previous version (before the newest change) too
 //   N11 tel0s's #260 rulings (11-06) are written: D1, D2, D6, D8
 //   bun test/protocol/normative-check.ts --pin [--ack "<why>"]   re-pin both from the code
 // A failing row means one of the two moved: change the other in the same commit, or mark the row's status.

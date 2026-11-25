@@ -8,8 +8,10 @@
 //     main), else (a shallow or foreign checkout with none of them) the previous version below. A file new since the base has no base version.
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
-//     a branch that brought the file new: its latest change is judged even though the base never had it. The changelog
-//     rule (unacknowledged) judges it only on main itself or with no base; the version rules always (see each).
+//     a branch that brought the file new: its latest change is judged even though the base never had it.
+// The version rules (sameVersionChanged, engine-check EN4) judge both. The changelog rule (unacknowledged) judges both on
+// main itself (the base is HEAD), with no base, or with a base that isn't an ancestor of HEAD; on a branch whose base is
+// an ancestor of HEAD it judges only the base (see unacknowledged).
 // @ts-nocheck
 import { spawnSync } from "node:child_process";
 
@@ -69,8 +71,9 @@ export function earlier(root: string, files: string[], readNow: (f: string) => s
 }
 
 /** The breaks no changelog line acknowledges: for each earlier version judged, `breaksOf(was, now)` (texts), each of which
- *  must be a `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]};
- *  out [] = held.
+ *  must be a `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]}.
+ *  Held is out [] AND judged non-empty: callers (D13, N10) refuse an empty judged as "judged nothing". A base whose tree
+ *  holds a file that can't be read as a pin (a blob missing from a partial clone, a file of JSON null) throws.
  *  On a branch (the base an ancestor of HEAD and not HEAD itself, as under CI's pull_request ref, where it is HEAD^1) only
  *  the base is judged: main only ever receives a branch's net change, and the base judges all of it. The previous version
  *  would judge states main never holds, and where main has the path it composes main's own steps since into breaks no
@@ -78,7 +81,8 @@ export function earlier(root: string, files: string[], readNow: (f: string) => s
  *  ASSUMPTIONS: a branch's intermediate steps are not judged, only what reaches main, so a stacked PR, or a staging server
  *  that keeps data across a branch's commits, is not protected by this rule. The base is the newest of the local
  *  origin/anima/upstream main refs, so a stale local main ref makes a local run lenient; CI's fresh fetch is authoritative.
- *  A base with none of the files (the branch brings them new, #260) still counts as judged: nothing in main can break.
+ *  A base whose tree has none of the paths (the branch brings them new, #260) still counts as judged: nothing in main can
+ *  break.
  *  On main itself (the base is HEAD), with no base, or with a --base / PIN_BASE that isn't an ancestor of HEAD, the
  *  previous version is judged too; on main that is main's newest pin-changing commit (a rebase-merge, or several commits
  *  pushed together, gets only its last one judged, as before). The version rules (sameVersionChanged, engine-check EN4)
@@ -93,8 +97,12 @@ export function unacknowledged(root: string, files: string[], changelog: string,
     const said = new Set(addedSince(root, rev, changelog).map((l) => l.trim()));
     for (const t of breaksOf(was, now)) if (!said.has(`- ${t}`)) out.push({ rev: rev.slice(0, 8), text: t });
   }
+  if (onBranch) for (const f of files) {   // a path in the base's tree must read as a pin: absent is only "missing from the tree"
+    const t = git(root, ["ls-tree", "--name-only", e.base!, "--", f]); if (t == null) throw new Error(`pinhistory: can't list ${f} at the base ${e.base}`);
+    const v = t.trim() ? showAt(root, e.base!, f) : ""; if (t.trim() && (v == null || JSON.parse(v) == null)) throw new Error(`pinhistory: the base ${e.base!.slice(0, 8)} has ${f} but no pin could be read from it (a missing blob, or JSON null)`);
+  }
   const judged = judging.map((o) => `${o.rev.slice(0, 8)} (${o.why})`);
-  if (onBranch && !judging.length) judged.push(`${e.base!.slice(0, 8)} (the base, which has none of these files: they are new)`);
+  if (onBranch && !judging.length) judged.push(`${e.base!.slice(0, 8)} (the base, whose tree has none of these files: they are new)`);
   return { judged, base: e.base?.slice(0, 8) ?? null, out };
 }
 
