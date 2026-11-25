@@ -366,10 +366,15 @@ export function updateBuild() {
       refreshOutline();
       relayDrag();
     } else if (dragging.multi) {
-      // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'
+      // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'. A ray near the
+      // horizon meets that plane hundreds of metres out, so the lead goes no further than GROUP_REACH from where it started; and
+      // a press whose ray missed the plane (looking up at a tall thing) takes hold once a ray meets it within that reach, from
+      // where the lead stands then, so taking hold moves nothing (bot #352 `6`, `7`)
+      dragging.plane ??= planeGrab(dragging.startPos);
       raycaster.setFromCamera(mouse, camera);
       if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
-        setWorldPosition(selected.obj, _w.copy(_hit).add(dragging.plane.grab).setY(dragging.startPos.y));
+        _w.copy(_hit).add(dragging.plane.grab).sub(dragging.startPos).setY(0).clampLength(0, GROUP_REACH);
+        setWorldPosition(selected.obj, _w.add(dragging.startPos));
         reindexCollider(selected.id); refreshOutline(); relayDrag();
       }
     } else {
@@ -612,12 +617,13 @@ canvas.addEventListener('mousedown', (e) => {
   e.preventDefault();
 });
 
-/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it or
- *  pointing away from it). */
+/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it, pointing
+ *  away from it, or meeting it further than GROUP_REACH from `at`). */
+const GROUP_REACH = 20;   // m: aimPoint's placeable range, here from where the lead started
 function planeGrab(at) {
   raycaster.setFromCamera(mouse, camera);
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
-  return raycaster.ray.intersectPlane(plane, _hit) ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
+  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - at.x, _hit.z - at.z) <= GROUP_REACH ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
 }
 
 // arm the drag only after a few pixels of travel (click vs drag)
