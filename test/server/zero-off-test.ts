@@ -11,41 +11,43 @@ import { suite } from "../gate/suite.ts";
 
 const S = suite("zero-off");
 const R = resolve(import.meta.dir, "../..");
+// the probes import R from inside generated source, where a Windows path's backslashes would be read as escapes
+const RI = R.replaceAll("\\", "/");
 const root = mkdtempSync(join(tmpdir(), "zero-off-"));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 
 // each probe is the body of an async function in a fresh process (env is read at import); it returns { ok, detail }
 const ROWS: [string, string][] = [
-  ["GZIP_CACHE_MB", `const g = await import("${R}/server/gzcache.ts"); let n = 0; const rd = () => { n++; return crypto.getRandomValues(new Uint8Array(20000)); };
+  ["GZIP_CACHE_MB", `const g = await import("${RI}/server/gzcache.ts"); let n = 0; const rd = () => { n++; return crypto.getRandomValues(new Uint8Array(20000)); };
     g.gzipOf("/z", 1, 20000, rd); g.gzipOf("/z", 1, 20000, rd); return { ok: n === 1, detail: { reads: n, ...g.gzStats() } };`],
-  ["GZIP_MAX_MB", `const g = await import("${R}/server/gzcache.ts"); return { ok: g.gzipsAt(1e12), detail: g.gzConfig };`],
-  ["ANON_IDS_KEPT", `const { directoryAt } = await import("${R}/server/directory.ts"); const d = directoryAt(process.env.SCR + "/d.json");
+  ["GZIP_MAX_MB", `const g = await import("${RI}/server/gzcache.ts"); return { ok: g.gzipsAt(1e12), detail: g.gzConfig };`],
+  ["ANON_IDS_KEPT", `const { directoryAt } = await import("${RI}/server/directory.ts"); const d = directoryAt(process.env.SCR + "/d.json");
     const ids = []; for (let i = 0; i < 50; i++) { const id = d.resolve({ name: "G" + i }); ids.push(id); d.release(id); }
     return { ok: d.nameOf(ids[0]) === "G0" && d.anonStats().held === 50, detail: d.anonStats() };`],
   ["PERFLOG_MB", `const fs = await import("node:fs"); const W = process.env.WORLDS_DIR; fs.mkdirSync(W, { recursive: true });
     const live = W + "/.perflogs.jsonl"; fs.writeFileSync(live, "x".repeat(6_000_000) + "\\n");
-    const { route } = await import("${R}/server/routes.ts");
+    const { route } = await import("${RI}/server/routes.ts");
     await route(new Request("http://x/perflog", { method: "POST", body: JSON.stringify({ kind: "load", ms: 777 }) }), { requestIP: () => ({ address: "192.0.2.5" }) });
     return { ok: !fs.existsSync(W + "/.perflogs.1.jsonl") && fs.readFileSync(live, "utf8").includes('"ms":777'), detail: { rotated: fs.existsSync(W + "/.perflogs.1.jsonl") } };`],
-  ["GEOM_PER_ADDRESS", `const { geomGate } = await import("${R}/server/routes.ts"); let ok = 0; for (let i = 0; i < 100; i++) if (geomGate.grant("198.51.100.1").ok) ok++;
+  ["GEOM_PER_ADDRESS", `const { geomGate } = await import("${RI}/server/routes.ts"); let ok = 0; for (let i = 0; i < 100; i++) if (geomGate.grant("198.51.100.1").ok) ok++;
     return { ok: ok === 100, detail: { granted: ok } };`],
-  ["GEOM_PER_MINUTE", `const { geomGate } = await import("${R}/server/routes.ts"); let ok = 0; for (let i = 0; i < 700; i++) if (geomGate.grant("a" + i).ok) ok++;
+  ["GEOM_PER_MINUTE", `const { geomGate } = await import("${RI}/server/routes.ts"); let ok = 0; for (let i = 0; i < 700; i++) if (geomGate.grant("a" + i).ok) ok++;
     return { ok: ok === 700, detail: { granted: ok } };`],
   // a new name's portrait is taken (the route's guard: at 0, "names held >= max" must not refuse every name)
-  ["THUMBS_MAX", `const { route } = await import("${R}/server/routes.ts");
+  ["THUMBS_MAX", `const { route } = await import("${RI}/server/routes.ts");
     const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]); const st = [];
     for (const n of ["z-one", "z-two", "z-three"]) st.push((await route(new Request("http://x/thumb?name=" + n, { method: "POST", body: png }), {})).status);
     return { ok: st.every((x) => x === 200), detail: st };`],
   // uploads are taken, the day's bytes counting toward nothing (the uploader's guard: at 0, "bytes > budget" must not refuse all)
-  ["UPLOAD_MB_PER_DAY", `const { handleUpload } = await import("${R}/server/upload.ts"); const { PNG } = require("pngjs"); const st = [];
+  ["UPLOAD_MB_PER_DAY", `const { handleUpload } = await import("${RI}/server/upload.ts"); const { PNG } = require("pngjs"); const st = [];
     for (let i = 0; i < 3; i++) { const p = new PNG({ width: 2, height: 2, colorType: 0, inputColorType: 0, inputHasAlpha: false }); p.data = Buffer.from([i, 85, 170, 255]);
       const body = new Uint8Array(PNG.sync.write(p, { colorType: 0, inputColorType: 0, inputHasAlpha: false })); const url = new URL("http://x/upload?as=image&name=z.png");
       st.push((await handleUpload(new Request(url, { method: "POST", body }), url, { requestIP: () => ({ address: "192.0.2.7" }) })).status); }
     return { ok: st.every((x) => x === 200), detail: st };`],
-  ["UPLOAD_MIN_FREE_MB", `const { diskNearlyFull } = await import("${R}/server/upload.ts"); return { ok: diskNearlyFull(1e18) === false };`],
+  ["UPLOAD_MIN_FREE_MB", `const { diskNearlyFull } = await import("${RI}/server/upload.ts"); return { ok: diskNearlyFull(1e18) === false };`],
   // ten travels at once on one socket, past JOIN_BURST (5): none refused (the join handler's guard: at 0 the bucket would never refill)
-  ["JOIN_RATE", `const { scratchSequencer } = await import("${R}/test/harness/harness.ts"); const { helloOf } = await import("${R}/shared/protocol/hello.js");
-    const { until } = await import("${R}/test/gate/wait.ts");
+  ["JOIN_RATE", `const { scratchSequencer } = await import("${RI}/test/harness/harness.ts"); const { helloOf } = await import("${RI}/shared/protocol/hello.js");
+    const { until } = await import("${RI}/test/gate/wait.ts");
     const h = await scratchSequencer("zero-off-join", { worlds: ["zoa", "zob"], owner: "keeper", serverEnv: { SKIP_OPT_SWEEP: "1", JOIN_RATE: "0" } });
     try { const ws = new WebSocket(h.BASE.replace("http", "ws") + "/ws"); const msgs = []; ws.onmessage = (e) => msgs.push(JSON.parse(String(e.data)));
       await new Promise((r) => (ws.onopen = r));
@@ -54,7 +56,7 @@ const ROWS: [string, string][] = [
       await until("every join is answered", () => n("snap") + n("refused") >= 10, { ms: 15000, step: 50 }).catch(() => {});
       ws.close(); return { ok: n("snap") === 10 && n("refused") === 0, detail: { snapshots: n("snap"), refused: n("refused") } };
     } finally { await h.cleanup(0); }`],
-  ["WS_PER_ADDRESS", `const { WS_PER_ADDRESS } = await import("${R}/server/config.ts"); const { takeSocket } = await import("${R}/server/sockcount.ts");
+  ["WS_PER_ADDRESS", `const { WS_PER_ADDRESS } = await import("${RI}/server/config.ts"); const { takeSocket } = await import("${RI}/server/sockcount.ts");
     let ok = 0; for (let i = 0; i < 1000; i++) if (takeSocket("198.51.100.2", WS_PER_ADDRESS)) ok++; return { ok: WS_PER_ADDRESS === 0 && ok === 1000, detail: { WS_PER_ADDRESS, ok } };`],
 ];
 
