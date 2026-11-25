@@ -8,7 +8,8 @@
 //     main), else (a shallow or foreign checkout with none of them) the previous version below. A file new since the base has no base version.
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
-//     a branch that brought the file new: its latest change is judged even though the base never had it.
+//     a branch that brought the file new: its latest change is judged even though the base never had it. The changelog
+//     rule (unacknowledged) judges it only on main itself or with no base; the version rules always (see each).
 // @ts-nocheck
 import { spawnSync } from "node:child_process";
 
@@ -67,16 +68,34 @@ export function earlier(root: string, files: string[], readNow: (f: string) => s
   return { base, prev, out };
 }
 
-/** The breaks no changelog line acknowledges: for each earlier version, `breaksOf(was, now)` (texts), each of which must be a
- *  `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]}; out [] = held. */
+/** The breaks no changelog line acknowledges: for each earlier version judged, `breaksOf(was, now)` (texts), each of which
+ *  must be a `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]};
+ *  out [] = held.
+ *  On a branch (the base an ancestor of HEAD and not HEAD itself, as under CI's pull_request ref, where it is HEAD^1) only
+ *  the base is judged: main only ever receives a branch's net change, and the base judges all of it. The previous version
+ *  would judge states main never holds, and where main has the path it composes main's own steps since into breaks no
+ *  line names (#363: main's light.decay A → B → C, a line each, judged from the branch's pre-merge pin as A → C).
+ *  ASSUMPTIONS: a branch's intermediate steps are not judged, only what reaches main, so a stacked PR, or a staging server
+ *  that keeps data across a branch's commits, is not protected by this rule. The base is the newest of the local
+ *  origin/anima/upstream main refs, so a stale local main ref makes a local run lenient; CI's fresh fetch is authoritative.
+ *  A base with none of the files (the branch brings them new, #260) still counts as judged: nothing in main can break.
+ *  On main itself (the base is HEAD), with no base, or with a --base / PIN_BASE that isn't an ancestor of HEAD, the
+ *  previous version is judged too; on main that is main's newest pin-changing commit (a rebase-merge, or several commits
+ *  pushed together, gets only its last one judged, as before). The version rules (sameVersionChanged, engine-check EN4)
+ *  compare for equality under a version's name, where an older version can't compose into a false break; they judge
+ *  both, as before. */
 export function unacknowledged(root: string, files: string[], changelog: string, readNow: (f: string) => string | null, breaksOf: (was: Record<string, any>, now: Record<string, any>) => string[], argv?: string[]) {
   const now = Object.fromEntries(files.map((f) => { const t = readNow(f); return [f, t == null ? null : JSON.parse(t)]; }));
   const e = earlier(root, files, readNow, argv); const out: { rev: string; text: string }[] = [];
-  for (const { rev, was } of e.out) {
+  const onBranch = !!e.base && e.base !== git(root, ["rev-parse", "HEAD"])?.trim() && spawnSync("git", ["-C", root, "merge-base", "--is-ancestor", e.base, "HEAD"]).status === 0;
+  const judging = onBranch ? e.out.filter((o) => o.why === "the base") : e.out;
+  for (const { rev, was } of judging) {
     const said = new Set(addedSince(root, rev, changelog).map((l) => l.trim()));
     for (const t of breaksOf(was, now)) if (!said.has(`- ${t}`)) out.push({ rev: rev.slice(0, 8), text: t });
   }
-  return { judged: e.out.map((o) => `${o.rev.slice(0, 8)} (${o.why})`), base: e.base?.slice(0, 8) ?? null, out };
+  const judged = judging.map((o) => `${o.rev.slice(0, 8)} (${o.why})`);
+  if (onBranch && !judging.length) judged.push(`${e.base!.slice(0, 8)} (the base, which has none of these files: they are new)`);
+  return { judged, base: e.base?.slice(0, 8) ?? null, out };
 }
 
 /** "A change meant to alter results is a new version" (the conformance files): for each law {law, versionOf, data} of a vector
