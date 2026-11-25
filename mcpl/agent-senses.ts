@@ -516,10 +516,10 @@ export class AgentSenses {
     this.inboxCursor = Math.max(this.inboxCursor, i);
   }
 
-  /** What was said after `seq`, oldest first: the newest `limit` of it (the log pages newest-first). */
-  async missedSince(seq: number, limit = 120) {
-    const { entries } = await this.a.history({ after: seq, limit, verbs: ["say"] });
-    return entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq }));
+  /** What was said after `seq`, oldest first: the newest `limit` of it (the log pages newest-first); `failed` when the read got no answer. */
+  async missedSince(seq: number, limit = 120): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; failed?: boolean }> {
+    const { entries, failed } = await this.a.history({ after: seq, limit, verbs: ["say"] });
+    return { said: entries.map((e) => ({ ts: e.ts, who: e.actor, text: e.args?.text ?? "", seq: e.seq })), ...(failed ? { failed } : {}) };
   }
   /** The OLDEST `limit` says after `seq`, and whether more follow: the log pages newest-first, so page back to `seq`. */
   async firstSaidSince(seq: number, limit: number): Promise<{ said: { ts: number; who: string; text: string; seq: number }[]; more: boolean; failed?: boolean; truncated?: boolean }> {

@@ -121,14 +121,14 @@ export function makeSchemaFrame(key, opts) {
 }
 
 /** What makes two paints the same SHAPE: types, keys, disabled/driven, fold state, enum and tile options, a tree's or
- *  list's whole rows, a vec3's link, a ref's filled/arming state. A field's own value and label are not shape — they
+ *  list's whole rows (and a list's empty text), a vec3's link, a ref's filled/arming state. A field's own value and label are not shape — they
  *  update in place. */
 export function shapeKey(fields) {
   return fields.map((f) => [f.t, f.k ?? '', f.disabled ? 1 : 0, f.driven ?? '',
     f.t === 'group' ? (f.open !== false ? 'o' : 'c') : '',
     f.t === 'enum' ? JSON.stringify(f.options ?? []) : '',
     f.t === 'tiles' ? JSON.stringify((f.options ?? []).map((o) => [o.v, o.label, o.img ?? '', o.icon ?? ''])) : '',
-    (f.t === 'tree' || f.t === 'list') ? JSON.stringify(f.rows ?? []) : '',
+    (f.t === 'tree' || f.t === 'list') ? JSON.stringify(f.rows ?? []) + (f.t === 'list' ? `|${f.empty ?? ''}` : '') : '',   // a list has no update(): its empty text is shape
     f.t === 'vec3' ? (f.link ? 'L' : '') : '',
     f.t === 'ref' ? ((f.value == null ? '0' : '1') + (f.arming ? 'A' : '')) : '',
   ].join('|')).join('\n');
