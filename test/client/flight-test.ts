@@ -37,7 +37,7 @@ import {
   takeOff, LEAF_PRESETS, foldDown, unfold,
 } from '../../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../../shared/flightpilot.js';
-import { inspectBody } from '../../shared/flightbody.js';
+import { inspectBody, WING_RE, FOLD_RELEASED } from '../../shared/flightbody.js';
 import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
@@ -1084,8 +1084,13 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
     check('a properly-cased wing rig animates its wings', inspectBody(proper).canAnimateWings);
     const lower = inspectBody(proper.map(b => b.toLowerCase()));
     check('KNOWN ASYMMETRY: an all-lowercase wing rig is not found to flap', !lower.canAnimateWings);
-    check('one wing node is a wing: the renderer moves any node named L_/R_Wing_* (wings.js _findWings)',
+    check('one wing node is a wing: the renderer moves any node WING_RE matches (wings.js _findWings)',
           inspectBody(['Hips', 'L_Wing_Upper']).canAnimateWings && inspectBody(['Hips', 'L_Wing_Upper']).wingCount === 1);
+    // the release names the renderer's exact names, so a body with L_Wing_Tip isn't told it has none (#365 review)
+    const named = FOLD_RELEASED.match(/[LR]_Wing_[A-Za-z]+/g) ?? [];
+    check('FOLD_RELEASED names the four chain roots WING_RE matches, and no wildcard',
+          ['L_Wing_Upper', 'L_Wing_Lower', 'R_Wing_Upper', 'R_Wing_Lower'].every(n => named.includes(n))
+          && named.every(n => WING_RE.test(n)) && !/_Wing_\*/.test(FOLD_RELEASED), FOLD_RELEASED);
   }
 
   // 6. And the whole reason this took three rounds: every report was a

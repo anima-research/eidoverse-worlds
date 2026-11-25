@@ -6,7 +6,7 @@
 // An empty list means a body with no bones, so fold_wings reads it as a body with no wings: a failed fetch kept as
 // that list would say a winged body has none. Flight acts don't wait on the bones (the grant decides,
 // shared/flightcap.js), except a take_off with a fold held, which waits once per body (the fold may not fit); a
-// fold carried into a body with no L_Wing_* / R_Wing_* bones is released.
+// fold carried into a body with no wing bones (shared/flightbody.js WING_RE) is released.
 
 import { noWorldUrl } from '../harness/no-world.ts';
 import { WorldAgent } from '../../mcpl/agent.ts';
@@ -228,7 +228,7 @@ console.log('\nA RELEASE IS SAID, WHEREVER IT HAPPENS');
   quiet.connect().catch(() => {});
   await quiet.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
   (globalThis as any).WebSocket = RealWS;
-  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => /folded-wing posture released — this body has no L_Wing_\* \/ R_Wing_\* bones/.test(e.text ?? '')),
+  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => /folded-wing posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(e.text ?? '')),
     JSON.stringify(quiet.inbox.map((e: any) => e.text)));
 }
 const raced: any = new WorldAgent({ url: noWorldUrl(), name: 'raced', world: 'bone-bench' });
@@ -251,7 +251,7 @@ said_.avatar = 'wingless.vrm'; said_.myRights = { role: 'builder', fly: true }; 
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
 r = await said_.takeOff();
 check('take_off on a wingless body carrying a fold flies, and says the fold was released, as the browser does',
-  /^took off/.test(text(r)) && /folded-wing posture released — this body has no L_Wing_\* \/ R_Wing_\* bones/.test(text(r)) && said_.wingsFolded === false, text(r));
+  /^took off/.test(text(r)) && /folded-wing posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(text(r)) && said_.wingsFolded === false, text(r));
 check("flight_status of a wingless flier doesn't report wings it hasn't got", !/\bwings (OPEN|FOLDED|LIMP)\b/.test(said_.flightStatus()), said_.flightStatus());
 r = await said_.takeOff();
 check('...and a second take_off says no release: the first one said it', !/released/.test(text(r)), text(r));
@@ -260,7 +260,8 @@ told.avatar = 'wingless.vrm'; told.myRights = { role: 'builder', fly: true }; to
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
 await told.loadBodyBones();   // the read releases the fold
 r = await told.foldWings(false);
-check("fold_wings' answer says the release it takes over saying", /posture released/.test(text(r)), text(r));
+check("fold_wings' answer says the release it takes over saying, and nothing that denies it",
+  /posture released/.test(text(r)) && !/no folded-wing posture to release/.test(text(r)), text(r));
 r = await told.takeOff();
 check('a release fold_wings has answered for is not said again by take_off', /^took off/.test(text(r)) && !/released/.test(text(r)), text(r));
 const back_: any = new WorldAgent({ url: noWorldUrl(), name: 'back', world: 'bone-bench' });
@@ -285,7 +286,7 @@ await same.loadBodyBones();   // the read releases the fold
 same.setAvatar('wingless.vrm');   // set_avatar naming the body already worn
 r = await same.takeOff();
 check('re-selecting the worn body keeps its unsaid release: take_off says it', /^took off/.test(text(r)) && /posture released/.test(text(r)), text(r));
-console.log('\nONE WING NODE IS A WING (the renderer, wings.js _findWings, moves any node named L_/R_Wing_*)');
+console.log('\nONE WING NODE IS A WING (the renderer, wings.js _findWings, moves any node WING_RE matches: [LR]_Wing_(Upper|Lower)[_n])');
 const one: any = new WorldAgent({ url: noWorldUrl(), name: 'one', world: 'bone-bench' });
 one.avatar = 'one-wing.vrm';
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head', 'L_Wing_Upper']));

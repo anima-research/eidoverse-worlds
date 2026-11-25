@@ -375,13 +375,13 @@ async function browserOwnerPart() {
   controller.armFlight([], "owner");   // a body with no authored wing chains
   const rel = packet();
   check("a wingless swap releases a carried posture, on the wire too", controller.myState.wingsFolded === false && Array.isArray(rel?.poses) && !rel.poses.includes(WINGS_FOLDED));
-  check("the wingless release is said, in the words G used to say it", hints.at(-1) === "folded-wing posture released — this body has no L_Wing_* / R_Wing_* bones for the fold to move", hints.at(-1));
+  check("the wingless release is said, in the words G used to say it", hints.at(-1) === "folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move", hints.at(-1));
   let said = hints.length;
   pressG();
   check("G on the wingless body then has nothing to fold or release", hints.length === said && controller.folded() === false, hints.at(-1));
   controller.setFolded(true);   // a fold restored on rejoin (main.js) onto the wingless body
   check("a fold restored onto a known wingless body is released where it is set, and says so", controller.folded() === false && owner.wingsFolded === false &&
-    hints.at(-1) === "folded-wing posture released — this body has no L_Wing_* / R_Wing_* bones for the fold to move", hints.at(-1));
+    hints.at(-1) === "folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move", hints.at(-1));
   controller.armFlight(WING_BONES, "owner");
   pressG();
   check("G on a winged body folds again", controller.folded() === true && /wings folded/.test(hints.at(-1) ?? ""), hints.at(-1));
@@ -417,7 +417,7 @@ async function browserOwnerPart() {
   arm(nodes(WING_BONES));
   check("wing nodes that aren't Bones are wings, as the renderer and the agent read them: the fold is kept", controller.folded() === true);
   arm(bodyOf(["Hips", "Spine", "Head"]));
-  check("a read wingless body releases the fold", controller.folded() === false && /posture released — this body has no L_Wing_\* \/ R_Wing_\* bones/.test(hints.at(-1) ?? ""), hints.at(-1));
+  check("a read wingless body releases the fold", controller.folded() === false && /posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(hints.at(-1) ?? ""), hints.at(-1));
   const beeSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base", "Wing_Left_High1"]));
   check("a mis-named wing rig flies with the grant; the toast is the plain one", beeSay === "flight available on this body — press F", String(beeSay));
 }

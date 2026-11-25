@@ -34,7 +34,7 @@ export function inspectBody(boneNames) {
 
   const notes = [];
   const canAnimateWings = wingCount > 0;
-  if (!canAnimateWings) notes.push('no [LR]_Wing_* bones: wings will not animate');
+  if (!canAnimateWings) notes.push('no [LR]_Wing_Upper / [LR]_Wing_Lower[_n] bones: wings will not animate');
   // Chains of differing depth are fine and worth SAYING: the wings grew from
   // two bones to three on 2026-08-17 and nothing in the pipeline counted them.
   const depths = [...new Set(Object.values(chains).map(c => c.length))];
@@ -45,7 +45,7 @@ export function inspectBody(boneNames) {
 
 /** Why a fold was released on a body: said the same way by the agent and the browser. It names the convention rather
  *  than claiming the body is wingless, since its wings may just be named otherwise. */
-export const FOLD_RELEASED = 'folded-wing posture released — this body has no L_Wing_* / R_Wing_* bones for the fold to move';
+export const FOLD_RELEASED = 'folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move';
 
 function depthOf(name) {
   const m = WING_RE.exec(name);

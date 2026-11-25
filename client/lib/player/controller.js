@@ -60,7 +60,7 @@ export function armFlight(boneNames, identity = 'me') {
 const knownWingless = () => Array.isArray(flightBones) && !inspectBody(flightBones).canAnimateWings;
 
 /** Arm flight for the body on screen (mybody.js setMe, every swap): its node names (the renderer moves any node named
- *  L_/R_Wing_*, wings.js _findWings, and the agent reads every glTF node), or null (unknown) for a capsule or a read
+ *  [LR]_Wing_(Upper|Lower)[_n], wings.js _findWings, and the agent reads every glTF node), or null (unknown) for a capsule or a read
  *  that throws. Returns the toast to show. */
 export function armFlightForBody(av, identity = 'me') {
   let names = null;
