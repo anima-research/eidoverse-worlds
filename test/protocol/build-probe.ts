@@ -766,6 +766,34 @@ try {
         await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
       }
     }
+
+    // a lock question still open when a pivot-tool drag of its lead begins: the pivot drag moves only the pivot and writes no
+    // transform, so it must hold nothing; cancelling the question puts the box back too (bot #352 `2`)
+    { const atP = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atP && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl");
+      if (atP) await gesture(atP, [atP[0] + 30, atP[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); (await import('/lib/edit/build.js')).setTool('pivot'); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box' && globalThis.__gizmo?.().viaProxy === true`);
+      const held = await localOf(["mm-box"]);
+      await evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: true }), true)`); await frames(2);
+      check("MM30 (setup) the table locked, the group release asks the lock question, the box left moved, and a pivot-tool gizmo drag pressed on the box",
+        !!atP && lk && asked && on && !near(held?.[0], B0), { asked, on, held, B0 });
+      await cardArmed("MM30");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      await gizmoUp(); await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM30 a lock question cancelled during a pivot-tool drag of the box puts the box back as well as the table (the pivot drag holds nothing)",
+        near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, T0, disk: [pose("mm-box"), pose("mm-tbl")] });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' });
+        if (m.replica.st.entities['mm-box']?.c?.pivot) await m.sendRequest('delete', { id: 'mm-box', component: 'pivot' }); return true;`);
+      await waitFor(`import('/lib/net.js').then((m) => !m.replica.st.entities['mm-box']?.c?.pivot)`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();

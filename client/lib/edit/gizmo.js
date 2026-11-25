@@ -109,7 +109,10 @@ function beginDrag() {
     if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));
   }
   engage('gizmo');
-  gen = MM.hold(MM.idsOf(attachedId, multi));   // on every other path, so no exit puts back by the previous drag's generation
+  // on every other path, so no exit puts back by the previous drag's generation. The pivot tool's drag moves the pivot, never
+  // the thing, and its release writes no transform: it holds nothing (generation 0), so an older drag's refusal still puts
+  // the thing back (bot #352 `2`)
+  gen = dragTool === 'pivot' ? 0 : MM.hold(MM.idsOf(attachedId, multi));
 }
 const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale' }[controls?.mode] ?? 'move');
 function onChange() {
