@@ -123,7 +123,10 @@ sudo -u eidoverse env $(systemctl show -p Environment --value eidoverse) bun too
 can't see `/home`, so anything they read from there (a library elsewhere, `KTX2_TOKTX`, `EW_AVATAR_DONOR`) moves to
 `/opt` or `/usr/local`, or is bound in with `BindReadOnlyPaths=`. A list setting in a drop-in adds to the unit's; an
 empty line (`BindReadOnlyPaths=`) clears it first. Settings go in `/etc/eidoverse/<unit>.env`, not a `.env` in the
-checkout: bun would skip one the units can't read without a word, so `deploy-vps.sh` stops on that.
+checkout: bun would skip one the units can't read without a word, so `deploy-vps.sh` stops on that. An env file wins
+over the unit's `Environment=`, so it must not set what the templates already set (`WORLDS_DIR`, `BACKUPS_DIR`,
+`OPT_DIR`, `SESSIONS_PATH`, `MCPL_STATE`, `AGENT_TOKENS_PATH`, `MCPL_TOKENS`, `GIT_CONFIG_*`): systemd won't say it
+was overridden.
 
 **Limits** are rails, not quotas: `MemoryMax=80%` on the world server (it stops, and restarts, before the box runs out
 of memory), `TasksMax=1024`, `LimitNOFILE=65536`. `MemoryMax` is also the cap for the server's children (the optimizer,
@@ -149,14 +152,16 @@ A box set up before these units has the checkout and its state in `~/eidoverse-w
 and changes nothing: the move is made by hand, once. Make it in place of the deploy that brings these units: the old
 script would install the new chat bridge unit, which runs from `/opt` as a user the box doesn't have yet.
 
-First look for what the units won't be able to read. Every `/home` path in a drop-in or env file moves out or is bound
-in. A checkout `.env` has its settings moved into `/etc/eidoverse/<unit>.env` and is then deleted. An encoder in
+First look for what the units won't be able to read. Every `/home` path in a unit, drop-in or env file moves out or is
+bound in, and an env file that sets one of the paths the templates set (above) loses that line: it would win over the
+template. A checkout `.env` has its settings moved into `/etc/eidoverse/<unit>.env` and is then deleted. An encoder in
 `~/.local/ktx` (found through `HOME`) goes to `/usr/local` or is named by `KTX2_TOKTX` in a drop-in
 ([KTX2-ENCODER](KTX2-ENCODER.md)). Other units that run from the checkout (a captionbot, a renderer) change their paths
 too.
 
 ```sh
-sudo grep -Hn /home /etc/systemd/system/eido*.service.d/*.conf /etc/eidoverse/*.env
+sudo sh -c 'grep -Hn /home /etc/systemd/system/eido*.service /etc/systemd/system/eido*.service.d/*.conf /etc/eidoverse/*.env'
+sudo sh -c 'grep -HnE "^(WORLDS_DIR|BACKUPS_DIR|OPT_DIR|SESSIONS_PATH|MCPL_STATE|AGENT_TOKENS_PATH|MCPL_TOKENS|GIT_CONFIG_[A-Z0-9_]*)=" /etc/eidoverse/*.env'
 ls -la ~/eidoverse-worlds/.env* ~/eidoverse-worlds/services/chatbridge/.env* ~/.local/ktx
 ```
 
@@ -191,7 +196,10 @@ sudo diff ~/before-opt/eidoverse-mcpl.service deploy/eidoverse-mcpl.service.temp
 The next block replaces the box's `eidoverse.service` and `eidoverse-mcpl.service` with the templates, so first carry
 over every setting the old units set inline that the templates lack: each `Environment=` (a `JOIN_TOKEN` there, left
 behind, brings the box up open; the door's `WORLD_TOKEN`; a port) goes into `/etc/eidoverse/eidoverse.env` or
-`/etc/eidoverse/eidoverse-mcpl.env` (`sudoedit`, one per line), anything else into a drop-in. Drop-ins stay as they are.
+`/etc/eidoverse/eidoverse-mcpl.env` (`sudoedit`, one per line), anything else into a drop-in. A `/home` path is
+rewritten to its new place, not copied (`EIDOVERSE_DIR=/home/…/eidoverse-video` is `/opt/eidoverse-video`, which is
+the default anyway), and nothing the templates set is carried (env files override the units). Drop-ins stay as they
+are. `grep -h '^Environment' ~/before-opt/*.service` lists the inline settings alone.
 
 ```sh
 # 5. the new units, then the usual deploy, and the bridge it leaves stopped
@@ -199,6 +207,7 @@ sudo install -m 644 deploy/eidoverse.service.template /etc/systemd/system/eidove
 sudo install -m 644 deploy/eidoverse-mcpl.service.template /etc/systemd/system/eidoverse-mcpl.service
 [ ! -f /etc/systemd/system/eido-chatbridge.service ] || sudo install -m 644 deploy/eido-chatbridge.service /etc/systemd/system/
 sudo systemctl daemon-reload && deploy/deploy-vps.sh && sudo systemctl start eido-chatbridge   # if the box has the bridge
+sudo grep -q '^JOIN_TOKEN=.' /etc/eidoverse/eidoverse.env && echo gated || echo 'OPEN: no JOIN_TOKEN (fine on a tailnet, not on a public box)'
 ```
 
 **Rolling back** puts everything where it was, with what the server wrote since. A rolled-back box must not run
