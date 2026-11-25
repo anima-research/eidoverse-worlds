@@ -35,6 +35,7 @@ let lastSent = 0;
 // and the thing follows it: objWorld = proxy × offset (offset fixed at drag start), so a turn or a size goes about the pivot.
 const proxy = new THREE.Object3D(); proxy.name = 'edit-gizmo-pivot';
 let viaProxy = false, offset = null;
+let pivotFrame = null;   // a pivot drag's thing's world matrix at the press: the release measures the proxy against it
 const _m = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pp = new THREE.Vector3(), _ps = new THREE.Vector3();
 const pivotOf = (id) => { const p = bagOf(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : null; };
 /** Put the proxy at obj's pivot in the world, turned as obj is, unscaled. */
@@ -113,6 +114,10 @@ function beginDrag() {
   // the thing, and its release writes no transform: it holds nothing (generation 0), so an older drag's refusal still puts
   // the thing back (bot #352 `2`)
   gen = dragTool === 'pivot' ? 0 : MM.hold(MM.idsOf(attachedId, multi));
+  // …and since an older refusal may then put the thing back mid-drag, the release measures where the proxy ended against the
+  // frame the thing had at the press (where the proxy was seated), not where it stands at the release
+  pivotFrame = null;
+  if (dragTool === 'pivot') { const o = entities.get(attachedId); if (o) { o.updateWorldMatrix(true, false); pivotFrame = o.matrixWorld.clone(); } }
 }
 const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale' }[controls?.mode] ?? 'move');
 function onChange() {
@@ -148,7 +153,8 @@ function endPivotDrag() {
   if (cancelled) { cancelled = false; return; }
   if (!obj) return;
   obj.updateWorldMatrix(true, false);
-  let p = proxy.position.clone().applyMatrix4(obj.matrixWorld.clone().invert()).toArray().map((v) => Math.round(v * 1e4) / 1e4);
+  const frame = pivotFrame ?? obj.matrixWorld; pivotFrame = null;
+  let p = proxy.position.clone().applyMatrix4(frame.clone().invert()).toArray().map((v) => Math.round(v * 1e4) / 1e4);
   const box = boxOf(id); let snapped = null;
   if (box) { const s = obj.getWorldScale(new THREE.Vector3()); let best = null;
     for (const [name, h] of hotspots(box)) { const d = Math.hypot(...h.map((v, i) => (v - p[i]) * [s.x, s.y, s.z][i])); if (d < 0.15 && (!best || d < best.d)) best = { name, h, d }; }
