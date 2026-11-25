@@ -2,10 +2,8 @@
 // the realizer's built-in style, never a gate: slots and finish shader
 // nodes are engine; the def restyles their values. Absent slots keep the
 // built-in default; unknown slots are preserved for future palette members.
+import { isNum, isObj, isStr } from "./protocol/is.js";
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v) => typeof v === 'string' && v.length > 0;
-const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
 /** Validate the palette sidecar (defs/structure/_palette.json).
  *  @param {unknown} palette @returns {string[]} */

@@ -1,48 +1,44 @@
-// eidoverse-worlds sequencer — live asset ingestion (TEL0S_NOTES §15, 7c).
-// POST /upload (models, avatars, runtime scripts) moved here whole from the
-// unsplit fetch(), together with the machinery only it feeds: the per-IP
-// upload rate windows and the store-optimization queue whose subprocess
-// builds each uploaded GLB its draco+webp shadow off the request path — plus
-// the deferred boot sweep that queues whatever accumulated while the server
-// was down. routes.ts delegates the endpoint here; nothing else changes hands.
+// Live asset ingestion: POST /upload (models, avatars, pictures, heightmaps, sound), with the machinery only it feeds: the
+// upload rate windows (one per uploader), the store-optimization queue (a subprocess builds each variant off the request
+// path), and the deferred boot sweeps. routes.ts delegates the endpoint here.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { addressOf } from "./peer.ts";
 import { bearerOf } from "./access.ts";
 import { join, basename, dirname, relative } from "node:path";
-import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
-// merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
-// in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
-// what it replaced — the merged body references neither)
+import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, PATCH_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR, optChildTimeoutMs } from "./config.ts";
 import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, freshOver, diskIdentity, sourceSidecar, recordedSource, sameIdentity, verdictMarker, readVerdict, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
 import { agentTokens, aid1JoinIdentity, sessionOfRequest } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { ingestHeightmap } from "./heightmap.ts";
+import { readCappedBytes } from "./request-body.ts";
 import { checkFile } from "./buildcheck-queue.ts";
+import { envNumber } from "./limits.ts";
+import { sha256Bytes } from "../shared/protocol/hash.js";
+import { avatarDefs } from "./defs.ts";
+import { resolveLibFile } from "./libfile.ts";
 
-/** What the handler needs from Bun's server object, structurally: the
- *  socket address behind the nginx front. */
+/** What the handler needs from Bun's server object, structurally: the socket address behind the proxy. */
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
-const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
+/** Uploads a minute for one uploader: the identity an upload stands on (a person's sign-in, an agent's bearer), or, when
+ *  it proves none (an open server's anonymous upload, the door key everyone shares), the address it comes from. */
+export const UPLOADS_PER_MINUTE = 30;
+const uploadWin = new Map<string, { t: number; n: number }>(); // upload rate windows, by uploader (identity, else address)
 let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-seconds
 
 // ---- store optimization -----------------------------------------------------
-// Every uploaded GLB (drag-drop, Orrery conjures) gets a draco+webp shadow in
-// store-min/ AND a KTX2 variant beside the original (store-variants.ts — the
-// ?ktx2=<key> answer, shared/ktx2.js; the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
-// synchronous wasm, and inside this process it would freeze pose relay for
-// every world. One file at a time; the sequencer never waits on it.
+// Every uploaded GLB gets a draco+webp shadow in store-min/, a KTX2 variant and a geometry LOD beside the original
+// (store-variants.ts), each built by a subprocess: draco encoding is CPU-seconds of synchronous wasm that would freeze pose
+// relay for every world. One file at a time; the server never waits on it.
 type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" | "--lod"; force?: boolean };
 const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
-/** An older recipe generation's files beside a lod outcome — variant, marker,
- *  deferral — are dead: their URL is never asked for again (the recipe is in
- *  both the URL and the name). Pruned on a bake AND on a refusal, so a recipe
- *  bump (a new floor, a new reducer) leaves one generation on disk. */
+/** An older recipe generation's lod files (variant, marker, deferral) are dead: the recipe is in the URL and the
+ *  name. Pruned on a bake AND on a refusal, so a recipe bump leaves one generation on disk. */
 function pruneOldLodGenerations(src: string, dest: string) {
   const base = basename(src), dir = dirname(dest);
   const keep = new Set([dest, `${dest}.failed`, `${dest}.deferred`, `${dest}.srcid`]);
@@ -53,11 +49,8 @@ function pruneOldLodGenerations(src: string, dest: string) {
   }
 }
 
-// Items this host could not afford (estimate over budget, or the child died
-// under the cap). Informational: the marker never blocks a retry — the next
-// boot re-estimates against whatever budget it has — it exists so /version
-// can say how much is waiting on a bigger box. The count is this boot's;
-// the markers persist (and are never listing entries — store-variants.ts).
+// Items this host could not afford (over budget, or the child died under the cap). Informational: the marker never
+// blocks a retry (the next boot re-estimates); /version reports the count, which is this boot's.
 const optDeferred = new Set<string>();
 if (process.env.OPT_CMD) console.warn(`[optimize] OPT_CMD=${process.env.OPT_CMD} — a stand-in optimizer is in charge of every variant this boot`);
 export function optStatus() {
@@ -78,39 +71,30 @@ export function queueOptimize(absPath: string) {
     optQueue.push({ src: absPath, dest: join(STORE_MIN, basename(absPath)) });
     pushed = true;
   }
-  // The KTX2 shadow too: same source (the ORIGINAL — the §20a diet encodes
-  // from the best bytes, and store-min has been wrong before, #122), the
-  // variant beside it where routes.ts already looks. Not once this boot has
-  // learned there is no encoder — every upload would otherwise spawn a pass
-  // that exits 3 and relearns it.
+  // the KTX2 variant too, encoded from the ORIGINAL (the best bytes), beside it where routes.ts looks; not once this
+  // boot has learned there is no encoder
   if (!ktx2Skip && !optQueue.some((q) => q.src === absPath && q.mode === "--ktx2")) {
     optQueue.push({ src: absPath, dest: ktx2VariantPath(absPath), mode: "--ktx2" });
     pushed = true;
   }
-  // The geometry LOD too (objects only — the CLI fails closed on anything
-  // skinned, with a typed verdict; the exclusion lives THERE, on the raw
-  // container, never here on a filename). NOT gated on ktx2Skip: geometry
-  // reduction of an untextured object needs no encoder at all, and killing
-  // it for the encoder's absence deleted valid work (review of #156, point
-  // 3) — the CLI decides per FILE, from the raw container, for a JSON
-  // parse's price.
+  // the geometry LOD too (objects only: the CLI fails closed on anything skinned, from the raw container). NOT gated
+  // on ktx2Skip: an untextured object needs no encoder, and the CLI decides per file
   if (!optQueue.some((q) => q.src === absPath && q.mode === "--lod")) {
     optQueue.push({ src: absPath, dest: lodVariantPath(absPath), mode: "--lod" });
     pushed = true;
   }
   if (pushed) pumpOptimize();
 }
+// One forced rebuild per model per window (the route's per-address limit caps presses, not the encode time each buys).
+// Read per call; REBUILD_COOLDOWN_MS=0 disables.
+const lastRebuild = new Map<string, number>();
+// And the pump takes every upload / sweep item before a forced one (pumpOptimize), with at most REBUILD_WAIT_CAP forced
+// passes waiting across all callers: rotating presses over many models can then only delay other rebuilds, never uploads.
 /** Rebuild one placeable object's KTX2 + LOD variants on request (a Build card's rebuild button, POST /rebuild).
  *  `rel` is the catalog path: `eidoverse/assets/models/<f>.glb` (source in the library, variants in the OPT mirror —
  *  the boot sweep's layout) or `store/<hash>.glb`. Its verdict markers (.failed, .deferred) are cleared so a refusal
  *  is asked again, and the passes are FORCED: a built variant keeps serving until the new one lands over it
  *  (optimize.ts writes atomically). null = not a rebuildable object. */
-// One model, one forced rebuild per window: the per-address limit on the route caps presses, not the encode time each
-// buys (2 forced passes, ~9 s each), so one caller could still keep the serial pump busy. Read per call (a harness sets
-// REBUILD_COOLDOWN_MS=0; 0 disables).
-const lastRebuild = new Map<string, number>();
-// And the pump takes every upload / sweep item before a forced one (pumpOptimize), with at most REBUILD_WAIT_CAP forced
-// passes waiting across all callers: rotating presses over many models can then only delay other rebuilds, never uploads.
 export function rebuildAsset(rel: string): { queued: string[]; cooldownS?: number; busy?: boolean } | null {
   if (!/^(eidoverse\/assets\/models\/[^/]+|store\/[^/]+)\.glb$/.test(rel) || rel.includes("..")) return null;
   const store = rel.startsWith("store/");
@@ -120,12 +104,11 @@ export function rebuildAsset(rel: string): { queued: string[]; cooldownS?: numbe
   const dests = store
     ? { "--ktx2": ktx2VariantPath(src), "--lod": lodVariantPath(src) }
     : { "--ktx2": join(OPT_DIR, ktx2VariantPath(rel)), "--lod": join(OPT_DIR, lodVariantPath(rel)) };
-  const cool = Number(process.env.REBUILD_COOLDOWN_MS ?? 600_000), last = lastRebuild.get(src) ?? -Infinity;
+  const cool = envNumber("REBUILD_COOLDOWN_MS", 600_000), last = lastRebuild.get(src) ?? -Infinity;
   if (cool > 0 && Date.now() - last < cool) return { queued: [], cooldownS: Math.ceil((cool - (Date.now() - last)) / 1000) };
-  // the cap bounds what WAITS after this ask, so count the forced passes it would add (Greptile #207: checking only the
-  // current count let 3 waiting + 2 new = 5 past a cap of 4). An ask never fits in part; an empty wait always takes one
-  // whole ask, so a cap below 2 can't lock a model's two passes out forever.
-  const cap = Number(process.env.REBUILD_WAIT_CAP ?? 4);
+  // the cap bounds what WAITS after this ask, its own passes counted. An ask never fits in part; an empty wait always
+  // takes one whole ask, so a cap below 2 can't lock a model's two passes out forever
+  const cap = envNumber("REBUILD_WAIT_CAP", 4);
   const waitingForced = optQueue.filter((q) => q.force).length;
   const adds = (Object.keys(dests) as NonNullable<OptItem["mode"]>[])
     .filter((mode) => !(mode === "--ktx2" && ktx2Skip) && !optQueue.some((q) => q.src === src && q.mode === mode && q.force)).length;
@@ -169,48 +152,35 @@ async function pumpOptimize() {
       // the file this pass is ABOUT (store-variants.ts freshOver): null for a content-addressed store original and for
       // the store-min pass, whose shadows are done forever once they exist; the library/overlay file otherwise
       const source = !mode || dirname(src) === join(OPT_DIR, "store") ? null : src;
-      // a size verdict from an older recipe does not stand (store-variants.ts);
-      // nor does ANY verdict about a source that has changed since — library
-      // files are mutable, and a re-exported model is a question again (the
-      // route reads the same rule: a stale marker serves provisional, never final)
+      // a size verdict from an older recipe does not stand (store-variants.ts), nor does any verdict about a source
+      // that has changed since (the route reads the same rule)
       const refused = existsSync(failed)
         && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE))
         && freshOver(failed, source);
       // a FORCED item is a re-ask (↻): a verdict it finds was written after the press, by a run already in flight
       if (!existsSync(src) || (refused && !force)) continue;
-      // Store shadows are content-addressed — existing means done forever.
-      // KTX2 variants shadow MUTABLE library files, so a variant built from
-      // another version of its source rebuilds (the sweep filters too, but a
-      // file can change while its item waits behind slow encodes).
+      // store shadows are content-addressed (existing = done forever); a library file's variant built from another
+      // version of its source rebuilds (it may change while its item waits)
       if (!force && existsSync(dest) && freshOver(dest, source)) { undefer(dest); continue; }   // done elsewhere: a stale .deferred must not outlive the variant
       // the identity of what this pass reads, taken BEFORE it runs: a source rewritten mid-pass must not be recorded as
       // the one the output was built from
       const srcId = source ? diskIdentity(source) : null;
-      // Budget gate: an item this host cannot afford is deferred, not failed,
-      // and the rest of the queue keeps going (config.ts OPT_MEM_BUDGET_MB).
+      // budget gate (config.ts OPT_MEM_BUDGET_MB): deferred, not failed, and the queue keeps going
       const estMB = Math.ceil(Bun.file(src).size * OPT_COST_FACTOR / 1_000_000);
       if (OPT_MEM_BUDGET_MB && estMB > OPT_MEM_BUDGET_MB) { defer(dest, `estimated ${estMB}MB > budget ${OPT_MEM_BUDGET_MB}MB`); continue; }
       mkdirSync(dirname(dest), { recursive: true });
-      // process.execPath = the running bun binary — PATH under systemd has no bun.
-      // Under a budget (Linux: the only kernel that enforces RLIMIT_DATA) the
-      // child runs beneath sh's `ulimit -d` (KB): an encode that outgrows it
-      // dies AS THE CHILD — a signal, SIGTRAP or SIGSEGV, exit ≥128, nothing
-      // on stderr (measured) — and the server serving worlds is never the
-      // casualty. RLIMIT_AS would be wrong here: bun reserves address space
-      // far beyond what it touches. The wrapper's OWN failures are made
-      // unmistakable (126: the limit could not be set — a hard limit below
-      // the budget; 127: exec failed) so they never read as a content verdict.
+      // process.execPath = the running bun binary (PATH under systemd has no bun). Under a budget the child runs beneath sh's
+      // `ulimit -d` (KB; RLIMIT_DATA, not RLIMIT_AS: bun reserves far more address space than it touches), so an encode that
+      // outgrows it dies as the child. The wrapper's own failures (126, 127) never read as a content verdict.
       const capped = OPT_MEM_BUDGET_MB > 0 && process.platform === "linux";
-      // OPT_CMD: a harness may own the child (tools/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
+      // OPT_CMD: a harness may own the child (test/server/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
       // a .js/.ts OPT_CMD runs under this bun: a shebang script is no executable on Windows (EFTYPE)
       const opt = process.env.OPT_CMD, viaBun = !!opt && /\.(m?js|ts)$/.test(opt);
       const cmd = [...(opt && !viaBun ? [opt] : [process.execPath, "run", opt || join(ROOT, "server", "optimize.ts")]), ...(mode ? [mode] : []), src, dest];
       let proc: ReturnType<typeof Bun.spawn>;
       try {
-        // /bin/sh by absolute path: the pump may run under a PATH that has no
-        // shell at all (a harness pointing PATH at its fake encoder), and a
-        // spawn that cannot start throws HERE, synchronously — which would
-        // reject the un-awaited pump and drop the rest of the queue.
+        // /bin/sh by absolute path: PATH may hold no shell (a harness's fake encoder), and a spawn that can't start
+        // throws here, synchronously
         proc = Bun.spawn(capped
           ? ["/bin/sh", "-c", 'ulimit -d "$0" || exit 126; exec "$@"', String(OPT_MEM_BUDGET_MB * 1024), ...cmd]
           : cmd, { stdout: "pipe", stderr: "pipe" });
@@ -218,8 +188,8 @@ async function pumpOptimize() {
         console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
         optQueue.length = 0; break;
       }
-      // never wait forever on a child: one that never answers is killed and deferred (tools/optimize-pump-test.ts 6b)
-      const stderr = drain(proc.stderr as ReadableStream<Uint8Array>), limitMs = Number(process.env.OPT_CHILD_TIMEOUT_MS ?? 1_800_000);
+      // never wait forever on a child: one that never answers is killed and deferred (test/server/optimize-pump-test.ts 6b)
+      const stderr = drain(proc.stderr as ReadableStream<Uint8Array>), limitMs = optChildTimeoutMs();
       let timedOut = false;
       const killer = limitMs > 0 ? setTimeout(() => { timedOut = true; proc.kill("SIGKILL"); }, limitMs) : null;
       const code = await proc.exited; if (killer) clearTimeout(killer);
@@ -238,8 +208,7 @@ async function pumpOptimize() {
         optQueue.length = 0; break;
       }
       if (capped && (proc.signalCode || code >= 128)) {
-        // OOM under the cap and a crash on a corrupt file look the same from
-        // here; both are retried next boot (a signal is never a stuck verdict).
+        // OOM under the cap and a crash on a corrupt file look the same here: both retried next boot
         defer(dest, `child died (${proc.signalCode ?? `exit ${code}`}) under the ${OPT_MEM_BUDGET_MB}MB cap`);
         continue;
       }
@@ -251,24 +220,12 @@ async function pumpOptimize() {
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
-        // not suitable — bigger than source, or (--ktx2-img) non-POT dims /
-        // conflicted consumers. Mark with the CLI's reason so the boot sweep
-        // stops re-measuring it. For --lod the marker's content is READ at
-        // serve time too (store-variants.ts lodVerdictFinal: a standing
-        // typed verdict makes the original this tier's final answer).
-        // a RECORD (store-variants.ts verdictMarker): the CLI's typed kind,
-        // its recipe and tools, the source identity this pass read, and the
-        // raw TAIL for diagnosis (per-texture notes before the verdict can
-        // run long; the verdict is last)
+        // not suitable (bigger than source, non-POT dims, …): marked with a verdict RECORD (store-variants.ts
+        // verdictMarker) so the sweep stops re-measuring; for --lod it is read at serve time too (lodVerdictFinal)
         writeFileSync(failed, verdictMarker(err, 2, srcId)); undefer(dest);
-        // a variant built from OTHER content than this refusal measured (a
-        // re-exported library model): beside a fresh standing verdict the
-        // sweep never revisits it, so it would serve the old model's bytes
-        // (ktx2) and read "stale" forever. A forced re-ask refused on
-        // unchanged content (the same identity) keeps the variant that still
-        // serves (store-variants.ts classifyVariant). A variant with no
-        // recorded identity keeps the old rule: removed only if strictly
-        // older than its source (equal mtimes were ambiguous there).
+        // a variant built from OTHER content than this refusal measured would otherwise serve the old model's bytes
+        // forever; one from the same identity still serves (store-variants.ts classifyVariant). With no recorded
+        // identity: removed only if strictly older than its source.
         try {
           if (srcId && existsSync(dest)) {
             const rec = recordedSource(dest, (p) => readFileSync(p, "utf8"));
@@ -282,37 +239,24 @@ async function pumpOptimize() {
         console.log(mode ? `[ktx2] ${base} — no variant (${readVerdict(err).kind}: ${readVerdict(err).reason})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
-        // Output failed its own container check — the pass corrupted its
-        // images (#122). ENVIRONMENTAL, like code 3: the source is good, so a
-        // .failed marker here would permanently skip an asset that will
-        // convert fine once the encoder stack is sane. Loud, and retried.
+        // output failed its own container check (the pass corrupted its images): ENVIRONMENTAL, like code 3: no
+        // marker, loud, retried
         console.error(`[${mode ? "ktx2" : "store"}] ${base} REFUSED — optimized output failed its image check, `
           + `serving the original: ${err.split("\n").filter((l) => l.includes("declares")).join(" | ") || err.split("\n").pop()}`);
       } else if (code === 3 && mode === "--lod") {
-        // a TEXTURED object met a box with no encoder — per-file and cheap
-        // (the CLI answers from the raw container before any transform), so
-        // no global skip and no purge: untextured objects keep reducing.
-        if (!lodEncoderWarned) { console.log("[lod] no KTX2 encoder — textured objects keep their originals until one lands (docs/ktx2-encoder.md)"); lodEncoderWarned = true; }
+        // a TEXTURED object met a box with no encoder: per-file, so no global skip (untextured objects keep reducing)
+        if (!lodEncoderWarned) { console.log("[lod] no KTX2 encoder — textured objects keep their originals until one lands (docs/operator/KTX2-ENCODER.md)"); lodEncoderWarned = true; }
       } else if (code === 3 && mode) {
-        // No KTX2 encoder on this box — ENVIRONMENTAL, never a .failed marker
-        // (that would permanently skip every model authored before
-        // KTX-Software lands — the sharp-degrade doctrine). And no point
-        // grinding the rest of the sweep against the same missing binary.
-        console.log("[ktx2] no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md); variants skipped this boot");
+        // no KTX2 encoder on this box: ENVIRONMENTAL, never a .failed marker; the rest of the variant queue is dropped
+        console.log("[ktx2] no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/operator/KTX2-ENCODER.md); variants skipped this boot");
         ktx2Skip = true;
         for (let i = optQueue.length - 1; i >= 0; i--) if (optQueue[i].mode && optQueue[i].mode !== "--lod") optQueue.splice(i, 1);
       } else if (code === 5 && mode) {
-        // An encoder answered, but not every eligible texture converted — the
-        // CLI REFUSED to write a variant whose name would lie about its
-        // contents (the #122 class, and it would be served immutable).
-        // ENVIRONMENTAL like code 3 (a flaky or misconfigured encoder, not a
-        // bad model): no marker, so the next boot sweep retries; and no
-        // ktx2Skip either — the encoder is there, one file did not convert.
+        // partial conversion: the CLI refused a variant whose name would lie about its contents. ENVIRONMENTAL (no
+        // marker, retried next boot), and no ktx2Skip: the encoder is there
         console.error(`[ktx2] ${base} REFUSED — partial conversion, serving the original: ${err.split("\n").pop() ?? `exit ${code}`}`);
       } else {
-        // Environmental failures (deps not installed yet) must NOT mark the
-        // file — that would permanently skip every upload made before the
-        // first successful `bun install`. Only content failures stick.
+        // environmental failures (deps not installed yet) never mark the file: only content failures stick
         const envFail = /cannot find module|cannot resolve|error: script not found/i.test(err);
         if (!envFail) { writeFileSync(failed, verdictMarker(err, code, srcId)); undefer(dest); }   // kind "failure": never final
         console.error(`[${mode ? "ktx2" : "store"}] optimize ${envFail ? "unavailable (deps?)" : `FAILED ${base}`}: ${err.split("\n")[0] || `exit ${code}`}`);
@@ -321,19 +265,13 @@ async function pumpOptimize() {
     }
   } finally { optRunning = false; done(); }
 }
-// Boot sweep: whatever accumulated before this shipped (or failed mid-queue
-// last run) gets its shadow now. Deferred so boot stays about serving worlds.
-// SKIP_OPT_SWEEP: see config.ts — a memory-tight host must be able to serve
-// worlds without shouldering the optimizer.
-/** The store sweep (named so a harness can drive it; the boot timer below calls it). */
+/** The store's boot sweep: every original missing a shadow is queued (deferred so boot serves worlds first;
+ *  SKIP_OPT_SWEEP in config.ts). Named so a harness can drive it. */
 export function sweepStore() {
   if (SKIP_OPT_SWEEP) return;
   const dir = join(OPT_DIR, "store");
   if (!existsSync(dir)) return;
-  // isStoreOriginal, not endsWith(".glb"): the KTX2 variants live in this
-  // same dir and end in .glb too — a variant must never queue as an upload
-  // of its own (the ghost-listing rule, §20c). An original lacking EITHER
-  // shadow queues both; the pump skips the one that already exists.
+  // isStoreOriginal, not endsWith(".glb"): variants live here and end in .glb too. The pump skips a shadow that already exists.
   const pending = readdirSync(dir).filter((f) => {
     if (!isStoreOriginal(f)) return false;
     const m = storeShadowsMissing(join(dir, f), STORE_MIN);
@@ -344,19 +282,9 @@ export function sweepStore() {
   for (const f of pending) queueOptimize(join(dir, f));
 }
 setTimeout(sweepStore, 5000).unref?.();   // a harness that imports this must not be held open by the timer
-// Library KTX2 sweep (§20a, VRMs §20c, loose images §20d): every library
-// model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
-// avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
-// curated loose texture a flip-baked variant at OPT_DIR/<rel>.ktx2 — all
-// served only on ?ktx2=<key> (routes.ts, shared/ktx2.js). PATH-PRESERVING, unlike the store arm — basename()
-// collides across library rels — and through the SAME serial pump, deferred
-// further so boot stays about serving worlds. GLBs go through the full
-// gltf-transform diet; VRMs go through --ktx2-vrm ONLY (optimize.ts header
-// doctrine: bodies get their textures swapped, everything else
-// byte-preserved). Avatars live in TWO bases — Skye's library and the upload
-// overlay (assets/opt/...) — and serving prefers the overlay, so the sweep
-// sources each rel from the base that actually wins.
-/** The library KTX2/LOD sweep — same seam. */
+/** The library sweep: variants at OPT_DIR/<rel>.ktx2.glb / .ktx2.vrm / .ktx2 and LODs, served only on ?ktx2=<key> (routes.ts,
+ *  shared/ktx2.js). Path-preserving (basenames collide across library rels), through the same serial pump. VRMs get --ktx2-vrm
+ *  only (textures swapped, the rest byte-preserved). Avatars come from the overlay first, then the library, as serving does. */
 export function sweepLibrary() {
   if (SKIP_OPT_SWEEP) return;
   if (ktx2Skip) return;
@@ -369,49 +297,32 @@ export function sweepLibrary() {
       if (e.isDirectory()) { walk(base, p, exts, mode); continue; }
       const ext = exts.find((x) => e.name.toLowerCase().endsWith(x));
       if (!ext) continue; // non-matching files (.json, _fit.json, audio, …) never queue
-      // never re-encode an encode: variants live beside overlay originals
-      // (OPT_DIR/<rel>.ktx2.vrm ends in .vrm too) and must not queue themselves
-      // (image variants end .ktx2 — outside every swept ext — but keep the
-      // guard uniform)
+      // never re-encode an encode: a variant (<rel>.ktx2.vrm) ends in its source's ext too
       if (e.name.endsWith(`.ktx2${ext}`)) continue;
       const rel = relative(base, p);
-      // keyed by (mode, rel): the ktx2 walk and the lod walk cover the SAME
-      // rels on purpose — one shared set silently killed the entire library
-      // lod arm (review of #156, point 2). The overlay-shadows-library rule
-      // still holds per mode.
+      // keyed by (mode, rel): the ktx2 and lod walks cover the SAME rels; overlay-shadows-library holds per mode
       if (seen.has(`${mode}:${rel}`)) continue;
       seen.add(`${mode}:${rel}`);
-      // GLB/VRM variants are themselves GLB/VRM containers (<rel>.ktx2.glb);
-      // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
-      // as image/ktx2)
+      // a GLB/VRM variant is itself a container (<rel>.ktx2.glb); a loose image's IS the ktx2 (<rel>.ktx2)
       const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel) : `${rel}.ktx2${ext}`);
-      // a standing verdict skips — if it is about THIS version of the source
-      // (freshOver: mutable library files: an updated model is re-measured,
-      // exactly as an updated model's variant is rebuilt below)
+      // a standing verdict skips, if it is about THIS version of the source (freshOver)
       if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)
         && freshOver(`${dest}.failed`, p)) continue;
-      // identity, not mere existence: library files are mutable — an updated
-      // model/body/texture rebuilds its variant next boot
+      // identity, not mere existence: library files are mutable
       if (existsSync(dest) && freshOver(dest, p)) continue;
-      // already waiting (a ↻ pressed before this sweep, or an earlier sweep): a second copy would run the same encode
-      // again, unforced first then forced, since the pump prefers unforced items (Greptile #207)
+      // already waiting (a ↻ press, or an earlier sweep): a second copy would run the same encode twice
       if (optQueue.some((q) => q.src === p && q.mode === mode)) continue;
       items.push({ src: p, dest, mode });
     }
   };
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "models"), [".glb"], "--ktx2");
-  // the LOD sweep walks the same models (objects; the CLI's structural
-  // exclusion is the body gate, and library models are not bodies anyway)
+  // the LOD sweep walks the same models (the CLI's structural exclusion is the body gate)
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "models"), [".glb"], "--lod");
   // overlay first (it wins in routes.ts serving and the /avatars roster)
   walk(OPT_DIR, join(OPT_DIR, "eidoverse", "assets", "vrms"), [".vrm"], "--ktx2-vrm");
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "vrms"), [".vrm"], "--ktx2-vrm");
-  // §20d loose toolkit images — CURATED dirs ONLY. These are consumed through
-  // the Deno-shim file layer whose loadImageTexture bakes the vertical flip
-  // into the pixels, and --ktx2-img pre-bakes exactly that flip; anywhere the
-  // convention doesn't hold (thumbnails, previews, arbitrary uploads) a
-  // pre-flipped variant would be wrongly mirrored — so the sweep names its
-  // dirs instead of chasing every image in the library.
+  // loose toolkit images: curated dirs only. --ktx2-img pre-bakes the vertical flip their loader applies; anywhere else
+  // (thumbnails, uploads) a pre-flipped variant would be mirrored
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "grass"), [".png"], "--ktx2-img");
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "sky"), [".png", ".jpg", ".jpeg"], "--ktx2-img");
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "particle_textures"), [".png"], "--ktx2-img");
@@ -424,21 +335,6 @@ setTimeout(sweepLibrary, 15_000).unref?.();
 
 // ---- the endpoint -----------------------------------------------------------
 
-/** POST /upload — live asset ingestion. Two destinations:
- *   - models (default): content-addressed into assets/opt/store/<hash>.glb —
- *     immutable by construction, so a thing's `model` can name the path
- *     forever and clients cache it forever. DESIGN.md's "content-addressed
- *     assets" plane, made real.
- *   - ?as=avatar&name=foo: named into the overlay vrms dir, because the
- *     roster is name-keyed and people re-export their bodies (mtime
- *     versioning handles the cache).
- *  Trust model (an Authorization Bearer header, or ?token=): the door token, any per-agent bearer from
- *  mcpl/tokens.json, OR an aid1 credential the home node vouches for
- *  (so Orrery and agents can push generated GLBs here directly — the
- *  store is content-addressed and inert; what enters a WORLD is still
- *  a door request, which per-world roles gate), plus per-IP
- *  rate limiting — live generation is the feature, an upload flood is
- *  not. `?by=` is attribution for the console trail. */
 /** Which image container these bytes are, by magic — the three the picture
  *  allow-list admits. `null` for anything else (a GLB, a script, a renamed
  *  GIF): the name someone typed is not evidence. */
@@ -451,21 +347,19 @@ export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
   return null;
 }
 
-/** Which audio container these bytes are, by magic — the five the sound
- *  allow-list admits. `null` for anything else: the name is not evidence. */
-/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. */
+/** The most pixels an uploaded image may have on a side. */
 export const MAX_IMAGE_PX = 8192;
 /** Why an upload's image is refused for its size: past MAX_IMAGE_PX on a side, or a size its header doesn't give: the cap
  *  holds only if every image's size is known. */
 export function imageSizeRefusal(b: Uint8Array, kind: "png" | "jpg" | "webp"): { status: number; why: string } | null {
   const dims = imageDims(b, kind);
-  // the remedy is one any uploader can take (house 6340433633: "save it again from an image editor" assumed a person at one)
+  // the remedy is one any uploader can take, human or agent
   if (!dims) return { status: 415, why: `this ${kind === "jpg" ? "JPEG" : kind.toUpperCase()}'s header doesn't say its pixel size, so it can't be checked against the ${MAX_IMAGE_PX}-px cap; sending these bytes again won't change that. Upload a copy whose header gives its size: any encoder writes one (a PNG always has it), so re-encode it with whatever made it, or a library such as sharp or Pillow` };
   if (Math.max(dims[0], dims[1]) > MAX_IMAGE_PX) return { status: 413, why: `image is ${dims[0]}×${dims[1]} px; at most ${MAX_IMAGE_PX} on a side (viewers draw it at 2048)` };
   return null;
 }
-/** …a zero on either side is no size either (house 6340433633, the lead's decision): a 0×0 WebP header, a PNG with width 0
- *  or a JPEG whose height its SOF defers is an image whose size can't be known, so it's refused as one. */
+/** An image's pixel size from its header (PNG IHDR, JPEG SOFn, WebP VP8/VP8L/VP8X), or null when it can't be read. A zero
+ *  on either side (a 0×0 WebP, a JPEG whose SOF defers its height) is no size either. */
 export function imageDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, number] | null {
   const d = headerDims(b, kind);
   return d && d[0] > 0 && d[1] > 0 ? d : null;
@@ -486,6 +380,8 @@ function headerDims(b: Uint8Array, kind: "png" | "jpg" | "webp"): [number, numbe
   } catch { /* unreadable */ }
   return null;
 }
+/** Which audio container these bytes are, by magic — the five the sound
+ *  allow-list admits. `null` for anything else: the name is not evidence. */
 export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a" | null {
   const tag = (off: number, s: string) => b.length >= off + s.length && [...s].every((ch, i) => b[off + i] === ch.charCodeAt(0));
   if (tag(0, "ID3")) return "mp3";
@@ -499,12 +395,21 @@ export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a
 
 
 /** The 415 for main's `/upload?as=script`: a script is the world authority's `upload {text}` request now. */
-export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/SCRIPTS.md)";
+export const SCRIPT_MOVED = "not stored: /upload?as=script went with the old protocol. Send the source as the world's upload {text} request (an agent: act {verb: \"upload\", args: {text}}); its reply's src goes in set {id, component: \"script:<name>\", value: {src, …}} (docs/guide/SCRIPTS.md)";
 
-// ?token= is deprecated (tokens in URLs land in access logs; RFC 9745 Deprecation header). Removal waits on Orrery moving to the header (Mica, #22)
+// ?token= is deprecated (tokens in URLs land in access logs; RFC 9745 Deprecation header). Removal waits on Orrery moving to the header
 const warnedQuery = new Set<string>();
+// A body is read whole into memory (about three times its size at peak: the chunks, their concatenation, the copy
+// handed on), so what is being read AT ONCE is bounded too: two caps' worth. Past that an upload is asked to come back;
+// one alone always proceeds. A body that states no length counts as a whole cap.
+let inFlight = 0;
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
-  const r = await uploadBy(req, url, srv);
+  const stated = Number(req.headers.get("content-length")), holds = stated > 0 ? Math.min(stated, UPLOAD_CAP) : UPLOAD_CAP;
+  if (inFlight > 0 && inFlight + holds > 2 * UPLOAD_CAP)
+    return new Response("busy: other uploads are being read; try again in a few seconds", { status: 503, headers: { "retry-after": "5" } });
+  inFlight += holds;
+  let r: Response;
+  try { r = await uploadBy(req, url, srv); } finally { inFlight -= holds; }
   if (url.searchParams.has("token") && !bearerOf(req)) {
     const ip = addressOf(req, srv);
     if (!warnedQuery.has(ip) && warnedQuery.size < 1024) { warnedQuery.add(ip); console.warn(`[upload] ?token= is deprecated; send Authorization: Bearer (from ${ip})`); }
@@ -515,47 +420,55 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
 async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   // the key by Authorization: Bearer (RFC 6750, as the read door takes it); ?token= still works for older clients
   const upTok = bearerOf(req) || (url.searchParams.get("token") ?? "");
-  let upAgent = agentTokens().byToken.get(upTok);
-  // The aid1 leg the join door has: guests enrolled via archipelago-home
-  // carry no tokens.json entry, but may build in a world that lets them —
-  // what they build with must be landable by the same identity.
-  // Same audience/scope/slug derivation as the two doors, no jti burn
-  // (an aid1 credential is reusable until expiry at every door).
-  if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
-  // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the
-  // join door takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
-  const session = sessionOfRequest(req);
-  // (embodied access, worlds:join — what the join door asks of a login that is not spectating)
-  const upPerson = session && session.scopes.includes("worlds:join") ? session.name : null;
-  if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent && !upPerson)
+  // Who the request proves, asked before the body read and again after it (a door with JOIN_TOKEN; an open server takes
+  // uploads from anyone): the credential the upload stands on must still hold. `ids` lists every credential that holds,
+  // the one it stands on first (person, then agent, then the door key: upBy's order).
+  const who = () => {
+    const key = !!JOIN_TOKEN && upTok === JOIN_TOKEN;
+    // an enrolled bearer (the door key too, when it is enrolled), or the aid1 leg the join door has (guests enrolled via
+    // archipelago-home carry no tokens.json entry; no jti burn: reusable until expiry)
+    const agent = agentTokens().byToken.get(upTok) ?? aid1JoinIdentity(upTok)?.slug;
+    // ...and the people who signed in through the home node: they carry a session cookie, not a door key (the join door
+    // takes the same cookie), a native client's too; never from another site's page (auth.ts sessionOfRequest).
+    // Embodied access (worlds:join), what the join door asks of a login that is not spectating.
+    const s = sessionOfRequest(req), person = s && s.scopes.includes("worlds:join") ? s : null;
+    const ids = [person && `person:${person.sub}`, agent && `agent:${agent}`, key && "key"].filter((x): x is string => !!x);
+    return { ids, agent, person: person?.name ?? null };
+  };
+  const first = who(), upAgent = first.agent, upPerson = first.person, stoodOn = first.ids[0];
+  if (JOIN_TOKEN && !stoodOn)
     return new Response("sign in, or bring the door key (token required)", { status: 401 });
   // a signed-in person is who the session says, whatever ?by= claims
   const upBy = (upPerson ?? url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);
-  // the client's address: X-Real-IP only from a trusted proxy (server/peer.ts; security review 10-18 H2)
-  const ip = addressOf(req, srv);
-  const u = uploadWin.get(ip) ?? { t: 0, n: 0 };
-  if (Date.now() - u.t > 60_000) { u.t = Date.now(); u.n = 0; }
-  u.n++; uploadWin.set(ip, u);
-  if (u.n > 4) return new Response("upload rate limit (4/min)", { status: 429 });
-  const body = new Uint8Array(await req.arrayBuffer());
-  if (body.length > UPLOAD_CAP) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
-  // main's script store left with the old protocol: say where a script goes now (decision table row 12)
+  // The window is the uploader's. An identity when the upload proves one: the agent tool server posts every agent's
+  // upload from its own address, so a window per address would be one window for all of them. Else the client's address
+  // (X-Real-IP only from a trusted proxy: server/peer.ts).
+  // …and the door key is nobody's identity even when it is also enrolled as an agent's bearer: everyone holds it
+  const uploader = stoodOn && stoodOn !== "key" && !(JOIN_TOKEN && upTok === JOIN_TOKEN) ? stoodOn : `address:${addressOf(req, srv)}`;
+  const u = uploadWin.get(uploader) ?? { t: 0, n: 0 };
+  if (Date.now() - u.t >= 60_000) { u.t = Date.now(); u.n = 0; }
+  u.n++; uploadWin.set(uploader, u);
+  if (u.n > UPLOADS_PER_MINUTE) {
+    const wait = Math.max(1, Math.ceil((60_000 - (Date.now() - u.t)) / 1000));
+    return new Response(`upload rate limit (${UPLOADS_PER_MINUTE} uploads a minute); try again in ${wait}s`, { status: 429, headers: { "retry-after": String(wait) } });
+  }
+  const body = await readCappedBytes(req, UPLOAD_CAP);
+  if (body === null) return new Response(`too large (${UPLOAD_CAP / 1e6}MB cap)`, { status: 413 });
+  if (JOIN_TOKEN && !who().ids.includes(stoodOn!))
+    return new Response(stoodOn!.startsWith("person:")
+      ? "not stored: your sign-in ended while the upload was read (sign in again and resend)"
+      : "not stored: the bearer this upload came with could not be confirmed after the read (revoked, expired, or the registry unreadable); renew it and resend", { status: 401 });
+  // main's script store left with the old protocol: say where a script goes now
   if (url.searchParams.get("as") === "script") return new Response(SCRIPT_MOVED, { status: 415 });
   if (url.searchParams.get("as") === "image") {
-    // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
-    // store/images/<hash>.<ext> and served by the /library route like any
-    // store upload (immutable address, no optimize pass — a picture is
-    // decoded by the client that hangs it, not re-encoded here). The kind is
-    // read from the BYTES, never the name: the store's extension is what the
-    // /library route and the picture allow-list key on, so it has to be true.
-    // What enters a WORLD is still a `picture` component, admitted by the
-    // door; the store itself stays inert.
+    // Pictures: PNG, JPEG or WebP, content-addressed into store/images/<hash>.<ext>, no optimize pass. The kind is
+    // read from the BYTES (the extension is what /library and the picture allow-list key on).
     if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     const kind = sniffImage(body);
     if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
-    // batch 2: a decompression bomb (a tiny file that decodes to 16k × 16k) is refused before any viewer decodes it
+    // a decompression bomb (a tiny file that decodes to 16k × 16k) is refused before any viewer decodes it
     { const no = imageSizeRefusal(body, kind); if (no) return new Response(no.why, { status: no.status }); }
-    const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const ihash = sha256Bytes(body).slice(0, 16);
     const idir = join(OPT_DIR, "store", "images");
     mkdirSync(idir, { recursive: true });
     const irel = `store/images/${ihash}.${kind}`;
@@ -564,10 +477,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     // means the catalog would otherwise know this picture as a hash
     const iname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
     {
-      // Content-addressed means the same bytes may arrive many times under
-      // many names; the FIRST arrival is the provenance (who brought it, when,
-      // what they called it). A later upload fills a missing name, never
-      // renames or re-attributes.
+      // first arrival is the provenance (who, when, what name); a later upload only fills a missing name
       const mp = join(idir, "manifest.json");
       let man: Record<string, { name?: string; by: string; ts: number }> = {};
       try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
@@ -585,22 +495,18 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     // WORLD is still the owner's `terrain` verb naming the grid.
     if (body.length > IMAGE_CAP) return new Response(`heightmap too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
     if (sniffImage(body) !== "png") return new Response("a heightmap must be a PNG (16-bit grayscale is best)", { status: 415 });
-    const hhash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const hhash = sha256Bytes(body).slice(0, 16);
     const r = ingestHeightmap(body, hhash);
     if ("error" in r) return new Response(r.error, { status: r.status });
     console.log(`[upload] heightmap ${r.grid} (${r.w}×${r.h}, ${r.bits}-bit) by ${upBy}`);
     return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
   }
   if (url.searchParams.get("as") === "audio") {
-    // Sound ingestion: an MP3, Ogg, WAV, WebM or M4A, content-addressed into
-    // store/audio/<hash>.<ext>, served by the /library route like any store
-    // upload (immutable address). No transcode: the client plays what was
-    // given. Kind from the BYTES, never the name — the store's extension is
-    // what the sound allow-list keys on. What plays in a WORLD is still the
-    // `sound` component, admitted by the door; the store is inert.
+    // Sound: MP3, Ogg, WAV, WebM or M4A, content-addressed into store/audio/<hash>.<ext>, no transcode; kind from the
+    // BYTES (the sound allow-list keys on the extension)
     const kind = sniffAudio(body);
     if (!kind) return new Response("not an MP3, Ogg, WAV, WebM or M4A audio file (judged by content, not by name)", { status: 415 });
-    const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const ahash = sha256Bytes(body).slice(0, 16);
     const adir = join(OPT_DIR, "store", "audio");
     mkdirSync(adir, { recursive: true });
     const arel = `store/audio/${ahash}.${kind}`;
@@ -624,17 +530,18 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
   if (url.searchParams.get("as") === "avatar") {
     const raw = url.searchParams.get("name") ?? "unnamed";
     const name = raw.replace(/\.vrm$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48) || "unnamed";
+    // a patch outranks OPT_DIR on /library, so this upload would never be served (#325)
+    if (existsSync(join(PATCH_DIR, "eidoverse/assets/vrms", `${name}.vrm`)))
+      return new Response(`"${name}" is a patched body: patched/ wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
+    // a def that claims the name (and resolves) outranks every scanned file on the roster: the same never-served case
+    const def = avatarDefs()[name]?.vrm;
+    if (def && resolveLibFile(def))
+      return new Response(`"${name}" is declared by a def (defs/avatars/${name}.json → ${def}), which wins over uploads, so this one would never be served. Upload it under another name.`, { status: 409 });
     const dir = join(OPT_DIR, "eidoverse/assets/vrms");
     mkdirSync(dir, { recursive: true });
-    // A RAW TRIPO RIG at the avatar door runs the import pipeline instead of
-    // being saved as-is (a Blender export is not wearable: proxy hulls,
-    // dropped textures, no humanoid map — three exports in a row needed all
-    // three repairs). Detection is a JSON-chunk peek: no VRM extension +
-    // the Tripo bone names. The pipeline runs in a SUBPROCESS (simplify +
-    // the verification falls are CPU-seconds; in-process they would freeze
-    // pose relay — the optimize queue's own rule), one at a time, and the
-    // tool's PASS/FAIL exit code is the gate: a body that cannot settle a
-    // fall under both engines never enters the roster.
+    // A RAW TRIPO RIG (no VRM extension + the Tripo bone names) runs the import pipeline instead of being saved as-is
+    // (proxy hulls, dropped textures, no humanoid map). In a SUBPROCESS, one at a time; its PASS/FAIL exit is the gate:
+    // a body that can't settle a fall under both engines never enters the roster.
     let gjson: any = null;
     try {
       const dv = new DataView(body.buffer, body.byteOffset);
@@ -650,8 +557,8 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
       try {
         const tmpIn = join(OPT_DIR, `.import-${name}.glb`);
         writeFileSync(tmpIn, body);
-        // process.execPath, never "bun" (docs/INCIDENTS.md, the Windows shim)
-        const spawnArgs = [process.execPath, "run", join(ROOT, "tools/import-tripo-avatar.ts"),
+        // process.execPath, never "bun" (docs/history/INCIDENTS.md, the Windows shim)
+        const spawnArgs = [process.execPath, "run", join(ROOT, "tools/assets/import-tripo-avatar.ts"),
           tmpIn, "--name", name, "--out", OPT_DIR];
         if (process.env.EW_AVATAR_DONOR) spawnArgs.push("--donor", process.env.EW_AVATAR_DONOR);
         const proc = Bun.spawn(spawnArgs, { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
@@ -672,9 +579,7 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
       writeFileSync(join(dir, `${name}.vrm`), body);
       console.log(`[upload] avatar "${name}" (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
     }
-    // Live cache invalidation: avatars are name-keyed and mutable (people
-    // iterate on their bodies), so every connected client — all worlds —
-    // learns the file changed; wearers hot-swap with the fresh version.
+    // avatars are name-keyed and mutable: every connected client learns the file changed, and wearers hot-swap
     const rel = `eidoverse/assets/vrms/${name}.vrm`;
     const update = JSON.stringify({ type: "avatar-updated", name, path: rel, v: Date.now() });
     let notified = 0;
@@ -683,26 +588,34 @@ async function uploadBy(req: Request, url: URL, srv: UploadSrv): Promise<Respons
     return new Response(JSON.stringify({ name, path: rel }),
       { headers: { "content-type": "application/json" } });
   }
-  const hash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+  const hash = sha256Bytes(body).slice(0, 16);
   const dir = join(OPT_DIR, "store");
   mkdirSync(dir, { recursive: true });
   const rel = `store/${hash}.glb`;
-  if (!existsSync(join(OPT_DIR, rel))) writeFileSync(join(OPT_DIR, rel), body);
+  const fresh = !existsSync(join(OPT_DIR, rel));   // new to the store: only then can this upload decide it is a one-off
+  if (fresh) writeFileSync(join(OPT_DIR, rel), body);
   queueOptimize(join(OPT_DIR, rel)); // draco+webp shadow, built off the request path
-  // The store is content-addressed, so the human name arrives ONLY here —
-  // record it, or the catalog can never list this object as anything but
-  // a hash (an orrery send used to vanish into exactly that black hole).
+  // content-addressed: the human name arrives ONLY here, so record it (or the catalog lists a hash)
   const upName = (url.searchParams.get("name") ?? "").replace(/\.glb$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+  // ?catalog=0: a one-off, made for one place and not meant to be reused. It is stored, served, optimized and checked like
+  // any model, and placed by its path; the catalog (/library-models, the authority's find) leaves it out. Listing wins:
+  // the same bytes uploaded for the catalog are listed from then on, and a one-off upload of bytes already in the store
+  // and listed leaves them listed (a file with no manifest entry is listed: every model stored before this was).
+  const forCatalog = !/^(0|false|no)$/i.test(url.searchParams.get("catalog") ?? "");
+  let listed = forCatalog;
   {
     const mp = join(dir, "manifest.json");
-    let man: Record<string, { name?: string; by: string; ts: number }> = {};
+    let man: Record<string, { name?: string; by: string; ts: number; catalog?: false }> = {};
     try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
-    man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now() };
+    const prev = man[hash];
+    if (forCatalog) man[hash] = { ...(upName ? { name: upName } : prev?.name ? { name: prev.name } : {}), by: upBy, ts: Date.now() };   // an unnamed re-upload keeps the name it had
+    else if (fresh) man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now(), catalog: false };
+    else { listed = prev?.catalog !== false; if (prev && !prev.name && upName) prev.name = upName; }   // as it was; a name it lacked is taken
     atomicWrite(mp, JSON.stringify(man));
   }
-  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+  console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""}${listed ? "" : " (a one-off: not in the catalog)"} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
   // the build check starts now and never holds the upload up or refuses it:
   // its report is advice, waiting at `check` (server/buildcheck.ts)
   void checkFile(join(OPT_DIR, rel), 1, body).catch((err) => console.warn(`[check] ${rel}: ${String(err?.message ?? err)}`));
-  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}` }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ path: rel, check: `/check?lib=${encodeURIComponent(rel)}`, catalog: listed }), { headers: { "content-type": "application/json" } });
 }

@@ -1,0 +1,102 @@
+# Modding the client UI
+
+Two surfaces, deliberately small. (Shape borrowed from the systems that aged
+well: WoW's frames — the default UI is itself an addon consuming the same API
+— and Resonite's slot-component model — everything is slots you can reparent
+and restyle. Ours is the humble web cousin of both.)
+
+## 1. The token sheet — restyle everything, touch nothing
+
+Most colors in the client resolve through the `:root` token block at the top
+of `client/index.html` (roles documented inline there: brand = identity &
+liveness, attn = needs-your-attention, ink ladder = content, surfaces,
+interaction whites). Not all: some editor chrome (e.g. `.edit-tool.on`,
+`.edit-vbtn.on`) still hard-codes its colors. JS-drawn chrome (mic/ear glyphs,
+nameplates) reads the same tokens at draw time.
+
+Live-override from anywhere:
+
+    document.documentElement.style.setProperty('--brand', '#b39dff');
+
+The in-client **settings → style** section is exactly this, with swatches and
+persistence (`ew-style-tokens`). If your restyle misses an element, that's a
+bug in our sweep — file it; hex outside the token sheet is a defect.
+
+## 2. `eido.ui.registerPanel` — add a real panel
+
+    eido.ui.registerPanel({
+      id: 'fishlog',            // unique; also the menu row name
+      icon: 'scroll',           // Phosphor fill name from icons.js registry
+      title: 'fish log',
+      w: 280, h: 220, x: 80, y: 80,
+      mount(body, frame) {      // body: the frame's content element
+        body.textContent = 'no fish yet';
+      },
+    });
+
+What you get for free: a draggable/resizable frame with the standard chrome,
+a row in the ∃ menu (click toggles, pin keeps it on the rail), arrange-mode
+tabs, layout lock/reset participation, viewport caging, edge stickiness —
+everything the built-in panels get, because the built-ins go through the same
+registry. There is no second-class citizenship.
+
+Rules of the road:
+- panels persist position by `id` — namespace yours (`myMod:fishlog`);
+- read tokens for any color; never hex;
+- the world state you can touch is the same lawful surface everyone has
+  (door requests over the socket, scripts server-side — see AGENTS.md). The
+  UI registry grants no extra authority, only a place to stand.
+
+## 3. What a local mod is trusted with
+
+A mod lives in the visitor's own browser (IndexedDB, the 🧩 mods panel,
+`client/lib/mods.js`) and runs as an in-page ES module with the whole client
+surface: the scene, the wire, your body. It speaks AS you — loading one is a
+mod-install decision, like a browser extension. What it can do needs no new
+machinery: it animates your own body freely (it is you), other bodies only
+through their consent, and objects through the door exactly as you would
+(grab, put, throw, drop, punt); the engine can't tell its output from yours,
+which is the point. Its default export is called with `{name, world, EW, ui,
+onTick, onDispose}`, and that object (with `EW` and the class contract in §4) is the surface: the client's own modules under `/lib/` can be imported, but their paths and exports are not stable and move without notice. Five consecutive tick throws pause it; disabling runs its
+`onDispose` handlers and removes the sections and frames it made through `ui`
+(a `registerPanel` panel stays until reload), and an imported module can't be
+unloaded until the page reloads. Untrusted code should instead join as **its
+own participant** (its own identity and rights), not run as a hand in your
+glove. A world can't offer mods to its visitors yet.
+
+## 4. The class contract — read and restyle the built-in chrome
+
+A local mod is a **trusted** mod (mods.js): an in-page ES module with the whole
+surface, handed `makeFrame` like any built-in. It can therefore read, restyle
+and mount alongside the shipped chrome. These class names are part of the
+contract — they are what a mod matches on, so they will not change without a
+note here:
+
+    frame panel              every frame's root (windows.js)
+    chat-cols                the chat frame's column pair
+    chat-side                the people pane
+    chat-side-tog            its collapse toggle
+    chat-side-grip           its drag edge
+    chat-side-head           its heading row
+    chat-side-list           the list of who is present
+
+Changes to the list above:
+
+- **2026-09-30** — `chat-side-tog` is no longer displayed (`display: none`):
+  the node and its class stay, and clicking it still toggles the pane, but
+  the 14px collapse strip is gone. Collapsed, a presence chip in the tab row
+  (`chat-who`, not part of this contract) opens the pane; open,
+  `chat-side-head` is the close control — it carries `role="button"`,
+  `tabindex="0"` and a `data-chev` chevron drawn by CSS `::after`, and its
+  text is still exactly the who's-here line.
+
+Two consequences, stated so neither surprises you:
+
+- **Restyle freely.** Match these in CSS, read them in JS, mount next to them.
+  Colors come from the token sheet (§1); never hex.
+- **The client does not trust them for its OWN lookups.** Because a mod can
+  legitimately carry any of these classes into any frame body, the client
+  addresses its own nodes by the handles it captured when it wrote them, not by
+  re-querying the class. That is what keeps your mod's `.chat-side` from being
+  mistaken for ours — your markup is never *disabled*, it is simply never
+  confused with the built-in's. Carry these classes as much as you like.

@@ -16,12 +16,8 @@
 /** @typedef {{enabled:false, reason:string}} Denied */
 /** @typedef {{enabled:true, source:string}} Granted */
 
-/** The default. Always denies, for every caller, in every world.
- *
- *  This is what production gets until someone authors a capability component,
- *  and it is what a test gets when it forgets to inject one -- which is the
- *  point: the failure mode of a forgotten dependency must be "no flight",
- *  never "flight for everyone". */
+/** The default. Always denies, for every caller, in every world: the failure
+ *  mode of a forgotten dependency is "no flight", never "flight for everyone". */
 export const denyAllFlight = {
   name: 'deny-all',
   flightCapability() {
@@ -69,15 +65,12 @@ export function worldFlightProvider({ rights = null, label = 'world-grant' } = {
     name: label,
     flightCapability() {
       const r = read() ?? null;
-      // A MISSING RIGHTS OBJECT IS A NO. Not yet joined, an older server that
-      // never heard of `fly`, a dropped snapshot -- every one of those is
-      // "nobody has said you may", which is the same answer as "no".
+      // A MISSING RIGHTS OBJECT IS A NO (not yet joined, an older server, a dropped snapshot).
       if (!r) {
         return { enabled: false, reason: "your rights in this world haven't arrived, which counts as no: if you're still joining, try again once you've joined; if they never arrive, this server may not send them (an older version), so ask whoever runs it" };
       }
       if (r.fly !== true) {
-        // main #245's wording (why, and who can fix it), in this branch's shape: flight is a role's `fly` permission
-        // (server rightsFor; research roles S4), not a `grant` verb flag, so the fix it names is a roles:<id> set
+        // flight is a role's fly permission (server rightsFor), so the fix this names is a roles:<id> set
         return {
           enabled: false,
           reason: "this world hasn't given you flight; flight comes with a role's fly permission, which the world's owner " +

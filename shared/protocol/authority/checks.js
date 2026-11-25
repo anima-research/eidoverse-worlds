@@ -1,12 +1,12 @@
 // shared/protocol/authority/checks.js — what the gate checks a value against: sanity and shape of what the authority's
 // own engine reads (valueCheck), media sources, the typed fields and the terrain's shape, unknown and dropped keys, the
-// registry's schema (schemaCheck, schemaRefusal), particle effects, handlers, and a rest's claim against the engine
-// (restCheck) (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). guess is above it, through UP.
+// registry's schema (schemaCheck, schemaRefusal), particle effects, handlers, a rest's claim against the engine
+// (restCheck), the zone and collider rules (zoneRules, colliderRules) and a bare yaw (bareYaw). guess is above it, through UP.
 import { checkSocket, checkStation } from "../../sockbody.js";
 import { checkGrabbable } from "../../grab.js";
 import { forecastSpellingRefusal } from "../../forecast.js";
 import { isEntityId, isComponent, isIdentity, REDACTED } from "../fold.js";
-import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords } from "../componentspec.js";
+import { COMPONENTS, defOf, registered, baseOf, isNamespaced, outOfRange, rangeWords, YAW_LIMIT } from "../componentspec.js";
 import { partSlot } from "../names.js";
 import * as R from "../roles.js";
 import { graphemes, cleanText } from "../../text.js";
@@ -23,25 +23,27 @@ import { ancestors } from "./math.js";
 import { toggleOf } from "./use.js";
 import { scriptCeiling } from "./scripts.js";
 import { CAPACITY_CEILING } from "./capacity.js";
-// the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
-// authority.js binds at load
+import { isNum } from "../is.js";
+import { featureOf, shapeable, tileIndex, tileOf, MAX_NAMED, MAX_TILES, SCULPT } from "../../terrainshape.js";
+// the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 
 // Sanity and shape of the values the authority's own engine reads (what the change IS, not which word carried it).
 function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {}) {
   const at = `${id}.${comp}`; const obj = v && typeof v === "object" && !Array.isArray(v);
   // where a component goes (catalogue `on`): world settings on a chair, or a transform on @world, were taken and then
-  // meant different things to the authority and the renderer (component review T1a/T1b)
+  // meant different things to the authority and the renderer
   const on = defOf(comp)?.on;
   if (on === "world" && id !== "@world") refuse("world-only", `${comp.split(":")[0]} is a world setting: it goes on @world, not on ${id}`, `set {id: '@world', component: '${comp}', value: …}`);
   if (on === "thing" && id === "@world") refuse("thing-only", `${comp} belongs to a thing; @world is the world itself`, "make a thing (create) and put it there");
   if (comp === "parent" && v?.to === "@world") refuse("thing-only", `@world isn't a thing to be inside: a thing with no parent already sits in the world`, `delete {id: '${id}', component: 'parent'}`);
+  // no one-place rule: components compose (a light, model, mesh and socket may share one thing; REGISTRY-CHANGELOG 2026-11-05)
   if (id === "@world" && comp.startsWith("roles:") && (!isIdentity(comp.slice(6)) || !CTX.knownId(comp.slice(6))))
     refuse("shape", !isIdentity(comp.slice(6)) ? `roles:${comp.slice(6)} names no one: a role is given to an identity (u-…), not a typed name` : `roles:${comp.slice(6)} is an identity this server doesn't know`,
       !isIdentity(comp.slice(6)) ? "whois {name} finds a person's identity; then set roles:<identity>" : "whois {name} finds the identity behind a person's name; a person whose identity this server doesn't know has to join or sign in on this server first, and until then this set is refused again", { didYouMean: guess(comp.slice(6), Object.keys(s.entities["@world"]?.c ?? {}).filter((k) => k.startsWith("roles:")).map((k) => k.slice(6))) });
   const nums = (a, n, lim = 1e5) => Array.isArray(a) && a.length === n && a.every((x) => typeof x === "number" && Math.abs(x) <= lim);
-  // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner (R 10-06;
-  // research §4); `none` is gone (R 10-21): refused like any id the world doesn't define (a stored one reads as no grant)
+  // H5: everyone-is-owner would let any stranger remove the real owners: the default role is any role but owner; `none`
+  // is refused like any id the world doesn't define (a stored one reads as no grant)
   const wcS = s.entities["@world"]?.c ?? {}; const roleIds = () => R.rolesOf(wcS).map((r) => r.id);
   if (id === "@world" && comp === "default-role" && (R.isOwner(v) || !R.roleDef(wcS, v?.role)))
     refuse("shape", `${at}.role must be a role here other than owner (${roleIds().filter((x) => x !== "owner").join(", ")}; got ${JSON.stringify(v?.role)})${R.renamedRole(wcS, v?.role)}`, "an owner is named by identity: set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}");
@@ -51,7 +53,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     refuse("shape", `${at}.role must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(v?.role)})${R.renamedRole(wcS, v?.role)}`, "role-defs (the owner) defines custom roles", { didYouMean: guess(String(v?.role), roleIds()) });
   if (id === "@world" && comp.startsWith("roles:") && obj) {
     for (const k of Object.keys(v)) if (!["role", "can", "note", "until"].includes(k)) refuse("schema", `${at}: unknown key '${k}'`, "roles:<id> is {role, can?, note?, until?}", { didYouMean: guessKey(k, ["role", "can", "note", "until"]) });
-    // a timed grant (upstream #258): `until` is when it ends (epoch ms, the authority's clock); the authority writes its end
+    // a timed grant: `until` is when it ends (epoch ms, the authority's clock); the authority writes its end
     // (expire-roles) and warns the holder five minutes before. Ownership never ends by itself (an ownerless world would
     // open), and a new end is in the future, at most a year out
     if (v.until !== undefined) {
@@ -61,7 +63,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     }
     if (v.note !== undefined && !(typeof v.note === "string" && v.note.length <= 80)) refuse("shape", `${at}.note is up to 80 characters`, "");
     if (v.can !== undefined) { const bad = R.checkCan(v.can, at); if (bad) refuse(bad.code, bad.reason, bad.fix, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined);
-      // dependencies are checked on the EFFECTIVE set at write (research §3): editOthers on without build is refused
+      // dependencies are checked on the EFFECTIVE set at write: editOthers on without build is refused
       if (!R.isOwner(v)) { const br = R.brokenNeed({ ...R.roleDef(wcS, v.role).can, ...v.can });
         if (br) refuse("needs", `${at}: ${br[0]} needs ${br[1]}, which would be off`, `give ${br[1]} too (can: {${br[1]}: true}), or leave ${br[0]} off`); } } }
   // default-role.can: permissions on top of the default role for everyone who holds it that way (what an imported world's
@@ -74,9 +76,9 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     for (const [k, n] of Object.entries(top)) if (Number.isFinite(v[k]) && v[k] > n) refuse("bounds", `${at}.${k} is ${v[k]}; this server allows at most ${n}`, `set it at ${n} or below (schema reports this server's defaults and ceilings)`, { ceiling: n }); }
   if (id === "@world" && comp === "access" && obj && v.soft !== undefined && v.max !== undefined && v.soft > v.max) refuse("bounds", `${at}.soft (${v.soft}) can't be above max (${v.max})`, "soft is the recommended capacity; max is the hard one");
   // a who names a role this world has (a custom role too); a typo would open or close it to the wrong people
-  // a carried value (a fork's copy, the maintenance command's lift) keeps the who it was written with, even a role deleted since: the lift
-  // re-spells what the log holds and judges nothing new (review 10-12 S2-3); an unknown who reads as the strictest
-  // recut item 8: a who is a role id (that rank or above), {permission} or {roles: [...]}; every role it names must be this world's
+  // a carried value (a fork's copy, the maintenance command's lift) keeps the who it was written with, even a role deleted
+  // since; an unknown who reads as the strictest. A who is a role id (that rank or above), {permission} or {roles: [...]};
+  // every role it names must be this world's
   const whoOk = (x, where) => { if (carry || x === undefined) return;
     const fix = "who may: a role name (that rank or above), {permission: '<name>'} (anyone holding it), or {roles: ['<id>', …]} (exactly those)";
     if (typeof x === "string") { if (!R.roleDef(wcS, x)) refuse("shape", `${where}.who must be a role here (${roleIds().join(", ")}; got ${JSON.stringify(x)})`, fix, { didYouMean: guess(String(x), roleIds()) }); return; }
@@ -89,7 +91,7 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
   if (comp === "transform") { if (!obj || !nums(v.pos, 3) || !nums(v.q, 4, 1.0001) || !nums(v.scale, 3, 1e3) || Object.keys(v).some((k) => !["pos", "q", "scale"].includes(k)))
     refuse("shape", `${at} must be {pos: [x,y,z], q: [x,y,z,w], scale: [x,y,z]}, finite and within bounds`, "pos within ±100 km, q a rotation, scale within ±1000");
     // a rotation is a unit quaternion (the renderer normalizes; the authority's own maths uses q as written), and a scale of
-    // 0 makes every child's transform divide by zero (review T0e)
+    // 0 makes every child's transform divide by zero
     if (Math.hypot(...v.q) < 1e-6) refuse("shape", `${at}.q is all zeros, which isn't a rotation`, "no rotation is [0, 0, 0, 1]");
     if (v.scale.some((x) => Math.abs(x) < 1e-4)) refuse("shape", `${at}.scale has a 0 in it; a thing can't be flat to nothing`, "to hide something, delete it or give it a tiny scale like 0.01"); }
   if (comp === "bounds") { if (!obj || !nums(v.min, 3) || !nums(v.max, 3) || Object.keys(v).some((k) => !["min", "max"].includes(k)) || v.min.some((x, i) => x >= v.max[i]))
@@ -114,16 +116,15 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     if (v.type === "path" && v.speed !== undefined && v.duration !== undefined) refuse("shape", `${at} gives its speed twice (speed and duration)`, "give one: speed (m/s) or duration (s from the first point to the last)");
     if (v.type === "path" && !(Array.isArray(v.points) && v.points.length >= 2 && v.points.length <= 64 && v.points.every((p) => nums(p, 3, 1e4))))
       refuse("shape", `${at}.points must be 2 to 64 points [x, y, z] (metres, in its parent's frame)`, "e.g. {type: 'path', points: [[0, 0, 0], [0, 0, 4]], speed: 1}"); }
-  // one hinge per thing (shape audit 10-16): a whole thing turns about its pivot component; motion:<part>.pivot is a part's
-  // a node of its model moves as motion:<slot> {node: <the file's name>} (review r7, R 10-16: a part's name is data, never
+  // one hinge per thing: a whole thing turns about its pivot component; motion:<part>.pivot is a part's
+  // a node of its model moves as motion:<slot> {node: <the file's name>} (a part's name is data, never
   // part of a key); a whole thing's motion moves the whole thing
   if (comp === "motion" && obj && "node" in v && !carry) refuse("shape", `${at}.node: a whole thing's motion moves the whole thing; a node of its model moves as its own component`, `set {id: '${id}', component: 'motion:${partSlot(typeof v.node === "string" && v.node ? v.node : "part")}', value: {node: ${JSON.stringify(typeof v.node === "string" ? v.node : "<node>")}, type, …}}`);
   if (comp.startsWith("motion:") && obj && "node" in v && !(typeof v.node === "string" && v.node.length >= 1 && v.node.length <= 256)) refuse("shape", `${at}.node is the name of a node in its model, as the file spells it (1–256 characters)`, "measure {id} lists its model's parts");
   if (comp === "motion" && obj && "pivot" in v && !carry) refuse("derived", `${at}.pivot: a whole thing's motion turns about its pivot component, not a field of the motion`, `set {id: '${id}', component: 'pivot', value: {pos: [x, y, z]}} (its own frame); a part's motion (motion:<part>) takes pivot`);
   if (comp === "home") { const okQ = (q) => nums(q, 4, 2) && Math.abs(Math.hypot(...q) - 1) < 1e-3;
     if (obj && v.parent && typeof v.parent === "object" && v.parent.socket !== undefined) refuse("legacy", `${at}.parent.socket is the old spelling: a socket is a child entity now`, `home {parent: {to: <the socket's id>}} (inspect {id: '${v.parent.to}'} lists its sockets)`);
-    // one spelling (shape audit 10-16): scale is [x, y, z] (a number is taken at write and stored as one; an older stored
-    // number is carried by a fork or a lift), parent is {to}
+    // one spelling: scale is [x, y, z] (a number is taken at write and stored as one), parent is {to}
     const okScale = (sc) => (nums(sc, 3) && sc.every((x) => x > 0)) || (carry && typeof sc === "number" && sc > 0);
     if (!obj || !nums(v.pos, 3) || (v.q !== undefined && !okQ(v.q)) || (v.scale !== undefined && !okScale(v.scale)) || Object.keys(v).some((k) => !["pos", "q", "scale", "parent"].includes(k)) || (v.parent !== undefined && !(v.parent && typeof v.parent === "object" && typeof v.parent.to === "string" && Object.keys(v.parent).every((k) => k === "to"))))
       refuse("shape", `${at} is {pos: [x, y, z], q?: [x, y, z, w], scale?: [x, y, z], parent?: {to}}`, "e.g. {pos: [0, 0, 2]}"); }
@@ -141,12 +142,12 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
       if (h.kind === "script" && !(typeof h.script === "string" && isComponent(`script:${h.script}`))) refuse("shape", `reactions.${act} (script) names the script: {kind: 'script', script: '<name>'} for the script:<name> on this thing`, "e.g. {ring: {kind: 'script', script: 'bell'}}");
       handlerCheck(at, act, h); effectCheck(s, id, act, h); } }
   mediaCheck(s, id, comp, v, at, obj);
-  // a held kind (componentspec reservedKinds: terrain's raster, shape audit 10-16) is refused as reserved, in its own words
   // a flat ground is its height alone (componentspec terrain kind flat): a noise number, a feature or a heightmap has no reader there
   if (comp === "terrain" && obj && v.kind === "flat") { const extra = Object.keys(v).filter((k) => k !== "kind" && k !== "height" && v[k] != null);
     if (extra.length) refuse("shape", `${at} is flat: {kind: 'flat', height} takes no ${extra.join(", ")}`, "terrain {kind: 'flat', height: <m>}; shaped ground is kind noise (features, heightmap)"); }
+  // a held kind (componentspec reservedKinds: terrain's raster) is refused as reserved, in its own words
   if (comp === "terrain" && obj && !carry && Object.hasOwn(COMPONENTS.terrain.reservedKinds, v.kind)) refuse("reserved", `${at}.kind '${v.kind}' is reserved: ${COMPONENTS.terrain.reservedKinds[v.kind]}`, "terrain {kind: 'noise', seed, size, amplitude, …}; an image as the base is heightmap {grid, min, max}", { status: "reserved" });
-  // the first protocol's particles bag (preset, origin, count…): its fields left the registry (shape audit 10-16), so say today's
+  // the first protocol's particles bag (preset, origin, count…): its fields left the registry, so say today's
   // spelling in particlesCheck's own words before the schema calls them unknown keys
   if (baseOf(comp) === "particles" && obj && !carry && LEGACY_FIELDS.some((k) => k in v)) refuse("shape", `${at}: ${instanceProblem(v, null)}`, `PROTOCOL §4 (effects are documents): {effect: '${ESSENTIAL_NAMES[0]}'} or an uploaded effect's address; schema {component: 'particles'} lists the Essentials and their params`);
   // water: @world's level, or a thing's body whose extent is its zone (zoneRules, below)
@@ -172,10 +173,11 @@ function valueCheck(s, { id, comp, value: v }, { carry = false, now = null } = {
     if (need && v.global !== true) for (const k of need) if (v[k] === undefined) refuse("schema", `${at}: a ${v.shape} needs ${k}`, fix); }
   for (const [f, allowed] of Object.entries(COMPONENTS[comp.split(":")[0]]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
   schemaCheck(at, comp, v, { carry });
-  // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces (shape audit 10-16): the
+  if (!carry && (comp.startsWith("terrain-feature:") || comp.startsWith("terrain-tile:"))) groundPieceCheck(s, at, comp, v);
+  // physics.material (a surface's name) is renamed physics.surface and reserved with surfaces: the
   // check that it names one of this world's surfaces returns when the field opens
 }
-// batch 2 (10-07): pictures, sounds, stories, signs and look-at, beyond their catalogue shape
+// pictures, sounds, stories, signs and look-at, beyond their catalogue shape
 const LOOK_WORDS = ["@viewer", "@nearest"];
 const ROTATING = new Set(["pendulum", "spin"]);
 const isLookAt = (k) => k === "look-at" || k.startsWith("look-at:");
@@ -200,12 +202,12 @@ function mediaCheck(s, id, comp, v, at, obj) {
     else if (typeof T === "string" && /^u-/.test(T)) { if (!isIdentity(T)) refuse("shape", `${at}.target '${T}' isn't an identity`, "whois {name} finds a person's identity"); }
     else if (typeof T === "string") { if (!s.entities[T] || T === "@world") refuse("not-found", `${at}.target: no thing called '${T}'`, "look lists what's here", { didYouMean: guess(T, Object.keys(s.entities).filter((k) => k !== "@world")) });
       if (T === id || ancestors(s, T).includes(id)) refuse("loop", `${id} can't turn to face ${T === id ? "itself" : `${T}, which rides it`}`, "pick a thing outside it"); }
-    // radians (shape audit 10-16; PROTOCOL §9.2): the limits are [min, max] from rest
+    // radians (PROTOCOL §9.2): the limits are [min, max] from rest
     for (const f of ["yaw", "pitch"]) if (v[f] !== undefined) { const lim = f === "yaw" ? Math.PI : Math.PI / 2;
       if (!(Array.isArray(v[f]) && v[f].length === 2 && v[f].every((x) => isNum(x) && Math.abs(x) <= lim + 1e-12) && v[f][0] <= v[f][1])) refuse("bounds", `${at}.${f} is [min, max] radians from rest, each within ±${f === "yaw" ? "π" : "π/2"}, min ≤ max`, `e.g. ${f}: [-0.785, 0.785] (±45°)`); }
     for (const f of ["forward", "up"]) if (typeof v[f] === "string" && !["x", "y", "z"].includes(v[f])) refuse("shape", `${at}.${f} is an axis: x|y|z or [x, y, z] (a negative one is a vector: [0, 0, -1])`, ""); }
-  // one driver per node (a socket's "one drive per thing", catalogue sockets): a node turned by a rotating motion can't
-  // also turn to face something, and a dynamic thing's rotation is the sim's
+  // one driver per node: a node turned by a rotating motion can't also turn to face something, and a dynamic thing's
+  // rotation is the sim's
   if ((isLookAt(comp) || comp === "motion" || comp.startsWith("motion:")) && obj) {
     const e = s.entities[id]; const node = nodeOf(comp, v);
     if (isLookAt(comp) && e?.c.physics?.kind === "dynamic") refuse("conflict", `${id} is dynamic: physics turns it, so it can't also turn to face something`, "make it static or kinematic (physics {kind: 'static'} or {kind: 'kinematic'}): only a dynamic body is turned by physics");
@@ -214,10 +216,9 @@ function mediaCheck(s, id, comp, v, at, obj) {
     for (const [k, x] of Object.entries(e?.c ?? {})) if (k !== comp && mine(k, x) && nodeOf(k, x) === node)
       refuse("conflict", `${node ? `${id}'s ${node}` : id} already turns by ${isLookAt(k) ? k : `${x.type} (${k})`}; one thing turns a node at a time`, `remove ${k} first, or put ${comp.split(":")[0]} on another part`); }
 }
-// L7 (21:45, research 40 T10): values are checked against their schema at admit. A KNOWN name with an unknown key is
-// refused with a "did you mean": Under the Eves sent terrain {amp: 0}, the engine reads `amplitude`, and the flat world
-// got 3 m hills. Unknown NAMES are still kept (L5): this binds only names the catalogue defines.
-const isNum = (x) => typeof x === "number" && Number.isFinite(x);
+// L7: values are checked against their schema at admit. A KNOWN name with an unknown key is refused with a "did you
+// mean" (terrain {amp: 0} vs the engine's `amplitude`). Unknown namespaced names are kept (L5); an unregistered bare one
+// is refused (schemaCheck, PROTOCOL §4).
 const TYPES = { number: isNum, int: Number.isInteger, string: (x) => typeof x === "string", bool: (x) => typeof x === "boolean", any: () => true,
   sha256: (x) => typeof x === "string" && /^sha256:[0-9a-f]{64}$/.test(x),   // a content hash (model-hash; the one spelling, as copy-of.from's)
   vec3: (x) => Array.isArray(x) && x.length === 3 && x.every(isNum),
@@ -235,9 +236,8 @@ function guessKey(k, allowed) {
     return [a, pre ? Math.abs(y.length - x.length) / 100 : lev(x, y)]; })
     .filter(([a, d]) => d < 1 || d <= Math.max(1, Math.floor(Math.max(k.length, a.length) / 3))).sort((p, q) => p[1] - q[1]).slice(0, 3).map(([a]) => a);
 }
-// upstream #237/#242's shaped terrain and water, bounded at the door (review 10-15 #5): the readers (shared/terrainshape.js)
-// clamp features and water but pass a heightmap's min/max through raw, so one write of ±1e308 made every client's,
-// agent's and the sim's ground NaN. A world's ground is everyone's: the same ±500 m as amplitude, min below max.
+// shaped terrain and water, bounded at the door: the readers (shared/terrainshape.js) pass a heightmap's min/max through
+// raw, and ±1e308 would make every reader's ground NaN. The same ±500 m as amplitude, min below max.
 const GRID_REF = /^store\/heightmaps\/[0-9a-f]{16}\.json$/, FEATURE_TYPES = ["hill", "ridge", "flatten"], HEX = /^#[0-9a-f]{6}$/i;
 const fin = (x) => typeof x === "number" && Number.isFinite(x);
 function terrainShapeCheck(at, v, def) {
@@ -258,12 +258,33 @@ function terrainShapeCheck(at, v, def) {
     if (Math.abs(min) > 500 || Math.abs(max) > 500) refuse("bounds", `${at}.heightmap min/max are ${min}/${max}; each must be within ±500 (m), the ground every client builds`, def.help);
     if (!(min < max)) refuse("bounds", `${at}.heightmap.min (${min}) must be below max (${max})`, def.help);
   }
-  // its colour layers (shape audit 10-16): [{color: 0xRRGGBB, repeat > 0}], at most 8 (the registry's maxItems). Water is its
+  // its colour layers: [{color: 0xRRGGBB, repeat > 0}], at most 8 (the registry's maxItems). Water is its
   // own component now (componentspec water: its level, opacity and kind are the registry's ranges and enum)
   if (Array.isArray(v.layers)) v.layers.forEach((l, i) => { const here = `${at}.layers[${i}]`;
     if (!l || typeof l !== "object" || Array.isArray(l) || Object.keys(l).some((k) => k !== "color" && k !== "repeat")) refuse("shape", `${here} must be {color?: 0xRRGGBB, repeat?: tiles across its size}`, def.help);
     if (l.color !== undefined && !(Number.isInteger(l.color) && l.color >= 0 && l.color <= 0xffffff)) refuse("shape", `${here}.color is an int 0xRRGGBB (sRGB)`, def.help);
     if (l.repeat !== undefined && !(fin(l.repeat) && l.repeat > 0 && l.repeat <= 4096)) refuse("bounds", `${here}.repeat is how many times it tiles across the ground, 0 < repeat ≤ 4096`, def.help); });
+}
+// a named feature or a sculpted tile (shared/terrainshape.js): a shape every reader would keep (they drop what is
+// malformed, so the door refuses it), on a ground that can be shaped, within what a world may hold
+const LEVEL_FIX = "give the world a ground that isn't level first: set {id: '@world', component: 'terrain', value: {kind: 'noise', amplitude: 0}} is flat ground you can shape (amplitude rolls hills)";
+function groundPieceCheck(s, at, comp, v) {
+  const wc = s.entities["@world"]?.c ?? {}, feature = comp.startsWith("terrain-feature:"), def = COMPONENTS[feature ? "terrain-feature" : "terrain-tile"];
+  if (!shapeable(wc.terrain)) refuse("level-ground", `${at}: this world's ground is the level floor (${wc.terrain ? "its terrain is kind flat" : "it has no terrain"}), which nothing shapes`, LEVEL_FIX);
+  if (feature) {
+    const pts = v.type === "ridge" ? ["x1", "z1", "x2", "z2"] : ["x", "z"], other = v.type === "ridge" ? ["x", "z"] : ["x1", "z1", "x2", "z2"];
+    for (const k of pts) if (v[k] === undefined) refuse("schema", `${at}: a ${v.type} needs ${pts.join(", ")}`, def.help);
+    const stray = [...other, ...(v.type === "flatten" ? [] : ["edge"])].find((k) => v[k] !== undefined);
+    if (stray) refuse("shape", `${at}: a ${v.type} takes ${pts.join(", ")}${v.type === "flatten" ? ", edge" : ""}, not ${stray}`, def.help);
+    if (!featureOf(v)) refuse("shape", `${at} isn't a shape the ground reads`, def.help);
+    const n = Object.keys(wc).filter((k) => k.startsWith("terrain-feature:")).length;
+    if (n > MAX_NAMED) refuse("full", `this world holds ${MAX_NAMED} named terrain features, the most a ground carries`, "delete one first (delete {id: '@world', component: 'terrain-feature:<name>'}); finer work is sculpt's");
+    return; }
+  const ij = tileIndex(comp.slice(13));
+  if (!ij) refuse("shape", `${comp} names no tile of the ground: a key is <i>-<j>, each 0–${SCULPT.span - 1} with no leading zero`, def.help);
+  if (!tileOf(v)) refuse("shape", `${at}.mm must be ${SCULPT.tile ** 2} whole numbers (millimetres), each within ±${SCULPT.limit}`, def.help);
+  const n = Object.keys(wc).filter((k) => k.startsWith("terrain-tile:")).length;
+  if (n > MAX_TILES) refuse("full", `this world's ground holds ${MAX_TILES} sculpted tiles, the most it carries`, "level a tile you don't need (delete {id: '@world', component: 'terrain-tile:<i>-<j>'}); a change that wide is the terrain's own (its heightmap, or a feature)");
 }
 // where a cut field went (componentspec `dropped`), for the refusal's fix
 const DROPPED_FIX = {
@@ -290,7 +311,7 @@ function unknownKeys(at, v, allowed, what) {
 function lev(a, b) { const d = Array.from({ length: b.length + 1 }, (_, j) => j);
   for (let i = 1; i <= a.length; i++) { let prev = d[0]; d[0] = i; for (let j = 1; j <= b.length; j++) { const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; } }
   return d[b.length]; }
-// the registered names one letter-slip from an unregistered bare one (round-2 R8): a typo, refused at admit; a renamed one, its new name
+// the registered names an edit or two from an unregistered bare one (one edit for names of 4 letters or fewer; R8): a typo, refused at admit; a renamed one, its new name
 const nearMiss = (name) => name === "physics-area" ? ["physics-volume"] : Object.keys(COMPONENTS).filter((k) => k !== name && Math.abs(k.length - name.length) <= 2 && lev(k, name) <= (k.length > 4 ? 2 : 1));
 /** Why the catalogue would refuse this value (its shape only: no state, no rights), or null. For tools that ask
  *  whether a translated world is one the authority takes as it is (sweep). */
@@ -301,12 +322,11 @@ export function schemaRefusal(comp, v) { try { schemaCheck(comp, comp, v);
     return null; } catch (e) { if (e instanceof Refusal) return `${e.code}: ${e.reason}`; throw e; } }
 function schemaCheck(at, comp, v, { carry = false } = {}) {
   const base = baseOf(comp), name = registered(base) ?? base, def = COMPONENTS[name];
-  // PROTOCOL §4 (review 10-07 H1, R's ruling): a bare name is the registry's. An unregistered one is refused: a typo of
-  // a registered name says "did you mean"; a versioned one (light@2) says a new meaning is registered first; anything
-  // else is someone's own component, which carries a namespace (example.org/heart). Before this they were admitted, and
-  // the registry later promoting the same word (story) would have reread every old value in the new meaning.
+  // PROTOCOL §4: a bare name is the registry's. An unregistered one is refused: a typo of a registered name says "did
+  // you mean"; a versioned one (light@2) says a new meaning is registered first; anything else is someone's own
+  // component, which carries a namespace (example.org/heart), so a later registry word never rereads old values.
   // `carry`: a fork's copy of what its parent already holds (an old world's bare invention travels as it was).
-  if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (R 10-07: chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
+  if (name === "door") refuse("schema", `${at}: the opening behaviour is called 'openable' (chests, gates, lids and hatches open too)`, "openable {open: false, locked?, angle?, slide?, time?}; schema {component: 'openable'} says the rest", { didYouMean: ["openable"] });
   if (name === "placer") refuse("derived", `${at}: who made a thing is a view over the log (§0 rule 2), never stored`, "inspect {id} → derived.madeBy");
   if (!def) { if (isNamespaced(base) || carry) return;   // someone's own: kept, replayed, shown honestly (must-ignore)
     const ver = /^(.*)@[1-9][0-9]*$/.exec(name);
@@ -325,9 +345,9 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     if (def.cleanAs) { const bad = cleanText(v, { lines: def.cleanAs === "lines" }); if (bad) refuse("shape", `${at} ${bad.why}`, bad.fix); } }
   if (name === "sky") { const bad = forecastSpellingRefusal(v?.forecast, at); if (bad) refuse(bad.code, bad.reason, bad.fix, { didYouMean: bad.didYouMean }); }
   if (name === "socket") { const bad = checkSocket(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.socket.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
-  // what a body does at a socket (shape audit 10-16): the core, closed; the reserved keys refused as reserved
+  // what a body does at a socket: the core, closed; the reserved keys refused as reserved
   if (name === "station") { const bad = checkStation(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.station.help, { ...(bad.didYouMean ? { didYouMean: bad.didYouMean } : {}), ...(bad.code === "reserved" ? { status: "reserved" } : {}) }); }
-  // a place entry is closed (shape audit 10-16): {at} | {min, max}, + label; null hides a model's own
+  // a place entry is closed: {at} | {min, max}, + label; null hides a model's own
   if (name === "places" && !carry && v && typeof v === "object" && !Array.isArray(v)) for (const [k, p] of Object.entries(v)) { if (p === null) continue; const pat = `${at}.${k}`;
     if (!(p && typeof p === "object" && !Array.isArray(p))) refuse("shape", `${pat} must be {at: [x, y, z]} or {min: [x, y, z], max: [x, y, z]} (+ label), or null`, def.help);
     unknownKeys(pat, p, ["at", "min", "max", "label"], "a place");
@@ -338,13 +358,13 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   // what a hand may do with it (shared/grab.js: closed keys, ranges, enums, grips), in its own words
   if (name === "grabbable") { const bad = checkGrabbable(v, at); if (bad) refuse(bad.code, bad.reason, bad.fix || COMPONENTS.grabbable.help, bad.didYouMean ? { didYouMean: bad.didYouMean } : undefined); }
   if (def.map) { if (!(v && typeof v === "object" && !Array.isArray(v)) || Object.values(v).some((x) => !TYPES[def.map](x))) refuse("shape", `${at} must be {<name>: ${def.map}}`, def.help ?? "");
-    // a keyed map's grammar and size (params: shape audit 10-16): its keys are names, and there are at most maxKeys of them
+    // a keyed map's grammar and size (params): its keys are names, and there are at most maxKeys of them
     if (def.keyPattern) { const re = new RegExp(def.keyPattern); const bad = Object.keys(v).find((k) => !re.test(k)); if (bad !== undefined) refuse("shape", `${at}: '${bad}' isn't a name here (${def.keyPattern})`, def.help ?? ""); }
     if (def.maxKeys !== undefined && Object.keys(v).length > def.maxKeys) refuse("bounds", `${at} has ${Object.keys(v).length} entries; at most ${def.maxKeys}`, def.help ?? ""); }
   if (!def.fields) return;
   const fields = Object.keys(def.fields);
   if (!(v && typeof v === "object" && !Array.isArray(v))) refuse("shape", `${at} must be an object {${fields.join(", ")}}`, def.help);
-  // shape audit 10-16: a reserved field (physics' unread properties) is refused in its own words, and a field the alpha cut
+  // a reserved field (physics' unread properties) is refused in its own words, and a field the alpha cut
   // (motion.amplitude, motion.part, physics.layers…) says where it went. A carried value (a fork's copy, the command's lift)
   // keeps what it was written with
   if (!carry) { const held = def.reservedFields?.find((k) => k in v);
@@ -363,7 +383,7 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
   for (const [k, g] of Object.entries(def.grammar ?? {})) if (v[k] !== undefined && g === "shape") { const why = shapeError(v[k]);
     if (why) refuse("shape", `${at}.${k}: ${why}`, "PHYSICS §3.1: a box [[min], [max]] or {type: sphere|capsule|cylinder|box|convex|mesh|compound, …}; the authority stamps it from the model"); }
   for (const [k, r] of Object.entries(def.ranges ?? {})) { const x = v[k]; if (x === undefined) continue;
-    // batch 2: a length cap on text (counted in graphemes, as a reader counts: a ZWJ family is 1) and a count cap on lists
+    // a length cap on text (counted in graphemes, as a reader counts: a ZWJ family is 1) and a count cap on lists
     if (r.maxLen !== undefined || r.maxItems !== undefined) { const n = typeof x === "string" ? graphemes(x) : Array.isArray(x) ? x.length : 0;
       const cap = typeof x === "string" ? r.maxLen : r.maxItems;
       if (cap !== undefined && n > cap) refuse("bounds", `${at}.${k} is ${n.toLocaleString("en")} ${typeof x === "string" ? "characters" : "items"}; it must be ≤ ${cap}`, def.help);
@@ -373,14 +393,13 @@ function schemaCheck(at, comp, v, { carry = false } = {}) {
     if (bad) refuse("bounds", `${at}.${k} is ${JSON.stringify(x)}; ${Array.isArray(x) ? "each" : "it"} must be ${rangeWords(r)}`, def.help); }
   if (name === "script" && v.scope) unknownKeys(`${at}.scope`, v.scope, Object.keys(def.scopeFields), "a script's scope");
   if (name === "terrain") terrainShapeCheck(at, v, def);
-  // batch 2: words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
+  // words everyone reads are checked once, here (shared/text.js): no direction overrides, no hidden controls, no zalgo
   for (const [k, how] of Object.entries(def.clean ?? {})) if (typeof v[k] === "string") { const bad = cleanText(v[k], { lines: how === "lines" });
     if (bad) refuse("shape", `${at}.${k} ${bad.why}`, bad.fix); }
 }
-// N5 (review 10-07): a handler is checked when it's WRITTEN, not when the first visitor uses it. What it would write is
-// checked now as the authority would check that write (a light's intensity 'bright' was taken, and the visitor got "must be
-// number"); a field it changes must be inside a component the thing has (a toggle on a plain crate wrote an invisible
-// openable); toggle flips true/false fields; an impulse swings a pendulum. Rights stay a use-time question (reactionCap).
+// a handler is checked when it's WRITTEN, not when the first visitor uses it: what it would write is checked as that
+// write would be; a field it changes must be inside a component the thing has; toggle flips true/false fields; an
+// impulse swings a pendulum. Rights stay a use-time question (reactionCap).
 function effectCheck(s, id, act, h) {
   const c = s.entities[id]?.c ?? {}; const isObj = (x) => x && typeof x === "object" && !Array.isArray(x) && x !== REDACTED;
   const where = `reactions.${act}`;
@@ -414,17 +433,22 @@ const ZONED = ["water", "water-exclusion"];
 // world-wide water is @world's alone (provisional, owner reviewing): this one rule, removable on its own
 const globalWater = (id, c) => c.water !== undefined && c.zone?.global === true
   && { code: "shape", reason: `${id} has water on a global zone: world-wide water goes on @world`, fix: "world-wide water goes on @world: set {id:'@world', component:'water', value: {level, …}}" };
+// a zoned effect's fix: the check judges the state a write leaves, so it names both a create and a set
+const zoneFix = (id, what) => `${what} on a thing needs a sibling zone {shape, size}, a box: a create carries it beside (components: {…, zone: {shape: 'box', size: [x, y, z]}}); on a thing that exists, set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}`;
 export function zoneRules(s, ids) {
   for (const id of ids) { const c = s.entities[id]?.c; if (!c || id === "@world") continue;
     // physics-volume reads a box zone or a global one (shared/zone.js physicsVolumesOf)
     { const pa = c["physics-volume"];
-      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) return { code: "shape", reason: `${id}.physics-volume.modes: a non-empty list of ${VOLUME_MODES.join(" | ")}` }; }
-    if (c["physics-volume"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-volume: ${c.zone === undefined ? "a physics-volume on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+      if (pa?.modes !== undefined && !(Array.isArray(pa.modes) && pa.modes.length && pa.modes.every((m) => VOLUME_MODES.includes(m)))) {
+        const off = Array.isArray(pa.modes) ? pa.modes.filter((m) => !VOLUME_MODES.includes(m)) : [];
+        return { code: "shape", reason: `${id}.physics-volume.modes is ${JSON.stringify(off.length ? off : pa.modes)}${off.length ? ", not a mode" : ""}: a non-empty list of ${VOLUME_MODES.join(" | ")}`,
+          fix: `modes: any of ${VOLUME_MODES.join(", ")}, or leave it out for every mode` }; } }
+    if (c["physics-volume"] !== undefined && !(c.zone?.shape === "box" || c.zone?.global === true)) return { code: c.zone === undefined ? "needs" : "shape", reason: `${id}.physics-volume: ${c.zone === undefined ? "a physics-volume on a thing needs a sibling zone {shape, size} (its extent)" : `it reads a box zone or a global one (shape '${c.zone.shape}' isn't read yet)`}`, fix: zoneFix(id, "a physics-volume") };
     const has = ZONED.filter((k) => c[k] !== undefined); if (!has.length) continue;
     if (has.length > 1) return { code: "shape", reason: `${id} has both water and water-exclusion: a thing is a water body or a dry pocket, not both`, fix: "put the dry pocket on a child thing with its own zone" };
-    if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: `${has[0]} on a thing needs a sibling zone {shape, size}: set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` };
+    if (c.zone === undefined) return { code: "needs", reason: `${id}.${has[0]}: ${has[0]} on a thing needs a sibling zone {shape, size} (its extent)`, fix: zoneFix(id, has[0]) };
     const g = globalWater(id, c); if (g) return g;
-    if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: `set {id: '${id}', component: 'zone', value: {shape: 'box', size: [x, y, z]}}` }; }
+    if (c.zone.shape !== "box" && c.zone.global !== true) return { code: "shape", reason: `${id}.${has[0]} reads a box zone (shape '${c.zone.shape}' isn't read by water yet)`, fix: zoneFix(id, has[0]) }; }
   return null;
 }
 // a collision layer (componentspec collider.layer, Godot's 32 numbered layers plus names)
@@ -442,4 +466,12 @@ export function colliderRules(s, ids) {
     if (!b.includes("things") && c.physics?.kind === "dynamic") return { code: "shape", reason: `${id}'s collider.blocks leaves out things, and it has physics {kind: 'dynamic'}: the engine would not carry it`, fix: "add 'things' to blocks, or make it kinematic or none" }; }
   return null;
 }
-export { isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };
+/** A bare yaw is a number of radians (PROTOCOL §9): anything else is refused, never coerced, and one past ±2π (spawn.yaw's range, YAW_LIMIT) is degrees typed as radians.
+ *  Every door that takes one (set transform, create's at, a copy's at) reaches it through resolve's transform. */
+function bareYaw(yaw) {
+  if (!isNum(yaw)) refuse("shape", `yaw must be a number (radians about +Y): got ${JSON.stringify(yaw)}`, "e.g. yaw: 1.5708 for a quarter turn; or q [x, y, z, w]");
+  if (Math.abs(yaw) <= YAW_LIMIT) return;   // YAW_LIMIT: componentspec, the same bound as spawn.yaw; degrees typed as radians are past it from 7 up (1–6 pass as radians)
+  const within = (r) => +Math.atan2(Math.sin(r), Math.cos(r)).toFixed(4) || 0;   // the same heading, within ±π
+  refuse("shape", `yaw ${yaw} is past ±2π: a yaw is radians about +Y, not degrees`, `as degrees, ${yaw}° is yaw ${within(yaw * Math.PI / 180)}; as radians, the same heading is yaw ${within(yaw)}`);
+}
+export { bareYaw, isLookAt, isNum, nearMiss, restCheck, unknownKeys, valueCheck };

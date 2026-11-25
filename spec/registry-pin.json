@@ -103,7 +103,7 @@
    ]
   },
   "absentMeans": {
-   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (client/lib/supportclass.js)",
+   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)",
    "enabled": "true: it is solid",
    "blocks": "everything: bodies, hulls and things",
    "layer": "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)",
@@ -112,9 +112,9 @@
   "docs": {
    "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
    "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed",
-   "blocks": "what it stops, a list of layers: bodies (people and agents walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet",
+   "blocks": "what it stops, a list of layers: bodies (anyone walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet",
    "layer": "the collision layers it is IN (Godot's collision_layer): a list of layer numbers 1..32 or names (a lowercase letter, then letters, digits, - or _; ≤ 40), each once. A mover meets it only when the mover's mask scans one of them (Godot: \"Object A can detect a contact with object B only if object B is in any of the layers that object A scans\")",
-   "mask": "the collision layers it SCANS when it moves (Godot's collision_mask), same items as layer: read for a hull (the authority's hull sweep meets only what is in a layer its mask scans). People and agents walking or swimming, and loose things in the physics engine, scan [1] (eidosim carries no layers between things); a still thing's mask is unread"
+   "mask": "the collision layers it SCANS when it moves (Godot's collision_mask), same items as layer: read for a hull (the authority's hull sweep meets only what is in a layer its mask scans). Anyone walking or swimming, and loose things in the physics engine, scan [1] (eidosim carries no layers between things); a still thing's mask is unread"
   },
   "on": "thing"
  },
@@ -710,7 +710,7 @@
    "action": "the verb use calls it (sit, lie, ride, stand…): a label; at write it picks the default anim",
    "anim": "what the body holds: a pose or clip by name (an open name: one the body doesn't know is its default); {clip, time?: loop|phase, offset?}; or a blend {by: <signal>, clips: [[key, clip], …], time?, offset?}",
    "anchor": "the body point that lands on the socket: root (where every seat put a body), hips, feet, head, or surface (the body's measured seat contact)",
-   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame",
+   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame (yaw in radians about its +y, 0 facing its +z)",
    "leaveBy": "jump | menu | script: how the occupant may leave (script: only when the world lets go; the occupant's escape, a held get-up or a second one, always works)",
    "who": "who may take it: a role id (this rank or above)",
    "input": "{move: 'drive'}: this seat's occupant drives its host (the host's drive); only on a drive station, one per host"
@@ -1824,7 +1824,7 @@
    "tile": "metres a cell",
    "wallH": "wall height, floor to floor, metres",
    "wallT": "wall thickness, metres",
-   "slabT": "floor slab thickness, metres (its top at the level's y)",
+   "slabT": "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)",
    "labels": "room names by cell",
    "levels": "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls"
   },
@@ -2153,8 +2153,8 @@
     "max": 100
    },
    "yaw": {
-    "min": -6.283185307179586,
-    "max": 6.283185307179586
+    "min": -6.284185307179587,
+    "max": 6.284185307179587
    }
   },
   "required": [
@@ -2651,13 +2651,128 @@
   },
   "on": "thing"
  },
- "terrain-grid": {
-  "status": "reserved",
+ "terrain-feature": {
+  "status": "trial",
+  "fields": {
+   "type": "string",
+   "x": "number",
+   "z": "number",
+   "x1": "number",
+   "z1": "number",
+   "x2": "number",
+   "z2": "number",
+   "radius": "number",
+   "height": "number",
+   "edge": "number",
+   "order": "number"
+  },
+  "enums": {
+   "type": [
+    "hill",
+    "ridge",
+    "flatten"
+   ]
+  },
+  "ranges": {
+   "radius": {
+    "gt": 0.05,
+    "max": 2000
+   },
+   "height": {
+    "min": -500,
+    "max": 500
+   },
+   "edge": {
+    "min": 0.01,
+    "max": 2000
+   },
+   "order": {
+    "min": -1000000,
+    "max": 1000000
+   },
+   "x": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x2": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z2": {
+    "min": -100000,
+    "max": 100000
+   }
+  },
+  "required": [
+   "type",
+   "radius",
+   "height"
+  ],
+  "absentMeans": {
+   "edge": "half the radius (a flatten's soft rim)",
+   "order": "0: among named shapes, by order and then by name"
+  },
+  "docs": {
+   "type": "hill (a round bump; a negative height is a pit) | ridge (a raised line; negative, a valley) | flatten (levels a circle to an absolute height)",
+   "x": "its centre (hill, flatten)",
+   "z": "its centre (hill, flatten)",
+   "x1": "a ridge's first end",
+   "z1": "a ridge's first end",
+   "x2": "a ridge's other end",
+   "z2": "a ridge's other end",
+   "radius": "how far it reaches",
+   "height": "how high it rises (hill, ridge), or the height it levels to (flatten)",
+   "edge": "a flatten's soft rim, beyond its radius",
+   "order": "where it applies among the named shapes: lower first (a flatten levels whatever came before it)"
+  },
+  "units": {
+   "x": "m",
+   "z": "m",
+   "x1": "m",
+   "z1": "m",
+   "x2": "m",
+   "z2": "m",
+   "radius": "m",
+   "height": "m",
+   "edge": "m"
+  },
+  "keyed": true,
   "on": "world"
  },
  "terrain-tile": {
-  "status": "reserved",
+  "status": "trial",
+  "fields": {
+   "mm": "array"
+  },
+  "required": [
+   "mm"
+  ],
+  "absentMeans": {
+   "mm": "never absent: a tile is its samples (a tile that isn't there at all is level)"
+  },
+  "docs": {
+   "mm": "the tile's 1024 samples, whole millimetres over the terrain and its features, row-major: 32 rows along z, each 32 samples along x"
+  },
+  "units": {
+   "mm": "mm"
+  },
   "keyed": true,
+  "on": "world"
+ },
+ "terrain-grid": {
+  "status": "reserved",
   "on": "world"
  },
  "script": {

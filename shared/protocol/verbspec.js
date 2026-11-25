@@ -1,15 +1,16 @@
 // Every request verb declares its arguments: type, which modes they apply to, and an example. The authority validates every
-// request against this BEFORE doing anything, and `help {verb}` is generated from it (fresh-builder findings W1–W3).
-// EVERY verb the authority answers has a row (engine-scars 3.3, R 10-17 02:45; scars-check's verb-row check): an argument a verb doesn't
+// request against this BEFORE doing anything, and `help {verb}` is generated from it.
+// EVERY verb the authority answers has a row (a scars-check row pins it): an argument a verb doesn't
 // list is refused `unknown-arg`, so tightening after ship would break every client that sends extras. Where a handler checks
 // a value itself (with its own words and code), the row's type is `any`: the row names the argument, the handler judges it.
 import { COMPONENTS } from "./componentspec.js";
+import { isNum } from "./is.js";
 const xz = { type: "xz", doc: "[x, z] in metres (ground position; y comes from what's below)" };
 const ref = (doc) => ({ type: "id", doc });
 const target = (doc) => ({ type: "id|xz", doc });
 export const PLACE_MODES = ["on", "beside", "hang", "against", "near", "at"];
 // the verbs a batch takes as its children: batch's help and the batch's own refusal both name them from here, and
-// authority/verbs.js buildBatch has a builder for each (authority-check BT5 runs every one)
+// authority/verbs.js buildBatch has a builder for each (test/protocol/authority-check.ts runs every one)
 export const BATCH_OPS = ["create", "set", "delete", "place", "turn", "sky", "weather"];
 export const VERBSPEC = {
   place: {
@@ -36,8 +37,8 @@ export const VERBSPEC = {
       dry: { type: "bool", doc: "preview only" },
     },
   },
-  // round-2 R10: a typo'd undo argument used to undo your latest act silently (undo {acts: 9}); now it's refused
-  undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or visitor's if you're a builder, anyone's if you're an owner; never someone above you",
+  // a typo'd undo argument (undo {acts: 9}) is refused, never read as "undo your latest act"
+  undo: { doc: "take back an act: your latest (bare), one by its act number, or one you tagged with label. You may undo your own acts, a builder's or member's if you're a builder, anyone's if you're an owner; never someone above you",
     args: { act: { type: "int", doc: "the act's number (history and inspect show them); someone else's needs the rank to revert it" }, label: { type: "string", doc: "the label you gave a batch" },
       actor: { type: "string", doc: "owners: roll back everything this person did since `since` (their identity; history shows it)" }, since: { type: "any", doc: "with actor: a version {seq, head} (history gives them)" },
       confirm: { type: "bool", doc: "with actor: needed to roll back more than 20 acts" }, dry: { type: "bool" } },
@@ -54,7 +55,7 @@ export const VERBSPEC = {
     doc: "make a new thing; optionally place it in the same step",
     args: { id: { type: "string", doc: "leave it out: the authority mints every id. A placeholder '$name' is accepted: refs to it in the same request (a batch) resolve, and the reply's ids map gives the id it became; any other id is refused" }, model: { type: "string", doc: "a model from find {kind: 'model'}" },
       components: { type: "object", doc: "component values; see schema" }, from: { type: "string", doc: "a blueprint hash (find {kind: 'blueprint'}), or a thing's id to duplicate it with what's attached to it" },
-      at: { type: "any", doc: "where: [x, z] on the ground, [x, y, z] exactly, or {pos, yaw|q}; with from, {pos, yaw|q} only (a duplicate's is local to the source's parent; default 0.5 m along x). Not with place" }, place: { type: "object", doc: "a place request without id", example: { model: "chair", place: { near: "table-1", facing: "table-1" } } }, dry: { type: "bool" } },
+      at: { type: "any", doc: "where: [x, z] on the ground, [x, y, z] exactly, or {pos, yaw|q} (yaw in radians about +Y: 0 faces +Z, 1.5708 a quarter turn); with from, {pos, yaw|q} only (a duplicate's is local to the source's parent; default 0.5 m along x). Not with place" }, place: { type: "object", doc: "a place request without id", example: { model: "chair", place: { near: "table-1", facing: "table-1" } } }, dry: { type: "bool" } },
   },
   set: { doc: "replace a component's value (merge: true patches only the fields you send)", args: { id: ref("the thing"), component: { type: "string" }, value: { type: "any" }, merge: { type: "bool" }, force: { type: "bool", doc: "@world.physics-engine only: cut even with things in flight (they freeze where they are)" }, base: { type: "any", doc: "the version you read, {seq, head} (inspect → versions; never a bare seq); refused if someone changed it since, or if it isn't this world's history" }, dry: { type: "bool" } }, required: ["id", "component"],
     example: { id: "lamp-1", component: "light", value: { range: 8 }, merge: true } },
@@ -73,9 +74,9 @@ export const VERBSPEC = {
   drop: { doc: "let go of what you're holding: it falls (with physics), or is set straight down (without); its grabbable may send it home, into a socket that accepts it, or leave it where you let go", args: { id: ref("the thing you hold"), pos: { type: "any", doc: "[x, y, z]: where your hand lets go; within reach" }, hand: { type: "enum", values: ["left", "right"], doc: "let go with this hand only (of a thing held in both: the other keeps it)" }, w: { type: "any", doc: "[x, y, z]: its spin as the hand let go, rad/s about world axes (optional; recorded, and carried in the launch; eidosim spins the body with it)" }, t: { type: "number", doc: "when the hand let go, on the authority's clock (the client's estimate, ms; optional; recorded for checks and smoothing, never a backdated sim input)" }, q: { type: "any", doc: "[x, y, z, w]: the thing's orientation as let go (a unit quaternion; optional). The launch carries it, so a client predicting its own throw folds the same inputs" } }, required: ["id"], example: { id: "ball-1" } },
   punt: { doc: "send a loose thing beside your body (low by it, or in the air beside you: a volley) into flight with a velocity. Only things with physics {kind: 'dynamic'}; who may is physics.who (default member). Needs the world to run physics", args: { id: ref("the thing"), power: { type: "number", doc: "m/s along the line from where you stand through it, lifted (default 4: a hop; 10: hard)" }, v: { type: "any", doc: "or exactly [x, y, z] in m/s (20 max)" }, contact: { type: "bool", doc: "true: a moving body's contact push (what a client sends when its body moves into the thing): needs v, along the ground at most what a 70 kg body's push passes to the thing's mass (3 m/s at most), from a body against the thing, never a thing beneath the body, already moving, or one that would move someone (occupied, or sliding into them)" } }, was: { dir: "'v', [x, y, z] in m/s (main's dir gave only the way; v gives the speed too)", shove: "contact: true (a moving body's push)" }, required: ["id"],
     example: { id: "ball-1", power: 6 } },
-  force: { doc: "a blast (/boom): from at, every body within radius is knocked over through its own consent (as body {kind: 'shove'}), and every loose thing (physics {kind: 'dynamic'}, in a world running physics) is punted outward through the punt's own gates; linear falloff to the rim. Builders and up. Bodies are presence: the reply counts them", args: { at: { type: "any", doc: "[x, y, z]: the blast's centre" }, radius: { type: "number", doc: "m, 0.5–30 (default 4)" }, power: { type: "number", doc: "m/s at the centre, 0.2–12 (default 3)" } }, required: ["at"],
+  force: { doc: "a blast (/boom): from at, every body the falloff still reaches with 0.3 m/s or more is knocked over through its own consent (as body {kind: 'shove'}), and the nearest 32 such loose things (physics {kind: 'dynamic'}, in a world running physics) are punted outward through the punt's own gates; linear falloff to the rim. Builders and up. Bodies are presence: the reply counts them", args: { at: { type: "any", doc: "[x, y, z]: the blast's centre" }, radius: { type: "number", doc: "m, 0.5–30 (default 4)" }, power: { type: "number", doc: "m/s at the centre, 0.2–12 (default 3)" } }, required: ["at"],
     example: { at: [0, 0, 0], radius: 4, power: 3 } },
-  // people (research roles 10-06): every act names an identity (whois {name} finds it) ranked below you
+  // people: every act names an identity (whois {name} finds it) ranked below you
   warn: { doc: "warn someone: a record in the moderator log, and a notice they must dismiss. Needs mute, kick or ban; they must rank below you", args: { who: { type: "string", doc: "their identity (u-…)" }, reason: { type: "string", doc: "why (they see it)" } }, required: ["who", "reason"], example: { who: "u-…", reason: "please keep it friendly" } },
   mute: { doc: "mute someone's voice and/or chat for everyone, for a while (at most 7 days). Needs mute; they must rank below you", args: { who: { type: "string", doc: "their identity" }, minutes: { type: "number", doc: "how long: 5, 60, 1440…" }, channels: { type: "any", doc: "['voice'], ['chat'] or both (default both)" }, reason: { type: "string" } }, required: ["who", "minutes"], example: { who: "u-…", minutes: 60, channels: ["voice"], reason: "spam" } },
   unmute: { doc: "end a mute early (its author, an owner, or someone who outranks its author)", args: { who: { type: "string" } }, required: ["who"] },
@@ -84,7 +85,7 @@ export const VERBSPEC = {
   unban: { doc: "lift a ban: its author, an owner, or a ban holder who outranks its author", args: { who: { type: "string" } }, required: ["who"] },
   modlog: { doc: "the moderation log, newest first, with role changes merged in (needs a moderation power)", args: { who: { type: "string", doc: "only this person" }, before: { type: "number", doc: "older than this ts (the reply's next)" }, limit: { type: "int" } } },
   bans: { doc: "who is banned or muted now, and bans that ended (needs a moderation power)", args: {} },
-  // ---- the rest of the authority's verbs (rows added 10-17: names and types; each handler still judges its values) ----
+  // ---- the rest of the authority's verbs (names and types; each handler still judges its values) ----
   leave: { doc: "leave the world: whatever you hold is dropped (the server sends this when you disconnect)", args: {} },
   wait: { doc: "what physics did lately: things in flight, things that came to rest in the last minute, and any not yet on the record", args: {} },
   consent: { doc: "your body's consent (presence: never logged). Bare: read it (your two gates, your allow and block lists, this world's defaults for the gates) and the last attempts on you. move and touch each turn a gate on or off; allow, block and unlist put one person on a list or take them off. A listed person's answer is always theirs: allow is yes and block is no, whatever the gates say (block wins). Only you change yours", args: {
@@ -121,12 +122,20 @@ export const VERBSPEC = {
   caption: { doc: "one line of a screen's captions (if its captioners name you), or end: true to clear it", args: { id: ref("the screen"), session: { type: "any", doc: "the UTC time the captioner attached, a hyphen, 2–16 letters or digits" },
       n: { type: "any", doc: "the line's number in the session" }, t0: { type: "any" }, t1: { type: "any" }, text: { type: "any" }, speaker: { type: "any" }, title: { type: "any" }, end: { type: "any" },
       gen: { type: "any", doc: "stamped by the server from the connection (a captioner's leg generation)" }, dry: { type: "bool" } }, required: ["id"] },
-  upload: { doc: "store a script's source (text) or a particle effect (effect); the reply's src goes in script:<name>", args: { text: { type: "any", doc: "JavaScript (docs/SCRIPTS.md)" }, effect: { type: "any", doc: "a particle effect document" }, dry: { type: "bool" } } },
+  upload: { doc: "store a script's source (text) or a particle effect (effect); the reply's src goes in script:<name>", args: { text: { type: "any", doc: "JavaScript (docs/guide/SCRIPTS.md)" }, effect: { type: "any", doc: "a particle effect document" }, dry: { type: "bool" } } },
   effect: { doc: "a particle effect by name (an Essential) or address (sha256:…)", args: { name: { type: "any" } }, required: ["name"], example: { name: "sparks" } },
   adopt: { doc: "take on a script someone else sponsors (it then runs on your rights)", args: { id: ref("the thing"), script: { type: "any", doc: "its name (script:<name>)" }, base: { type: "any", doc: "the version you read" }, dry: { type: "bool" } }, required: ["id", "script"] },
   scripts: { doc: "the scripts here and their status; with id + script + test, run one dry on a test event", args: { id: ref("one thing"), script: { type: "any" }, test: { type: "any", doc: "an event {on: 'use'|'tick'|'wake'|'say'|'enter'|'leave'|'changed:<comp>', …}" } } },
   sky: { doc: "set the sky (the authority stamps its clock): every field of the sky component", args: skyArgs(), was: skyWas() },
   weather: { doc: "a weather change, merged onto the standing sky (keepSky: false starts fresh)", args: skyArgs(), was: skyWas() },
+  sculpt: { doc: "one brush stroke on the ground (builders): raise or lower it along a path, flatten it to one height, or smooth it. The authority works the stroke out against the ground as it stands and writes the sculpted tiles it changes (@world's terrain-tile:<i>-<j>); undo takes a raise or a lower back from under later raises and lowers",
+    args: { brush: { type: "enum", values: ["raise", "lower", "flatten", "smooth"], doc: "raise | lower (by strength metres) | flatten (to height) | smooth (toward the ground round each spot)" },
+      path: { type: "any", doc: "where: [[x, z], …], 1–256 points in world metres (one point is a dab, more are a line the brush follows); absent: where your body stands" },
+      radius: { type: "number", doc: "how far the brush reaches from the path, metres (0.25–64); it fades to nothing there" },
+      strength: { type: "number", doc: "raise, lower: metres at the path (up to 100). flatten, smooth: how far to go, 0–1 (absent: all the way)" },
+      height: { type: "number", doc: "flatten: the height to bring the ground to, metres (absent: the ground's own at the path's first point)" },
+      label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } },
+    required: ["brush", "radius"], example: { brush: "lower", path: [[12, -4]], radius: 3, strength: 0.4 } },
   batch: { doc: `several writes as ONE request (one undo): requests [{verb, args}…] of ${BATCH_OPS.join(", ")}`, args: { requests: { type: "any", doc: "[{verb, args}, …]" }, ops: { type: "any", doc: "retired spelling of requests (refused, with the pointer)" }, label: { type: "any", doc: "a name undo {label} can find it by" }, dry: { type: "bool" } }, required: [] },
   "fork-copy": { doc: "a fork's copy of its parent's state (the server's own, while forking; never a person's request)", args: { requests: { type: "any" } } },
   use: { doc: "do something to a thing (inspect shows what it offers you). While you hold it, use {id} with no action fires its grabbable.use (its down; args {phase: 'up'} its up)", args: { id: ref("the thing"), action: { type: "string" }, args: { type: "object" }, dry: { type: "bool", doc: "preview only: what it would write (a script runs dry); nothing is logged" } }, required: ["id"],
@@ -144,9 +153,9 @@ export const RESERVED_VERBS = Object.freeze({
 export const REMOVED_VERBS = Object.freeze({
   whisper: { why: "speech in a world is public and arrival-only (R 10-18): everyone present hears a say, the world's log keeps it, and only the world's admins read it back. Direct messages will live at the identity level (client and profile), not in world chat",
     fix: "say it to everyone here (say {text, to} addresses one person in public), or reach them outside the world" },
-  // the old verb set's names this authority doesn't take, each with the call that does it now (R 10-27; the old set: AGENTS.md)
+  // the old verb set's names this authority doesn't take, each with the call that does it now (the old set: AGENTS.md)
   ...Object.fromEntries(Object.entries({
-    mount: ["riding is a socket now", "attach {to, socket?} (the agent's tool; a person sits) puts your body on a socket; a thing rides another with set {id, component: \"parent\", value: {to}}"],
+    mount: ["riding is a socket now", "attach {to, socket?} (the agent's tool; a human sits) puts your body on a socket; a thing rides another with set {id, component: \"parent\", value: {to}}"],
     dismount: ["riding is a socket now", "detach {} (the agent's tool) gets your body off; delete {id, component: \"parent\"} lets a riding thing go where it stands"],
     spawn: ["things are created now", "create {model, at?} (the authority mints the id; components: {label} names it)"],
     remove: ["things are deleted now", "delete {id}"],
@@ -155,7 +164,7 @@ export const REMOVED_VERBS = Object.freeze({
     motion: ["motion is a component now", "set {id, component: \"motion\", value: {type, …}}"],
     behavior: ["scripts are components now", "upload {text} stores the source; set {id, component: \"script:<name>\", value: {src, …}} binds it; delete {id, component: \"script:<name>\"} unbinds it"],
     asset: ["the world's assets are a component now", "set {id: \"@world\", component: \"assets:<name>\", value: {name, path}}"],
-    terrain: ["the terrain is a component now", "set {id: \"@world\", component: \"terrain\", value: {…}} (owner)"],
+    terrain: ["the terrain is a component now", "set {id: \"@world\", component: \"terrain\", value: {…}} (builders); sculpt {brush, path, radius} for a stroke"],
     grass: ["grass is a component now", "set {id: \"@world\", component: \"grass\", value: {…}}; delete {id: \"@world\", component: \"grass\"} mows it"],
     epoch: ["physics is a component now", "set {id: \"@world\", component: \"physics-engine\", value: {engine, tickMs?}} (owner) enters it; delete {id: \"@world\", component: \"physics-engine\"} leaves it"],
     grant: ["roles are components now", "set {id: \"@world\", component: \"roles:<identity>\", value: {role}}; delete {id: \"@world\", component: \"roles:<identity>\"} revokes"],
@@ -165,10 +174,9 @@ export const REMOVED_VERBS = Object.freeze({
 // refused naming today's (unknown-arg's fix)
 function skyWas() { return { clock: "tz (a tz present means the wall clock governs; absent, the rated clock)", weatherSeconds: "transition (seconds)", dormantRated: "hours and rate" }; }
 function skyArgs() {
-  const f = Object.fromEntries(Object.keys(COMPONENTS.sky.fields).map((k) => [k, { type: "any", doc: `the sky's ${k}` }]));
+  const u = COMPONENTS.sky.units ?? {}, f = Object.fromEntries(Object.keys(COMPONENTS.sky.fields).map((k) => [k, { type: "any", doc: `the sky's ${k}${u[k] ? ` (${u[k] === "rad" ? "radians" : u[k]})` : ""}` }]));
   return { ...f, keepSky: { type: "any", doc: "weather: false discards the standing sky" }, dry: { type: "bool" } };
 }
-const isNum = (v) => typeof v === "number" && Number.isFinite(v);
 const okType = (spec, v) => {
   switch (spec.type) {
     case "xz": return Array.isArray(v) && v.length === 2 && v.every(isNum);
@@ -179,7 +187,7 @@ const okType = (spec, v) => {
     case "enum": return spec.values.includes(v); default: return true;
   }
 };
-/** Is k one of a verb's OWN argument names? (`k in args` finds `toString`/`constructor` too: review of #260, #522/#538.) */
+/** Is k one of a verb's OWN argument names? (`k in args` finds `toString`/`constructor` too.) */
 export const ownArg = (args, k) => Object.hasOwn(args, k);
 export function validate(verb, a) {
   const T = Object.hasOwn(VERBSPEC, verb) ? VERBSPEC[verb] : null; if (!T) return null;

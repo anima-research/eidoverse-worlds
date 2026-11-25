@@ -1,13 +1,16 @@
 // What the sim reads that isn't in the log. Everything else it reads is the entries' own (Covenant III: geometry enters as
 // physics.shape); these are named by the log and fetched apart, so a client can hold the log before it holds them.
 // One list: the replica waits on it (replica.js), and siminputs-check refuses a sim module that reads outside it.
-import { shapeReady, shapeParams, requestGrid } from "../terrainshape.js";
+import { shapeReady, shapeParams, requestGrid, groundArgs } from "../terrainshape.js";
 
 export const SIM_INPUTS = {
   // a heightmap's grid: the authority reads its disk, a client fetches store/heightmaps/<hash>.json
   heightmap: {
     module: "shared/terrainshape.js",
-    missing: (st) => { const t = st?.entities?.["@world"]?.c?.terrain; return t && typeof t === "object" && !shapeReady(shapeParams(t)) ? [t.heightmap.grid] : []; },
+    // read through the ground's args whatever the terrain is: shapeParams names the sculpted layer on this machine as it
+    // goes (the tiles are in the log, so the state holds them), and what can still be missing is the grid
+    missing: (st) => { const t = groundArgs(st?.entities?.["@world"]?.c); const shape = t && typeof t === "object" ? shapeParams(t) : null;
+      return shape?.heightmap && !shapeReady(shape) ? [shape.heightmap.grid] : []; },
     request: (ref) => requestGrid(ref),
   },
 };

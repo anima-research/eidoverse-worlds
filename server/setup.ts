@@ -1,7 +1,7 @@
-// server/setup.ts — the first-run setup link (R 10-28): with no operator, GET /setup is a page that posts the link's token back;
+// server/setup.ts — the first-run setup link: with no operator, GET /setup is a page that posts the link's token back;
 // POST /setup from a proven account (an agent's Bearer if sent, else a person's session) makes it the operator (server/operators.ts claimSetup).
 import { httpCaller, bearerCaller } from "./access.ts";
-import { readCapped } from "./reqbody.ts";
+import { readCapped } from "./request-body.ts";
 import { claimSetup, setupOpen } from "./operators.ts";
 import { addressOf } from "./peer.ts";
 import { windowLimiter } from "./ratewindow.ts";
@@ -39,12 +39,14 @@ export function setupPage(): Response {
   return new Response(PAGE, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer", "content-security-policy": PAGE_CSP } });
 }
 
-/** POST /setup {token}. Refused: another site's page, too many tries, no proven account (a guest), a wrong or used token — no hint which. */
+/** POST /setup {token}. Refused: another site's page (403), too many tries (429), no proven account (401, sign in), a wrong
+ *  token (a plain "refused": nothing says how it was wrong). Once an operator exists /setup is a missing page
+ *  (routes.ts setupOpen); a request that passed that check before a claim landed meets setupOpen again after its body is read. */
 export async function setupClaim(req: Request, srv: { requestIP?(req: Request): { address: string } | null }): Promise<Response> {
   const site = req.headers.get("sec-fetch-site");
   if (site !== null && site !== "same-origin") return json({ error: "refused" }, 403);   // CSRF: only this server's own page, or a native caller
   if (!limiter.grant(addressOf(req, srv)).ok) return json({ error: "too many tries: wait a minute" }, 429);
-  const bearer = bearerCaller(req), who = bearer === undefined ? httpCaller(req) : bearer;   // an explicit Bearer is the claimant, never the cookie beside it (#260 Stella q2)
+  const bearer = bearerCaller(req), who = bearer === undefined ? httpCaller(req) : bearer;   // an explicit Bearer is the claimant, never the cookie beside it
   if (!who?.account) return json({ error: SETUP_SIGN_IN }, 401);
   if (Number(req.headers.get("content-length") ?? 0) > SETUP_BODY_LIMIT) return json({ error: "refused" }, 413);
   let token = "";

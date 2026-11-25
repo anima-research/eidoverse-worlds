@@ -1,0 +1,56 @@
+// icons — the shipped attention glyphs exist as real, distinct path data.
+//
+//   bun test/client/icons-test.ts
+//
+// Why this test is shaped like this: the bug that motivated icons.js was
+// canvas fillText of an emoji painting NOTHING when the platform lacks the
+// glyph — no error, just empty pixels, invisible to any CI that runs on a
+// machine with good font coverage. Path data can't fail that way at the
+// platform level, but it CAN fail at the registry level: an entry deleted in
+// a refactor, an empty array, two states accidentally sharing one glyph. This
+// pins the registry. (A raster assertion — stroke the Path2D and count
+// non-zero pixels per icon — needs a browser; this suite is the headless half.)
+
+import * as I from "../../client/lib/ui/icons.js";
+import { suite } from "../gate/suite.ts";
+const { has, svg } = I as any;
+
+const S = suite("icons");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
+
+// the four states the typing relay admits (server/messages.ts: ear, think, tool → wrench, mic), and the hear glyph pair (HUD toggle, nameplate mark, hover card)
+const SHIPPED = ["ear", "think", "wrench", "mic", "headphones", "headphonesOff"];
+
+const rendered: Record<string, string> = {};
+for (const name of SHIPPED) {
+  check(`${name} exists in the registry`, has(name));
+  const markup = svg(name);
+  rendered[name] = markup;
+  const ds = [...markup.matchAll(/ d="([^"]+)"/g)].map((m) => m[1]).join(" ");
+  // real Lucide glyphs are multi-command paths; a stub or truncation isn't
+  const commands = (ds.match(/[MLHVCSQTAZmlhvcsqtaz]/g) ?? []).length;
+  check(`${name} has substantive path data`, commands >= 4, `${commands} commands`);
+  check(`${name} carries path geometry, not empty markup`, ds.length >= 20, `${ds.length} chars`);
+}
+
+// distinct states must be distinct glyphs — two states sharing one path is
+// the "which is it?" failure a viewer can't diagnose
+for (let i = 0; i < SHIPPED.length; i++)
+  for (let j = i + 1; j < SHIPPED.length; j++)
+    check(`${SHIPPED[i]} ≠ ${SHIPPED[j]}`, rendered[SHIPPED[i]] !== rendered[SHIPPED[j]]);
+
+// and nothing shipped may depend on an entry that isn't there: the registry
+// is allowed to carry spares, but ICON_FOR (nameplate.js) may only name real ones
+const avatarSrc = await Bun.file(new URL("../../client/lib/avatar/nameplate.js", import.meta.url)).text();
+const iconFor = avatarSrc.match(/ICON_FOR = \{([^}]*)\}/)?.[1] ?? "";
+for (const m of iconFor.matchAll(/:\s*'(\w+)'/g))
+  check(`ICON_FOR '${m[1]}' resolves in the registry`, has(m[1]));
+
+// every fill-set entry renders through fsvg (each is an array of paths; a bare string throws in d.map: 333-cm a10)
+const iconsSrc = await Bun.file(new URL("../../client/lib/ui/icons.js", import.meta.url)).text();
+const pfBlock = iconsSrc.slice(iconsSrc.indexOf("const PF = {"), iconsSrc.indexOf("\n};", iconsSrc.indexOf("const PF = {")));
+const pfNames = [...pfBlock.matchAll(/^\s*'?([\w-]+)'?\s*:/gm)].map((m) => m[1]);
+check("setup: the fill set's names are read from icons.js", pfNames.length >= 10 && pfNames.includes("goggles"), pfNames.join(" "));
+const fsvgBroken = pfNames.filter((n) => { try { return !/<path d="M/.test(I.fsvg(n)); } catch { return true; } });
+check("every fill-set icon renders a path through fsvg", fsvgBroken.length === 0, fsvgBroken.join(" "));
+S.done();

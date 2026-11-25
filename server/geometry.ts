@@ -1,33 +1,20 @@
-// geometry — mesh truth for reading beings.
-//
-// The sequencer stays a sequencer: nothing here simulates or renders. But
-// "where can a body sit on this swing" is a question about TRIANGLES, and
-// agents who perceive by reading deserve a better answer than trial-by-
-// snapshot. @gltf-transform is already aboard for the store diet, so we can
-// read the same GLBs the clients render and report shape as DATA: bounding
-// boxes, up-facing flat zones (seat/table candidates), named parts.
-//
-// Everything is offline parsing with caching — cheap enough to serve on
-// request, heavy enough that the cache matters. Raw bytes remain pullable at
-// GET /library/<lib> for agents who want to process locally; this module is
-// the server-side convenience tier.
+// geometry — reads the GLBs clients render and reports shape as DATA for agents: bounding boxes, up-facing flat
+// zones (seat/table candidates), named parts, the box-top lie grid, and collision triangles. Parsing only (nothing
+// simulates or renders), cached. Raw bytes stay at GET /library/<lib>.
 
 import { statSync } from "node:fs";
 import { solidsFromTriangles } from "./solids.ts";
-// the one classifier both runtimes share (#84) — grid math and constants
-// live there; this file only supplies vertices from gltf-transform accessors
+// the support classifier both runtimes share; this file only supplies vertices
 import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID,
-  CERT_SPREAD, CERT_SUBSAMPLE } from "../client/lib/supportclass.js";
+  CERT_SPREAD, CERT_SUBSAMPLE } from "../shared/supportclass.js";
 
-// Ray certification (#94 review B1) needs a BVH — loaded lazily and
-// optionally, same doctrine as gltf-transform above: without it the summary
-// still carries `lie` (classification works) but serves no topGrid, and the
-// consumer's duty on a missing grid is a declared abstention.
+// Ray certification needs a BVH, loaded lazily and optionally: without it the summary still carries `lie` but no
+// topGrid (the consumer abstains).
 let bvhP: Promise<{ THREE: any; MeshBVH: any } | null> | null = null;
 async function getBVH() {
   bvhP ??= (async () => {
     try {
-      const { THREE } = await import("../tools/core-stub.mjs");
+      const { THREE } = await import("./three.mjs");
       const { MeshBVH } = await import("../client/node_modules/three-mesh-bvh/src/index.js");
       return { THREE, MeshBVH };
     } catch (err) {
@@ -38,8 +25,7 @@ async function getBVH() {
   return bvhP;
 }
 
-// gltf-transform loads lazily and optionally, same doctrine as the behavior
-// sandbox: the sequencer must boot (and worlds must run) without it.
+// gltf-transform loads lazily and optionally: the server must boot without it.
 let ioP: Promise<any> | null = null;
 async function getIO(): Promise<any | null> {
   ioP ??= (async () => {
@@ -73,25 +59,17 @@ export type GeomSummary = {
   /** up-facing flat zones, biggest first — seat pans, table tops, decks.
    *  A socket candidate is {pos: [cx, y, cz]} straight off one of these. */
   topSurfaces: Surface[];
-  /** Named mesh parts (Orrery's segmented exports name theirs: tripo_part_N).
-   *  `center`/`size` are the MODEL frame (same as bbox/topSurfaces);
-   *  `origin` is where the part's own node sits in that frame; `local` is the
-   *  part's OWN coordinate frame — the frame a `motion:<name>` component's
-   *  pivot/axis use, so `local.center` is a pivot candidate verbatim and
-   *  [0,0,0] is the node origin (where a hinge usually lives). */
+  /** Named mesh parts. `center`/`size`/`origin` are in the MODEL frame; `local` is the part's OWN frame — the one a
+   *  `motion:<name>` pivot/axis uses, so `local.center` is a pivot candidate and [0,0,0] the node origin. */
   nodes: { name: string; center: number[]; size: number[]; origin: number[];
            local: { center: number[]; size: number[] }; tris: number }[];
   /** true when the mesh was too big to walk exhaustively */
   sampled: boolean;
-  /** the box-top lie (m, model frame): bbox top minus the median 24×24
-   *  cell top — the SAME probe the browser's collider decide() runs, from
-   *  the shared classifier (client/lib/supportclass.js). Present whenever
-   *  the shape was worth probing; consumers scale it before judging. */
+  /** the box-top lie (m, model frame): bbox top minus the median 24×24 cell top — the same probe as the browser's
+   *  collider decide() (shared/supportclass.js). Consumers scale it before judging. */
   lie?: number;
-  /** the probe's grid itself, served as a truthful heightfield for
-   *  floor-shaped assets whose box top lies (#84). Versioned and
-   *  self-describing; cells are model-local max-y, null = unoccupied.
-   *  Row-major, index = z * n + x over the minXZ/sizeXZ footprint. */
+  /** the probe's grid as a heightfield for floor-shaped assets whose box top lies: cells are model-local max-y,
+   *  null = unoccupied; row-major, index = z * n + x over the minXZ/sizeXZ footprint. */
   topGrid?: { version: number; n: number; minXZ: [number, number];
               sizeXZ: [number, number]; lie: number;
               /** the within-cell surface-spread bound every offered cell was
@@ -126,14 +104,8 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
     return null;
   }
 
-  // ONLY scene-reachable nodes exist, as far as the WORLD is concerned:
-  // three.js renders the default scene, so an orphan node (present in the
-  // file, attached to nothing) never appears on any client — and naming one
-  // in a motion component aims at a ghost. Fable's swing seat was exactly
-  // this: Orrery's rescale wrapper left tripo_part_2/3 dangling outside the
-  // scene, measure reported them as real, and the motion pointed at a part
-  // no renderer would ever draw. Report the world's truth; list orphans
-  // separately as the file defect they are.
+  // ONLY scene-reachable nodes exist for the world: a node in ANY scene counts (three.js renders only the default one);
+  // orphan nodes are listed separately as the file defect they are, so no motion aims at one.
   const inScene = new Set<any>();
   for (const scene of doc.getRoot().listScenes()) {
     scene.traverse((n: any) => inScene.add(n));
@@ -259,13 +231,9 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
 
   const ok = Number.isFinite(min[0]);
 
-  // ---- the box-top lie probe (#84) -----------------------------------------
-  // Same math as the browser's collider decide(): the shared accumulator
-  // buckets model-frame vertices 24×24 and medians the cell tops. This pass
-  // walks POSITION accessors exhaustively (the browser walks every vertex,
-  // so sampling here would change the verdict) — gated to shapes that could
-  // ever be floor-shaped, with slack for in-world scaling, so room-scale
-  // architecture and skyscraper meshes never pay for it.
+  // ---- the box-top lie probe -----------------------------------
+  // Same math as the browser's collider decide(), over EVERY vertex (sampling would change the verdict); only for
+  // shapes that could be floor-shaped at some in-world scale.
   let lie: number | undefined;
   let topGrid: GeomSummary["topGrid"];
   if (ok) {
@@ -292,19 +260,12 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
         }
         const fin = acc.finish(max[1]);
         if (fin.occupied >= SPARSE_MIN_CELLS) {
-          // FULL precision: the browser's topLie is unrounded, and the 0.10m
-          // gate is strict — a 0.1004 lie rounded to 0.100 flips the verdict
-          // headlessly while the browser calls it uneven (#94 review B2).
+          // FULL precision: the browser's topLie is unrounded and its 0.10 m gate strict, so rounding flips verdicts.
           lie = fin.lie;
 
-          // ---- per-cell ray certification (#94 review B1) ----------------
-          // A body may stand ANYWHERE in a cell, so every offered cell must
-          // prove its whole surface, not its tallest vertex: CERT_SUBSAMPLE²
-          // (4×4) rays per occupied cell, with rough cells re-proving
-          // themselves on an 8×8 lattice below; any miss (air in the cell)
-          // or a spread beyond CERT_SPREAD serves as null. The offered value
-          // folds in the cell's vertex max — a certified upper bound within
-          // the declared spread.
+          // ---- per-cell ray certification ----------------
+          // A body may stand ANYWHERE in a cell, so each offered cell samples its surface: CERT_SUBSAMPLE² rays (rough cells
+          // re-sample on 8×8); any miss or spread beyond CERT_SPREAD serves null. A hole between the rays goes unseen.
           const bvhMod = tris <= SAMPLE_ABOVE_TRIS ? await getBVH() : null;   // a sampled-scale mesh gets no certification, hence no grid
           if (bvhMod) {
             const soup: number[] = [];
@@ -353,20 +314,11 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
                     if (hit.point.y > hi) hi = hit.point.y;
                   }
                 }
-                // The OFFERED top is max(ray max, this cell's vertex max): a
-                // piecewise-linear surface cannot exceed its vertices inside
-                // the cell, so folding vertMax in covers peaks the ray lattice
-                // slips between. The spread check then runs against the
-                // OFFERED value: a cell whose deepest sampled point sits more
-                // than CERT_SPREAD under what we would offer is not flat
-                // enough to certify — null, air, abstention.
+                // OFFERED top = max(ray max, vertex max): covers peaks between rays (a piecewise-linear surface can't
+                // exceed its vertices). The spread check runs against the offered value.
                 let top = Math.max(hi, vertMax);
                 if (misses || top - lo > CERT_SPREAD) { cells.push(null); continue; }
-                // Adaptive re-certification (#94 B1, "adaptive subdivision is
-                // fine"): a ROUGH cell — spread in the upper half of the
-                // certifiable band — must re-prove itself on an 8×8 lattice.
-                // Smooth cloth skips this; rubble crevices that hid between
-                // the 4×4 rays are found here and refused.
+                // a ROUGH cell (spread in the upper half of the band) re-proves on an 8×8 lattice, catching crevices.
                 if (top - lo > CERT_SPREAD * 0.5) {
                   const RE = 8;
                   for (let sz = 0; sz < RE && !misses; sz++) {
@@ -425,22 +377,10 @@ export async function summarizeGlb(absPath: string, opts: { solids?: boolean } =
   return sum;
 }
 
-/** A model's triangles as one indexed soup in the model's ROOT frame — every
- *  scene-reachable mesh node with its world matrix applied, orphans excluded
- *  (the same "what the world renders" rule summarizeGlb applies). This is the
- *  geometry a browser's collider is fitted from, handed to a process with no
- *  renderer: the agent fits client/lib/colliders.js against it, so a body
- *  standing in an agent's process is held up and held back by exactly the
- *  surfaces a person's browser uses. Takes BYTES (what GET /library/<lib>
- *  serves — usually the draco-compressed optimized copy, which this decodes)
- *  rather than a path, because its caller is a client of that route.
- *  Triangle-list primitives only: strips, fans, lines and points contribute
- *  nothing (three's GLTFLoader turns strips/fans into lists; none ship here).
- *  `building` is the model's own description of itself when a scene node
- *  carries one in its glTF extras (rooms, portals, seats, arrivals — what
- *  mcpl/places.ts reads named places from), parsed if it was stored as a
- *  JSON string, as Blender's exporter stores custom properties.
- *  null when parsing is unavailable or the bytes are not a readable GLB. */
+/** A model's triangles as one indexed soup in its ROOT frame (scene-reachable meshes only): what a browser's collider
+ *  is fitted from, for agents fitting client/lib/colliders.js. Takes the BYTES GET /library/<lib> serves (decodes
+ *  draco). Triangle lists only. `building` is a scene node's glTF-extras self-description (shared/places.js), JSON-parsed
+ *  if stored as a string. null when unparseable. */
 export async function collisionTriangles(bytes: Uint8Array): Promise<{ positions: Float32Array; indices: Uint32Array; building?: unknown } | null> {
   const io = await getIO();
   if (!io) return null;

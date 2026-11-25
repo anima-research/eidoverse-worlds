@@ -17,7 +17,7 @@ SHOULD / MAY are RFC-2119. Parts marked **reserved** are names held now, because
 the log, the registry pin or shipped clients would otherwise freeze whatever took
 them first: an authority refuses what they name until it implements them. How
 the unbuilt parts are expected to work is direction, not protocol, in
-`docs/PHYSICS-DIRECTION.md`.
+`docs/design/PHYSICS-DIRECTION.md`.
 
 ## 0. The idea
 
@@ -69,7 +69,7 @@ decades. Therefore, inside the sim:
 two-word reduction, fixed-order polynomials, explicit-endian bit assembly).
 Its coefficients are its version. It is proven bit-identical across
 JavaScriptCore, node-V8 and deno-V8 on a 48,000-point sweep with a committed
-golden digest (tools/simmath-test.ts); accuracy ≤ 2 ulp on sin/cos/exp over
+golden digest (test/shared/simmath-test.ts); accuracy ≤ 2 ulp on sin/cos/exp over
 the working domain. `shared/terrainmath.js` is the terrain height law
 re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 `hypot` → `sqrt`, since hypot is implementation-approximated).
@@ -212,7 +212,7 @@ doesn't yet.
 `reserved`) until an engine declares that it reads it: a number a builder can
 type that nothing honours is a number tuned for nothing. Their expected units,
 limits and meanings of absence, and how the names map to the major engines,
-are direction (`docs/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
+are direction (`docs/design/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
 bare `{}` read as dynamic while the component's absence means static or
 nothing.
 
@@ -220,7 +220,7 @@ nothing.
   only, with `physics`' reserved fields: no shape is pinned until a world
   needs one, and a `physics.surface` naming no surface reads as none. The
   shape it was sketched with, and how two surfaces' modes would combine, are
-  `docs/RESERVED-SHAPES.md`.
+  `docs/reference/RESERVED-SHAPES.md`.
 - **Angular velocity is `w`: [x, y, z] in rad/s about world axes, everywhere**
   (acts, launches, state samples). Orientation is `q`, a unit quaternion
   (PROTOCOL §9.1).
@@ -258,7 +258,7 @@ nothing.
   for a cone or a spring. `parent` is a rigid attachment and never a solver
   joint; `openable` is kinematic animation; a *physical* door is a
   physics-joint.
-- **The target shape** of a joint is direction (`docs/PHYSICS-DIRECTION.md`), not
+- **The target shape** of a joint is direction (`docs/design/PHYSICS-DIRECTION.md`), not
   registered and not pinned.
 
 ## 4. Covenant III — the planes stand
@@ -300,7 +300,7 @@ updates; VRChat splits them the same way):
   `v`); the thing's own motion ignores the body. Carrying a person is reserved,
   and whatever form it takes, the carried person may stop it at any moment;
   how it would work, and simulated bodies, are direction
-  (`docs/PHYSICS-DIRECTION.md`).
+  (`docs/design/PHYSICS-DIRECTION.md`).
 - **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
   - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
     `grab` is refused (`held`) until a `launch` or a settlement.
@@ -310,7 +310,7 @@ updates; VRChat splits them the same way):
     engine until it rests (§4); a flight's outcome never depends on a presence-plane fact (Covenant III).
   - **A held object rides its holder's hand**: it travels in the holder's pose as which grip and where, never as a
     separate stream. Taking a resting thing into live authority is a `lift`; leaving it is a `launch`.
-  - **Reserved names, refused until built** (their intended rules are direction, in docs/PHYSICS-DIRECTION.md): the verb
+  - **Reserved names, refused until built** (their intended rules are direction, in docs/design/PHYSICS-DIRECTION.md): the verb
     `cohold`, the `steal` value `"ask"`, and on `@world.physics-engine` the fields `claimDebounceMs` and
     `liveAuthorityExpiryMs`.
 - **Write authority** is the door: it alone appends to the log, and it checks
@@ -332,7 +332,7 @@ into rollback the moment bodies collide.
 
 The presence message `state` (a live authority streaming a thing's samples) and the settlement claim are reserved names:
 the server refuses every `state` sample, and nothing settles by claim yet. Their intended shapes are direction, not
-contract: docs/PHYSICS-DIRECTION.md.
+contract: docs/design/PHYSICS-DIRECTION.md.
 
 ## 5. Covenant IV — tick-indexed time
 
@@ -377,7 +377,7 @@ engine has them; no component names them yet); capsules, convex and compound
 shapes; flying bodies colliding with each other mid-flight under two
 different launches is engine-defined attribution (the touching launch);
 shared live physics between several hands is solved one way everywhere that
-ships (research 10-11, C): one simulator per thing, a holder-side theft
+ships: one simulator per thing, a holder-side theft
 switch, claims ordered by the arbiter; the second hand, where it exists at
 all (Bonelab Fusion, MIT, `LabFusion/src/Entities`), is a force inside the
 holder's sim. §4.1 fixes the same here (`steal`, admission order, `cohold`
@@ -406,10 +406,10 @@ the log stays exact for everyone.
 - **Rests**: every rest in a log MUST equal the carried engine's result for
   its launch (the sim layer's `checks.disagree` is empty).
 - **Cross-engine**: results MUST be bit-identical across JavaScript
-  engines (tools/simmath-test.ts for the kernel, bun only; the `browser` suite
+  engines (test/shared/simmath-test.ts for the kernel, bun against node or deno; the `browser` suite
   runs the fold/authority core in headless Chromium byte for byte against bun,
   not the kernel).
-- `bun tools/protocol/run.ts phys physlive physseeds` runs the physics suites:
+- `bun test/gate/run.ts phys physlive physseeds` runs the physics suites:
   launches, rests by cause, carriers, the running server and a client's fold,
   and the reserved seeds (the shape grammar, physical properties, releases
   with spin, the state sample, one clock).
@@ -418,4 +418,4 @@ the log stays exact for everyone.
 
 ## Lost at the edge
 
-A flight that crosses the world's edge is lost there and then: the sim layer reports it rested where it is (`lost`), the rest is admitted without the engine's resting flag, and the authority sends it home on the same pass. Bounds bound x, z and the sky (`max[1]`); the floor is the terrain's, never `bounds.min[1]` (the default bounds' min y sits above the default heightfield). (10-11, attack-physics P1/P2.)
+A flight that crosses the world's edge is lost there and then: the sim layer reports it rested where it is (`lost`), the rest is admitted without the engine's resting flag, and the authority sends it home on the same pass. Bounds bound x, z and the sky (`max[1]`); the floor is the terrain's, never `bounds.min[1]` (the default bounds' min y sits above the default heightfield).

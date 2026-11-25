@@ -78,3 +78,88 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## procedural-grass-threejs (MIT)
+
+- **What:** the grass wind and pushers, adapted to three's TSL node shaders.
+- **Where:** `client/lib/vegetation/vegetation.js` (its header carries the credit and the copyright line).
+- **Source:** https://github.com/CK42BB/procedural-grass-threejs, commit `26f072308df12caac68a474cb40300ef576793e1`.
+- **Licence:** MIT.
+
+```
+MIT License
+
+Copyright (c) 2026 Kingsley
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## SeedThree (MIT)
+
+- **What:** the dichotomous plant math (`src/core/dichotomous.js`), the spray cards (`src/core/leaf-cards.js`)
+  and the seeded rng (`src/core/rng.js`, verbatim).
+- **Where:** `client/lib/vegetation/vegetation_shrub_gen.js` (its header lists what was kept and removed).
+- **Source:** https://github.com/SkyeShark/SeedThree (the header names "SeedThree"; its `rng.js` matches this
+  repo's copy line for line). Came here via eidoverse-video `@62365e9` (2026-08-27); the SeedThree commit is not recorded.
+- **Licence:** MIT (the repo's own LICENSE, checked 2026-11-08).
+
+```
+MIT License
+
+Copyright (c) 2026 SkyeShark
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Vendored directories (notice kept beside the files)
+
+- `client/vendor/three-addons/htmlmesh.js` — three.js `HTMLMesh.js`, MIT; notice in `client/vendor/three-addons/LICENSE-three-MIT.txt`, changes in its header.
+- `client/vendor/piper/` — the piper_phonemize wasm build and its data, both GPL-3.0 (espeak-ng's library is statically linked into the `.wasm`; its MIT parts stay MIT); source, digests and terms in `client/vendor/piper/NOTICE.md`.
+- `client/vendor/ammo/` — ammo.js (Bullet Physics port), zlib; notice in `client/vendor/ammo/LICENSE-ammo-zlib.txt` (upstream's
+  LICENSE, verbatim). Both files are byte-identical (git blob) to `builds/` at https://github.com/kripken/ammo.js commit
+  `0f92865b2f2cff3602ff2cf203101cde0edf2c37` (2026-06-16); sha256 `ammo.wasm.js` `5645b5a0c4f03be9d9d1ae604ffacd5e5e525310cfd1d0ed27474cdd1f34aab0`,
+  `ammo.wasm.wasm` `a61b504d4a6ce6bb93bd843e0f61edb8115e7317f1b3462247031a83ddb25d09`.
+
+## Used with the author's permission
+
+- `client/lib/ragdoll/ammodoll.js` (its tables in `client/lib/ragdoll/ammodoll-tuning.js`) — ported from
+  socketteer/ragdoll-physics (tables carried verbatim, per commit `9d6abcd69`). The repo isn't public (GitHub 404,
+  2026-11-08) and has no licence file. Its author (GitHub socketteer, janus in the eidoverse dev channel), asked there
+  whether it had a licence, answered on 2026-11-13T08:28:07Z: "i dont recall a decision on a license but i am fine with
+  it being used for anything". That is the permission for the ported code and tables. ammo.js itself is zlib (above).
+
+## Credited, licence not yet recorded
+
+- `client/lib/xr/xrwarm.js` — a shader-warming pattern from BasisVR (MIT, © 2024 Luke B Doolan), cited in its header.

@@ -1,14 +1,13 @@
-// Runtime adapter for shared CPU body/terrain modules that otherwise import
-// the browser's core. Three scene objects and shader nodes are real; there is
-// no WebGPU renderer, canvas, test material imitation or fixture dependency.
+// Stand-in for the browser's core module, so shared CPU body/terrain modules load headless.
+// Three scene objects and TSL nodes are real; there is no renderer or canvas.
 import * as THREE from 'three/webgpu';
 import * as TSL from 'three/tsl';
 export { THREE, TSL };
 export const scene = new THREE.Scene();
 export const ground = null;
 export const grid = null;
-export const axisLines = null;          // terrain.js toggles it with the grid (VR alpha, part 2)
-export const backendName = 'none';      // avatar.js reads the renderer backend; there is none here
+export const axisLines = null;          // terrain.js toggles it with the grid
+export const backendName = () => 'none';   // avatar.js calls it for the renderer backend; there is none here
 export const XR_BOOT = false;           // frameloop.js: this is never an XR boot
 export const camera = new THREE.PerspectiveCamera();
 // Client light setup reads shadow configuration even when nothing draws.

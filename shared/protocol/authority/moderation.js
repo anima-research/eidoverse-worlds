@@ -1,8 +1,7 @@
 // shared/protocol/authority/moderation.js — acting on a person: the rule every person-act shares (personAct), lifting a
 // sanction (personLift), and the moderation verbs (warn, mute/unmute, kick, ban/unban, modlog, bans) as
-// MOD_VERBS, which authority.js spreads into VERBS where they stood (refactor split, 2026-10-17; moved from authority.js's
-// "acting on a person" section and the VERBS table unchanged). Moderation is the separate moderator log (§2.1): nothing
-// here writes the world log.
+// MOD_VERBS, which authority.js spreads into VERBS. Moderation is the separate moderator log (§2.1): nothing here writes
+// the world log.
 import { isIdentity } from "../fold.js";
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
@@ -10,8 +9,7 @@ import { refuse, said } from "./refuse.js";
 import { isE, opsQuiet } from "./storage.js";
 import { banOf, effective, entryBy, inForceOf, may, modHolder, rankOf, roleOf, sanctionsNow, wcOf } from "./rights.js";
 
-// ---------- acting on a person (research roles §6) ----------
-const WARN_OR_MOD = (st, who) => modHolder(st, who) || roleOf(st, who) === "owner";
+// ---------- acting on a person ----------
 const reasonOf = (a) => (typeof a.reason === "string" && a.reason.trim() ? { reason: a.reason.slice(0, R.REASON_MAX) } : {});
 /** A duration in minutes → until (the authority's ms). Capped below owner at `cap`. */
 function minutesUntil(w, actor, minutes, { cap, what, required = false }) {
@@ -40,10 +38,10 @@ function personAct(w, actor, a, verb, powers, { noOwner } = {}) {
 function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   const st = w.state(); if (!isIdentity(a.who)) refuse("shape", `un${verb} {who}`, "");
   if (!may(st, actor, power) && roleOf(st, actor) !== "owner") refuse("rights", `lifting a ${verb} needs ${power}; you are ${roleOf(st, actor)}`, "ask a moderator or an owner", { needs: power });
-  if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");   // review 10-07
-  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions: review 10-07);
+  if (a.who === actor) refuse("rank", `you can't lift a ${verb} on yourself`, "ask someone ranked above whoever made it");
+  // a lift ends every record of its kind in force, so it must be allowed over each one (stacked sanctions);
   // with none in force (never made, or already ended) it answers ok and changes nothing: no record is logged, and nobody is
-  // told (server-check CM4: "a second unban changes nothing, and tells nobody anything"). Returns whether any was in force
+  // told. Returns whether any was in force
   const inForce = Array.isArray(recs) ? recs : recs ? [recs] : [];
   for (const rec of inForce) {
   if (roleOf(st, actor) === "owner" || rec.actor === actor) continue;
@@ -53,9 +51,10 @@ function personLift(w, actor, a, verb, recs, { strict, power = verb }) {
   return inForce.length > 0;
 }
 const MOD_VERBS = {
-  // moderation (§2.1): a separate log, enforced by the authority; never a world entry. Research roles §5–6: every act on a
-  // person needs its permission and a target ranked strictly below you (never yourself, never your equal, never an owner);
-  // its duration is capped below owner; its record names identities. Expiry is the authority's clock (sanction views above).
+  // moderation (§2.1): a separate log, enforced by the authority; never a world entry. Every act on a person needs its
+  // permission and a target ranked strictly below you (never yourself, never your equal, never an owner; a lift, unmute or
+  // unban, is ranked against whoever made the record: personLift);
+  // a ban is until lifted or up to 3650 days, for anyone who may ban (no lower cap below owner); its record names identities. Expiry is the authority's clock (the sanction views: rights.js).
   warn: (w, actor, a) => { const t = personAct(w, actor, a, "warn", R.WARN_POWERS);
     if (typeof a.reason !== "string" || !a.reason.trim()) refuse("shape", "warn {who, reason}: a warning says why", "e.g. warn {who, reason: 'please keep it friendly'}");
     w.appendMod({ actor, verb: "warn", who: a.who, reason: a.reason.slice(0, R.REASON_MAX) }); return { ok: true, warned: a.who, ...t, logged: "moderator log" }; },
@@ -67,7 +66,7 @@ const MOD_VERBS = {
   unmute: (w, actor, a) => { if (!personLift(w, actor, a, "mute", inForceOf(w, a.who, "mute"), { strict: true })) return { ok: true, unmuted: a.who, recorded: false, note: `${said(a.who)} has no mute in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unmute", who: a.who }); return { ok: true, unmuted: a.who }; },
   // a kick removes a live session now (the server does the removing on this reply) and they may come straight back: the
-  // conventional kick (R 10-28); a timed exclusion is a ban {days}
+  // conventional kick; a timed exclusion is a ban {days}
   kick: (w, actor, a) => { const t = personAct(w, actor, a, "kick", ["kick"], { noOwner: "kicked" });
     if (a.minutes !== undefined) refuse("shape", "a kick has no length: it removes them now and they may come back at once", "to keep them out for a while, ban {who, days, reason}");
     w.appendMod({ actor, verb: "kick", who: a.who, ...reasonOf(a) }); return { ok: true, kicked: a.who, ...t, logged: "moderator log" }; },
@@ -80,7 +79,7 @@ const MOD_VERBS = {
     const op = !!CTX.operator && CTX.operator === actor;
     if (!op && !personLift(w, actor, a, "ban", inForceOf(w, a.who, "ban"), { strict: true })) return { ok: true, unbanned: a.who, recorded: false, note: `${said(a.who)} has no ban in force here: there was nothing to lift` };
     w.appendMod({ actor, verb: "unban", who: a.who, ...(op ? { operator: true } : {}) }); return { ok: true, unbanned: a.who, ...(op ? { operator: true } : {}) }; },
-  // the moderation log (research: read by anyone holding a moderation power): newest first, merged with role changes
+  // the moderation log (read by anyone holding a moderation power): newest first, merged with role changes
   // from the world log (roles:* writes, read-only) and the authority's automatic cool-downs
   modlog: (w, actor, a) => { const st = w.state(); if (!modHolder(st, actor) && roleOf(st, actor) !== "owner") refuse("rights", "the moderation log is for people who hold a moderation power (mute, kick, ban or pauseScripts)", "ask a moderator", { needs: "mute|kick|ban|pauseScripts" });
     const lim = Math.max(1, Math.min(200, a.limit ?? 50)); const before = a.before ?? Infinity;

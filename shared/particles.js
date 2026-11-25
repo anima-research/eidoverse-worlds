@@ -1,13 +1,6 @@
-// particles — how a `particles` component READS: the one prose line a text-tier resident gets for an emitter, and the
-// begin / change / end narration of a live change. What a value MEANS (its effect document, params, limits, the older
-// spelling) is shared/particle_effects.js; the simulation is shared/particlesim.js. Pure; imported by
-//
-//   mcpl/agent.ts            text-tier perception: look() + the live percept
-//   shared/a11y.js           the authority's and the inspector's reading (name, description, what it can do, its state)
-//
-// so a renderer client, a late joiner, and a resident who perceives by reading cannot disagree about what is burning.
-//
-// Unit-tested in tools/particles-test.ts.
+// particles — how a `particles` component READS: the prose line a text-tier resident gets for an emitter, and the
+// begin / change / end narration of a live change. What a value MEANS is shared/particle_effects.js; the simulation is
+// shared/particlesim.js. Pure; shared by mcpl/agent-senses.ts and shared/a11y.js. Tests: test/client/particles-test.ts.
 import { ESSENTIALS, ESSENTIAL_NAMES, instanceOf, effectBlobName, effectFor, hashSeed, QUALITY_TIERS, essentialNameOf } from './particle_effects.js';
 import { quoted } from './text.js';
 
@@ -16,23 +9,12 @@ export { hashSeed, QUALITY_TIERS };
 export const PARTICLE_PRESETS = Object.freeze(Object.fromEntries(ESSENTIAL_NAMES.map((k) => [k, { count: ESSENTIALS[k].emitters[0].spawn.amount, reads: ESSENTIALS[k].reads }])));
 export const PARTICLE_MAX_COUNT = 4000;   // EFFECT_LIMITS.amount: main's motes (3,000) fit
 
-/** mulberry32 — small, fast, and the same sequence everywhere. */
-export function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function rnd() {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-/** The emitter's seed: the authored one if there is one, otherwise derived from the entity id and the effect (persistent:
- *  the id is; every client and every replay computes the same number without a round trip). */
+export { mulberry32 } from './rand.js';
+/** The emitter's seed: the authored one, else derived from the entity id and the effect (so every client and replay agrees). */
 export function emitterSeed(entityId, data) {
   const inst = instanceOf(data) ?? {};
   if (typeof inst.seed === 'number' && Number.isFinite(inst.seed)) return Math.floor(inst.seed) >>> 0;
-  return hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);   // an Essential's name (or the address one was stored as before 10-17)
+  return hashSeed(`${entityId}:${essentialNameOf(inst.effect) ?? inst.effect ?? ''}`);
 }
 /** Particles one viewer draws of `amount`: the effect's own ratio (an older value's quality) and the viewer's tier,
  *  whichever asks for less. The only number allowed to differ between two clients looking at the same fire. */
@@ -46,7 +28,7 @@ const short = (addr) => `${addr.replace(/^eido:sha256\//, 'sha256:').slice(0, 19
  *  reader has it; else its address, shortened. */
 function readsAs(effect, lookup) {
   if (typeof effect !== 'string' || !effect) return 'something';
-  const ess = essentialNameOf(effect); if (ess) return ESSENTIALS[ess].reads;   // a name, or the address it is stored as
+  const ess = essentialNameOf(effect); if (ess) return ESSENTIALS[ess].reads;
   const doc = effectFor(effect, lookup);
   if (doc) return doc.reads || doc.name ? quoted(doc.reads || doc.name, 80) : `a stored effect (${short(effect)})`;
   if (effectBlobName(effect)) return `a stored effect (${short(effect)})`;
@@ -54,10 +36,8 @@ function readsAs(effect, lookup) {
 }
 
 /**
- * How an emitter reads in prose, from the RAW component value (either spelling). Tolerant: an effect this reader doesn't
- * know still reads as an emitter rather than disappearing. Names the semantic thing on the owning entity — never a
- * sprite count, never a bare `components: particles`. Heat, light, sound and contact are NOT claimed: separate
- * authored components provide those, and a resident who reads "warm" acts on it.
+ * How an emitter reads in prose, from the RAW component value (either spelling); an unknown effect still reads as an
+ * emitter. Never a sprite count. Heat, light, sound and contact are NOT claimed: separate components provide those.
  */
 export function describeParticles(data, { lookup = () => null } = {}) {
   const inst = instanceOf(data);
@@ -67,17 +47,15 @@ export function describeParticles(data, { lookup = () => null } = {}) {
   const o = Array.isArray(inst.at) && inst.at.length === 3 && inst.at.every((n) => typeof n === 'number' && Number.isFinite(n)) ? inst.at : null;
   bits.push(`local origin [${(o ?? [0, 0, 0]).join(', ')}]`);
   if (typeof inst.part === 'string') bits.push(`on its ${quoted(inst.part, 64)}`);
-  // size is a shared fact a resident can act on (a candle flame is not a bonfire: upstream #256), so a scaled emitter
-  // says so; at its own size (absent, or 1) nothing is claimed
+  // a scaled emitter says so (a candle flame is not a bonfire); at its own size nothing is claimed
   if (typeof inst.scale === 'number' && Number.isFinite(inst.scale) && inst.scale !== 1) bits.push(`scale ${+inst.scale.toPrecision(3)}`);
   if (!known && !effectBlobName(inst.effect)) bits.push('effect unknown to this client');
-  // the component IS the emitter's state: present and playing means it is emitting now
   bits.push(inst.playing === false ? 'stopped' : 'active');
   return `${inst.playing === false ? 'can emit' : 'emitting'} ${readsAs(inst.effect, lookup)} (${bits.join('; ')})`;
 }
 
-/** begin / change / end, from the two component states around a live change. `null` on either side means the emitter
- *  was not there. Returns null when nothing perceptible happened (an identical re-author). */
+/** {kind: begin | end | stop | start | change}, from the two component states around a live change. `null` on either side
+ *  means the emitter was not there. Returns null when nothing perceptible happened (an identical re-author). */
 export function emitterTransition(prev, next) {
   const p = instanceOf(prev), n = instanceOf(next);
   if (!p && !n) return null;
@@ -89,8 +67,8 @@ export function emitterTransition(prev, next) {
   return { kind: 'change', preset: n.effect ?? null, from: p.effect ?? null };
 }
 
-/** The one ambient line a live attach/replace/remove produces: actor, entity, effect, and which of begin/change/end
- *  happened; nothing per-particle or per-frame. */
+/** The one ambient line a live attach/replace/remove produces: actor, entity, effect, and which transition
+ *  (emitterTransition's kind) happened; nothing per-particle or per-frame. */
 export function transitionLine(actor, entityId, transition) {
   if (!transition) return null;
   const r = (e) => readsAs(e, () => null);

@@ -1,11 +1,8 @@
-// server/worldindex.ts — what each name under WORLDS_DIR is, held outside the worlds' bytes (§F F-3, no existence oracle;
-// Mica 11-05: "toldOf should decide visibility before touching world bytes"). access.ts toldOf and doorFor ask lookup(),
-// and lookup() makes the same calls for every name, missing or not: one stat of WORLDS_DIR, the same five stats under the
-// name, one map read. It opens no world. An entry is read from a world's bytes only when those stats change: at boot
-// (warmIndex), or after someone changes the directory (an operator's act, a translation), never because of who asks.
-// An old-format world's entry carries its owners (world.ts owners-of, read with the entry), so "is this asker its owner?"
-// (ownerIn: server/ownerrecognise.ts, the rule the translation's --claim applies too) is answered from memory: no request
-// reads the old log or runs the CLI.
+// server/worldindex.ts — what each name under WORLDS_DIR is, held outside the worlds' bytes so visibility is decided before
+// any are touched (no existence oracle). lookup() makes the same stats for every name, missing or not, and opens no world;
+// an entry is re-read only when those stats change (boot, an operator's act, a translation), never because of who asks
+// (by the 2 s sweep, or by whichever lookup meets the change first, before its visibility is decided).
+// An old-format world's entry carries its owners (tools/world.ts owners-of), so ownerIn answers from memory.
 import fs from "node:fs";
 import path from "node:path";
 import { WORLDS_DIR, ROOT, OPT_DIR, BACKUPS_DIR } from "./config.ts";
@@ -16,10 +13,10 @@ import { readLogBytes } from "./durable.ts";
 import { directoryFor } from "./directory.ts";
 import { recogniseOwner, type OldOwner, type Recognised } from "./ownerrecognise.ts";
 import { opsOf } from "../shared/protocol/fold.js";
+import { WORLD_NAME_RE } from "./limits.ts";
 import { runOneShot } from "./oneshot.ts";
 
-/** Tests only: EIDO_TEST_ACCESS_TRACE=<file> appends each index lookup, entry read, owner check and world load as a JSON line
- *  (access-check F23-O10/O11 read it; "refresh" is the background sweep's read, which no asker causes). Unset, nothing is written. */
+/** Tests only: EIDO_TEST_ACCESS_TRACE=<file> appends each lookup, entry read, owner check and world load as a JSON line. */
 const TRACE = process.env.EIDO_TEST_ACCESS_TRACE ?? "";
 export function accessTrace(ev: "lookup" | "read" | "refresh" | "owners" | "load", name: string) {
   if (TRACE) try { fs.appendFileSync(TRACE, JSON.stringify({ ev, name }) + "\n"); } catch { /* the test's own file */ }
@@ -30,7 +27,6 @@ export type Owners = OldOwner[];
 export type IndexEntry = { kind: "none" } | { kind: "interrupted" } | { kind: "saved"; door: DoorRead | null }
   | { kind: "old"; old: OldWorld; owners: Owners | null; ready: Promise<void> | null };
 const NONE: IndexEntry = { kind: "none" };
-const NAME = /^[a-z0-9_-]{1,64}$/i;
 const PROBES = ["", "world.jsonl", "world.mod.jsonl", "log.jsonl", "translation.lock"];
 const held = new Map<string, { key: string; e: IndexEntry }>();
 let listing = new Set<string>(), listKey = "", listedAt = 0;
@@ -52,7 +48,7 @@ export function lookup(name: string, { loaded = false } = {}): IndexEntry {
   return entry(name, loaded);
 }
 function entry(name: string, loaded: boolean, sweeping = false): IndexEntry {
-  if (!NAME.test(name)) return NONE;
+  if (!WORLD_NAME_RE.test(name)) return NONE;
   relist(Date.now());
   const d = path.join(WORLDS_DIR, name), key = PROBES.map((p) => statKey(path.join(d, p))).join("|");
   if (!listing.has(name)) return NONE;
@@ -94,18 +90,16 @@ function read(name: string, sweeping: boolean): IndexEntry {
   return e;
 }
 
-// A saved world's door: the change entries in world.jsonl that touch @world's access, default-role, role-defs and roles:*,
-// folded set/delete in order (only those keys: nothing else about the world is read), and its moderator log
-// (world.mod.jsonl, never in the world log): a ban or kick there closes the door before the world is loaded, as after
-// (Antra's review of f91840e5 P1). An unreadable moderator log is no door (as an unreadable world log), never a door that
-// forgets its bans.
+// A saved world's door: the change entries in world.jsonl touching @world's access, default-role, role-defs and roles:*,
+// folded in order, and its moderator log (world.mod.jsonl): a ban there closes the door before the world is loaded.
+// An unreadable moderator log is no door, never a door that forgets its bans.
 const DOOR_LINE = /"id"\s*:\s*"@world"/;
 const isDoorComp = (k: unknown) => typeof k === "string" && (k === "access" || k === "default-role" || k === "role-defs" || k.startsWith("roles:"));   // role-defs: a custom role's powers (the moderation bypass)
 function readDoor(d: string): DoorRead | null {
   let mod: any[]; try { mod = modLogAt(path.join(d, "world.mod.jsonl")).mod; } catch { return null; }
   const wc: Record<string, any> = {};
   try {
-    for (const line of readLogBytes(path.join(d, "world.jsonl"), { cut: false }).toString("utf8").split("\n")) {   // a torn last line is not the log's yet (#260 bot 7)
+    for (const line of readLogBytes(path.join(d, "world.jsonl"), { cut: false }).toString("utf8").split("\n")) {   // a torn last line is not the log's yet
       if (!line || !DOOR_LINE.test(line)) continue;
       let e: any; try { e = JSON.parse(line); } catch { continue; }
       if (e?.kind !== "change") continue;
@@ -120,12 +114,12 @@ function readDoor(d: string): DoorRead | null {
   return { wc, mod };
 }
 
-// An old world's owners: tools/protocol/world.ts owners-of, once per change of the world (the translator stays out of the server
-// process), one-shot and framed (server/oneshot.ts): an answer it doesn't accept reads as no owners known.
+// An old world's owners: tools/world.ts owners-of, run one-shot (server/oneshot.ts) once per change of the world; an answer
+// it doesn't accept reads as no owners known.
 async function ownersOf(name: string): Promise<Owners | null> {
   accessTrace("owners", name);
   try {
-    const r = await runOneShot([process.execPath, path.join(ROOT, "tools", "protocol", "world.ts"), "owners-of", "--", name],
+    const r = await runOneShot([process.execPath, path.join(ROOT, "tools", "world.ts"), "owners-of", "--", name],
       { cwd: ROOT, env: { ...process.env, WORLDS_DIR, BACKUPS_DIR, OPT_DIR }, guardMs: 120_000, label: `owners-of ${name}` });
     if (!r.accepted || r.code !== 0) return null;
     const l = r.out.split("\n").find((x) => x.startsWith("owners-json "));

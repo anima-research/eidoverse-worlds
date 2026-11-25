@@ -1,5 +1,5 @@
 {
- "source": "client/lib/motioneval.js",
+ "source": "shared/motioneval.js",
  "tolerance": 0.000001,
  "cases": [
   {

@@ -1,8 +1,8 @@
-// shared/viewdiff.js — what changed between two world views (view.js viewState), said in the protocol's terms (slice 3c).
-// The renderer's realizers and the agent's caches react to these. Pure.
+// viewdiff — what changed between two world views (protocol/view.js viewState), in the protocol's terms. Pure; the
+// renderer's realizers and the agent's caches react to these.
 //   diffView(prev, next) → { things: [{id, what, comp?}], world: [key], ids: {<map key>: [changed entry]} }
 //     what: 'gone'   the thing left the world
-//           'born'   it's new, or became a different thing (another model, kind, or a field only a rebuild can show)
+//           'born'   it's new, or became a different thing (another model: the one field only a rebuild can show)
 //           'pose'   its own transform (pos / q / scale / scale3) moved
 //           'parent' what it hangs from changed (attached, detached, or another parent / slot / offset)
 //           'comp'   one component (`comp`) was set, changed or removed
@@ -12,8 +12,8 @@
 
 const EPS = 1e-9;
 export function near(a, b) {
-  // a whole number is a count, an id's seq or a timestamp, compared exactly (a ms stamp near 1.7e12 is 1.7 s wide at a relative
-  // 1e-9); the tolerance is for float noise in poses and scales
+  if (a === b) return true;   // the same value (a sculpted tile's samples are handed from view to view as they are)
+  // integers (counts, seqs, timestamps) compare exactly; the tolerance is for float noise in poses and scales
   if (typeof a === "number" && typeof b === "number") return a === b || (!(Number.isInteger(a) && Number.isInteger(b)) && Math.abs(a - b) <= EPS * Math.max(1, Math.abs(a), Math.abs(b)));
   if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => near(x, b[i]));
   if (a && b && typeof a === "object" && typeof b === "object") {
@@ -24,13 +24,12 @@ export function near(a, b) {
 }
 
 const POSE = ["pos", "q", "scale", "scale3"];
-// fields the diff reads itself (the derived ones, view.js DERIVED), or that are stamps rather than state; every other key on
-// a record is a component (model, parent and the rest sit flat, in the protocol's names)
+// fields the diff reads itself (view.js DERIVED) or that are stamps; every other key on a record is a component
 const OWN = new Set([...POSE, "model", "yaw", "parent", "born", "actor", "ts", "placer"]);
 // the one component only a rebuild can show: a changed model is another object (a mesh, a light, a socket change in place)
 const REBUILDS = new Set(["model"]);
 const NOT_WORLD = new Set(["entities", "recentChat", "chatTotal"]);
-const MAPS = new Set(["roles", "bans", "behaviors"]);
+const MAPS = new Set(["roles", "bans", "behaviors", "terrainFeatures", "terrainTiles"]);
 
 /** One thing's change from `p` to `n` (either may be undefined), appended to `out`. */
 export function diffThing(id, p, n, out) {

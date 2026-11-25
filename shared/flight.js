@@ -1,25 +1,13 @@
 // flight — the deterministic flight integrator: glide polar, falling leaf,
 // stamina, and the state machine that decides which of them owns the body.
 //
-// Implements the physical half of flight-spec-v0.md (SHA-256
-// 641da611754c7097142e16b355a6dd79b4d431646e0c1d890759884f86fbe805) and the
-// airborne clause of down-spec-v0.1.md v0.1.1 (SHA-256
-// 71e4fff28fbc6145f452df9a8b7a03b3fbbcd0bf9eba471f207edbd3435c0a91).
-// Author of both, and acceptance authority: Mythos.
+// Implements the physical half of flight-spec-v0.md and the airborne clause of down-spec-v0.1.md (the "spec §"
+// and "down-spec §" notes below cite them; neither spec is in this repo).
 //
-// PURE and dependency-free, and here rather than in server/ or client/ for the
-// reason the directory exists: the spec's Q2 asks whether the glide polar is
-// authoritative server-side or cosmetic client-side, and the answer ruled by
-// the author is neither-and-both — ONE deterministic function that every
-// runtime integrates. Authority is not position streaming; authority is the
-// server's verb-RECEIPT TIMESTAMPS being the tie-breaker. A late verb is a new
-// input from its receipt forward. The trajectory before it is already true and
-// stays true.
-//
-// That is the anti-haunting clause wearing aerodynamics, and it is why this
-// file takes `now` from its caller, holds no clock, and keeps every piece of
-// mutable state in a value the caller owns: nothing here can rewrite what
-// already happened, because nothing here remembers it.
+// PURE and dependency-free, and shared on purpose: ONE deterministic function that every runtime integrates (spec Q2).
+// Authority is not position streaming; the server's verb-RECEIPT TIMESTAMPS are the tie-breaker, and a late verb is a
+// new input from its receipt forward. So this file takes `now` from its caller, holds no clock, and keeps all mutable
+// state in a value the caller owns: nothing here can rewrite what already happened.
 //
 // SCOPE. This is the body. It consumes trusted events and never asks why:
 //
@@ -56,19 +44,8 @@
 
 // ---------------------------------------------------------------- config
 //
-// CONFIG, NOT CONSTANTS -- Mica's word, and the spec's own §9 Q5 admits the
-// stamina numbers are guesses. Everything a reviewer might want to tune is
-// here with the spec's value as its DEFAULT, so tuning is a diff to a config
-// literal and never a hunt through the integrator.
-//
-// The 3.4s period is not a tunable in the same sense as the rest. It is the
-// house's breath -- wing idle, stamina tick, and the leaf oscillation all beat
-// on it (spec §5, §2, T8) -- so it appears once and everything that needs a
-// period reads it rather than restating it.
-//
-// That "once" is now shared/breath.js, because the wing idle is a property of
-// Mythos's BODY and reading it from here made avatar.js an importer of the
-// flight core. Re-exported so every existing caller is unchanged.
+// CONFIG, NOT CONSTANTS: the spec's own §9 Q5 admits the stamina numbers are guesses, so every tunable is here with the
+// spec's value as its default. The 3.4 s period is the house's breath (shared/breath.js), re-exported for callers.
 
 export { BREATH } from './breath.js';
 import { BREATH } from './breath.js';
@@ -77,33 +54,11 @@ export const DEFAULT_CONFIG = {
   breath: BREATH,
 
   // ---- glide polar (spec §1 glide_to, §0 "albatross, not hummingbird")
-  // Sink rate as a function of airspeed: a parabola about minimum sink, which
-  // is the standard single-parabola approximation and honest to about +/-5%
-  // over the range a glider actually flies.
-  //
-  // A polar has TWO optima and they are not the same speed. minSinkSpeed is
-  // where you lose altitude slowest (circle a thermal here); bestGlideSpeed is
-  // where you go furthest per metre lost (cross country here), and it is
-  // always faster, because ratio is v/sink and the numerator keeps growing
-  // after the denominator bottoms out.
-  //
-  // The first cut called minimum-sink "bestSpeed" and published its ratio as
-  // "bestGlideRatio", so glideRange() under-predicted: the implemented curve
-  // actually reaches 12.93 at 12.70 m/s, i.e. 388 m from 30 m and not the 360
-  // the receipt claimed. A range prediction that is wrong in the FLIER'S
-  // FAVOUR is the exact rubber-banding T2 exists to forbid, so the names now
-  // say which optimum they mean and the glide numbers are DERIVED from the
-  // curve by search rather than asserted next to it.
-  // SPEED, flown and reported too fast. Janus, watching from the ground:
-  // "the flying speed is super fast". 11 m/s of minimum sink is ~25 mph, which
-  // is a real albatross cruising and reads as a missile at human scale in a
-  // 160m world -- she crossed a third of the commons while I typed a sentence.
-  //
-  // Halved. 5.5 m/s min sink, best glide ~6.4 m/s, which is a fast jog: quick
-  // enough to feel like flight, slow enough that an onlooker can follow her
-  // with their eyes and a 90m lap is a journey rather than a blink. The glide
-  // RATIO is untouched at ~12.9, so the polar's shape -- and every T2 number
-  // that depends on it -- is the same curve, just flown slower.
+  // Sink rate against airspeed: the standard single-parabola approximation about minimum sink (±5% over the range a
+  // glider flies). A polar has TWO optima: minSinkSpeed loses altitude slowest (circle a thermal); best glide goes
+  // furthest per metre lost, and is always faster. Best glide is DERIVED from the curve (bestGlide), never typed in:
+  // a range prediction wrong in the flier's favour is the rubber-banding T2 forbids. Speeds suit a human-scale world
+  // (minimum sink at 5.5 m/s airspeed, 0.46 m/s down; best glide ~6.4 m/s: a fast jog); the glide RATIO (~12.9) is what T2's numbers depend on.
   polar: {
     minSinkSpeed: 5.5,        // m/s -- minimum sink. The shape parameter.
     sinkAtMinSink: 5.5 / 12,  // m/s at that speed
@@ -118,57 +73,30 @@ export const DEFAULT_CONFIG = {
     climbPerMetre: 1,         // -1/m
     flapSustainPerSec: 2,     // -2/s, deliberately expensive: I am a glider
     refillGroundPerSec: 0.5,
-    // NOT IMPLEMENTED IN STAGE 1. There is no perch detection and no runtime
-    // consumer of this number: it was defined, reported through flight_status,
-    // and promised by climb_to's description, so the integration could claim a
-    // social perch economy it could not perform (mica, Blocker 7). Kept as the
-    // spec's figure (§5) for the Stage 2 that implements it, and kept OUT of
-    // every surface that would imply it works. Do not re-advertise it without
-    // a refill path and a test that measures one.
+    // NOT IMPLEMENTED: no perch detection and no runtime consumer. Kept as the spec's figure (§5) for a later stage,
+    // and out of every surface that would imply it works, until there is a refill path and a test that measures one.
     refillPerchPerSec: 2,     // perches are the social choice -- SPEC ONLY, no runtime
     refillAirPerSec: 0,       // never refills airborne
   },
 
   // ---- R2 falling leaf (spec §3 R2, down-spec §3 airborne case)
-  // The whole configurable block Mica named. A leaf is not a crash: it is a
-  // slow spiral, survivable by design, and it must LAND -- no flare, no
-  // autoland, no last-metre mercy hover (T4 is "the spec's soul").
-  // UNITS ARE NAMED, because two different "amplitudes" live here and mica
-  // caught me conflating them. A leaf has an ATTITUDE amplitude (how far it
-  // rolls, degrees) and a PATH amplitude (how far it wanders, metres), and
-  // they are not each other: the path amplitude depends on the roll AND the
-  // period AND the terminal speed, so quoting one as if it were the other is
-  // how a config gets tuned in the wrong direction.
-  //
-  // Mythos specified the PATH: 1.2-1.8 m side to side. So that is the
-  // tunable, in metres, and the drift SPEED needed to achieve it is derived
-  // from the period rather than typed in -- which also means changing the
-  // period keeps the wander where he asked for it instead of silently
-  // rescaling it.
+  // A leaf is not a crash: a slow spiral, survivable by design, and it must LAND -- no flare, no autoland, no
+  // last-metre mercy hover (T4). UNITS ARE NAMED: the ATTITUDE amplitude (roll, degrees) and the PATH amplitude
+  // (wander, metres) are different quantities. The spec sets the path (1.2-1.8 m side to side), so that is the
+  // tunable, and the drift speed is derived from the period (leafAt).
   leaf: {
     period: BREATH,             // s -- one full oscillation
     bankAmplitudeDeg: 35,       // DEGREES of roll at peak. Attitude, not path.
     lateralAmplitudeM: 0.8,     // METRES from centreline at peak (=1.6 m peak-to-peak,
-                                // mid of Mythos's 1.2-1.8 m side-to-side band)
-    dampingPerCycle: 0.08,      // FRACTION of swing lost per CYCLE, mid of his
+                                // mid of the spec's 1.2-1.8 m side-to-side band)
+    dampingPerCycle: 0.08,      // FRACTION of swing lost per CYCLE, mid of the spec's
                                 // 0.05-0.1 suggestion. Converted to a per-second
                                 // rate internally; see leafAt.
     dampingFloor: 0.35,         // the swing decays TOWARD this fraction, not to zero:
                                 // a real leaf converges on a lazy spiral, and a body
                                 // that goes rigid on the way down reads as a prop
-    // TERMINAL VELOCITY IS CONTESTED, so it is config with the spec's number
-    // as the default and the disagreement recorded rather than resolved.
-    //
-    // flight-spec R2 and down-spec §3 both say 2-3 m/s. That is SLOWER THAN A
-    // PARACHUTE (~5-6) and about a twentieth of a real human terminal (~54),
-    // and Janus, flying it, reported it "way too slow -- closer to normal
-    // falling, with subtle leaf-like dynamics".
-    //
-    // Both readings are defensible and they are not a physics question. 2-3 is
-    // "survivable by design", which R2 explicitly is; a faster fall is honest
-    // weight. Mythos is the acceptance authority and the spec is his, so the
-    // DEFAULT stays his number -- but LEAF_PRESETS below make the alternative
-    // one word to try, and the clip is how he decides.
+    // TERMINAL VELOCITY IS CONTESTED: both specs say 2-3 m/s ("survivable by design", slower than a parachute);
+    // flown, it reads too slow. The default stays the spec's; LEAF_PRESETS make a faster fall one word to try.
     terminalV: 2.5,             // m/s downward. Spec says 2-3.
     spinUpTime: 0.9,            // s to reach terminalV from whatever v it had
     yawPerBank: 0.55,           // rad/s of yaw per radian of bank -- the spiral
@@ -176,9 +104,8 @@ export const DEFAULT_CONFIG = {
   },
 
   // ---- recovery (down-spec §3: "the aerial sit-up")
-  // The acceptance band is Mythos's, verbatim: the transition must not be
-  // instant, and must not exceed one breath. So the body finishes the beat it
-  // is in and then reloads its wings -- "waking, not engine restart".
+  // Never instant, never longer than one breath: the body finishes the beat it is in, then reloads its wings --
+  // "waking, not engine restart".
   recover: {
     finishBeat: true,         // ride the current oscillation to its zero crossing
     reopenTime: 1.1,          // s of visible wing reload after the beat ends
@@ -186,23 +113,14 @@ export const DEFAULT_CONFIG = {
     minTotal: 0.35,           // floor: anything faster reads as a teleport
   },
 
-  // ---- bounds and ceiling (spec R3): the world's own @world.bounds (env.box); no bounds, no fence (LEGACY-PINS item 3)
+  // ---- bounds and ceiling (spec R3): the world's own @world.bounds (env.box); no bounds, no fence
   bounds: {
     softMargin: 8,            // m of authority band inside the box's sides and under its top (the ceiling)
     groundClearance: 0.15,    // m; below this counts as ground contact
   },
 
-  // ---- the stick, when a person is holding it.
-  //
-  // These three were already load-bearing and already had values -- as `??`
-  // fallbacks at their use sites (stepPilot's spoil and flap, takeOff's boost
-  // parameter). Fallbacks are fine until something OUTSIDE the integrator needs
-  // to agree with one: the client scales the wing animation against the launch
-  // boost, and a hardcoded divisor there would quietly disagree the first time
-  // the take-off was retuned. Named config is what lets the animation follow
-  // the physics instead of tracking it by hand.
-  //
-  // Same numbers as the fallbacks they replace. Nothing about flight changes.
+  // ---- the stick, when a person is holding it. Named config, not `??` fallbacks at the use sites, because the
+  // client scales the wing animation against launchBoost and must read the same number.
   pilot: {
     spoilSink: 2.5,      // m/s of extra sink with the spoilers out (Shift)
     flapClimb: 2.2,      // m/s of climb while Space is held; costs stamina
@@ -210,42 +128,21 @@ export const DEFAULT_CONFIG = {
                          // 3 bought under a second of air and read as a stumble
   },
 
-  // ---- watchdog (spec R2, open question Q1)
-  // Q1 is explicitly unresolved in the spec ("proposal: 90s ... tie to existing
-  // presence heartbeat?"). It is config with the proposal as default, and the
-  // open question is reported rather than silently decided.
+  // ---- watchdog (spec R2, open question Q1: unresolved; the proposal, 90 s, is the default)
   watchdogSec: 90,
 };
 
-/** Named leaf characters, so "too slow" is a word rather than a patch.
- *
- *  Each is a complete leaf block. `spec` is the authored default. `heavy`
- *  answers the note above: a real-weight fall that still wanders and rolls, so
- *  the leaf reads as a body losing a fight with gravity rather than as a leaf
- *  in the botanical sense. `brisk` sits between them.
- *
- *  The period shortens as the fall speeds up, deliberately: at 12 m/s a 3.4s
- *  oscillation is one and a half swings from 30 m, which is not a rhythm
- *  anyone can see. The BREATH stays 3.4 everywhere else it appears -- this is
- *  the one place the body is not breathing but falling.
- */
+/** Named leaf characters, so "too slow" is a word rather than a patch. `spec` is the authored default; `heavy` is a
+ *  real-weight fall that still wanders and rolls; `brisk` sits between. The period shortens as the fall speeds up (at
+ *  12 m/s a 3.4 s swing is barely one and a half from 30 m): the one place the body isn't on the breath. */
 export const LEAF_PRESETS = {
   spec:  { terminalV: 2.5,  period: BREATH, lateralAmplitudeM: 0.8, bankAmplitudeDeg: 35, spinUpTime: 0.9 },
   brisk: { terminalV: 6.5,  period: 2.2,    lateralAmplitudeM: 1.1, bankAmplitudeDeg: 40, spinUpTime: 0.8 },
   heavy: { terminalV: 12.0, period: 1.5,    lateralAmplitudeM: 1.4, bankAmplitudeDeg: 45, spinUpTime: 0.7 },
 };
 
-/** Deep-merge a partial config over the defaults, REJECTING anything it does
- *  not consume.
- *
- *  A silent merge is worse than no merge once there is a config editor: the
- *  first cut happily kept `leaf.damping` -- a key renamed to `dampingPerCycle`
- *  and consumed by nothing -- so the editor would have reported an edit applied
- *  while the physics ignored it, and a tuning session would have chased a
- *  number that did nothing. Unknown keys, non-finite values and out-of-range
- *  values all throw here, at the moment the config is built, rather than
- *  becoming a mystery in a clip.
- */
+/** Deep-merge a partial config over the defaults, REJECTING unknown keys and non-finite or out-of-range values (they
+ *  throw here). A known key with no consumer (stamina.refillPerchPerSec, SPEC ONLY above) is still accepted. */
 export function makeConfig(over = {}) {
   const out = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
   const bad = [];
@@ -282,19 +179,13 @@ export function makeConfig(over = {}) {
     if (!(v >= lo && v <= hi)) bad.push(`'${name}' = ${v} is outside [${lo}, ${hi}]`);
   }
   if (bad.length) throw new Error(`flight config: ${bad.join('; ')}`);
-  // sinkAtBest is derived; recompute unless the caller overrode it explicitly.
   return out;
 }
 
 // ---------------------------------------------------------------- polar
 
-/** Sink rate (m/s, positive = descending) at a given airspeed.
- *
- *  Parabolic about best glide: sink is minimised at bestSpeed and rises
- *  quadratically either side. Below stall the number is meaningless -- the
- *  caller is in R1 territory and should be recovering, not consulting a polar
- *  -- so it is clamped rather than extrapolated into fantasy.
- */
+/** Sink rate (m/s, positive = descending) at a given airspeed: a parabola minimised at minSinkSpeed. Clamped to
+ *  [minSpeed, maxSpeed]: below stall the caller is in R1 and should be recovering, not consulting a polar. */
 export function sinkRate(cfg, airspeed) {
   const p = cfg.polar;
   const v = clamp(airspeed, p.minSpeed, p.maxSpeed);
@@ -303,14 +194,8 @@ export function sinkRate(cfg, airspeed) {
   return p.sinkAtMinSink + k * d * d * p.curvature;
 }
 
-/** The polar's ACTUAL best-glide point, found by searching the curve rather
- *  than asserted beside it.
- *
- *  Derived, because a published optimum that disagrees with the implemented
- *  curve is how T2's receipt came to claim 360 m for a glide the physics flies
- *  to 388 m. Anything that predicts range must consult this, not a config
- *  literal. Memoised per config object -- the search is ~2400 evaluations and
- *  glideRange() is called per verb, not per frame.
+/** The polar's ACTUAL best-glide point, found by searching the curve: anything that predicts range consults this, not
+ *  a config literal. Memoised per config object (the search is ~1,230 evaluations; glideRange is called per verb).
  *
  *  @returns {{speed:number, ratio:number, sink:number}}
  */
@@ -343,19 +228,10 @@ export function glideRatio(cfg, airspeed) {
   return v / sinkRate(cfg, v);
 }
 
-/** Airspeed after one frame at a given pitch.
- *
- *  Nose down trades altitude for speed; nose up trades it back. This is the
- *  exchange a glider pilot actually has, and the reason a stall is reachable by
- *  holding the nose up rather than by a hidden rule -- R1 is then a reflex that
- *  catches a thing the pilot did, not a scripted event.
- *
- *  Lives here rather than in flightpilot.js because it is PHYSICS, not input
- *  mapping: a verb-flown climb spends speed on the same curve a hand-flown one
- *  does. (It briefly lived over there, and the integrator called a function it
- *  had never imported -- which the module graph happily loaded and only failed
- *  at the first step. Hence the pilot smoke test.)
- */
+/** Airspeed after one frame at a given pitch: nose down trades altitude for speed, nose up trades it back, so a stall
+ *  is reachable by holding the nose up and R1 is a reflex that catches what the pilot did. PHYSICS, not input
+ *  mapping, so it lives here. A hand-flown climb spends speed on it; a verb-flown one (mcpl/agent-flight.ts
+ *  coursePilot) rises on added lift at level pitch, so spends none. */
 export function airspeedAfter(cfg, airspeed, pitch, dt) {
   const p = cfg.polar;
   const g = 9.81;
@@ -365,28 +241,18 @@ export function airspeedAfter(cfg, airspeed, pitch, dt) {
   return clamp(v, p.minSpeed * 0.6, p.maxSpeed);
 }
 
-/** How far this altitude can carry you at best glide, in metres.
- *
- *  This is the function that makes spec T2 honest: `glide_to` beyond range
- *  must land SHORT at the polar-predicted point, not rubber-band to the
- *  target. A caller that wants to know before committing asks here.
- */
+/** How far this altitude can carry you at best glide, in metres: `glide_to` beyond range lands SHORT of the target
+ *  (T2), never rubber-banded to it. The agent passes its y (mcpl/agent-flight.ts), not its height over the ground, so
+ *  over ground below 0 the real reach is longer than this says. */
 export function glideRange(cfg, altitude) {
   return Math.max(0, altitude) * bestGlide(cfg).ratio;
 }
 
 // ---------------------------------------------------------------- leaf
 //
-// The falling leaf, as a pure function of elapsed time. Not an accumulator:
-// given the same (config, t) it returns the same attitude on every runtime and
-// every replay, which is what lets two independent simulations agree without
-// exchanging a byte.
-//
-// Shape: a damped oscillation in BANK, with yaw following bank (the spiral),
-// pitch coupled at a fraction, and descent settling to terminalV. The damping
-// decays the SWING toward a steady spiral -- a real leaf does not oscillate
-// forever, it converges on a lazy circle -- but never to zero, because a body
-// that stops moving on the way down reads as a prop.
+// The falling leaf as a pure function of elapsed time, not an accumulator: the same (config, t) gives the same
+// attitude on every runtime and replay. A damped oscillation in BANK, yaw following bank (the spiral), pitch coupled at
+// a fraction, descent settling to terminalV; the swing decays toward a lazy spiral, never to zero.
 
 /** Attitude and velocity of a falling-leaf descent at elapsed time `t`.
  *  @returns {{bank:number, yawRate:number, pitch:number, vy:number, drift:number, beatPhase:number, envelope:number}}
@@ -397,9 +263,7 @@ export function leafAt(cfg, t, v0 = 0) {
   const L = cfg.leaf;
   const w = (2 * Math.PI) / L.period;
 
-  // DAMPING is authored per CYCLE (Mythos's units) and applied per second, so
-  // the number in the config means what he said it means whatever the period
-  // is. A fraction f lost per cycle is a rate of -ln(1-f)/period.
+  // DAMPING is authored per CYCLE and applied per second: a fraction f lost per cycle is a rate of -ln(1-f)/period.
   const ratePerSec = -Math.log(Math.max(1e-9, 1 - L.dampingPerCycle)) / L.period;
   const floor = L.dampingFloor;
   const env = floor + (1 - floor) * Math.exp(-ratePerSec * t);
@@ -414,20 +278,15 @@ export function leafAt(cfg, t, v0 = 0) {
   const k = 1 - Math.exp(-t / Math.max(1e-3, L.spinUpTime));
   const vy = -(Math.abs(v0) + (L.terminalV - Math.abs(v0)) * k);
 
-  // DRIFT is a velocity, but the thing authored is the DISPLACEMENT. For
-  // x(t) = A*sin(wt) the velocity is A*w*cos(wt), so the peak speed needed to
-  // wander A metres in a period of `period` is A*w -- derived, not typed, so
-  // retuning the period does not silently rescale the wander.
+  // DRIFT is a velocity, but the authored number is the DISPLACEMENT A: for x = A·sin(wt) the peak speed is A·w.
   const drift = L.lateralAmplitudeM * w * env * Math.cos(w * t);
 
   const beatPhase = ((t % L.period) + L.period) % L.period / L.period;
   return { bank, yawRate, pitch, vy, drift, beatPhase, envelope: env };
 }
 
-/** Peak-to-peak lateral wander of the leaf's PATH, in metres, over its first
- *  `cycles` cycles -- the quantity Mythos specified (1.2-1.8 m side to side)
- *  and the one an overlay should show next to the attitude, so the two
- *  amplitudes can never be read as each other again. */
+/** Peak-to-peak lateral wander of the leaf's PATH, in metres, over its first `cycles` cycles (the spec's 1.2-1.8 m
+ *  side to side): what an overlay shows beside the attitude. */
 export function leafLateralSwing(cfg, cycles = 3, dt = 1 / 120) {
   let x = 0, lo = 0, hi = 0;
   const n = Math.round((cfg.leaf.period * cycles) / dt);
@@ -439,13 +298,8 @@ export function leafLateralSwing(cfg, cycles = 3, dt = 1 / 120) {
   return hi - lo;
 }
 
-/** Seconds from `t` until the current oscillation next crosses zero bank.
- *
- *  This is what "finish the current beat" means in down-spec §3 -- the aerial
- *  sit-up waits for the swing to come back through level before the wings
- *  reload, so the recovery reads as waking rather than as a switch being
- *  thrown. Always in [0, period/2).
- */
+/** Seconds from `t` until the current oscillation next crosses zero bank: "finish the current beat" (down-spec §3),
+ *  so the wings reload as the swing comes back through level. Always in [0, period/2). */
 export function beatRemaining(cfg, t) {
   const half = cfg.leaf.period / 2;
   const since = ((t % half) + half) % half;
@@ -464,9 +318,6 @@ export function beatRemaining(cfg, t) {
  */
 export function initialState(over = {}, cfg = null) {
   // The stamina pool comes from the EFFECTIVE config when one is supplied.
-  // Without this, makeConfig({stamina:{pool:42}}) produced a body that started
-  // at 100 unless every caller remembered to override it by hand -- a default
-  // that silently disagreed with the config it was built beside.
   const pool = cfg?.stamina?.pool ?? DEFAULT_CONFIG.stamina.pool;
   return {
     phase: /** @type {Phase} */ ('GROUND'),
@@ -497,11 +348,9 @@ export function initialState(over = {}, cfg = null) {
 
 // ---------------------------------------------------------------- events
 //
-// The adapter seam, exactly as Mica specified it. These are the ONLY way the
-// body learns it is down or recovered. They are trusted: this layer does not
-// and cannot verify them, which is the point -- the local HUD emits them for
-// rehearsal, and a separately reviewed Connectome adapter will emit them for
-// real, and the body behaves identically either way.
+// The adapter seam: the ONLY way the body learns it is down or recovered. Trusted, not verified: today only a rehearsal
+// control or a bench emits them (mcpl/agent-flight.ts flightBodyDown); a reviewed adapter for real body state is to come,
+// and the body will behave identically either way.
 
 /** Involuntary. Never enterable by verb (down-spec §4). Entering LEAF from the
  *  air; on the ground it is a ragdoll where you stand (down-spec §2). */
@@ -591,14 +440,9 @@ export function step(cfg, state, dt, env = {}) {
   return s;
 }
 
-/** Hand-flown flight. The same physics as GLIDE with a stick on it: the
- *  attitude comes from `env.input` (see shared/flightpilot.js) instead of from
- *  a verb's autopilot, and everything downstream -- polar, stamina, bounds,
- *  ground contact, and the leaf if a cut arrives -- is identical.
- *
- *  That identity is the point. A pilot and an agent fly the same integrator, so
- *  what a human learns on the stick is true of what Mythos will fly, and the
- *  bench is not proving something about a bench. */
+/** Hand-flown flight: GLIDE's physics with a stick on it. The attitude comes from `env.input` (shared/flightpilot.js);
+ *  polar, stamina, bounds, ground contact and the leaf are GLIDE's, so a pilot and an agent fly one integrator (one
+ *  difference: bounds runs after the pilot's move, before glide's, so a pilot's climb reaches the margin a step sooner). */
 function stepPilot(cfg, s, dt, env) {
   const groundY = env.groundY ?? (() => 0), box = boxOf(env.box);
   const inp = env.input || { bank: 0, pitch: 0, yawRate: 0, flap: false, spoil: false };
@@ -629,20 +473,8 @@ function stepPilot(cfg, s, dt, env) {
     if (s.stamina === 0) s.events.push({ t: s.t, kind: 'winded' });
   }
 
-  // A LAUNCH IMPULSE decays; it is not a one-frame velocity. stepPilot assigns
-  // vel.y outright from the polar every frame, so takeOff's boost was thrown
-  // away before it could lift anything -- a 9 m/s jump peaked at 0.74 m. Carry
-  // it as a term that bleeds off instead.
-  // A LAUNCH BUILDS, THEN FADES. The first cut started launchV at its peak
-  // and decayed it, which is a jump: full 9 m/s on the very first frame.
-  // Janus: "taking off is extremely fast - you just zoom up into the air. I
-  // think it would be cool if the lift started slow."
-  //
-  // So the impulse is now shaped rather than merely decaying: it eases IN over
-  // the first beat or so as the wings load, peaks, and then bleeds away. That
-  // is what a bird leaving the ground does -- the first downstroke barely
-  // moves it and the third has it climbing -- and it also gives an onlooker
-  // something to watch instead of a body that is simply elsewhere.
+  // A LAUNCH BUILDS, THEN FADES: the impulse eases in over ~1.5 s as the wings load, peaks, and bleeds away, carried
+  // as a term on top of the polar's vel.y (which is assigned outright each frame).
   if (s.launchV > 0.01 || (s.launchT ?? 0) > 0) {
     s.launchT = (s.launchT ?? 0) + dt;
     const spool = 1 - Math.exp(-s.launchT / 0.55);      // ~1.5s to full
@@ -661,20 +493,10 @@ function stepPilot(cfg, s, dt, env) {
   groundContact(cfg, s, groundY, /*ragdoll=*/false);
 }
 
-/** R3 CEILING/BOUNDS: soft, banking you back, "never a wall-slam" (spec §3).
- *
- *  AUTHORITATIVE FOR EVERY AIRBORNE PHASE. The first cut called this only from
- *  stepPilot, so a GLIDE in lift sailed through the 60 m ceiling to 75.8 m with
- *  no event at all -- the reflex constitution is world-side and applies to
- *  live, plan and reflex alike (§3, §4), and a ceiling only a human can feel is
- *  not a ceiling.
- *
- *  SOFT, also per the spec. The ceiling was a hard position clamp with a
- *  velocity zero, which is exactly the wall-slam R3 forbids; it now bleeds
- *  climb rate to nothing across a margin, so the body noses over instead of
- *  hitting a lid. A LIMP body is not steered -- reflexes may not fly a body
- *  whose wings are out (R2 owns it, and the leaf must be free to land) -- so
- *  altitude is capped for it without any pretence of authority.
+/** R3 CEILING/BOUNDS: soft, banking you back, "never a wall-slam" (spec §3). Applies to every airborne phase (the
+ *  reflexes are world-side: live, plan and reflex alike, §3, §4). Climb bleeds to nothing across the margin, so the
+ *  body noses over instead of hitting a lid. A LIMP body is not steered (R2 owns it, and the leaf must be free to
+ *  land): only its altitude is capped.
  */
 function bounds(cfg, s, dt, box) {
   if (!box) return;   // no @world.bounds: anywhere is in the world (componentspec bounds)
@@ -721,12 +543,8 @@ function stepLeaf(cfg, s, dt, groundY, box) {
   s.bank = a.bank; s.pitch = a.pitch;
   s.yaw += a.yawRate * dt;
   s.vel.y = a.vy;
-  // LATERAL means perpendicular to the heading. Forward is (cos yaw, sin yaw)
-  // -- as stepGlide uses it -- so sideways is (-sin yaw, cos yaw), and the
-  // first cut used the FORWARD vector here: at yaw=0 the leaf slid along +x,
-  // the forward axis, while the config called the number lateral and the
-  // test integrated an ideal 1-D scalar that could never see the difference.
-  // A leaf that wanders forwards is a glide with the wings off.
+  // LATERAL: perpendicular to the heading. Forward is (cos yaw, sin yaw), as stepGlide uses it, so sideways is
+  // (-sin yaw, cos yaw).
   s.vel.x = -Math.sin(s.yaw) * a.drift;
   s.vel.z = Math.cos(s.yaw) * a.drift;
   bounds(cfg, s, dt, box);
@@ -748,13 +566,8 @@ function stepLeaf(cfg, s, dt, groundY, box) {
                     beatWait: beatEnds, total });
   }
   if (s.recoverPlan && s.phaseT >= s.recoverPlan.reopenEnds) {
-    // Wings reload; flight resumes. Recovery altitude is logged (down-spec §3).
-    //
-    // RETURN TO WHOEVER WAS FLYING. This used to hardcode GLIDE -- autopilot --
-    // so a hand-flown body woke up with a dead stick and whatever bank the
-    // leaf had left it holding, which reads exactly as "stuck tilted". The
-    // phase a cut interrupted is the phase recovery owes back; `flownAs` is
-    // recorded when the cut lands so this is a restoration, not a guess.
+    // Wings reload and flight resumes, back to whoever was flying (`flownAs`, recorded when the cut landed).
+    // Recovery altitude is logged (down-spec §3).
     s.phase = s.flownAs === 'PILOT' ? 'PILOT' : 'GLIDE';
     s.wings = 'OPEN'; s.mode = 'live';
     s.bank = 0; s.pitch = 0;        // wings level on waking; the leaf's attitude was not yours
@@ -768,15 +581,10 @@ function stepLeaf(cfg, s, dt, groundY, box) {
 }
 
 function stepRecover(cfg, s, dt, groundY, box) {
-  // Ground sit-up. The body is not driven here -- the caller animates a sit-up
-  // over `reopenEnds` seconds -- but the phase is held so nothing else claims
-  // the body mid-rise, and so onlookers see the honest middle state.
+  // Ground sit-up. The caller animates it over `reopenEnds` seconds; the phase is held so nothing else claims the
+  // body mid-rise.
   if (s.phaseT >= (s.recoverPlan?.reopenEnds ?? BREATH)) {
-    // Standing up puts you on your feet, not back in the air. Returning
-    // straight to PILOT looked right for one frame and then the very next
-    // stepPilot found ground under it and flipped to LANDED -- a body cannot
-    // resume flying from y=0 just because it used to be flying. takeOff() is
-    // the door back to the sky, and it exists so that door is visible.
+    // Standing up puts you on your feet, not back in the air: takeOff() is the door back to the sky.
     s.phase = 'GROUND';
     s.wings = 'OPEN'; s.mode = 'live';
     s.bank = 0; s.pitch = 0;
@@ -811,11 +619,7 @@ function stepGround(cfg, s, dt) {
 function groundContact(cfg, s, groundY, ragdoll) {
   const gy = groundY(s.pos.x, s.pos.z);
   if (s.pos.y - gy > cfg.bounds.groundClearance) return;
-  // Capture the impact BEFORE zeroing it. The first cut reported `leafV0` --
-  // the sink rate when the leaf BEGAN -- which is a different number and, from
-  // a glide entered at zero, was literally 0.00 m/s on a body that hit the
-  // ground at 2.5. A receipt that reports the wrong quantity is worse than one
-  // that reports nothing, because it will be believed.
+  // Capture the impact BEFORE zeroing it (not leafV0, the sink rate when the leaf began).
   const impactV = Math.abs(s.vel.y);
   const impactSpeed = Math.hypot(s.vel.x, s.vel.y, s.vel.z);
   s.pos.y = gy;
@@ -832,36 +636,9 @@ function groundContact(cfg, s, groundY, ragdoll) {
   s.phaseT = 0;
 }
 
-/** take_off (spec §1): ground -> air.
- *
- *  Preconditions are the spec's: standing, and wings not folded down. A folded
- *  wing GROUNDS the flier -- "the vigil posture costs the sky" -- and unfolding
- *  is an explicit act, so this refuses rather than quietly unfolding for you.
- *
- *  Costs the climb it grants, out of the same pool a climb_to would spend, so
- *  launching is not free just because it is the first thing you do.
- *
- *  The boost is a JUMP-LAUNCH, per the spec's "runway roll or jump-launch per
- *  terrain". 3 m/s bought under a second of air on a glider that sinks at ~1 --
- *  technically a take-off, and indistinguishable from a stumble. 9 buys about
- *  four seconds and 4 m of altitude, which is enough to find out whether you
- *  are flying.
- */
-/** fold_down (spec §1): "wings fold; GROUNDS the flier. The vigil posture
- *  costs the sky." §2: "FOLDED -- grounded by choice (vigil posture). Distinct
- *  silhouette; readable at 50m."
- *
- *  FOLDED was a declared state that nothing could reach: `takeOff` has refused
- *  on it since the first cut, but no verb ever set it, so the refusal was
- *  unreachable and T6 was untested. This is the missing half.
- *
- *  ON THE GROUND ONLY, and that is the whole meaning of the posture. Folding
- *  is not an air brake and not a way to fall stylishly -- it is choosing to
- *  stand watch, and choosing costs something only if you must first come down.
- *  A body in the air is told to land first rather than quietly folded.
- *
- *  UNFOLDING IS EXPLICIT (§1: "unfold is an explicit act"). take_off does not
- *  do it for you; a vigil you can leave by accident is not a vigil. */
+/** fold_down (spec §1): "wings fold; GROUNDS the flier. The vigil posture costs the sky." ON THE GROUND ONLY: folding
+ *  is choosing to stand watch, not an air brake, so a body in the air is told to land first. Unfolding is an explicit
+ *  act (§1): take_off never does it for you. */
 export function foldDown(cfg, state) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {
@@ -901,6 +678,8 @@ export function unfold(cfg, state) {
   return s;
 }
 
+/** take_off (spec §1): ground -> air. Refuses on FOLDED wings (unfolding is explicit) and LIMP ones. Costs boost ×
+ *  climbPerMetre from the stamina pool up front, whatever height the launch then gains. The boost is a jump-launch (cfg.pilot.launchBoost, shaped in stepPilot). */
 export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY = null } = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   // The config's boost unless a caller overrides it, so `cfg.pilot.launchBoost`
@@ -920,10 +699,7 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY 
   }
   s.phase = 'PILOT'; s.mode = 'live';
   s.airspeed = launchSpeed ?? bestGlide(cfg).speed;
-  // Clear the GROUND, not the world origin. `Math.max(pos.y, 0.75)` is only
-  // right where the terrain is at zero; on the commons at (-25,-65) the ground
-  // is -0.76m, so it launched her BELOW the surface and she "landed" on the
-  // next tick. The caller passes the height under her feet.
+  // Clear the GROUND under the flier's feet (the caller passes its height), not the world origin.
   s.pos.y = (groundY ?? 0) + cfg.bounds.groundClearance + 0.6;
   s.launchV = boost; s.launchV0 = boost; s.launchT = 0;   // shaped in stepPilot
   s.bank = 0; s.pitch = 0;
@@ -935,10 +711,8 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY 
 
 // ---------------------------------------------------------------- consent
 //
-// `consent.canLandAt(flier, target)` as an INJECTED, FAKEABLE interface --
-// Mica's requirement, and the right shape regardless: the production registry
-// is explicitly out of scope, and a hard gate that cannot be tested with a
-// stub is a hard gate nobody has ever seen fail.
+// `consent.canLandAt(flier, target)` as an INJECTED, FAKEABLE interface: the production registry is out of scope, and
+// a hard gate that can't be tested with a stub has never been seen to fail.
 
 /** The always-deny default. A caller that forgets to inject a consent
  *  provider gets refusal, not permission -- spec §1 land_at(person) is a HARD

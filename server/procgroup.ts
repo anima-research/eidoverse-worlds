@@ -1,7 +1,6 @@
-// server/procgroup.ts — a suite's processes, found and killed the same way on Linux, macOS and Windows (review #260, rereview blocker 2: the gate
-// read /proc and crashed on macOS before the first suite).
+// server/procgroup.ts — a suite's processes, found and killed the same way on Linux, macOS and Windows.
 //   Linux:   /proc/<pid>/stat (no subprocess per suite)
-//   macOS and other POSIX: `ps -A -o pid=,pgid=,stat=`
+//   macOS and other POSIX: `ps -A -o pid=,pgid=,ppid=,stat=`
 //   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
 //            parent links in Win32_Process (they survive the parent's exit, so orphans still count); killed with taskkill.
 import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
@@ -21,7 +20,7 @@ export function processTable(platform: NodeJS.Platform = process.platform): Row[
   if (platform === "win32") {
     const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
       "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8", timeout: 30_000 });
-    // bounded: the gate is sequential and waits on this, so a stalled WMI query once froze a whole CI run past its 90 min (10-19)
+    // bounded: the gate waits on this, and a stalled WMI query would freeze it
     if (r.error || r.status !== 0) console.error(`[procgroup] the Windows process table didn't answer (${r.error?.message ?? `exit ${r.status}`}); killing by tree only`);
     return parseWinTable(r.stdout ?? "");
   }
@@ -51,15 +50,13 @@ export function suiteMembers(root: number, table: Row[] = processTable(), platfo
 /** Kill what a suite started (`root` and everything with it). Never throws: a gone process is the goal. */
 export function killSuite(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform): void {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
-  // Windows has no signals or groups: kill the tree, children first (taskkill /T can't find orphans of a dead root)
+  // Windows has no signals or groups: the root's tree first (/T), then each member by id (/T can't find orphans of a dead parent)
   const members = suiteMembers(root, processTable("win32"), "win32");
   for (const pid of (members.length ? members : [root]).reverse()) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 15_000 });
 }
 
-// ---- the gate's kill path, asynchronous end to end (CI 10-21: on Windows a synchronous WMI query or taskkill can block forever
-// when a grandchild holds its pipe, whatever timeout it was given; the gate's event loop froze, and with it every timer that
-// could have moved on, until the job's two-hour limit). These never block: each child call has a bound, and past it we
-// give up on the answer (an empty table, a kill that may not have landed) and say so, rather than wait.
+// ---- the gate's kill path, asynchronous end to end: on Windows a synchronous WMI query or taskkill can block forever when a
+// grandchild holds its pipe. Each child call here has a bound, past which we give up on the answer and say so.
 
 /** Run a command, give back its stdout, or null past `ms` (the command is killed and left behind; never waited on). */
 function outputOf(cmd: string, args: string[], ms: number): Promise<string | null> {
@@ -89,17 +86,12 @@ async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { 
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
-/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
- *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
-/** Which Windows processes to kill for a suite started as `root`, deepest first, each one by its own id (never `/T`).
- *  Windows reuses process ids (CI 10-22: the runner "lost communication" mid-gate, with a tree kill aimed at an exited
- *  suite's id on every suite): once the suite has `exited`, an id that is in the table again belongs to someone else, so
- *  nothing is killed; if the id is free, only its orphans are, and the dead root's id never is. */
+/** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
+ *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
+ *  the id is free, only its orphans are. */
 export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid): number[] {
   if (exited && table.some((r) => r.pid === root)) return [];
-  // never ourselves or an ancestor: a parent id on Windows is only a number, and once the dead root's id is reused a
-  // stale ParentProcessId can make the gate (or the shell that started it) look like that root's orphan. A tree kill
-  // landed there once: the gate died mid-lane with exit 1 and no tally (windows-latest, 10-23, run 40054616217)
+  // never ourselves or an ancestor: once the dead root's id is reused, a stale ParentProcessId can make the gate itself look like its orphan
   const byPid = new Map(table.map((r) => [r.pid, r])), mine = new Set<number>();
   for (let p: number | undefined = self; p !== undefined && !mine.has(p); p = byPid.get(p)?.ppid) mine.add(p);
   const kids = new Map<number, number[]>(); for (const r of table) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
@@ -108,6 +100,8 @@ export function winKillPlan(root: number, table: Row[], exited: boolean, self: n
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
   return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
+/** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
+ *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
 export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
   const table = await tableOrNull("win32", { query, ms }), gone = () => (typeof exited === "function" ? exited() : exited);

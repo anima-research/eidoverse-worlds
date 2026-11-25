@@ -1,27 +1,12 @@
-// optimize — the store's diet.
+// optimize — the store's diet: dedup + prune + resample + webp@1024 + draco for uploaded GLBs, plus the KTX2
+// (--ktx2, --ktx2-vrm, --ktx2-img) and geometry-LOD (--lod) variant arms. Originals are never touched (the hash names
+// them); optimized copies live in assets/opt/store-min/<hash>.glb and /library serving prefers them.
 //
-// Uploaded GLBs (drag-drop, Orrery/Tripo conjures) used to be served exactly
-// as they arrived: raw multi-megabyte meshes with 2K PNG textures, paid in
-// full by EVERY client on EVERY first load, forever — the library got a
-// draco+webp mirror on day one (~30x) and the store, where all new content
-// lands, never did.
+// RUN AS A SUBPROCESS (see CLI at the bottom): draco and image encoding are CPU-seconds of synchronous wasm that would
+// freeze pose relay and every world inside the sequencer. upload.ts's pump spawns `bun run server/optimize.ts [mode] <in> <out>`.
 //
-// This is the same proven recipe, programmatic: dedup + prune + resample +
-// webp@1024 + draco. Originals are NEVER touched (append-only doctrine; they
-// are the provenance the hash names). Optimized copies live in
-// assets/opt/store-min/<hash>.glb and /library serving prefers them.
-//
-// ⚠️ RUN AS A SUBPROCESS (see CLI below). Draco and image encoding are
-// CPU-seconds of synchronous wasm — inside the sequencer process they would
-// freeze pose relay and every world for the duration. server.ts spawns
-// `bun run server/optimize.ts <in> <out>` per file, one at a time.
-//
-// VRMs are deliberately NOT run through this pipeline: their springbone/MToon
-// extension data has not been proven through it, and a corrupted body is a
-// much worse day than a heavy one. The ONE thing a VRM gets is §20c's
-// --ktx2-vrm surgical texture rewrite below — raw container work that never
-// constructs a Document, swaps image bytes only, and byte-preserves
-// everything else (no draco, no prune, no resample on bodies, ever).
+// VRMs never go through a Document (springbone/MToon extensions would be dropped): their only arm is --ktx2-vrm's
+// raw-container texture swap, which byte-preserves everything else.
 
 import { NodeIO, Primitive, getBounds, type Document, type Mesh, type Texture } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
@@ -37,59 +22,15 @@ import { parseGlb, rasterDims, GLB_MAGIC, CHUNK_JSON, CHUNK_BIN, KTX2_ID, align4
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
+import { sha256Bytes } from "../shared/protocol/hash.js";
 
-// ---- ONE libvips per process (#122) -----------------------------------------
-// @gltf-transform/functions reaches sharp through ndarray-pixels, which
-// declares `^0.35.0`. Whenever the store's root manifest declares a range
-// that doesn't intersect it, as its `^0.33.5` once did, no installer can
-// dedupe them and BOTH land on disk: node_modules/sharp beside
-// node_modules/ndarray-pixels/node_modules/sharp. Importing plain "sharp"
-// here then loads a SECOND native libvips into a process that already has
-// one, and the two disagree about libvips' own enums:
-//
-//   GLib-GObject-CRITICAL: value "32" of type 'gint' is invalid or out of
-//   range for property 'space' of type 'VipsInterpretation'
-//   Error: colourspace: parameter space not set   (sharp/lib/output.js)
-//
-// On win32 that THROWS, which is the merciful outcome — the pass dies and the
-// original is kept. On the show box's libvips it does not throw: encoding
-// returns a buffer of uninitialized memory (a repeated LE uint32, then
-// zeros), gltf-transform stamps it `image/webp`, and the store serves an
-// image that is not an image. That is #122 — the threshold-lantern's
-// baseColor and normal (both JPEG-sourced, so both routed through the
-// converting path) came out undecodable, the material fell back to
-// baseColorFactor 1,1,1,1, and the lantern rendered white.
-//
-// So: never import "sharp" by bare specifier in this file. Resolve the copy
-// @gltf-transform/functions itself will use, and hand that same module back
-// to it as the encoder — one libvips, end to end.
-//
-// RESOLUTION and IMPORT are kept separate, and the bare specifier is reached
-// on exactly one condition: no copy could be RESOLVED from ndarray-pixels.
-// In a deduped install that resolution finds the root's own copy, the only
-// one, and the import takes it by that path.
-//
-// A nested copy that resolves but fails to IMPORT — ABI mismatch, missing
-// dylib, damaged install — must NOT fall back (#136 review). Doing so loads
-// the root copy beside the one gltf-transform already has and recreates the
-// exact two-libvips condition this module exists to forbid, in the one
-// situation where things are already going wrong. It fails closed instead:
-// the rejection propagates, both callers skip the texture pass, and a
-// draco-only result ships. Less compression is a cost; an image that is not
-// an image is a lie.
-// resolveNestedSharp — where gltf-transform's own sharp lives (RESOLUTION ONLY) — is in tools-stamp.ts, which names
-// that same copy in the verdict stamp; re-exported above.
+// ---- ONE libvips per process ------------------------------------------------
+// Never import "sharp" by bare specifier here: a second libvips in-process corrupts encoder output into bytes that
+// are not images. Use getSharp(), which resolves gltf-transform's own copy (resolveNestedSharp, tools-stamp.ts) and
+// fails closed. Why: docs/research/optimize-design-notes.md#one-libvips-per-process
 
-/** The choice itself, with its two effects injected so a test can drive the
- *  branch that matters (#136 review). Fails CLOSED: once a copy has been
- *  resolved from ndarray-pixels, an import failure PROPAGATES. Where that
- *  copy is nested, falling back to the bare specifier would load the root
- *  copy beside the one gltf-transform already has and recreate the exact
- *  two-libvips condition this module forbids, in the one situation (ABI
- *  mismatch, missing dylib, damaged install) where things are already going
- *  wrong. Both callers already know how to degrade on rejection by skipping
- *  the texture pass, which is the correct outcome: a draco-only pass ships
- *  nothing false. */
+/** The choice itself, effects injected so a test can drive it. Fails CLOSED: once a copy resolves from ndarray-pixels, an
+ *  import failure PROPAGATES (callers then skip the texture pass) rather than falling back to the bare specifier. */
 export async function pickSharp(
   resolveNested: () => string | null,
   load: (specifier: string) => Promise<any>,
@@ -99,16 +40,13 @@ export async function pickSharp(
     const mod = await load(nested);          // no catch: fail closed
     return { sharp: mod.default ?? mod, from: nested };
   }
-  // Nothing resolved from ndarray-pixels, so the bare specifier is the one
-  // copy left to try.
+  // nothing resolved from ndarray-pixels: the bare specifier is the one copy left to try
   const mod = await load("sharp");
   return { sharp: mod.default ?? mod, from: "sharp (bare specifier)" };
 }
 
 let sharpP: Promise<{ sharp: any; from: string }> | null = null;
-/** Exported for tools/one-libvips-test.ts, which asserts `from` is the copy
- *  gltf-transform's own ndarray-pixels resolves, nested or the root's: the
- *  whole fix in one readable value. */
+/** Exported for test/server/one-libvips-test.ts: `from` is the copy gltf-transform's own ndarray-pixels resolves, nested or the root's. */
 export function getSharp(): Promise<{ sharp: any; from: string }> {
   sharpP ??= pickSharp(resolveNestedSharp, (s) => import(s));
   return sharpP;
@@ -130,13 +68,8 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
 
   const transforms = [
     dedup(),      // shared textures/accessors stored once
-    // prune with keepAttributes: by default prune also drops a primitive's
-    // vertex attributes its MATERIAL doesn't read — TEXCOORD_0 on anything
-    // with an untextured material. A named blank part is exactly the picture
-    // contract (shared/picture.js: the comp textures the part later), and the
-    // frame prop's `picture` quad came back from this pass with no UVs, so a
-    // hung picture sampled one texel and painted a flat colour. Attributes
-    // are the author's; the shadow only re-encodes what it was given.
+    // keepAttributes: default prune drops attributes the material doesn't read (TEXCOORD_0 on an untextured part),
+    // which breaks the picture contract (shared/picture.js textures a named blank part later)
     prune({ keepAttributes: true }),      // unreferenced leftovers dropped
     resample(),   // animation keyframes deduplicated (lossless within tolerance)
   ];
@@ -144,9 +77,7 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
   // Texture recompression needs sharp (native). If it can't load on this box,
   // a draco-only pass is still most of the win — degrade, don't die.
   try {
-    // getSharp, never a bare import: this encoder must be the SAME module
-    // gltf-transform decodes with, or the two libvips corrupt each other's
-    // output and we ship it (#122).
+    // getSharp, never a bare import: the encoder must be the same libvips gltf-transform decodes with
     const { sharp } = await getSharp();
     transforms.push(textureCompress({
       encoder: sharp,
@@ -163,32 +94,19 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
   return io.writeBinary(doc);
 }
 
-// ---- KTX2 (§20a): the library variant diet ----------------------------------
-// GPU-native compressed textures pay the texture bill in the right currency:
-// no createImageBitmap decode (1.0-1.2s/GLB on the MacBook trace), no raw
-// RGBA uploads (1.07GB of them), 4-8× less VRAM. The variant is the store
-// recipe MINUS the webp stage (KTX2 encodes from the best source) PLUS a
-// per-texture KTX2 pass between resample and draco. Output serves ONLY on
-// ?ktx2=1 — KHR_texture_basisu lands in extensionsRequired, and parsers
-// without a KTX2 decoder throw on required extensions.
+// ---- KTX2: the library variant diet ----------------------------------
+// GPU-native compressed textures: no createImageBitmap decode, no raw RGBA uploads, 4-8× less VRAM. The store recipe minus
+// webp plus a per-texture KTX2 pass before draco. Serves only on ?ktx2=1: KHR_texture_basisu is in extensionsRequired.
 
-// findKtx2Encoder lives in tools-stamp.ts (the verdict stamp names the encoder it finds) — re-exported above
+// findKtx2Encoder lives in tools-stamp.ts (the verdict stamp names the encoder it finds)
 
-// baseColor/emissive are the eye-facing sRGB slots — ETC1S block noise hides
-// in shading there and the files come out ~4-8× smaller. Everything else
-// (normal, occlusion-roughness-metallic, packed maps, any slot we can't name)
-// carries per-channel DATA: MToon samples .r/.b scalars and normals get
-// renormalized, so ETC1S artifacts read as corruption — those go UASTC+zstd.
+// baseColor/emissive are eye-facing sRGB → ETC1S (~4-8× smaller, block noise hides in shading). Every other slot
+// carries per-channel DATA (MToon .r/.b scalars, normals) where ETC1S artifacts read as corruption → UASTC+zstd.
 const COLOR_SLOT = /baseColor|emissive/i;
 
-/** One encoder invocation's argv, shared by the GLB arm and the VRM rewrite.
- *  ETC1S rides BasisLZ (zstd would be invalid there); UASTC gets mild RDO
- *  (λ=1.0, quality-preserving) + zstd 18 — raw UASTC is a flat 8bpp and zstd
- *  alone barely dents it (the crow's 2048² maps came out 2.6× the JPEG
- *  source; RDO is what makes zstd bite). --genmipmap always: compressed mips
- *  can't be generated at runtime. `resize` (the GLB arm's texel budget,
- *  store-variants.ts capTexels) rides toktx's own --resize — the encoder
- *  scales before it generates mips, and libvips is nowhere in the loop. */
+/** One encoder invocation's argv (toktx or `ktx create`), shared by every arm. ETC1S rides BasisLZ (zstd would be
+ *  invalid there); UASTC gets mild RDO (λ=1.0) + zstd 18 — without RDO zstd barely dents UASTC. Mips are always
+ *  generated (compressed mips can't be made at runtime). `resize` (capTexels) uses toktx's own --resize. */
 export function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc: boolean, inPath: string, outPath: string,
   resize: [number, number] | null = null): string[] {
   return isToktx
@@ -197,10 +115,8 @@ export function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean,
        ...(uastc ? ["--encode", "uastc", "--uastc_quality", "2", "--uastc_rdo_l", "1.0", "--zcmp", "18"]
                  : ["--encode", "etc1s", "--qlevel", "128"]),
        outPath, inPath]
-    // --assign-tf, never a conversion: ktx create reads an 8-bit PNG with no colour chunk as sRGB and, given a UNORM
-    // format, CONVERTS it — every normal/metallic-roughness/occlusion map got the sRGB→linear curve baked in (a flat
-    // normal 127 came out 54; measured 09-24 on the rubble pile: normals bent, surfaces darker, highlights gone).
-    // toktx's --assign_oetf above has always meant assign.
+    // --assign-tf, never a conversion: given a UNORM format, ktx create would CONVERT an untagged 8-bit PNG from sRGB
+    // and bake the curve into normal/data maps. toktx's --assign_oetf already means assign.
     : [encoder, "create", "--format", srgb ? "R8G8B8A8_SRGB" : "R8G8B8A8_UNORM", "--assign-tf", srgb ? "srgb" : "linear",
        "--generate-mipmap",
        ...(uastc ? ["--encode", "uastc", "--uastc-quality", "2", "--uastc-rdo", "--uastc-rdo-l", "1.0", "--zstd", "18"]
@@ -208,27 +124,23 @@ export function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean,
        inPath, outPath];
 }
 
-/** Per-texture KTX2 encode, in place on the Document. Supports both
- *  KTX-Software CLIs — toktx (v4.4.2, the primary target) and the newer
- *  unified `ktx create` — detected by basename. A texture that will not
- *  convert is skipped and NAMED in the tally; the caller decides whether a
- *  partial result is a file at all (the GLB arm refuses one — a .ktx2.glb
- *  with png inside is #122's class of lie, served immutable). Every encoder
- *  output is checked for the KTX2 container magic before it is accepted. */
 /** Stamped on every image this encoder writes since the transfer fix (ktx2EncodeArgs --assign-tf). A ktx-create
- *  KTX2 image without it, written LINEAR, had the sRGB→linear curve baked in — tools/ktx2-tf-purge.ts finds those.
+ *  KTX2 image without it, written LINEAR, had the sRGB→linear curve baked in — tools/assets/ktx2-tf-purge.ts finds those.
  *  The image's own KTX metadata can't tell them apart (same writer, same params). */
 export const KTX2_TF_MARK = "ktx2Tf";
 export type Ktx2Tally = { eligible: number; converted: number; failed: string[] };
 const KTX2_MAGIC = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
 export const isKtx2Container = (b: Uint8Array) => b.length >= 12 && KTX2_MAGIC.every((v, i) => b[i] === v);
+/** Per-texture KTX2 encode, in place on the Document (toktx or `ktx create`, detected by basename). A texture that
+ *  will not convert is skipped and NAMED in the tally; the caller decides whether a partial result ships. Every
+ *  output is checked for the KTX2 container magic before it is accepted. */
 async function ktx2CompressTextures(doc: Document, encoder: string, caps?: Map<Texture, number>): Promise<Ktx2Tally> {
   const isToktx = basename(encoder).toLowerCase().includes("toktx");
   // sharp converts non-PNG sources (webp/jpeg) and 4-aligns dimensions —
   // KHR_texture_basisu (and WebGPU BC upload) wants width/height % 4 == 0.
   // sharp is optional today: without it, only already-aligned PNGs encode.
   let sharp: any = null;
-  // KTX2_NO_SHARP=1 behaves as a host without sharp (tools/ktx2-resize-test.ts drives it)
+  // KTX2_NO_SHARP=1 behaves as a host without sharp (test/server/ktx2-resize-test.ts drives it)
   try { sharp = process.env.KTX2_NO_SHARP === "1" ? null : (await getSharp()).sharp; } catch { /* PNG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2-"));
   let converted = 0, eligible = 0;
@@ -248,22 +160,13 @@ async function ktx2CompressTextures(doc: Document, encoder: string, caps?: Map<T
       const size = tex.getSize(); // [w, h] | null (png/jpeg/webp all readable)
       const aligned = !!size && size[0] % 4 === 0 && size[1] % 4 === 0;
       const mime = tex.getMimeType();
-      // Pass the source straight through wherever the encoder reads it
-      // natively — PNG always, JPEG for toktx. sharp is only the CONVERTER
-      // for the rest (webp, unaligned dims), and it must be treated as
-      // best-effort here: @gltf-transform/functions' ndarray-pixels vendors
-      // its OWN sharp, and two libvips copies in one process can corrupt
-      // each other's GLib state (observed on win32: "colourspace: parameter
-      // space not set"). A sharp failure skips the TEXTURE, never the file.
-      //
-      // The house texel budget: the shadow's 1024², never more (store-variants.ts). toktx resizes itself (--resize);
-      // `ktx create` has no such flag, so on that encoder sharp (already the converter here) does it first. Until
-      // 2026-09-24 the ktx-create arm logged "encoding at source size" and shipped 2048² under a recipe named
-      // texel1024: every KTX2 built on a ktx-create host kept its full-size textures.
+      // The source passes straight through where the encoder reads it natively (PNG; JPEG for toktx); sharp converts
+      // the rest, best-effort — a sharp failure skips the TEXTURE, never the file.
+      // Texel budget: 1024² (store-variants.ts). toktx resizes itself; for `ktx create` sharp resizes first.
       const resize = capTexels(size as [number, number] | null, caps?.get(tex) ?? KTX2_TEXEL_CAP);   // caps: a LOD's density budget (lodTexelCaps)
       const sharpResize = !!resize && !isToktx && !!sharp;
-      // no sharp on a `ktx create` host: this texture can't be brought under the cap, so it isn't encoded at all (kept
-      // as-is), rather than shipped at source size inside a variant whose recipe says texel1024 (Greptile #207)
+      // no sharp on a `ktx create` host: can't get under the cap, so not encoded at all (never shipped at source size
+      // under a texel1024 recipe)
       if (resize && !isToktx && !sharp) {
         console.error(`[optimize] ktx2: skip ${label} (${size![0]}x${size![1]}) — over the texel cap, and no sharp to resize it (ktx create has no --resize)`);
         failed.push(label); continue;
@@ -300,8 +203,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string, caps?: Map<T
         failed.push(label); continue;
       }
       const encoded = new Uint8Array(await Bun.file(outPath).arrayBuffer());
-      // an image must be what it says it is (#122/#124): the encoder exited 0,
-      // now the bytes have to carry the container they will be labelled with
+      // exit 0 isn't enough: the bytes must carry the container they will be labelled with
       if (!isKtx2Container(encoded)) {
         console.error(`[optimize] ktx2: ${label} — encoder wrote ${encoded.length} bytes that are not a KTX2 container — texture kept as-is`);
         failed.push(label); continue;
@@ -320,13 +222,8 @@ async function ktx2CompressTextures(doc: Document, encoder: string, caps?: Map<T
   return { eligible, converted, failed };
 }
 
-/** The --ktx2 diet: dedup + prune + resample (the store recipe minus webp —
- *  KTX2 encodes from the best source) + per-texture KTX2 + draco. ALL or
- *  nothing: `out` is null unless every eligible texture converted. A variant
- *  with some — or no — KTX2 in it is a .ktx2.glb whose name lies about its
- *  contents, and it would be served immutable to every capable client (the
- *  #122 class). The tally says which it was: nothing eligible is exit 2's
- *  business, anything unconverted is exit 5's (see the CLI). */
+/** The --ktx2 diet. ALL or nothing: `out` is null unless every eligible texture converted (a partial .ktx2.glb's
+ *  name would lie, and it is served immutable). Nothing eligible → exit 2; anything unconverted → exit 5 (CLI). */
 export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<{ out: Uint8Array | null } & Ktx2Tally> {
   const io = await getIO();
   const doc = await io.readBinary(bytes);
@@ -338,21 +235,15 @@ export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promi
 }
 
 // ---- geometry LOD (objects only, fail closed on bodies) ---------------------
-// The v1 contract (PR #142 thread): a decimated variant for PLACEABLE
-// OBJECTS. Bodies are excluded by POSITIVE STRUCTURAL DETECTION on the raw
-// container — before any Document is constructed — and the answer is a typed
-// verdict, never a silent attempt. For accepted objects the reduce must
-// PROVE it preserved what the world depends on: named nodes (parts, socket
-// frames), materials, bounds (seat pans, collider fits) — or refuse.
+// A decimated variant for PLACEABLE OBJECTS only. Bodies are excluded by structural detection on the raw container
+// (typed verdict, never a silent attempt); accepted objects must prove they kept named nodes, materials and bounds.
 
 /** Why this GLB is not an object the reducer may touch — or null. Reads the
  *  raw JSON chunk: gltf-transform must not be the thing deciding whether a
  *  body is a body (it drops extensions it does not know). */
 export function lodExclusion(json: any): string | null {
   if (json?.skins?.length) return "unsupported: skinned/avatar asset (skins)";
-  // fail-closed means NOT trusting well-formedness (review of #156, point 5):
-  // a VRM that forgot extensionsUsed still carries the extension OBJECT, and
-  // multi-set skinning may skip set 0 — look everywhere the structure can be
+  // fail closed: don't trust well-formedness — a VRM may omit extensionsUsed, skinning may skip set 0
   const extNames = [...(json?.extensionsUsed ?? []), ...(json?.extensionsRequired ?? []),
     ...Object.keys(json?.extensions ?? {})];
   if (extNames.some((e) => /^VRM/i.test(e) || /^VRMC_/i.test(e))) return "unsupported: skinned/avatar asset (VRM metadata)";
@@ -361,11 +252,7 @@ export function lodExclusion(json: any): string | null {
     for (const k of Object.keys(p.attributes ?? {}))
       if (/^(JOINTS|WEIGHTS)_\d+$/.test(k)) return "unsupported: skinned/avatar asset (joint weights)";
   }
-  // v1 reduces STATIC geometry only. An animated object could survive the
-  // reduce structurally, but "could" is not the contract — preservation of
-  // channels/samplers through the diet is unproven here, and fail-closed is
-  // the reviewer-offered v1 answer. A later recipe can earn animation back
-  // with end-to-end evidence.
+  // static geometry only: preservation of animation channels through the reduce is unproven
   if (json?.animations?.length) return "unsupported: animated object (v1 reduces static geometry only)";
   return null;
 }
@@ -375,10 +262,7 @@ const totalVerts = (doc: Document) => {
   for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) n += p.getAttribute("POSITION")?.getCount() ?? 0;
   return n;
 };
-// WORLD space (node transforms applied), like the budget it is compared against. Until gen 3 this unioned raw POSITION
-// min/max across meshes with their node transforms ignored: a model of 24 translated parts (store 51e8…) read a 15 cm
-// "shift" that was 0.0 in the world and was refused for it — and the same frame-blind box could miss a real one. A
-// model authored in centimetres under a 0.01 node would also have mixed units against a metre budget.
+// WORLD space (node transforms applied), like the metre budget it is compared against.
 const sceneBounds = (doc: Document): [number[], number[]] => {
   const scene = doc.getRoot().getDefaultScene() ?? doc.getRoot().listScenes()[0];
   if (!scene) return [[0, 0, 0], [0, 0, 0]];
@@ -398,22 +282,8 @@ export const lodGpuRefusal = (origTexMB: number, lodTexMB: number, ms: number): 
 export type LodResult = { out: Uint8Array | null; verdict: string | null; kind?: LodVerdictKind; before: number; after: number; permissive?: boolean;
   /** served for its textures alone (LOD_TEX_ONLY): the vertices stayed over 0.6× */ texOnly?: boolean; /** LOD / full-tier texel area */ texRatio?: number };
 
-// ATTRIBUTE-AWARE SIMPLIFICATION. gltf-transform's simplify() hands meshoptimizer POSITIONS ONLY (4.4.2 and 4.5.1), so
-// every collapse was judged on shape alone: across hard-edge normals (a hovercar's wheel arches smeared dark, its rear
-// wheel gone) and across UV seams (a pallet's white blotches, a Joshua tree's foliage gone dull). meshoptimizer's README:
-// use Permissive only with attribute-aware simplification; we used it without. So each primitive is simplified here
-// with simplifyWithAttributes, normals, COLOR_0 and TEXCOORD_0 in the error metric. Weights were chosen by measurement
-// (09-29, six library models rendered at the client's LOD switch distances, notes: lod-look-2026-09-29): normals 0.25,
-// UVs 1, colour 1. Normals at 1.0 (meshoptimizer's demo, Godot) or 0.5 (gltfpack) left the desk and streetlight
-// 'ineffective'. Protecting UV-seam and crease vertices (meshopt_SimplifyVertex_Protect) instead froze the seamed models
-// and changed nothing on the rest, so nothing is locked: weighted UVs let the simplifier trade instead of refuse, and
-// a model that can't reach the bar without tearing its UVs is refused as 'ineffective' (a pallet) rather than served
-// torn. Against the served KTX2 at the switch distance: the hovercar 25% → 4% of pixels visibly different, its rear
-// wheel and arches kept; the Joshua tree 49% → 29%, its foliage colour kept.
-// Weld, strip/fan conversion and compaction are gltf-transform's own exported helpers, as its simplify() uses them.
-// ErrorClamped (meshoptimizer 1.3): attribute error clamped to the position-error scale — without it the normal error
-// used up the error budget and every pass stopped early (all six test models went 'ineffective'); the README recommends
-// it for any attribute-aware use.
+// Attribute-aware simplification (normals, COLOR_0, TEXCOORD_0 in the error metric; gltf-transform's simplify() is
+// positions-only). Weights were measured; why, and ErrorClamped: docs/research/optimize-design-notes.md#attribute-aware-lod-simplification
 const LOD_NORMAL_WEIGHT = 0.25, LOD_UV_WEIGHT = 1, LOD_COLOR_WEIGHT = 1;
 function readFloats(a: NonNullable<ReturnType<Primitive["getAttribute"]>>, width: number, out: Float32Array, stride: number, at: number) {
   const el = new Array(a.getElementSize()).fill(0);
@@ -501,16 +371,11 @@ export function minTexelDensity(f: number[], g: number[], t1: number[], t2: numb
   return Number.isFinite(d) ? d : 0;
 }
 
-/** TEXEL DENSITY: the longest side each texture needs so that every part of the model it covers still gets
- *  `texelsPerMetre`. Per texture, over every triangle that samples it (world area from EVERY drawing node, its UVs in
- *  texels), the density along its LEAST dense axis (a stretched mapping binds on its stretched axis — the geometric
- *  mean sqrt(texels²/m²) let a 10:1 strip come out at half the target). Shrinking the map by k scales every density
- *  by k, so the part that
- *  binds is the LEAST dense: keep the area-weighted 10th percentile at the target, and the densely mapped parts (a
- *  label, a face) keep more than they need. Not the minimum: a sliver of stretched UVs would pin the whole map at full
- *  size. (Gen 3's first cut kept the 90th percentile — backwards: up to 90% of the area fell under 1 texel/px.)
- *  Rounded UP to a power of two, never above the house cap, never below 64. A texture this cannot measure keeps the house cap: sampled from a
- *  texCoord it cannot follow (KHR_texture_transform), or referenced by anything but a core material slot. */
+/** TEXEL DENSITY: the longest side each texture needs so all but its least dense tenth (by area) still gets `texelsPerMetre`. Per
+ *  triangle, density along its LEAST dense axis (minTexelDensity); the area-weighted 10th percentile is held at the
+ *  target (not the minimum: a sliver of stretched UVs would pin the map at full size). Rounded up to a power of two,
+ *  clamped to [64, house cap]. Unmeasurable textures (KHR_texture_transform, non-core slots) keep the house cap, except
+ *  an extension's texture whose materials had core slots measured: it takes their largest cap (below). */
 export function lodTexelCaps(doc: Document, texelsPerMetre: number): Map<Texture, number> {
   const slotsOf = (mt: any): [Texture | null, any][] => [
     [mt.getBaseColorTexture(), mt.getBaseColorTextureInfo()], [mt.getEmissiveTexture(), mt.getEmissiveTextureInfo()],
@@ -599,45 +464,29 @@ export const lodNodesSig = (d: Document): string => {
 export const lodMatsSig = (d: Document): string => JSON.stringify(d.getRoot().listMeshes().map((m) =>
   [m.getName(), m.listPrimitives().map((p) => { const mt = p.getMaterial(); return mt ? d.getRoot().listMaterials().indexOf(mt) : -1; })]));
 
-/** The lod1 diet: the ktx2 diet (dedup/prune/resample + texel-budget KTX2 +
- *  draco) with weld + meshopt-simplify between — and the preservation
- *  asserts around the reduce. `verdict` non-null = a typed content refusal
- *  (marker's business); textures follow --ktx2's all-or-nothing. */
-/** `mutate` is the MUTATION-CONTROL SEAM demanded by the #156 re-review:
- *  the test suite injects a post-reduce corruption (a renamed node, a
- *  swapped material assignment) and asserts the guard REFUSES it — so
- *  deleting either guard turns a named test red instead of leaving the
- *  suite green. Production callers (the CLI) never pass it. */
+/** The lod1 diet: the ktx2 diet with weld + attribute-aware simplify between, and preservation asserts around the
+ *  reduce. `verdict` non-null = a typed content refusal; textures follow --ktx2's all-or-nothing. `mutate` is the
+ *  mutation-control seam: tests inject a post-reduce corruption and assert a guard refuses it. The CLI never passes it. */
 export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, mutate?: (doc: Document) => void,
   { minVerts = LOD_MIN_VERTS }: { minVerts?: number } = {}): Promise<LodResult & Ktx2Tally> {   // minVerts: the census and the reducer-mechanics tests only; the recipe names the real floor
   const none = { eligible: 0, converted: 0, failed: [] as string[] };
   const rawJson = parseGlb(bytes).json;
   const excluded = lodExclusion(rawJson);
   if (excluded) return { out: null, verdict: excluded, kind: "structural", before: 0, after: 0, ...none };
-  // a textured object on an encoder-less box is environmental — and known
-  // from the raw container, BEFORE any expensive transform runs (the pump
-  // retries this every boot; it must cost a JSON parse, not a simplify)
+  // a textured object on an encoder-less box is environmental, decided from the raw JSON before any expensive
+  // transform (the pump retries it every boot)
   if (!encoder && (rawJson?.images?.length ?? 0) > 0) return { out: null, verdict: "__no_encoder__", before: 0, after: 0, ...none };
   const io = await getIO();
-  // ONE reduce, run as the proven pass and — only if that pass cannot reach the bar — again PERMISSIVE: meshopt's
-  // mode that may collapse edges ACROSS UV/normal seams. Measured 09-24: seams lock the regular pass (a server rack
-  // 96% → 25%, a yucca 83% → 25%, all 8 "ineffective" library/store models into 25–60%). Permissive can drag UVs a
-  // little across a seam; a LOD is only seen at distance (lod_policy.js), and the owner approved it there ("fine with
-  // permissive at a distance"). Every preservation assert below applies to both passes unchanged.
+  // One reduce: the regular pass, and only if it can't reach the bar, again PERMISSIVE (may collapse across seams).
+  // docs/research/optimize-design-notes.md#permissive-retry
   const reduce = async (permissive: boolean, simplify = true) => {
     const doc = await io.readBinary(bytes);
-    // The node contract is captured BEFORE any destructive transform (re-review
-    // of #156, blocker 1: a plain prune() deleted an empty named socket helper
-    // before the old post-head signature existed — the loss was invisible).
-    // prune() runs with keepLeaves so named empty helpers — socket frames,
-    // attachment points — survive the head at all; the whole-diet signature
-    // then PROVES nothing was lost, or the variant is refused.
+    // The node contract is captured BEFORE any destructive transform; prune keepLeaves lets named empty helpers
+    // (socket frames) survive, and the signature then proves nothing was lost.
     const preNodes = lodNodesSig(doc);
     await doc.transform(dedup(), prune({ keepLeaves: true, keepAttributes: true }), resample());   // keepAttributes: see optimizeGlb
     const before = totalVerts(doc);
-    // material assignments are captured after the head — dedup may merge
-    // byte-identical materials, which is the ktx2 variant's existing behavior;
-    // what may not change from HERE on is which material each primitive wears
+    // captured after the head (dedup may merge identical materials); from here no primitive may change material
     const preMats = lodMatsSig(doc);
     const bounds = sceneBounds(doc);
     const budget = lodBudget(doc);
@@ -654,11 +503,8 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
     if (lodMatsSig(c.doc) !== c.preMats) return "preservation failed: material assignments changed";
     const [preMin, preMax] = c.bounds, [postMin, postMax] = sceneBounds(c.doc);
     for (let i = 0; i < 3; i++) {
-      // 2% of the extent (1 cm floor), or the screen-space budget if that is larger: a silhouette that moved by less
-      // than 2 px where the LOD is first seen moved by nothing a viewer can see (a 1 m prop: 2 cm gate, 4 cm budget).
-      // A LOD placement owns no collider (lod_policy.js), so the budget is the visible standard here too. Still
-      // refused: any silhouette that moved further — a thin spike collapsed into its base scores cheap in the quadric
-      // metric (its side planes pass near the base), and this is what catches it.
+      // 2% of the extent (1 cm floor), or the screen-space budget if larger (a LOD placement owns no collider,
+      // lod_policy.js). Catches e.g. a thin spike collapsed into its base, which the quadric metric scores cheap.
       const tol = Math.max((preMax[i] - preMin[i]) * 0.02, 0.01, c.budget.errWorld);
       if (Math.abs(postMin[i] - preMin[i]) > tol || Math.abs(postMax[i] - preMax[i]) > tol) return `preservation failed: bounds moved on axis ${i}`;
     }
@@ -676,11 +522,9 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
     }
     return { caps, texRatio: fullArea > 0 ? lodArea / fullArea : 1 };
   };
-  // Candidates, in order: a GEOMETRY LOD from the regular pass; else from the Permissive retry, if it passes every
-  // gate; else a TEXTURE-ONLY LOD (LOD_TEX_ONLY) on the REGULAR pass — the retry's seam-crossing collapses buy a
-  // texture-only LOD nothing, and a retry that broke a gate must not take down a LOD the regular pass would carry —
-  // or, if the regular pass broke a gate too, on the UNTOUCHED geometry: a simplify that dropped a finial must not
-  // cost a model the texture saving it qualifies for. Under the vertex floor nothing is simplified at all.
+  // Candidates, in order: geometry LOD from the regular pass; else from the Permissive retry; else a TEXTURE-ONLY LOD
+  // (LOD_TEX_ONLY) on the regular pass, or on untouched geometry if that broke a gate. Under the vertex floor nothing
+  // is simplified.
   const regular = await reduce(false);
   const before = regular.before;
   let r: Pass | null = null, permissive = false, texOnly = false, refused: string | null = null;
@@ -719,11 +563,10 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
     return { out: null, verdict: "__no_encoder__", before, after, ...none };   // env, the CLI exit-3s
   }
   // identity: the variant SAYS what it is a variant of, and how it was made
-  const srcHash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  const srcHash = sha256Bytes(bytes);
   let meshoptVer = "unknown";
   try { meshoptVer = JSON.parse(await Bun.file(Bun.resolveSync("meshoptimizer/package.json", import.meta.dir)).text()).version; } catch { /* stays unknown */ }
-  // the SOURCE's extras survive; ours ride alongside (never clobber a
-  // producer's own annotations — review of #156, point 6)
+  // the source's extras survive, except the keys we write (lodOf, recipe, tools, simplify, lodBasis)
   const asset = doc.getRoot().getAsset();
   asset.extras = { ...(asset.extras ?? {}), lodOf: srcHash, recipe: LOD_RECIPE, ...(permissive ? { simplify: "permissive" } : {}), ...(texOnly ? { lodBasis: "textures" } : {}),
     tools: { meshoptimizer: meshoptVer, encoder: encoder ? basename(encoder) : "none" } };
@@ -731,38 +574,16 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
   return { out: await io.writeBinary(doc), verdict: null, before, after, permissive, texOnly, texRatio, ...tally };
 }
 
-// ---- KTX2 for VRMs (§20c): the surgical container rewrite -------------------
-// gltf-transform DROPS unknown extensions on read, and a VRM is mostly
-// unknown extensions (VRM 0.x: everything under extensions.VRM; 1.x:
-// VRMC_vrm, VRMC_materials_mtoon, VRMC_springBone, VRMC_node_constraint…) —
-// one round-trip through a Document and the body loses its springs, its face,
-// its humanoid. So a VRM never touches a Document: raw GLB container work
-// where the ONLY mutations are (a) image bytes swapped for their KTX2
-// encodes, (b) the bufferView byteOffsets/byteLengths that move implies, and
-// (c) the minimal JSON that declares them (mimeType, KHR_texture_basisu).
-// Every bufferView keeps its INDEX and ORDER; accessors, skins, sparse
-// blocks, and every VRM/VRMC_* JSON section ride through byte-untouched. A
-// torn VRM is someone's BODY: transcodeVrmKtx2 validates its own output —
-// re-parse, per-view byte comparison, untouched-section equality — and
-// throws (CLI exit 1) over returning anything questionable.
+// ---- KTX2 for VRMs: the surgical container rewrite -------------------
+// gltf-transform drops unknown extensions on read, and a VRM is mostly unknown extensions, so a VRM never touches a
+// Document: the only mutations are image bytes → KTX2, the bufferView offsets that implies, and the JSON declaring them.
+// validateVrmRewrite checks the output and throws (CLI exit 1) rather than return anything questionable.
 
 
 // ---- output validation ------------------------------------------------------
-// The write below is already careful about TRUNCATION (tmp+rename: "a killed
-// pass must never leave a truncated GLB where the server will trustingly serve
-// it"). A whole GLB can still arrive intact and carry image bytes that are not
-// images: `textureCompress` runs ndarray-pixels' vendored sharp alongside ours,
-// and two libvips copies in one process can corrupt each other's state (the
-// hazard documented at ktx2CompressTextures). When that happens the encoder
-// returns a buffer, gltf-transform stamps `image/webp` on it, draco packs it,
-// and the file ships. Nothing downstream looks, because every consumer trusts
-// the mimeType — so the failure surfaces as one asset rendering untextured
-// white, days later, in someone's screenshot (#122).
-//
-// The rule: an optimizer may give up, but it may not emit bytes it has not
-// checked. The VRM arm already validates its own output and throws rather than
-// return anything questionable; this is the same doctrine for the other arms,
-// at the one place where a lie is cheap to detect — the first four bytes.
+// An optimizer may give up, but may not emit bytes it has not checked: an intact GLB can still carry image bytes that
+// are not images (the two-libvips hazard, docs/research/optimize-design-notes.md#one-libvips-per-process), and every
+// consumer trusts the mimeType. So each embedded image's magic is checked against its declared type.
 
 const IMAGE_MAGIC: { mime: string; test: (b: Uint8Array) => boolean }[] = [
   { mime: "image/png", test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
@@ -798,21 +619,13 @@ export function findImageLies(bytes: Uint8Array): ImageLie[] {
   return out;
 }
 
-/** Slot classification from the JSON alone — the three vocabularies a VRM can
- *  speak, folded onto IMAGES (encoding is per image; textures sharing one
- *  image accumulate their marks onto it):
- *    - core glTF materials: baseColor/emissive = color; normal/occlusion/
- *      metallicRoughness = data.
- *    - VRM 1.x VRMC_materials_mtoon: shade/matcap/rimMultiply = color;
- *      shadingShift/uvAnimationMask/outlineWidthMultiply = data (MToon
- *      samples .r/.b SCALARS there — ETC1S block color noise reads as
- *      corruption, the §20 extraction's finding).
- *    - VRM 0.x extensions.VRM.materialProperties[].textureProperties:
- *      _MainTex/_ShadeTexture/_SphereAdd/_RimTexture/_EmissionMap = color;
- *      _BumpMap/_OutlineWidthTexture/_UvAnimMaskTexture = data.
- *  Anything unrecognized — unknown slot keys, the VRM 1.x meta
- *  thumbnailImage (an image no texture references), VRM 0.x meta.texture —
- *  ends up data-or-unreferenced, i.e. UASTC: safe, bigger. */
+/** Slot classification from the JSON alone, folded onto IMAGES (textures sharing an image accumulate marks):
+ *    - core glTF: baseColor/emissive = color; normal/occlusion/metallicRoughness = data.
+ *    - VRM 1.x VRMC_materials_mtoon: shade/matcap/rimMultiply = color; other *Texture keys = data (MToon samples
+ *      .r/.b scalars there; ETC1S noise reads as corruption).
+ *    - VRM 0.x materialProperties[].textureProperties: _MainTex/_ShadeTexture/_SphereAdd/_RimTexture/_EmissionMap =
+ *      color; anything else = data.
+ *  Unrecognized or unreferenced (meta thumbnails) → UASTC: safe, bigger. */
 function classifyVrmImages(json: any): Map<number, { color: boolean; data: boolean }> {
   const marks = new Map<number, { color: boolean; data: boolean }>();
   const texIndex = (ref: any): number | undefined =>
@@ -932,10 +745,7 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
     if ((bv.byteOffset ?? 0) + (bv.byteLength ?? 0) > bin.length)
       throw new Error(`SOURCE bufferView ${idx} out of bounds — refusing to touch this file`);
   }
-  // An image bufferView shared by two images — or by an ACCESSOR (never seen
-  // from a real exporter, but a swap would silently feed KTX2 bytes to
-  // whatever reads it) — cannot be replaced. Count image owners; collect the
-  // views accessors (incl. sparse) read; either disqualifies the image.
+  // An image bufferView shared with another image or an accessor (incl. sparse) can't be swapped: skip that image.
   const viewOwners = new Map<number, number>();
   for (const img of json.images ?? []) {
     if (typeof img.bufferView === "number") viewOwners.set(img.bufferView, (viewOwners.get(img.bufferView) ?? 0) + 1);
@@ -976,8 +786,8 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
         inPath = join(tmp, mime === "image/png" ? `${i}.png` : `${i}.jpg`);
         await Bun.write(inPath, src);
       } else if (sharp) {
-        // best-effort, exactly the GLB arm's posture: a sharp failure skips
-        // the TEXTURE, never the file
+        // best-effort: a sharp failure skips the TEXTURE, never the file. Unlike --ktx2 (all or nothing),
+        // this arm ships a partial result
         try {
           let s = sharp(Buffer.from(src));
           const meta = await s.metadata();
@@ -1038,10 +848,7 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
   for (const [i] of newImageBytes) { json.images[i].mimeType = "image/ktx2"; json.images[i].extras = { ...(json.images[i].extras ?? {}), [KTX2_TF_MARK]: "assigned" }; }
   for (const t of json.textures ?? []) {
     if (typeof t.source === "number" && newImageBytes.has(t.source)) {
-      // No raster fallback exists any more, so the spec's top-level `source`
-      // fallback would dangle — remove it and require the extension, matching
-      // the GLB arm's negotiated-serving contract (variants serve ONLY to
-      // clients that asked with ?ktx2=1).
+      // no raster fallback remains, so drop top-level `source` and require the extension (served only on ?ktx2=1)
       (t.extensions ??= {}).KHR_texture_basisu = { source: t.source };
       delete t.source;
     }
@@ -1074,64 +881,33 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
   return { out, converted: newImageBytes.size, etc1s, uastc: uastcN };
 }
 
-// ---- KTX2 for loose library images (§20d) -----------------------------------
-// Vegetation, sky, and particle textures reach the client as RAW image bytes
-// through the Deno-shim file layer (assets.js primeFiles → readFileSync →
-// loadImageTexture): ~92.5MB of decoded RGBA uploads for the meadow, a 34MB
-// single-frame upload for the 4K starmap alone. The .ktx2 sibling pays that in
-// GPU currency — but TWO contracts must be baked at ENCODE time, because
-// three's KTX2Loader ignores KTX orientation metadata and the client takes the
-// container's word over the call site's:
-//   1. THE FLIP. The engine's loadImageTexture contract bakes the vertical
-//      flip into the PIXELS (browser flipY convention; tex.flipY stays false
-//      so it composes with repeat tiling — UV-authored trim sheets arrive
-//      mirrored without it). Every curated-dir call site takes the default
-//      flip, so every encode here flips rows before the encoder ever runs.
-//      Decoding is pngjs/jpeg-js — pure JS, deterministic on every platform.
-//      sharp is deliberately NOT used in this mode: it is broken on the win32
-//      dev box (the recorded two-libvips clash), and a flip that silently
-//      failed to happen is a vertically mirrored meadow.
-//   2. THE TRANSFER. The DFD's OETF must match what the call site's opts.srgb
-//      would have set on the raster texture — the client reads colorSpace
-//      from the DFD (KTX2Loader parseColorSpace) and must not override it, so
-//      a mismatch is a visible lighting error. Classification is by FILENAME,
-//      verified against the actual consumers: vegetation.js loadMap,
-//      sky_worlds.js readTex, and the client's own emitters.js spriteTexture.
+// ---- KTX2 for loose library images -----------------------------------
+// Vegetation, sky and particle textures otherwise reach the client as raw RGBA uploads. three's KTX2Loader ignores KTX
+// orientation metadata and the client trusts the container, so two contracts are baked at encode time:
+//   1. the flip: loadImageTexture bakes the vertical flip into the pixels, so every encode here flips rows first (pure-JS
+//      decoders; a flip that silently failed is a mirrored meadow);
+//   2. the transfer: the DFD's OETF must match the call site's opts.srgb, classified by filename against the consumers
+//      (vegetation.js loadMap, sky_worlds.js readTex, emitters.js spriteTexture).
 
 const isPow2 = (n: number) => n > 0 && (n & (n - 1)) === 0;
 
-/** Filename → codec/transfer, or a refusal. Every rule cites the call site it
- *  matches (all in ../eidoverse-video unless noted). Order matters: the
- *  particle dir is classified as a DIR (its consumer ignores filenames), data
- *  keywords beat color keywords (asteroid_moon_normal contains "moon"). */
+/** Filename → codec/transfer, or a refusal. Rules cite their call sites (in ../eidoverse-video unless noted). Order
+ *  matters: the particle dir is classified as a DIR; data keywords beat color (asteroid_moon_normal contains "moon"). */
 export function classifyLooseImage(srcPath: string): { srgb: boolean; uastc: boolean } | { conflict: string } {
   const p = srcPath.replace(/\\/g, "/").toLowerCase();
   const name = basename(p);
   if (p.includes("/particle_textures/")) {
-    // trace_06.png is consumed BOTH ways: sky_worlds.js loads it linear as
-    // the storm bolt (readTex(..., false)) while emitters.js loads every
-    // authored sprite { srgb: true }. One DFD cannot serve both callers —
-    // no variant; both keep today's raster bytes.
+    // trace_06.png is loaded linear by sky_worlds.js (bolt) and srgb by emitters.js: one DFD can't serve both
     if (name === "trace_06.png") return { conflict: "loaded linear by sky_worlds (bolt) AND srgb by emitters" };
-    // Every other sprite has ONE loader: emitters.js spriteTexture,
-    // { srgb: true }. UASTC, not ETC1S: smooth radial alpha gradients are
-    // ETC1S's worst case, and the whole dir is 4.7MB — quality over bytes.
+    // emitters.js spriteTexture, { srgb: true }; UASTC because smooth alpha gradients are ETC1S's worst case
     return { srgb: true, uastc: true };
   }
-  // Data maps — sampled as per-channel scalars/vectors, loaded WITHOUT srgb
-  // (vegetation.js loadMap normal/roughness; sky_worlds.js band + solar set:
-  // NormalGL/Roughness/Metalness/ao/height/landmask): linear + UASTC (ETC1S
-  // block color noise reads as data corruption there — §20 doctrine).
+  // Data maps, loaded WITHOUT srgb (vegetation.js loadMap normal/roughness; sky_worlds.js band + solar set):
+  // linear + UASTC (§20)
   if (/(normal|rough|metal|_ao\b|height|mask|bump|occlusion|displace)/.test(name)) return { srgb: false, uastc: true };
-  // Color maps — loaded { srgb: true }: vegetation albedo/translucency
-  // (loadMap srgb:true), everything the sky reads as color (readTex(.., true):
-  // starmap/moon/rock_giant/rain_streak/solar Color; asteroid_moon_baked is
-  // the shattered moon's albedo atlas). ETC1S q128: eye-facing sRGB, 4-8×
-  // smaller, block noise hides in shading.
+  // Color maps, loaded { srgb: true } (vegetation albedo/translucency; sky readTex(.., true)): ETC1S q128
   if (/(albedo|translucen|_color|basecolor|diffuse|emissi|_baked|starmap|kloppenheim|puresky|moon|rock_giant|rain_streak)/.test(name)) return { srgb: true, uastc: false };
-  // Unmatched ⇒ UASTC + linear (safe for data, merely bigger). A COLOR file
-  // landing here would render with darkened mids — extend the color list when
-  // a new name shows up rather than letting it fall through.
+  // Unmatched ⇒ UASTC + linear. A COLOR file landing here renders with darkened mids: extend the color list.
   return { srgb: false, uastc: true };
 }
 
@@ -1145,10 +921,8 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
   if ("conflict" in cls) return { skip: `conflicted consumers — ${cls.conflict}` };
   const ext = srcPath.toLowerCase().match(/\.(png|jpe?g)$/)?.[1];
   if (!ext) return { skip: `not a png/jpeg (${basename(srcPath)})` };
-  // pngjs/jpeg-js: the ONE deliberate dep addition of §20d (pure JS — the
-  // flip must gate locally and sharp cannot be trusted on this box). Lazy
-  // imports so every other optimize mode keeps working before `bun install`
-  // catches up (a resolve failure here reads as env-skip in the pump).
+  // lazy imports (pure-JS decoders, §20d): other modes keep working before `bun install`; a resolve failure here
+  // reads as env-skip in the pump
   let w: number, h: number, data: Uint8Array;
   if (ext === "png") {
     const { PNG } = (await import("pngjs")) as any;
@@ -1186,22 +960,15 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
-// ---- CLI: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img] <in> <out>
-// Exit 0 = wrote out. Exit 2 = optimization made it BIGGER — or, for
-// --ktx2-vrm, there was nothing to convert (no raster images); or, for
-// --ktx2-img, the image is not suitable (non-POT/4-misaligned dims,
-// conflicted consumers) — nothing written, serve the original. Exit 1 =
-// failure, reason on stderr.
-// Exit 3 (any --ktx2* mode) = no KTX2 encoder on this box — environmental,
-// the caller must env-skip (never a .failed marker).
-// --lod shares the whole ladder: exit 2 for typed content verdicts (a body,
-// fail closed; nothing to reduce; a preservation assert), exit 3 when a
-// textured object meets a box with no encoder, exit 5 for a partial texture
-// conversion — REFUSED, retryable.
-// Exit 5 (--ktx2) = an encoder answered but not every eligible texture
-// converted — the variant is REFUSED, nothing written. Environmental too (a
-// flaky or misconfigured encoder, not a bad model): no marker, retried next
-// boot; and not exit 3's ktx2Skip either — the encoder is there.
+// ---- CLI: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img|--lod] <in> <out>
+// Exit codes:
+//   0  wrote out.
+//   1  failure, reason on stderr.
+//   2  nothing written, serve the original: not smaller; --ktx2/--ktx2-vrm nothing convertible; --ktx2-img unsuitable
+//      image; --lod a typed content verdict (body, nothing to reduce, preservation, not lighter on the GPU).
+//   3  any --ktx2* mode (or --lod with textures): no KTX2 encoder — environmental, env-skip, never a .failed marker.
+//   4  an output image failed the container check — retryable, not marked failed.
+//   5  --ktx2/--lod: an encoder answered but not every texture converted — refused, no marker, retried next boot.
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
@@ -1212,13 +979,13 @@ if (import.meta.main) {
   const ktx2Mode = mode !== null;
   const [inPath, outPath] = argv.filter((a) => !a.startsWith("--"));
   if (!inPath || !outPath) {
-    console.error("usage: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img] <in> <out>");
+    console.error("usage: bun run server/optimize.ts [--ktx2|--ktx2-vrm|--ktx2-img|--lod] <in> <out>");
     process.exit(1);
   }
   let encoder: string | null = null;
   if (mode === "--lod") encoder = findKtx2Encoder();   // optional here: an untextured object reduces fine without one
   else if (ktx2Mode && !(encoder = findKtx2Encoder())) {
-    console.error("[optimize] ktx2: no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md)");
+    console.error("[optimize] ktx2: no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/operator/KTX2-ENCODER.md)");
     process.exit(3);
   }
   try {
@@ -1246,7 +1013,7 @@ if (import.meta.main) {
     } else if (mode === "--lod") {
       const r = await optimizeGlbLod(src, encoder);
       if (r.verdict === "__no_encoder__") {
-        console.error("[optimize] lod: textured object and no KTX2 encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md)");
+        console.error("[optimize] lod: textured object and no KTX2 encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/operator/KTX2-ENCODER.md)");
         process.exit(3);
       }
       if (r.verdict) {   // a typed content refusal — fail closed, marker's business; stamped with the recipe like the ktx2 size verdict
@@ -1277,17 +1044,9 @@ if (import.meta.main) {
       out = await optimizeGlb(src);
     }
     const ms = Math.round(performance.now() - t0);
-    // An already-lean upload (someone re-uploading our own optimized output,
-    // a tiny primitive) gains nothing — don't shadow it with a same-size copy.
-    // The --ktx2 gate is deliberately generous: KTX2 variants exist for
-    // decode/upload wins (no createImageBitmap, GPU-native mips, 4-8× less
-    // VRAM), not just wire bytes — accept anything not grossly bigger than
-    // the ORIGINAL source (>1.25×).
-    // A LOD is judged by what it is FOR (owner, 09-24: "judge LODs by verts/GPU memory instead of file size"): the
-    // vertex cut — or, for a texture-only LOD, the texture cut — is already asserted (optimizeGlbLod), and here its textures must not cost MORE GPU memory
-    // than the original's. Its KTX2 textures are routinely 2–5× LARGER ON DISK than a JPEG original while far
-    // smaller in VRAM — the byte gate below refused 7 of 8 real candidates for exactly that. The download ratio is
-    // logged on success, because a far placement fetches the LOD first (lod_policy.js) and it is a real trade.
+    // Size gate: an already-lean upload isn't shadowed by a same-size copy. --ktx2 accepts up to 1.25× the source
+    // (its wins are decode/upload/VRAM, not wire bytes). --lod is judged by GPU texture memory instead of file size:
+    // docs/research/optimize-design-notes.md#lod-gate-gpu-cost-not-file-bytes
     if (mode === "--lod") {
       const a = glbPerf(src), b = glbPerf(out);
       if (b.texMB > a.texMB) {
@@ -1297,16 +1056,12 @@ if (import.meta.main) {
       }
       console.log(`[optimize] lod: GPU textures ${a.texMB} -> ${b.texMB} MB, tris ${a.tris} -> ${b.tris}; download ${(out.length / src.length).toFixed(2)}x the original`);
     } else if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
-      // the KTX2 verdict carries its recipe AND its tools: a later recipe or
-      // a new encoder re-measures it (store-variants.ts verdictStands)
-      // instead of inheriting the refusal
-      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp(mode === "--lod" ? LOD_RECIPE : undefined)} ${toolsStamp()}` : ""} — keeping original`);
-      console.error(verdictLine("size", `not smaller (${src.length} -> ${out.length})`, ktx2Mode ? (mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE) : null));
+      // the verdict carries recipe and tools so a later recipe/encoder re-measures it (store-variants.ts verdictStands)
+      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp()} ${toolsStamp()}` : ""} — keeping original`);
+      console.error(verdictLine("size", `not smaller (${src.length} -> ${out.length})`, ktx2Mode ? KTX2_RECIPE : null));
       process.exit(2);
     }
-    // …and the same care about CONTENT: a GLB whose images are not images is
-    // worse than no variant, because it serves confidently (#122). --ktx2-img
-    // emits a bare KTX2 file rather than a container, so it has nothing to walk.
+    // content check: a GLB whose images are not images serves confidently. --ktx2-img emits a bare KTX2, nothing to walk
     if (mode !== "--ktx2-img") {
       const lies = findImageLies(out);
       if (lies.length) {
@@ -1320,9 +1075,7 @@ if (import.meta.main) {
         process.exit(4);
       }
     }
-    // tmp+rename: a killed pass must never leave a truncated GLB where the
-    // server will trustingly serve it (atomicWrite, the house idiom — this
-    // site used to be the odd one out with a lazy fs import)
+    // tmp+rename: a killed pass must never leave a truncated GLB where the server will serve it
     const { atomicWrite } = await import("./fsutil.ts");
     atomicWrite(outPath, out);
     console.log(`[optimize] ${src.length} -> ${out.length} bytes (${(src.length / out.length).toFixed(1)}x, ${ms}ms)`);

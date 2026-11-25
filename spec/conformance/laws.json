@@ -1,6 +1,6 @@
 {
  "laws": {
-  "ground": "ground@1",
+  "ground": "ground@2",
   "sky": "forecast@1"
  },
  "columns": {
@@ -17,7 +17,7 @@
    "intensity k (float64 bits)"
   ]
  },
- "contract": "The ground: each row's args are normalised by terrainParams (shared/terrainmath.js) before the height law makeHeightField reads them, and the heights pinned are of the normalised params. A missing or non-finite number takes its default: size 80, amplitude 3, flatRadius 0, flatHeight 0, frequency 2.5; seed, default 1, is truncated toward zero and then read as a 32-bit integer (seed | 0), where 0 reads as 1; octaves is truncated and clamped to 1..8, default 4. kind: 'flat' is level ground at its height (default 0, size 200): the noise keys and shaping are then not read (no row here pins it). Any other key (scale in one row here) is not a parameter and changes nothing. Shaping (shared/terrainshape.js shapeParams) is carried only when the args use it: the first 64 features, in order; an unknown type is dropped; radius is clamped to 0..2000 and a feature with radius <= 0.05 dropped; height is clamped to -500..500; a ridge needs finite x1, z1, x2, z2, a hill or flatten finite x, z, or it is dropped; a flatten's edge defaults to radius * 0.5, clamped to 0.01..2000; a heightmap {grid, min (default 0), max (default 10)} whose grid is a stored grid's reference is carried too (no row here pins it: its grid is data outside this file). The features then apply in order over the base height (shapeHeight): the noise, or, when a heightmap's grid is found, the heightmap's sample in its place (the noise is then not read; a grid not found falls back to the noise). The sky: each policy is read through normalizePolicy (shared/forecast.js) with its epoch kept, and segments are walked from the epoch, each starting where the last ended.",
+ "contract": "The ground: each row's args are normalised by terrainParams (shared/terrainmath.js) before the height law makeHeightField reads them, and the heights pinned are of the normalised params. A missing or non-finite number takes its default: size 80, amplitude 3, flatRadius 0, flatHeight 0, frequency 2.5; seed, default 1, is truncated toward zero and then read as a 32-bit integer (seed | 0), where 0 reads as 1; octaves is truncated and clamped to 1..8, default 4. kind: 'flat' is level ground at its height (default 0, size 200): the noise keys and shaping are then not read (no row here pins it). Any other key (scale in one row here) is not a parameter and changes nothing. Shaping (shared/terrainshape.js shapeParams) is carried only when the args use it: the first 64 features, in order; an unknown type is dropped; radius is clamped to 0..2000 and a feature with radius <= 0.05 dropped; height is clamped to -500..500; a ridge needs finite x1, z1, x2, z2, a hill or flatten finite x, z, or it is dropped; a flatten's edge defaults to radius * 0.5, clamped to 0.01..2000; a heightmap {grid, min (default 0), max (default 10)} whose grid is a stored grid's reference is carried too (no row here pins it: its grid is data outside this file). The features then apply in order over the base height (shapeHeight): the noise, or, when a heightmap's grid is found, the heightmap's sample in its place (the noise is then not read; a grid not found falls back to the noise). A row may shape its ground from beside its args, as a world does from components of their own on @world (never on level ground: kind 'flat' reads neither). named is {<name>: a feature, with order?}: read as a list feature is and applied after the list, by order (absent or non-finite: 0) and then by name in code-unit order, the first 64 of them. tiles is the sculpted layer, {<i>-<j>: {<sample>: mm}}: a lattice of samples every 0.5 m, sample (gx, gz) standing at x = -2048 + 0.5 gx, z = -2048 + 0.5 gz; tile <i>-<j> holds the 32 × 32 samples gx = 32 i …, gz = 32 j …, row-major with rows along z (sample (gx, gz) is entry (gz - 32 j) * 32 + (gx - 32 i)), in whole millimetres; a row here lists only the samples that aren't 0, and a tile or sample not given is 0. At a point the layer is bilinear between the four samples round it (u = (x - -2048) / 0.5, i = floor(u), along x first: a = d00 + (d10 - d00) * fu, b = d01 + (d11 - d01) * fu, then (a + (b - a) * fv) / 1000 metres; nothing is added where all four are 0), and it is added last, after every feature. The sky: each policy is read through normalizePolicy (shared/forecast.js) with its epoch kept, and segments are walked from the epoch, each starting where the last ended.",
  "note": "heights and intensities are IEEE-754 float64 bits, big-endian hex; times are epoch ms",
  "terrain": [
   {
@@ -231,6 +231,246 @@
      200,
      3,
      "3fd77fd05ffaeccc"
+    ]
+   ]
+  },
+  {
+   "args": {
+    "seed": 5,
+    "amplitude": 2
+   },
+   "named": {
+    "mound": {
+     "type": "hill",
+     "x": 10,
+     "z": 10,
+     "radius": 12,
+     "height": 3
+    },
+    "cut": {
+     "type": "ridge",
+     "x1": -40,
+     "z1": 10,
+     "x2": -30,
+     "z2": 14,
+     "radius": 6,
+     "height": -2
+    }
+   },
+   "heights": [
+    [
+     0,
+     0,
+     "bfedc574ff3bbbbc"
+    ],
+    [
+     1.5,
+     -2.25,
+     "bfe945ff3397b5b2"
+    ],
+    [
+     10,
+     10,
+     "4004b3619d427866"
+    ],
+    [
+     -37.5,
+     12,
+     "bffddb25c2a501ea"
+    ],
+    [
+     64,
+     -64,
+     "3fd36081ffe66668"
+    ],
+    [
+     200,
+     3,
+     "3fe678cd202fbbbc"
+    ]
+   ]
+  },
+  {
+   "args": {
+    "seed": 5,
+    "amplitude": 2,
+    "features": [
+     {
+      "type": "hill",
+      "x": 0,
+      "z": 0,
+      "radius": 9,
+      "height": 1.5
+     }
+    ]
+   },
+   "named": {
+    "a-rise": {
+     "type": "hill",
+     "x": 1.5,
+     "z": -2.25,
+     "radius": 4,
+     "height": 0.75
+    },
+    "b-pad": {
+     "type": "flatten",
+     "x": 0,
+     "z": 0,
+     "radius": 6,
+     "height": 1,
+     "edge": 2,
+     "order": -1
+    }
+   },
+   "heights": [
+    [
+     0,
+     0,
+     "3ff389ac00000000"
+    ],
+    [
+     1.5,
+     -2.25,
+     "3ffc000000000000"
+    ],
+    [
+     10,
+     10,
+     "bfda64f315ec3ccc"
+    ],
+    [
+     -37.5,
+     12,
+     "3fa426cfba7f0f80"
+    ],
+    [
+     64,
+     -64,
+     "3fd36081ffe66668"
+    ],
+    [
+     200,
+     3,
+     "3fe678cd202fbbbc"
+    ]
+   ]
+  },
+  {
+   "args": {
+    "seed": 11,
+    "amplitude": 0
+   },
+   "tiles": {
+    "128-128": {
+     "0": 1000,
+     "1": 400,
+     "32": -250,
+     "660": 730
+    },
+    "131-127": {
+     "31": -1200
+    },
+    "53-152": {
+     "17": 90,
+     "49": 45
+    }
+   },
+   "heights": [
+    [
+     0,
+     0,
+     "3ff0000000000000"
+    ],
+    [
+     1.5,
+     -2.25,
+     "0000000000000000"
+    ],
+    [
+     10,
+     10,
+     "3fe75c28f5c28f5c"
+    ],
+    [
+     -37.5,
+     12,
+     "0000000000000000"
+    ],
+    [
+     64,
+     -64,
+     "0000000000000000"
+    ],
+    [
+     200,
+     3,
+     "0000000000000000"
+    ]
+   ]
+  },
+  {
+   "args": {
+    "seed": 3,
+    "features": [
+     {
+      "type": "flatten",
+      "x": 10,
+      "z": 10,
+      "radius": 5,
+      "height": 2
+     }
+    ]
+   },
+   "named": {
+    "lip": {
+     "type": "ridge",
+     "x1": 0,
+     "z1": 0,
+     "x2": 10,
+     "z2": 10,
+     "radius": 3,
+     "height": 0.5
+    }
+   },
+   "tiles": {
+    "128-128": {
+     "660": -333,
+     "661": 125
+    },
+    "127-127": {
+     "1023": 500
+    }
+   },
+   "heights": [
+    [
+     0,
+     0,
+     "3ff59cd777466666"
+    ],
+    [
+     1.5,
+     -2.25,
+     "3fe3f854336bf724"
+    ],
+    [
+     10,
+     10,
+     "40015604189374bc"
+    ],
+    [
+     -37.5,
+     12,
+     "3f85e4c7a6895300"
+    ],
+    [
+     64,
+     -64,
+     "bff139f9a4f66668"
+    ],
+    [
+     200,
+     3,
+     "3fe14066caca6664"
     ]
    ]
   }

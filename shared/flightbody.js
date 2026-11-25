@@ -1,11 +1,7 @@
 // flightbody — which wings a body can ANIMATE, checked by name and nothing else. It never decides whether a body may fly
 // (that is the world's fly right, shared/flightcap.js); it decides whether wings flap and fold.
 //
-// Janus's constraint, and the right one: "the flying mechanics should continue
-// to work if I update the body as long as the load-bearing bits remain the
-// same (such as wing bones), or maybe even more compatible than that."
-//
-// So wings are bound to a NAMING CONTRACT, which is the same contract hair and wings already flow through in this
+// Wings are bound to a NAMING CONTRACT, which is the same contract hair and wings already flow through in this
 // project (rigtest/EIDOVERSE-DEPLOY.md: "the pipeline recognises bones by NAME and nothing else"). Re-export the body
 // with the same bone names and the wings keep moving; rename them and this says so, loudly (deadWingsNote), instead
 // of producing a flier whose wings do not move.
@@ -13,8 +9,7 @@
 // PURE, per shared/README.md: no three, no DOM, no fetch. The caller passes a
 // list of bone names, however it happens to know them.
 
-/** The wing chains, as authored by rigtest/hair_rig.py's sibling convention:
- *  <side>_Wing_<row> then _1, _2 outward. Two rows per side, three deep. */
+/** The wing chains, as the rig authors them: <side>_Wing_<row> then _1, _2 outward. Two rows per side, three deep. */
 export const WING_RE = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/;
 
 /**
@@ -34,9 +29,7 @@ export function inspectBody(boneNames) {
     const key = `${m[1]}_${m[2]}`;                 // L_Upper, R_Lower, ...
     (chains[key] ??= []).push(n);
   }
-  // Sort each chain root-first. The INDEX in the name is the depth: counting
-  // underscores instead collapses _1 and _2 to the same level, which is the
-  // bug ammodoll.js documents having hit.
+  // Sort each chain root-first. The INDEX in the name is the depth (counting underscores would put _1 and _2 level).
   for (const k of Object.keys(chains)) {
     chains[k].sort((a, b) => depthOf(a) - depthOf(b));
   }

@@ -1,13 +1,13 @@
-// server/clientlog.ts — the /clientlog tee's budget: rate, size, scrub, disk. The numbers and their precedents (Beeper rageshake,
-// Mastodon, Sentry, Logster, Element): notes/eidoverse/pr260/RESEARCH-clientlog-budget-conventions-2026-11-03.md.
+// server/clientlog.ts — the /clientlog tee's budget: rate, size, scrub, disk. The numbers follow rageshake's, Sentry's and Mastodon's.
 import { existsSync, mkdirSync, readdirSync, statSync, appendFileSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { newBucket, admitMessage, type MsgBucket } from "./msgrate.ts";
+import { envNumber } from "./limits.ts";
 
-const num = (k: string, d: number) => Math.max(0, Number(process.env[k] ?? d));   // an operator's rail (README): 0 = none
+const num = (k: string, d: number) => envNumber(k, d, (n) => Number.isInteger(n) && n >= 0);   // an operator's rail (README), a count: 0 = none
 export const LIMITS = {
   ipPer10Min: num("CLIENTLOG_IP_PER_10MIN", 30),        // posts per address (IPv6 by /64) per 10 min, the burst the same
-  senderPer10Min: num("CLIENTLOG_SENDER_PER_10MIN", 30), senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit (RESEARCH-bf4-questions)
+  senderPer10Min: num("CLIENTLOG_SENDER_PER_10MIN", 30), senderBurst: 10,   // posts per signed-in account (else per address) per 10 min, 10 in a row: several tabs and an agent fit
   bodyBytes: 256 * 1024,                 // a request above this is 413, by Content-Length and again while reading
   lineChars: 2000, lines: 2000,          // inside a request: cut, never refused
   senderBytes: 2 * 1024 * 1024,          // a sender's file keeps its newest 2 MB
@@ -63,8 +63,7 @@ export function scrub(text: string): { text: string; scrubbed: number } {
   for (const [re, to] of RULES) text = text.replace(re, (...m) => { scrubbed++; return to.replace(/\$(\d)/g, (_, i) => m[Number(i)] ?? ""); });
   return { text, scrubbed };
 }
-/** A private-key block has no business in a console log: the whole request is refused, nothing stored (rageshake's
- *  rejection_conditions; Element's CVE-2024-34353 was a key that reached the server). */
+/** A private-key block has no business in a console log: the whole request is refused, nothing stored. */
 export const holdsPrivateKey = (text: string) => /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text);
 
 /** A request's lines within LIMITS: a long line keeps its head, too many lines keep the head and the tail, each cut marked. */

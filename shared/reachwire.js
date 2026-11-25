@@ -1,75 +1,54 @@
-// shared/reachwire.js — the reach DESCRIPTOR: what a reach IS on the wire.
+// reachwire — the reach DESCRIPTOR: what a reach IS on the wire.
 //
-// A reach travels as a RELATION, not as solved bone angles: "right hand toward
-// mythos's shoulder_l", "left hand toward this point in my own frame". Every
-// client that receives the descriptor resolves the target against its own live
-// scene and re-solves the arm each frame — the solver is closed-form
-// (shared/reach.js) precisely so that independent solvers agree. What can NOT
-// travel is a function, which is why the descriptor grammar below exists.
+// A reach travels as a RELATION, not as solved bone angles ("right hand toward mythos's shoulder_l"): every receiving
+// client resolves the target against its own live scene and re-solves the arm each frame with the closed-form solver
+// (shared/reach.js), so independent solvers agree.
 //
-// It rides the presence plane (spec/PROTOCOL.md §5): per-frame, lossy, never
-// persisted. The server relays the bag unchanged except server/reachgate.ts (a refused
-// or malformed limb is removed); everything else in this file
-// runs at the two ends. Because the ends don't trust the middle — or each
-// other's versions — every reader normalizes: a malformed descriptor folds to
-// nothing rather than to a throw in somebody's frame loop.
+// It rides the presence plane (spec/PROTOCOL.md §5): per-frame, lossy, never persisted. The server relays the bag
+// unchanged except server/reachgate.ts (a refused or malformed limb is removed). Every reader normalizes: a malformed
+// descriptor folds to nothing, never to a throw in a frame loop.
 //
 // Two target shapes:
-//   { who: 'mythos', point: 'shoulder_l', standoff?: 0.02 }
-//       a named contact point (shared/contact.js) on a body — the toucher's
-//       own body included. Resolvers derive the millimetre per rig; the name
-//       is what travels, because a coordinate that is a shoulder on one body
-//       is mid-air on the next.
-//   { p: [x,y,z], space?: 'world' | 'self' | '<participant id>' }
-//       a bare point. 'world' (the default) is fixed; 'self' lives in the
-//       REACHER's root frame and moves with them; a participant id lives in
-//       that body's root frame and tracks them.
+//   { who: 'mythos', point: 'shoulder_l', standoff?: 0.02 }   a named contact point (shared/contact.js) on a body, the
+//       reacher's own included; the name travels because a coordinate that is a shoulder on one body is mid-air on the next
+//   { p: [x,y,z], space?: 'world' | 'self' | '<participant id>' }   a bare point: fixed, in the REACHER's root frame,
+//       or in that participant's root frame
 //
-// A limb entry wraps a target with its flags:
-//   { t: <target>, palm?: false, reached?: true }
-// `palm: false` opts out of turning the palm to meet the surface (name-form
-// targets orient the palm by default — see EW.reach's history for why).
-// `reached` is set by the REACHER's own solve when the hand arrives; the
-// rising edge is what a touch event fires on. It is an attestation, not a
-// measurement made by anyone else — same trust level as the pose stream that
-// carries it.
+// A limb entry wraps a target with its flags: { t: <target>, palm?: false, reached?: true }. `palm: false` opts out of
+// turning the palm to the surface. `reached` is set by the REACHER's own solve when the hand arrives; its rising edge
+// fires a touch event. It is an attestation, trusted exactly as the pose stream that carries it is.
 
 import { canonicalPoint } from './contact.js';
 
 /** The limbs a reach can drive — mirror of shared/joints.js REACH_CHAINS. */
 export const REACH_LIMBS = ['leftHand', 'rightHand', 'leftFoot', 'rightFoot'];
 
-/** A hand "has arrived" when its solve leaves this little gap or less. The
- *  target already stands off the skin, so 0 is the ideal; the slack absorbs
- *  breathing, interpolation, and the retreat search settling nearby. One
- *  constant for every attester — browser and agent must agree on what a
- *  touch is, or the same hand touches in one process and hovers in another. */
+/** A hand "has arrived" when its solve leaves this gap or less (slack for breathing, interpolation and the retreat
+ *  search). One constant for every attester, so browser and agent agree on what a touch is. */
 export const TOUCH_GAP = 0.05;
 
+const LIMB_BY_KEY = new Map(Object.entries({
+  left: 'leftHand', right: 'rightHand',
+  lefthand: 'leftHand', righthand: 'rightHand',
+  leftfoot: 'leftFoot', rightfoot: 'rightFoot',
+  leftleg: 'leftFoot', rightleg: 'rightFoot',
+}));
 /** Tolerant limb naming: 'right', 'right hand', 'right_hand' → 'rightHand'. */
 export function canonicalLimb(name) {
   if (typeof name !== 'string') return null;
-  const k = name.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  const map = {
-    left: 'leftHand', right: 'rightHand',
-    lefthand: 'leftHand', righthand: 'rightHand',
-    leftfoot: 'leftFoot', rightfoot: 'rightFoot',
-    leftleg: 'leftFoot', rightleg: 'rightFoot',
-  };
-  return map[k] ?? null;
+  return LIMB_BY_KEY.get(name.trim().toLowerCase().replace(/[\s_-]+/g, '')) ?? null;
 }
 
 const fin3 = (p) => Array.isArray(p) && p.length === 3 && p.every(Number.isFinite);
 
-/** Normalize one target. Returns the canonical form, or null (never throws,
- *  never guesses: a reader of wire data folds garbage to nothing). */
+/** Normalize one target to its canonical form, or null (never throws, never guesses). */
 export function normalizeReachTarget(t) {
   if (!t || typeof t !== 'object') return null;
   if (typeof t.who === 'string' && t.who.length && t.who.length <= 64) {
     const point = canonicalPoint(t.point);
     if (!point) return null;
     const out = { who: t.who, point };
-    const s = Number(t.standoff);
+    const s = typeof t.standoff === 'object' ? NaN : Number(t.standoff);   // an object's ToPrimitive can throw (JSON {"valueOf":0})
     if (Number.isFinite(s) && s >= 0) out.standoff = Math.min(0.2, s);
     return out;
   }
@@ -81,9 +60,7 @@ export function normalizeReachTarget(t) {
   return null;
 }
 
-/** Normalize a whole `pose.reach` bag from the wire. Unknown limbs and
- *  malformed entries drop; an empty result is null (absence and emptiness
- *  mean the same thing: nobody is reaching). */
+/** Normalize a whole `pose.reach` bag from the wire. Unknown limbs and malformed entries drop; an empty result is null. */
 export function normalizeReachBag(bag) {
   if (!bag || typeof bag !== 'object') return null;
   const out = {};
@@ -108,8 +85,7 @@ export function reachTargetsWho(entry, id) {
   return t.who === id || t.space === id;
 }
 
-/** Same reach, ignoring the `reached` flag — the identity that edge
- *  detection cares about. Both sides assumed normalized. */
+/** Same reach, ignoring the `reached` flag (the identity edge detection cares about). Both sides normalized. */
 export function sameReach(a, b) {
   if (!a || !b) return false;
   if ((a.palm === false) !== (b.palm === false)) return false;
@@ -137,12 +113,8 @@ export function describeTarget(t, selfId = null) {
 }
 
 /**
- * Diff two normalized bags into the EVENTS a body should hear about.
- * Pure, so the edge/latch logic is testable without an agent or a browser.
- *
- * `selfId` is the body doing the listening; only reaches directed at it (a
- * landmark on it, or a point in its frame) produce events. Returns
- * [{ type: 'reach' | 'touch' | 'release', limb, entry }]:
+ * Diff two normalized bags into the EVENTS a body should hear about. `selfId` is the listening body; only reaches
+ * directed at it produce events. Returns [{ type: 'reach' | 'touch' | 'release', limb, entry }]:
  *   reach   — a descriptor aimed at self appeared or changed aim
  *   touch   — the reacher's solve reports the hand arrived (rising edge)
  *   release — a descriptor aimed at self went away
