@@ -24,7 +24,8 @@
 //       swapped mid-drag where the drag put it; a follower whose object goes away mid-drag makes either release write
 //       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30); a gizmo drag held still keeps
 //       relaying (MM31); a selection change before the travel drops the press (MM32); a planar group drag goes no further
-//       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach (MM12)
+//       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
+//       nothing there (MM12), and not where a ray first meets it beyond reach (MM35)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -874,9 +875,11 @@ try {
       }
     }
 
-    // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold once a ray meets the
-    // plane within reach, from where the lead stands then, and moves from there (bot #352 `6`; the row reverted with the late
-    // grab in a913e4e8a, back with the reach limit, and a third point past the take-hold so the move is the take-hold's own)
+    // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold the first frame a ray
+    // meets the plane within reach (20 m of where the lead started), from where the lead stands then, so taking hold moves
+    // nothing; from there the lead moves by exactly what the hit does (bot #352 `6`; the row reverted with the late grab in
+    // a913e4e8a, back with the reach limit). Points down one screen column, each ray dipping more: F meets the plane 25–60 m
+    // out (beyond reach), N is the first within 15 m, M between N and the bottom, B at the bottom
     NAMES.push("mm-pole", "mm-stool");
     const poleOk = await place("mm-pole", [sx - 4, 0, sz - 4.5], [0.3, 3, 0.3]) && await place("mm-stool", [sx - 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3]);
     check("MM (setup) a tall pole and a stool", poleOk);
@@ -884,28 +887,54 @@ try {
       const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.3); return C.frameOn(b.getCenter(new THREE.Vector3()), 2);`);
     await frames(2); await settle();
     const up = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
-      const oy = P.getWorldPosition(new T.Vector3()).y, cy = c.camera.getWorldPosition(new T.Vector3()).y;
-      const dirY = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray.direction.y; };
+      const O = P.getWorldPosition(new T.Vector3()), cy = c.camera.getWorldPosition(new T.Vector3()).y, pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y);
+      const ray = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray; };
+      const hit = (x, y) => { const h = new T.Vector3(); return ray(x, y).intersectPlane(pl, h) ? [h.x, h.z] : null; };
+      const dist = (x, y) => { const h = hit(x, y); return h ? Math.hypot(h[0] - O.x, h[1] - O.z) : Infinity; };
       const b = new T.Box3().setFromObject(P), mid = new T.Vector3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2).project(c.camera);
       const px = Math.round((mid.x + 1) / 2 * innerWidth); let py = 10;   // on screen: a press a person could make
-      while (py < innerHeight - 10 && !(__mmHit(px, py, 'mm-pole', null).onLead && dirY(px, py) > 0.05)) py += 4;
+      while (py < innerHeight - 10 && !(__mmHit(px, py, 'mm-pole', null).onLead && ray(px, py).direction.y > 0.05)) py += 4;
       const at = py < innerHeight - 10 ? [px, py] : null;
-      let d1 = py; while (d1 < innerHeight - 4 && dirY(px, d1) > -0.1) d1 += 4;
-      // two more points further down the screen, each dipping more: the move after taking hold is from d1 or d2 to d3
-      const d3 = innerHeight - 4, d2 = Math.round((d1 + d3) / 2);
-      return { at, d1: dirY(px, d1) <= -0.1 ? [px + 20, d1] : null, d2: [px + 40, d2], d3: d3 - d1 >= 40 ? [px + 60, d3] : null, dips: [dirY(px, d1), dirY(px, d2), dirY(px, d3)], camAbove: cy > oy + 0.05, cy, oy, top: b.max.y }; })`);
-    check("MM (setup) a press point on the pole whose ray points up from above the pole's origin, and three points lower whose rays dip", !!up?.at && !!up?.d1 && !!up?.d3 && up?.camAbove, up);
-    if (poleOk && up?.at && up?.d1 && up?.d3 && up?.camAbove) {
+      let f = py; while (f < innerHeight - 4 && !(dist(px, f) > 25 && dist(px, f) < 60)) f += 1;
+      let n = f; while (n < innerHeight - 4 && !(dist(px, n) <= 15)) n += 1;
+      const B = innerHeight - 4, m = Math.round((n + B) / 2), pt = (y, dx) => ({ px: [px + dx, y], hit: hit(px + dx, y), dist: dist(px + dx, y) });
+      return { at, F: f < innerHeight - 4 ? pt(f, 0) : null, N: pt(n, 10), M: pt(m, 20), B: B - n >= 40 ? pt(B, 30) : null, camAbove: cy > O.y + 0.05, cy, oy: O.y }; })`);
+    const pts = !!up?.at && !!up?.F && up.F.dist > 25 && up.F.dist < 60 && up.N?.dist <= 20 && !!up?.B && up?.camAbove;
+    check("MM (setup) a press point on the pole whose ray points up from above its origin, a point whose ray meets the plane 25–60 m out, and three within reach", pts, up);
+    const mv = async (p: number[]) => { await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${p[0]}, clientY: ${p[1]} })), true)`); await frames(3); };
+    const plus = (L: number[], a: number[], b: number[]) => [L[0] + b[0] - a[0], L[1], L[2] + b[1] - a[1]];   // L moved by the hit's move a → b
+    // press, arm, then the given points in order, reading the lead after each; release on the last; returns the lead after each
+    const poleDrag = async (route: any[]) => {
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${up.at[0]}, clientY: ${up.at[1]} })), true))`);
+      await mv([up.at[0] + 6, up.at[1]]); const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+      const seen: any[] = []; for (const q of route) { await mv(q.px); seen.push((await localOf(["mm-pole"]))?.[0]); }
+      const last = route.at(-1).px; await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${last[0]}, clientY: ${last[1]} })), true)`);
+      return { armed, seen }; };
+    if (poleOk && pts) {
       await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
-      const L0 = pose("mm-pole"), F0 = pose("mm-stool"); const n0 = myActs().length;
-      await gesture(up.at, up.d3, async () => { await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${up.d1[0]}, clientY: ${up.d1[1]} })), true)`); await frames(3);
-        await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${up.d2[0]}, clientY: ${up.d2[1]} })), true)`); });
+      const L0 = pose("mm-pole"), F0 = pose("mm-stool"); let n0 = myActs().length;
+      // MM12: N, M, B. It takes hold at N (the lead stays at L0), then moves by the hit's move from N
+      let r = await poleDrag([up.N, up.M, up.B]);
       await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
-      const L1 = pose("mm-pole"), F1 = pose("mm-stool");
-      check("MM12 a group drag pressed with the ray above the lead's plane moves once a ray meets it within reach: one act, both slide level together, within 20 m",
-        myActs().length === n0 + 1 && !!L1 && !!F1 && Math.abs(L1[1] - L0[1]) < 0.01 && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1) && Math.hypot(L1[0] - L0[0], L1[2] - L0[2]) <= 20.01,
-        { L0, L1, F0, F1, acts: actsSince(n0) });
-      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-pole")) === JSON.stringify(L0)); }
+      let L1 = pose("mm-pole"), F1 = pose("mm-stool");
+      check("MM12 a group drag pressed with the ray above the lead's plane takes hold where a ray first meets it within reach, moving nothing there (the lead still at its start)",
+        r.armed && near(r.seen[0], L0, 0.1), { seen: r.seen, L0, N: up.N });
+      check("MM12 …then the lead moves by exactly the hit's move from the take-hold, and the release writes that: one act, both level, the same move",
+        near(r.seen[1], plus(L0, up.N.hit, up.M.hit), 0.1) && myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1),
+        { seen: r.seen, wantM: plus(L0, up.N.hit, up.M.hit), L1, wantB: plus(L0, up.N.hit, up.B.hit), F0, F1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
+      await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+      // MM35: F first (its ray meets the plane beyond reach: no take-hold there), then N, then B
+      n0 = myActs().length;
+      r = await poleDrag([up.F, up.N, up.B]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      L1 = pose("mm-pole"); F1 = pose("mm-stool");
+      check("MM35 a ray that first meets the plane beyond reach (25–60 m) takes no hold there: the lead is still at its start after F, and after N, where it does take hold",
+        r.armed && near(r.seen[0], L0, 0.1) && near(r.seen[1], L0, 0.1), { seen: r.seen, L0, F: up.F, N: up.N });
+      check("MM35 …and the release writes the move from N's hit to B's: one act, both level, the same move",
+        myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && sameMove(F0, F1, L0, L1), { L1, want: plus(L0, up.N.hit, up.B.hit), acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
+      await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
     }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
