@@ -25,7 +25,8 @@
 //       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30); a gizmo drag held still keeps
 //       relaying (MM31); a selection change before the travel drops the press (MM32); a planar group drag goes no further
 //       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
-//       nothing there (MM12), and not where a ray first meets it beyond reach (MM35)
+//       nothing there (MM12), and not where a ray first meets it beyond reach (MM35); a press
+//       on a large thing's end far from its origin takes hold at once (MM37)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -935,6 +936,37 @@ try {
         myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && sameMove(F0, F1, L0, L1), { L1, want: plus(L0, up.N.hit, up.B.hit), acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
       await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+    }
+
+    // a press on a large thing's far end, more than 20 m from its origin: the press ray met the thing, so the group drag takes
+    // hold at the press (the reach is for the late take-hold's grazing rays, not the press's) (cold read of #352 `6`)
+    NAMES.push("mm-long");
+    const longOk = await place("mm-long", [sx - 4, 0, sz + 20], [20, 0.3, 0.3]);
+    await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const L = w.entities.get('mm-long'), O = L.getWorldPosition(new THREE.Vector3()), b = new THREE.Box3().setFromObject(L);
+      C.setCamPitch(0.7); return C.frameOn(new THREE.Vector3(Math.min(b.max.x - 1, O.x + 24), b.max.y, (b.min.z + b.max.z) / 2), 2);`);
+    await frames(2); await settle();
+    // any pixel on it whose ray meets its plane more than 20 m from its origin (the screen scanned, so the framing needn't be exact)
+    const far = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, L = w.entities.get('mm-long');
+      const O = L.getWorldPosition(new T.Vector3()), b = new T.Box3().setFromObject(L), pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y), rc = new T.Raycaster(), h = new T.Vector3();
+      let best = null;
+      for (let y = 20; y < innerHeight - 20; y += 8) for (let x = 20; x < innerWidth - 20; x += 8) {
+        rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+        if (!rc.intersectObject(L, true).length || !rc.ray.intersectPlane(pl, h)) continue;
+        const d = Math.hypot(h.x - O.x, h.z - O.z); if (d > 24 && d < 32 && (!best || d < best.dist) && __mmHit(x, y, 'mm-long', null).onLead) best = { at: [x, y], dist: d };
+      }
+      return best ? { ...best, len: b.max.x - b.min.x } : { diag: true, len: b.max.x - b.min.x, O: O.toArray(), cam: c.camera.getWorldPosition(new T.Vector3()).toArray() }; })`);
+    check("MM (setup) a long thing (about 50 m), and a press point on its far end whose ray meets its plane 24–32 m from its origin", longOk && !!far?.at && far.dist > 24, { longOk, far });
+    if (longOk && far?.at && far.dist > 24) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-long', 'mm-stool']); return true;`);
+      const L0 = pose("mm-long"), F0 = pose("mm-stool"), n0 = myActs().length;
+      await gesture(far.at, [far.at[0] + 30, far.at[1] + 10]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      const L1 = pose("mm-long"), F1 = pose("mm-stool");
+      check("MM37 a group drag pressed on a large thing's far end (over 20 m from its origin) takes hold at the press: one act, both level, the same move",
+        myActs().length === n0 + 1 && !!L1 && !!F1 && Math.abs(L1[1] - L0[1]) < 0.01 && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1), { L0, L1, F0, F1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-long"), L0)); }
+      await onRecord("mm-long"); await onRecord("mm-stool"); await frames(3);
     }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));

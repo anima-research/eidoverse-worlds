@@ -370,7 +370,7 @@ export function updateBuild() {
       // horizon meets that plane hundreds of metres out, so the lead goes no further than GROUP_REACH from where it started; and
       // a press whose ray missed the plane (looking up at a tall thing) takes hold once a ray meets it within that reach, from
       // where the lead stands then, so taking hold moves nothing (bot #352 `6`, `7`)
-      dragging.plane ??= planeGrab(dragging.startPos);
+      dragging.plane ??= planeGrab(dragging.startPos, GROUP_REACH);
       raycaster.setFromCamera(mouse, camera);
       if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
         _w.copy(_hit).add(dragging.plane.grab).sub(dragging.startPos).setY(0).clampLength(0, GROUP_REACH);
@@ -617,13 +617,15 @@ canvas.addEventListener('mousedown', (e) => {
   e.preventDefault();
 });
 
-/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it, pointing
- *  away from it, or meeting it further than GROUP_REACH from `at`). */
 const GROUP_REACH = 20;   // m: aimPoint's placeable range, here from where the lead started
-function planeGrab(at) {
+/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it, pointing
+ *  away from it, or meeting it further than `reach` from `at`). The press takes any hit: its ray met the thing, so a hit far
+ *  from the origin is a press on a large thing's far end. The late take-hold passes GROUP_REACH: its first ray to meet the
+ *  plane is the most grazing one. */
+function planeGrab(at, reach = Infinity) {
   raycaster.setFromCamera(mouse, camera);
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
-  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - at.x, _hit.z - at.z) <= GROUP_REACH ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
+  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - at.x, _hit.z - at.z) <= reach ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
 }
 
 // arm the drag only after a few pixels of travel (click vs drag)
