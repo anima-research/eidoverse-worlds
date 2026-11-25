@@ -71,7 +71,11 @@
  "collider": {
   "status": "trial",
   "fields": {
-   "shape": "string"
+   "shape": "string",
+   "enabled": "bool",
+   "blocks": "array",
+   "layer": "array",
+   "mask": "array"
   },
   "enums": {
    "shape": [
@@ -80,11 +84,37 @@
     "sphere"
    ]
   },
+  "ranges": {
+   "blocks": {
+    "maxItems": 3
+   },
+   "layer": {
+    "maxItems": 32
+   },
+   "mask": {
+    "maxItems": 32
+   }
+  },
+  "itemEnums": {
+   "blocks": [
+    "bodies",
+    "hulls",
+    "things"
+   ]
+  },
   "absentMeans": {
-   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)"
+   "shape": "its size decides, for each reader: physics collides it as its measured box; walking uses its triangles (mesh) when it is room-scale (footprint ≥ 16 m² and ≥ 2.2 m tall) or floor-shaped and uneven (footprint ≥ 2 m², ≤ 1.0 m tall, its box top > 0.10 m above its surface), else its box (shared/supportclass.js)",
+   "enabled": "true: it is solid",
+   "blocks": "everything: bodies, hulls and things",
+   "layer": "[1] (Godot's default): every mover that scans the default layer (bodies and things always; a hull by its own mask)",
+   "mask": "[1] (Godot's default)"
   },
   "docs": {
-   "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide"
+   "shape": "mesh = its triangles (to walk on; physics collides a mesh as its box, PhysX's rule for a dynamic body, and eidosim carries boxes), box = its bounding box, sphere = a ball (rolls, under an engine that carries spheres); remove the component to let its size decide",
+   "enabled": "false: not solid. Nothing collides with it, stands on it or bumps into it (walkers, agents, the authority's track, the physics engine); it still moves as its physics.kind and motion say, and is still drawn, clicked and grabbed",
+   "blocks": "what it stops, a list of layers: bodies (anyone walking or swimming), hulls (driven vehicles: the authority's hull sweep), things (loose things in the physics engine). What it leaves out passes through it: [\"hulls\"] with hidden is an invisible wall only vehicles meet",
+   "layer": "the collision layers it is IN (Godot's collision_layer): a list of layer numbers 1..32 or names (a lowercase letter, then letters, digits, - or _; ≤ 40), each once. A mover meets it only when the mover's mask scans one of them (Godot: \"Object A can detect a contact with object B only if object B is in any of the layers that object A scans\")",
+   "mask": "the collision layers it SCANS when it moves (Godot's collision_mask), same items as layer: read for a hull (the authority's hull sweep meets only what is in a layer its mask scans). Anyone walking or swimming, and loose things in the physics engine, scan [1] (eidosim carries no layers between things); a still thing's mask is unread"
   },
   "on": "thing"
  },
@@ -182,7 +212,7 @@
   "defaults": {
    "kind": "point",
    "color": 16767392,
-   "intensity": 16,
+   "intensity": 25.93,
    "range": 10,
    "decay": 2,
    "important": false,
@@ -202,7 +232,8 @@
   "enums": {
    "kind": [
     "point",
-    "spot"
+    "spot",
+    "directional"
    ],
    "daytime": [
     "dim",
@@ -234,18 +265,19 @@
    }
   },
   "absentMeans": {
-   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); a value stored before 10-16 is repaired to 1.7 at its first load",
+   "decay": "1.7: the falloff exponent the light rig used before it was written (three.js decay); an older light is written 1.7 when its world is translated",
+   "intensity": "the default; on a light with no decay (stored before 10-16) 16, the old rig's, written by the same repair",
    "daytime": "dim: it follows the day cycle (an older value's day: false meant full)"
   },
   "docs": {
-   "kind": "point (shines every way) or spot (a cone along its -Z)",
+   "kind": "point (shines every way), spot (a cone along its -Z) or directional (a sun: parallel light along its -Z everywhere, KHR_lights_punctual's; range and decay unread; the first by id is the renderer's sun)",
    "color": "its colour, 0xRRGGBB, sRGB",
-   "intensity": "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise",
+   "intensity": "how bright it is: candela at decay 2 (KHR_lights_punctual); three.js units under this light's decay otherwise. Default 25.93: main's default light's brightness at 5 m",
    "range": "a hard cutoff, metres: nothing beyond it is lit",
    "angle": "a spot's cone half-angle, radians",
    "inner": "where a spot's edge starts to soften, radians",
    "decay": "how it falls off with distance, an exponent: 2 = inverse square (physical, glTF), 0 = not at all",
-   "important": "always casts: first claim on a light slot, never governor-shed",
+   "important": "first claim on a light slot, never governor-shed (more important lights than slots: the nearest cast)",
    "daytime": "dim (it dims by day, follows the day cycle) | full (it burns at noon too)"
   },
   "units": {
@@ -486,13 +518,13 @@
    "type"
   ],
   "absentMeans": {
-   "period": "pendulum: 3.5 s; spin and orbit: their degPerSec; oscillate: 4 s",
-   "damp": "0: it swings forever",
+   "period": "pendulum: 3.5 s (an old value's reading; a swing written today carries the default, 2.4 s); spin and orbit: their degPerSec; oscillate: 4 s",
+   "damp": "0: it swings forever (an old value's reading; the default is 0.08)",
    "amp": "pendulum 0 (still); oscillate 0.3 m",
    "axis": "pendulum [1, 0, 0]; spin and oscillate [0, 1, 0]",
    "pivot": "a part turns about its own origin; a whole thing (which never holds one) about its pivot component, else its origin [0, 0, 0]",
    "phase": "0",
-   "maxAmp": "0.9 rad",
+   "maxAmp": "1.1 rad (an old value's reading, the first protocol's push cap; the default is 0.9 rad)",
    "degPerSec": "spin 36°/s, orbit 12°/s (when no period either)",
    "radius": "3 m",
    "center": "where it stands",
@@ -544,10 +576,6 @@
   "keyed": "optional",
   "on": "thing"
  },
- "sockets": {
-  "status": "reserved",
-  "on": "thing"
- },
  "socket": {
   "status": "trial",
   "fields": {
@@ -592,7 +620,8 @@
    "anchor": "string",
    "exit": "array",
    "leaveBy": "string",
-   "who": "any"
+   "who": "any",
+   "input": "object"
   },
   "defaults": {
    "action": "sit",
@@ -672,6 +701,7 @@
   },
   "absentMeans": {
    "exit": "set down where they got on",
+   "input": "the occupant drives nothing: movement keys leave the seat",
    "leaveBy": "moving, jumping or getting up all leave",
    "who": "anyone who may use the host",
    "anim": "the action's default, materialized at write (sit/ride/drive sitchair, lie lie, kneel sit, stand idle); a value stored before 10-17 says pose, renamed anim at load"
@@ -680,9 +710,10 @@
    "action": "the verb use calls it (sit, lie, ride, stand…): a label; at write it picks the default anim",
    "anim": "what the body holds: a pose or clip by name (an open name: one the body doesn't know is its default); {clip, time?: loop|phase, offset?}; or a blend {by: <signal>, clips: [[key, clip], …], time?, offset?}",
    "anchor": "the body point that lands on the socket: root (where every seat put a body), hips, feet, head, or surface (the body's measured seat contact)",
-   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame",
+   "exit": "where they're set down, [x, y, z] or [x, y, z, yaw] in its host's frame (yaw in radians about its +y, 0 facing its +z)",
    "leaveBy": "jump | menu | script: how the occupant may leave (script: only when the world lets go; the occupant's escape, a held get-up or a second one, always works)",
-   "who": "who may take it: a role id (this rank or above)"
+   "who": "who may take it: a role id (this rank or above)",
+   "input": "{move: 'drive'}: this seat's occupant drives its host (the host's drive); only on a drive station, one per host"
   },
   "units": {
    "exit": "m"
@@ -696,7 +727,6 @@
    "leave",
    "reach",
    "look",
-   "input",
    "fromSeat"
   ]
  },
@@ -730,7 +760,12 @@
  "places": {
   "status": "trial",
   "keyPattern": "^[A-Za-z0-9_][A-Za-z0-9_ .:'-]{0,47}$",
-  "docs": {},
+  "docs": {
+   "at": "a spot to stand, [x, y, z] in the thing's own frame (its y the floor there)",
+   "min": "a room's low corner (its y the floor)",
+   "max": "a room's high corner",
+   "label": "how it reads, ≤ 80 characters"
+  },
   "units": {
    "at": "m",
    "min": "m",
@@ -760,13 +795,15 @@
     "script"
    ],
    "play": [],
+   "impulse": [
+    "strength",
+    "angular"
+   ],
    "reset": [
     "targets"
    ]
   },
-  "reservedKinds": [
-   "impulse"
-  ]
+  "reservedKinds": []
  },
  "openable": {
   "status": "trial",
@@ -844,7 +881,7 @@
      "kind": "dynamic"
     },
     "set": {
-     "who": "inhabitant"
+     "who": "member"
     }
    }
   ],
@@ -883,7 +920,7 @@
    "centerOfMass": "[x, y, z] m in its own frame before scale; absent, the centroid of its stamped shape"
   },
   "docs": {
-   "kind": "dynamic (falls, tumbles, can be pushed) | static (solid, never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (no collisions)",
+   "kind": "dynamic (falls, tumbles, can be pushed) | static (never moves) | kinematic (moves only by its motion, an edit or a script, pushes others; what the authority stamps on a thing with motion or openable) | none (not simulated: the engine never moves it). Whether it is solid is collider.enabled's, never the kind's",
    "who": "who may punt it (and pick it up when it has no grabbable): a role id, this rank or above",
    "shape": "its collision shape, measured from its model by the authority (you never send it)",
    "mass": "how heavy it is, kg (a body's shove reads it; eidosim's flight doesn't yet); blank: its density × its size",
@@ -930,7 +967,7 @@
   },
   "defaults": {
    "enabled": true,
-   "who": "inhabitant",
+   "who": "member",
    "steal": true,
    "range": 1.5,
    "priority": 0,
@@ -978,7 +1015,7 @@
   },
   "absentMeans": {
    "enabled": "true: it can be picked up",
-   "who": "inhabitant",
+   "who": "member",
    "steal": "true",
    "range": "1.5 m",
    "priority": "0",
@@ -1002,7 +1039,7 @@
    "use": "what the use button fires while it is held: a reactions action, or {down, up}",
    "prompt": "the hover text (≤ 40)",
    "enabled": "off: nobody can pick it up for now (a loose ball can still be punted)",
-   "who": "who may pick it up: a role id (this rank or above): inhabitant (anyone), builder, owner or this world's own",
+   "who": "who may pick it up: a role id (this rank or above): member (anyone), builder, owner or this world's own",
    "steal": "on: someone else can take it out of a hand; off: it stays with its holder (owners may still take it)",
    "range": "how far from the hand it can be picked up, metres; past arm's reach (1.5) it flies to the hand",
    "priority": "when several things are in reach the highest wins: the key, not the table it sits on",
@@ -1024,7 +1061,30 @@
  },
  "body-default": {
   "status": "trial",
-  "type": "string",
+  "fields": {
+   "move": "bool",
+   "touch": "bool",
+   "range": "number"
+  },
+  "ranges": {
+   "range": {
+    "min": 0.5,
+    "max": 10000
+   }
+  },
+  "absentMeans": {
+   "move": "true: an untouched body may be moved (shoved, dragged, carried, seated)",
+   "touch": "false: an untouched body may not be touched or posed",
+   "range": "no limit: the server forwards a puppet or a grab from any distance unless the world sets a range (@world.body-default.range)"
+  },
+  "docs": {
+   "move": "the move gate an untouched body has here: being shoved (a /boom's force too), dragged, carried, seated or occupied",
+   "touch": "the touch gate an untouched body has here: being touched (intimate points too) and posed",
+   "range": "how near (m, between the two bodies) someone must be for the server to forward their knock-over, pose or grab of another body; consent still decides"
+  },
+  "units": {
+   "range": "m"
+  },
   "on": "world"
  },
  "keep-owner": {
@@ -1108,7 +1168,7 @@
    "radius": "number",
    "spatial": "bool",
    "t0": "number",
-   "alt": "string"
+   "description": "string"
   },
   "defaults": {
    "playing": true,
@@ -1130,16 +1190,16 @@
    },
    "near": {
     "gt": 0,
-    "max": 100
+    "max": 200
    },
    "radius": {
     "min": 1,
-    "max": 100
+    "max": 200
    },
    "src": {
     "maxLen": 2048
    },
-   "alt": {
+   "description": {
     "maxLen": 200
    }
   },
@@ -1147,6 +1207,7 @@
    "src"
   ],
   "absentMeans": {
+   "description": "no description: a reader gets the file name",
    "law": "gain = min(1, near / distance) (inverse distance, full volume inside near), then a (1−t)² taper over the last 5% of radius to exactly 0 at radius: shared/sound.js gainAt"
   },
   "docs": {
@@ -1159,7 +1220,7 @@
    "radius": "silent at and beyond this many metres: nobody further hears it at all",
    "spatial": "positional; off: heard evenly everywhere inside its radius (room tone, music in a hall)",
    "t0": "when it started, epoch ms (the authority stamps it)",
-   "alt": "what is playing, in words: for people who can't hear it and for agents"
+   "description": "what is playing, in words: for people who can't hear it and for agents"
   },
   "units": {
    "near": "m",
@@ -1173,7 +1234,7 @@
   "fields": {
    "src": "string",
    "width": "number",
-   "alt": "string",
+   "description": "string",
    "lit": "string"
   },
   "defaults": {
@@ -1194,21 +1255,67 @@
    "src": {
     "maxLen": 2048
    },
-   "alt": {
+   "description": {
     "maxLen": 200
    }
   },
   "required": [
    "src"
   ],
+  "absentMeans": {
+   "description": "no description: a reader gets the file name"
+  },
   "docs": {
    "src": "the image: store/images/…, eidoverse/assets/…, or an https link",
    "width": "the quad's width, metres; its height follows the image",
-   "alt": "what it shows, in words: for people who can't see it and for agents",
+   "description": "what it shows, in words: for people who can't see it and for agents",
    "lit": "scene (takes the scene's light) | self (a screen, unlit)"
   },
   "units": {
    "width": "m"
+  },
+  "on": "thing"
+ },
+ "material": {
+  "status": "trial",
+  "fields": {
+   "node": "string",
+   "texture": "string",
+   "description": "string",
+   "lit": "string"
+  },
+  "defaults": {
+   "lit": "scene"
+  },
+  "enums": {
+   "lit": [
+    "scene",
+    "self"
+   ]
+  },
+  "ranges": {
+   "node": {
+    "maxLen": 64
+   },
+   "texture": {
+    "maxLen": 2048
+   },
+   "description": {
+    "maxLen": 200
+   }
+  },
+  "required": [
+   "node",
+   "texture"
+  ],
+  "absentMeans": {
+   "description": "no description: a reader gets the file name"
+  },
+  "docs": {
+   "node": "the node of its model the image goes on, its name as the file spells it (measure lists them)",
+   "texture": "the image: store/images/…, eidoverse/assets/…, or an https link (as a picture's src)",
+   "description": "what it shows, in words: for people who can't see it and for agents",
+   "lit": "scene (takes the scene's light) | self (a screen, unlit)"
   },
   "on": "thing"
  },
@@ -1462,8 +1569,14 @@
    "fog": "number",
    "exposure": "number",
    "ambient": "number",
+   "sun": "number",
+   "fill": "number",
    "forecast": "object",
-   "override": "object"
+   "override": "object",
+   "gradient": "object",
+   "system": "string",
+   "colors": "object",
+   "audio": "bool"
   },
   "defaults": {
    "hours": 12,
@@ -1490,6 +1603,10 @@
     "storm",
     "cyclone",
     "darkstorm"
+   ],
+   "system": [
+    "eidoverse",
+    "skymesh"
    ]
   },
   "ranges": {
@@ -1514,6 +1631,12 @@
    "ambient": {
     "min": 0
    },
+   "sun": {
+    "min": 0
+   },
+   "fill": {
+    "min": 0
+   },
    "transition": {
     "gt": 0,
     "max": 600
@@ -1533,9 +1656,17 @@
    "transition": "the renderer's own ease (30 s in a forecast)",
    "forecast": "no forecast: the authored weather holds",
    "override": "no manual weather inside the current forecast segment",
+   "gradient": "the renderer's own sky (its day, clouds and weather)",
+   "system": "eidoverse: the detailed sky",
+   "colors": "the sky's own colours",
+   "audio": "off: no weather sounds (main's default)",
+   "sun": "1: the sun at its own strength (a multiplier, as main's sun slider)",
+   "fill": "1: the bounce light opposite the sun at its own strength (main's fill slider)",
    "law": "forecast@1: per (seed, segment), drawn in the order dwell, then state, then intensity; spec/conformance/laws.json pins its segments"
   },
   "docs": {
+   "sun": "how strong the sun is, a multiplier on the renderer's own sun (main's sun slider)",
+   "fill": "how strong the bounce light opposite the sun is, a multiplier (main's fill slider)",
    "hours": "the hour of day at ts, 0 ≤ h ≤ 24",
    "rate": "world hours a real hour (0: the sun stands still)",
    "ts": "the instant hours held, epoch ms (stamped by the authority)",
@@ -1549,7 +1680,11 @@
    "exposure": "× this renderer's tone mapping",
    "ambient": "× this renderer's ambient curve",
    "forecast": "a weather policy {seed, states: [name | {state, weight}], dwell: [min, max] s, k: [min, max], transition: s, epoch (stamped)}",
-   "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)"
+   "override": "a weather act inside a forecast segment {state, k?, ts} (stamped)",
+   "gradient": "a painted sky in place of the day's: {top, horizon, bottom?}, each a linear [r, g, b] 0..1 (OMI_environment_sky gradient; absent bottom = horizon). rate: 0 already pins the clock",
+   "system": "eidoverse (the detailed sky) | skymesh (the basic sky, for weak GPUs)",
+   "colors": "tints {star? (or sun), cloud?, sky?, fog?, shield?}, each [r, g, b] 0..1 (SWEEP-3 S1, main's)",
+   "audio": "plays the asset library's weather sounds (rain, thunder) when this server has them; silent otherwise (main's sky.audio; read when the sky is built)"
   },
   "units": {
    "hours": "h",
@@ -1689,7 +1824,7 @@
    "tile": "metres a cell",
    "wallH": "wall height, floor to floor, metres",
    "wallT": "wall thickness, metres",
-   "slabT": "floor slab thickness, metres (its top at the level's y)",
+   "slabT": "floor slab thickness, metres (it sits on the level's y; the walk surface is its top)",
    "labels": "room names by cell",
    "levels": "the storeys: tiles, walls on cell edges, apertures (door, window, arch) in walls"
   },
@@ -1846,20 +1981,20 @@
    "until": "the grant has no end: it stands until someone with the right changes or removes it (every role written before 10-17)"
   },
   "docs": {
-   "role": "the role this person holds: a built-in (inhabitant, builder, moderator, owner) or one the world defines",
+   "role": "the role this person holds: a built-in (member, builder, moderator, owner) or one the world defines",
    "can": "{<permission>: true|false}: exceptions on top of the role, for this person",
    "note": "a note on the grant (≤ 80)",
    "until": "when the grant ends, epoch ms; never on owner"
   },
   "vocab": {
    "rank": {
-    "inhabitant": 0,
+    "member": 0,
     "builder": 100,
     "moderator": 200,
     "owner": 255
    },
    "builtin": [
-    "inhabitant",
+    "member",
     "builder",
     "moderator",
     "owner"
@@ -2009,29 +2144,174 @@
   "status": "trial",
   "fields": {
    "pos": "vec3",
-   "radius": "number"
+   "radius": "number",
+   "yaw": "number"
   },
   "ranges": {
    "radius": {
     "min": 0,
     "max": 100
+   },
+   "yaw": {
+    "min": -6.284185307179587,
+    "max": 6.284185307179587
    }
   },
   "required": [
    "pos"
   ],
   "absentMeans": {
-   "radius": "2 m"
+   "radius": "2 m",
+   "yaw": "0: facing the world's +z"
   },
   "docs": {
    "pos": "where visitors arrive, [x, y, z] world metres",
-   "radius": "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)"
+   "radius": "a visitor's arrival must lie within this many metres of pos (the client chooses where inside)",
+   "yaw": "which way an arrival faces, radians about +y (0: the world's +z)"
   },
   "units": {
    "pos": "m",
-   "radius": "m"
+   "radius": "m",
+   "yaw": "rad"
   },
   "on": "world"
+ },
+ "spawn-point": {
+  "status": "trial",
+  "fields": {
+   "title": "string",
+   "team": "string",
+   "group": "string"
+  },
+  "ranges": {
+   "title": {
+    "maxLen": 80
+   },
+   "team": {
+    "maxLen": 80
+   },
+   "group": {
+    "maxLen": 80
+   }
+  },
+  "absentMeans": {
+   "title": "untitled",
+   "team": "any team's",
+   "group": "no group"
+  },
+  "docs": {
+   "title": "its name, as a menu lists it (≤ 80)",
+   "team": "the team that arrives here (≤ 80; OMI_spawn_point team)",
+   "group": "a group of spawn points chosen among together (≤ 80; OMI_spawn_point group)"
+  },
+  "on": "thing"
+ },
+ "climb": {
+  "status": "trial",
+  "fields": {
+   "points": "array",
+   "reach": "number",
+   "speed": "number",
+   "face": "vec3",
+   "ends": "string"
+  },
+  "enums": {
+   "ends": [
+    "both",
+    "start",
+    "end"
+   ]
+  },
+  "ranges": {
+   "points": {
+    "maxItems": 16
+   },
+   "reach": {
+    "min": 0.3,
+    "max": 3
+   },
+   "speed": {
+    "min": 0.3,
+    "max": 4
+   },
+   "face": {
+    "min": -10000,
+    "max": 10000
+   }
+  },
+  "required": [
+   "points"
+  ],
+  "absentMeans": {
+   "reach": "1.4 m",
+   "speed": "1.3 m/s",
+   "face": "along the route's run in the ground plane, from its first point to its last; a route with no run (straight up) faces the thing's own +z",
+   "ends": "both: it may be boarded at either end"
+  },
+  "docs": {
+   "points": "2–16 points [x, y, z] in the thing's own frame (metres before its scale), climbed in straight lines between them",
+   "reach": "how near an end a body must stand to board it, metres",
+   "speed": "how fast a climber moves along it, metres a second in its own frame",
+   "face": "which way a climber faces, a direction [x, y, z] in the thing's frame (its ground-plane part is used)",
+   "ends": "which ends it may be boarded at: both, start (the first point) or end (the last)"
+  },
+  "units": {
+   "points": "m",
+   "reach": "m",
+   "speed": "m/s"
+  },
+  "on": "thing"
+ },
+ "drive": {
+  "status": "trial",
+  "fields": {
+   "maxSpeed": "number",
+   "turnRate": "number",
+   "climbRate": "number",
+   "response": "number",
+   "throttle": "bool"
+  },
+  "ranges": {
+   "maxSpeed": {
+    "min": 0.1,
+    "max": 50
+   },
+   "turnRate": {
+    "min": 0.1,
+    "max": 4
+   },
+   "climbRate": {
+    "min": 0,
+    "max": 50
+   },
+   "response": {
+    "min": 0.05,
+    "max": 10
+   }
+  },
+  "required": [
+   "maxSpeed",
+   "turnRate"
+  ],
+  "absentMeans": {
+   "climbRate": "0: it holds its height",
+   "response": "1/1.5 s (upstream's ease)",
+   "throttle": "false: thrust is held, never set"
+  },
+  "docs": {
+   "maxSpeed": "its top speed in the ground plane, m/s (OMI_vehicle_body maxSpeed)",
+   "turnRate": "how fast it turns about its up axis, rad/s (ours; Roblox VehicleSeat TurnSpeed)",
+   "climbRate": "how fast it rises or sinks, m/s (ours)",
+   "response": "how fast its velocity eases to the driver's ask: the time constant, s (ours)",
+   "throttle": "true: thrust is a level the driver sets and leaves (OMI_vehicle_body useThrottle)"
+  },
+  "units": {
+   "maxSpeed": "m/s",
+   "turnRate": "rad/s",
+   "climbRate": "m/s",
+   "response": "s"
+  },
+  "on": "thing"
  },
  "terrain": {
   "status": "trial",
@@ -2047,21 +2327,40 @@
    "segments": "int",
    "layers": "array",
    "features": "array",
-   "heightmap": "object"
+   "heightmap": "object",
+   "height": "number"
   },
   "defaults": {
-   "kind": "noise",
-   "seed": 1,
-   "size": 80,
-   "amplitude": 3,
-   "octaves": 4,
-   "frequency": 2.5,
-   "flatRadius": 0,
-   "flatHeight": 0
+   "kind": "noise"
   },
+  "when": [
+   {
+    "if": {
+     "kind": "noise"
+    },
+    "set": {
+     "seed": 1,
+     "size": 80,
+     "amplitude": 3,
+     "octaves": 4,
+     "frequency": 2.5,
+     "flatRadius": 0,
+     "flatHeight": 0
+    }
+   },
+   {
+    "if": {
+     "kind": "flat"
+    },
+    "set": {
+     "height": 0
+    }
+   }
+  ],
   "enums": {
    "kind": [
-    "noise"
+    "noise",
+    "flat"
    ]
   },
   "ranges": {
@@ -2094,9 +2393,14 @@
    },
    "layers": {
     "maxItems": 8
+   },
+   "height": {
+    "min": -10000,
+    "max": 10000
    }
   },
   "absentMeans": {
+   "height": "on a flat ground 0 m (written at write); a noise ground has none",
    "features": "no placed shapes: the base alone is the ground",
    "heightmap": "no image: the noise is the base",
    "segments": "the renderer's own mesh resolution (a drawing choice, not part of the height law)",
@@ -2104,7 +2408,8 @@
    "law": "the ground's height over these numbers, then features and heightmap; spec/conformance/laws.json pins heights bit for bit"
   },
   "docs": {
-   "kind": "the base's kind: noise (a raster kind is reserved)",
+   "kind": "the base's kind: noise, or flat (level ground at height; a raster kind is reserved)",
+   "height": "a flat ground's height, metres (kind flat only)",
    "seed": "the noise seed",
    "size": "the ground's size, metres",
    "amplitude": "its relief: how high the ground rises, metres",
@@ -2121,7 +2426,8 @@
    "size": "m",
    "amplitude": "m",
    "flatRadius": "m",
-   "flatHeight": "m"
+   "flatHeight": "m",
+   "height": "m"
   },
   "on": "world",
   "reservedKinds": [
@@ -2135,13 +2441,20 @@
    "color": "int",
    "opacity": "number",
    "kind": "string",
-   "flow": "array"
+   "flow": "array",
+   "waves": "array",
+   "attenuationColor": "vec3",
+   "attenuationDistance": "number",
+   "scatterColor": "vec3",
+   "density": "number"
   },
   "enums": {
    "kind": [
     "still",
     "river",
-    "ocean"
+    "ocean",
+    "lake",
+    "pool"
    ]
   },
   "ranges": {
@@ -2156,37 +2469,310 @@
    "opacity": {
     "min": 0.1,
     "max": 1
+   },
+   "waves": {
+    "maxItems": 8
+   },
+   "attenuationColor": {
+    "min": 0,
+    "max": 1
+   },
+   "attenuationDistance": {
+    "gt": 0,
+    "max": 10000
+   },
+   "scatterColor": {
+    "min": 0,
+    "max": 1
+   },
+   "density": {
+    "gt": 0,
+    "max": 20000
    }
   },
-  "required": [
-   "level"
-  ],
   "absentMeans": {
    "color": "0x1d5a6e",
    "opacity": "0.82",
    "kind": "decided from the ground it fills (shared/waterkind.js)",
-   "flow": "still: no current"
+   "flow": "still: no current",
+   "level": "on @world never (it is required there); on a thing, its zone's top",
+   "waves": "a flat surface",
+   "attenuationColor": "the reader's own look for its kind (a level by kind; a body σ [0.16, 0.055, 0.025] per metre: shared/water.js waterParams)",
+   "attenuationDistance": "the reader's own look for its kind, as attenuationColor",
+   "scatterColor": "the reader's own look (a level by kind and daylight; a body [0.015, 0.12, 0.18]: shared/water.js waterParams)",
+   "density": "1000 kg/m³ (fresh water)"
   },
   "docs": {
-   "level": "the water's surface height, metres (world y)",
+   "level": "its surface height, metres, in its entity's frame (the world's on @world; on a thing, absent: its zone's top)",
    "color": "its colour, 0xRRGGBB (sRGB)",
    "opacity": "0.1..1",
-   "kind": "still | river | ocean",
-   "flow": "a current [x, z], metres a second"
+   "kind": "still | river | ocean | lake | pool",
+   "flow": "a current, metres a second: [x, z] on @world; on a thing [x, z] or [x, y, z], in its own frame",
+   "waves": "up to 8 waves summed on the surface, each {amplitude (m, 0..5), wavelength (m, ≥ 0.1), direction [x, z], phase? (rad)}",
+   "attenuationColor": "the colour white light becomes after attenuationDistance of water, linear [r, g, b] 0..1 (KHR_materials_volume; absorption σ = −ln(c) / d per metre)",
+   "attenuationDistance": "the distance, metres, at which light has become attenuationColor (KHR_materials_volume)",
+   "scatterColor": "the colour the water scatters back, linear [r, g, b] 0..1 (Unity HDRP scatteringColor)",
+   "density": "how dense the water is, kg/m³; reserved: nothing reads it yet (swimming and floating don't)"
   },
   "units": {
    "level": "m",
-   "flow": "m/s"
+   "flow": "m/s",
+   "attenuationDistance": "m",
+   "density": "kg/m³"
+  }
+ },
+ "zone": {
+  "status": "trial",
+  "fields": {
+   "shape": "string",
+   "size": "vec3",
+   "radius": "number",
+   "height": "number",
+   "priority": "int",
+   "blend": "number",
+   "weight": "number",
+   "global": "bool"
   },
+  "enums": {
+   "shape": [
+    "box",
+    "sphere",
+    "capsule",
+    "cylinder"
+   ]
+  },
+  "ranges": {
+   "size": {
+    "gt": 0,
+    "max": 10000
+   },
+   "radius": {
+    "gt": 0,
+    "max": 10000
+   },
+   "height": {
+    "gt": 0,
+    "max": 10000
+   },
+   "priority": {
+    "min": -1000000,
+    "max": 1000000
+   },
+   "blend": {
+    "min": 0,
+    "max": 1000
+   },
+   "weight": {
+    "min": 0,
+    "max": 1
+   }
+  },
+  "required": [
+   "shape"
+  ],
+  "absentMeans": {
+   "shape": "never absent: a zone names its shape",
+   "size": "not a box (a box needs its size)",
+   "radius": "not a sphere, capsule or cylinder (each needs a radius)",
+   "height": "not a capsule or cylinder (each needs a height)",
+   "priority": "0",
+   "blend": "0: a hard edge",
+   "weight": "1: full strength",
+   "global": "false: the zone is its shape"
+  },
+  "docs": {
+   "shape": "box, sphere, capsule or cylinder (OMI_physics_shape's), centred on the thing's origin in its own frame; a capsule or cylinder stands along its y",
+   "size": "a box's full size [x, y, z], metres, before the thing's scale",
+   "radius": "a sphere's, capsule's or cylinder's radius, metres",
+   "height": "a capsule's or cylinder's full height along its y, metres (a capsule's includes its caps)",
+   "priority": "which of two overlapping zones' effects wins: the higher (Godot Area3D); a tie goes to the later id",
+   "blend": "how far outside its shape a look effect fades out, metres (Unity Volume blend distance); look only, never the medium",
+   "weight": "how strongly a look effect applies, 0..1 (Unity Volume weight); look only, never the medium",
+   "global": "true: everywhere in the world, its shape unused (Unity Volume global, Unreal unbound)"
+  },
+  "units": {
+   "size": "m",
+   "radius": "m",
+   "height": "m",
+   "blend": "m"
+  },
+  "on": "thing"
+ },
+ "water-exclusion": {
+  "status": "trial",
+  "fields": {
+   "bodies": "refs"
+  },
+  "ranges": {
+   "bodies": {
+    "maxItems": 16
+   }
+  },
+  "absentMeans": {
+   "bodies": "every water body its zone overlaps, @world's level included"
+  },
+  "docs": {
+   "bodies": "the water bodies (things with water, or @world) it keeps out: only those named (name @world to keep the level out), and of them only those at or below its zone's priority (@world's level is lowest of all)"
+  },
+  "on": "thing"
+ },
+ "physics-volume": {
+  "status": "trial",
+  "fields": {
+   "kind": "string",
+   "factor": "number",
+   "modes": "array"
+  },
+  "enums": {
+   "kind": [
+    "speed"
+   ]
+  },
+  "ranges": {
+   "factor": {
+    "min": 0.05,
+    "max": 10
+   }
+  },
+  "required": [
+   "kind"
+  ],
+  "absentMeans": {
+   "factor": "1: no change",
+   "modes": "every mode"
+  },
+  "docs": {
+   "kind": "what it does to bodies inside its zone: speed (× their own speed); direction, point and vortex are planned, not open",
+   "factor": "speed: × a body's own speed inside (walking, running, wading, swimming): < 1 slows (mud, deep snow), > 1 boosts; 0.05..10. The authority's track widens inside a boost, never narrows",
+   "modes": "which movement modes it touches: walk | swim | fly | climb (Unreal's per-mode settings); absent: all. Main's slow water translates to ['swim']"
+  },
+  "units": {
+   "factor": "×"
+  },
+  "on": "thing"
+ },
+ "terrain-feature": {
+  "status": "trial",
+  "fields": {
+   "type": "string",
+   "x": "number",
+   "z": "number",
+   "x1": "number",
+   "z1": "number",
+   "x2": "number",
+   "z2": "number",
+   "radius": "number",
+   "height": "number",
+   "edge": "number",
+   "order": "number"
+  },
+  "enums": {
+   "type": [
+    "hill",
+    "ridge",
+    "flatten"
+   ]
+  },
+  "ranges": {
+   "radius": {
+    "gt": 0.05,
+    "max": 2000
+   },
+   "height": {
+    "min": -500,
+    "max": 500
+   },
+   "edge": {
+    "min": 0.01,
+    "max": 2000
+   },
+   "order": {
+    "min": -1000000,
+    "max": 1000000
+   },
+   "x": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z1": {
+    "min": -100000,
+    "max": 100000
+   },
+   "x2": {
+    "min": -100000,
+    "max": 100000
+   },
+   "z2": {
+    "min": -100000,
+    "max": 100000
+   }
+  },
+  "required": [
+   "type",
+   "radius",
+   "height"
+  ],
+  "absentMeans": {
+   "edge": "half the radius (a flatten's soft rim)",
+   "order": "0: among named shapes, by order and then by name"
+  },
+  "docs": {
+   "type": "hill (a round bump; a negative height is a pit) | ridge (a raised line; negative, a valley) | flatten (levels a circle to an absolute height)",
+   "x": "its centre (hill, flatten)",
+   "z": "its centre (hill, flatten)",
+   "x1": "a ridge's first end",
+   "z1": "a ridge's first end",
+   "x2": "a ridge's other end",
+   "z2": "a ridge's other end",
+   "radius": "how far it reaches",
+   "height": "how high it rises (hill, ridge), or the height it levels to (flatten)",
+   "edge": "a flatten's soft rim, beyond its radius",
+   "order": "where it applies among the named shapes: lower first (a flatten levels whatever came before it)"
+  },
+  "units": {
+   "x": "m",
+   "z": "m",
+   "x1": "m",
+   "z1": "m",
+   "x2": "m",
+   "z2": "m",
+   "radius": "m",
+   "height": "m",
+   "edge": "m"
+  },
+  "keyed": true,
+  "on": "world"
+ },
+ "terrain-tile": {
+  "status": "trial",
+  "fields": {
+   "mm": "array"
+  },
+  "required": [
+   "mm"
+  ],
+  "absentMeans": {
+   "mm": "never absent: a tile is its samples (a tile that isn't there at all is level)"
+  },
+  "docs": {
+   "mm": "the tile's 1024 samples, whole millimetres over the terrain and its features, row-major: 32 rows along z, each 32 samples along x"
+  },
+  "units": {
+   "mm": "mm"
+  },
+  "keyed": true,
   "on": "world"
  },
  "terrain-grid": {
   "status": "reserved",
-  "on": "world"
- },
- "terrain-tile": {
-  "status": "reserved",
-  "keyed": true,
   "on": "world"
  },
  "script": {
@@ -2335,9 +2921,6 @@
   },
   "on": "world"
  },
- "material": {
-  "status": "reserved"
- },
  "anim-pose": {
   "status": "reserved"
  },
@@ -2348,9 +2931,6 @@
   "status": "reserved"
  },
  "camera": {
-  "status": "reserved"
- },
- "zone": {
   "status": "reserved"
  },
  "video": {

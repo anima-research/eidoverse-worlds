@@ -1,12 +1,7 @@
-// uidefs — the help-overlay contract (charter §3, defs round two).
-//
-// The ? overlay's content is world-served data: a world can reword its own
-// welcome (an agent-only world, a gallery, a classroom) without forking the
-// client. Defs are server-owned — the same trust domain as the shipped
-// client itself — so the HTML fragments here are trusted markup, exactly as
-// they were when they lived in ui.js.
+// uidefs — the help-overlay sidecar (defs/ui/_help.json): a world rewords its own ? overlay without forking the client.
+// Defs are server-owned, the same trust domain as the shipped client, so the HTML fragments are trusted markup.
+import { isStr } from "./protocol/is.js";
 
-const isStr = (v) => typeof v === 'string' && v.length > 0;
 
 /** Validate the help sidecar (defs/ui/_help.json). Empty = servable.
  *  @param {unknown} h @returns {string[]} */

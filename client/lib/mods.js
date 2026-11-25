@@ -1,32 +1,31 @@
 // mods — runtime-loaded client scripts: physics, animation, in-game UI.
 //
-// The trust model, decided deliberately (docs/MODDING-UI.md):
+// The trust model, decided deliberately (docs/guide/MODDING-UI.md):
 //
 //   * A mod is LOCAL and TRUSTED — full access, an in-page ES module with
 //     the whole EW surface (your bones, the scene, door requests, the wire).
 //     It can act as you; loading one is a mod-install decision, like a
 //     browser extension. Stored in IndexedDB, yours alone, survives reloads.
 //     (A world doesn't offer client mods: what runs in a world is its own
-//     scripts, on the server, through the door — docs/SCRIPTS.md.)
+//     scripts, on the server, through the door — docs/guide/SCRIPTS.md.)
 //
-// What a mod can DO needs no new machinery: it animates your own body freely
-// (it is you), other bodies by their consent (bodydrag), objects through the
-// door as you would (EW.physics: grab/put/throw/drop/punt), and it may
-// build in-game UI through the
-// same panel primitives the client itself uses. The engine cannot tell a
-// mod's output from anyone else's, which is the point.
+// What a mod can DO needs no new machinery: it animates your own body freely (it is you), other bodies by their
+// consent (bodydrag), objects through the door as you would (EW.physics), and it builds in-game UI through the same
+// panel primitives the client uses. The engine cannot tell a mod's output from anyone else's, which is the point.
 //
 // Contract: a mod is an ES module. Its default export (if any) is called
 // with a context: { name, world, EW, ui, onTick, onDispose }. Ticks are
 // wrapped; five consecutive throws pause the mod loudly. Disabling runs your onDispose handlers and removes your
-// panels — but a module, once imported, cannot be UNLOADED; a mod that
+// ui.section/ui.frame panels (a registerPanel one stays until reload) — but a module, once imported, cannot be UNLOADED; a mod that
 // grabbed globals keeps them until reload. Trusted means trusted.
 
 import { bus, CONFIG, report } from './base.js';
-import { makeSection, toast, flashHint } from './ui.js';
-import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
-import { makeFrame } from './windows.js';
-import { logChat } from './chat.js';
+import { makeSection, toast, flashHint } from './ui/ui.js';
+import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './ragdoll/bodysim.js';
+import { physicsEnabled, setPhysicsEnabled } from './thingphysics.js';
+import { makeFrame } from './ui/windows.js';
+import { logChat } from './ui/chat.js';
+import { escapeHtml as esc } from './ui/markup.js';
 
 // ---------------------------------------------------------------- storage
 
@@ -124,7 +123,6 @@ export function tickMods(dt, now) {
 // ---------------------------------------------------------------- the panel
 
 let paint = null;
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const TEMPLATE = `// an eidoverse mod — full client access, trusted like a browser extension.
 // export default gets { name, world, EW, ui, onTick, onDispose }.
@@ -139,15 +137,13 @@ export default ({ EW, ui, onTick }) => {
 };
 `;
 
-/** The scriptable face of the mod system — same acts as the panel buttons.
- *  (Also what the e2e drives: UI and API share one implementation.)
+/** The scriptable face of the mod system — same acts as the panel buttons (the e2e drives this).
  *
- *  put and run need YOUR hand: a click or key press this moment (the browser's transient user activation). Installing
- *  or running code is a decision you make, and a mod you install can set itself to run on every arrival — so code that
- *  merely holds EW (a mod running on its own at load, or anything that found its way into the page) can't plant another
- *  that outlives it (the world-mod note, 09-28: one "run once" becoming permanent). Defence in depth, not a wall: code
- *  already in this page is same-origin and could reach the store another way; the walls are that nothing a world sends
- *  runs as code here (tools/protocol/modhole-check.ts) and the page's CSP. The 🧩 panel's own buttons are clicks. */
+ *  put and run need YOUR hand: transient user activation, so code that merely holds EW (a mod
+ *  autorunning at load, or anything injected into the page) can't plant another at load. It can still
+ *  act during any click of yours, and a browser without navigator.userActivation isn't checked.
+ *  Defence in depth, not a wall: the walls are that nothing a world sends runs as code here
+ *  (test/protocol/modhole-check.ts) and the page's CSP. */
 const byHand = (what) => {
   if (globalThis.navigator?.userActivation && !navigator.userActivation.isActive) throw new Error(`EW.mods.${what} needs a click or key press from you (installing or running a mod is your decision)`);
 };
@@ -164,10 +160,7 @@ export function initMods() {
     let editing = null;      // name being edited, '' = new
     const render = async () => {
       const mine = await listScripts();
-      // THE LAYOUT (owner, 09-29: "the mod area was a bit of a hot mess"): every entry is one .mod-row —
-      // its name, a quiet line saying what it is, and its controls on the right (or under it, when a
-      // row carries more than one) — grouped under the pane's captions. No inline button runs in prose,
-      // no rules, no nested scroller.
+      // every entry is one .mod-row (name, a quiet note, controls), grouped under the pane's captions
       const rows = mine.map((s) => {
         const on = running.has(s.name);
         return `<div class="mod-row stacked">
@@ -184,6 +177,9 @@ export function initMods() {
         <div class="mod-row">
           <div class="mod-txt"><span class="mod-nm">body engine</span><span class="mod-note">how your falls simulate — verlet: particles · ammo: Bullet, the janus rig. Click to cycle.</span></div>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">object physics</span><span class="mod-note">flights drawn here, and the things you walk into pushed. Off, for a slow device: things stand where the world last logged them. Only this browser changes</span></div>
+          <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
         <div class="sec-cap">your mods</div>
         <div class="mod-note warn">local mods run with full access, as you — load only code you trust</div>
         ${rows || '<div class="mod-note">no local mods yet</div>'}
@@ -200,16 +196,17 @@ export function initMods() {
         const b = e.target.closest('button');
         if (!b) return;
         const d = b.dataset;
-        // The built-in toggles answer BEFORE any await. listScripts() touches
-        // storage and the network, and this is an async handler with no catch:
-        // one rejection there killed every button in the panel silently,
-        // including the two that need nothing from it. The body-engine toggle
-        // then read as permanently stuck — the engine never changed because
-        // the click never arrived, not because the switch was wrong.
+        // The built-in toggles answer BEFORE any await: a listScripts() rejection
+        // in this uncaught async handler would otherwise kill them too.
         if (d.bodyeng) {
           const names = listBodyEngines();
           setBodyEngine(names[(names.indexOf(currentBodyEngine()) + 1) % names.length]);
           flashHint(`body engine: ${bodyEngine()} — takes effect on your next fall`);
+          return render();
+        }
+        if (d.corephys) {   // thingphysics.js setPhysicsEnabled
+          setPhysicsEnabled(!physicsEnabled());
+          flashHint(`object physics ${physicsEnabled() ? 'on' : 'off: things stand where the world last logged them'}`);
           return render();
         }
         let mine2 = [];

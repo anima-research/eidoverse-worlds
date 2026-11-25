@@ -5,7 +5,7 @@
 // scene through the scheduler; this file never does.
 //
 // net.js folds the door's stream (shared/protocol/replica.js) and hands this module each new view (applyView); this module
-// says what changed, in the protocol's terms (shared/protocol/viewdiff.js). Events are invalidation signals, not data carriers:
+// says what changed, in the protocol's terms (shared/viewdiff.js). Events are invalidation signals, not data carriers:
 // subscribers are told WHAT changed and read the world from state.st:
 //   {type:'hydrated'} · {type:'reset'}
 //   {type:'change', id, what: 'born'|'gone'|'pose'|'parent'|'comp', comp?}
@@ -13,13 +13,13 @@
 // What I may do here (role, gen, fly) is the server's answer (`your-rights`, re-sent whenever a role changes), never
 // recomputed here.
 
-import { diffView } from '../../shared/protocol/viewdiff.js';
+import { diffView } from '../../shared/viewdiff.js';
 import { emptyView } from '../../shared/protocol/view.js';
 
 export const state = {
   /** the view (view.js viewState): {entities, sky, terrain, grass, assets, roles, bans, recentChat, chatTotal} */
   st: emptyView(),
-  /** Highest chat seq covered (seq × 1000); -1 before hydration. */
+  /** The chat seq the join's view covered (seq × 1000), set at hydrate; -1 before. net.js keeps the live cursor. */
   lastSeq: -1,
   hydrated: false,
 };
@@ -34,8 +34,7 @@ export function onWorldChange(fn) {
 
 function emit(ev) {
   for (const fn of [...subs]) {
-    // A subscriber must not be able to break the fold path — same doctrine
-    // as the sequencer's house rule 3, one layer down.
+    // a failing subscriber must not break the fold path
     try { fn(ev); } catch (err) { console.error('[state] subscriber failed:', err); }
   }
 }

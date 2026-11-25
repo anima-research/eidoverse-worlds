@@ -1,6 +1,5 @@
-// lookat — the turn a `look-at` component asks for, as a pure function (batch 2). Each client evaluates it every frame
-// (client/lib/motion.js), like motion: the component is logged state, the turn is a view nobody logs. Pure maths, no
-// three.js, so bun tests it and every client computes the same angle from the same inputs.
+// lookat — the turn a `look-at` component asks for, as a pure function. Each client evaluates it every frame
+// (client/lib/realize/lookats.js): the component is logged state, the turn is a view nobody logs. No three.js.
 //
 //   evalLookAt({rest, frame, at, target, la, prev, dt}) → {q, yaw, pitch, rested}
 //     rest    the node's rest rotation, local to its parent [x,y,z,w]
@@ -9,9 +8,10 @@
 //     la      the component: {mode: yaw|aim, forward, up, yaw?: [min,max] rad, pitch?: [min,max] rad, speed rad/s (0 = at once)}
 //     prev    last frame's local rotation (null: start at rest); dt: seconds since
 // Yaw turns about the node's own up (it stays upright: Blender's Locked Track); aim adds pitch, never roll (Damped Track
-// with an up). Limits are radians from rest (shape audit 10-16: the registry stores radians). A target straight above a
+// with an up). Limits are radians from rest (the registry stores radians). A target straight above a
 // yaw-only node gives no heading: it keeps the last. An older value's letter axes are still read (axisOf).
-export const AXIS = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
+import { AXES as AXIS } from './axes.js';
+export { AXIS };
 const D2R = Math.PI / 180;
 const axisOf = (a, d) => { const v = typeof a === 'string' ? AXIS[a] : Array.isArray(a) && a.length === 3 ? a : null; const n = v ? Math.hypot(...v) : 0; return n > 1e-9 ? v.map((x) => x / n) : AXIS[d]; };
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

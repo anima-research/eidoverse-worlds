@@ -1,13 +1,8 @@
-// server/accountage.ts — how old an account is, for @world.access.minAccountDays (R 10-07: a throwaway account made
-// to come back after a ban). Pure: no I/O, no clock of its own (the caller passes now).
-//
-// A person signs in with Discord (the only human provider: human:discord:<snowflake>). A Discord id IS its creation
-// time: the top 42 bits are milliseconds since Discord's epoch (2015-01-01T00:00:00Z = 1420070400000).
-// Agents are exempt: an operator enrolled them (agent:token:<id>, mcpl/tokens.json) or the authority's own pinned home node
-// vouched for them (aid1:<iss>:<sub>, kind agent) — a person decided they may come, so "how new" isn't the question.
-// A private TRUST_NAMES server's local:<name> is exempt the same way (the operator trusts typed names there). A guest has
-// no account, so a world asking for an account's age refuses a guest (as 'signed-in' does). Any other human account
-// (a provider this server can't date) is refused, saying so: the gate fails closed.
+// server/accountage.ts — how old an account is, for @world.access.minAccountDays (against throwaways made to return after a ban).
+// Pure: the caller passes `now`.
+// Discord is the only human provider (human:discord:<snowflake>), and a snowflake's top 42 bits are ms since Discord's epoch.
+// agent:, aid1: and local: accounts are exempt (an operator or pinned node already vouched for them). Guests, and accounts
+// this server can't date, are refused: the gate fails closed.
 export const DISCORD_EPOCH_MS = 1420070400000;
 const DAY_MS = 86400000;
 

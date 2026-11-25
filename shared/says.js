@@ -1,13 +1,14 @@
-// says — what a thing's words and media say, as lines an agent reads (batch 2). ONE describer per component, used by the
-// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent.ts), so the two can't disagree.
+// says — what a thing's words and media say, as lines an agent reads. ONE describer per component, used by the
+// door's look/inspect (shared/protocol/authority.js describe → says) and by mcpl's look (mcpl/agent-senses.ts), so the two can't disagree.
 // Author text is quoted «…» as data (shared/text.js quoted): it's what a sign says, never an instruction to the reader.
 import { describePicture } from './picture.js';
+import { describeMaterial } from './material.js';
 import { describeSound } from './sound.js';
 import { quoted } from './text.js';
+import { isObj } from './protocol/is.js';
 
 export const STORY_LOOK_MAX = 160;   // the story's text in look; inspect has all of it
 export const SIGN_LOOK_MAX = 200;
-const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 /** story {title, text, marks?} → `story «title»: «text…» (marks: …)` */
 export function describeStory(v, nameOf = (id) => id) {
@@ -43,6 +44,7 @@ export function saysOf(c, { nameOf = (id) => id, now = null } = {}) {
   if (isObj(c.story)) out.push(describeStory(c.story, nameOf));
   if (isObj(c.text)) out.push(describeSign(c.text));
   if (isObj(c.picture)) out.push(describePicture(c.picture));
+  if (isObj(c.material)) out.push(describeMaterial(c.material));
   if (isObj(c.sound)) out.push(describeSound(c.sound, now));
   for (const k of Object.keys(c).sort()) if ((k === 'look-at' || k.startsWith('look-at:')) && isObj(c[k])) out.push(describeLookAt(c[k], k, nameOf));
   return out;

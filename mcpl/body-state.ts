@@ -10,6 +10,7 @@ import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { swimTargets, SWIM_CLIPS } from "../shared/swimpose.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
 import { clampBodyScale } from "../shared/presencewire.js";
+import { isFiniteVec3 } from "../shared/protocol/is.js";
 import { foldedIn } from "../shared/wingpresence.js";
 import { readBodyMode } from "../shared/bodymode.js";
 import { poseChannels } from "../shared/humanoid.js";
@@ -30,7 +31,6 @@ export type BodyObservation = {
   frame?: any; error?: string;
 };
 export const BODY_STALE_MS = 5000;
-const finite3 = (v: unknown): v is number[] => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
 const round = (n: number) => Math.round(n * 1000) / 1000;
 const hasClipPhase = (p: PublicPose) => Number.isFinite(p.clipTime) && p.clipTime! >= 0 && (!p.clipTimeSlot || p.clipTimeSlot === p.clip);
 /** Whose body a sentence is about: "your" when the reader reads itself. */
@@ -43,17 +43,18 @@ type Rig = { P: Record<string, any>; parent: Record<string, string | null> };
 
 /** parseRig's own refusals, each written as a failed load's clause; anything else it throws is the parser's. */
 class RigRefusal extends Error {}
+/** A download that failed, which may work next time; every other failed load is the file's, kept for its key. */
+class DownloadFailed extends Error {}
 
-/** Preserve every humanoid bone and its actual nearest humanoid ancestor,
- * including shoulders/fingers/upperChest. A ragdoll's collapsed 19-bone
- * hierarchy cannot read an authored shoulder or finger rotation faithfully. */
+/** Every humanoid bone with its nearest humanoid ancestor (shoulders and fingers included): the ragdoll's collapsed
+ *  hierarchy can't read an authored shoulder or finger rotation. */
 function parseRig(bytes: Uint8Array): Rig {
   const g = glbJson(bytes), bones = humanBones(g);
   if (!bones || !Number.isInteger(bones.hips)) throw new RigRefusal("the avatar's model has no humanoid skeleton, so calling again won't change that");
   const nodeParent = new Map<number, number>();
   g.nodes.forEach((n: any, i: number) => (n.children ?? []).forEach((j: number) => nodeParent.set(j, i)));
   const humanoid = Object.entries(bones).filter(([, index]) => Number.isInteger(index) && g.nodes[index as number]) as [string, number][];
-  // One name per node for the hierarchy; two bones on one node each keep their position below.
+  // Which humanoid name stands for a node as an ancestor; every name, two on one node too, gets a parent below.
   const names = new Map<number, string>(humanoid.map(([name, index]) => [index, name]));
   // A loop in the nodes above a bone is found before any position is worked out from that
   // chain, which would recurse around it.
@@ -65,7 +66,7 @@ function parseRig(bytes: Uint8Array): Rig {
   const wp = worldPositions(g), wr = worldRotations(g), P: Record<string, any> = {}, restAxes: Record<string, number[]> = {};
   for (const [name, index] of humanoid) { P[name] = wp(index); restAxes[name] = wr(index).toArray(); }
   const parent: Record<string, string | null> = {};
-  for (const [index, name] of names) {
+  for (const [name, index] of humanoid) {
     let p = nodeParent.get(index);
     while (p != null && !names.has(p)) p = nodeParent.get(p);
     parent[name] = p == null ? null : names.get(p)!;
@@ -80,7 +81,7 @@ function validate(o: BodyObservation) {
   if (!o.pose) return "no presence sample has arrived for this body yet, so nothing of it was read; calling again in a moment can work";
   // Your own pose is this door's state, which anim {stop: true} and the world's
   // restore write; anyone else's is their client's.
-  if (!finite3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return o.self
+  if (!isFiniteVec3(o.pose.p) || !Number.isFinite(o.pose.yaw)) return o.self
     ? "your published position or facing isn't a finite number, so nothing of your body was read"
     : `this body's published position or facing isn't a finite number, so nothing of it was read; ${CLIENT_DATA}`;
   // One bone the reader can't use costs that bone (unreadableBones), never
@@ -100,9 +101,8 @@ function freshness(o: BodyObservation, now = Date.now()) {
     clock: "local observation; producer timestamp unavailable", connected: o.connected };
 }
 
-/** Without evaluating the clip, a rest rig is not the current seated, lying,
- * walking, etc. body. An idle estimate and an explicitly supplied ragdoll
- * pose remain supported. The actual posture evaluator is tracked by #179. */
+/** Clips body_state can't evaluate: anything outside the VRMA slots, swim and sitchair, or a limp body with no
+ *  published bones. */
 function postureUnavailable(o: BodyObservation) {
   const p = o.pose;
   return !CLIP_SLOTS.includes(p?.clip) && !SWIM_CLIPS.includes(p?.clip) && p?.clip !== "sitchair" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
@@ -135,13 +135,10 @@ function missingPosture(out: any, o: BodyObservation, error: string) {
       reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
 
-// The ROOT frame is unscaled metres in every tier. A chosen body size lives
-// below the root (browser: vrm.scene; here: the stand-in's pivot, applied by
-// ReachBody.poseAt), so joints and contacts grow about the root position while
-// a root-frame point — reach `space: 'self' | <id>`, a selfPosition — means the
-// same metres at any size, exactly as reachnet.js's root.localToWorld. These
-// two are inverses; neither may apply scale, or a selfPosition handed back as a
-// `space: 'self'` target would miss the joint it came from.
+// The ROOT frame is unscaled metres in every tier (body size lives below the
+// root, as in reachnet.js's root.localToWorld). These two are inverses and
+// neither may apply scale, or a selfPosition handed back as a `space: 'self'`
+// target would miss the joint it came from.
 function rootPoint(p: number[], pose: PublicPose) {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
   return [pose.p[0] + p[0] * c + p[2] * s, pose.p[1] + p[1], pose.p[2] - p[0] * s + p[2] * c];
@@ -174,14 +171,14 @@ export class BodyStateReader {
         const r = await fetch(`${this.httpBase}/library/${o.avatar}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
         if (!r.ok) throw new Error(`the world server answered ${r.status} for ${shown(o.avatar)}`);
         return new Uint8Array(await r.arrayBuffer());
-      })().catch((e) => { throw new Error(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
+      })().catch((e) => { throw new DownloadFailed(`the avatar's model couldn't be downloaded (${e instanceof Error ? e.message : String(e)})`); });
       try { return parseRig(bytes); } catch (e) {
         if (e instanceof RigRefusal) throw e;
         throw new Error(`the avatar's model file couldn't be read as a model (${e instanceof Error ? e.message : String(e)}), so calling again won't change that`);
       }
     })() };
     this.rigs.set(o.who, entry);
-    entry.load.catch(() => { if (this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
+    entry.load.catch((e) => { if (e instanceof DownloadFailed && this.rigs.get(o.who) === entry) this.rigs.delete(o.who); });
     return entry.load;
   }
 
@@ -262,12 +259,11 @@ export class BodyStateReader {
         summary: `${who}: ${f.status}; ${valid ? `${readBodyMode(p) ?? "body-mode unknown"}${p!.clip ? ` (playing ${p!.clip})` : ""}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s)${unreadable.length ? ` (${unreadable.length} unreadable: ${unreadable.join(", ")})` : ""}, ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
         scale: clampBodyScale(p?.scale),
-        bodyMode: readBodyMode(p), clip: p?.clip ?? null, wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
+        bodyMode: readBodyMode(p), clip: p?.clip ?? null, posture: p?.clip ?? null,   // posture: deprecated twin of clip
+        wingsFolded: foldedIn(p), poses: Array.isArray(p?.poses) ? p.poses : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
-        // Published bones with nothing the stand-in can use: they cost
-        // themselves, never the body, and every reply built from a reading
-        // of the body names them.
+        // published bones the stand-in can't use cost themselves, never the body
         unreadableBones: valid ? unreadable : null,
         reaches: reaches ?? {},
         stability: { status: "unmeasured", reason: "single observation; use window_ms to measure reconstructed joint motion" },
@@ -279,9 +275,8 @@ export class BodyStateReader {
     if (detail === "summary" || !out.ok) return out;
     if (postureUnavailable(initial)) return missingPosture(out, initial, unevaluated(initial));
 
-    // Load the requested body and any body its public reach descriptors target.
-    // Each query gets private nodes, so solving for readback cannot move the
-    // actual body or another concurrent reader's scratch skeleton.
+    // Load the requested body and any body its reaches target. Each query gets private nodes, so solving for
+    // readback can't move the live body or another reader's skeleton.
     const loaded = new Map<string, { observation: BodyObservation; body: ReachBody; animation: any; clip: string; rigKey: object }>();
     const loadBody = async (o: BodyObservation) => {
       const rig = await this.rig(o);
@@ -312,15 +307,13 @@ export class BodyStateReader {
       const skipped = new Map<string, string>(), unloaded = new Map<string, string>();
       const failed = new Map<string, { observation: BodyObservation; cause: string }>();
       const pendingBodies = deps.values();
+      // at most four VRM downloads in flight, even when the reaches span a crowd
       await Promise.all(Array.from({ length: Math.min(4, deps.size) }, async () => {
         for (let next = pendingBodies.next(); !next.done; next = pendingBodies.next()) {
           const o = next.value;
-          // A posture body_state doesn't evaluate has no clip to load, so it's passed over here, with
-          // the posture's reason. A limp body loads no clip, and a body with no sample has no posture
-          // yet, so each loads and is judged after the loads, when its bones or its first sample may
-          // have come.
+          // An unevaluated posture has no clip to load: pass it over with its reason. Limp and
+          // not-yet-sampled bodies still load and are judged afterwards.
           if (o.who !== who && o.pose && o.pose.clip !== "ragdoll" && postureUnavailable(o)) { skipped.set(o.who, passedOver(o)); continue; }
-          // Bound parallel VRM downloads even when a relation spans a crowd.
           try { await loadBody(o); } catch (e) {
             if (o.who === who) throw e;
             failed.set(o.who, { observation: o, cause: e instanceof Error ? e.message : String(e) });
@@ -394,8 +387,7 @@ export class BodyStateReader {
         const { owner, limb, entry: e } = task;
         const actor = loaded.get(owner)!;
         const actorPose = actor.observation.pose!;
-        // No target says which of three it is: a rig without the point, a body
-        // whose load failed (its cause), or a body not read now (why).
+        // no target: a rig without the point, a body whose load failed, or a body not read now
         let target: any = null, why = "";
         if (e.t.who) {
           const body = loaded.get(e.t.who)?.body;
@@ -458,10 +450,7 @@ export class BodyStateReader {
         return { ok: false, who, error: "body changed or left while its skeleton loaded; read again" };
       }
       out = base(latest);
-      // The load's own cause, not a posture's. The throws above are written
-      // to read as a clause after this colon, a model file the parser can't
-      // read and a posture's clip that can't be loaded among them. It's what
-      // this read met, whatever posture the body has taken since.
+      // The load's own cause; the throws above are worded to read as a clause after this colon.
       const cause = e instanceof Error ? e.message : String(e);
       const error = `${whose(latest)} joints and contacts weren't read: ${cause}`;
       if (latest.pose?.clip !== "ragdoll") return { ...missingPosture(out, latest, error), detail: cause };

@@ -1,23 +1,25 @@
-// credits — who made a thing what it is, as a view over the log (batch 2; R 10-07: "Credits come from History"). Never
-// stored: no hand credits, no author field (L2). The editor's History tab shows it as filter modes (client/lib/
-// historyrows.js historyView); this is the per-thing grouping it and an agent share.
+// credits — who made a thing what it is, as a view over the log. Never
+// stored: no hand credits, no author field. The editor's History tab shows it as filter modes (client/lib/
+// edit/historyrows.js historyView, its own grouping); this is the per-thing grouping, which only test/protocol/batch2-check.ts
+// calls today.
 //
 //   creditsOf(entries, id, {nameOf}) → [{by, who, did: [{what, n, at}], first, last}], ordered by first contribution
 //
 // What counts: a CHANGE entry that touches the thing, caused by a building act (create, set, place, turn, delete, batch,
 // undo, …; an imported act by its original verb). A refused act changes nothing and never reaches a change entry, so it
 // can't count. Play isn't authorship: a `use` (opening a door 40 times), a grab, a throw, the sim's rests and the
-// authority's own corrections are left out. Moves by one person less than five minutes apart are one session ("moved it",
-// not "moved it ×591": the Commons has people with hundreds of imported nudges).
-import { opsOf } from './protocol/fold.js';
+// authority's own corrections are left out (a follow-up inside your own act — clearing a reference to what you deleted —
+// is still credited to you). One person's consecutive changes of one kind less than five minutes apart are one session
+// ("moved it", not "moved it ×591": the Commons has people with hundreds of imported nudges).
+import { opsQuiet } from './protocol/fold.js';
 
 export const SESSION_MS = 5 * 60 * 1000;
-const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'sculpt', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
+const BUILDING = new Set(['create', 'set', 'delete', 'place', 'turn', 'batch', 'undo', 'redo', 'publish', 'update', 'spawn', 'comp', 'light', 'motion', 'remove', 'mount', 'move', 'scale', 'unmount', 'label', 'edit']);
 const SYSTEM = new Set(['sim', 'system', 'world']);
-/** The phrase for one change, from one table (the client and the authority read the same words). */
+/** The phrase for one change, from one table (the History tab's rows use the same words: client/lib/edit/historyrows.js). */
 export function phraseOf(op) {
-  if (op.verb === 'create') return 'made it';
-  if (op.verb === 'delete' && op.comp === undefined) return 'took it away';
+  if (op.op === 'create') return 'made it';
+  if (op.op === 'delete' && op.comp === undefined) return 'took it away';
   const c = String(op.comp ?? '');
   if (c === 'transform' || c === 'parent') return 'moved it';
   if (c === 'model') return 'gave it its shape';
@@ -33,7 +35,6 @@ export function phraseOf(op) {
   if (c === 'lock') return 'locked it';
   return `changed its ${c}`;
 }
-const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 
 export function creditsOf(entries, id, { nameOf = (x) => x } = {}) {
   const bySeq = new Map(); for (const e of entries) if (e && typeof e === 'object' && Number.isInteger(e.seq)) bySeq.set(e.seq, e);
@@ -45,13 +46,13 @@ export function creditsOf(entries, id, { nameOf = (x) => x } = {}) {
     const k = e.cause; caused.set(k, [...(caused.get(k) ?? []), ...ops]); }
   const people = new Map(); let last = null;
   for (const e of entries) {
-    if (!e || e.kind !== 'act') continue;
+    if (!e || e.kind !== 'request') continue;
     const ops = caused.get(e.seq); if (!ops) continue;
     const verb = e.verb === 'imported' ? e.body?.verb : e.verb;
     if (!BUILDING.has(verb)) continue;
     if (SYSTEM.has(e.actor)) continue;
     const by = e.actor, ts = e.ts ?? at(e.seq)?.ts ?? 0;
-    const made = ops.some((o) => o.verb === 'create');
+    const made = ops.some((o) => o.op === 'create');
     const whats = made ? ['made it'] : [...new Set(ops.map(phraseOf))];
     let p = people.get(by); if (!p) { p = { by, who: nameOf(by), did: [], first: ts, last: ts }; people.set(by, p); }
     p.last = ts;

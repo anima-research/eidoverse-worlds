@@ -1,13 +1,9 @@
-// grounddefs — the ground-palette contract (charter §3, defs round two).
+// grounddefs — the ground palette (defs/ground/_palette.json): validation, and the terrain/grass verb args a choice writes.
 //
-// Same law as the sky presets: everything here is an AUTHORING convenience.
-// The ground panel applies a choice as a concrete terrain/grass verb on a
-// deliberate click, so the log never stores one of these names — a mutable
-// def file can restyle the panel, never rewrite logged meaning.
+// Palette names are an authoring convenience only: a panel click writes concrete verb args, so the log never stores a
+// palette name and a restyled def can't rewrite logged meaning.
+import { isNum, isObj, isStr } from "./protocol/is.js";
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v) => typeof v === 'string' && v.length > 0;
-const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // panel labels, not def files — spaces allowed ("mojave desert"), still bounded
 const LABEL_RE = /^[a-z][a-z0-9 _-]{0,32}$/;
 
@@ -47,10 +43,7 @@ export function validateGroundPalette(t) {
 }
 
 // ------------------------------------------------------------ the verb args a choice writes
-// One recipe for "this palette choice → these terrain/grass args", read by the
-// world panel's 🌿 section (client/lib/groundpanel.js) and the Build tab's World
-// section (client/lib/editpanels.js) alike, so the two can never write
-// different args for the same pick.
+// One recipe shared by client/lib/edit/groundpanel.js and client/lib/edit/panels.js, so the two never write different args for the same pick.
 
 /** The choice the panel starts from when nothing is dialled yet (the names
  *  groundpanel always preferred, else each table's first entry). */
@@ -61,6 +54,8 @@ export function paletteDefaults(pal) {
     density: pref(pal?.grassDensity, 'normal'), plant: pref(pal?.plantings, 'meadow'), seed: 7 };
 }
 
+const colorInt = (s) => (typeof s === 'string' && /^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 16) : null);
+
 /** terrain-verb args for a choice {shape?, tint?, seed?}. With `base` (the
  *  world's current terrain bag) only the chosen dials change and every other
  *  authored field (size, segments, a custom layer's repeat) is kept; without
@@ -69,8 +64,8 @@ export function terrainArgs(pal, choice = {}, base = null) {
   const out = base ? JSON.parse(JSON.stringify(base)) : { seed: choice.seed ?? 7, size: 160, segments: 200, flatRadius: 16, layers: [{ repeat: 16 }] };
   if (choice.seed != null) out.seed = choice.seed;
   if (choice.shape != null && pal?.shapes?.[choice.shape] != null) out.amplitude = pal.shapes[choice.shape];
-  const color = choice.tint != null ? pal?.tints?.[choice.tint]?.layer : null;
-  if (color) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
+  const color = choice.tint != null ? colorInt(pal?.tints?.[choice.tint]?.layer) : null;   // the palette says #rrggbb; a layer stores an int
+  if (color != null) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
   return out;
 }
 
@@ -98,7 +93,7 @@ export function groundChoice(pal, terrain, grass) {
   const layer = Array.isArray(terrain?.layers) ? terrain.layers[0]?.color : null;
   return {
     shape: terrain ? by(pal?.shapes, (v) => v === terrain.amplitude) : null,
-    tint: layer ? by(pal?.tints, (t) => t?.layer === layer) : null,
+    tint: layer != null ? by(pal?.tints, (t) => colorInt(t?.layer) === layer) : null,
     seed: terrain?.seed ?? null,
     plant: grass ? by(pal?.plantings, (p) => (p?.args?.preset != null ? p.args.preset === grass.preset : p?.args?.species === grass.species && grass.preset == null)) : null,
     height: grass?.height != null ? by(pal?.grassHeight, (v) => v === grass.height) : null,

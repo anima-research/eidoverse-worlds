@@ -1,61 +1,50 @@
-// eidoverse-worlds sequencer — the ws message table (R2, survey §2.2).
-//
-// The unsplit ws switch, as a handler table: one entry per message type,
-// bodies moved VERBATIM from server.ts (the §15 verbs.ts precedent, and the
-// same cycle break — this module never imports server.ts; what lives with
-// the session, `expel`, arrives through the ctx). The preamble that guards
-// every message (rate cap, superseded unmap, the never-throw envelope) and
-// the `join` case (the session's front door — admission, takeover, the
-// snapshot) stay in server.ts, where the source-text gates that pin
-// settledPose expect them.
-//
-// A suite regexes THIS file's source now (it used to pin server.ts):
-// tools/voice-wiring-test.ts — moving a body again means moving its patterns
-// with it.
+// The ws message table: one handler per message type. Never imports server.ts (what lives with the session, `expel`,
+// arrives through the ctx). The per-message preamble (rate cap, superseded unmap, never-throw envelope) and `join`
+// stay in server.ts.
 
-import { WORLDS_DIR } from "./config.ts";
+import { WORLDS_DIR, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
-import { gateReach } from "./reachgate.ts";
-import { BODY_RANGE } from "../shared/protocol/physconst.js";
+import { gateReach, rangeRefusal } from "./reachgate.ts";
+import { DRAG_SILENCE_MS } from "../shared/protocol/physconst.js";
 import { currentIncarnation } from "./transport.ts";
 import { isOperator } from "./operators.ts";
-import { directoryFor, foldName } from "./directory.ts";
+import { directoryFor, foldName, isMinted } from "./directory.ts";
 import { actorOf as actorIdOf } from "./requestwire.ts";
 import { qNorm } from "../shared/rot.js";
 import { decide as consentDecide, refusalWords } from "../shared/protocol/consent.js";
 import { worlds, type World, type Client, authorityNow } from "./world.ts";
 import { stateSampleError } from "../shared/presencewire.js";
-import { snapshots } from "./snapshots.ts";
+import { screenshots } from "./screenshots.ts";
 import { REMOVED_VERBS } from "../shared/protocol/verbspec.js";
-import { globalBans, saveGlobalBans, banKey, ADDR_BAN_MS, bansLiftedBy } from "./moderation.ts";
+import { serverBans, saveServerBans, banKey, ADDR_BAN_MS, bansLiftedBy, serverBansText, takePending, notPersisted } from "./moderation.ts";
 import { isOwner } from "../shared/protocol/roles.js";
+import { sha256 } from "../shared/protocol/hash.js";
 
-/** Who a presence message (puppet, bodydrag, typing) is FOR (security pass 3, H2). A sender that knows the
- *  identity names it by its opaque actor id (`targetActor` / `toActor` — every arrive carries one); then that identity's
- *  embodied leg is the target, whatever name anyone wears, and an actor who isn't here is simply not here (the name
- *  beside it is NOT a fallback: that would hand the message to whoever wears the name). A sender with no actor id (an
- *  agent, an older client) still reaches by name — names are unique among the people here and, for accounts, across
- *  the directory (server.ts join). A display name can't be shaped like an actor id (refused at join). */
-const ACTOR_ID = /^u-[a-z2-7]{20}$/;
+/** Who a presence message (puppet, bodydrag, typing) is for. A sender that knows the identity names it by its opaque actor id
+ *  (`targetActor` / `toActor`); then that identity's embodied leg is the target whatever name anyone wears, and the name beside
+ *  it is not a fallback. A sender with no actor id (an agent, an older client) still reaches by name, which is unique among
+ *  the people here. A display name can't be shaped like an actor id (refused at join). */
+const ACTOR_ID = /^u-[a-z2-7]{20}(?:[a-z2-7]{4})?$/;
+/** The world's body-default as it stands now ({} when unset): the relay never reads the authority's synced copy. */
+const liveBodyDefault = (live: any) => live.state?.()?.entities?.["@world"]?.c?.["body-default"] ?? {};
+/** A drag is one pair of sessions (dragger leg, target leg, by gen): begun by a forwarded grab, kept by a forwarded pose
+ *  sample, gone after DRAG_SILENCE_MS, at an end or a break, and with either session (a takeover, a rejoin, travel). */
+const dragOf = (a: Client, b: Client, now: number) => { const d = b.gen != null ? a.drags?.get(b.gen) : undefined;
+  return d && d.by === a.gen && now - d.at <= DRAG_SILENCE_MS ? d : null; };
+const dragEnd = (a: Client, b: Client) => { if (b.gen != null) a.drags?.delete(b.gen); if (a.gen != null) b.drags?.delete(a.gen); };
 
-/** Body consent at the server (PROTOCOL L6; tools audit 10-07 "Body consent"): a presence act on someone else's body is
- *  checked against THEIR table in the authority's presence plane (shared/protocol/consent.js — a body that never sent
- *  one is Normal: everyone's shove, pose and displace are deny) and a sane range, BEFORE it's forwarded. The target's
- *  client still has the last word; this is so a stranger's packet never reaches a body that said no. 'ask' is refused
- *  with how to ask (the authority's `body` verb asks and delivers). Returns the refusal, or null to forward. */
-export { BODY_RANGE };   // m between the two bodies' last frames
-function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace", kind: string): string | null {
+/** Body consent at the server (PROTOCOL §5): a presence act on someone else's body is checked against THEIR consent
+ *  table (shared/protocol/consent.js) and the world's range BEFORE it's forwarded; the target's client still has the
+ *  last word. Returns the refusal, or null to forward. */
+function bodyRefusal(c: Client, tc: Client, cls: "shove" | "pose" | "displace"): string | null {
   if (c.actorId && c.actorId === tc.actorId) return null;            // your own body
   const live = c.world?.log?.live;
   if (!live || !c.actorId || !tc.actorId) return `${tc.id}'s body isn't taking ${cls} right now`;
-  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, live.now());
-  if (d.mode === "deny") return refusalWords(tc.id, cls);   // one sentence whatever the cause (a pause, a per-person no, a tier): the real cause is theirs, not yours
-  if (d.mode === "ask") return `${tc.id} asks first for ${cls}: ask with the body request — body {to: "${tc.actorId}", kind: "${kind}"}`;
-  const a = c.lastPose?.p, b = tc.lastPose?.p, r = BODY_RANGE[cls];
-  if (!Array.isArray(a) || !Array.isArray(b)) return `can't tell where you and ${tc.id} are yet — try again in a moment`;
-  const m = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-  if (!(m <= r)) return `${tc.id} is ${m.toFixed(1)} m away (${cls} reaches ${r} m) — walk closer`;
+  // range before consent: out of range reads the same whatever their gates (reachgate.ts rangeRefusal)
+  const far = rangeRefusal(c, c.lastPose?.p, tc); if (far) return far;
+  const d = consentDecide(live.presence, c.actorId, tc.actorId, cls, liveBodyDefault(live));
+  if (d.mode === "deny") { c.world.log?.noteRefused(c.actorId, tc.actorId, cls); return refusalWords(tc.id, cls); }   // one sentence whatever the cause: the real cause is the target's; they are told (once per asker per cooldown)
   return null;
 }
 function presenceTarget(w: World, actor: unknown, name: string, embodied = true): { tc: Client | null; byActor: boolean; actor: string | null } {
@@ -73,13 +62,17 @@ export type MsgCtx = {
 
 /** A page size asked for on the wire: a whole number from 1 to PAGE_MAX, else the default (NaN or 1.5 never equals a
  *  page's length, so readHistory's ceiling would never stop it). */
-export const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.PAGE_DEFAULT); return Number.isInteger(n) && n >= 1 ? Math.min(LIMITS.PAGE_MAX, n) : LIMITS.PAGE_DEFAULT; };
+const pageLimit = (v: unknown): number => { const n = Number(v ?? LIMITS.PAGE_DEFAULT); return Number.isInteger(n) && n >= 1 ? Math.min(LIMITS.PAGE_MAX, n) : LIMITS.PAGE_DEFAULT; };
 
+/** A moment, not a fact: a socket still holding a backlog skips it rather than queueing another 64 KB. */
+export function relayLossy(w: Pick<World, "clients">, msg: unknown, except?: Client) {
+  const data = JSON.stringify(msg);
+  for (const t of w.clients) if (t !== except && (t.ws.getBufferedAmount?.() ?? 0) <= FRAME_SKIP_BUFFERED) t.ws.send(data);
+}
 export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "history": ({ c, ws, now, expel }, msg) => {
-    // Speech is arrival-only (R 10-18): the log keeps every say, but a page holds only the lines said since this
-    // connection arrived, unless it is an admin's (owner, operator: world.ts sayFloorFor), who reads the master log.
-    // Spectators page like anyone else: what they were present for.
+    // Speech is arrival-only: a page holds only lines said since its identity's earliest connection here arrived,
+    // unless it's an admin's (world.ts sayFloorFor).
     if (!c.world) return;
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
@@ -91,15 +84,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
   },
   "debug": ({ c, ws, now, expel }, msg) => {
-    // The flight recorder (World.debugLog): why things bounced —
-    // denials, rejections, rate limits, reaction outcomes. Open to
-    // spectators for the same reason history is: the log is public,
-    // so the reasons things failed to reach it are public too.
+    // The flight recorder (World.debugLog): why things bounced. Open to spectators, like the public log.
     if (!c.world) return;
     const limit = pageLimit(msg.limit);
     if (msg.script != null) {
       // one script's own log ring + status — the author's console
-      const b = c.world.scripts.inspect(String(msg.script));
+      const b = c.world.scripts.inspect(String(msg.script), c.world.sayFloorFor(c));   // a say from before the asker came stays out
       ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
         script: String(msg.script),
         status: b?.status ?? "no such script",
@@ -117,21 +107,15 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       .slice(-limit);
     ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null, events }));
   },
-  // whisper was removed (R 10-18): speech is public and arrival-only, and direct messages will live at the identity level
-  // (client/profile), not in world chat. A client still sending one is told so in the registry's words (refusalcodes.js
-  // `removed`); its text goes nowhere — not delivered, not held, not logged.
+  // whisper was removed (REMOVED_VERBS): the sender is told so; its text is not delivered, held, or logged.
   "whisper": ({ ws }, msg) => {
     const r = REMOVED_VERBS.whisper;
     ws.send(JSON.stringify({ type: "error", error: `whisper was removed: ${r.why}`, about: "whisper", refused: { code: "removed", reason: `whisper was removed: ${r.why}`, fix: r.fix }, ...(msg?.reqId !== undefined ? { reqId: msg.reqId } : {}) }));
   },
   "anim": ({ c, ws, now, expel }, msg) => {
-    // A one-off animation: relayed once to everyone, never logged. It is
-    // a moment, not a fact about the world — presence, like a pose. Small
-    // enough (a few KB of quaternions) that it needs no store; big enough
-    // that it must not ride the 15Hz pose stream, so it is its own
-    // message sent once.
+    // A one-off animation: presence, relayed once and never logged; too big for the 15 Hz pose stream.
     if (!c.world || c.spectator) return;
-    // {stop: true} (R 10-17 16:26): every animation this body is playing fades out, back to what it holds beneath
+    // {stop: true}: every animation this body is playing fades out, back to what it holds beneath
     if (msg.stop === true) { c.world.broadcast({ type: "anim", id: c.id, stop: true }, c); return; }
     if (typeof msg.dur !== "number" || typeof msg.tracks !== "object") return;
     // one guard against a pathological payload — poses are tiny, so
@@ -140,21 +124,16 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "animation too large — keep custom clips small and sparse" }));
       return;
     }
-    // Legacy packets omit replace and replace the previous animation.
-    // Modern merge requests must carry an explicit false.
-    c.world.broadcast({ type: "anim", id: c.id, dur: msg.dur, tracks: msg.tracks, loop: !!msg.loop, replace: msg.replace !== false }, c);
+    // a packet without replace REPLACES the previous animation (legacy); a merge must say replace: false
+    relayLossy(c.world, { type: "anim", id: c.id, dur: msg.dur, tracks: msg.tracks, loop: !!msg.loop, replace: msg.replace !== false }, c);
   },
   "puppet": ({ c, ws, now, expel }, msg) => {
-    // Ask another body to hold a pose or play an animation. Deliberately
-    // ROUTED to the target rather than broadcast: DESIGN.md's invariant
-    // is that each client owns its own avatar, so a puppet is a REQUEST
-    // its target applies to itself (and then broadcasts through its own
-    // presence, like any other input) — not a pose asserted onto it from
-    // outside. The target decides whether to honour it.
+    // Ask another body to pose or animate: ROUTED to the target, not broadcast — each client owns its avatar
+    // (DESIGN.md), so a puppet is a request the target may honour.
     if (!c.world || c.spectator) return;
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name (H2)
-    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
+    const { tc } = presenceTarget(c.world, msg.targetActor, to);   // the identity named, or the name
+    if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to ${msg.ragdoll ? "shove" : "pose"}` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
     // {lean:[x,y,z]} m/s — which way the shove sends them. Sanitize to
     // exactly those two shapes; the receiver caps magnitude for itself.
@@ -164,8 +143,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const lean = ((msg.ragdoll as { lean: unknown[] }).lean).map(Number);
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
-    // consent and range at the server (L6): a knock-over is a shove, a pose or an animation is a pose
-    const why = (rag ? bodyRefusal(c, tc, "shove", "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose", msg.anim ? "anim" : "pose") : null);
+    // consent and range at the server: a knock-over is a shove, a pose or an animation is a pose
+    const why = (rag ? bodyRefusal(c, tc, "shove") : null) ?? (msg.pose || msg.anim ? bodyRefusal(c, tc, "pose") : null);
     if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
     // merge: pose only the bones sent, over what the target already holds.
     // Absent means replace — what every sender meant before the flag existed.
@@ -183,12 +162,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   "bodydrag": ({ c, ws, now, expel }, msg) => {
     const okSim = (v: any) => {
       if (!v || typeof v !== "object") return false;
-      // §15.1's destructure bug lived here: `q: v.v` — a binding named
-      // for quats fed the VELOCITIES. There are no quats anywhere on
-      // this path: both engines' snapshot() (rapierdoll.js/ragdoll.js)
-      // hand over {j, p, v} — joint names, positions and velocities,
-      // three finite numbers per joint each — so validate exactly
-      // that, under its real name. Accepted payloads are unchanged.
+      // snapshot() (client/lib/ragdoll/ammodoll.js, or the verlet ragdoll.js) hands over {j, p, v}: joint names, positions, velocities (no quats).
       const { j, p, v: vel } = { j: v.j, p: v.p, v: v.v };
       if (!Array.isArray(j) || j.length === 0 || j.length > 24) return false;
       if (!Array.isArray(p) || !Array.isArray(vel)) return false;
@@ -197,55 +171,58 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         && p.every((n: unknown) => Number.isFinite(n))
         && vel.every((n: unknown) => Number.isFinite(n));
     };
-    // Interactive ragdoll drag — the takeover stream. A dragger runs the
-    // body's sim on ITS machine and streams the result to the body's
-    // owner, who applies it to itself and rebroadcasts through normal
-    // presence (one source of truth; everyone else needs no new code).
-    // Targeted like puppet, presence-plane semantics: never logged,
-    // never queued, relayed as-is. The OWNER decides whether to honour
-    // any of it — grab, stream and release are all just requests.
+    // Interactive ragdoll drag: the dragger runs the body's sim and streams it to the owner, who applies and
+    // rebroadcasts it. Targeted like puppet, never logged; grab, stream and release are all requests the OWNER may refuse.
     if (!c.world || c.spectator) return;
     const raw = String(msg.pose ? JSON.stringify(msg.pose) : "");
     if (raw.length > LIMITS.BODYDRAG_POSE_BYTES) return;      // a pose is tiny; anything else is an attack
     const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
-    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name (H2)
+    const { tc } = presenceTarget(c.world, msg.targetActor, to, false);   // the identity named, or the name
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
-    // a grab takes someone's body (move, L6): their consent and reach, at the server; the stream and release that follow
-    // only ever go to a body that accepted the grab (its client answers with end otherwise)
-    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace", "drag"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; } }
-    // what follows a grab is held to the same table (review of #260): pulling a nail (unpin) takes the body as a
-    // grab does, so it needs displace allowed or a drag this person granted; and once displace is deny, nothing more of a
-    // drag reaches them ("only deny ends it": a grant by an ask outlives a later ask cell). An end always goes through, but
-    // a nail riding it (unpin, pinAt, pins) is checked like any nail and dropped from it when refused (house 6340433633 Q3)
-    else if ((msg.end == null || msg.unpin != null || msg.pinAt != null || msg.pins != null) && !(c.actorId && c.actorId === tc.actorId)) {
+    const addressed = { type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}) };
+    // a grab takes someone's body (displace): their consent and range, at the server; the owner decides whether to accept it
+    if (msg.grab != null) { const why = bodyRefusal(c, tc, "displace"); if (why) { ws.send(JSON.stringify({ type: "error", error: why })); return; }
+      if (tc.actorId && tc.actorId !== c.actorId && tc.gen != null && c.gen != null) {
+        const m = (c.drags ??= new Map()); for (const [g, d] of m) if (now - d.at > DRAG_SILENCE_MS) m.delete(g);
+        m.set(tc.gen, { by: c.gen, at: now }); } }
+    // a non-grab release ends the drag even after move consent closes; its final sample and nails need range and live
+    // displace consent, so a refused release carries only the end
+    else if (!(c.actorId && c.actorId === tc.actorId)) {
       const nail = msg.unpin != null || msg.pinAt != null || msg.pins != null;
-      const endAlone = () => { if (msg.end == null) return true; delete msg.unpin; delete msg.pinAt; delete msg.pins; return false; };   // refused: an end still goes, bare
+      const endAlone = () => { if (msg.end != null) tc.ws.send(JSON.stringify({ ...addressed, end: true })); };
       // fails closed as bodyRefusal does: with no live log or no identity on either side, nothing can say yes
       const live = c.world.log?.live;
-      if (!live || !c.actorId || !tc.actorId) { if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` })); if (endAlone()) return; }
-      else {
-      const d = consentDecide(live.presence, c.actorId, tc.actorId, "displace", live.now());
-      const granted = (live.presence as any)?.bodies?.[tc.actorId]?.draggedBy === c.actorId;
-      if (d.mode === "deny" || (nail && d.mode !== "allow" && !granted)) {
-        if (nail) ws.send(JSON.stringify({ type: "error", error: d.mode === "deny" ? refusalWords(tc.id, "displace") : `${tc.id} asks first for displace: ask with the body request — body {to: "${tc.actorId}", kind: "drag"}` }));
-        if (endAlone()) return;
+      if (!live || !c.actorId || !tc.actorId) {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: `${tc.id}'s body isn't taking displace right now` }));
+        endAlone(); return;
       }
-    } }
+      const mine = dragOf(c, tc, now), theirs = mine ? null : dragOf(tc, c, now), held = !!(mine ?? theirs);   // the dragger's messages or the owner's replies
+      const reply = !!theirs && Object.keys(msg).every((k) => ["type", "target", "targetActor", "pins", "end"].includes(k));   // pins and/or end only
+      if (msg.end != null) dragEnd(c, tc);   // either side's end ends it
+      // range before consent, as bodyRefusal; a drag under way follows out to the break distance, and past it both are told it ended
+      const far = rangeRefusal(c, c.lastPose?.p, tc, held);
+      if (far && held) { dragEnd(c, tc); const why = { end: true, reason: "out-of-reach" };
+        tc.ws.send(JSON.stringify({ ...addressed, ...why }));
+        ws.send(JSON.stringify({ type: "bodydrag", by: tc.id, byActor: tc.actorId, ...why })); return; }
+      // the owner's pins/end belong to its own dragged-body session: the dragger's gate isn't asked (it would answer for the wrong body);
+      // anything else the owner sends acts on the dragger's body, and that gate decides
+      const d = far || reply ? null : consentDecide(live.presence, c.actorId, tc.actorId, "displace", liveBodyDefault(live));
+      if (far || d?.mode === "deny") {
+        if (nail) ws.send(JSON.stringify({ type: "error", error: far ?? refusalWords(tc.id, "displace") }));
+        endAlone(); return;
+      }
+      if (mine && msg.end == null && msg.pose != null) mine.at = now;
+    }
     tc.ws.send(JSON.stringify({
-      type: "bodydrag", by: c.id, ...(c.actorId ? { byActor: c.actorId } : {}),
+      ...addressed,
       ...(msg.grab != null ? { grab: msg.grab } : {}),
       ...(msg.end != null ? { end: true } : {}),
       ...(msg.pose != null ? { pose: msg.pose } : {}),
       ...(Array.isArray(msg.p) ? { p: (msg.p as unknown[]).slice(0, 3).map(Number) } : {}),
       ...(msg.yaw != null ? { yaw: Number(msg.yaw) } : {}),
-      // persistent pins: nail-here (rides a release), pull-this-nail,
-      // and the owner's current pin set (sent back on grab accept so
-      // the dragger's takeover sim keeps enforcing the other nails)
-      // the handover: joint names, positions and velocities, so the
-      // receiver CONTINUES the sim instead of rebuilding a guess from
-      // the bones. Bounded like everything else on this path — 24 joints,
-      // three finite numbers each, or it does not travel.
+      // sim: the handover state so the receiver continues the sim (bounded by okSim); then the pins: nail-here,
+      // pull-this-nail, and the owner's pin set (sent on grab accept)
       ...(okSim(msg.sim) ? { sim: msg.sim } : {}),
       ...(msg.pinAt != null ? { pinAt: msg.pinAt } : {}),
       ...(msg.unpin != null ? { unpin: msg.unpin } : {}),
@@ -253,19 +230,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }));
   },
   "caption": ({ c, ws, now, expel }, msg) => {
-    // Live speech pacing: a voice agent STREAMS by nature, but streaming
-    // into the log turns one utterance into six fragmentary pings for
-    // every listening agent. So the sentences ride presence — relayed,
-    // never persisted, same doctrine as typing — and the complete
-    // utterance lands in the log as ONE say when the voice finishes.
-    // A reader of the log gets one paragraph; a listener watches it spoken.
-    // Any participant's voice paces this way (a person's TTS as well as a program's).
-    // Presence lanes are the voice surface's pacing channel (#57, review
-    // finding 8): the bound voice leg owns the audio clock, so it — not
-    // the primary, which has no playback timing — paces captions and
-    // raises the mic glyph. Same admission the attest gate uses: the
-    // voice surface, bound to the identity's authority. All other aux
-    // legs stay presence-mute spectators.
+    // Live speech pacing: streamed sentences ride presence (never persisted); the whole utterance lands as ONE say.
+    // The bound voice leg owns the audio clock, so it may send this (same admission as attest); other aux legs stay mute.
     const voiceLeg = c.surface === "voice" && c.auxBound === true;
     if (!c.world || (c.spectator && !voiceLeg)) return;
     const capText = String(msg.text ?? "").slice(0, LIMITS.CAPTION_LEN);
@@ -274,28 +240,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     c.world.broadcast({ type: "caption", id: c.id, text: capText,
       utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
   },
-  // 🔴 the `rtc` handler is GONE (#104 phase-1 cutover, upstream 2026-08-16,
-  // adopted in the anima merge): it was the MESH's point-to-point SDP lane
-  // and its only client was voice.js, now deleted. It was deliberately
-  // ungated on transport, which made it an unauthenticated relay with no
-  // consumer. SFU signaling is separate verbs, inline in server.ts's switch
-  // (they mint gens and ride upstream's active development).
+  // no SFU or voice handlers here (sfu-*, relay-cred, voice-*): that signalling lives in server.ts's switch.
   "attest": ({ c, ws, now, expel }, msg) => {
-    // B1 (#57): the per-utterance performance receipt. ONLY message an
-    // aux media leg is allowed beyond signalling — and only for its own
-    // identity's says. The server verifies, then broadcasts `performed`
-    // (presence-grade, unlogged — like typing): listeners that were
-    // HOLDING local TTS on the author's voice capability now skip;
-    // everyone else ignores it. No boolean is inferred from presence
-    // anywhere: capability gates the hold, this receipt confirms the
-    // performance, a timeout recovers the fallback.
+    // The per-utterance performance receipt, for the leg's own identity's says. Verified, then broadcast as
+    // `performed` (unlogged); listeners holding local TTS for it skip, and a timeout recovers the fallback.
     if (!c.world) return;
-    // B3: performance attestation is the VOICE surface's privilege alone,
-    // and only from a leg BOUND to the identity's authority (the same B1
-    // admission test — token bearer OR the primary's own login sub). A
-    // vr-hands or otherwise non-voice aux leg cannot mint a voice receipt;
-    // and a sub-bound human's voice leg CAN (Opus-5 review: gating on
-    // tokenVerified alone barred exactly that legitimate leg).
+    // only the voice surface, bound to the identity (token bearer OR the primary's login sub — not tokenVerified alone)
     if (c.surface !== "voice" || c.auxBound !== true) {
       ws.send(JSON.stringify({ type: "error", error: "attest is for the identity's bound voice leg" }));
       return;
@@ -303,37 +253,29 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const seq = Number(msg.seq);
     const digest = String(msg.digest ?? "").slice(0, 64);
     if (!Number.isSafeInteger(seq) || !digest) return;
-    // B2: the leg must attest under the generation it currently holds. A
-    // completion born under a RETIRED leg and submitted after reconnect
-    // carries the old gen; without this it would be broadcast stamped with
-    // the successor's c.gen and relabelled as the live generation.
+    // attest under the generation the leg holds now, so a retired leg's receipt isn't relabelled as the live one
     if (msg.gen !== c.gen) {
       ws.send(JSON.stringify({ type: "error", error: "attest surface-generation mismatch" }));
       return;
     }
-    // the say must exist, be recent, and be THIS identity's
-    // recentSays, not entries[]: fold() empties entries every FOLD_EVERY
-    // appends, and a receipt for a folded-out say must still land
-    // (review finding 3). Misses answer with an error frame — every
-    // other refusal in this handler does, and a leg whose receipt was
-    // discarded silently cannot even detect it.
+    // the say must exist, be recent, and be THIS identity's — looked up in recentSays (survives a fold); a miss
+    // answers with an error frame so the leg can detect it
     const e = c.world.recentSays.find((x) => x.seq === seq);
     if (!e || e.verb !== "say" || e.actor !== c.id) {
       ws.send(JSON.stringify({ type: "error", error: "attest names no recent say of yours" }));
       return;
     }
-    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) return;   // stale receipt: refuse
+    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) {   // stale receipt: refused, and said
+      ws.send(JSON.stringify({ type: "error", error: "attest is stale (too long after the say)" }));
+      return;
+    }
     const text = String((e.args as Record<string, unknown>)?.text ?? "");
-    const want = new Bun.CryptoHasher("sha256").update(text).digest("hex");
+    const want = sha256(text);
     if (digest !== want) {
       ws.send(JSON.stringify({ type: "error", error: "attest digest mismatch" }));
       return;
     }
-    // 🔴 AMENDMENT 5: NAME THE RUNG (antra, 2026-08-13). What this receipt
-    // proves is that an AUTHORIZED LEG CLAIMED it performed the utterance —
-    // nothing about SFU ingress, forwarding, decoding, rendering, or
-    // hearing. `rung` says so on the wire, so a consumer cannot quietly
-    // read it as "this was heard"; the incarnation scopes the claim.
+    // `rung`: this proves only that an AUTHORIZED LEG CLAIMED the performance, never that it was heard.
     const performed = JSON.stringify({ type: "performed",
       rung: "authorized-claim",
       incarnation: currentIncarnation(),
@@ -342,43 +284,33 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     return;
   },
   "typing": ({ c, ws, now, expel }, msg) => {
-    // Pure presence: who is composing, right now. Never logged, never
-    // queued, and irrelevant a second later.
-    // Presence lanes are the voice surface's pacing channel (#57, review
-    // finding 8): the bound voice leg owns the audio clock, so it — not
-    // the primary, which has no playback timing — paces captions and
-    // raises the mic glyph. Same admission the attest gate uses: the
-    // voice surface, bound to the identity's authority. All other aux
-    // legs stay presence-mute spectators.
+    // Pure presence: who is composing, right now. The bound voice leg may send it (see caption).
     const voiceLeg = c.surface === "voice" && c.auxBound === true;
     if (!c.world || (c.spectator && !voiceLeg)) return;
-    // state: optional social affordance glyph for agents (ear = I hear
-    // you, think = composing a reply, tool = working). Whitelisted so
-    // presence stays presence.
-    // mic = a live voice is coming from this body right now (R, 23:30)
+    // state: an allow-listed glyph — ear (I hear you), think (composing), tool (working), mic (live voice)
     const st = typeof msg.state === "string" && ["ear", "think", "tool", "mic"].includes(msg.state) ? msg.state : null;
-    // `to` names someone present (presence is about the people here), or nobody
-    // …by identity when the sender names one (toActor, H2), else by name
+    // `to` names someone present, or nobody: by identity when the sender names one (toActor), else by name
     const tt = presenceTarget(c.world, msg.toActor, typeof msg.to === "string" ? msg.to : "", false).tc;
     c.world.broadcast({ type: "typing", id: c.id, to: tt?.id ?? null, ...(tt?.actorId ? { toActor: tt.actorId } : {}), ...(st ? { state: st } : {}) }, c);
   },
   "drag": ({ c, ws, now, expel }, msg) => {
-    // Transient build feedback. DESIGN.md is explicit that dragging is
-    // presence traffic and only the RELEASE commits a log entry — so this
-    // is relayed and never persisted, exactly like a pose. Without it,
-    // everyone else sees objects teleport on release instead of move.
+    // Transient build feedback: presence, never persisted; only the release (`place`) commits (DESIGN.md).
     if (!c.world || c.spectator) return;
-    // the RELEASE is a `place` verb the gate above checks; the live drag
-    // must agree with it or visitors can slide props they can't commit
-    // (the authority's rights for the person's identity)
-    // the build switch (roles S2), never the old protocol's rank table: an unknown role (moderator, a custom role) read undefined < 1 → false and passed
+    // the live drag needs the same build right the release does
     if (!c.world.log!.rightsOf(actorIdOf(c)).can.build) return;   // the person's directory identity, never their name
-    // q: the rotate gizmo turns about any axis (design §5); relayed only when
+    // q: the rotate gizmo turns about any axis; relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);
-    // `end: true` is the last sample of a drag: receivers drop the claim it carried (docs/WIRE.md: a live drag is a claim)
+    // `end: true` is the last sample of a drag: receivers drop the claim it carried (docs/reference/WIRE.md: a live drag is a claim)
     const scale = Array.isArray(msg.scale) && msg.scale.length === 3 && msg.scale.every((n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0 && n < 1000) ? msg.scale : null;   // a scrubbed size
     c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), ...(scale ? { scale } : {}), ...(msg.end === true ? { end: true } : {}), by: c.id }, c);
+  },
+  "drive": ({ c, ws }, msg) => {
+    // a hull's pose from its helm: presence like drag, gated on sitting at the helm (never on build rights); the authority checks it (shared/protocol/authority/drive.js)
+    if (!c.world || c.spectator || typeof msg.id !== "string") return;
+    const r: any = c.world.log!.requestSync(actorIdOf(c), "drive", { id: msg.id, pos: msg.pos, q: msg.q });
+    if (r?.ok) c.world.broadcast({ type: "drive", id: msg.id, pos: r.pose.pos, q: r.pose.q, by: c.id }, c);
+    else ws.send(JSON.stringify({ type: "drive", id: msg.id, snap: true, ...(r?.refused?.pose ? { pos: r.refused.pose.pos, q: r.refused.pose.q } : {}), why: r?.refused?.reason ?? "refused" }));
   },
   // spec/PHYSICS.md §5.1: a round-trip clock. {t0} (the asker's own clock, echoed untouched) → {t0, t}: t on the
   // world's AUTHORITY clock, the one that stamps entries' ts and frames' t. The asker's offset is t − (t0 + t1) / 2.
@@ -409,17 +341,13 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, pose);
   },
-  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/snapshots.ts,
+  // a renderer (or an opt-in native donor) says what it can capture, and answers a `capture` request (server/screenshots.ts,
   // the broker: roaming renderers, PNG validation, the generation check)
-  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
-  "capture-result": ({ c }, msg) => { snapshots.receive(c, msg); },
+  "capture-capabilities": ({ c }, msg) => { if (c.world) screenshots.configure(c, msg.capture); },
+  "capture-result": ({ c }, msg) => { screenshots.receive(c, msg); },
   "world-bans": ({ c, ws, now, expel }, msg) => {
-    // Who is banned from the world you are standing in. Available to
-    // anyone present — the moderator's record is public in its outline (who,
-    // when, by whom); a list nobody can read is not an audit trail.
+    // Who is banned from this world: for people holding a moderation power here (PROTOCOL §7); ended bans aren't listed.
     if (!c.world) return;
-    // the moderation record is read by people holding a moderation power (research roles §7; review 10-07: anyone
-    // here could read every ban and its reason), and by the authority's clock (a ban that ended isn't listed)
     if (c.world.log) { const e = c.actorId ? c.world.log.rightsOf(c.actorId) : null;
       if (!e || !(isOwner(e) || ["mute", "kick", "ban", "pauseScripts"].some((k) => e.permissions.includes(k)))) { ws.send(JSON.stringify({ type: "error", error: "the ban list is for people who hold a moderation power here" })); return; } }
     const S = c.world.log!.sanctions();
@@ -430,23 +358,20 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ? `banned from "${c.world.name}" (${list.length}):\n${list.join("\n")}`
       : `nobody is banned from "${c.world.name}"` }));
   },
-  "global-mod": ({ c, ws, now, expel }, msg) => {
-    // Instance-wide moderation. Not world verbs — there is no global log
-    // — so these are messages, gated on WORLD_ADMIN and persisted in
+  "server-mod": ({ c, ws, now, expel }, msg) => {
+    // Server-wide moderation. Not world verbs — there is no server-wide log
+    // — so these are messages, gated on SERVER_OPERATORS and persisted in
     // .bans.json (same posture as .sessions.json). Replies come back as
     // `mod` messages; refusals as `error`, like everything else.
-    if (!isOperator(c.account)) {   // WORLD_ADMIN names ACCOUNTS (security review C3), never a typed name
-      ws.send(JSON.stringify({ type: "error", error: "global moderation needs WORLD_ADMIN — per-world /ban is the owner tool" }));
+    if (!isOperator(c.account)) {   // SERVER_OPERATORS names accounts, never a typed name
+      ws.send(JSON.stringify({ type: "error", error: "server moderation is for this server's operators (SERVER_OPERATORS) — per-world /ban is the world owner's tool" }));
       return;
     }
-    if (msg.type === "global-bans") {
-      const list = Object.entries(globalBans).map(([k, b]) =>
-        `${b.name ?? k}${b.account ? ` (${b.account})` : b.addr ? " (a guest's connection)" : ""} — by ${b.by}, ${new Date(b.ts).toISOString().slice(0, 10)}${b.reason ? `: ${b.reason}` : ""}`);
-      ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
+    if (msg.type === "server-bans") {
+      ws.send(JSON.stringify({ type: "mod", text: serverBansText() }));   // pre-account bans listed too (moderation.ts restoreBans)
       return;
     }
-    // an account selector keeps its whole length (an aid1 account carries its issuer's URL): cut to a display name's 64
-    // it named no one, and an unban couldn't find it (review of #260, server I30)
+    // an account selector keeps its whole length (an aid1 account carries its issuer's URL); a name is cut to ID_LEN
     const raw = String(msg.id ?? "").trim(), id = /^(human|agent|aid1|local):/.test(raw) ? raw.slice(0, 512) : raw.slice(0, LIMITS.ID_LEN);
     if (!id || id === "*") {
       ws.send(JSON.stringify({ type: "error", error: `${msg.type} wants {id, reason?} — a specific participant, not everyone` }));
@@ -454,23 +379,25 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     }
     const fold = (x: string) => foldName(x);
     const dir = directoryFor(WORLDS_DIR);
-    if (msg.type === "global-unban") {
+    if (msg.type === "server-unban") {
       // by the name it was filed under, by the account named, or by an account wearing that name here
-      const accts = new Set([id, ...dir.accountsNamed(id)]);
-      const gone = bansLiftedBy(globalBans, id, accts, fold);
-      for (const k of gone) delete globalBans[k];
-      saveGlobalBans();
-      console.log(`[mod] ${c.id} lifted global ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
-      ws.send(JSON.stringify({ type: "mod", text: gone.length ? `${id} is no longer banned globally` : `${id} was not globally banned` }));
+      const accts = new Set([id, ...dir.accountsNamed(id), ...(isMinted(id) ? dir.entry(id)?.subs ?? [] : [])]);
+      const gone = bansLiftedBy(serverBans, id, accts, fold);
+      for (const k of gone) delete serverBans[k];
+      gone.push(...takePending(id, fold));
+      const unsaved = saveServerBans();   // the lift holds in memory only when the file wasn't written: said
+      console.log(`[mod] ${c.id} lifted server ban on ${id}${gone.length ? ` (${gone.length} record(s))` : " (was not banned)"}`);
+      ws.send(JSON.stringify({ type: "mod", text: (gone.length ? `${id} is no longer banned server-wide` : `${id} was not banned server-wide`) + (unsaved ? ` (${notPersisted(unsaved)})` : "") }));
       return;
     }
-    // global-ban (security review 10-18 H1): a ban is filed against what the DOOR checks — the target's proven account, or a
-    // guest's hashed address — never a display name alone (findBan matches account/addr; a name-keyed record bound nothing until
-    // a restart rewrote it). Present anywhere: their account (or, a guest, their address); absent: every account the directory
-    // knows under that name. Nothing to bind → refused, said plainly.
-    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id));
+    // server-ban: filed against what the door checks (the target's proven account, or a guest's hashed address), never a display
+    // name alone. Present anywhere: their account (a guest: their address); absent: every account the directory knows under
+    // that name. Nothing to bind → refused, said plainly.
+    const named = dir.accountsNamed(id);   // reads the directory fresh: a bind another writer made since is seen
+    const byIdentity = isMinted(id) ? dir.entry(id)?.subs ?? [] : [];   // a u- identity (whois) binds its accounts
+    const present = [...worlds.values()].flatMap((w) => [...w.clients]).filter((o) => fold(o.id) === fold(id) || (typeof msg.id === "string" && o.account === msg.id) || (isMinted(id) && o.actorId === id));
     if (present.some((o) => isOperator(o.account))) {
-      ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` }));
+      ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` }));
       return;
     }
     if (fold(id) === fold(c.id) || present.some((o) => o === c)) {
@@ -478,17 +405,20 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       return;
     }
     const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
-    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...dir.accountsNamed(id), ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
-    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a world operator — remove them from WORLD_ADMIN first` })); return; }
+    // days, as a world's ban takes it (authority/moderation.js): absent = until lifted
+    if (msg.days !== undefined && !(typeof msg.days === "number" && msg.days > 0 && msg.days <= 3650)) { ws.send(JSON.stringify({ type: "error", error: "server-ban days is a number of days (more than 0, at most 3650); leave it out for a ban until lifted" })); return; }
+    const accounts = new Set<string>([...present.map((o) => o.account).filter((a): a is string => !!a), ...named, ...byIdentity, ...(/^(human|agent|aid1|local):/.test(id) ? [id] : [])]);
+    if ([...accounts].some((a) => isOperator(a))) { ws.send(JSON.stringify({ type: "error", error: `${id} is a server operator — remove them from SERVER_OPERATORS first` })); return; }
     const guestAddrs = new Set<string>(present.filter((o) => !o.account && o.addr).map((o) => o.addr as string));
     if (!accounts.size && !guestAddrs.size) {
-      ws.send(JSON.stringify({ type: "error", error: `can't ban "${id}" globally: nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
+      ws.send(JSON.stringify({ type: "error", error: `can't server-ban "${id}": nobody by that name is here, and no account wears it in the directory, so there is nothing a ban could bind to (bans bind to accounts, or a present guest's connection)` }));
       return;
     }
-    const ts = Date.now();
-    for (const account of accounts) globalBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(reason ? { reason } : {}) };
-    for (const addr of guestAddrs) globalBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: ts + ADDR_BAN_MS, ...(reason ? { reason } : {}) };
-    saveGlobalBans();
+    const ts = Date.now(), until = msg.days !== undefined ? Math.floor(ts + msg.days * 86400000) : undefined;
+    for (const account of accounts) serverBans[banKey(account)] = { by: c.id, ts, name: id, account, ...(until ? { until } : {}), ...(reason ? { reason } : {}) };
+    if (accounts.size) takePending(id, fold);   // a pre-account ban under this name is bound to a person now
+    for (const addr of guestAddrs) serverBans[banKey(null, addr)] = { by: c.id, ts, name: id, addr, until: Math.min(ts + ADDR_BAN_MS, until ?? Infinity), ...(reason ? { reason } : {}) };
+    const unsaved = saveServerBans();   // the ban holds in memory only when the file wasn't written: said in the reply
     let expelled = 0;
     for (const w2 of worlds.values()) {
       for (const other of [...w2.clients]) {
@@ -498,14 +428,15 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         expelled++;
       }
     }
-    console.log(`[mod] ${c.id} banned ${id} globally (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
-    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}` }));
+    console.log(`[mod] ${c.id} server-banned ${id} (${accounts.size} account(s), ${guestAddrs.size} guest address(es))${reason ? ` (${reason})` : ""}${expelled ? ` — ${expelled} session(s) disconnected` : ""}`);
+    const addrCapped = guestAddrs.size && !(until && until <= ts + ADDR_BAN_MS) ? " (guest addresses: 24 h at most)" : "";
+    ws.send(JSON.stringify({ type: "mod", text: `${id} is banned from all worlds${until ? ` until ${new Date(until).toISOString().slice(0, 10)}` : ""}${addrCapped}${reason ? ` — ${reason}` : ""}${expelled ? ` (${expelled} live session${expelled === 1 ? "" : "s"} disconnected)` : ""}${unsaved ? ` (${notPersisted(unsaved)})` : ""}` }));
     return;
   }
 };
 
-// the three global-moderation labels share one body that branches on msg.type
-MESSAGES["global-ban"] = MESSAGES["global-mod"];
-MESSAGES["global-unban"] = MESSAGES["global-mod"];
-MESSAGES["global-bans"] = MESSAGES["global-mod"];
-delete (MESSAGES as Record<string, unknown>)["global-mod"];
+// the three server-moderation labels share one body that branches on msg.type
+MESSAGES["server-ban"] = MESSAGES["server-mod"];
+MESSAGES["server-unban"] = MESSAGES["server-mod"];
+MESSAGES["server-bans"] = MESSAGES["server-mod"];
+delete (MESSAGES as Record<string, unknown>)["server-mod"];

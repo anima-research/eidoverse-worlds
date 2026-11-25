@@ -1,18 +1,15 @@
 // eidosim's adapter: the engine (./eidosim.js) behind the sim API the protocol's sim layer drives (emptySim, tickOf,
-// simEntry, advanceSim, simSnapshot, simPose). It replaced the first eidosim here (R 2026-10-09: "stomp the existing
-// eidosim engine"; "eidosim is eidosim").
+// simEntry, advanceSim, simSnapshot, simPose).
 //
 // What a body is here: a LAUNCHED thing flies; a dynamic thing at rest that no lock holds is a sleeping body, woken when
-// a moving body touches it, and flies under the launch that touched it (PHYSICS.md §1's widened rest rule); every other
-// modelled thing with a box is a static collider. A body that comes to rest is a collider (or a sleeper) again. The law
-// inside a flight: rigid boxes and spheres with full rotation (q, w), oriented-box statics, a height-field ground,
-// contacts solved with Box3D's soft step, swept against what rests (CCD).
+// a moving body touches it, and flies under the launch that touched it; every other modelled thing with a box is a static
+// collider. A body that comes to rest is a collider (or a sleeper) again. Inside a flight: rigid boxes and spheres with
+// full rotation (q, w), oriented-box statics, a height-field ground, soft-step contacts, swept against what rests (CCD).
 //
-// STATE IS PLAIN JSON and is the truth. Readers clone it (restEta), hand it to joiners (simCutOf) and digest it; an
-// engine world is built from it for each advance and written back. Per body the truth is the CENTRE pose (c, q, v, w)
-// plus the engine's sleep record; `p` (the entity origin, what readers compare a rest against) is derived from it and never
-// read back, so any advance schedule reaching tick T gives the same bits (Covenant IV). No yaw is stored: readers
-// derive it from q (a host atan2 inside digested state could differ between runtimes).
+// STATE IS PLAIN JSON and is the truth: an engine world is built from it for each advance and written back. Per body the
+// truth is the CENTRE pose (c, q, v, w) plus the engine's sleep record; `p` (the entity origin) is derived and never read
+// back, so any advance schedule reaching tick T gives the same bits. No yaw is stored: readers derive it from q (a host
+// atan2 inside digested state could differ between runtimes).
 
 import { createWorld, VERSION } from './eidosim.js';
 import { terrainParams, makeHeightField } from './terrainmath.js';
@@ -27,13 +24,13 @@ const SUBSTEPS = 4, DENSITY = 1000, FRICTION = 0.6, GRAVITY = [0, -9.81, 0];
 // thrown ball would roll until the runaway backstop. 0.05 stops a 2 m/s ball in ~6 s (decel μr·g/1.4 = 0.35 m/s²)
 const ROLLING = 0.05;
 const MAX_SPEED = 20;
-// the law caps spin as the authority caps v: a corner may not move faster than MAX_SPEED (|w|·|half| ≤ 20 m/s), else a
-// spun throw rolls off at any speed (review of 49d4fb0d #2: w 1000 rad/s sent a crate 330 m at 54 m/s). + − × ÷ √ only.
+// spin is capped as the authority caps v (ENGINES[].maxSpeed): no corner may move faster than MAX_SPEED (|w|·|half|),
+// else a spun throw rolls off at any speed. Exact ops only (+ − × ÷ √).
 function spinCap(w, half) {
   const r = Math.sqrt(half[0] * half[0] + half[1] * half[1] + half[2] * half[2]), m = Math.sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
   if (!(r > 0) || m * r <= MAX_SPEED) return w;
   const k = MAX_SPEED / (m * r); return [w[0] * k, w[1] * k, w[2] * k];
-}             // m/s: launches are clamped by the authority (ENGINES[].maxSpeed); the sim trusts them
+}
 
 export const emptySim = () => ({ epoch: null, tick: 0, bodies: {}, terrain: null, boxes: {}, statics: {}, e2: null });
 
@@ -59,13 +56,12 @@ function geometry(box, scale) {
   return { half: half.map((h) => (h > 0.005 ? h : 0.005)), off };
 }
 // a thing's collider: a stamped sphere ({type: 'sphere', radius, pos?}: radius × its largest |scale|, centred at pos in
-// its own frame, the origin when absent, as PHYSICS.md §3.1 reads), else its model's box. half is the sphere's bounding
-// half extent, so everything that bounds a body by half (spin cap, cull reach) stays conservative for it.
+// its own frame), else its model's box. A sphere's half is its bounding half extent, so the spin cap and cull reach stay
+// conservative for it.
 function collider(sim, ent) {
   const sc = scale3(ent.scale3 ?? ent.scale), sh = ent.shape;
   if (sh && sh.type === 'sphere' && Number.isFinite(sh.radius) && sh.radius > 0) {
-    // a sphere scales as a sphere: radius and centre both by its largest |scale| (a squashed ball isn't a sphere; per-axis
-    // centre with a max radius floated or buried it, review of 8377ec52 #8)
+    // radius and centre both scale by the largest |scale| (a per-axis centre with a max radius would float or bury it)
     const k = Math.max(sc[0], sc[1], sc[2]), r = sh.radius * k, at = vec3ok(sh.pos) ? sh.pos : [0, 0, 0];
     return { shape: 'sphere', radius: r, half: [r, r, r], off: [at[0] * k, at[1] * k, at[2] * k] };
   }
@@ -97,7 +93,7 @@ export function simEntry(sim, entry, st) {
     sim.epoch = { sim: a.sim, tickMs: a.tickMs, ts: entry.ts, seq: entry.seq, ...(a.sim === SIM_ID ? {} : { foreign: true }) };
     if (sim.epoch.foreign) return;
     sim.e2 = { nextUid: 0, stepNo: 0, impulses: [], manifolds: [], pairs: [] };
-    sim.terrain = st?.terrain ? terrainParams(st.terrain) : null;
+    sim.terrain = st?.terrain ? terrainParams(st.terrain) : null; groundOf(sim);   // (its height function, built now: see `fields`)
     if (a.boxes && typeof a.boxes === 'object') for (const lib of Object.keys(a.boxes)) if (boxOk(a.boxes[lib])) sim.boxes[lib] = a.boxes[lib];
     for (const id of Object.keys(st?.entities ?? {})) setStatic(sim, id, st.entities[id]);
     return;
@@ -105,7 +101,7 @@ export function simEntry(sim, entry, st) {
   if (!sim.epoch || sim.epoch.foreign) return;
   if (entry.verb === 'terrain') {
     advanceSim(sim, tickOf(sim, entry.ts));
-    sim.terrain = terrainParams(a);
+    sim.terrain = terrainParams(a); groundOf(sim);
     sim.bodies = {}; sim.statics = {};
     for (const id of Object.keys(st?.entities ?? {})) setStatic(sim, id, st.entities[id]);
     return;
@@ -132,7 +128,10 @@ export function simEntry(sim, entry, st) {
 const RELEASERS = new Set(['place', 'spawn', 'remove', 'mount', 'dismount', 'motion', 'light']);
 const RESEATERS = new Set(['place', 'spawn', 'dismount', 'light']);
 
-// height fields are compiled once per params object (outside the state: the state stays plain JSON)
+// height fields are compiled once per params object (outside the state: the state stays plain JSON), and when the sim is
+// handed its ground, not when it first steps: a shaped ground's params only NAME its heightmap grid and its sculpted layer
+// (shared/terrainshape.js keeps the last few by name), and a field holds what it found from then on. A copy of a sim
+// made here (simCopy) keeps its source's field, so it never looks a name up again either.
 const fields = new WeakMap();
 function groundOf(sim) {
   if (!sim.terrain) return { height: () => 0 };
@@ -140,8 +139,6 @@ function groundOf(sim) {
   return { height: f };
 }
 
-// Build the engine world from the state: statics and flying bodies in uid order (so the engine's pair order is the
-// uid order, the same in every runtime and across any rebuild).
 // a static's world box (its centre c, turn q, half extents), for culling
 function staticBox(s) {
   const [x, y, z, w] = s.q, h = s.half;
@@ -159,11 +156,13 @@ function reachBox(b, dt, slack) {
   const g = r + (2 * sp + 9.81 * dt) * dt + slack;
   return [b.c[0] - g, b.c[1] - g, b.c[2] - g, b.c[0] + g, b.c[1] + g, b.c[2] + g];
 }
+// Build the engine world from the state: statics (`keep`: only these) and flying bodies, in uid order so the engine's
+// pair order is the same in every runtime and across any rebuild.
 function hydrate(sim, keep = null) {
   const rows = [];
   for (const id of Object.keys(sim.statics)) { const s = sim.statics[id]; if (keep && !keep.has(id)) continue;
-    // stage 2: a dynamic thing at rest is a SLEEPING body (its own island, tag 's<uid>'; the engine's are 'step:root'),
-    // so a flyer that reaches it wakes it the engine's own way; anything else at rest is a static collider
+    // a dynamic thing at rest is a SLEEPING body (its own island, tag 's<uid>') so a flyer that reaches it wakes it the
+    // engine's own way; anything else at rest is a static collider
     rows.push({ spec: { uid: s.uid, shape: s.shape ?? 'box', half: s.half, radius: s.radius, ...(s.shape === 'sphere' ? { rollingResistance: ROLLING } : {}), pos: s.c, rot: s.q, ...(s.dyn ? { ccd: true } : { static: true }), friction: s.friction, frictionCombine: s.frictionCombine },
       p: s.c, q: s.q, v: [0, 0, 0], w: [0, 0, 0], awake: false, sleepTime: 0, sleepTag: s.dyn ? `s${s.uid}` : null }); }
   const ids = [];
@@ -183,21 +182,16 @@ export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign || !sim.e2) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
   const live = () => Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting);
   if (!live().length) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
-  // the live world is exactly what hydrate(sim) would build, so long as nothing rests: a rest turns a body into a
-  // static in the JSON, so the world is rebuilt from the JSON before the next tick (else one jump would solve it as
-  // the sleeping dynamic body it was, and differ from tick-by-tick; review of 49d4fb0d #1)
-  // Each tick the world holds only the statics a flyer could reach in that tick (review of 49d4fb0d #4: hydrating
-  // every static cost 20 ms/tick at 3000). Exact by construction: contact pairs are found from the bodies' boxes at
-  // the start of the step, and the swept (continuous) test only looks inside each flyer's start→end box; after the
-  // step, if any static left out touches a flyer's swept box, the tick is redone with every static.
+  // The world is rebuilt from the JSON every tick (a rest turns a body into a static, and a multi-tick jump must
+  // match tick-by-tick). Each tick holds only the statics a flyer could reach (hydrating every static is too slow in a
+  // big world); if after the step a left-out static touches a flyer's swept box, the tick is redone with every static.
   const dt = sim.epoch.tickMs / 1000; let W, ids, index;
   const save = () => { const ex = W.exportState(); sim.e2.stepNo = ex.stepNo; sim.e2.impulses = ex.impulses; sim.e2.manifolds = ex.manifolds; sim.e2.pairs = ex.pairs; };
   const sbox = (id) => { const row = sim.statics[id]; let b = SBOX.get(row); if (!b) SBOX.set(row, (b = staticBox(row))); return b; };
   while (sim.tick < toTick) {
     const flyers = Object.keys(sim.bodies).filter((id) => !sim.bodies[id].resting).map((id) => sim.bodies[id]);
     const reach = flyers.map((b) => reachBox(b, dt, _cull.slack ?? CULL_SLACK)), keep = new Set();
-    // a static named in any kept warm start stays too: the engine keeps a resting pair's impulses only while both of
-    // its bodies are in the world, and a rested thing thrown again (same uid) warm-starts from them
+    // a static named in a kept warm start stays too: the engine drops a pair's impulses when either body leaves the world
     const named = new Set();
     for (const M of [sim.e2.impulses, sim.e2.manifolds, sim.e2.pairs]) for (const [key] of M) { const [i, j] = key.split(":"); named.add(+i); named.add(+j); }
     for (const id of Object.keys(sim.statics)) if (_cull.off || named.has(sim.statics[id].uid) || reach.some((r) => hits(r, sbox(id)))) keep.add(id);
@@ -213,9 +207,7 @@ export function advanceSim(sim, toTick) {
       if (missed) { cullStats.redo++; sim.e2 = JSON.parse(before); ({ W, ids, index } = hydrate(sim)); W.step(dt);
         woke.length = 0; for (const id of Object.keys(sim.statics)) if (sim.statics[id].dyn && W.bodies[index.get(sim.statics[id].uid)].awake) woke.push(id); }
     }
-    // woken: it flies now, under the launch whose flight woke it — the engine names the awake body that started the
-    // cascade (wokeBy), and that body's launch is the cause (PHYSICS §1: through contact). Review of 8377ec52 #7: the
-    // newest launch anywhere was blamed for a crate 40 m away.
+    // a woken sleeper flies under the launch that woke it (the engine's wokeBy), never the newest launch anywhere
     const seqOfUid = new Map(Object.values(sim.bodies).filter((b) => !b.resting).map((b) => [b.uid, b.seq]));
     const latest = Math.max(...flyers.map((b) => b.seq));
     sim.tick++;
@@ -241,8 +233,7 @@ export function advanceSim(sim, toTick) {
 }
 // at rest it is a collider again where it lies (a sleeper if it's dynamic and free), keeping its uid
 function restBody(sim, id, b) {
-  // the engine's sleep tag ('step:root') names an island by a body's index in that tick's world, which culling changes;
-  // at rest it's a static here and carries no tag (stage 2's sleepers get 's<uid>' when hydrated)
+  // the engine's sleep tag names an island by index in that tick's world, which culling changes: a static carries none
   b.resting = true; b.v = [0, 0, 0]; b.w = [0, 0, 0]; b.awake = false; b.sleepTag = null;
   sim.statics[id] = { uid: b.uid, c: b.c.slice(), q: b.q.slice(), half: b.half, ...(b.shape === 'sphere' ? { shape: 'sphere', radius: b.radius } : {}), ...(b.dyn ? { dyn: true, off: b.off } : {}), friction: b.friction, frictionCombine: b.frictionCombine };
 }
@@ -250,3 +241,5 @@ function restBody(sim, id, b) {
 export function simPose(sim, id) { const b = sim.bodies[id]; return b ? { p: b.p, q: b.q, resting: b.resting } : null; }
 // plain JSON, keys in insertion order (entry order): the snapshot IS the state
 export const simSnapshot = (sim) => JSON.parse(JSON.stringify(sim));
+/** A copy of a sim to step on its own (a prediction, a rest's forecast): its state, with the ground its source stands on. */
+export function simCopy(sim) { const s = JSON.parse(JSON.stringify(sim)); const f = sim?.terrain && fields.get(sim.terrain); if (f && s.terrain) fields.set(s.terrain, f); return s; }

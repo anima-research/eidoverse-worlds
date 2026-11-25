@@ -1,6 +1,6 @@
 # eido: URIs — content references that survive leaving the host (first draft)
 
-**Status: informative** (recut C14, 2026-10-21). No reader resolves an `eido:` URI today, so this file isn't part of the
+**Status: informative** (recut C14, 2026-10-21). No reader fetches an `eido:` URI from elsewhere today (a host serves its own `eido:sha256/<hex>` bytes: server/libfile.ts, a compatibility path), so this file isn't part of the
 normative set (spec/NORMATIVE.md). It becomes normative when a world needs portable blobs.
 
 **License: CC0 1.0 (public domain)**, same terms as `PROTOCOL.md` beside it.
@@ -94,11 +94,12 @@ So the type contract is: **media lives beside the reference, in the log.**
   whole value is a reference has nowhere to put a sibling, and needs none
   when its **media is fixed by its role**: `model` is always a glTF binary
   (`glb`), so `model: "eido:sha256/<hex>"` is complete (translate-v1@8–@11
-  wrote models this way, review 2026-10-07; since R's ruling of 2026-10-17 a
-  model is stored as its library path, the portable reference, with its
-  bytes' hash beside it as `model-hash: "sha256:<hex>"`, and a stored
-  `eido:` model is read, and written back as its path when the world's
-  maintenance command runs, where the host's index knows it). A whole-value reference
+  wrote models this way; today a model is stored as its library path, the
+  portable reference, with its bytes' hash beside it as
+  `model-hash: "sha256:<hex>"` when the catalogue knows that hash at the
+  write and the write isn't a capped one (a script's, a handler's or the
+  system's has none; so does one before the catalogue hashed the model), and a stored `eido:` model is still read). A
+  whole-value reference
   whose media can vary needs a new versioned name with a `media` field
   (PROTOCOL §4: a changed meaning is a new name).
   Exporters that rewrite `store/<hex16>.glb` → `eido:` derive `media` from

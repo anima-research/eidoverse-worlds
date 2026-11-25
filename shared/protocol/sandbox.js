@@ -1,23 +1,21 @@
-// shared/protocol/sandbox.js — the script sandbox: real JavaScript in QuickJS compiled to WASM (research 41 §3.13, §6:
-// a SEPARATE VM, never same-VM compartments; Figma's Realms scar). The authority never imports this file (browsers import the
-// authority); a host injects `runScript` as io.scripts (server/livehost.ts, server/filehost.ts), and an auditor calls it
-// directly to re-run an activation from what its act records (shared/protocol/scriptaudit.js).
+// shared/protocol/sandbox.js — the script sandbox: real JavaScript in QuickJS compiled to WASM, a SEPARATE VM (never
+// same-VM compartments). The authority never imports this file (browsers import the
+// authority); a host injects SANDBOX (below) as io.scripts (server/livehost.ts, test/harness/filehost.ts), and an auditor calls
+// runScript directly to re-run an activation from what its act records (shared/protocol/scriptaudit.js).
 //
 // One activation = one FRESH runtime and context: evaluate the source (which registers handlers with world.on), deliver
 // the one event, collect the proposed writes. Nothing survives between activations, so a re-run from the act's inputs
-// is the same run (41 §3.5: "a script must behave correctly if VM memory is lost": here it always is).
-// Deterministic inputs only (41 §3.7):
+// is the same run (a script must behave correctly if VM memory is lost: here it always is).
+// Deterministic inputs only:
 //   clock    Date.now() and new Date() are frozen at `now` (the act's ts) for the whole activation;
 //   random   Math.random is a PRNG seeded from `seed` (H(world ‖ act seq ‖ script key), recorded in the act);
 //   world    reads see the folded head the activation was given, plus its own writes so far (read-your-writes);
 //   presence world.near(r) / world.count() answers, and world.name(id) (the authority's directory, outside the log), are
-//            RECORDED (`reads`) as what was asked and how much came back — never WHO (consent gaps 6b, R 10-17 02:45: a
-//            script's act is signed and permanent, so ids near it and display names made it an attendance log anyone with
-//            `scripts` could keep). The script itself still receives ids and names live: what it writes or says with them
-//            is its own act (review r8 M4), and the act's record of its reads never names who. `reads` = {near: [{r, n}], count: [n], names: <how many name() calls>}. A re-run gets
-//            n opaque stand-ins per near() and null per name(): an auditor re-runs with those and verifies the result when
-//            it doesn't depend on who was there, and says honestly that it can't when it does (scriptaudit.js `skipped`).
-//            An older act that recorded the ids ({r, ids}, [{id, name}]) still replays them;
+//            RECORDED (`reads`) as what was asked and how much came back — never WHO: an act is signed and permanent,
+//            and recorded ids would make it an attendance log. The script still receives ids and names live (what it
+//            writes with them is its own act). `reads` = {near: [{r, n}], count: [n], names: <how many name() calls>}.
+//            A re-run gets n opaque stand-ins per near() and null per name(), and the auditor says when it can't verify
+//            (scriptaudit.js `skipped`). An older act that recorded the ids ({r, ids}, [{id, name}]) still replays them;
 //   nothing else: no timers, no network, no filesystem, no other clock.
 // Metered by FUEL: QuickJS calls the interrupt handler every so many bytecode ticks; the count of calls is the fuel,
 // deterministic for one QuickJS build (LIMITS.fuel). A wall-clock deadline is the backstop (host calls can't be
@@ -26,8 +24,8 @@
 //
 // Where it runs: an authority runs the VM side in a sandbox PROCESS (runIsolated, sandbox-child.js) that it SIGKILLs at the
 // deadline, because fuel and the wall clock bound BYTECODE only: QuickJS's interrupt handler never runs inside a native
-// builtin, and one such call (String#indexOf on crafted text, BigInt toString, an out-of-memory inside Array#fill) once
-// held the authority's thread for 1–13 s (review, 2026-10-06). The host side stays on the authority's thread, so an activation is
+// builtin (String#indexOf on crafted text, BigInt toString, an OOM in Array#fill can each run for seconds). The host side
+// stays on the authority's thread, so an activation is
 // still one synchronous step. runScript (in-process) is for auditors and tools, which may take their time.
 import { fileURLToPath } from "node:url";
 import { jcs, isEntityId, isComponent } from "./fold.js";
@@ -38,10 +36,13 @@ import { isEido, modelWord } from "../eido.js";
 let Q = null, unavailable = null;
 try { const mod = await import("quickjs-emscripten"); Q = await mod.getQuickJS(); }
 catch (e) { unavailable = String(e?.message ?? e).slice(0, 200); console.error(`[sandbox] quickjs-emscripten didn't load, so no script runs here: ${unavailable}`); }
+// Windows can't isolate (fifoOk), so no script runs there unless the operator opts in with EIDO_SANDBOX=inprocess
+const WINDOWS = "this server runs on Windows, where scripts can't be isolated yet, so none runs here unless its operator sets EIDO_SANDBOX=inprocess";
+const winRefuses = () => globalThis.process?.platform === "win32" && globalThis.process?.env?.EIDO_SANDBOX !== "inprocess";
 /** Is the sandbox here? (The authority says "unavailable" for every activation when it isn't.) */
-export const sandboxAvailable = () => (Q ? true : unavailable);
+export const sandboxAvailable = () => (!Q ? unavailable : winRefuses() ? WINDOWS : true);
 
-// The whole script-facing API, in one place (docs: docs/SCRIPTS.md). Runs inside the VM before the source.
+// The whole script-facing API, in one place (docs: docs/guide/SCRIPTS.md). Runs inside the VM before the source.
 const PRELUDE = String.raw`"use strict";
 (() => {
   const host = globalThis.__host; delete globalThis.__host;
@@ -93,6 +94,7 @@ const PRELUDE = String.raw`"use strict";
     children(id) { return call(["children", String(id)]); },
     ids() { return call(["ids"]); },
     near(r) { return call(["near", Number(r)]); },
+    nearby(r) { return call(["nearby", Number(r)]); },
     count() { return call(["count"]); },
     name(id) { return call(["name", String(id)]); },
     set(id, comp, value) { call(["set", String(id), String(comp), JSON.parse(enc(value, "world.set " + comp))]); },
@@ -100,11 +102,9 @@ const PRELUDE = String.raw`"use strict";
     delete(id, comp) { call(["delete", String(id), comp === undefined ? null : String(comp)]); },
     create(components, id) { return call(["create", JSON.parse(enc(components ?? {}, "world.create")), id === undefined || id === null ? null : String(id)]); },
     say(text) { call(["say", String(text)]); },
+    use(id, action, args) { call(["use", String(id), String(action), args === undefined ? null : JSON.parse(enc(args, "world.use " + action))]); },
     shove(who) { call(["body", "shove", String(who), null]); },
     pose(who, spec) { call(["body", "pose", String(who), JSON.parse(enc(spec ?? {}, "world.pose"))]); },
-    // world.log: the old spelling of console.log, kept for one version (the names pass, 2026-10-07); "the world log" is
-    // the event log, never a script's console
-    log(...parts) { consoleLog(...parts); },
   };
   globalThis.world = Object.freeze(world);
   globalThis.console = Object.freeze({ log: (...parts) => consoleLog(...parts) });
@@ -129,24 +129,23 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace
  */
 export function makeHost(x) {
   const L = { ...LIMITS, ...(x.limits ?? {}) };
-  const logs = [], ops = [], says = [], bodies = [], reads = { near: [], count: [], names: 0 }; let nearAt = 0, countAt = 0, nameAt = 0;
+  const logs = [], ops = [], says = [], bodies = [], uses = [], reads = { near: [], count: [], names: 0 }; let nearAt = 0, countAt = 0, nameAt = 0;
   let calls = 0, minted = 0, stop = null;
   // read-your-writes without copying the world: an overlay of the things this activation wrote (id → entity, or null if
-  // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (a review
-  // found 32 writes then a read cloned a big world 32 times, on the authority's thread, past the deadline). The authority's
-  // admit still judges the real batch; this view is only what the script reads back.
+  // it deleted it), over the head it was given. Each write costs O(1); ids/children use indexes built once (never a world
+  // clone per read). The authority's admit still judges the real batch; this view is only what the script reads back.
   const base = x.st.entities, ov = new Map(); let idsIdx = null, kidsIdx = null, idsAll = null;
   const entOf = (id) => (ov.has(id) ? ov.get(id) : base[id] ?? null);
   const writable = (id) => { if (ov.has(id)) return ov.get(id); const b = base[id]; if (!b) return null; const e = { born: b.born, c: Object.assign(Object.create(null), b.c) }; ov.set(id, e); return e; };
   const apply = (o) => {
-    if (o.verb === "create") { if (!entOf(o.id)) { ov.set(o.id, { born: -1, c: Object.create(null) }); idsAll = null; } return; }
-    if (o.verb === "delete" && o.comp === undefined) { ov.set(o.id, null); idsAll = null; return; }
+    if (o.op === "create") { if (!entOf(o.id)) { ov.set(o.id, { born: -1, c: Object.create(null) }); idsAll = null; } return; }
+    if (o.op === "delete" && o.comp === undefined) { ov.set(o.id, null); idsAll = null; return; }
     const e = writable(o.id); if (!e) return;
-    if (o.verb === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
+    if (o.op === "set") e.c[o.comp] = o.value; else delete e.c[o.comp];
   };
   const parentOf = (e) => (e?.c?.parent && typeof e.c.parent.to === "string" ? e.c.parent.to : null);
-  // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 64 times on a
-  // big world must not cost the authority 64 sorts)
+  // the merged id list, kept until the activation creates or deletes a thing (a script calling world.ids() 256 times on a
+  // big world must not cost the authority 256 sorts)
   const allIds = () => { if (idsAll) return idsAll; idsIdx ??= Object.keys(base).sort();
     return (idsAll = ov.size ? [...new Set([...idsIdx, ...ov.keys()])].filter((k) => entOf(k)).sort() : idsIdx); };
   const kidsOf = (id) => { if (!kidsIdx) { kidsIdx = new Map(); for (const k of Object.keys(base)) { const p = parentOf(base[k]); if (p) { let a = kidsIdx.get(p); if (!a) kidsIdx.set(p, (a = [])); a.push(k); } } }
@@ -166,36 +165,42 @@ export function makeHost(x) {
       case "get": { read(); const e = entOf(self(a[0])); if (!e) return null; if (a[1] === null) return copy(e.c); return copy(e.c[a[1]]); }
       case "children": { read(); return kidsOf(self(a[0])).slice(0, L.ids); }
       case "ids": { read(); return allIds().slice(0, L.ids); }
-      case "near": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError("world.near(r): r is metres, 0–1000");
-        const was = x.reads?.near?.[nearAt]; const ids = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)) : (x.near ? x.near(r) : []);
-        nearAt++; reads.near.push({ r, n: ids.length }); return ids.slice(); }
+      // near: ids (by id); nearby: {id, d} nearest first. Both record only {r, n}; a re-run's stand-ins are d = r away
+      case "near": case "nearby": { read(); const r = a[0]; if (!(r >= 0 && r <= 1000)) throw new HostError(`world.${verb}(r): r is metres, 0–1000`);
+        const was = x.reads?.near?.[nearAt]; const got = x.reads ? (Array.isArray(was?.ids) ? was.ids : standIns(nearAt, was?.n)).map((id) => ({ id, d: r }))
+          : (x.near ? x.near(r) : []).map((p) => (typeof p === "string" ? { id: p, d: r } : { id: p.id, d: p.d }));
+        nearAt++; reads.near.push({ r, n: got.length });
+        return verb === "near" ? got.map((p) => p.id) : got.sort((p, q) => p.d - q.d || (p.id < q.id ? -1 : p.id > q.id ? 1 : 0)); }
       case "name": { read(); const id = a[0]; // a display name lives in the authority's directory, outside the log: counted, never recorded
         const n = x.reads ? (Array.isArray(x.reads.names) ? x.reads.names[nameAt]?.name ?? null : null) : (x.name ? x.name(id) ?? null : null); nameAt++; reads.names++; return n; }
       case "count": { read(); const n = x.reads ? x.reads.count?.[countAt] ?? 0 : (x.count ? x.count() : 0); countAt++; reads.count.push(n); return n; }
       // every parameter written down (PROTOCOL §4): a script's value gets its definition's defaults here, in the host, so the
       // logged batch is what an auditor's re-run makes too (and a re-asserted value equal to the stored one is elided)
-      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { verb: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
+      case "set": { write(); const id = wantId(self(a[0]), "world.set"), comp = wantComp(a[1], "world.set"); const op = { op: "set", id, comp, value: materialize(comp, a[2]).value }; ops.push(op); apply(op); return null; }
       // a signal into the thing's params (the one store: a seat pose blends by param.<name>); merged into what's there
       case "param": { write(); const id = wantId(self(a[0]), "world.param"), name = a[1];
         if (!isParamName(name)) throw new HostError(`world.param: '${name}' isn't a parameter name (a lowercase letter, then letters, digits, _ or -, up to 32)`);
         if (typeof a[2] !== "number") throw new HostError(`world.param: ${name} is a number (a signal), got ${JSON.stringify(a[2])}`);
         const was = entOf(id)?.c.params; const prev = was && typeof was === "object" && !Array.isArray(was) ? copy(was) : {};
-        const op = { verb: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
-      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { verb: "delete", id } : { verb: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
+        const op = { op: "set", id, comp: "params", value: { ...prev, [name]: a[2] } }; ops.push(op); apply(op); return null; }
+      case "delete": { write(); const id = wantId(self(a[0]), "world.delete"); const op = a[1] === null ? { op: "delete", id } : { op: "delete", id, comp: wantComp(a[1], "world.delete") }; ops.push(op); apply(op); return null; }
       case "create": { const comps = a[0]; if (!comps || typeof comps !== "object" || Array.isArray(comps)) throw new HostError("world.create(components, id?): components is an object");
-        // a minted id carries 128 bits of the activation's seed (review 10-07 H5: 32 bits collided across forks), so a re-run mints it
-        // again. API 2 (R 10-17, ID HARDENING): opaque (no slug: a word in an id goes stale) and never the script's choice: the
-        // id is minted and returned. An API-1 act (an older log's) re-runs as it was minted then: <slug>-<seed>, or the id it chose
+        // a minted id carries 128 bits of the activation's seed (32 collided across forks), so a re-run mints it again.
+        // API 2: opaque (no slug) and never the script's choice. An API-1 act re-runs as minted then: <slug>-<seed>, or its own id
         const v2 = (x.api ?? API) >= 2;
         if (v2 && a[1] !== null) throw new HostError("world.create(components): a script never chooses an id; the id is minted and returned (const id = world.create({...}))");
         const id = a[1] !== null ? wantId(a[1], "world.create") : v2 ? `${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}` : `${slug(isEido(comps.model) ? comps.label ?? modelWord(comps.model, null) : comps.model ?? comps.label ?? "thing")}-${x.seed.slice(0, 32)}${minted ? `-${minted}` : ""}`; minted++;
         for (const c of Object.keys(comps)) wantComp(c, "world.create");
-        write(); const mk = { verb: "create", id }; ops.push(mk); apply(mk);
-        for (const [c, v] of Object.entries(comps)) { write(); const op = { verb: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }
+        write(); const mk = { op: "create", id }; ops.push(mk); apply(mk);
+        for (const [c, v] of Object.entries(comps)) { write(); const op = { op: "set", id, comp: c, value: materialize(c, v).value }; ops.push(op); apply(op); }
         return id; }
       case "say": { if (says.length >= L.says) { stop = { code: "too-big", why: `more than ${L.says} says in one activation` }; throw new HostError(stop.why); } says.push(String(a[0]).slice(0, 8192)); return null; }
       case "body": { if (bodies.length >= L.bodies) { stop = { code: "too-big", why: `more than ${L.bodies} body effects in one activation` }; throw new HostError(stop.why); }
         bodies.push({ kind: a[0], to: String(a[1]).replace(/^body:/, ""), ...(a[2] ? { spec: a[2] } : {}) }); return null; }
+      // a proposal like a write: after the batch lands, each meets the target's own reaction gate (scriptrun, use.js scriptUse)
+      case "use": { if (uses.length >= L.uses) { stop = { code: "too-big", why: `more than ${L.uses} uses in one activation` }; throw new HostError(stop.why); }
+        const id = wantId(self(a[0]), "world.use"); if (!a[1]) throw new HostError("world.use(id, action, args?): action names one of the thing's reactions");
+        uses.push({ id, action: a[1], ...(a[2] !== null ? { args: a[2] } : {}) }); return null; }
       case "log": { if (logs.length < L.logLines) logs.push(String(a[0]).slice(0, 500)); return null; }
       default: throw new HostError(`no host call '${verb}'`);
     }
@@ -207,7 +212,7 @@ export function makeHost(x) {
   const finish = (vm) => {
     if (stop) return { ok: false, ...stop, logs, fuel: vm.fuel };
     if (vm.fail) return { ok: false, ...vm.fail, logs, fuel: vm.fuel };
-    return { ok: true, ran: vm.ran, ops, says, bodies, reads: reads.near.length || reads.count.length || reads.names ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
+    return { ok: true, ran: vm.ran, ops, says, bodies, uses, reads: reads.near.length || reads.count.length || reads.names ? { ...(reads.near.length ? { near: reads.near } : {}), ...(reads.count.length ? { count: reads.count } : {}), ...(reads.names ? { names: reads.names } : {}) } : null, logs, fuel: vm.fuel };
   };
   return { call, finish, limits: L, input: { self: x.self, key: x.key, knobs: x.knobs ?? {}, now: x.now, seed: x.seed } };
 }
@@ -251,18 +256,19 @@ export function vmRun(text, input, event, L, call, clock = () => performance.now
  * Run one activation IN THIS PROCESS (an auditor's re-run, tools). Never throws for anything the script does; returns
  * {ok, ...}. A slow native builtin can hold this thread: an authority runs activations isolated (runIsolated, below).
  * @param {{text: string, self: string, key: string, event: object, knobs?: object, now: number, seed: string, st: any,
- *   near?: (r: number) => string[], count?: () => number, name?: (id: string) => string | null,
+ *   near?: (r: number) => ({id: string, d: number} | string)[], count?: () => number, name?: (id: string) => string | null,
  *   reads?: {near?: {r, n, ids?}[], count?: number[], names?: number | {id, name}[]},
  *   limits?: object, clock?: () => number}} x
- * @returns {{ok: true, ops, says, bodies, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
+ * @returns {{ok: true, ops, says, bodies, uses, reads, logs, fuel, ran} | {ok: false, code, why, logs, fuel}}
  */
 export function runScript(x) {
   const h = makeHost(x);
   return h.finish(vmRun(x.text, h.input, x.event, h.limits, h.call, x.clock));
 }
-/** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null, or {code, why}. */
+/** Does the source parse? (At upload and install: a refusal that teaches, before anything runs.) null (it parses), undefined
+ *  (unchecked: no sandbox here), or {code, why}. */
 export function checkSyntax(text) {
-  if (!Q) return null; // no sandbox: install still works; every activation says "unavailable"
+  if (!Q) return undefined; // no sandbox: install still works; every activation says "unavailable"
   let rt = null, ctx = null;
   try { rt = Q.newRuntime(); rt.setMemoryLimit(LIMITS.memory); rt.setMaxStackSize(LIMITS.stack); let n = 0; rt.setInterruptHandler(() => ++n > LIMITS.fuel);
     ctx = rt.newContext(); const r = ctx.evalCode(text, "eval.js", { compileOnly: true });
@@ -275,9 +281,10 @@ export function checkSyntax(text) {
 // The authority's thread sends the job down a named pipe and reads the process's lines back without blocking, answering the
 // script's world.* calls itself (makeHost). So an activation stays one synchronous step of the authority (L7: one act + one
 // batch, admitted at the head it read), and the authority holds the process's handle: at `wallMs + GRACE` after the job was
-// sent it SIGKILLs the process (certain: a signal, not a request) and returns "time"; a warm spare takes the next job.
-// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline.
-// (A Worker can't do this: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3; measured 2026-10-06.)
+// sent it SIGKILLs the process (certain: a signal, not a request) and returns "time" ("unavailable" if the host starved it: STARVED); a warm spare takes the next job.
+// Nothing a script does, a native builtin included, can hold the authority's thread past that deadline, give or take one
+// host answer: a world.* call is answered on this thread and runs to its end.
+// (Not a Worker: worker.terminate() doesn't stop a thread inside WASM under Bun 1.3.)
 export const GRACE = 200;        // ms over the script's own wall-clock backstop: the pipes, a loaded host, and the kill
 const MAX = 2 << 20;             // bytes of one message (a job, a host call, an answer)
 const WARM_MS = 300;             // at most this long an activation waits for a warm process (after kills): then it's
@@ -287,10 +294,9 @@ const env = () => globalThis.process?.env ?? {};
 let fsm = null, osm = null, pathm = null; // node:fs etc., loaded only where isolation runs (never in a browser)
 try { if (globalThis.process?.versions) { fsm = await import("node:fs"); osm = await import("node:os"); pathm = await import("node:path"); } } catch { /* no isolation here */ }
 const canIsolate = () => !!(Q && fsm && typeof Bun !== "undefined" && !env().EIDO_SANDBOX_CHILD && env().EIDO_SANDBOX !== "inprocess" && fifoOk());
-// Windows: never. Git for Windows ships an `mkfifo` that succeeds, but what it makes is an MSYS emulation the OS's own file
-// calls can't open (ENOENT on the child's pipe, every install crashed: CI 10-19). There scripts run in-process — fuel and the
-// wall clock still bind script code, but a native builtin can hold the thread past the deadline (isolation's one extra
-// guarantee). Real isolation there needs Windows named pipes: post-ship.
+// Windows: never. Git for Windows' `mkfifo` makes an MSYS emulation the OS can't open. There scripts run in-process, and only
+// with EIDO_SANDBOX=inprocess (else none runs: winRefuses): fuel
+// and the wall clock still bind script code, but a native builtin can hold the thread (needs Windows named pipes).
 let FIFO = null; const fifoOk = () => (FIFO ??= globalThis.process?.platform !== "win32" && (() => { try { return Bun.spawnSync(["mkfifo", "--help"]).exitCode !== null; } catch { return false; } })());
 const pool = []; let kills = 0, spawned = 0;
 const SLEEP = new Int32Array(new SharedArrayBuffer(4)); const nap = (ms) => Atomics.wait(SLEEP, 0, 0, ms);
@@ -353,15 +359,13 @@ export function warm() { if (canIsolate()) { refill(); pollReady(); } }
 /** A view for tests and status: is isolation on, how many processes were killed, how many were started. */
 export const isolationStats = () => (fsm && pollReady(), { isolated: canIsolate(), kills, spawned, warm: pool.filter((c) => c.ready || c.opened).length, next: pool.find((c) => c.ready || c.opened)?.proc.pid ?? null });
 if (globalThis.process?.on) process.on("exit", () => { for (const c of pool) closeChild(c, true); });
-// the CPU a process has used, ms (Linux /proc: utime + stime, clock ticks; null where there's no /proc: macOS and Windows fall
-// back to whether the process ever said `go`). At a deadline it
-// tells a script that kept its process busy (a loop, a native call: `time`, its failure) from a process the host never
-// got round to running (a loaded machine: `unavailable`, not the script's failure). The kill happens either way.
+// the CPU a process has used, ms (Linux /proc utime + stime; null without /proc, where `go` is the signal). At a deadline it
+// tells a busy script (`time`, its failure) from one the host never ran (a loaded machine: `unavailable`). Killed either way.
 const TICK_MS = 10; // USER_HZ is 100 on Linux (getconf CLK_TCK)
 function cpuMs(pid) { if (globalThis.process?.env?.EIDO_SANDBOX_CPU === "none") return null; // tests: the macOS/Windows path on Linux
   try { const f = fsm.readFileSync(`/proc/${pid}/stat`, "utf8"); const r = f.slice(f.lastIndexOf(")") + 2).split(" ");
   return (Number(r[11]) + Number(r[12])) * TICK_MS; } catch { return null; } }
-export const STARVED = 0.3; // a job that got under this share of the deadline's wall time on a CPU was starved, not stuck
+export const STARVED = 0.3; // a job that got under this share of its own wall time (the deadline's, less what the authority spent answering it) on a CPU was starved, not stuck
 /** Run one activation with its VM side in a sandbox process. Same input and result as runScript. */
 export function runIsolated(x) {
   const h = makeHost(x); const L = h.limits;
@@ -386,7 +390,7 @@ export function runIsolated(x) {
   }
   // at the deadline: killed either way. The script's failure (`time`) unless the process was starved: it had under
   // STARVED of the time the AUTHORITY wasn't busy answering it (answering is the script's doing: it asked), and that time
-  // was most of the run (a review found heavy reads could make a busy script look starved)
+  // was most of the run (else heavy reads make a busy script look starved)
   function killAt() {
       kills++; const cpu1 = cpuMs(c.proc.pid), wall = performance.now() - sentAt, used = cpu0 !== null && cpu1 !== null ? cpu1 - cpu0 : null, own = wall - hostMs;
       // where there's no /proc (macOS, Windows) the CPU reading is null; then a process that never even said it took the job
@@ -399,6 +403,7 @@ export function runIsolated(x) {
 // warm the sandbox once at load (the first QuickJS run in a process is several times slower than the rest)
 if (Q) try { runScript({ text: "", self: "warm", key: "script:warm", event: { on: "warm" }, now: 0, seed: "0".repeat(64), st: { entities: {} } }); } catch { /* the next run says what's wrong */ }
 /** What an authority injects as io.scripts. */
-// an authority runs activations isolated wherever it can (bun, node: Worker + SharedArrayBuffer); EIDO_SANDBOX=inprocess opts out
-export const SANDBOX = Object.freeze({ run: (x) => (canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
+// an authority runs activations isolated where it can (Bun, not Windows: a pooled sandbox-child.js process over FIFOs; canIsolate); EIDO_SANDBOX=inprocess opts out
+// (and is the only way scripts run on Windows: winRefuses)
+export const SANDBOX = Object.freeze({ run: (x) => (winRefuses() ? { ok: false, code: "unavailable", why: WINDOWS, logs: [], fuel: 0 } : canIsolate() ? runIsolated(x) : runScript(x)), checkSyntax, available: sandboxAvailable, warm, isolated: canIsolate });
 export { jcs };

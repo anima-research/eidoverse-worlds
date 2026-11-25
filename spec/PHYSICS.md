@@ -7,7 +7,7 @@ contract is free.
 (PROTOCOL_v2.md, "dialect 3"; kept verbatim as `history/PROTOCOL-v2-sim.md`,
 which is what code citing "PROTOCOL_v2 Covenant I" points at) and is now the
 physics part of the protocol (PROTOCOL.md); the covenants carried over
-unchanged, and how physics meets the log was redone: launches are `sim`
+unchanged, and how physics meets the log was redone: launches are `physics`
 entries, and the log records where things come to rest.*
 
 Status: normative for worlds whose `@world.physics-engine` names an engine, with a
@@ -17,7 +17,7 @@ SHOULD / MAY are RFC-2119. Parts marked **reserved** are names held now, because
 the log, the registry pin or shipped clients would otherwise freeze whatever took
 them first: an authority refuses what they name until it implements them. How
 the unbuilt parts are expected to work is direction, not protocol, in
-`docs/PHYSICS-DIRECTION.md`.
+`docs/design/PHYSICS-DIRECTION.md`.
 
 ## 0. The idea
 
@@ -34,9 +34,9 @@ the world depends on carrying the engine; only watching the flight does.
 ## 1. Two folds, one truth
 
 - **The fold** (PROTOCOL.md §3): pure, per-entry state transitions. It
-  never reads `sim` entries and never runs an engine.
+  never reads `physics` entries and never runs an engine.
 - **The sim layer**: a fixed-tick, deterministic reduction over the log's
-  change entries and its `sim` entries (launches, lifts, catches), run by
+  change entries and its `physics` entries (launches, lifts, catches), run by
   the engine `@world.physics-engine` names. It owns what is in the air between a launch
   and its rest. It never writes the log; the authority does, from its own copy.
 
@@ -69,7 +69,7 @@ decades. Therefore, inside the sim:
 two-word reduction, fixed-order polynomials, explicit-endian bit assembly).
 Its coefficients are its version. It is proven bit-identical across
 JavaScriptCore, node-V8 and deno-V8 on a 48,000-point sweep with a committed
-golden digest (tools/simmath-test.ts); accuracy ≤ 2 ulp on sin/cos/exp over
+golden digest (test/shared/simmath-test.ts); accuracy ≤ 2 ulp on sin/cos/exp over
 the working domain. `shared/terrainmath.js` is the terrain height law
 re-expressed in the same exact-op set (`pow(0.5, n)` → accumulated halving;
 `hypot` → `sqrt`, since hypot is implementation-approximated).
@@ -96,13 +96,13 @@ versioned in the log itself:
 - **A version the authority stamped is the authority's to restamp.** When a world
   names an engine this server carries under a version it doesn't, and the version
   was stamped (no version typed in the request that set the engine), the authority
-  cuts the world to the version it would stamp today, itself, as `system` (act
+  cuts the world to the version it would stamp today, itself, as `system` (request
   `restamp-engine`), at the next request or heartbeat. The owner never chose the
   old version, so the cut overrides no choice of theirs, and the log shows where
   the world's law changed. **A flight doesn't hold the cut back**: this server
   can't compute it, so a cut that waited for its rest would never come. The cut
   ends each flight itself, leaving the thing where the fold has it (only a rest
-  moves it), and names what it ended (`ended`; a purged launch's unknown body is
+  moves it), and names what it ended (`ended`; a redacted launch's unknown body is
   counted, `endedUnknown`). That is the cut's change, not a rest, so a reader that
   carries the old version has no rest to check it against. A lift on the record
   outlives the cut; only a hold in presence defers it, to the next act. A server
@@ -163,8 +163,9 @@ fixed before any engine writes a shape that isn't a box
 (`shared/protocol/shapes.js`; the authority refuses anything else):
 
 - **A bare `[[minX, minY, minZ], [maxX, maxY, maxZ]]` is a box, forever**: the
-  authority's measured box in the thing's own frame, finite, min ≤ max. Every
-  shape stamped so far is one.
+  authority's measured box in the thing's own frame, finite, min ≤ max. A
+  thing's measured shape is a bare box; `collider.shape: "sphere"` stamps a
+  tagged sphere (`shared/protocol/authority/catalogue.js`).
 - **Any other shape is a tagged object** in the thing's own frame, in metres,
   placed by optional `pos` [x, y, z] and `q` (a unit quaternion):
   `{type: "box", half: [x, y, z]}`, `{type: "sphere", radius}`,
@@ -211,7 +212,7 @@ doesn't yet.
 `reserved`) until an engine declares that it reads it: a number a builder can
 type that nothing honours is a number tuned for nothing. Their expected units,
 limits and meanings of absence, and how the names map to the major engines,
-are direction (`docs/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
+are direction (`docs/design/PHYSICS-DIRECTION.md`). `physics.kind` is **required**: a
 bare `{}` read as dynamic while the component's absence means static or
 nothing.
 
@@ -219,7 +220,7 @@ nothing.
   only, with `physics`' reserved fields: no shape is pinned until a world
   needs one, and a `physics.surface` naming no surface reads as none. The
   shape it was sketched with, and how two surfaces' modes would combine, are
-  `docs/RESERVED-SHAPES.md`.
+  `docs/reference/RESERVED-SHAPES.md`.
 - **Angular velocity is `w`: [x, y, z] in rad/s about world axes, everywhere**
   (acts, launches, state samples). Orientation is `q`, a unit quaternion
   (PROTOCOL §9.1).
@@ -257,7 +258,7 @@ nothing.
   for a cone or a spring. `parent` is a rigid attachment and never a solver
   joint; `openable` is kinematic animation; a *physical* door is a
   physics-joint.
-- **The target shape** of a joint is direction (`docs/PHYSICS-DIRECTION.md`), not
+- **The target shape** of a joint is direction (`docs/design/PHYSICS-DIRECTION.md`), not
   registered and not pinned.
 
 ## 4. Covenant III — the planes stand
@@ -265,8 +266,8 @@ nothing.
 - The presence plane still **never folds** and is never a sim input.
 - **The engine/presence boundary is crossed only by log entries, in both
   directions.** Bodies and hands affect the sim only by crossing the plane as
-  checked acts — `throw {id, v, w?}`, `punt {id, power | v}`, a `drop` with
-  physics — and the `sim` entry they produce carries everything the engine
+  checked requests — `throw {id, v, w?}`, `punt {id, power | v}`, a `drop` with
+  physics — and the `physics` entry they produce carries everything the engine
   needs. Taking a thing *out* of the engine is a `lift` or `catch`, whatever
   the cause: a grab today, a touch or push takeover later. Returning it is a
   `launch` (a release with its state) or (reserved) a settlement (§4.3). The engine MUST
@@ -276,7 +277,7 @@ nothing.
   only as a settlement or a launch.
 - **A launched thing belongs to the engine until it rests.** No state write
   may touch it in flight except its rest (caused by its launch) or a catch
-  (itself a `sim` entry).
+  (itself a `physics` entry).
 - Carrying is presence: a held thing moves with its holder's body and is
   settled into the log by `put`, `drop` or `throw` (AGENTS.md).
 
@@ -287,18 +288,19 @@ updates; VRChat splits them the same way):
 
 - **Body authority** is the person's own: never transferred, never
   sim-owned, never shared. Contact between people is each receiver's machine
-  applying another's puppet force to its own body, so consent is enforced
-  where it lands. It is never logged. **Bodies are not sim inputs because
+  applying another's puppet force to its own body, after the authority's
+  consent gate let it through (NORMATIVE.md, body consent); the receiver
+  never decides a second time. It is never logged. **Bodies are not sim inputs because
   the log is results, never processes; a body in the engine is a process.**
   A body has no `physics` component and the engine never sees it: a flight
   passes through a body. The body's client may `catch` (existing) or,
-  *reserved* (refused until built), `deflect` (a `sim` entry: the body hands a flying thing back). A thing under live authority that meets a
+  *reserved* (refused until built), `deflect` (a `physics` entry: the body hands a flying thing back). A thing under live authority that meets a
   body delivers a `shove` to that body's client, if that body's consent
   allows it (actor: the thing's live authority, carrying the thing's `id` and
   `v`); the thing's own motion ignores the body. Carrying a person is reserved,
   and whatever form it takes, the carried person may stop it at any moment;
   how it would work, and simulated bodies, are direction
-  (`docs/PHYSICS-DIRECTION.md`).
+  (`docs/design/PHYSICS-DIRECTION.md`).
 - **Live simulation authority** over a thing is presence: transient, cheap, unlogged. What is built and binding:
   - **The holder's switch.** `grabbable.steal` defaults to `true` (the latest grab wins); under `steal: false` the second
     `grab` is refused (`held`) until a `launch` or a settlement.
@@ -308,7 +310,7 @@ updates; VRChat splits them the same way):
     engine until it rests (§4); a flight's outcome never depends on a presence-plane fact (Covenant III).
   - **A held object rides its holder's hand**: it travels in the holder's pose as which grip and where, never as a
     separate stream. Taking a resting thing into live authority is a `lift`; leaving it is a `launch`.
-  - **Reserved names, refused until built** (their intended rules are direction, in docs/PHYSICS-DIRECTION.md): the verb
+  - **Reserved names, refused until built** (their intended rules are direction, in docs/design/PHYSICS-DIRECTION.md): the verb
     `cohold`, the `steal` value `"ask"`, and on `@world.physics-engine` the fields `claimDebounceMs` and
     `liveAuthorityExpiryMs`.
 - **Write authority** is the door: it alone appends to the log, and it checks
@@ -317,7 +319,7 @@ updates; VRChat splits them the same way):
 ### 4.2. Releases carry their state
 
 A `throw` or `drop` MAY carry `w` (spin, rad/s, world frame) and `t` (the
-moment the hand let go, on the authority's clock, §5.1). The act records the
+moment the hand let go, on the authority's clock, §5.1). The request entry records the
 request as sent; the launch carries `w` for engines that spin things (eidosim
 does, capped as in §3), and `q` (the thing's orientation as it was
 let go) for engines that rotate them; a rest under such an engine writes the
@@ -330,7 +332,7 @@ into rollback the moment bodies collide.
 
 The presence message `state` (a live authority streaming a thing's samples) and the settlement claim are reserved names:
 the server refuses every `state` sample, and nothing settles by claim yet. Their intended shapes are direction, not
-contract: docs/PHYSICS-DIRECTION.md.
+contract: docs/design/PHYSICS-DIRECTION.md.
 
 ## 5. Covenant IV — tick-indexed time
 
@@ -375,7 +377,7 @@ engine has them; no component names them yet); capsules, convex and compound
 shapes; flying bodies colliding with each other mid-flight under two
 different launches is engine-defined attribution (the touching launch);
 shared live physics between several hands is solved one way everywhere that
-ships (research 10-11, C): one simulator per thing, a holder-side theft
+ships: one simulator per thing, a holder-side theft
 switch, claims ordered by the arbiter; the second hand, where it exists at
 all (Bonelab Fusion, MIT, `LabFusion/src/Entities`), is a force inside the
 holder's sim. §4.1 fixes the same here (`steal`, admission order, `cohold`
@@ -404,9 +406,10 @@ the log stays exact for everyone.
 - **Rests**: every rest in a log MUST equal the carried engine's result for
   its launch (the sim layer's `checks.disagree` is empty).
 - **Cross-engine**: results MUST be bit-identical across JavaScript
-  engines (tools/simmath-test.ts for the kernel; the `browser` suite runs
-  the shared core in headless Chromium byte for byte against bun).
-- `bun tools/protocol/run.ts phys physlive physseeds` runs the physics suites:
+  engines (test/shared/simmath-test.ts for the kernel, bun against node or deno; the `browser` suite
+  runs the fold/authority core in headless Chromium byte for byte against bun,
+  not the kernel).
+- `bun test/gate/run.ts phys physlive physseeds` runs the physics suites:
   launches, rests by cause, carriers, the running server and a client's fold,
   and the reserved seeds (the shape grammar, physical properties, releases
   with spin, the state sample, one clock).
@@ -415,4 +418,4 @@ the log stays exact for everyone.
 
 ## Lost at the edge
 
-A flight that crosses the world's edge is lost there and then: the sim layer reports it rested where it is (`lost`), the rest is admitted without the engine's resting flag, and the authority sends it home on the same pass. Bounds bound x, z and the sky (`max[1]`); the floor is the terrain's, never `bounds.min[1]` (the default bounds' min y sits above the default heightfield). (10-11, attack-physics P1/P2.)
+A flight that crosses the world's edge is lost there and then: the sim layer reports it rested where it is (`lost`), the rest is admitted without the engine's resting flag, and the authority sends it home on the same pass. Bounds bound x, z and the sky (`max[1]`); the floor is the terrain's, never `bounds.min[1]` (the default bounds' min y sits above the default heightfield).

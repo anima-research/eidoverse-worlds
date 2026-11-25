@@ -1,43 +1,21 @@
-// buildcheck-queue — the sequencer's side of the build check: one check at a
-// time, each in its own process (server/buildcheck-run.ts), cached by what
-// was checked.
-//
-// A check loads the collider module and can take seconds; the sequencer only
-// ever spawns it and reads the JSON back. Reports are cached in memory and on
-// disk (OPT_DIR/checks/), keyed by the model's BYTES (a digest), the scale it
-// was checked at and CHECK_VERSION — so a library file replaced in place is
-// checked again however its timestamps read, and a store upload (content-
-// addressed) is checked once. The digest itself is remembered per path
-// against size, mtime, ctime and inode, so an unchanged file isn't re-read on
-// every ask; restoring an mtime moves the ctime, so it can't fake that. The
-// worker checks a snapshot of the hashed bytes, never the path itself.
-// Concurrent asks for one check share the run.
-//
-// The door is public (GET /check), so everything it can grow is bounded (review r3 F1):
-//   · new work is granted per address and for the whole process (server/ratewindow.ts, the heightmap
-//     export's gate) — a cached answer, or one already running, is never refused;
-//   · the queue holds at most checkConfig.queueMax waiting jobs (and queueBytes of snapshots); past that a
-//     check is refused 503 in words;
-//   · snapshots are written at enqueue (a queued check runs on exactly the bytes that were asked about,
-//     never on the source reopened later) but ONE per distinct model — named by its digest and shared by
-//     every scale and job of it, deleted when the last of them is done. Scales are parameters, not files;
-//   · reports are kept LRU, memoMax in memory and diskMax files on disk.
-// Scale is NOT bucketed coarser than 0.01: the check's verdicts are thresholds on scaled geometry (a
-// doorway against the body's width, a riser against its step), so a bucket would answer for a scale the
-// thing isn't placed at, and flip a verdict near its edge. The gate above bounds the cost instead.
-//
-// The worker is owned to the end: its output is drained (stdout up to a cap,
-// stderr's tail kept), it is asked to stop at the timeout and killed after a
-// grace, and the queue moves on even if it is never seen to exit.
+// buildcheck-queue — the sequencer's side of the build check: one check at a time, each in its own process
+// (server/buildcheck-run.ts). Reports are cached in memory and on disk (OPT_DIR/checks/), keyed by the model's digest, the scale
+// and CHECK_VERSION; concurrent asks for one check share the run.
+// The door is public (GET /check), so everything it can grow is bounded: new work is granted per address and per process
+// (server/ratewindow.ts), the queue holds at most queueMax jobs and queueBytes of snapshots, and reports are kept LRU in
+// memory (memoMax) and oldest-written first on disk (diskMax).
+// A queued check runs on a snapshot of exactly the bytes asked about, one per distinct model. Scale is keyed to 0.01, not
+// bucketed coarser: the verdicts are thresholds on scaled geometry, and a bucket would flip one near its edge.
+// The worker is owned to the end: output drained, SIGTERM at the timeout, SIGKILL after a grace.
 
 import { mkdirSync, readdirSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { OPT_DIR, ROOT } from "./config.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { windowLimiter } from "./ratewindow.ts";
+import { sha256Bytes as sha256 } from "../shared/protocol/hash.js";
 
-/** Bump when what a check finds changes (server/buildcheck.ts, the navgrid
- *  moves it walks, the collider rules): stored reports from before are stale. */
+/** Bump when what a check finds changes (server/buildcheck.ts, the navgrid, the collider rules): stored reports from before are stale. */
 export const CHECK_VERSION = 4;   // 4: the walking body is MOVER.body (radius 0.2, was 0.32)
 /** The worker and its limits; tests swap the runner for a misbehaving one. */
 export const checkConfig = {
@@ -53,6 +31,8 @@ export const checkConfig = {
   /** reports kept: in memory, and files in OPT_DIR/checks */
   memoMax: 512,
   diskMax: 4096,
+  /** paths whose digest is remembered against their stat (the oldest forgotten past this) */
+  digestMax: 4096,
 };
 /** New checks a minute: per asking address, and for the whole process (a cached answer costs nothing). */
 export const CHECK_PER_ADDRESS = 10;
@@ -68,12 +48,13 @@ export const CHECK_SCALE = { min: 0.05, max: 20 };
 const memo = new Map<string, unknown>();
 const running = new Map<string, Promise<unknown>>();
 const digests = new Map<string, { id: string; digest: string }>();
+const reading = new Map<string, Promise<{ data: Uint8Array; digest: string }>>();   // file|stat id → its one read+hash, shared by concurrent asks
 let queue: Promise<unknown> = Promise.resolve();
 let waiting = 0, heldBytes = 0;
 /** One snapshot per distinct model in the queue: digest -> its jobs still to finish and its size. */
 const snaps = new Map<string, { refs: number; bytes: number; written: Promise<unknown> }>();
 /** Tests: what the queue and the cache hold now; and a clean rate budget. */
-export const checkStats = () => ({ waiting, heldBytes, snapshots: snaps.size, memo: memo.size, running: running.size });
+export const checkStats = () => ({ waiting, heldBytes, snapshots: snaps.size, memo: memo.size, running: running.size, digests: digests.size });
 export const resetCheckBudget = () => checkGate.reset();
 
 /** Keep a report, most recent last; the oldest go past memoMax. */
@@ -100,18 +81,11 @@ export function checkScale(s: unknown): number {
   return Math.round(Math.min(CHECK_SCALE.max, Math.max(CHECK_SCALE.min, n)) * 100) / 100;
 }
 
-const sha256 = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const statId = (file: string) => { const st = statSync(file); return `${st.size}|${st.mtimeMs}|${st.ctimeMs}|${st.ino}`; };
 
-/** The build check for the model at `file`, at `scale` — cached, else run
- *  (queued behind any check already running). Rejects when the model can't
- *  be checked. `bytes`: the file's contents when the caller already holds
- *  them (an upload), so they are not read again.
- *
- *  A report answers for exactly the bytes its key names: the worker never
- *  opens `file` — it checks a snapshot of the bytes that were hashed, so a
- *  file replaced while its check waits in the queue cannot have its report
- *  filed under the old digest. */
+/** The build check for the model at `file`, at `scale`: cached, else queued and run. Rejects when the model can't be
+ *  checked. `bytes`: the contents when the caller already holds them (an upload). The worker checks a snapshot of the
+ *  hashed bytes, never `file`, so a report always answers for exactly the bytes its key names. */
 export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opts: { address?: string } = {}): Promise<unknown> {
   const s = checkScale(scale);
   let id: string;
@@ -123,9 +97,14 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
     if (hit !== undefined) return hit;
   }
   // otherwise its bytes, read once (asynchronously), name the check
-  const data = bytes ?? new Uint8Array(await Bun.file(file).arrayBuffer());
-  const digest = sha256(data);
-  digests.set(file, { id, digest });   // the id from before the read: a change during it shows next time
+  let data: Uint8Array, digest: string;
+  if (bytes) { data = bytes; digest = sha256(data); }
+  else { const rk = `${file}|${id}`; let rd = reading.get(rk);
+    if (!rd) { rd = (async () => { const b = new Uint8Array(await Bun.file(file).arrayBuffer()); return { data: b, digest: sha256(b) }; })();
+      reading.set(rk, rd); void rd.finally(() => reading.delete(rk)).catch(() => {}); }
+    ({ data, digest } = await rd); }
+  digests.delete(file); digests.set(file, { id, digest });   // the id from before the read: a change during it shows next time
+  while (digests.size > checkConfig.digestMax) digests.delete(digests.keys().next().value!);
   const key = `${CHECK_VERSION}|${digest}|${s}`;
   const hit = cached(key);
   if (hit !== undefined) return hit;
@@ -133,7 +112,7 @@ export async function checkFile(file: string, scale = 1, bytes?: Uint8Array, opt
   if (inflight) return inflight;
   // new work: the queue's room first (a refusal there spends no one's budget), then the asker's grant
   const newBytes = snaps.has(digest) ? 0 : data.length;
-  if (waiting >= checkConfig.queueMax || (heldBytes > 0 && heldBytes + newBytes > checkConfig.queueBytes))
+  if (waiting >= checkConfig.queueMax || heldBytes + newBytes > checkConfig.queueBytes)   // one over-cap snapshot is refused too
     throw new CheckRefused(`the build check's queue is full (${waiting} waiting) — ask again in a minute`, 503, 60);
   if (opts.address !== undefined) {
     const g = checkGate.grant(opts.address);
@@ -181,9 +160,7 @@ function cached(key: string): unknown {
   return undefined;
 }
 
-/** Read a stream to its end, keeping at most `cap` bytes (the head, or with
- *  `tail` the last ones) — always draining, so the writer never blocks on a
- *  full pipe. */
+/** Read a stream to its end, keeping the first `cap` bytes (or with `tail` the last `cap`, in whole chunks); always draining, so the writer never blocks. */
 async function drain(stream: ReadableStream<Uint8Array>, cap: number, tail = false): Promise<{ text: string; over: boolean }> {
   const parts: Uint8Array[] = [];
   let kept = 0, over = false;
@@ -206,8 +183,6 @@ async function drain(stream: ReadableStream<Uint8Array>, cap: number, tail = fal
   return { text: Buffer.concat(parts).toString("utf8"), over };
 }
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
 async function runWorker(file: string, scale: number): Promise<unknown> {
   const { runner, timeoutMs, graceMs, maxOut } = checkConfig;
   const proc = Bun.spawn([process.execPath, runner, file, String(scale)], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
@@ -217,7 +192,7 @@ async function runWorker(file: string, scale: number): Promise<unknown> {
   const term = setTimeout(() => { stopped = true; try { proc.kill("SIGTERM"); } catch { /* gone */ } }, timeoutMs);
   const kill = setTimeout(() => { try { proc.kill("SIGKILL"); } catch { /* gone */ } }, timeoutMs + graceMs);
   // the queue is never held past the hard kill plus a grace, whatever the process does
-  const exited = await Promise.race([proc.exited.then(() => true), sleep(timeoutMs + 2 * graceMs).then(() => false)]);
+  const exited = await Promise.race([proc.exited.then(() => true), Bun.sleep(timeoutMs + 2 * graceMs).then(() => false)]);
   clearTimeout(term); clearTimeout(kill);
   if (!exited) {
     console.warn(`[check] worker ${proc.pid} for ${file} did not exit after SIGKILL — abandoned`);
@@ -226,8 +201,8 @@ async function runWorker(file: string, scale: number): Promise<unknown> {
   if (stopped) throw new Error("the check timed out");
   // its pipes close with it; a grandchild holding them open doesn't hold the queue
   const [o, e] = await Promise.all([
-    Promise.race([out, sleep(graceMs).then(() => ({ text: "", over: true }))]),
-    Promise.race([err, sleep(graceMs).then(() => ({ text: "", over: false }))])]);
+    Promise.race([out, Bun.sleep(graceMs).then(() => ({ text: "", over: true }))]),
+    Promise.race([err, Bun.sleep(graceMs).then(() => ({ text: "", over: false }))])]);
   if (o.over) throw new Error("the check's output was not a report");
   let report: any;
   try { report = JSON.parse(o.text.trim().split("\n").pop() ?? ""); }

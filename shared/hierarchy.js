@@ -1,27 +1,20 @@
-// hierarchy — the scene tree as a pure function of the fold (design §3
-// "Children", §5 "Left: Hierarchy"). Dependency-free beyond shared/rot.js;
-// read by the desktop Hierarchy panel, its VR quad, the inspector's Parent
-// field and the agent's `inspect` / `hierarchy` tools.
+// hierarchy — the scene tree as a pure function of the fold. Read by the Hierarchy panel, the inspector's Parent field
+// and the agent's `inspect` / `hierarchy` tools.
 //
-// `world` is the fold's entities map ({ id: record }) — state.st.entities in
-// the browser, the agent's folded records in mcpl. A record's `parent`
-// ({ to, socket?, offset?, yaw?, q? }) is the only edge.
+// `world` is the fold's entities map ({ id: record }). A record's `parent` ({ to, socket?, offset?, yaw?, q? }) is the only edge.
 //
-// A child's transform is LOCAL to its parent, exactly as the renderer
-// realizes it (client/lib/realize/models.js execMount): the child is added
-// to its carrier's Object3D, so
+// A child's transform is LOCAL to its parent, as the renderer realizes it (client/lib/realize/models.js execMount):
 //   position = parent.offset ?? socket.pos ?? [0,0,0]   (carrier frame)
 //   rotation = parent.q ?? R_y(parent.yaw ?? socket.yaw ?? 0)
 //   scale    = the child's own `scale` (the carrier's scale multiplies it)
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
-import * as OP from './protocol/requests.js';
+import * as OP from './requests.js';
 import { enc } from './protocol/names.js';
 import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading, qConj as conj, composePose } from './rot.js';
-import { socketQ, lightOf } from './components.js';
-import { kindOf } from './protocol/kind.js';
+import { socketQ, lightOf, isMeshBag } from './components.js';
 import { socketRole } from './sockbody.js';
 import { r9 } from './protocol/round.js';
 import { modelWord } from './eido.js';
@@ -29,9 +22,8 @@ import { modelWord } from './eido.js';
 /** A pure turn about +Y (no tilt): such an orientation travels as a bare yaw. */
 const upright = (q) => Math.abs(q[0]) < 1e-9 && Math.abs(q[2]) < 1e-9;
 
-/** The socket a mount names, resolved on its carrier — or null. Only a record in the old spelling has one: an imported old-protocol fold's
- *  (tools/protocol/import-v1/fold.js, which authority-check's M checks draw old-protocol logs by) and a blueprint's own published parts
- *  (blueprint.js). A live record's socket is a child entity, and its mount names that entity (PLAN-sockets-entities). */
+/** The socket a mount names, resolved on its carrier, or null. Only old-spelling records have one (imported folds via
+ *  tools/import-v1/fold.js, which test/protocol/sweep.ts reads through localOf); a live record's socket is a child entity. */
 export function socketOf(world, rel) {
   if (!rel?.socket) return null;
   const s = world?.[rel.to]?.sockets?.[rel.socket];
@@ -115,15 +107,15 @@ export function childrenOf(world, id) {
   return Object.keys(world ?? {}).filter((k) => world[k]?.parent?.to === id).sort();
 }
 
-/** What a row says a thing IS, in a word or two: kindOf's word, or a model's file stem (+ light for an imported lamp). */
+/** What a row says a thing carries, in a word or two: its model's word, its mesh's shape, light, its socket's role, joined
+ *  by ' + '; a thing with none of them is an empty. Read from its components (a thing may carry any of them at once). */
 export function kindHint(ent) {
   if (!ent) return '?';
-  const kind = kindOf(ent);
-  if (kind === 'socket') return socketRole(ent.c ?? ent);   // what it is for: station, snap or attach (never stored)
-  const plus = lightOf(ent) ? ' + light' : '';
-  if (kind === 'mesh') return `${(ent.c ?? ent).mesh.shape}${plus}`;
-  if (kind !== 'model') return kind;
-  return `${modelWord(ent.model).split('_').slice(0, 3).join(' ')}${plus}`;   // an address: the word for it, never its hex (shared/eido.js)
+  const c = ent.c ?? ent;
+  const words = [typeof c.model === 'string' ? modelWord(c.model).split('_').slice(0, 3).join(' ') : null,   // an address: the word for it, never its hex (shared/eido.js)
+    isMeshBag(c.mesh) ? c.mesh.shape : null, lightOf(c) ? 'light' : null,
+    c.socket && typeof c.socket === 'object' && !Array.isArray(c.socket) ? socketRole(c) : null].filter(Boolean);   // what a socket is for: station, snap or attach (never stored)
+  return words.length ? words.join(' + ') : 'empty';
 }
 
 /** { roots, kids } from the fold: a thing whose carrier is absent, or whose
@@ -131,7 +123,7 @@ export function kindHint(ent) {
  *  its members from the tree). */
 export function treeOf(world) {
   const kids = new Map(); const roots = [];
-  // ordered by the name a person sees, numbers as numbers (R 10-10: 'domino 11, domino 12, domino 3')
+  // ordered by the name a person sees, numbers as numbers ('domino 3' before 'domino 11')
   const nm = (id) => { const l = world[id]?.label; return typeof l === 'string' && l ? l : id; };
   const order = Object.keys(world ?? {}).sort((a, b) => nm(a).localeCompare(nm(b), 'en', { numeric: true, sensitivity: 'base' }) || (a < b ? -1 : a > b ? 1 : 0));
   for (const id of order) {
@@ -172,10 +164,8 @@ export function treeRows(world, { collapsed = new Set(), matches = null, extra =
   return rows;
 }
 
-/** Parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS: the authority requests (shared/protocol/requests.js)
- *  for the Hierarchy's drag, the Parent card and the agent's edit. Its world pose is kept: under a parent the transform
- *  becomes local to it (pos, q and scale: the renderer composes a child's scale with its carrier's); as a root it is the
- *  world pose. One gesture, one batch, one act — the authority's undo is the way back. Locks are the authority's to ask about. */
+/** The requests (shared/requests.js) that parent `id` under `to` (or make it a root when `to` is null) WHERE IT STANDS:
+ *  its world pose is kept, so the transform becomes local under a parent and world as a root. One batch, one undo step. */
 export function parentOps(world, id, to) {
   const errors = [];
   const ent = world?.[id];

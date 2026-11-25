@@ -1,14 +1,8 @@
 {
   "name": "mcpl",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "The agent frontend (an MCP stdio server). zod is imported nowhere here: it is the MCP sdk's schema library, declared so its major version matches the sdk's.",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "sharp": "^0.35.3",
@@ -17,7 +11,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@animalabs/agent-framework": "file:../../agent-framework",
-    "@animalabs/mcpl-core": "file:../../mcpl-core-ts"
+    "@animalabs/agent-framework": "file:../.siblings/agent-framework",
+    "@animalabs/mcpl-core": "file:../.siblings/mcpl-core-ts"
   }
 }

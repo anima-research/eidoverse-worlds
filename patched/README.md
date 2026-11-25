@@ -19,5 +19,5 @@ asset is a bug report with the fix attached.
 
 Current contents:
 - `eidoverse/assets/animations/sitting_normal_chair.vrma` — the corrected
-  sit clip (see docs/INCIDENTS.md, the stale-cache incident of 2026-08-19,
+  sit clip (see docs/history/INCIDENTS.md, the stale-cache incident of 2026-08-19,
   and seats.ts's precedence notes).

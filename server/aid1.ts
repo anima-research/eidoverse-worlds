@@ -1,13 +1,6 @@
-// aid1 verification — the audience contract of connectome docs/home-node.md §5.
-//
-// Deliberately a self-contained COPY of archipelago-home's verifier (this repo
-// has no npm link to it; the spec blesses copy-paste for audiences). One
-// credential: `aid1.<b64url payload>.<b64url ed25519 sig>`, signature over the
-// literal `aid1.<payload>` bytes, verified OFFLINE against the issuer's public
-// key — the home node is never a party to any connection here.
-//
-// Source of truth: archipelago-home src/token.ts + src/keys.ts. If the format
-// ever changes, re-copy; do not fork semantics.
+// aid1 verification: a self-contained copy of archipelago-home's verifier (src/token.ts + src/keys.ts; re-copy if the format
+// changes, never fork it). A credential is `aid1.<b64url payload>.<b64url ed25519 sig>`, the signature over the literal
+// `aid1.<payload>` bytes, verified offline against the issuer's pinned public key.
 import { createPublicKey, verify as cryptoVerify } from "node:crypto";
 
 export const TOKEN_PREFIX = "aid1";
@@ -17,7 +10,7 @@ export type PrincipalKind = "human" | "agent" | "service";
 export interface Aid1Payload {
   v: 1;
   iss: string;
-  /** Durable principal id: `human:discord:<snowflake>` / `agent:<name>@<domain>`. */
+  /** Durable principal id as the issuer signed it, e.g. `human:discord:<snowflake>` / `agent:<name>@<domain>`; /auth takes any `human:` one (server/routes.ts). */
   sub: string;
   kind: PrincipalKind;
   name: string;
@@ -42,14 +35,8 @@ function b64urlToBuf(s: string): Buffer | null {
 
 export type VerifyOutcome = { ok: true; payload: Aid1Payload } | { ok: false; reason: string };
 
-/** The mention-handle slug every door derives from an aid1 identity — ONE
- *  implementation (§24l R1, survey B1): it was copied verbatim at three
- *  doors (ws join, upload, the MCPL door), each carrying a comment
- *  asserting they must agree. If they drift, an agent is a different
- *  person depending on which door it walked through, and nothing detects
- *  it. World addressing is name-based; name uniqueness was enforced at
- *  enrollment by the home node; `sub` is the fallback for a name that
- *  slugs to nothing. */
+/** The handle slug every door derives from an aid1 identity, so an agent is the same person whichever door it walks through.
+ *  `sub` is the fallback for a name that slugs to nothing. */
 export function aid1Slug(payload: Aid1Payload): string {
   return payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || payload.sub;
 }
@@ -109,8 +96,7 @@ export function verifyToken(token: string, opts: VerifyOpts): VerifyOutcome {
   return { ok: true, payload };
 }
 
-/** Single-use guard for login-redirect tokens; restart-amnesia is covered by
- *  the token's own 10-minute exp. */
+/** Single-use guard for login-redirect tokens; a restart forgets them, which the token's own 10-minute exp covers. */
 export class JtiCache {
   private seen = new Map<string, number>();
 

@@ -1,45 +1,27 @@
-// terrainmath — the terrain height law as owned numerics (Covenant I).
+// terrainmath — the terrain height law in exact arithmetic, so the deterministic sim can ground bodies on it.
 //
-// A faithful port of the eidoverse toolkit's makeTerrain height function
-// (eidoverse-video/eidoverse/terrain.js: mulberry32 → 64×64 value-noise grid
-// → fBm → amplitude + flat-radius blend), re-expressed inside the blessed
-// exact-op set so the deterministic sim (eidosim) may ground bodies on
-// it. The toolkit's law was ALREADY almost covenant-clean — integer-hash
-// PRNG, lerp/smoothstep, floor; no transcendental anywhere — with exactly
-// two unblessed calls, substituted here:
+// A port of the eidoverse toolkit's makeTerrain (mulberry32 → 64×64 value-noise grid → fBm → amplitude + flat-radius
+// blend) with its two non-exact calls replaced: Math.pow(0.5, octaves) by halving, Math.hypot by sqrt(x²+z²) (hypot
+// differs across engines; the difference is nanometres of ground). The client's mesh still comes from the toolkit's
+// function (client/lib/world.js makeTerrain); they agree to ~1 ulp, and every SIM consumer uses this law.
 //
-//   - Math.pow(0.5, octaves) → the same value accumulated by halving (for
-//     the integer octaves in use the results are bit-identical);
-//   - Math.hypot(x, z) → Math.sqrt(x*x + z*z) (hypot is implementation-
-//     approximated and historically differs across engines; sqrt is the
-//     blessed op; at world scale the overflow guard hypot exists for is
-//     irrelevant, and the ~1-ulp difference in the flat-radius blend is
-//     nanometres of ground).
+// THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION: eidosim's conformance digests hold this law
+// (test/protocol/engine-check.ts, the onto-hills scenario); anything that moves a digest is a new engine version.
 //
-// One consequence stated honestly: the CLIENT's rendered mesh and walking
-// heightAt still come from the toolkit's own function (vendored, eval-
-// loaded); this module is the SIM's ground truth. The two agree to ~1 ulp
-// everywhere (measured in tools/sim-test.ts), which is nanometres — but the
-// covenant identity that matters (server sim ≡ client shadow sim ≡ any
-// replay, bit for bit) holds because ALL sim consumers use THIS law.
-//
-// THE CONSTANTS AND THE EVALUATION ORDER ARE THE VERSION (Covenant II):
-// this law is held by eidosim's conformance digests (engine-check: the onto-hills scenario): editing anything here that
-// moves a digest is a new engine version, never a patch.
-//
-// SHAPING (features, heightmap — shared/terrainshape.js) rides on top and is
-// carried ONLY when the args use it: for every world that does not, the
-// params object and every height are exactly what they were, so no existing
-// epoch's ground moves. A shaped world's sim grounds bodies on the same
-// shaped law the mesh and the agents use — through the same function.
+// SHAPING (features, heightmap: shared/terrainshape.js) rides on top only when the args use it, so no unshaped
+// world's ground moves by a bit.
 
 import { shapeParams, shapeHeight } from './terrainshape.js';
 
 /** Normalize terrain-verb args to the canonical parameter set, with the
  *  TOOLKIT's own defaults — the sim must assume exactly what the mesh
  *  builder assumes. @param {Record<string, unknown>} a */
+/** A flat ground's height (terrain {kind: 'flat', height}), else null: the readers that build no mesh for it ask this. */
+export const flatHeightOf = (a) => (a?.kind === 'flat' ? (typeof a.height === 'number' && Number.isFinite(a.height) ? a.height : 0) : null);
+
 export function terrainParams(a) {
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+  if (a?.kind === 'flat') return { flat: num(a.height, 0), size: 200 };   // level ground (componentspec terrain kind flat); size: the no-terrain projection's
   const shape = shapeParams(a);
   return {
     ...(shape ? { shape } : {}),
@@ -53,12 +35,12 @@ export function terrainParams(a) {
   };
 }
 
-/** Build the height function for one terrain. Pure of everything but its
- *  params; the grid build is integer-hash exact.
+/** Build the height function for one terrain. Pure of everything but its params.
  *  @param {ReturnType<typeof terrainParams>} P
  *  @returns {(x: number, z: number) => number} */
 export function makeHeightField(P) {
-  // mulberry32 — integer ops only, bit-exact on every engine
+  if (typeof P.flat === 'number') { const h = P.flat; return () => h; }
+  // mulberry32 — integer ops only, bit-exact on every engine; a copy, not shared/rand.js, on purpose: the sim's import closure is pinned (siminputs-check.ts)
   let s = (P.seed | 0) || 1;
   const rand = () => {
     s |= 0; s = (s + 0x6D2B79F5) | 0;
@@ -67,8 +49,7 @@ export function makeHeightField(P) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
   const GS = 64;
-  // Float32Array stores round exactly per IEEE — deterministic; and it is
-  // what the toolkit does, so the grids are bit-identical
+  // Float32Array rounding is IEEE-exact, and it is what the toolkit does, so the grids are bit-identical
   const grid = new Float32Array(GS * GS);
   for (let i = 0; i < grid.length; i++) grid[i] = rand();
   const lerp = (a, b, t) => a + (b - a) * t;

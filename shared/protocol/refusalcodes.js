@@ -1,31 +1,30 @@
-// shared/protocol/refusalcodes.js — every code the authority refuses with, registered (engine-scars 3.1, R 10-17 02:45).
+// shared/protocol/refusalcodes.js — every code the authority refuses with, registered.
 // Pure data, no imports. A code is written into signed log entries (a refused write's act carries `refused: {code}`), so a
 // code is one-way: clients branch on it, old logs hold it forever. Like HTTP's status codes or gRPC's closed `Code` enum:
 // a fixed, registered set, with free-text `reason` and `fix` beside it. A new code is a new row here, with what it means
-// and when it is given; tools/protocol/scars-check.ts G1 fails if the authority can refuse with a code that has no row, if
+// and when it is given; test/protocol/scars-check.ts G1 fails if the authority can refuse with a code that has no row, if
 // a row names a code nothing gives (unless it is `reserved`), and if a request in that suite met an unregistered code.
 //
 // Each row: { meaning, when, reserved? }. `meaning` is what the asker should understand; `when` is what triggers it.
-// Synonyms merged 10-17: `no-such` (the caption request's not-found) is `not-found`. Kept apart on purpose: `gone` (a
+// Kept apart on purpose: `gone` (a
 // thing you were holding was deleted), `not-here` (a body isn't in the world), `not-a-thing` (a socket isn't a thing).
 export const REFUSAL_CODES = Object.freeze({
   // ---- who is asking (identity, membership, sanctions) ----
   "identity":       { meaning: "the actor isn't an identity the authority can stamp", when: "an actor outside the §3.1 grammar, or one of the authority's own (system, sim, world)" },
   "no-world":       { meaning: "there is no such world", when: "any verb but create-world/help on a world that hasn't been founded" },
   "custody":        { meaning: "this server can't sign for the world", when: "a write to a world whose genesis names another sequencer key" },
-  "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version" },
-  "repair-needed":  { meaning: "the world's stored values are in an old spelling no reader serves; the maintenance command must run first", when: "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`" },
+  "unreadable":     { meaning: "the log folds to a status the authority won't write to", when: "a write while the fold says no-world/unknown-version/unsupported-feature" },
+  "unsupported-feature": { meaning: "a feature this world or server can't use (docs/decisions/LOG-VOCABULARY.md §F F-1)", when: "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement" },
   // ---- the transaction (PROTOCOL §7: every request ends committed, rolled-back or ambiguous) ----
   "ambiguous":      { meaning: "the request's result is unknown: some or all of it may be written; never ok, never a plain failure", when: "a durable write threw (its line may be on disk; the log is wedged until reopened), or the request was cut off after part of it was written; the reply's `from` is the first seq whose state history must settle (storage.js txnOutcome)" },
   "server-error":   { meaning: "the server failed handling the request and nothing it asked for was written", when: "a throw before any line of the request reached the log, including a write refused because the log was already wedged (rolled back)" },
   "unknown-verb":   { meaning: "no such request", when: "a verb the authority doesn't have (help lists them)" },
   "removed":        { meaning: "the protocol had that request and removed it", when: "a request named in verbspec.js REMOVED_VERBS (whisper, removed 2026-10-18: speech is public and arrival-only)" },
   "banned":         { meaning: "the actor is banned from this world", when: "any request but help/leave from a banned identity" },
-  "kicked":         { meaning: "the actor was removed and may come back later", when: "any request but help/leave inside a kick's cooldown" },
   "muted":          { meaning: "the actor is muted here", when: "a say (or voice) while a mute is in force" },
-  "rate":           { meaning: "too much, too fast", when: "an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent" },
-  "cool-down":      { meaning: "wait before asking this again", when: "a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)" },
-  "pending":        { meaning: "one ask at a time", when: "a body ask while another to the same person is still waiting" },
+  "rate":           { meaning: "too much, too fast", when: "an actor's entry, say, byte, dry-run or upload budget for the window is spent" },
+  "cool-down":      { meaning: "wait before trying this again", when: "repeated refusals of one class of body act (world-wide, moderator log)" },
+  "pending":        { meaning: "one ask at a time", when: "reserved: a body ask while another to the same person was waiting (the ask was removed 10-28; never logged, kept so the word isn't reused)", reserved: true },
   // ---- rights, ranks and consent ----
   "rights":         { meaning: "the actor's role doesn't allow this", when: "a missing permission (build, editOthers, scripts…), someone else's key, a world setting below owner, a rollback below owner" },
   "rank":           { meaning: "the other side ranks at or above you", when: "a lock above your rank, undoing someone ranked above you, a sanction on an equal or higher rank, an authority act" },
@@ -38,12 +37,11 @@ export const REFUSAL_CODES = Object.freeze({
   "barred":         { meaning: "this action is closed until another happens first", when: "a reaction handler whose `unless` holds" },
   "locked":         { meaning: "a lock covers it", when: "a write to a locked thing (or under one) without throughLock" },
   "occupied":       { meaning: "someone is on it", when: "a hand verb (grab, put, punt, throw, drop) on a thing someone sits or stands on, or a seat that's taken" },
-  "revert-war":     { meaning: "that's a dispute: an owner settles it", when: "reverting someone's work on a thing already reverted across people twice in the hour, below owner" },
   // ---- the request's shape ----
   "shape":          { meaning: "the request or value isn't the right shape", when: "a wrong type, a missing part, a bad name, a bad placeholder, anything the shape rules refuse" },
   "unknown-arg":    { meaning: "the verb has no such argument", when: "an argument VERBSPEC doesn't list for the verb" },
   "missing-arg":    { meaning: "the verb needs that argument", when: "a required VERBSPEC argument left out" },
-  "doesnt-apply":   { meaning: "that argument doesn't go with the mode you chose", when: "a place argument whose modes exclude the chosen one" },
+  "doesnt-apply":   { meaning: "that argument doesn't go with the mode you chose", when: "a place argument whose modes exclude the chosen one; a below-bounds respawn for a body the authority last knew above @world.bounds.min.y (or nowhere), or one seated" },
   "schema":         { meaning: "a component value the registry doesn't take", when: "an unknown field, an unregistered bare name, a value outside the component's schema" },
   "bounds":         { meaning: "a number past what this server allows", when: "a value above a server limit (counts, sizes, rates)" },
   "too-big":        { meaning: "too large to write", when: "a value over 64 KiB, a log line over 1 MiB or 64 deep, a script source or batch over its cap" },
@@ -55,12 +53,10 @@ export const REFUSAL_CODES = Object.freeze({
   "server-written": { meaning: "the server writes that (copy-of, rebase)", when: "a request or handler setting a server-written component" },
   "caption-only":   { meaning: "captions are written by the caption request", when: "a set of `captions` by hand" },
   "caption":        { meaning: "that caption line was refused by the caption rules", when: "a resend, an out-of-order n, a superseded leg" },
-  "one-place":      { meaning: "a thing is in one place", when: "two ways of saying where it is (a socket and a parent, two seats…)" },
   "world":          { meaning: "@world can't be that", when: "deleting or locking @world" },
   "world-only":     { meaning: "a world setting goes on @world", when: "a world component written on a thing" },
   "thing-only":     { meaning: "that component belongs to a thing", when: "a thing's component written on @world" },
   "schema-fixed":   { meaning: "a schema never changes meaning", when: "changing or deleting a set schemas:<name>" },
-  "grid-fixed":     { meaning: "the terrain grid is fixed while it has tiles", when: "changing terrain-grid with tiles under it" },
   "syntax":         { meaning: "the script doesn't parse", when: "installing a script whose source has a syntax error" },
   "source":         { meaning: "a script's source isn't usable text", when: "a non-string or missing source at upload or install" },
   "source-bom":     { meaning: "the source starts with a byte-order mark", when: "upload or install of a source with a BOM" },
@@ -86,9 +82,11 @@ export const REFUSAL_CODES = Object.freeze({
   "conflicts":      { meaning: "parts changed both here and upstream", when: "a blueprint update without resolve for parts edited on both sides" },
   "founding":       { meaning: "founding a world can't be undone", when: "undo of create-world" },
   "physical":       { meaning: "physics decided that, not an edit", when: "undo of a throw, drop or leave" },
+  "undo-unavailable": { meaning: "that act can't be undone, and nothing was", when: "undo or rollback of an imported act the translation's lift-sockets rewrote (cause: migration-transformed, with the act and its ops): the whole request refuses, never a partial undo" },
   "disabled":       { meaning: "it's switched off", when: "handling, using or standing on a thing that is (or hangs under) disabled" },
   "in-flight":      { meaning: "the engine has it until it rests", when: "any write to a launched thing before its rest" },
   "not-at-rest":    { meaning: "the engine doesn't have it at rest", when: "a rest the engine doesn't agree with" },
+  "not-the-engine's": { meaning: "the rest isn't where the engine has it", when: "a rest whose pose differs from the engine's resting pos or q (checks.js restCheck)" },
   "implausible":    { meaning: "physics wouldn't leave it there", when: "a put or place whose result floats or interpenetrates" },
   "full":           { meaning: "this world is at its entity limit", when: "a write that adds entities past capacity" },
   "too-many":       { meaning: "too many of those", when: "more scripts than script-settings.max" },
@@ -102,7 +100,7 @@ export const REFUSAL_CODES = Object.freeze({
   "in-the-way":     { meaning: "someone is where it would go", when: "a shove or push that would slide a thing into a body" },
   // ---- bodies, hands and physics ----
   "solid":          { meaning: "a body doesn't fit there", when: "an arrival or step into something solid" },
-  "spawn":          { meaning: "arrivals are limited to the spawn", when: "an arrival or teleport outside @world.spawn's radius" },
+  "spawn":          { meaning: "arrivals are limited to the world's arrival places", when: "an arrival, teleport or below-bounds respawn outside every arrival place's radius (@world.spawn and the spawn-point things)" },
   "out-of-bounds":  { meaning: "outside this world", when: "a move or position past @world.bounds" },
   "too-fast":       { meaning: "faster than a body (or a throw) may go", when: "a step past the speed track, a throw or shove over its cap" },
   "out-of-reach":   { meaning: "too far away", when: "a hand or body act beyond its reach" },
@@ -127,7 +125,7 @@ export const REFUSAL_CODES = Object.freeze({
   "no-room":        { meaning: "it doesn't fit there", when: "place {on} a surface with no free room for it" },
   "unsupported":    { meaning: "nothing to stand on there", when: "place {beside} where there's no support on that side" },
   "inside":         { meaning: "that would put it inside something solid", when: "a hang or place into a thing's solid parts" },
-  "no-grid":        { meaning: "no terrain grid", when: "a sculpt on ground without terrain-grid" },
+  "level-ground":   { meaning: "this ground can't be shaped", when: "a sculpt, a terrain-feature or a terrain-tile where the ground is the level floor (no terrain, or kind flat)" },
   "no-model":       { meaning: "nothing to measure", when: "measure of a thing with no model or mesh" },
   "no-target":      { meaning: "the handler's target isn't there", when: "a set handler naming a field of a component the thing doesn't have" },
   "no-action":      { meaning: "it offers nothing to use", when: "use of a thing with no reactions and no station" },
@@ -142,12 +140,7 @@ export const REFUSAL_CODES = Object.freeze({
 export const REFUSAL_SOURCES = Object.freeze(["shared/protocol/verbspec.js", "shared/protocol/roles.js", "shared/protocol/consent.js", "shared/protocol/scriptrules.js", "shared/sockbody.js", "shared/grab.js"]);
 /** The refuse(<expression>) sites in authority.js, by the expression they pass: each forwards a code one of the sources
  *  above (or the authority's own refusals) produced, so the static scan covers what they can carry. A new one is reviewed. */
-export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code", "b.code"]);   // b.code: writeBlock's (scriptrun.js), whose codes are literals there
+export const DYNAMIC_REFUSALS = Object.freeze(["code", "bad.code", "e.code", "dirty.code", "r.code", "g.code"]);
 /** `code:` literals in the scanned files that aren't refusal codes (none today; a status code that isn't a refusal goes here). */
 export const NOT_REFUSALS = Object.freeze([]);
-/** Codes renamed before release (protocol minor 0, R 10-17: no body plan in a name). A log written before the rename may
- *  carry the old word in a refused act; the fold never judges a code, so it reads either, and a reader that branches on
- *  one maps it through here. The authority never refuses with an old word. */
-export const RENAMED_CODES = Object.freeze({ "hands-full": "hold-limit", "underfoot": "beneath", "no-body": "not-pushable", "no-such": "not-found" });
-export const canonicalCode = (c) => (typeof c === "string" && Object.hasOwn(RENAMED_CODES, c) ? RENAMED_CODES[c] : c);
 export const isRefusalCode = (c) => typeof c === "string" && Object.hasOwn(REFUSAL_CODES, c);

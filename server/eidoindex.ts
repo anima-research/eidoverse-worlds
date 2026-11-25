@@ -1,19 +1,15 @@
-// server/eidoindex.ts — which file on this host holds the bytes an eido:sha256/<hex> address names (spec/EIDO-URIS.md §2:
-// the origin host is a resolver). Review 2026-10-07 H3: a translated world's models are addresses, never this host's paths.
-//   - a store blob is named by the first 16 hex of its upload's sha256 (server/upload.ts), so an address is found by that
-//     prefix and checked against the whole digest of the bytes. Some blobs on a long-lived host no longer hash to their
-//     name (rewritten in place after upload): their address is the digest of the bytes this host actually has, recorded
-//     in the index, and the translator lists them (storeNameMatches) so the operator knows;
-//   - a library model's address is its ORIGINAL's (LIBRARY_DIR), never the optimized mirror in OPT_DIR, which is a
-//     different byte string (§1a); whoever computes one (the translator) records it in OPT_DIR/eido-index.json; the model
-//     catalogue notes each one it hashes at measure for this process (noteEido).
-// R 10-17: a model is stored as its library path, so nothing a world needs to LOAD depends on this index; it resolves an
-// address stored before (translate-v1@8–@11) and a model-hash's bytes (/eido/sha256/<hex>).
-// The address always names the original; /library/eido/… may still serve the host's rendition (routes.ts).
+// server/eidoindex.ts — which file on this host holds the bytes an eido:sha256/<hex> address names (spec/EIDO-URIS.md §2).
+//   - a store blob is named by the first 16 hex of its upload's sha256 (server/upload.ts): found by prefix, checked against the
+//     whole digest. A blob rewritten in place no longer hashes to its name; its real digest goes in the index (storeNameMatches
+//     lets the translator list them);
+//   - a library model's address is its original's (LIBRARY_DIR), never the optimized mirror's; the translator records it in
+//     OPT_DIR/eido-index.json, and the catalogue notes each one it hashes for this process (noteEido).
+// A model stored as its library path doesn't need this index; an address stored by translate-v1 @8–@11 does (a library model's
+// address is found only here), and so does /eido/sha256/<hex>. Not disposable.
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { OPT_DIR, LIBRARY_DIR } from "./config.ts";
+import { sha256Bytes } from "../shared/protocol/hash.js";
 
 const INDEX = path.join(OPT_DIR, "eido-index.json");
 let index: Record<string, string> | null = null, indexMtime = -1;
@@ -23,12 +19,11 @@ function load(): Record<string, string> {
   try { index = m >= 0 ? JSON.parse(fs.readFileSync(INDEX, "utf8")) : {}; } catch { index = {}; }
   indexMtime = m; return index!;
 }
-// a file's hash is remembered while its size and mtime stand (review of #260, server I82: a public lookup that missed
-// hashed a whole store blob again on every request, on the event loop)
+// a file's hash is remembered while its size and mtime stand (a public lookup must not re-hash a blob per request)
 const hashed = new Map<string, { size: number; mtimeMs: number; hex: string }>();
 const sha = (p: string) => { const st = fs.statSync(p), h = hashed.get(p);
   if (h && h.size === st.size && h.mtimeMs === st.mtimeMs) return h.hex;
-  const hex = crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
+  const hex = sha256Bytes(fs.readFileSync(p));
   if (hashed.size > 4096) hashed.clear();
   hashed.set(p, { size: st.size, mtimeMs: st.mtimeMs, hex }); return hex; };
 const inside = (base: string, rel: string) => { const p = path.normalize(path.join(base, rel)); return p.startsWith(base + path.sep) ? p : null; };
@@ -53,8 +48,8 @@ export function recordEido(hex: string, rel: string) {
   const tmp = `${INDEX}.${process.pid}.tmp`; fs.writeFileSync(tmp, JSON.stringify(I, null, 1)); fs.renameSync(tmp, INDEX); index = I; indexMtime = fs.statSync(INDEX).mtimeMs;
 }
 const checked = new Map<string, string | null>();   // hex → rel, verified against the bytes once per process
-/** Remember, for this process, that `rel`'s original bytes hash to `hex` (the catalogue, having just hashed them at measure:
- *  R 10-17, a model-hash's bytes are then fetchable here by /eido/sha256/<hex>). Nothing is written to disk. */
+/** Remember, for this process, that `rel`'s original bytes hash to `hex` (the catalogue, having just hashed them at measure),
+ *  so a model-hash's bytes are fetchable here by /eido/sha256/<hex>. Nothing is written to disk. */
 export function noteEido(hex: string, rel: string) { if (/^[0-9a-f]{64}$/.test(hex) && typeof rel === "string" && !checked.get(hex)) checked.set(hex, rel); }
 /** The library-style path on this host whose ORIGINAL bytes are `hex`, or null. */
 export function eidoRel(hex: string): string | null {
@@ -64,5 +59,6 @@ export function eidoRel(hex: string): string | null {
   for (const rel of cands) if (contentAddressOf(rel) === hex) { checked.set(hex, rel); return rel; }
   return null;   // not cached: a blob uploaded later may answer it
 }
-/** The file holding exactly the bytes `hex` names, or null. */
+/** The file holding the bytes `hex` names, or null: verified once per process (a file replaced in place under the same
+ *  name is served until restart; the store is content-addressed and only an operator writes over it). */
 export const eidoFile = (hex: string): string | null => { const rel = eidoRel(hex); return rel ? originalOf(rel) : null; };

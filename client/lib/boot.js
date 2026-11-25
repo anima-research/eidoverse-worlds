@@ -1,18 +1,8 @@
-// boot — the first fifteen seconds.
-//
-// Arriving used to be: a black page while 2.1MB of engine parsed, then a dark
-// empty grid while ~22MB of body, clips and sky streamed in, with a small
-// bottom-right tray of filenames as the only evidence anything was happening.
-// Nothing said what was going on, how far along it was, or when you could move.
-//
-// Three things fix that, in descending order of how much they matter:
-//   1. Something on screen IMMEDIATELY — the splash is static markup in
-//      index.html, so it paints before any JavaScript has loaded at all.
-//   2. Progress measured in real bytes and real phases, never a fake timer.
-//   3. The wait made useful: the controls are on the splash, so the time is
-//      spent learning them instead of watching a bar.
+// boot — the first fifteen seconds: the splash (static markup in index.html, painting before any JS), progress in
+// real bytes and phases (never a fake timer), and the controls to learn while it waits.
 
-import { bus } from './base.js';
+import { bus, CONFIG } from './base.js';
+import { escapeHtml } from './ui/markup.js';
 // Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
 // is shared with a client that loads no assets and therefore has no bytes to count.
 // The empty defaults are the truth for such a client — its phases finish on their own
@@ -24,14 +14,8 @@ export function setBootAssets({ items, bytes }) {
   if (bytes) bootBytes = bytes;
 }
 
-// Phase weights are rough shares of a cold boot, measured rather than guessed
-// (see the timings in the commit that added this). They only need to be
-// approximately right — what must never happen is the bar reaching 100% and
-// then sitting there, so `world` and `sky` deliberately hold the tail.
-// What the splash covers is "is there somewhere to stand", which is the engine,
-// the connection, the folded log, a body, and ground. The sky is deliberately
-// NOT here: it arrives over your head a second later, and waiting for it was
-// most of a cold boot.
+// Weights are measured shares of a cold boot; the late phases hold the tail so the bar never sits at 100%.
+// The splash covers "somewhere to stand"; the sky has no phase here, but its first warm holds the splash, capped (world.js skyGate).
 const PHASES = [
   { key: 'engine', label: 'waking the engine', weight: 14 },
   { key: 'connect', label: 'finding the world', weight: 6 },
@@ -67,7 +51,7 @@ function currentLabel() {
 
 // ---- what's loading: named items, once they have been in flight > 2 s
 const firstSeen = new Map();   // key → performance.now() when first seen in flight
-const SHOW_AFTER_MS = 2000, MAX_ITEMS = 1;   // ONE line of load detail (R 09-06 13:24: two left a fat empty gap between the MB line and the tips)
+const SHOW_AFTER_MS = 2000, MAX_ITEMS = 1;   // ONE line: two leave an empty gap above the tips
 function paintItems() {
   if (!itemsEl || done) return;
   const now = performance.now();
@@ -82,31 +66,21 @@ function paintItems() {
   itemsEl.innerHTML = shown.map((it) => `<div class="sp-load"><span class="sp-load-name">${escapeHtml(prettyLabel(it.label))}</span><span class="sp-load-bytes">${it.total > 0 ? `${(it.done / 1048576).toFixed(1)} / ${(it.total / 1048576).toFixed(1)} MB` : it.done > 0 ? `${(it.done / 1048576).toFixed(1)} MB…` : ''}</span></div>`).join('');
 }
 const prettyLabel = (l) => String(l).split('/').pop().replace(/\.(vrm|glb|gltf|png|jpg|ktx2|json|g|gl)(\?.*)?$/i, '').replace(/[_-]+/g, ' ');   // some labels arrive pre-truncated ('desk.g')
-const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-// THE PEG IS THE PROGRESS (owner, 09-29 23:53): the new mark's peg enters from the sphere's left skin,
-// passes the doorway, and rests at 1 — the logo notes' splash/doorway.html render(p), verbatim in its
-// numbers — except its START. The peg's front is an arc of the same r = 40 circle, so its TIP (on the centre line,
-// y = 50) is at x = 48 + 40 = 88 and the sphere's leftmost point is 8: D must be at least 80 for nothing to show at
-// rest. (The notes' 79.240 measured the arc's ends at y = 44.5 / 55.5, which left a 0.76-unit sliver of peg inside
-// the sphere while the engine woke — the owner, 10-01: "a teeny speck… looks like an error".) +0.5 clears the
-// anti-aliased edge.
+// The peg is the progress: it enters from the sphere's left skin and rests at 1. Its tip is at x = 48 + 40 = 88 and
+// the sphere's leftmost point is 8, so D >= 80 hides it at rest; +0.5 clears the anti-aliased edge.
 const PEG_D = 88 - 8 + 0.5;
-/** Mostly honest (linear in progress) with a gentle ease-out on the last stretch, so the peg ARRIVES
- *  rather than stops. ease(0) = 0, ease(1) = 1 exactly, monotone. */
-export function pegEase(p) { const k = 0.35; return (1 - k) * p + k * (1 - Math.pow(1 - p, 3)); }
+/** Linear, easing out on the last stretch so the peg ARRIVES; ease(0) = 0, ease(1) = 1 exactly, monotone. */
+function pegEase(p) { const k = 0.35; return (1 - k) * p + k * (1 - Math.pow(1 - p, 3)); }
 /** The peg's x offset at progress p: −D at 0, exactly 0 at 1. */
-export const pegOffset = (p) => -PEG_D * (1 - pegEase(Math.min(1, Math.max(0, p))));
-/** Put the splash's peg where progress p says. At p ≥ 1 the transform and the sphere clip are
- *  REMOVED, not zeroed — the loaded mark is exactly the still mark (the clip is a geometric no-op
- *  there, but a second anti-aliasing pass on the skin edge is not). */
+const pegOffset = (p) => -PEG_D * (1 - pegEase(Math.min(1, Math.max(0, p))));
+/** At p ≥ 1 the transform and clip are REMOVED, not zeroed: a no-op clip still re-antialiases the skin edge. */
 export function paintPeg(p, root = document.getElementById('splash')) {
   const peg = root?.querySelector('.sp-peg'); if (!peg) return;
   const world = peg.parentNode;
   if (p >= 1) {
     peg.style.transform = '';
-    // the clip goes once the .3s glide has landed: a peg still gliding home, unclipped, would show
-    // outside the sphere for a moment
+    // the clip goes once the .3s glide lands, or a still-gliding peg shows outside the sphere
     const drop = () => { if (peg.style.transform === '') world.removeAttribute?.('clip-path'); };
     if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) drop(); else setTimeout(drop, 350);
   } else {
@@ -120,34 +94,27 @@ function paint() {
   paintItems();
   const p = progress();
   paintPeg(p, el);
-  const pct = Math.round(p * 100);
+  const pct = Math.floor(p * 100);
   bar.style.width = `${pct}%`;
   phaseEl.textContent = currentLabel();
   const b = bootBytes();
-  // ALWAYS show the expected total (R, 16:01 — people deserve to know how
-  // much they're in for, in case they want to bail). done can overrun the
-  // manifest total when late discoveries join; display total grows with it
-  // so the fraction stays honest instead of reading 117%.
+  // Always show the expected total; it grows with late discoveries so the fraction never reads over 100%.
   const shownTotal = Math.max(b.total, b.done);
   detailEl.textContent = b.total > 0
     ? `${(b.done / 1048576).toFixed(1)} / ${(shownTotal / 1048576).toFixed(1)} MB`
     : '';
 }
 
-// Rotating tips — the wait is the best teaching moment the client gets, since
-// it's the one time the user is looking at the UI and not at the world.
+// rotating tips — keep them in step with the live bindings; an agent's wake rules are its own: describe, never promise
 const TIPS = [
-  // audited against the live bindings 09-05 (R: "see if anything needs updating")
-  // An agent's wake rules are its own, not promises this client can make — the wording stays descriptive, never a
-  // guarantee (review 2026-09-10 #4).
   ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
   ['/', 'Type <b>/</b> in chat for commands. Everything said in a world is public: everyone here hears it.'],
   ['B', '<b>B</b> toggles builder mode. Off by default, so looking around never moves anything.'],
   ['↕', 'In builder mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
   ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
-  ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
-  ['1', 'Number keys play the action bar\'s entries, in its order. The bar shows which is which.'],
+  ['V', '<b>V</b> turns your mic on and off (with push-to-talk on in Audio, hold it to talk). Your body should wake up silent — the mic is off until you say so.'],
+  ['1', 'Number keys play the bar\'s gestures, in its order (sit/stand/lie are X and Z). The bar shows which is which.'],
   ['Tab', '<b>Tab</b> hides every open panel and brings back exactly what you had. <b>F11</b> is full screen; <b>Esc</b> leaves it.'],
   ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],
@@ -174,7 +141,7 @@ export function initBoot({ world, name }) {
   const WHY = {
     'vr-webgl': 'restarted on WebGL 2 for VR — this browser can\'t present VR from WebGPU yet (Video settings › VR renderer)',
     'vr': 'restarted in VR mode',
-  }[new URLSearchParams(location.search).get('why')];
+  }[CONFIG.params.get('why')];
   if (WHY) { const w = document.createElement('div'); w.className = 'sp-why'; w.textContent = WHY; el.querySelector('.sp-status')?.after(w); }
   bus.on('loading', paintItems);
   itemsTimer = setInterval(paintItems, 500);   // the > 2 s gate needs a clock, not just events
@@ -186,20 +153,14 @@ export function initBoot({ world, name }) {
   rotateTip();
   tipTimer = setInterval(rotateTip, 5200);
 
-  // The engine is already parsed by the time this module runs — that phase is
-  // complete by definition, and its duration is measurable from navigation.
-  // performance.now() is already ms since navigation, so this IS how long the
-  // engine took to arrive and parse — the part of the boot the splash exists to
-  // cover, and the part no JavaScript can measure from the inside any earlier.
+  // The engine is parsed by the time this runs; performance.now() (ms since navigation) is its arrival time.
   markPhase('engine', 1);
   marks.engine = Math.round(performance.now());
 
-  // Byte progress refreshes the numbers even when no phase boundary moves, so
-  // the bar never looks frozen during one big download.
+  // bytes refresh the numbers between phases, so one big download never looks frozen
   bus.on('loading', paint);
 
-  // An escape hatch, always. A stuck asset must never trap someone outside the
-  // world — they can walk in and let the rest arrive around them.
+  // an escape hatch, always: a stuck asset must never trap someone outside the world
   const skip = el.querySelector('.sp-skip');
   skip.onclick = () => finishBoot('skipped');
   setTimeout(() => { if (!done) skip.classList.add('show'); }, 4000);
@@ -209,11 +170,9 @@ export function initBoot({ world, name }) {
   paint();
 }
 
-// ?holdsplash=N keeps the splash up until N seconds after boot began, even
-// though the world is ready — R, 09-05: "fake a longer load so I can see what
-// it might look like on a big world". Everything else (tips, breath) runs as
-// on a real long load; only the dismissal waits.
-const HOLD_S = Number(new URLSearchParams(globalThis.location?.search ?? '').get('holdsplash')) || 0;   // module scope: node-side suites import this without a window
+// ?holdsplash=N keeps the splash up until N s after boot began, to preview a long load; only the dismissal waits.
+const HOLD_S = Number(CONFIG.params.get('holdsplash')) || 0;
+let hideTimer = null;
 export function finishBoot(reason = 'ready') {
   if (done || !el) return;
   if (HOLD_S > 0) {
@@ -230,22 +189,20 @@ export function finishBoot(reason = 'ready') {
   phaseEl.textContent = 'welcome';
   el.classList.add('gone');
   stopRays();
-  setTimeout(() => { el.style.display = 'none'; }, 620);
+  hideTimer = setTimeout(() => { el.style.display = 'none'; }, 620);
   const total = Math.round(performance.now() - startedAt);
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
   releaseBoot?.();
 }
 
-/** The world refused the join (net.js: close 4005 and its kin — an old-format world, no such world, a removal): the
- *  splash stays up, or comes back, and says so in the server's own words. Nothing lifts it — no ceiling, no "go in
- *  anyway": an empty world behind it looked like a successful join (R 10-16 00:02: an old-format world opened as her
- *  avatar on an empty grid, the refusal toasted UNDER the splash and gone before it lifted). Coming back is a reload. */
+/** A refused join (close 4005 and kin) keeps the splash up in the server's words; nothing lifts it, a reload returns. */
 export function refuseBoot(text) {
   const root = el ?? document.getElementById('splash');
   if (!root) return;
   el = root;
   done = true;   // finishBoot, the 45 s ceiling and the progress painters all stand down
+  clearTimeout(hideTimer);   // a refusal inside finishBoot's fade must not be hidden by it
   clearInterval(tipTimer);
   clearInterval(itemsTimer);
   stopRays();
@@ -259,10 +216,8 @@ export function refuseBoot(text) {
   const sub = root.querySelector('.sp-sub');
   if (sub) sub.textContent = "couldn't step in";
 }
-export const bootRefused = () => !!el?.classList.contains('refused');
 
-/** A TRANSIENT refusal (a full world) said on the splash while it waits: the words where the person is looking, but
- *  nothing is pinned — the splash goes on, and the next join that succeeds finishes it as usual (review r3 F6). */
+/** Nothing is pinned: the next successful join finishes it as usual. */
 export function waitBoot(text) {
   const root = el ?? document.getElementById('splash');
   if (!root || done) return false;
@@ -274,43 +229,14 @@ export function waitBoot(text) {
   return true;
 }
 
-/** Disarm the lite-mode tripwire index.html armed before the first engine byte.
- *
- *  NOT at finishBoot: arrival means "there is somewhere to stand", and the world's assets
- *  keep streaming after it. A phone that dies on a busy world dies in that tail, so
- *  clearing on arrival wipes the flag seconds before the crash it exists to record.
- *
- *  The first version of this waited for loadingItems() to go quiet, which does not work
- *  and hid that it did not: prefetch.js streams the library during idle time and keeps
- *  entries in that list indefinitely, so the list never empties, the quiet branch was
- *  dead code, and a ceiling meant for pathological worlds was quietly deciding every
- *  case. Two signals that actually discriminate:
- *
- *  1. PAGEHIDE. Leaving on purpose - navigating away, closing the tab - fires this. An
- *     out-of-memory kill does not: the renderer is terminated without notice. That
- *     asymmetry is the whole signal, and it is the honest one, because it says "this
- *     session ended deliberately" rather than "this session lasted a while".
- *  2. A DWELL. Surviving the heavy early tail is evidence in its own right, and it
- *     bounds the false positive from a pagehide that never fires - a backgrounded tab
- *     discarded by Android, say, which is common and is not the user's doing.
- *
- *  Known and accepted: a crash LATER than the dwell, with no pagehide, is not
- *  remembered. Asset streaming front-loads the risk, so most of the danger is inside it;
- *  and the cheap direction to be wrong is toward forgetting, because the cost of a false
- *  demotion is a lite session the person did not ask for, while the cost of a missed
- *  crash is one more crash and then the flag catches it. */
+/** On pagehide or after DWELL_MS, never at finishBoot: assets stream on after arrival, and that tail is where phones die.
+ *  A crash after the dwell is forgotten, on purpose. */
 const DWELL_MS = 60000;
 function disarmTripwire() {
-  // A LITE session proves nothing about the full client, and it is the full client the
-  // flag is about. lite.js calls finishBoot too (its splash has to come down like any
-  // other), so without this a phone demoted to lite would clear its own evidence by
-  // surviving in lite and walk back into the crash on the next visit.
+  // A lite session (lite.js calls finishBoot too) proves nothing about the full client: don't clear its evidence.
   if (globalThis.__ewLite) return;
   const key = globalThis.__ewTripKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-attempt';
-  // Signal 1 (pagehide) is index.html's, listening since the moment it armed the flag, so a
-  // tab closed MID-LOAD is a clean exit too. What's left here is the dwell. It removes the key
-  // unconditionally and marks the disarm final, because a bfcache restore re-arms (index.html)
-  // and a guard like "already cleared once" would then leave that re-armed flag set forever.
+  // unconditional: a bfcache restore re-arms, so an "already cleared" guard would leave the flag set forever
   setTimeout(() => {
     globalThis.__ewTripDisarmed = true;
     try {
@@ -322,43 +248,30 @@ function disarmTripwire() {
 
 export const bootDone = () => done;
 
-// Scenery that isn't gating arrival should also not COMPETE with it. Without
-// this the sky's 7.5MB simply moved from blocking the boot to stealing its
-// bandwidth, and the body — which arrival does wait for — got slower by almost
-// exactly what the sky gained.
+// Scenery that doesn't gate arrival must not compete with it for bandwidth (the sky would slow the body).
 let releaseBoot;
 const bootGate = new Promise((res) => { releaseBoot = res; });
-// Yielding to arrival must never become waiting on it FOREVER. Anything that
-// awaits this is background work; if boot is somehow stuck, background work
-// proceeding is strictly better than a deadlock, and a deadlock here already
-// cost a 45-second join once.
+// Yielding to arrival must never become waiting forever: if boot is stuck, background work proceeds.
 const BOOT_GATE_MAX = 12000;
 export const whenBooted = () => (done
   ? Promise.resolve()
   : Promise.race([bootGate, new Promise((r) => setTimeout(r, BOOT_GATE_MAX))]));
 bus.on('booted', () => releaseBoot?.());
 
-// ---- the rays live in a WORKER (splashrays.worker.js): a WebGL2 shader on an
-// OffscreenCanvas, so the splash animates every frame regardless of what
-// loading does to the main thread, and stops only if the tab is hard-frozen
-// (R, 09-05). Dithered in the shader — Canvas2D banded. Falls back to the
-// static gradient (already under it) when OffscreenCanvas/WebGL2 is missing.
-// The worker, its resize listener and the harness handle are ONE resource with one owner: stopRays releases
-// all three, idempotently, on every exit (finish, nogl, a throw mid-start) — a closed worker must never stay
-// advertised as the instrument and a no-op listener must not outlive the splash (review 2026-09-10 #3).
+// ---- the rays live in a WORKER (splashrays.worker.js) so they animate whatever the main thread does
+// worker, resize listener and harness handle are one resource: stopRays releases all three, idempotently
 let raysWorker = null, raysResize = null;
 export function startRays(el) {
   const cv = el.querySelector('.sp-rays');
   if (!cv || typeof OffscreenCanvas === 'undefined' || !cv.transferControlToOffscreen) return;
-  if (new URLSearchParams(location.search).get('rays') === '0') return;   // A/B: does the splash shader slow the load?
+  if (CONFIG.params.get('rays') === '0') return;   // A/B: does the splash shader slow the load?
   stopRays();   // a second start releases the first worker + listener instead of stacking them
   try {
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
     cv.width = cv.clientWidth; cv.height = cv.clientHeight;
     const off = cv.transferControlToOffscreen();
     raysWorker = new Worker(new URL('./splashrays.worker.js', import.meta.url), { type: 'module' });
-    // Three outcomes, kept distinct (antra-tess #185 B4 rereview): ACK = the worker drew a frame
-    // and said so; NOGL = it reached us and declined (legitimate fallback); silence = neither.
+    // three outcomes kept distinct: ACK = drew a frame; NOGL = declined (fallback); silence = neither
     raysWorker.onmessage = (e) => {
       const t = e.data?.type;
       if (t === 'ready') { globalThis.__raysAck = true; return; }
@@ -368,11 +281,7 @@ export function startRays(el) {
     raysResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
     addEventListener('resize', raysResize);
     globalThis.__raysWorker = raysWorker;   // harness: postMessage({type:'frames'}) answers with the frame count
-    // CUMULATIVE, never cleared (antra-tess #185 rereview B4, 2026-09-12): the
-    // handle above is transient — stopRays nulls it — and boot-check sampled it
-    // on a 250ms poll, so a worker that started AND finished between two samples
-    // was invisible. 2 of 8 owned runs failed on that race. This flag is the
-    // durable receipt: started is started, whatever the sampler saw.
+    // cumulative, never cleared: a polling sampler can miss a short-lived worker
     globalThis.__raysStarted = true;
   } catch { cv.style.display = 'none'; stopRays(); }
 }

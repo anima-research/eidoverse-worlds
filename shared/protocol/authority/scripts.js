@@ -1,36 +1,35 @@
 // shared/protocol/authority/scripts.js — scripts, the standing half (settings and registration): the server's script
 // settings and an owner's @world.script-settings, a script's rights and install checks, particles and effect uploads, the
 // runtime console ring, sponsors and pauses, the per-state script memo, and the budgets (rate, duty, CPU) an activation is
-// held to (refactor split, 2026-10-17; moved from authority.js's "behaviours" section unchanged; the running half is
-// authority/scriptrun.js). The gate's rights words (lacks, needWords, nearMiss) are above it, reached through UP.
-import { isEntityId, isComponent, jcs, utf8Len, PURGED } from "../fold.js";
+// held to (the running half is authority/scriptrun.js). The gate's rights words (lacks, needWords, nearMiss) are above
+// it, reached through UP.
+import { isEntityId, isComponent, jcs, utf8Len, REDACTED } from "../fold.js";
 import { COMPONENTS, registered, baseOf } from "../componentspec.js";
 import * as SR from "../scriptrules.js";
 import { instanceProblem, effectFor, effectBlobName, effectProblem, EFFECT_KIND, ESSENTIAL_NAMES, isEssential } from "../../particle_effects.js";
 import { UP } from "./ctx.js";
 import { refuse, said } from "./refuse.js";
-import { VOLATILE, followUpsOf, isE, opsQuiet } from "./storage.js";
+import { VOLATILE, cascadeOf, isE, opsQuiet } from "./storage.js";
 import { descendants } from "./math.js";
 import { backward, creatorOf, entryBy, isScriptActor, may, roleOf } from "./rights.js";
 import * as Roles from "../roles.js";
-// the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
-// authority.js binds at load
+// the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const guess = (...a) => UP.guess(...a);
 const lacks = (...a) => UP.lacks(...a);
 const nearMiss = (...a) => UP.nearMiss(...a);
 const needWords = (...a) => UP.needWords(...a);
 
-// ---------- behaviours (L4, L7 as revised; research 41; the lab's slice, the protocol lab's authority.js @ 2300bae, on a real sandbox) ----------
+// ---------- behaviours (L4, L7) ----------
 // A script is a keyed component `script:<name>` naming a source blob ({lang: "js", api, text}, by its sha256 name) and a
 // declared SCOPE. Its sponsor is whose rights admitted the LATEST write to that key in its current life (§5 "Two views"):
 // a view, never a stored field. Every activation is a fresh admission with capability {kind: "script"}: the sponsor's
 // rights NOW, narrowed to the scope. The visitor who triggers it adds nothing. An activation that changes something is
-// ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, head, seed, depth,
-// reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
+// ONE act (actor script:<id>, verb script, naming script, src, sponsor, sponsorAt, on, trigger, event, seq (the log's head), seed, depth,
+// engine, api, reads) plus ONE all-or-nothing batch caused by it, plus its says. Replay never runs code: the fold reads the batch.
 // Stated rule (§3d): no-op writes in a script batch are dropped (SR.elide, shared with the auditor). Authority practice: timers
 // sleep in an empty world unless `always`; a per-script rate, a per-sponsor fair share of a per-world hourly budget, a
 // cascade depth, and a pause after repeated failures.
-// This server's script configuration (shape audit 10-16): run, max, budget and cpu are what an owner may set in
+// This server's script configuration: run, max, budget and cpu are what an owner may set in
 // @world.script-settings (absent: scriptDefaults(), which schema reports), max, budget and cpu never above scriptCeiling() (an owner
 // tightens the budgets, never raises them past the server's); rate, depth, fails and runs are the server's alone
 // (setScriptConfig, an operator's). A stored value of a field the owner no longer sets (an old install, rate…) is ignored.
@@ -42,7 +41,7 @@ export const scriptCeiling = () => ({ max: 64, budget: SCRIPTS.budget, cpu: SCRI
 /** An operator's (and a test's) script configuration; returns what it was, to restore. Never a world's. */
 export function setScriptConfig(over = {}) { const was = { ...SCRIPTS }; Object.assign(SCRIPTS, over); return was; }
 // what the owner wrote in @world.script-settings ({} when nothing, or not an object)
-const ownScriptSettings = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return c && typeof c === "object" && !Array.isArray(c) && c !== PURGED ? c : {}; };
+const ownScriptSettings = (st) => { const c = st.entities["@world"]?.c["script-settings"]; return c && typeof c === "object" && !Array.isArray(c) && c !== REDACTED ? c : {}; };
 const scriptsCfg = (st) => { const own = ownScriptSettings(st);
   const out = { ...SCRIPTS }; for (const k of OWNER_SCRIPT_FIELDS) if (own[k] !== undefined) out[k] = own[k];
   // a value above this server's ceiling is lowered to it; when it was the owner's, `capped` keeps what they asked for, so a
@@ -50,9 +49,11 @@ const scriptsCfg = (st) => { const own = ownScriptSettings(st);
   for (const [k, top] of Object.entries(scriptCeiling())) if (Number.isFinite(out[k]) && out[k] > top) { if (own[k] !== undefined) (out.capped ??= {})[k] = out[k]; out[k] = top; }
   return out; };
 // Whose a limit an owner may set is, for a refusal that quotes it: this server's ceiling when it lowered the owner's
-// value (`capped`), the owner's when their value stands, else this server's own, which the owner may lower but not raise
+// value (`capped`), the owner's when their value stands, else this server's own: a default below the ceiling the owner may
+// raise to it (max: 12 of 64), one at the ceiling they may lower but not raise
 const limitWhose = (st, cfg, k) => (cfg.capped?.[k] !== undefined ? `this server's ceiling: the owner's @world.script-settings.${k} asks ${cfg.capped[k]}, and this server caps it`
   : ownScriptSettings(st)[k] !== undefined ? `which the world's owner sets in @world.script-settings.${k}`
+  : cfg[k] < scriptCeiling()[k] ? `this server's default, which the world's owner may raise in @world.script-settings.${k} up to ${scriptCeiling()[k]}`
   : `this server's limit, which the world's owner may lower in @world.script-settings.${k} but not raise`);
 // the registry's lists (componentspec script.itemEnums), read here, never restated
 const BODY_EFFECTS = COMPONENTS.script.itemEnums["scope.bodies"];
@@ -61,23 +62,20 @@ const scopeIds = (st, id, ids) => (ids === "self" ? [id] : ids === "subtree" ? [
 const inComps = (comps, c) => typeof c === "string" && comps.some((p) => p === c || (p.endsWith(":*") && c.startsWith(p.slice(0, -1))));
 const sampleOf = (p) => (p.endsWith(":*") ? p.slice(0, -1) + "x" : p);
 function scriptRights(w, st, cap, op, at, made) {
-  if (op.verb === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
+  if (op.op === "create") { if (!cap.create) refuse("scope", `${cap.key} doesn't declare create: true`, "its scope is data: what it may touch is fixed at install"); (cap.made ??= new Set()).add(op.id); }
   else { const mine = cap.ids.includes(op.id) || cap.made?.has(op.id);
     if (!mine || (op.comp !== undefined && !inComps(cap.comps, op.comp)) || (op.comp === undefined && !cap.made?.has(op.id)))
-      refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.verb} ${at}`, "a script acts only inside the scope it declared at install"); }
+      refuse("scope", `${cap.key} on ${cap.id} may change only ${cap.comps.join("/") || "nothing"} of ${cap.ids.join(", ") || "nothing"}, not ${op.op} ${at}`, "a script acts only inside the scope it declared at install"); }
   const r = roleOf(st, cap.sponsor); const need = lacks(w, st, cap.sponsor, op, new Set([...(made ?? []), ...(cap.made ?? [])]), { viaCap: true });
   if (need) refuse("rights", `${cap.key}'s sponsor ${said(cap.sponsor)} can't change ${at} any more (${r} now; it needs ${needWords(need)})`, "dormant: a behaviour has its sponsor's rights now, never more (§8). An owner may adopt it: adopt {id, script}");
 }
-// At install (any set of script:<name>), by whoever's rights carry the write: the install rank, a scope within those
-// rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that parses, the
-// timer floor, `always` only by an owner, the world's script count.
-// R 10-07 (particles): the instance names an effect (an Essential, or a document stored in this world's blobs), and its
+// particles: the instance names an effect (an Essential, or a document stored in this world's blobs), and its
 // params are ones that document declares, within their bounds, with the effect still within EFFECT_LIMITS once they're
 // applied. The first protocol's flat bag is read in older values (PROTOCOL §4: a stored value is read forever) and never
 // taken in a write: its spelling would be a second way to say one thing. A held thing's fx carries a particles value too.
 function particlesCheck(w, op) {
   const one = (v, at) => { if (!v || typeof v !== "object" || Array.isArray(v)) return;
-    const b = isEssential(v.effect) ? null : effectBlobName(v.effect); let doc = null;   // an Essential's address is its own document (shape audit 10-16), not this world's blob
+    const b = isEssential(v.effect) ? null : effectBlobName(v.effect); let doc = null;   // an Essential's address is its own document, not this world's blob
     if (b) { try { doc = w.getBlob(b); } catch { /* not stored here: said below */ }
       if (doc && (doc.kind !== EFFECT_KIND || effectProblem(doc))) refuse("shape", `${at}.effect: ${b} isn't a particle effect this protocol runs (${doc.kind !== EFFECT_KIND ? "not a particle-effect document" : effectProblem(doc)})`, "upload {effect: {kind: 'particle-effect', v: 1, emitters: [...]}} stores one and says why it can't"); }
     else doc = effectFor(v.effect);
@@ -101,10 +99,13 @@ function uploadEffect(w, actor, a) {
   const h = w.putBlob(a.effect);
   return { ok: true, effect: h, next: `set {id, component: 'particles', value: {effect: '${h}'}}` };
 }
+// At install (any set of script:<name>), by whoever's rights carry the write: the scripts permission, a scope within
+// those rights NOW (a builder can't install a script that writes roles:*: promotion by proxy), a clean source that
+// parses (where the host has a sandbox to ask: checkSyntax is optional, so without one only hygiene is checked), `always` only by an owner, the world's script count (the timer floor is the registry's range).
 function installCheck(w, st, s, who, op) {
   const { actor, cap } = who; const installer = cap?.kind === "script" ? cap.sponsor : cap?.kind === "reaction" ? cap.author : actor;
   const role = roleOf(st, installer), cfg = scriptsCfg(st), v = op.value, at = `${op.id}.${op.comp}`;
-  // research S2: the `scripts` permission is the install gate (role-defs: the owner sets each role's)
+  // the `scripts` permission is the install gate (role-defs: the owner sets each role's)
   if (!may(st, installer, "scripts")) refuse("rights", `installing a script here needs the scripts permission; ${said(installer)} is ${role}`, "the role's scripts permission says who may (the owner sets it in role-defs)", { needs: "scripts" });
   if (typeof v.src !== "string" || !/^sha256:[0-9a-f]{64}$/.test(v.src)) refuse("shape", `${at}.src must be a blob name sha256:<64 hex>`, "upload {text} stores the source and returns its name");
   let blob = null; try { blob = w.getBlob(v.src); } catch { /* missing or doesn't match its name: refused below */ }
@@ -112,7 +113,7 @@ function installCheck(w, st, s, who, op) {
   if (blob.lang !== SR.LANG || typeof blob.text !== "string") refuse("shape", `${at}.src isn't JavaScript source ({lang: '${SR.LANG}', text})`, "upload {text}");
   const dirty = SR.hygiene(blob.text); if (dirty) refuse(dirty.code, `${at}: ${dirty.reason}`, dirty.fix ?? "refused at install: reviewers must see what runs");
   w.scripts?.warm?.(); // a world that gets a script gets warm sandbox processes (a no-op once they're up)
-  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "docs/SCRIPTS.md shows the API; scripts {id, script, test: {on: 'use'}} runs it dry");
+  const syn = w.scripts?.checkSyntax?.(blob.text); if (syn) refuse("syntax", `${at}: ${syn.why}`, "fix the source, upload it again and set the new src (docs/guide/SCRIPTS.md shows the API); a dry run tests only an installed script");
   const sc = v.scope; if (!sc || typeof sc !== "object" || Array.isArray(sc)) refuse("shape", `${at} needs a scope {ids, comps}`, COMPONENTS.script.help);
   if (!(sc.ids === "self" || sc.ids === "subtree" || (Array.isArray(sc.ids) && sc.ids.length <= 32 && sc.ids.every((x) => x === "self" || isEntityId(x)))))
     refuse("shape", `${at}.scope.ids must be 'self', 'subtree' or up to 32 ids`, COMPONENTS.script.help);
@@ -125,38 +126,48 @@ function installCheck(w, st, s, who, op) {
     // PROTOCOL §4: a script may only ever write what the authority takes, so a bare name nobody registered is refused here,
     // at install, rather than at every activation
     if (!registered(n) && !n.includes("/")) refuse("schema", `${at}.scope.comps: '${n}' isn't a registered component; bare names belong to the registry (PROTOCOL §4)`, `a component of your own carries a namespace: 'example.org/${n}'`, { didYouMean: [`example.org/${n}`] }); }
-  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { verb: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
+  for (const id of scopeIds(s, op.id, sc.ids)) for (const c of sc.comps) { const need = lacks(w, st, installer, { op: "set", id, comp: sampleOf(c) }, new Set(s.entities[id] && !st.entities[id] ? [id] : []), { viaCap: true });
     if (need) refuse("rights", `${at}'s scope reaches ${id}.${c}, which needs ${needWords(need)}; ${said(installer)} is ${role}`, "a script can never do more than its installer could do directly: narrow the scope, or ask an owner to install or adopt it"); }
   const on = v.on ?? [];
   if (!Array.isArray(on) || on.some((e) => typeof e !== "string" || !(SCRIPT_EVENTS.includes(e) || (e.startsWith("changed:") && isComponent(e.slice(8))))))
     refuse("shape", `${at}.on lists ${SCRIPT_EVENTS.join(", ")} and changed:<comp>`, "timers come from every (they deliver tick, and wake after sleeping)");
-  if (v.every !== undefined && !(typeof v.every === "number" && v.every >= 5)) refuse("shape", `${at}.every is ${v.every} s; the floor is 5 s`, "sub-second behaviour belongs in client presence or the engine; motion is a function of time");
+  // every's 5 s floor is the registry's range (componentspec script.ranges), refused at the door before this runs
   if (v.knobs !== undefined && utf8Len(jcs(v.knobs)) > 4096) refuse("too-big", `${at}.knobs is ${utf8Len(jcs(v.knobs))} bytes; at most 4 KiB`, "big data goes in a blob");
   const prev = st.entities[op.id]?.c[op.comp];
   if (v.always === true && prev?.always !== true && !Roles.isOwner(role)) refuse("rights", `${at}.always (run with nobody present) needs an owner`, "it costs the host while nobody benefits");
-  if (prev === undefined || prev === PURGED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
-    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}`, "@world.script-settings.max (owner)"); }
+  if (prev === undefined || prev === REDACTED) { const n = allScripts(s).length;   // a purged slot holds no live script, so filling it is a new one
+    if (n > cfg.max) refuse("too-many", `this world would have ${n} scripts; it allows ${cfg.max}, ${limitWhose(st, cfg, "max")}`, tooManyFix(st, s, n, cfg.max)); }
+}
+function tooManyFix(st, s, n, max) {
+  const was = new Set(allScripts(st).map((x) => `${x.id}|${x.name}`)), added = allScripts(s).filter((x) => !was.has(`${x.id}|${x.name}`)).length;
+  const here = n - added, k = n - max, top = scriptCeiling().max, K = (x) => (x === 1 ? "one" : String(x)), ways = [];
+  if (here >= k) ways.push(`remove ${K(k)} of the ${here} here first`);
+  if (added >= k) ways.push(`add ${K(k)} fewer in this request (it adds ${added})`);
+  if (!ways.length) ways.push(`take ${K(k)} away between the ${here} here and the ${added} this request adds`);
+  const raise = max >= top ? null : n <= top ? `the world's owner may raise @world.script-settings.max to ${n} or more (up to ${top} on this server)`
+    : `the world's owner may raise @world.script-settings.max to ${top}, this server's ceiling, and ${K(n - top)} must still go`;
+  return raise ? `${ways.join(", or ")}, or ${raise}` : `${ways.join(", or ")}: this server allows a world ${top} at most`;
 }
 const rtKey = (id, name) => `${id}|${name}`;
 const rtOf = (w, id, name) => ((w.presence.scripts ??= {})[rtKey(id, name)] ??= { console: [] });
 const logRt = (w, rt, line) => { rt.console.push({ ts: Math.floor(w.now()), ...line }); if (rt.console.length > 20) rt.console.shift(); w.presenceDirty = true; };
-// how many behaviour acts sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
+// how many behaviour acts (verb script; a world.use act is a link, not a level) sit in the cause chain behind entry `seq` (41 §3.9: a reader computes it from the log)
 function scriptDepth(w, seq) { let n = 0, e = w.entries[seq], guard = 0;
-  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "act") n++; e = w.entries[e.cause]; } return n; }
+  while (isE(e) && isScriptActor(e.actor) && guard++ < 1000) { if (e.kind === "request" && e.verb === "script") n++; e = w.entries[e.cause]; } return n; }
 // The writes to a script: key in its current life, newest first: [{e, value}] (value undefined if purged)
 function scriptWrites(w, id, key) {
   const out = []; let restored = false;
-  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = followUpsOf(e);
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "change") continue; const ops = opsQuiet(e); const fu = cascadeOf(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
-      if (o.verb === "set" && o.comp === key) { if (fu.has(k)) restored = true; else { restored = false; out.push({ e, value: o.value }); } }   // a follow-up never sponsors (review r9 H1)
-      else if (o.verb === "delete" && fu.has(k) && restored && (o.comp === key || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
-      else if (o.verb === "create" || (o.verb === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
+      if (o.op === "set" && o.comp === key) { if (fu.has(k)) restored = true; else { restored = false; out.push({ e, value: o.value }); } }   // a follow-up never sponsors (review r9 H1)
+      else if (o.op === "delete" && fu.has(k) && restored && (o.comp === key || o.comp === undefined)) { restored = false; continue; }   // reversed by a follow-up restore (r10 M2)
+      else if (o.op === "create" || (o.op === "delete" && (o.comp === key || o.comp === undefined))) return out; } }
   return out;
 }
 // `paused` is a permission, not the script: a write that changes only it (pause, resume) is a "pause write"
 export const unpaused = (v) => { if (!v || typeof v !== "object" || Array.isArray(v)) return v; const { paused, ...rest } = v; return rest; };
 const pauseOnly = (v, prev) => v !== undefined && prev !== undefined && jcs(unpaused(v)) === jcs(unpaused(prev));
-// §5 "Two views" (H3), with R's decision on lab 49 F4 (2026-10-06): the sponsor is whose rights admitted the latest write
+// §5 "Two views" (H3): the sponsor is whose rights admitted the latest write
 // to the script: key in its current life THAT CHANGED MORE THAN `paused`. Pausing or resuming adopts nothing: an owner
 // who pauses a builder's script stops it, and the builder still answers for it (an explicit adopt is how to take it on).
 function sponsorOf(w, id, key) {
@@ -169,7 +180,7 @@ function sponsorOf(w, id, key) {
 function pausedBy(w, id, key) {
   const W = scriptWrites(w, id, key); let at = null;
   for (const x of W) { if (x.value?.paused !== true) break; at = x; }
-  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "act" ? c.actor : at.e.actor;
+  if (!at) return null; const c = w.entries[at.e.cause]; const by = isE(c) && c.kind === "request" ? c.actor : at.e.actor;
   return { by, at: at.e.seq, ts: at.e.ts };
 }
 // who is here: the authority's own bodies plus whoever the host says is connected (a server's people), id → position | null
@@ -178,12 +189,11 @@ function presentOf(w) { const out = new Map();
   for (const p of w.present?.() ?? []) if (p && typeof p.id === "string" && !out.has(p.id)) out.set(p.id, Array.isArray(p.at) && p.at.length === 3 && p.at.every(Number.isFinite) ? p.at : null);
   return out; }
 const scriptMemo = new WeakMap();
-// per state, from each entity's own list (cached on its entity object: a write's next state re-reads only what it touched;
-// review 10-06 S0-2, every write re-scanned every component of every thing)
+// per state, from each entity's own list (cached on its entity object: a write's next state re-reads only what it touched)
 const scriptsOfEnt = new WeakMap();
 function allScripts(st) { let out = scriptMemo.get(st); if (out) return out; out = []; const vol = VOLATILE.has(st.entities);
   for (const id of Object.keys(st.entities)) { const e = st.entities[id]; let mine = vol ? null : scriptsOfEnt.get(e);
-    if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== PURGED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
+    if (!mine || mine.id !== id) { mine = { id, list: [] }; for (const k of Object.keys(e.c)) { const v = e.c[k]; if (k.startsWith("script:") && v && typeof v === "object" && !Array.isArray(v) && v !== REDACTED) mine.list.push({ id, name: k.slice(7), v }); } if (!vol) scriptsOfEnt.set(e, mine); }
     for (const x of mine.list) out.push(x); }
   scriptMemo.set(st, out); return out; }
 // budgets (authority practice, stated in @world.script-settings; §3d M3): per script per minute; per world per hour; each sponsor a fair
@@ -194,15 +204,16 @@ function budgetOf(w, st, now, id, key, sponsor, cfg) {
   const sponsors = new Set(allScripts(st).map((x) => sponsorOf(w, x.id, `script:${x.name}`)?.sponsor).filter(Boolean));
   for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e)) continue; if (Number.isInteger(e.ts) && now - e.ts > 3600000) break;
     if (!isScriptActor(e.actor)) continue; all++;
-    const a = e.kind === "act" ? e : w.entries[e.cause];
-    if (isE(a) && a.kind === "act" && a.body?.sponsor === sponsor) bySp++;
-    if (e.kind === "act" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
+    const a = e.kind === "request" ? e : w.entries[e.cause];
+    if (isE(a) && a.kind === "request" && a.body?.sponsor === sponsor) bySp++;
+    if (e.kind === "request" && e.actor === `script:${id}` && e.body?.script === key && now - e.ts <= 60000) mine++; }
   return { mine, all, bySponsor: bySp, sponsors: sponsors.size, share: Math.floor(cfg.budget / Math.max(1, sponsors.size)) };
 }
 // The authority's thread is shared by every world in this process, so script time is capped for the PROCESS, not only per
 // world or sponsor: in any rolling second, activations may use at most DUTY.maxMs of it. Past that they're refused
 // ("busy", never the script's failure). With the sandbox's per-activation deadline (wallMs + GRACE), no request, tick or
-// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2).
+// chain of cascades can hold the thread longer than about DUTY.maxMs + one deadline (I2). Under EIDO_SANDBOX=inprocess
+// (Windows' opt-in) nothing kills a native builtin, so that bound holds for bytecode only.
 export const DUTY = { windowMs: 1000, maxMs: 500, worldShare: 0.6 }; // one world gets at most worldShare of it (fairness between worlds)
 /** A host sets the process's script duty (a big server may give scripts more of each second; a test that fires a thousand
  *  activations in a tight loop opens it wide). Returns the previous setting. */

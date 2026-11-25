@@ -1,16 +1,24 @@
-// server/durable.ts — the disk practice a sequencer owes its readers (platforms review 10-06, #5):
-//  - a line is on disk (fsync) BEFORE anyone is told about it: otherwise a crash after a broadcast loses the tail, the
-//    restarted server re-issues the same seq with a different head, and every client holding (seq, head) holds "proof"
-//    the authority equivocated;
-//  - a torn last line (a crash mid-write) is cut off at open, not kept as a permanent malformed entry;
-//  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten, never kept.
+// server/durable.ts — the disk practice a sequencer owes its readers:
+//  - a line is fsynced before anyone is told about it (else a crash after a broadcast re-issues a seq under another head);
+//  - a torn last line (a crash mid-write) is cut off at open;
+//  - a blob is written to a temp file and renamed, and one whose bytes don't match its name is rewritten.
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { sha256 } from "../shared/protocol/hash.js";
 
+/** Does the file at `p` hold `needle`'s bytes? Read in 1 MiB chunks, never whole (the boot sweep's peek). */
+export function fileIncludes(p: string, needle: string): boolean {
+  const n = Buffer.from(needle), b = Buffer.allocUnsafe((1 << 20) + n.length), fd = fs.openSync(p, "r");
+  try { for (let pos = 0, keep = 0; ;) { const got = fs.readSync(fd, b, keep, b.length - keep, pos); if (got <= 0) return false;
+    pos += got; const end = keep + got; if (b.subarray(0, end).includes(n)) return true;
+    keep = Math.min(n.length - 1, end); b.copy(b, 0, end - keep, end); } }   // a needle across the chunk edge is found next read
+  finally { fs.closeSync(fd); }
+}
+
 /** The log's bytes, with a torn tail (no final newline) cut off the file first. `cut: false` is a reader's: it leaves the
- *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now (review
- *  of #260, server I127: a reader that cut it made the writer's line land broken). Only the log's writer cuts. */
+ *  file alone and only leaves the tail out, since a line without its newline may be one a writer is appending now. Only
+ *  the log's writer cuts. */
 export function readLogBytes(logPath: string, { cut = true } = {}): Buffer {
   if (!fs.existsSync(logPath)) return Buffer.alloc(0);
   const b = fs.readFileSync(logPath);
@@ -39,7 +47,7 @@ export function appendDurable(logPath: string, line: string) {
   const fresh = !fs.existsSync(logPath);
   const fd = fs.openSync(logPath, "a");
   try { writeAll(fd, Buffer.from(line + "\n", "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  if (fresh) syncDir(path.dirname(logPath));   // a file's first line is durable only once its name is (review of #260, server I17)
+  if (fresh) syncDir(path.dirname(logPath));   // a file's first line is durable only once its name is
 }
 /** fsync a directory, so a file just created or renamed into it survives a crash (POSIX: the entry lives in the directory,
  *  not the file). Windows can't open a directory for this, and NTFS journals names itself: skipped there. */
@@ -49,14 +57,19 @@ export function syncDir(dir: string) {
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 
+/** fsync one file's bytes (a copy just made: copyFileSync syncs nothing). Windows flushes a file only through a handle
+ *  opened for writing (FlushFileBuffers); POSIX blobs may be read-only. */
+export function syncFile(p: string) {
+  const fd = fs.openSync(p, process.platform === "win32" ? "r+" : "r");
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
 /** fsync every file and directory under `dir`, deepest first, `dir` included: a tree copied with cpSync (a fork's blobs)
  *  is written but not durable until each file's bytes and each directory's entries are synced. */
 export function syncTree(dir: string) {
   for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, ent.name);
     if (ent.isDirectory()) syncTree(p);
-    // Windows flushes a file only through a handle opened for writing (FlushFileBuffers); POSIX blobs may be read-only
-    else if (ent.isFile()) { const fd = fs.openSync(p, process.platform === "win32" ? "r+" : "r"); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); } }
+    else if (ent.isFile()) syncFile(p);
   }
   syncDir(dir);
 }
@@ -72,23 +85,63 @@ export function mkdirDurable(dir: string) {
   for (let d = path.dirname(path.resolve(dir)); ; d = path.dirname(d)) { syncDir(d); if (d === top || d === path.dirname(d)) break; }
 }
 
-/** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode`, set before the data goes in)
- *  and synced, renamed over `file`, and the directory that holds the new name synced. */
-export function replaceDurable(file: string, data: string, mode = 0o644) {
+/** Replace `file` with `data`, atomically and durably: written whole to a temp file (`mode` less the umask, set before the
+ *  data goes in) and synced, renamed over `file`, and the directory that holds the new name synced. */
+export function replaceDurable(file: string, data: string | Uint8Array, mode = 0o644) {
   mkdirDurable(path.dirname(file));
   const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, "w", mode);
-  try { fs.fchmodSync(fd, mode); writeAll(fd, Buffer.from(data, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.unlinkSync(tmp); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }   // a stale temp, never recursively
+  const fd = fs.openSync(tmp, "wx", mode);   // umask applies at create ("wx"); fchmod would override it (txn-check T8j)
+  try { writeAll(fd, typeof data === "string" ? Buffer.from(data, "utf8") : data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
   fs.renameSync(tmp, file);
   syncDir(path.dirname(file));   // the new name, in its directory
 }
+// ---- the one cross-process file lock: pid + nonce written to a file of its own and synced, then linked to the
+// lock name, so the lock never exists without its holder; a dead holder (its pid exited) is removed, never one merely old ----
+/** Who holds a lock file: the pid and the nonce its taker wrote (`<pid> <nonce>`), or null when it can't be read. */
+function holderOf(f: string): { pid: number; nonce: string } | null {
+  let s: string; try { s = fs.readFileSync(f, "utf8"); } catch { return null; }
+  const [p, nonce] = s.split(" "); const pid = Number(p);
+  return Number.isInteger(pid) && pid > 0 && /^[0-9a-f]{16}$/.test(nonce ?? "") ? { pid, nonce } : null;
+}
+/** Whether the holder `pid` named in a lock is gone: exited, or this very process (a lock is held only inside one synchronous
+ *  call on the main thread, so one naming our pid was left by an earlier process that had it). */
+function gone(pid: number): boolean {
+  if (pid === process.pid) return true;
+  try { process.kill(pid, 0); return false; } catch (e) { return (e as NodeJS.ErrnoException).code === "ESRCH"; }
+}
+/** Takes the lock file `name` for this process, or returns null when another holds it. Returns the nonce. */
+function take(name: string): string | null {
+  const nonce = crypto.randomBytes(8).toString("hex"), tmp = `${name}.${nonce}.tmp`;
+  const fd = fs.openSync(tmp, "wx", 0o600);
+  try { fs.writeSync(fd, `${process.pid} ${nonce}`); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  try { fs.linkSync(tmp, name); return nonce; }
+  catch (e) { if ((e as NodeJS.ErrnoException).code === "EEXIST") return null; throw e; }
+  finally { fs.rmSync(tmp, { force: true }); }
+}
+/** Removes the lock file `f` if its holder is gone, as one step: two waiters can see the same dead holder, so the remover
+ *  first links `<lock>.<nonce>` as its right, and removes `f` only if `f` still holds that nonce. Whether it removed `f`. */
+function clearIfGone(lock: string, f: string): boolean {
+  const h = holderOf(f); if (!h || !gone(h.pid)) return false;
+  const right = `${lock}.${h.nonce}`;
+  if (!take(right)) { clearIfGone(lock, right); return false; }
+  try { if (holderOf(f)?.nonce !== h.nonce) return false; fs.unlinkSync(f); return true; } finally { fs.rmSync(right, { force: true }); }
+}
+/** Run `f` holding the lock file `lock` (its directory must exist): another process waits up to `waitMs` for it, removes one
+ *  whose holder has exited, and throws past `waitMs`. Only this process removes its own lock. Not re-entrant. */
+export function withFileLock<T>(lock: string, waitMs: number, f: () => T): T {
+  const wait = new Int32Array(new SharedArrayBuffer(4)); const until = performance.now() + waitMs;
+  while (!take(lock)) {
+    if (clearIfGone(lock, lock)) continue;
+    if (performance.now() > until) { const h = holderOf(lock);
+      throw new Error(`${lock} has been held${h ? ` by process ${h.pid}` : ""} for ${waitMs / 1000} s; if no process is using it, remove it`); }
+    Atomics.wait(wait, 0, 0, 10);
+  }
+  try { return f(); } finally { fs.rmSync(lock, { force: true }); }
+}
+
 /** Store blob text `s` under its hash `h` at `file`: atomically, and replacing a copy that doesn't verify. */
 export function putBlobFile(file: string, s: string, h: string) {
   if (fs.existsSync(file)) { try { if (`sha256:${sha256(fs.readFileSync(file, "utf8"))}` === h) return; } catch {} }
-  mkdirDurable(path.dirname(file));
-  const tmp = `${file}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, "w");
-  try { writeAll(fd, Buffer.from(s, "utf8")); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-  fs.renameSync(tmp, file);
-  syncDir(path.dirname(file));
+  replaceDurable(file, s);
 }

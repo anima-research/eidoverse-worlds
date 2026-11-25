@@ -9,7 +9,7 @@ Every place the spec is silent, the choice made here is tagged GUESS-nn; the
 numbers match the ambiguity list in 27-python-reader-from-spec.md.
 
 Output:
-  status   ok | unknown-version | no-world
+  status   ok | unknown-version | unsupported-feature | no-world
   digest   sha256 hex of JCS(world-view)   (see DIGEST below)
   diagnostics, one per line: seq  code  detail
 
@@ -18,8 +18,8 @@ DIGEST (this reader's definition):
     over every LIVE entity (including live entities with no components, and
     the implicit @world), where CELL is
       {"v": <the I-JSON value>}    for a present component
-      {"purged": true}             for a component whose current value is
-                                   absent(purged)
+      {"redacted": true}           for a component whose current value is
+                                   absent(redacted)
   digest = lowercase hex sha256 of the UTF-8 bytes of RFC 8785 (JCS)
            serialization of world-view. Keys sort by UTF-16 code units.
   No version, world id or seq is mixed in (GUESS-20).
@@ -33,12 +33,12 @@ from decimal import Decimal
 
 DIALECT = "eidoverse-log"      # spec 2.4: genesis says {dialect: "eidoverse-log", v: 4} (upstream's shape)
 FOLD_VERSIONS = {4}            # GUESS-03: v is the integer 4
-KNOWN_MINORS = {0}             # §3d H6: a reader that doesn't know the minor refuses the world
 MAX_LINE_BYTES = 1 << 20       # GUESS-12: spec says "size caps", gives none
 MAX_DEPTH = 64                 # GUESS-12
-KINDS = {"genesis", "change", "act", "sim", "say", "purge", "sequencer"}
-ENVELOPE = {"world", "kind", "ts", "actor", "for", "grant", "by", "cause",
-            "verb", "body", "head", "sig"}   # head/sig: chain points (spec 2.4, chain.py)
+KINDS = {"genesis", "change", "request", "physics", "say", "redaction", "governance"}
+ENVELOPE = {"world", "kind", "ts", "actor", "cause", "op", "verb", "body", "head", "sig"}   # head/sig: chain points (spec 2.4, chain.py)
+WORD_OF = {"change": "op", "request": "verb", "physics": "verb"}   # D3: op on a change, verb on a request/physics entry, neither elsewhere
+BODY_KINDS = ("request", "say", "physics")   # the kinds whose whole body is purgeable (chain skeleton {commitment})
 OPS = {"create", "set", "delete", "batch"}
 
 # ---- names and ids (spec 2.3) ----------------------------------------------
@@ -84,7 +84,7 @@ def _parse_float(s):
 def _parse_int(s):
     if s.startswith("-") and int(s) == 0:
         raise Malformed("ijson-negzero", s)
-    # PROTOCOL §1 L1: an integer literal of magnitude above 2^53 is malformed (not rounded)
+    # PROTOCOL §1 L1: an integer literal not exactly representable as a binary64 is malformed (1e20 is; 2^53+1 is not)
     n = int(s)
     try:
         f = float(n)
@@ -212,7 +212,7 @@ def jcs(v):
 
 
 # ---- genesis (spec 2.4, 3d C1/H5/H6) -----------------------------------------
-GENESIS_FIELDS = {"dialect", "v", "minor", "nonce", "rewind_window", "parent", "owners", "quorum", "sequencer"}
+GENESIS_FIELDS = {"dialect", "v", "nonce", "rewindWindow", "parent", "owners", "quorum", "sequencer", "requires", "provenance"}
 _B64U = re.compile(r"\A[A-Za-z0-9_-]*\Z")
 _HEX64 = re.compile(r"\A[0-9a-f]{64}\Z")
 # the 8 small-order points' y (sign bit cleared): conformance/ed25519/test_vectors.py, spec 2.4 "Keys"
@@ -251,15 +251,11 @@ def _int(v, lo=0):
 
 
 def check_genesis(b):
-    """Returns None if the genesis body is well formed, "unknown-minor" if this reader doesn't know its minor, else
-    raises Malformed. The minor is checked before the shape: a later minor may add fields (L1)."""
-    if "minor" not in b or not _int(b["minor"]):
-        raise Malformed("genesis-minor", repr(b.get("minor"))[:40])
-    if int(b["minor"]) not in KNOWN_MINORS:
-        return "unknown-minor"
+    """Returns None if the genesis body is well formed, else raises Malformed. Its fields are exact: a stray one (`minor`
+    included) is malformed."""
     extra = set(b) - GENESIS_FIELDS
     if extra:
-        raise Malformed("genesis-field", ",".join(sorted(extra)))   # GUESS-27: a known minor's fields are exact
+        raise Malformed("genesis-field", ",".join(sorted(extra)))   # GUESS-27: the fields are exact
     n = b64u_decode(b.get("nonce"))
     if n is None or len(n) < 16:
         raise Malformed("genesis-nonce", repr(b.get("nonce"))[:40])
@@ -282,25 +278,110 @@ def check_genesis(b):
         q = b["quorum"]
         if not isinstance(q, list) or len(q) != len(tiers) or not all(_int(x, 1) for x in q):
             raise Malformed("genesis-quorum", repr(q)[:60])
-    if "rewind_window" in b and not _int(b["rewind_window"]):
-        raise Malformed("genesis-window", repr(b["rewind_window"])[:40])
+    if "rewindWindow" in b and not _int(b["rewindWindow"]):
+        raise Malformed("genesis-window", repr(b["rewindWindow"])[:40])
     if "parent" in b:
         p = b["parent"]
         if not (isinstance(p, dict) and set(p) == {"world", "seq", "head"} and isinstance(p["world"], str)
                 and p["world"].startswith("sha256:") and _HEX64.match(p["world"][7:]) and _int(p["seq"])
                 and isinstance(p["head"], str) and _HEX64.match(p["head"])):
             raise Malformed("genesis-parent", repr(p)[:60])
+    r = check_requires(b.get("requires"))
+    if r:
+        raise Malformed("genesis-requires", r[1])
+    if "provenance" in b:
+        p = check_provenance(b["provenance"])
+        if p:
+            raise Malformed("genesis-provenance", p)
     return None
 
 
+# ---- feature declarations and writer provenance (§F F-1, F-2; the twin of features.js, provenance.js) ----
+FEATURE_ID = re.compile(r"\A[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}\Z")
+MAX_FEATURES = 64
+KNOWN_FEATURES = set()   # the feature ids this reader implements: none yet
+
+
+def check_requires(lst, at="requires"):
+    """(code, detail) when lst is not a feature list, else None. Absent (None) is the empty list."""
+    if lst is None:
+        return None
+    if not isinstance(lst, list):
+        return (at + "-shape", at + " is a list of feature ids")
+    if len(lst) > MAX_FEATURES:
+        return (at + "-count", "%d ids; at most %d per world" % (len(lst), MAX_FEATURES))
+    for i in lst:
+        if not isinstance(i, str) or len(i) > 88 or not FEATURE_ID.match(i):
+            return (at + "-id", "%s is not namespace:name@major" % json.dumps(i))
+    if any(utf16(lst[k - 1]) >= utf16(lst[k]) for k in range(1, len(lst))):
+        return (at + "-order", "ids are sorted and unique")
+    return None
+
+
+def utf16(s):
+    return s.encode("utf-16-be")
+
+
+_SEMVER = re.compile(r"\A(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?\Z")
+
+
+def check_provenance(p):
+    """The code naming why p is not a provenance object, else None."""
+    if not isinstance(p, dict) or set(p) != {"registry", "writer"}:
+        return "provenance-shape"
+    r, w = p["registry"], p["writer"]
+    if not isinstance(r, dict) or set(r) != {"id", "sha256"} or r["id"] != "registry-pin" or not isinstance(r["sha256"], str) or not _HEX64.match(r["sha256"]):
+        return "provenance-registry"
+    if not isinstance(w, dict) or set(w) != {"name", "version", "sourceRevision", "sourceTreeSha256", "dirty"}:
+        return "provenance-writer"
+    if not isinstance(w["name"], str) or not re.match(r"\A[a-z][a-z0-9-]{0,47}\Z", w["name"]):
+        return "provenance-writer-name"
+    if not isinstance(w["version"], str) or not _SEMVER.match(w["version"]):
+        return "provenance-writer-version"
+    if not isinstance(w["sourceRevision"], str) or not re.match(r"\Agit:(?:sha1:[0-9a-f]{40}|sha256:[0-9a-f]{64})\Z", w["sourceRevision"]):
+        return "provenance-writer-revision"
+    if not isinstance(w["sourceTreeSha256"], str) or not _HEX64.match(w["sourceTreeSha256"]):
+        return "provenance-writer-tree"
+    if not isinstance(w["dirty"], bool):
+        return "provenance-writer-dirty"
+    return None
+
+
+def feature_decision(entries, known):
+    """Genesis requires, then each governance requiresAdd in order: (malformed (seq, code, detail) | None,
+    unsupported (seq, ids) | None). Nothing is declared past either."""
+    req = list(entries[0]["body"].get("requires") or [])
+    u = [i for i in req if i not in known]
+    if u:
+        return None, (0, u)
+    for seq, e in enumerate(entries):
+        if seq == 0 or e is None or e.get("kind") != "governance" or not isinstance(e.get("body"), dict) or "requiresAdd" not in e["body"]:
+            continue
+        add = e["body"]["requiresAdd"]
+        bad = check_requires(add, "requiresAdd")
+        if not bad and not add:
+            bad = ("requiresAdd-empty", "requiresAdd adds at least one feature id")
+        if not bad and any(i in req for i in add):
+            bad = ("requiresAdd-present", "%s is already required" % next(i for i in add if i in req))
+        if not bad and len(req) + len(add) > MAX_FEATURES:
+            bad = ("requiresAdd-count", "%d ids; at most %d per world" % (len(req) + len(add), MAX_FEATURES))
+        if bad:
+            return (seq,) + bad, None
+        req = sorted(req + add, key=utf16)
+        u = [i for i in add if i not in known]
+        if u:
+            return None, (seq, u)
+    return None, None
+
+
 # ---- the fold --------------------------------------------------------------
-PURGED = object()   # absent(purged): a defined value, distinct from "deleted"
+REDACTED = object()   # absent(redacted): a defined value, distinct from "deleted"
 
 
 class Reader:
     def __init__(self):
         self.diag = []          # (seq, code, detail)
-        self.world = None       # dict: id -> dict(comp -> value | PURGED)
+        self.world = None       # dict: id -> dict(comp -> value | REDACTED)
         self.status = None
         self.world_id = None
 
@@ -349,10 +430,7 @@ class Reader:
             self.d(0, "unknown-version", repr(ver))
             return
         try:
-            if check_genesis(g["body"]) == "unknown-minor":
-                self.status = "unknown-version"
-                self.d(0, "unknown-minor", repr(g["body"]["minor"]))
-                return
+            check_genesis(g["body"])
         except Malformed as m:
             self.status = "no-world"
             self.d(0, "malformed:" + m.code, m.detail)
@@ -370,8 +448,9 @@ class Reader:
                 continue
             w = e.get("world")
             if w != self.world_id:
-                # GUESS-21: soft: diagnose, do not reject (no hashing rule given)
-                self.d(seq, "world-mismatch", str(w)[:80])
+                # §2: an entry carrying another world's id is malformed, like a decreasing ts
+                self.d(seq, "malformed:world-mismatch", str(w)[:80])
+                entries[seq] = None
 
         # -- ts: integer ms, required after genesis, never decreasing (2.1) --
         last_ts = None
@@ -385,10 +464,19 @@ class Reader:
                 self.d(seq, "malformed:ts-decreasing", "%d < %d" % (t, last_ts)); entries[seq] = None; continue
             last_ts = t
 
-        # -- purge first (L1 Purge: "applied before anything else") --
-        purged = self.collect_purges(entries)
-        self.unnamed_stubs(entries, purged)
-        self.purges, self.entries = purged, entries   # for chain.verify: which stubs a purge the fold accepts names
+        # -- §F F-1: a feature this reader doesn't implement, declared anywhere, means no world (never a partial fold) --
+        bad, unsupported = feature_decision(entries, KNOWN_FEATURES)
+        if bad:
+            self.d(bad[0], "malformed:" + bad[1], bad[2])
+        if unsupported:
+            self.status = "unsupported-feature"
+            self.d(unsupported[0], "unsupported-feature", ",".join(unsupported[1]))
+            return
+
+        # -- redactions first (L1: "applied before anything else") --
+        redacted = self.collect_redactions(entries)
+        self.unnamed_stubs(entries, redacted)
+        self.redactions, self.entries = redacted, entries   # for chain.verify: which stubs a redaction the fold accepts names
 
         # -- fold change entries in seq order --
         self.world = {"@world": {}}       # GUESS-07: @world live from genesis
@@ -396,7 +484,7 @@ class Reader:
             if e is None or e.get("kind") != "change":
                 continue
             try:
-                ops = self.shape_ops(seq, e, purged)
+                ops = self.shape_ops(seq, e, redacted)
             except Malformed as m:      # whole entry shapes nothing (GUESS-13)
                 self.d(seq, "malformed:" + m.code, m.detail)
                 continue
@@ -414,18 +502,22 @@ class Reader:
         if extra:
             raise Malformed("unknown-field", ",".join(sorted(extra)))  # GUESS-14
         kind = e.get("kind")
-        if kind not in KINDS:
-            raise Malformed("kind", repr(kind))
-        for f in ("kind", "actor", "verb"):
+        if not isinstance(kind, str) or kind not in KINDS:   # a non-string kind is malformed, not a crash (fold.js checkEntry)
+            raise Malformed("kind", repr(kind)[:40])
+        for f in ("kind", "actor"):
             if not isinstance(e.get(f), str):
                 raise Malformed("envelope", f + " missing or not a string")
+        word = WORD_OF.get(kind)
+        for f in ("op", "verb"):
+            if f == word:
+                if not isinstance(e.get(f), str):
+                    raise Malformed("envelope", f + " missing or not a string")
+            elif f in e:
+                raise Malformed("envelope", "%s not allowed on %s" % (f, kind))
         if kind != "genesis" and not isinstance(e.get("world"), str):
             raise Malformed("envelope", "world")  # GUESS-21: genesis may omit
         if not isinstance(e.get("body"), dict):
             raise Malformed("envelope", "body not an object")   # GUESS-15
-        if "for" in e:
-            # L4 / 5: "until identities have keys, for is not written at all"
-            raise Malformed("for-before-keys")   # GUESS-16
         if kind == "change":
             c = e.get("cause")
             # L3: every change entry has a cause; GUESS-17: integer, earlier seq
@@ -436,50 +528,50 @@ class Reader:
             if not (type(c) is float and c.is_integer() and 0 <= c < seq):
                 raise Malformed("cause", repr(c))
 
-    # -- purge --
-    def collect_purges(self, entries):
-        """Returns {(seq, op_index): purge_seq}. GUESS-18 for the body shape:
-        body = {"values": [{"seq": N}, {"seq": N, "op": k}, ...]}
-        `op` indexes into a batch; absent means the entry's own single op."""
-        purged = {}
+    # -- redaction --
+    def collect_redactions(self, entries):
+        """Returns {(seq, op_index): redaction_seq}. GUESS-18 for the body shape:
+        body = {"values": [{"seq": N}, {"seq": N, "index": k}, ...]}
+        `index` indexes into a batch; absent means the entry's own single op."""
+        redacted = {}
         for pseq, e in enumerate(entries):
-            if e is None or e.get("kind") != "purge":
+            if e is None or e.get("kind") != "redaction":
                 continue
             vals = e["body"].get("values")
             if not isinstance(vals, list):
-                self.d(pseq, "purge-ignored", "body.values not a list")
+                self.d(pseq, "redaction-ignored", "body.values not a list")
                 continue
             for t in vals:
-                if not isinstance(t, dict) or set(t) - {"seq", "op"}:
-                    self.d(pseq, "purge-target-bad", jcs(t)[:60])
+                if not isinstance(t, dict) or set(t) - {"seq", "index"}:
+                    self.d(pseq, "redaction-target-bad", jcs(t)[:60])
                     continue
-                s, k = t.get("seq"), t.get("op", None)
+                s, k = t.get("seq"), t.get("index", None)
                 if not (type(s) is float and s.is_integer()) or (
-                        k is not None and not (type(k) is float and k.is_integer() and k >= 0)):
-                    self.d(pseq, "purge-target-bad", jcs(t)[:60])
+                        "index" in t and not (type(k) is float and k.is_integer() and k >= 0)):   # index: null is bad, not omitted (fold.js redactionsOf)
+                    self.d(pseq, "redaction-target-bad", jcs(t)[:60])
                     continue
                 s = int(s)
                 k = None if k is None else int(k)
                 if s >= pseq or s <= 0:          # GUESS-19: only earlier entries
-                    self.d(pseq, "purge-target-range", str(s))
+                    self.d(pseq, "redaction-target-range", str(s))
                     continue
                 tgt = entries[s]
-                if tgt is not None and tgt.get("kind") == "purge":
-                    self.d(pseq, "purge-of-purge-refused", str(s))  # L1
+                if tgt is not None and tgt.get("kind") == "redaction":
+                    self.d(pseq, "redaction-of-redaction-refused", str(s))  # L1
                     continue
-                if self.governance_target(tgt, k):   # 3d M11: purge never targets roles: (reversed by acts)
-                    self.d(pseq, "purge-target-governance", "seq %d%s" % (s, "" if k is None else " op %d" % k))
+                if self.governance_target(tgt, k):   # 3d M11: a redaction never targets roles: (reversed by requests)
+                    self.d(pseq, "redaction-target-governance", "seq %d%s" % (s, "" if k is None else " index %d" % k))
                     continue
-                purged[(s, k)] = pseq
-                self.d(pseq, "purge", "seq %d%s" % (s, "" if k is None else " op %d" % k))
-        return purged
+                redacted[(s, k)] = pseq
+                self.d(pseq, "redaction", "seq %d%s" % (s, "" if k is None else " index %d" % k))
+        return redacted
 
-    def unnamed_stubs(self, entries, purged):
-        """PROTOCOL 12: a purge is the one rule that changes the record. A set whose value is stripped to its
-        commit (`commit`, no `value`) is a purge's work; one that no purge the fold accepts names (none does, or
-        only a refused one, as any aimed at a roles: value) was changed outside that rule. It folds as
-        absent(purged), unknown as every purged value is (PROTOCOL 1), never as the value before it, and is
-        diagnosed `commit-unpurged`. The line still shapes, so the code has no `malformed:` prefix."""
+    def unnamed_stubs(self, entries, redacted):
+        """PROTOCOL 12: a redaction is the one rule that changes the record. A set whose value is stripped to its
+        commitment (`commitment`, no `value`) is a redaction's work; one that no redaction the fold accepts names (none does,
+        or only a refused one, as any aimed at a roles: value) was changed outside that rule. It folds as
+        absent(redacted), unknown as every redacted value is (PROTOCOL 1), never as the value before it, and is
+        diagnosed `commitment-unredacted`. The line still shapes, so the code has no `malformed:` prefix."""
         for seq, e in enumerate(entries):
             if e is None or e.get("kind") != "change":
                 continue
@@ -487,66 +579,66 @@ class Reader:
                 self.shape_ops(seq, e, {})      # an entry that shapes nothing is diagnosed by the fold, not here
             except Malformed:
                 continue
-            batch = e["verb"] == "batch"
-            ops = e["body"]["ops"] if batch else [e["body"]] if e["verb"] == "set" else []
+            batch = e["op"] == "batch"
+            ops = e["body"]["ops"] if batch else [e["body"]] if e["op"] == "set" else []
             for i, op in enumerate(ops):
-                if (batch and op.get("verb") != "set") or "value" in op or "commit" not in op:
+                if (batch and op.get("op") != "set") or "value" in op or "commitment" not in op:
                     continue
                 k = (seq, i if batch else None)
-                if k not in purged:
-                    purged[k] = 0
-                    self.d(seq, "commit-unpurged", "%s.%s" % (op.get("id"), op.get("comp")))
+                if k not in redacted:
+                    redacted[k] = 0
+                    self.d(seq, "commitment-unredacted", "%s.%s" % (op.get("id"), op.get("comp")))
 
     @staticmethod
     def governance_target(e, k):
         if e is None or e.get("kind") != "change" or not isinstance(e.get("body"), dict):
             return False
         b = e["body"]
-        if e.get("verb") == "batch":
+        if e.get("op") == "batch":
             ops = b.get("ops")
             o = ops[k] if isinstance(ops, list) and k is not None and 0 <= k < len(ops) else None
         else:
-            o = dict(b, verb=e.get("verb")) if k is None else None
-        return isinstance(o, dict) and o.get("verb") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
+            o = dict(b, op=e.get("op")) if k is None else None
+        return isinstance(o, dict) and o.get("op") == "set" and isinstance(o.get("comp"), str) and o["comp"].startswith("roles:")
 
     # -- turning a change entry into a flat op list --
-    def shape_ops(self, seq, e, purged):
-        verb, body = e["verb"], e["body"]
+    def shape_ops(self, seq, e, redacted):
+        verb, body = e["op"], e["body"]
         if verb not in OPS:
-            raise Malformed("verb", verb)
+            raise Malformed("op", verb)
         if verb == "batch":
-            # GUESS-06: body = {"ops": [ {verb, id, comp?, value?}, ... ]}
-            if set(body) - {"ops", "followUps"}:
-                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops", "followUps"})))
+            # GUESS-06: body = {"ops": [ {op, id, comp?, value?}, ... ]}
+            if set(body) - {"ops", "cascade"}:
+                raise Malformed("batch-field", ",".join(sorted(set(body) - {"ops", "cascade"})))
             ops = body.get("ops")
             if not isinstance(ops, list):
                 raise Malformed("batch-ops")
-            if "followUps" in body:
-                # the authority's follow-up ops in this batch (strictly ascending indices, in range): applied like any op
-                f = body["followUps"]
+            if "cascade" in body:
+                # the authority's cascaded ops in this batch (strictly ascending indices, in range): applied like any op
+                f = body["cascade"]
                 if not isinstance(f, list) or not f:
-                    raise Malformed("batch-followups", "not a non-empty array")
+                    raise Malformed("batch-cascade", "not a non-empty array")
                 for i, k in enumerate(f):
                     if not _int(k) or k >= len(ops) or (i > 0 and k <= f[i - 1]):
-                        raise Malformed("batch-followups", repr(k))
+                        raise Malformed("batch-cascade", repr(k))
             out = []
             for i, op in enumerate(ops):
                 if not isinstance(op, dict):
                     raise Malformed("batch-op", str(i))
-                if op.get("verb") == "batch":
+                if op.get("op") == "batch":
                     raise Malformed("nested-batch", "op %d" % i)
-                out.append(self.shape_one(op.get("verb"), op, purged.get((seq, i)),
+                out.append(self.shape_one(op.get("op"), op, redacted.get((seq, i)),
                                           inner=True, where="op %d" % i))
             return out
-        return [self.shape_one(verb, body, purged.get((seq, None)), inner=False,
+        return [self.shape_one(verb, body, redacted.get((seq, None)), inner=False,
                                where="")]
 
-    def shape_one(self, verb, b, purge_seq, inner, where):
+    def shape_one(self, verb, b, redaction_seq, inner, where):
         allowed = {"create": {"id"}, "delete": {"id", "comp"},
-                   "set": {"id", "comp", "value", "salt", "commit"}}
-        if verb not in allowed:
-            raise Malformed("verb", "%s %r" % (where, verb))
-        keys = set(b) - ({"verb"} if inner else set())
+                   "set": {"id", "comp", "value", "salt", "commitment"}}
+        if not isinstance(verb, str) or verb not in allowed:   # a non-string op word is malformed, not a crash (fold.js shapeOne)
+            raise Malformed("op", "%s %r" % (where, verb))
+        keys = set(b) - ({"op"} if inner else set())
         if keys - allowed[verb]:
             raise Malformed("op-field", "%s %s" % (where, ",".join(sorted(keys - allowed[verb]))))
         eid = b.get("id")
@@ -556,22 +648,22 @@ class Reader:
         if verb == "set" or "comp" in b:
             if not isinstance(comp, str) or not COMP_RE.match(comp):
                 raise Malformed("comp-name", "%s %r" % (where, comp))
-        op = {"verb": verb, "id": eid, "comp": comp}
+        op = {"op": verb, "id": eid, "comp": comp}
         if verb == "set":
-            if purge_seq is not None:
-                op["value"] = PURGED       # purge wins even if bytes are gone
+            if redaction_seq is not None:
+                op["value"] = REDACTED     # the redaction wins even if bytes are gone
             elif "value" in b:
                 op["value"] = b["value"]   # GUESS-22: null is a value
             # else: no value -> no-op (L1)
-        elif purge_seq is not None:
-            op["purge_on_valueless"] = purge_seq
+        elif redaction_seq is not None:
+            op["redaction_on_valueless"] = redaction_seq
         return op
 
     def apply(self, seq, i, op):
-        w, eid, comp, verb = self.world, op["id"], op["comp"], op["verb"]
+        w, eid, comp, verb = self.world, op["id"], op["comp"], op["op"]
         at = "seq %d op %d" % (seq, i)
-        if "purge_on_valueless" in op:
-            self.d(seq, "purge-target-not-a-value", at)
+        if "redaction_on_valueless" in op:
+            self.d(seq, "redaction-target-not-a-value", at)
         if verb == "create":
             if eid in w:
                 self.d(seq, "noop:create-live", eid)
@@ -600,7 +692,7 @@ class Reader:
 
     # -- digest --
     def view(self):
-        return {eid: {c: ({"purged": True} if v is PURGED else {"v": v})
+        return {eid: {c: ({"redacted": True} if v is REDACTED else {"v": v})
                       for c, v in comps.items()}
                 for eid, comps in self.world.items()}
 

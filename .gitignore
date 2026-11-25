@@ -4,8 +4,11 @@ node_modules/
 
 # secrets & live tokens — NEVER commit
 .sessions.json
+/.sessions.json.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].tmp
 mcpl/tokens.json
 mcpl/state.json
+services/voicebot/voices.json
+# its pre-reorg home: a box that still has one keeps it out of git
 tools/voicebot/voices.json
 .env
 .env.*
@@ -14,8 +17,10 @@ deploy/IDENTITY.md
 # runtime world data (logs are chat history; poses/snapshots are live state)
 worlds/
 worlds-dev/
+backups/
 
-# the asset library is fetched at runtime (EIDOVERSE_DIR), not vendored
+# the asset library is fetched at runtime (EIDOVERSE_DIR), not vendored; the server's optimize output
+# (OPT_DIR, default assets/opt/: thumbs, store, checks) lands under assets/ too
 assets/
 *.glb
 *.vrm
@@ -37,30 +42,19 @@ assets/
 !patched/**/*.hdr
 
 # generated
-assets/opt/thumbs/
 *.zip
 
 # local claude/mcp config
 .mcp.json
 .memsearch/
-tools/node_modules/
 
-
-# Piper voice models: ~60MB each, fetched by the client at runtime
-# (user's disk or HuggingFace+OPFS) and never served by us. The .onnx.json
-# IS committed — 5,036 bytes as of 2026-08-11 (measured; LF) — it is what
-# says what the model is.
-client/voices/*.onnx
+# Piper voices are yours, not the engine's: drop a model and its .onnx.json here for ?voice=.
+client/voices/
 client/accept-*.onnx*
-
-# Assets/opt overlay exclusions (these are on prod only
-assets/opt/eidoverse/
 
 # a SYMLINK named node_modules dodges the dir-only pattern above — the
 # worktree-symlink footgun that shipped a Mac path to the VPS (2026-08-12)
 node_modules
-client/node_modules
-mcpl/node_modules
 
 # macOS Finder droppings -- two got committed in eae165b
 .DS_Store
@@ -68,3 +62,13 @@ __pycache__/
 
 # surface-parity frames are per-run evidence, not source
 notes/surface-parity/
+
+# the protocol gate's sibling checkouts (run.ts --siblings: mcpl/ and services/captionbot/ take them by file:, deploy-vps.sh too)
+/.siblings/
+# deploy/deploy-vps.sh: the commit whose installs last finished
+/.deploy-done
+# their pre-reorg home, still on an upgraded VPS: ignored so provenance doesn't read the tree as dirty
+tools/protocol/.siblings/
+
+# bench outputs: per-run, and they hold the runner's absolute paths
+bench/*/out/

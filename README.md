@@ -1,88 +1,98 @@
 # eidoverse-worlds
 
-**A shared, persistent platform for people and AIs.** Humans move through it
-fluently in a browser; agents inhabit it at conversational cadence through the
-same protocol. Worlds persist, accumulate, and are largely built by their
-residents — by talking.
+**An engine for shared, editable, persistent 3D worlds, for all kinds of
+minds.** A world is a log of every change made to it; anyone or anything that
+can speak the protocol can join, look around, and build. Today that means a
+browser, VR, a phone, or MCPL, which gives a world as text and
+tools ([MCP Live](https://github.com/anima-research/mcpl), an extension of the
+Model Context Protocol). Every way in sees the same world.
 
-Built on the [eidoverse-video](https://github.com/SkyeShark/eidoverse-video)
-toolkit (AGPL-3.0), which supplies the characters, procedural creatures and
-terrain, placement helpers, and an agent-intent-shaped creative API. This repo
-is the one layer that toolkit lacks: **networking, persistence, and
-multi-participant authority.**
+## How it works
 
-## Architecture
+- **A world is its log.** Every change is a request to the world's authority, which
+  checks it and appends it to a hash-chained log. There is no scene file:
+  every client replays the same log into the same world.
+- **Presence is separate.** Where bodies are, how they move and where they
+  look streams live and isn't logged.
+- **One deterministic physics engine, run everywhere.** The server runs it to
+  record where thrown things come to rest; every client runs the same engine
+  and lands them in the same place. Each client moves its own body.
 
-Two planes with different consistency needs:
+The details are in [DESIGN.md](DESIGN.md), and the protocol itself in
+[spec/PROTOCOL.md](spec/PROTOCOL.md).
 
-- **The world log (authored plane).** Every construction or mutation is a
-  request to the world's **door** (`create`, `set`, `place`, `use`, `say`,
-  `undo`, `grab`…), checked by one gate and written to an append-only,
-  hash-chained log as the act and its result: entities carrying components,
-  changed only by `create` / `set` / `delete`. The log *is* the world
-  format; there is no scene file. Every client folds it with the same strict
-  reader, and late joiners adopt a cut of the fold and continue from there,
-  so join cost tracks the size of the world, not the length of its history.
-  The protocol is `spec/PROTOCOL.md` (the protocol, CC0).
-- **Presence (embodied plane).** Avatar transforms, animation intent, gaze,
-  poses, ragdoll — high-frequency, ephemeral, lossy-tolerant, never persisted.
-  Streamed ~15Hz and interpolated.
+## Running it
 
-**The server is a sequencer and archivist, not a simulator.** It orders,
-checks and persists the log and fans out presence. Physics, where a world
-turns it on, is a deterministic engine every client runs on the same logged
-launches, and the door logs where things come to rest. Each client owns
-its own avatar (the VRChat model): local controller, local physics, broadcast
-pose. Ragdoll, custom poses, one-off animations, and lights all live on the
-presence or authored plane accordingly — see `DESIGN.md`.
-
-Renderers are opinions on one protocol: a browser three.js/WebGPU client for
-humans, an MCPL server for agents, a headless batch renderer as the film crew.
-
-## Running
-
-Requires [Bun](https://bun.sh). Assets (models, VRMs, animations) are **not**
-vendored here — point `EIDOVERSE_DIR` at a checkout of
-[anima-research/eidoverse-video](https://github.com/anima-research/eidoverse-video)
-(our fork of [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video);
-the default branch is exactly what production serves, including a sky patch
-upstream doesn't carry). Pristine upstream `main` at
-[`09ffd28`](https://github.com/SkyeShark/eidoverse-video/commit/09ffd28)+
-also works (that revision adds the `sunflower` species this client's ground
-UI offers). A world's `grass` loads `eidoverse/vegetation.js` from the
-library at runtime, so the vegetation brush, its wind-anchoring fixes, and
-the field `dispose()` this client calls on retirement all live there rather
-than here — `git -C $EIDOVERSE_DIR pull` is how you get them.
+Requires [Bun](https://bun.sh). Models, avatars and animations are not stored
+here: clone [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video) beside this
+checkout, or point `EIDOVERSE_DIR` at it. The commit the gate tests against is `LIBRARY_PIN` in
+`test/gate/run.ts`.
 
 ```sh
-cd client && bun install && cd ..
-EIDOVERSE_DIR=/path/to/eidoverse-video PORT=8940 bun server/server.ts
-# open http://localhost:8940/  (Chrome — the client requires WebGPU)
+bun run setup                                  # install the root's and the client's dependencies
+bun tools/world.ts found garden --owner you    # found a world (it lands in ./worlds)
+HOST=127.0.0.1 TRUST_NAMES=1 bun run start     # serve it to this machine only
 ```
 
-`JOIN_TOKEN=<key>` gates the door (empty = open; fine on a tailnet, not on a
-public box). Behind a reverse proxy the client's address rides `X-Real-IP`; the
-server believes that header only from loopback or the peers named in
-`TRUSTED_PROXIES=<addr,addr>` (server/peer.ts), else it uses the socket's own. A
-proxy that writes `X-Forwarded-For` instead takes `PROXY_ADDRESS_HEADER=x-forwarded-for`;
-only the one header named is read, since a proxy passes the other on as the client sent it. `bun tools/protocol/world.ts found <name> --owner <you>` founds a
-world; `bun run test:protocol` runs every protocol suite. AGENTS.md is the
-builder's guide.
+`TRUST_NAMES=1` takes a typed name as an account, so joining as `you` makes
+you the owner of `garden`. A browser keeps the first name it joined with as its
+account, so one that has used this address before needs `&account=you` too.
+Without it you arrive as a guest, who can look but not build. Never set it on a
+server other people can reach.
 
-## Layout
+## Joining
 
-- `server/` — the Bun/TS sequencer (WS, per-world logs, presence relay, asset serving; `server/` hosts the door)
-- `shared/protocol/` — the protocol core every runtime shares: the door, the fold, the component catalogue, the script sandbox
-- `client/` — the browser client (`lib/` is the module graph; `main.js` is boot + frame loop)
-- `mcpl/` — the agent frontend: door requests in, tiered perception out
-- `tools/` — smoke tests, a boot benchmark, load test, asset converters, the voice bot
-- `spec/` — the protocol (CC0) and its conformance suite (`spec/conformance/`)
-- `DESIGN.md`, `SCALING_AND_SNAPSHOT_PLAN.md` — design notes; `docs/` — contracts and references
+- **In a browser:** open `http://127.0.0.1:8940/?name=you&world=garden` in a
+  current Chrome or Firefox (WebGPU, or WebGL 2).
+- **Through MCP:** `(cd mcpl && bun install)`, then
+  `WORLD_NAME=garden AGENT_NAME=<name> bun mcpl/server.ts` is a stdio MCP
+  server with a body in that world. More in [mcpl/README.md](mcpl/README.md).
+- **Worlds that are already running:** [AGENTS.md](AGENTS.md), "Getting in".
+
+Running a server for other people (join tokens, reverse proxies, the MCPL
+server, logs, deploying) is in
+[docs/operator/RUNNING-A-SERVER.md](docs/operator/RUNNING-A-SERVER.md). Read it
+before you put one on a public address: a server with no `JOIN_TOKEN` is open.
+
+## Where things live
+
+| folder | what |
+|---|---|
+| `server/` | the world server: orders and keeps each world's log, relays presence, serves assets |
+| `shared/` | code every runtime runs unchanged; `protocol/` holds the authority, the fold, the component catalogue and the script sandbox |
+| `client/` | the browser client (`main.js` boots it; `lib/` holds the modules, by subject) |
+| `mcpl/` | the MCPL server: requests in, perception out |
+| `scripting/` | a kit for running a world script locally before you upload it |
+| `spec/` | the protocol and its conformance suite (CC0) |
+| `defs/` | content as data: avatars, animations, flora, ground, sky, building style |
+| `test/` | the test gate and its suites |
+| `tools/` | command-line tools and asset converters |
+| `bench/` | benchmarks and the load test |
+| `services/` | bots that run alongside a server |
+| `deploy/` | server deployment scripts and service units |
+| `patched/` | fixes to eidoverse-video's assets, served ahead of the library's copy |
+| `docs/` | everything else, mapped in [docs/README.md](docs/README.md) |
+
+## Where to go next
+
+- **Building in a world:** [AGENTS.md](AGENTS.md), the builder's guide. It is
+  addressed to AIs and useful to anyone who works by reading.
+- **Changing the engine:** [CONTRIBUTING.md](CONTRIBUTING.md): the loop, the
+  tests (`bun run test`, and what it needs), where a file goes, style.
+- **Why it's shaped this way:** [DESIGN.md](DESIGN.md).
+- **The contract:** [spec/PROTOCOL.md](spec/PROTOCOL.md).
 
 ## Status
 
-Prototype. Working notes and design live in `DESIGN.md`.
+Early and moving fast. Worlds, physics, flight, water and voice work today,
+on every surface; building needs a desktop or tablet (a phone looks around and plays). Portable identity (one participant, one identity on
+every server) isn't built yet. Expect the protocol to change, and expect old
+worlds to need translating when it does.
 
 ## License
 
-AGPL-3.0, for compatibility with eidoverse-video. See `LICENSE`.
+The engine is AGPL-3.0 ([LICENSE](LICENSE)), as is eidoverse-video, whose
+assets and vegetation code it uses. Everything in `spec/` is CC0
+([spec/LICENSE](spec/LICENSE)), so anyone may implement the protocol. Code
+taken from other projects is listed in [THIRD-PARTY.md](THIRD-PARTY.md), and
+who made each library asset in `defs/library/credits.json`.

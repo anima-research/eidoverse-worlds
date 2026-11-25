@@ -1,39 +1,31 @@
-// terrain — the world's ground truth for "how high is the floor here".
-//
-// Its own module (rather than living in world.js) purely to break a cycle:
-// the controller needs ground height every frame, and world.js needs the
-// controller's position to place things. Both depend on this instead.
+// terrain — the world's ground truth for "how high is the floor here", and the meadow's draw budget.
+// Its own module to break a cycle: the controller needs ground height every frame, and world.js needs the
+// controller's position to place things.
 
 import { scene, ground, grid, axisLines } from './core.js';
 import { bus } from './base.js';
-import { retireField } from './flora_field.js';
-import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
+import { retireField } from './vegetation/flora_field.js';
+import { makeGrassQuality, GRASS_QUALITY } from './vegetation/grass_quality.js';
 
 let current = null;
-let environmentFloor = null;
-export function setEnvironmentFloor(y) {
-  environmentFloor = Number.isFinite(y) ? y : null;
-  if (!current) {
-    if (ground) ground.visible = environmentFloor === null;
-    if (grid) grid.visible = environmentFloor === null;
-  }
+// with no terrain mesh the stage floor is the ground: at 0, or at a flat terrain's height (terrain {kind: 'flat'})
+let floorY = 0;
+export function setFlatGround(y) {
+  floorY = Number.isFinite(y) ? y : 0;
+  for (const [o, lift] of [[ground, 0], [grid, 0.02], [axisLines, 0.04]]) if (o) o.position.y = floorY + lift;
+  bus.emit('ground-changed');
 }
 
-export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
-// THE WATER, for whatever floats in it (the ragdolls — ammodoll.js). The same seam as the ground and for the
-// same reason: the browser and the agents' headless bodies both load this module, and each hands it its
-// own water — the browser from client/lib/water.js, an agent from mcpl/physics.ts setWaterField.
-// {level, sample(x, z) → shared/waterkind.js sample | null, time() → wave seconds} or null for no water.
+export const heightAt = (x, z) => (current ? current.heightAt(x, z) : floorY);
+// The water, for whatever floats in it (ammodoll.js): {level, sample(x, z) → shared/waterkind.js sample | null,
+// time() → wave seconds}, or null. Browser (water.js) and headless agents each hand in their own.
 let water = null;
 export const waterField = () => water;
 export function setWaterField(f) { water = f ?? null; bus.emit('ground-changed'); }
 export const hasTerrain = () => current !== null;
 
-/** Where the rain lands (the sky's splash ground — weather_system's groundHeightAt): the terrain, or
- *  the water standing over it, whichever is higher. null past the terrain's edge: there is no ground
- *  out there, so no splash. With no terrain, whatever floor heightAt stands on. The weather system
- *  bakes this into a heightfield around the camera, so it is called a few thousand times when the
- *  rain starts or the camera roams far, not per frame. 'ground-changed' (below) re-bakes it. */
+/** Where the rain lands (sky.js groundHeightAt): the terrain or the water over it, whichever is higher; null past
+ *  the terrain's edge (no splash); with no terrain, whatever floor heightAt stands on. Baked into a heightfield on 'ground-changed', not called per frame. */
 export function rainSurfaceAt(x, z) {
   if (!current) return heightAt(x, z);
   const box = extentOf(current);
@@ -42,8 +34,7 @@ export function rainSurfaceAt(x, z) {
   const level = water?.level;
   return typeof level === 'number' && level > h ? level : h;
 }
-// The terrain's horizontal footprint in world space, from its mesh (a PlaneGeometry of the verb's
-// `size`, centred where the mesh stands). Agents' terrains have no mesh: no edge, ground everywhere.
+// The terrain's horizontal footprint in world space, from its mesh. Agents' terrains have no mesh: no edge.
 const extents = new WeakMap();
 function extentOf(t) {
   if (!t.mesh?.geometry) return null;
@@ -57,17 +48,13 @@ function extentOf(t) {
   }
   return e;
 }
-/** §22m diag: the terrain mesh, for cost-attribution phases. */
+/** The terrain mesh, for the perf diagnostics' cost attribution. */
 export const getTerrainMesh = () => current?.mesh ?? null;
 
 export function setTerrain(t) {
   if (current) {
     scene.remove(current.mesh);
-    // …and FREE it (audit §13.1): three's WebGPU renderer pins every
-    // geometry and texture it has uploaded in strong maps, so a replaced
-    // terrain stayed GPU-resident forever. Terrain resources are per-build
-    // (engine mesh + client-baked layer noiseTextures) — nothing shared,
-    // safe to dispose wholesale.
+    // and free it: three pins uploaded geometry/textures; terrain resources are per-build, nothing shared
     current.mesh?.traverse?.((o) => {
       o.geometry?.dispose?.();
       for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
@@ -75,19 +62,14 @@ export function setTerrain(t) {
         m.dispose?.();
       }
     });
-    // layer textures ride the colorNode, not material properties (world.js
-    // stashes them at build for exactly this pass)
+    // layer textures ride the colorNode, not material properties; world.js stashes them at build for this
     for (const tex of current.layerTextures ?? []) tex?.dispose?.();
   }
   current = t;
-  // ground/grid are null under the headless core stub — an agent process sets
-  // terrain for its settle sim and has no stage floor to hide (issue #17)
+  // ground/grid are null under the headless core stub (an agent's settle sim has no stage floor)
   if (t) {
     if (t.mesh) {
-      // the sky's scene-diff claim must never own the ground: a terrain
-      // landing while an async sky build is in flight got CLAIMED (tel0s's
-      // trace: "sky warm terrain") and the next sky rebuild would have
-      // removed it (§17c)
+      // the sky's scene-diff claim must never own the ground, or a sky rebuild would remove it (sky.js skyExempt)
       if (t.mesh.userData) { t.mesh.userData.skyExempt = true; t.mesh.userData.odTag = 'terrain'; }
       scene.add(t.mesh);
     }
@@ -96,78 +78,53 @@ export function setTerrain(t) {
     if (grid) grid.visible = false;
     if (axisLines) axisLines.visible = false;
   } else {
-    if (ground) ground.visible = environmentFloor === null;
-    if (grid) grid.visible = environmentFloor === null;
-    if (axisLines) axisLines.visible = environmentFloor === null;
+    if (ground) ground.visible = true;
+    if (grid) grid.visible = true;
+    if (axisLines) axisLines.visible = true;
   }
-  // the ground moved: whatever stands on it by height (the rain's splashes, via sky.js) re-reads it
   bus.emit('ground-changed');
 }
 
 // ---- grass -----------------------------------------------------------------
-// A flora field adds its mesh to the scene AND pushes per-frame hooks (wind
-// per stroke, plus the avatar pushers) into globalThis._autoParticleSystems.
-// Replacing or clearing has to undo BOTH — otherwise a new field stacks on
-// the old, and the old field's hooks keep ticking against disposed GPU
-// resources. setGrass owns that; retireField does the work.
-//
-// ⚠️ A field's mesh is a GROUP (one child InstancedMesh per stroke, plus
-// shrub-wood stem meshes), and its textures are the species' map sets. Only
-// the field itself knows all of that, so retirement prefers the field's own
-// dispose() — walking `mesh.geometry`/`mesh.material` on a Group frees
-// NOTHING and silently leaked a whole meadow's VRAM per re-grow.
+// A flora field adds its mesh to the scene and pushes per-frame hooks into globalThis._autoParticleSystems;
+// retireField undoes both through the field's own dispose().
 let currentGrass = null;
 
 export function setGrass(field) {
   retireField(currentGrass, globalThis._autoParticleSystems, scene);
   currentGrass = field ?? null;
-  // sticky budget: a machine that had to thin its meadow keeps it thin
-  // across re-grows, instead of re-discovering the same slow frame rate —
-  // and a resident's chosen cap (persisted) survives them the same way
+  // sticky budget: a thinned meadow (governor or resident's cap) stays thin across re-grows
   if (field && budget.effective() < 1) applyGrassBudget();
 }
 export const clearGrass = () => setGrass(null);
 export const hasGrass = () => currentGrass !== null;
-/** The live field object — grassdiag's toggle surface (§22). */
+/** The live field object (grassdiag.js). */
 export const getGrassField = () => currentGrass;
 
-// The meadow budget: the resident's persisted cap × the governor's session
-// shed (grass_quality.js owns the semantics — effective is their min).
+// The meadow budget: the resident's persisted cap and the governor's session shed; effective() is their min (grass_quality.js).
 const budget = makeGrassQuality(globalThis.localStorage);
 
 function applyGrassBudget() {
   const eff = budget.effective();
   if (currentGrass) {
-    // `off` retires the draw entirely: count 0 stops the fill, and hiding the
-    // group spares raycasts/shadows too. The field object stays whole — shared
-    // state untouched, and any cap raise restores it in place.
+    // `off` hides the group too (spares raycasts/shadows); the field stays whole for a later raise
     if (currentGrass.mesh) currentGrass.mesh.visible = eff > 0;
     currentGrass.setDensity?.(eff);
   }
-  // whoever renders the dials (the grass⚙ row) hears every budget change —
-  // including the governor's, which otherwise went stale until the next
-  // panel open
-  bus.emit('grass-budget');
+  bus.emit('grass-budget');   // the dials hear every budget change, the governor's included
 }
 
-// Perf governor's handle on the meadow — may thin below the resident's cap,
-// never raises above it (the cap wins in effective()).
+// The perf governor's handle: may thin below the resident's cap, never raises above it.
 export function setGrassDensity(f) {
   budget.shedTo(f);
   applyGrassBudget();
 }
-/** effective REQUESTED density — what the two dials agreed to ask for.
- *  Whether the renderer actually applied it is getGrassApplied()'s answer:
- *  a stroke without a working count dial draws denser than this number. */
+/** The requested density; whether the renderer applied it is getGrassApplied()'s answer. */
 export const getGrassDensity = () => budget.effective();
 
-/** The full budget→draw chain, honestly (#74): the resident's chosen level,
- *  the governor's shed, the requested effective factor, and what the
- *  renderer verifiably APPLIED — read from live instance counts, never from
- *  policy arithmetic. status: 'applied' | 'partial' | 'unavailable' |
- *  'not-applied' | 'unknown' (field predates draw-state reporting) |
- *  'no-field'. Strokes carry per-stroke truth so partial failure names the
- *  affected stroke(s). Shared authored grass state is never touched. */
+/** The budget→draw chain: the resident's level, the governor's shed, the requested factor, and what the renderer
+ *  verifiably applied (read from live instance counts). status: 'applied' | 'partial' | 'unavailable' | 'not-applied'
+ *  | 'unknown' (the field predates draw-state reporting) | 'no-field'; strokes name any partial failure. */
 export function getGrassApplied() {
   const base = {
     quality: budget.quality, cap: budget.cap,
@@ -180,22 +137,16 @@ export function getGrassApplied() {
   return { ...base, field: true, ...rep };
 }
 
-/** Tile-level truth (§13.2's promised-and-never-landed stats, landed 8e):
- *  how each stroke is actually cut and what it draws right now — the render-
- *  object count that §16 spent a night shrinking, readable in-session. */
+/** How each stroke is tiled and what it draws right now (docs/research/meadow-grass-rendering.md). */
 export function grassTiles() {
   if (!currentGrass) return { field: false, strokes: [] };
   const strokes = (currentGrass._strokes ?? []).map((f, i) => {
     const tiles = f.tiles ?? [];
     return {
       stroke: f.strokeLabel ?? `stroke ${i}`,
-      // §22m: which material generation this stroke actually built —
-      // 'opaque' (palette blades), 'cards-fast', 'cards-sss', or species
-      // default. Answers "is the branch's grass actually on?" in one read.
-      mode: f.grassMode ?? 'n/a',
+      mode: f.grassMode ?? 'n/a',   // the material it built: 'opaque', 'cards-fast', 'cards-sss', or species default
       tiled: !!f.tiled,
-      // tiled strokes: f.count is the LIVE summing getter (#74), so the
-      // planted total lives on the tiles' fullCount
+      // tiled strokes: f.count is the live summing getter, so the planted total lives on the tiles' fullCount
       planted: tiles.length
         ? tiles.reduce((s, t) => s + (t.userData.fullCount ?? 0), 0)
         : (f.count ?? 0),
@@ -204,9 +155,7 @@ export function grassTiles() {
       drawn: tiles.length
         ? tiles.reduce((s, t) => s + t.count, 0)
         : (f.mesh?.count ?? f.count ?? 0),
-      // §17b blade LOD, observable: `lod` says the stroke carries far-index
-      // twins at all; `lodTiles` counts tiles drawing the thinned tuft right
-      // now. Existing fields stay put (bootjank prints them).
+      // blade LOD: `lod` = the stroke carries far-index twins; `lodTiles` = tiles drawing the thinned tuft now
       lod: tiles.some((t) => t.userData.lodFar !== undefined),
       lodTiles: tiles.filter((t) => t.userData.lodFar === true).length,
     };
@@ -214,9 +163,7 @@ export function grassTiles() {
   return { field: true, strokes };
 }
 
-// The resident's own dial (#60): full | medium | low | off, persisted per
-// browser. Never a verb — the shared field is world state, the draw cost is
-// not.
+// The resident's own dial: full | medium | low | off, persisted per browser (the draw cost is not world state).
 export function setGrassQuality(q) {
   const applied = budget.setQuality(q);
   applyGrassBudget();

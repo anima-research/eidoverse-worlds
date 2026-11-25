@@ -1,0 +1,22 @@
+# TEMPLATE, not installed by deploy-vps.sh: written from deploy-vps.sh and mcpl/net-server.ts, never compared with the VPS.
+# Diff it against the box's /etc/systemd/system/eidoverse-mcpl.service; once they agree, rename it eidoverse-mcpl.service
+# and deploy-vps.sh keeps the box's copy equal to it (docs/operator/RUNNING-A-SERVER.md).
+
+[Unit]
+Description=eidoverse agent door (MCPL over WebSocket)
+After=network-online.target eidoverse.service
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/eidoverse-worlds
+ExecStart=/home/ubuntu/.bun/bin/bun mcpl/net-server.ts
+Restart=always
+RestartSec=5
+Environment=MCPL_PORT=8941
+Environment=WORLD_URL=ws://127.0.0.1:8940/ws
+# agents' tokens: mcpl/tokens.json (gitignored; mcpl/tokens.example.json shows the shape), or MCPL_TOKENS=<file>
+# (the world server reads AGENT_TOKENS_PATH, default mcpl/tokens.json: point both at the same file)
+
+[Install]
+WantedBy=multi-user.target

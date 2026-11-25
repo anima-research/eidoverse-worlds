@@ -14,11 +14,11 @@
   },
   "unreadable": {
    "meaning": "the log folds to a status the authority won't write to",
-   "when": "a write while the fold says no-world/unknown-version"
+   "when": "a write while the fold says no-world/unknown-version/unsupported-feature"
   },
-  "repair-needed": {
-   "meaning": "the world's stored values are in an old spelling no reader serves; the maintenance command must run first",
-   "when": "any write (not a read, not leave) to a world needing lift-sockets, a grabbable rename or repair-shapes (authority maintenanceNeeds); the text names `bun tools/protocol/world.ts repair <name>`"
+  "unsupported-feature": {
+   "meaning": "a feature this world or server can't use (docs/decisions/LOG-VOCABULARY.md §F F-1)",
+   "when": "a feature's verb before the world declares it; founding a world requiring a feature this server doesn't implement"
   },
   "ambiguous": {
    "meaning": "the request's result is unknown: some or all of it may be written; never ok, never a plain failure",
@@ -40,25 +40,22 @@
    "meaning": "the actor is banned from this world",
    "when": "any request but help/leave from a banned identity"
   },
-  "kicked": {
-   "meaning": "the actor was removed and may come back later",
-   "when": "any request but help/leave inside a kick's cooldown"
-  },
   "muted": {
    "meaning": "the actor is muted here",
    "when": "a say (or voice) while a mute is in force"
   },
   "rate": {
    "meaning": "too much, too fast",
-   "when": "an actor's entry, say, byte, ask, dry-run or upload budget for the window is spent"
+   "when": "an actor's entry, say, byte, dry-run or upload budget for the window is spent"
   },
   "cool-down": {
-   "meaning": "wait before asking this again",
-   "when": "a body ask refused or unanswered (doubling wait), or repeated refusals of one class (world-wide, moderator log)"
+   "meaning": "wait before trying this again",
+   "when": "repeated refusals of one class of body act (world-wide, moderator log)"
   },
   "pending": {
    "meaning": "one ask at a time",
-   "when": "a body ask while another to the same person is still waiting"
+   "when": "reserved: a body ask while another to the same person was waiting (the ask was removed 10-28; never logged, kept so the word isn't reused)",
+   "reserved": true
   },
   "rights": {
    "meaning": "the actor's role doesn't allow this",
@@ -105,10 +102,6 @@
    "meaning": "someone is on it",
    "when": "a hand verb (grab, put, punt, throw, drop) on a thing someone sits or stands on, or a seat that's taken"
   },
-  "revert-war": {
-   "meaning": "that's a dispute: an owner settles it",
-   "when": "reverting someone's work on a thing already reverted across people twice in the hour, below owner"
-  },
   "shape": {
    "meaning": "the request or value isn't the right shape",
    "when": "a wrong type, a missing part, a bad name, a bad placeholder, anything the shape rules refuse"
@@ -123,7 +116,7 @@
   },
   "doesnt-apply": {
    "meaning": "that argument doesn't go with the mode you chose",
-   "when": "a place argument whose modes exclude the chosen one"
+   "when": "a place argument whose modes exclude the chosen one; a below-bounds respawn for a body the authority last knew above @world.bounds.min.y (or nowhere), or one seated"
   },
   "schema": {
    "meaning": "a component value the registry doesn't take",
@@ -169,10 +162,6 @@
    "meaning": "that caption line was refused by the caption rules",
    "when": "a resend, an out-of-order n, a superseded leg"
   },
-  "one-place": {
-   "meaning": "a thing is in one place",
-   "when": "two ways of saying where it is (a socket and a parent, two seats…)"
-  },
   "world": {
    "meaning": "@world can't be that",
    "when": "deleting or locking @world"
@@ -188,10 +177,6 @@
   "schema-fixed": {
    "meaning": "a schema never changes meaning",
    "when": "changing or deleting a set schemas:<name>"
-  },
-  "grid-fixed": {
-   "meaning": "the terrain grid is fixed while it has tiles",
-   "when": "changing terrain-grid with tiles under it"
   },
   "syntax": {
    "meaning": "the script doesn't parse",
@@ -289,6 +274,10 @@
    "meaning": "physics decided that, not an edit",
    "when": "undo of a throw, drop or leave"
   },
+  "undo-unavailable": {
+   "meaning": "that act can't be undone, and nothing was",
+   "when": "undo or rollback of an imported act the translation's lift-sockets rewrote (cause: migration-transformed, with the act and its ops): the whole request refuses, never a partial undo"
+  },
   "disabled": {
    "meaning": "it's switched off",
    "when": "handling, using or standing on a thing that is (or hangs under) disabled"
@@ -300,6 +289,10 @@
   "not-at-rest": {
    "meaning": "the engine doesn't have it at rest",
    "when": "a rest the engine doesn't agree with"
+  },
+  "not-the-engine's": {
+   "meaning": "the rest isn't where the engine has it",
+   "when": "a rest whose pose differs from the engine's resting pos or q (checks.js restCheck)"
   },
   "implausible": {
    "meaning": "physics wouldn't leave it there",
@@ -350,8 +343,8 @@
    "when": "an arrival or step into something solid"
   },
   "spawn": {
-   "meaning": "arrivals are limited to the spawn",
-   "when": "an arrival or teleport outside @world.spawn's radius"
+   "meaning": "arrivals are limited to the world's arrival places",
+   "when": "an arrival, teleport or below-bounds respawn outside every arrival place's radius (@world.spawn and the spawn-point things)"
   },
   "out-of-bounds": {
    "meaning": "outside this world",
@@ -445,9 +438,9 @@
    "meaning": "that would put it inside something solid",
    "when": "a hang or place into a thing's solid parts"
   },
-  "no-grid": {
-   "meaning": "no terrain grid",
-   "when": "a sculpt on ground without terrain-grid"
+  "level-ground": {
+   "meaning": "this ground can't be shaped",
+   "when": "a sculpt, a terrain-feature or a terrain-tile where the ground is the level floor (no terrain, or kind flat)"
   },
   "no-model": {
    "meaning": "nothing to measure",
@@ -485,11 +478,5 @@
    "meaning": "a link points outside what you publish",
    "when": "publish of a set whose refs name things outside it"
   }
- },
- "renamed": {
-  "hands-full": "hold-limit",
-  "underfoot": "beneath",
-  "no-body": "not-pushable",
-  "no-such": "not-found"
  }
 }

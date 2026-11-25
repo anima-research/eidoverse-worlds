@@ -1,6 +1,6 @@
-// text — words a builder writes into the world (a sign's text, a story, a picture's alt), read by every visitor and every
-// agent. Pure: the authority (shared/protocol/authority.js), the editor (shared/editschema.js), the renderer (client/lib/texts.js) and
-// the agent describers all use these, so they can't disagree about what a string is, how long it is, or how it wraps.
+// text — words a builder writes into the world (a sign, a story, a picture's description). Pure: the authority, the
+// editor (shared/editschema.js), the renderer (client/lib/realize/texts.js) and the agent describers all use these, so they
+// can't disagree about what a string is, how long it is, or how it wraps.
 //
 //   graphemes(s)            how long a string is, the way a reader counts it: a ZWJ family emoji is 1, a CJK character
 //                           is 1, "é" written as e + U+0301 is 1 (Intl.Segmenter; Bun and every browser have it)
@@ -48,7 +48,8 @@ export function quoted(s, max = 200) {
   return `«${body}${g.length > max ? '…' : ''}»`;
 }
 
-// the first strong character decides a paragraph's base direction (the bidi algorithm's P2–P3, which a canvas then applies)
+// the first character in an RTL or LTR block decides a paragraph's base direction (near the bidi algorithm's P2–P3, which
+// a canvas then applies; the RTL block includes Arabic-Indic digits, which P2 skips)
 const RTL = /[֐-ࣿיִ-﷿ﹰ-﻿]/u, LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ぀-ヿ一-鿿가-힯]/u;
 export function directionOf(p) { for (const ch of p) { if (RTL.test(ch)) return 'rtl'; if (LTR.test(ch)) return 'ltr'; } return 'ltr'; }
 

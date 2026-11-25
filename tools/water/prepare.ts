@@ -1,28 +1,28 @@
-// bun tools/water/prepare.ts EXPORT_DIR OUTPUT_DIR
-// Convert the exported scene to wire coordinates and write a portable authoring
-// manifest plus content-addressed GLBs. No sequencer or live world is modified.
+// bun tools/water/prepare.ts EXPORT_DIR OUTPUT_DIR [--right-handed]
+// Convert the exported scene to wire coordinates and write content-addressed GLBs and a manifest of create/set requests
+// (requests.js: the scene's records through the old-world translator's mapping). No sequencer or live world is modified.
 import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {NodeIO} from '@gltf-transform/core';
 import {ALL_EXTENSIONS} from '@gltf-transform/extensions';
 import {dedup, instance} from '@gltf-transform/functions';
 import {createHash} from 'node:crypto';
+import {requestsOf} from './requests.js';
 const [source,output]=process.argv.slice(2,4).map(p=>resolve(p));
 if(!source||!output)throw Error('usage: prepare.ts EXPORT_DIR OUTPUT_DIR');
 mkdirSync(join(output,'models'),{recursive:true});
 const meta=JSON.parse(readFileSync(join(source,'export.json'),'utf8'));
-const vessels=JSON.parse(readFileSync(new URL('../../world-data/water/vessels.json',import.meta.url),'utf8'));
+const vessels=JSON.parse(readFileSync(new URL('./data/vessels.json',import.meta.url),'utf8'));
 const ueLocal=(p:number[])=>convert([p[1]/100,p[2]/100,p[0]/100]);
 const corrected=process.argv.includes('--right-handed');
 const convert=(p:number[])=>corrected?[-p[0],p[1],p[2]]:p;
 const origins:any={terrain:[0,0,0],scenery:[0,0,0],habitat:[13,-30,80],submarine:[-26,-18,60],platform:[60,0,0]};
-const verbs:any[]=[],files:any[]=[];
+const records:any[]=[],files:any[]=[];   // the scene in main's record shapes: requests.js's input, never sent
 const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);
 for(const name of Object.keys(meta.groups)){
  const file=name==='submarine'?'submarine-source.glb':name+'.glb';
  const doc=await io.read(join(source,file));
- // Visible pool water is not a solid floor. Preserve this semantic as glTF
- // extras so every exact-collision consumer gets the same open moonpool.
+ // pool water is not a floor: carried as glTF extras so exact-collision consumers keep the moonpool open
  for(const node of doc.getRoot().listNodes())if(['PoolSurface','HatchSurface'].includes(node.getName()))node.setExtras({...node.getExtras(),collision:false});
  await doc.transform(dedup(),instance({min:2}));
  const raw=Buffer.from(await io.writeBinary(doc)),length=raw.readUInt32LE(12);
@@ -31,8 +31,7 @@ for(const name of Object.keys(meta.groups)){
  const bin=raw.subarray(20+length);
  const pos=convert(origins[name]);
  const i=gltf.nodes.length;
- // Unreal glTF is (X,Z,Y), presence is (Y,Z,X). Reflect X/Z exactly once.
- // Blender source exports centimetres, while Unreal exports metres.
+ // Unreal glTF is (X,Z,Y), the wire is (Y,Z,X): reflect X/Z once. Blender exports centimetres, Unreal metres.
  const scale=name==='submarine'?.01:1;
  const translation=name==='submarine'?[0,0,0]:pos.map((v:number)=>-v);
  gltf.nodes.push({name:'wire-coordinate-frame',matrix:[0,0,scale,0,0,scale,0,0,(corrected?-scale:scale),0,0,0,...translation,1],children:gltf.scenes[gltf.scene??0].nodes});
@@ -44,8 +43,8 @@ for(const name of Object.keys(meta.groups)){
  files.push({file:'models/'+hash+'.glb',path,sha256:hash,bytes:bytes.length});
  const id='water-'+name;
  const yaw=name==='submarine'?(corrected?-Math.PI/2:Math.PI/2):0;
- verbs.push({verb:'asset',args:{name:`Unreal ${name}`,path}},{verb:'spawn',args:{id,lib:path,pos,yaw,collide:'exact'}});
- const comp=(type:string,data:any)=>verbs.push({verb:'comp',args:{id,type,data}});
+ records.push({verb:'asset',args:{name:`Unreal ${name}`,path}},{verb:'spawn',args:{id,lib:path,pos,yaw,collide:'exact'}});
+ const comp=(type:string,data:any)=>records.push({verb:'comp',args:{id,type,data}});
  if(name==='scenery')comp('collision',{enabled:false});
  if(name==='submarine')comp('air',{boxes:vessels.BP_Cyclops.filter((c:any)=>c.extent).map((c:any)=>({center:ueLocal(c.p),size:[c.extent[1]/50,c.extent[2]/50,c.extent[0]/50],q:[0,0,0,1]}))});
  else if(meta.air[name])comp('air',{boxes:meta.air[name].map((b:any)=>({...b,center:convert(b.center).map((v:number,i:number)=>v-pos[i]),q:corrected?[b.q[0],-b.q[1],-b.q[2],b.q[3]]:b.q}))});
@@ -64,6 +63,7 @@ for(const name of Object.keys(meta.groups)){
   comp('sockets',{passenger:{pos:convert([1,-1.8,-5]),pose:'sitchair'}});
  }
 }
-const manifest={version:1,source:meta.world,coordinateSystem:corrected?'metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)':'metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)',files,verbs};
+const {batch,uploads,deferred,mapped,unmapped}=requestsOf(records);
+const manifest={version:2,source:meta.world,coordinateSystem:corrected?'metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)':'metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)',files,requests:[batch],uploads,mapped,unmapped,deferred};
 writeFileSync(join(output,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
-console.log(JSON.stringify({manifest:join(output,'manifest.json'),files:files.length,verbs:verbs.length,bytes:files.reduce((n,f)=>n+f.bytes,0)}));
+console.log(JSON.stringify({manifest:join(output,'manifest.json'),files:files.length,ops:batch.args.requests.length,deferred:deferred.length,bytes:files.reduce((n,f)=>n+f.bytes,0)}));

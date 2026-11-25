@@ -1,4 +1,4 @@
-// floradefs — the flora def contract, as one pure module (charter §3:
+// floradefs — the flora def contract, as one pure module (docs/design/OVERHAUL-CHARTER.md §3:
 // content is declarative data; code is reserved for new KINDS of things).
 //
 // A flora species def is a JSON object in defs/flora/<name>.json. The server
@@ -12,6 +12,7 @@
 // author's business. Unknown keys are PRESERVED, never dropped — the same
 // forward-compatibility rule the log protocol lives by (`doc` is the
 // conventional human-notes field).
+import { isNum, isObj, isStr } from "./protocol/is.js";
 
 /** The engine's geometry builders. A def naming an archetype outside this
  *  set cannot be built by any current client — refused at load, like an
@@ -23,10 +24,7 @@ export const FLORA_ARCHETYPES = ['blades', 'shrub', 'yucca', 'corn', 'sunflower'
 /** Def names double as wire values in `grass` verb args and as filenames. */
 export const DEF_NAME_RE = /^[a-z][a-z0-9_-]{0,32}$/;
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v) => typeof v === 'string' && v.length > 0;
 const isVec = (v, n) => Array.isArray(v) && v.length === n && v.every(isNum);
-const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 
 /** Validate one flora def. Returns a list of human-readable problems —
  *  empty means servable.
