@@ -39,7 +39,7 @@ passes as the browser says); without it, an Origin must equal `ownOrigin` exactl
 origin check. Approve and deny need one of the two (a browser on this server's page). A POST with neither (a native
 client) is not checked. The native session cookie is `Secure` on an https origin, or when the proxy sends
 `X-Forwarded-Proto: https` (as the browser's `/auth` cookie; deploy/nginx-show.conf sends it, overwriting a client's).
-That header is the only forwarded one read, and only for this flag: a client that sends it itself only makes its own
+It is the only forwarded header native login reads, and only for this flag: a client that sends it itself only makes its own
 cookie stricter. Behind a proxy, set `HN_NATIVE_ORIGIN` to the public origin anyway: an older browser that sends no
 `Sec-Fetch-Site` is refused without it.
 
