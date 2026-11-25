@@ -11,6 +11,7 @@
 import { noWorldUrl } from '../harness/no-world.ts';
 import { WorldAgent } from '../../mcpl/agent.ts';
 import { devFlightProvider } from '../../shared/flightcap.js';
+import { FOLD_RELEASED } from '../../shared/flightbody.js';
 import { rigBonesFor, bodyHeightFor } from '../../mcpl/rigbones.ts';
 import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
@@ -228,7 +229,7 @@ console.log('\nA RELEASE IS SAID, WHEREVER IT HAPPENS');
   quiet.connect().catch(() => {});
   await quiet.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
   (globalThis as any).WebSocket = RealWS;
-  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => /folded-wing posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(e.text ?? '')),
+  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => (e.text ?? '').includes(FOLD_RELEASED)),
     JSON.stringify(quiet.inbox.map((e: any) => e.text)));
 }
 const raced: any = new WorldAgent({ url: noWorldUrl(), name: 'raced', world: 'bone-bench' });
@@ -251,7 +252,7 @@ said_.avatar = 'wingless.vrm'; said_.myRights = { role: 'builder', fly: true }; 
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
 r = await said_.takeOff();
 check('take_off on a wingless body carrying a fold flies, and says the fold was released, as the browser does',
-  /^took off/.test(text(r)) && /folded-wing posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(text(r)) && said_.wingsFolded === false, text(r));
+  /^took off/.test(text(r)) && text(r).includes(FOLD_RELEASED) && said_.wingsFolded === false, text(r));
 check("flight_status of a wingless flier doesn't report wings it hasn't got", !/\bwings (OPEN|FOLDED|LIMP)\b/.test(said_.flightStatus()), said_.flightStatus());
 r = await said_.takeOff();
 check('...and a second take_off says no release: the first one said it', !/released/.test(text(r)), text(r));
@@ -260,8 +261,8 @@ told.avatar = 'wingless.vrm'; told.myRights = { role: 'builder', fly: true }; to
 serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
 await told.loadBodyBones();   // the read releases the fold
 r = await told.foldWings(false);
-check("fold_wings' answer says the release it takes over saying, and nothing that denies it",
-  /posture released/.test(text(r)) && !/no folded-wing posture to release/.test(text(r)), text(r));
+check("fold_wings' answer is the release it takes over saying, said once, and nothing that denies it",
+  text(r) === FOLD_RELEASED, text(r));
 r = await told.takeOff();
 check('a release fold_wings has answered for is not said again by take_off', /^took off/.test(text(r)) && !/released/.test(text(r)), text(r));
 const back_: any = new WorldAgent({ url: noWorldUrl(), name: 'back', world: 'bone-bench' });

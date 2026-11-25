@@ -292,7 +292,7 @@ export class AgentFlight {
     }
     const body = inspectBody(bones ?? []);
     if (fold && !body.canAnimateWings) return refused(`this body has no animatable wings to fold`);
-    // Nothing is folded, which is what unfolding asks for; a release a read just made is the answer (withRelease adds it).
+    // Nothing is folded, which is what unfolding asks for; a release a read just made is the answer, said here, so withRelease adds nothing.
     if (!fold && bones != null && !body.canAnimateWings && !this.a.wingsFolded) {
       if (this.a.foldReleaseUnsaid) { this.a.foldReleaseUnsaid = false; return done(FOLD_RELEASED); }
       return done(`this body has no folded-wing posture to release`);
