@@ -737,6 +737,35 @@ try {
       await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
+
+    // a follower whose object goes away mid-drag (someone else deletes it, or its object is retired) while it stays selected:
+    // the release writes none of the group and puts the lead back, by the mesh drag and by the gizmo (bot #352 `1`)
+    await frame("mm-tbl", 1.5);
+    { const atV = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      check("MM (setup) a press point on the box over the table, for the vanishing follower", !!atV, { atV });
+      const vanish = () => page(`const w = await import('/lib/world.js'); globalThis.__mmGone = w.entities.get('mm-tbl'); w.entities.delete('mm-tbl'); return true;`);
+      const unvanish = () => page(`const w = await import('/lib/world.js'); if (globalThis.__mmGone) w.entities.set('mm-tbl', globalThis.__mmGone); delete globalThis.__mmGone; return true;`);
+      if (atV) {
+        await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+        const B0 = pose("mm-box"), T0 = pose("mm-tbl"); let n0 = myActs().length;
+        await gesture(atV, [atV[0] + 30, atV[1] + 10], vanish);
+        await frames(3); await caughtUp();
+        let local = await localOf(["mm-box"]); await unvanish();
+        check("MM34 a mesh group drag whose follower's object went away mid-drag writes nothing and puts the lead back",
+          myActs().length === n0 && near(local?.[0], B0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+        await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+        await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+        const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+        n0 = myActs().length;
+        await gizmoDrag("mm-box", 1); await frames(2); await vanish(); await frames(2); await gizmoUp(); await frames(3); await caughtUp();
+        local = await localOf(["mm-box"]); await unvanish();
+        check("MM34 …and so does a gizmo group drag: nothing written, the lead back where the log has it",
+          on && myActs().length === n0 && near(local?.[0], B0) && near(pose("mm-box"), B0), { on, local, B0, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+        await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+      }
+    }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();

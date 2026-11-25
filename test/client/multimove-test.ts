@@ -121,6 +121,12 @@ a.quaternion.identity(); a.updateMatrixWorld(true);
 // release: the followers' writes come back for one batch, each with its start components as the expect base
 const out = MM.ops(st, (id: string) => ({ ops: [{ op: "set", id }] }));
 check("ops: one write per follower, with its start components for the expect", out.ops.length === 1 && out.ops[0].id === "b" && !!out.base.b, JSON.stringify(out));
+// a follower whose object is gone by the release (deleted by someone else, its object retired) is an error, not a silent skip:
+// the group is one act, so the release writes none of it (bot #352 `1`)
+stub.entities.delete("b");
+const gone = MM.ops(st, (id: string) => ({ ops: [{ op: "set", id }] }));
+stub.entities.set("b", b);
+check("ops: a follower whose object went away mid-drag is an error, so the release writes nothing", gone.errors.length === 1, JSON.stringify(gone));
 MM.revertHeld(MM.hold(["b"]), ["b"]);
 check("revertHeld puts a follower its gesture holds back where the log has it", stub.reverted.join() === "b", JSON.stringify(stub.reverted));
 

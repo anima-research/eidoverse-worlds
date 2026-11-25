@@ -129,11 +129,13 @@ export function apply(st, mode, space = 'world') {
 }
 
 /** The followers' writes, by `opsFor(id, obj)` (each surface's own: the gizmo's poseEdits, the mesh drag's setTransform).
- *  Returns { ops, base, errors } — base: id → its components at the start, for the release's expect. */
+ *  Returns { ops, base, errors } — base: id → its components at the start, for the release's expect. A follower whose
+ *  object is gone is an error, not a skip: the group is one act, so a release that can't write all of it writes none. */
+export const GONE = 'a selected thing went away during the drag — nothing written';
 export function ops(st, opsFor) {
   const out = { ops: [], base: {}, errors: [] };
   for (const f of st?.followers ?? []) {
-    const o = entities.get(f.id); if (!o) continue;
+    const o = entities.get(f.id); if (!o) { out.errors.push(GONE); continue; }
     const r = opsFor(f.id, o) ?? { ops: [] };
     out.errors.push(...(r.errors ?? []));
     if (r.ops?.length) { out.ops.push(...r.ops); if (f.comps) out.base[f.id] = f.comps; }

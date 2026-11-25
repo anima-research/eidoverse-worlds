@@ -473,6 +473,8 @@ function commitPlace(before, multi = null, gen = 0) {
   const id = selected.id;
   const tf = (x, ob) => OP.setTransform(state.st.entities?.[x] ?? {}, x, { pos: [ob.position.x, ob.position.y, ob.position.z], q: ob.quaternion.toArray(), scale: scaleOf(ob) });
   const more = MM.ops(multi, (x, ob) => ({ ops: [tf(x, ob)] }));
+  // a follower gone since the drag began: the lot goes back and nothing is written, as the gizmo's release does (bot #352 `1`)
+  if (more.errors.length) { MM.revertHeld(gen, MM.idsOf(id, multi)); flashHint(more.errors.join(' · '), 5000); return; }
   const n = 1 + (multi?.followers.length ?? 0);
   Edits.sendOps([tf(id, o), ...more.ops],
     { what: n > 1 ? `move ${n} things` : `move ${id}`, base: { ...(before.comps ? { [id]: before.comps } : {}), ...more.base }, revert: () => MM.revertHeld(gen, MM.idsOf(id, multi)) });
