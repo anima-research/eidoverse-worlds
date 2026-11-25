@@ -469,6 +469,25 @@ try {
   const l1 = { made, lk0, moved: await R('m1'), reverts: await pg.evaluate(() => globalThis.__reverts) };
   check('L1 a queued lock question cancelled after a newer drag of the thing began leaves the thing to that drag (no revert)', l1.made.ok && l1.lk0.ok && l1.moved === false && l1.reverts === 0, JSON.stringify(l1));
 
+  // L1g: the same, for a GROUP move (a multi-select drag: #352): a newer drag took only one of its things. That one stays
+  // under the hand; the others still go back where the log has them, as any cancelled move puts its things back
+  const mate = await req('create', { id: '$lkq', components: { transform: { pos: [2, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] }, label: 'lock probe mate' } });
+  await pg.evaluate((id) => { globalThis.__lk2 = id; return true; }, mate.ids?.$lkq ?? null);
+  await blocker('b1g'); await asked(/Blocking/, 'L1g: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
+  await pg.evaluate(async () => { const E = await import('./lib/edit/writes.js'); const { bus } = await import('./lib/base.js');
+    globalThis.__putBack = []; if (!globalThis.__putBackOn) { globalThis.__putBackOn = true; bus.on('pose-revert', (e) => globalThis.__putBack?.push(e.id)); }
+    const ids = [globalThis.__lk, globalThis.__lk2], op = (id, x) => ({ verb: 'set', args: { id, component: 'transform', value: { pos: [x, 0, 3], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+    return globalThis.__px.track('m1g', E.sendOps([op(ids[0], 4), op(ids[1], 1)], { what: 'move 2 things', expect: false, revert: () => ids.forEach((i) => E.revertPose(i)) }).then((r) => r.ok)); });
+  await inLine().catch(() => {});
+  await pg.evaluate(async () => { (await import('./lib/net.js')).sendDrag(globalThis.__lk, [5, 0, 3], 0); return true; });   // a newer drag of the locked one alone
+  await pg.evaluate(() => globalThis.__px.press(/^ok$/i));
+  await asked(/locked/, 'L1g: the lock question is asked').catch(() => {});
+  await pg.evaluate(() => globalThis.__px.press(/cancel/i));
+  await settledR('m1g', 'L1g: the group move settled').catch(() => {});
+  const l1g = { mate: mate.ok, moved: await R('m1g'), putBack: await pg.evaluate(() => globalThis.__putBack.map((i) => (i === globalThis.__lk ? 'held' : i === globalThis.__lk2 ? 'mate' : i))) };
+  check('L1g a queued lock question on a group move, cancelled after a newer drag took one of its things: the others go back, that one stays',
+    l1g.mate && l1g.moved === false && l1g.putBack.includes('mate') && !l1g.putBack.includes('held'), JSON.stringify(l1g));
+
   // L2 (15): while the question waits, the lock it names is lifted and a new one set: 🔓 Unlock must not lift the new one
   await blocker('b2'); await asked(/Blocking/, 'L2: the blocking question is open').catch(async (e) => { throw new Error(`${e.message}; on the quad: ${await onQuad()}`); });
   await move('m2', 4); await inLine().catch(() => {});
