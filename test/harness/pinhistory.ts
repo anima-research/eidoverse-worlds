@@ -72,8 +72,8 @@ export function earlier(root: string, files: string[], readNow: (f: string) => s
 
 /** The breaks no changelog line acknowledges: for each earlier version judged, `breaksOf(was, now)` (texts), each of which
  *  must be a `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]}.
- *  Held is out [] AND judged non-empty: callers (D13, N10) refuse an empty judged as "judged nothing". A base whose tree
- *  holds a file that can't be read as a pin (a blob missing from a partial clone, a file of JSON null) throws.
+ *  Held is out [] AND judged non-empty: callers (D13, N10) refuse an empty judged as "judged nothing". On a branch, a base
+ *  whose tree holds a file that can't be read as a pin (a blob missing from a partial clone, a file of JSON null) throws.
  *  On a branch (the base an ancestor of HEAD and not HEAD itself, as under CI's pull_request ref, where it is HEAD^1) only
  *  the base is judged: main only ever receives a branch's net change, and the base judges all of it. The previous version
  *  would judge states main never holds, and where main has the path it composes main's own steps since into breaks no
