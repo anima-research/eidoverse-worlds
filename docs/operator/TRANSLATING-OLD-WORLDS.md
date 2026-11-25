@@ -5,7 +5,7 @@ Otherwise ask whoever runs it.
 
 ## Quick start: do this, in order
 
-For an operator (person or agent) on the host, one world at a time. Run from the engine checkout; `<dir>` is the server's
+For an operator (human or agent) on the host, one world at a time. Run from the engine checkout; `<dir>` is the server's
 `WORLDS_DIR`, `<world>` the world's folder name. (The splash's **Upgrade world…** button runs steps 2 and 3 for you:
 *Upgrading from the browser*, below.)
 
