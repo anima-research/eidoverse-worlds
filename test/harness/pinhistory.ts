@@ -9,7 +9,8 @@
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
 //     a branch that brought the file new: its latest change is judged even though the base never had it.
-// The version rules (sameVersionChanged, engine-check EN4) judge both. The changelog rule (unacknowledged) judges both on
+// The version rules (sameVersionChanged, engine-check EN4) judge both, each walked back along first parents to the newest
+// version that names one (see earlier). The changelog rule (unacknowledged) judges both on
 // main itself (the base is HEAD), with no base, or with a base that isn't an ancestor of HEAD; on a branch whose base is
 // an ancestor of HEAD it judges only the base (see unacknowledged).
 // @ts-nocheck
@@ -79,19 +80,19 @@ export function revisions(root: string, files: string[], readNow: (f: string) =>
  *  must not hold the fix red. */
 export function load(root: string, rev: string, why: string, files: string[], noVersion = false) { return readAt(root, rev, why, files, noVersion).was; }
 
-/** load's work, with the files (under noVersion) that are in the tree but name no version: {was, unnamed}. */
+/** load's work: {was, present, unnamed}: the files in the tree, and (under noVersion) those that are but aren't JSON or are null. */
 function readAt(root: string, rev: string, why: string, files: string[], noVersion: boolean) {
-  const at = `${rev.slice(0, 8)} (${why})`; const unnamed: string[] = [];
+  const at = `${rev.slice(0, 8)} (${why})`; const unnamed: string[] = [], present: string[] = [];
   const was = Object.fromEntries(files.map((f) => {
     const ls = gitR(root, ["ls-tree", "--name-only", rev, "--", f]); if (!ls.ok) throw new Error(`pinhistory: can't list ${f} at ${at}: git: ${ls.err}`);
-    if (!ls.out.trim()) return [f, null];
+    if (!ls.out.trim()) return [f, null]; present.push(f);
     const t = gitR(root, ["show", `${rev}:${f}`]);
     if (!t.ok) throw new Error(`pinhistory: ${f} at ${at} is in its tree but can't be read: git: ${t.err}. A partial clone may lack the blob: fetch it (a full clone, or git fetch --refetch) and run again`);
     let v: any; try { v = JSON.parse(t.out); } catch (err: any) { if (noVersion) { unnamed.push(f); return [f, null]; } throw new Error(`pinhistory: ${f} at ${at} is not valid JSON (${err?.message ?? err}), so nothing can be judged from it`); }
     if (v == null) { if (noVersion) { unnamed.push(f); return [f, null]; } throw new Error(`pinhistory: ${f} at ${at} is JSON null, not a pin`); }
     return [f, v];
   }));
-  return { was, unnamed };
+  return { was, present, unnamed };
 }
 
 /** The version before the one a revision holds, along first parents: the parent of the newest commit (at or before rev)
@@ -105,22 +106,47 @@ function olderOf(root: string, rev: string, files: string[]) {
 const loaded = (root: string, revs: { rev: string; why: string }[], files: string[], noVersion = false) =>
   revs.map(({ rev, why }) => ({ rev, why, was: load(root, rev, why, files, noVersion) })).filter((o) => files.some((f) => o.was[f] != null));
 
-/** The earlier versions to judge, both of them loaded (the version rules'): {base, prev, out: [{rev, why, was: {file:
- *  parsed|null}}], unnamed: [labels]}. An earlier file that isn't JSON, or is JSON null, names no version (see load). It
- *  must not hide the version before it: with no base, or on main (the base is HEAD), the previous version is all that
- *  judges a change, so where it names none the walk goes on along first parents to the newest version that names one
- *  (a branch's conflict markers committed, then v1's data changed: the v1 before the markers judges it). A version that
- *  names none and has none behind it is listed in unnamed, so a row can say so rather than "no earlier version". */
-export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
+/** A JSON object that isn't an array: the only shape that can name a version. */
+const isObj = (x: any) => x != null && typeof x === "object" && !Array.isArray(x);
+
+/** EN4's sense of "names a version": a file that is an object with at least one key (a version). */
+const namesAny = (files: string[]) => (was: Record<string, any>) => files.some((f) => isObj(was[f]) && Object.keys(was[f]).length > 0);
+
+/** The version rules' walk. From `start` (the base, or the previous version), the newest version along first parents,
+ *  start itself first, for which `names(was)` holds. Every version that names none is passed, whatever the reason: text
+ *  that isn't JSON, JSON null, {}, [], the file absent (deleted, then re-added), or no version for the law asked about.
+ *  The base is walked too: its history is main's, so walking it back to main's last version that names one judges what
+ *  main receives. {hit: {rev, why, was} | null, unnamed: [revs passed whose tree held a file]}. It stops where the
+ *  history does: the files' first version, a root commit, or a shallow clone's edge. */
+function walkFrom(root: string, start: string, why: string, files: string[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any) {
+  const unnamed: string[] = [], passed: string[] = []; let rev = start;
+  for (;;) { const r = read(rev, why);
+    if (names(r.was)) return { hit: { rev, why: passed.length ? `${why}, walked back past ${passed.join(", ")}, which name none` : why, was: r.was }, unnamed };
+    if (r.present.length) unnamed.push(rev); passed.push(rev.slice(0, 8));
+    const older = olderOf(root, rev, files); if (!older) return { hit: null, unnamed }; rev = older; }
+}
+
+/** Each revision read once per rule (strictly about blobs; leniently about JSON: see load). */
+const reader = (root: string, files: string[]) => { const seen = new Map<string, any>(); return (rev: string, why: string) => { if (!seen.has(rev)) seen.set(rev, readAt(root, rev, why, files, true)); return seen.get(rev); }; };
+
+/** Walk each of revs (the base, the previous version) to the version that names one: {out: [{rev, why, was}] (deduplicated:
+ *  the walks can meet), unnamed: [labels of the versions passed that held a file but named none]}. */
+function walked(root: string, files: string[], revs: { rev: string; why: string }[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any) {
+  const out: { rev: string; why: string; was: Record<string, any> }[] = [], passed = new Set<string>();
+  for (const { rev, why } of revs) { const w = walkFrom(root, rev, why, files, names, read); for (const u of w.unnamed) passed.add(u);
+    if (w.hit && !out.some((x) => x.rev === w.hit!.rev)) out.push(w.hit); }
+  return { out, unnamed: [...passed].map((r) => `${r.slice(0, 8)} (${files.join(", ")} there: not JSON, JSON null, or no version)`) };
+}
+
+/** The earlier versions to judge (EN4's): {base, prev, out: [{rev, why, was: {file: parsed|null}}], unnamed: [labels]}.
+ *  Each of the base and the previous version is walked back to the newest version that names one (walkFrom), so no
+ *  version that names none hides the one before it: a branch's conflict markers, a base of JSON null, a {} or [], a
+ *  deletion and re-adding. What was passed is listed in unnamed, so a row can show "judged nothing, though a version named
+ *  none" as red rather than as a quiet "no earlier version". `names` says what naming a version is (default: a file that
+ *  is an object with a key). */
+export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[], names = namesAny(files)) {
   const { base, prev, revs } = revisions(root, files, readNow, argv);
-  const out: { rev: string; why: string; was: Record<string, any> }[] = [], unnamed: string[] = [];
-  for (const o of revs) { let { rev, why } = o; let r = readAt(root, rev, why, files, true); const passed: string[] = [];
-    if (why === "the previous version") while (r.unnamed.length) { const older = olderOf(root, rev, files); if (!older) break;
-      passed.push(rev.slice(0, 8)); rev = older; r = readAt(root, rev, why, files, true); }
-    if (passed.length && !r.unnamed.length) why = `the previous version that names one, before ${passed.join(", ")}`;
-    if (r.unnamed.length) unnamed.push(`${rev.slice(0, 8)} (${why}: ${r.unnamed.join(", ")} not JSON, or JSON null)`);
-    if (!out.some((x) => x.rev === rev) && files.some((f) => r.was[f] != null)) out.push({ rev, why, was: r.was }); }   // the walk can reach the base
-  return { base, prev, out, unnamed };
+  return { base, prev, ...walked(root, files, revs, names, reader(root, files)) };
 }
 
 /** What a version rule judged, for its row's title: "<rev> (<why>), ..." plus any version that names none; "no earlier
@@ -186,17 +212,22 @@ export function unacknowledged(root: string, files: string[], changelog: string,
 /** "A change meant to alter results is a new version" (the conformance files): for each law {law, versionOf, data} of a vector
  *  file, an earlier version of the file (the base's, the previous) whose versionOf(file) is the same string as now's must pin
  *  the same output in `data` (compared through `norm`, so a relabelled row is the same output). Each offence: {rev, law,
- *  version, field}. An earlier file that names no version for a law is no version, so there is nothing to hold it to; an
- *  earlier file that isn't JSON (or is JSON null) names none, and the walk in earlier passes it to the version before. The
- *  file as it is now must parse, or this throws; so does an
+ *  version, field}. Each law walks on its own (walkFrom): from the base and from the previous version, back to the newest
+ *  version that names that law's version, past any that names none (not JSON, JSON null, {}, [], absent, or no version for
+ *  this law). A law judged from nothing although a version named none is listed in `unjudged` (its judgedText), which the
+ *  callers make a red row: a clone too shallow to reach a version says so. A reused version name (v1, then v2, then v1
+ *  with other data) compares the newest v1-naming version only against the base and the previous one: a limit of this
+ *  design. The file as it is now must parse, or this throws; so does an
  *  earlier blob git can't read, since what it named is unknown. Callers catch a throw as one red row (TRV, LWV, EN4; N10). */
 export function sameVersionChanged(root: string, file: string, readNow: (f: string) => string | null, laws: { law: string; versionOf: (x: any) => any; data: string[] }[], norm: (field: string, x: any) => any = (_f, x) => x, argv?: string[]) {
   const t = readNow(file); let now: any; try { now = t == null ? null : JSON.parse(t); } catch (err: any) { throw new Error(`pinhistory: ${file} as it is now is not valid JSON (${err?.message ?? err})`); }
-  const e = earlier(root, [file], readNow, argv);
+  const { revs } = revisions(root, [file], readNow, argv); const read = reader(root, [file]);
   const j = (f: string, x: any) => JSON.stringify(norm(f, x));
-  const out: { rev: string; law: string; version: string; field: string }[] = [];
-  for (const { rev, was } of e.out) { const w = was[file]; if (!w || !now) continue;
-    for (const L of laws) { const v = L.versionOf(w); if (typeof v !== "string" || v !== L.versionOf(now)) continue;
-      for (const f of L.data) if (j(f, w[f]) !== j(f, now[f])) out.push({ rev: rev.slice(0, 8), law: L.law, version: v, field: f }); } }
-  return { judged: e.out.map((o) => `${o.rev.slice(0, 8)} (${o.why})`), unnamed: e.unnamed, out };
+  const out: { rev: string; law: string; version: string; field: string }[] = [], judged: string[] = [], unjudged: string[] = [], unnamed = new Set<string>();
+  for (const L of laws) { const w = walked(root, [file], revs, (was) => isObj(was[file]) && typeof L.versionOf(was[file]) === "string", read); w.unnamed.forEach((u) => unnamed.add(u));
+    if (!w.out.length && w.unnamed.length) unjudged.push(`${L.law}: ${judgedText(w)}`);
+    for (const { rev, why, was } of w.out) { const label = `${rev.slice(0, 8)} (${why})`; if (!judged.includes(label)) judged.push(label);
+      const v = L.versionOf(was[file]); if (!isObj(now) || v !== L.versionOf(now)) continue;
+      for (const f of L.data) if (j(f, was[file][f]) !== j(f, now[f])) out.push({ rev: rev.slice(0, 8), law: L.law, version: v, field: f }); } }
+  return { judged, unjudged, unnamed: [...unnamed], out };
 }
