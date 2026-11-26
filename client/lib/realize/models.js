@@ -155,7 +155,7 @@ const isPlaceholder = (obj) => Boolean(obj?.userData?.placeholder);
 function clearReservation(id) {
   const cur = entities.get(id);
   if (cur === null || isPlaceholder(cur)) {
-    if (cur) (cur.parent ?? scene).remove(cur);
+    if (cur) { (cur.parent ?? scene).remove(cur); discardObject(cur); }   // the stand-in's box goes with what drew it
     entities.delete(id);
     syncCompLight(id);   // the stand-in it rode is gone: park at the fold, or drop
   }
@@ -289,6 +289,7 @@ function realizeModel(id, cur, obj) {
     // a real object being replaced (a tier swap) releases what it held; a placeholder held nothing
     if (!isPlaceholder(stand)) teardownRealized(id, stand, 'swap');
     (stand.parent ?? scene).remove(stand);   // the real thing takes the spot
+    if (isPlaceholder(stand)) discardObject(stand);   // a stand-in's box (a real one went in teardownRealized)
   }
   retainGLB(obj.userData.glbKey ?? cur.model);   // the proto is worn: eviction must not undress it
   obj.userData.lib = cur.model;
@@ -482,7 +483,7 @@ function setEmptyMarker(g, on) {
     m.castShadow = m.receiveShadow = false;
     m.renderOrder = 999;
     g.add(m);
-  } else if (!on && cur) g.remove(cur);
+  } else if (!on && cur) { g.remove(cur); discardObject(cur); }   // the marker shares _emGeo/_emMat with every Empty
 }
 
 // ---- light components -------------------------------------------------------
@@ -579,7 +580,8 @@ function retire(id) {
   cancelOwner(`entity:${id}`);
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);
-  if (obj && !isPlaceholder(obj) && obj.userData?.lib) { releaseGLB(obj.userData.glbKey ?? obj.userData.lib); discardObject(obj); }
+  if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
+  if (obj) discardObject(obj);    // a model, a stand-in's box or an Empty's marker: none is drawn again
   dropMeshPart(id);
   const rode = obj?.userData?.mountedTo;
   // a carrier that leaves the fold with only a stand-in: its cargo steps off that, the same way (one that is only being
