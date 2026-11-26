@@ -3,6 +3,7 @@
 // its own (Godot's Marker3D, Unity's child Transform), and what a person's body does there, its station. What it is for
 // is read from what it has, never stored: a seat if a station, a snap point if accepts, else an attach point.
 import { REDACTED } from "../fold.js";
+import { VOLATILE } from "./storage.js";
 import { kidsMap } from "./spatial.js";
 import { worldT } from "./math.js";
 
@@ -16,9 +17,15 @@ const UNIT = (sc) => sc === undefined || (Array.isArray(sc) && sc.length === 3 &
 
 /** The door's rules for socket entities, over the state a write leaves: the first that breaks, as {code, reason, fix}, or
  *  null. Only the sockets the write touches are read, and their siblings. */
-export function socketRules(s, ids) {
+const SOCKKIDS = new WeakMap();   // a state's entities → host → its socket children, in key order
+const socketKids = (s) => { const m = new Map();
+  for (const [k, e] of Object.entries(s.entities)) { const to = e.c.parent?.to; if (to && isSocketC(e.c)) { let a = m.get(to); if (!a) m.set(to, (a = [])); a.push(k); } } return m; };
+export function socketRules(s, ids, before = null) {
   let kids = null;
-  const kidsOf = (p) => { if (!kids) { kids = new Map(); for (const [k, e] of Object.entries(s.entities)) { const to = e.c.parent?.to; if (to) { let a = kids.get(to); if (!a) kids.set(to, (a = [])); a.push(k); } } } return kids.get(p) ?? []; };
+  // every use below asks only for a host's SOCKET children. A write that makes, changes or removes no socket (no id it
+  // touches is one, before or after) leaves those as `before` had them, so before's map, built once per state, answers
+  const same = before && ![...ids].some((id) => isSocketC(s.entities[id]?.c) || isSocketC(before.entities[id]?.c));
+  const kidsOf = (p) => { if (!kids) { if (same) { kids = SOCKKIDS.get(before.entities); if (!kids) { kids = socketKids(before); if (!VOLATILE.has(before.entities)) SOCKKIDS.set(before.entities, kids); } } else kids = socketKids(s); } return kids.get(p) ?? []; };
   const hosts = new Set();
   for (const id of ids) { const e = s.entities[id]; if (!e) continue;
     if (!isSocketC(e.c)) { if (liveObj(e.c.station)) return { code: "shape", reason: `${id} has a station but no socket: a station is what a body does at a socket`, fix: `give it a socket {name} (a child of the thing it belongs to), or delete station` }; continue; }
