@@ -52,7 +52,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { ENGINE } from "./common.ts";
+import { ENGINE, linkInto } from "./common.ts";
 import { SUITES, localImports, suitePath } from "./suites.ts";
 import { suite } from "./suite.ts";
 
@@ -170,23 +170,36 @@ export function underscoreNames(): string[] {
   const r = Bun.spawnSync(["git", "ls-files", "-z", "--", "client", "server", "shared", "mcpl", "tools", "test", "services", "bench", "deploy", "scripting"], { cwd: ENGINE });
   return r.stdout.toString().split("\0").filter((f) => f && underscoreName(f)).sort();
 }
-export function ungatedTests(): string[] {
+/** The test-named files under `root` (the checkout; a scratch tree in H-rows) that no row of `suites` reaches. */
+export function ungatedTests(root = ENGINE, suites: [string, string, number][] = SUITES): string[] {
   const gated = new Set<string>();
-  for (const [, file] of SUITES) {
-    for (const f of localImports(suitePath(file))) gated.add(rel(f));
-    for (const a of file.split(" ").slice(1)) if (/\.(?:ts|mjs|js)$/.test(a)) for (const f of localImports(path.join(ENGINE, a))) gated.add(rel(f));   // a runner's file argument (bun-test.ts tools/x-test.ts)
+  for (const [, file] of suites) {
+    for (const f of localImports(path.resolve(root, "test", file.split(" ")[0]))) gated.add(relTo(root, f));
+    for (const a of file.split(" ").slice(1)) if (/\.(?:ts|mjs|js)$/.test(a)) for (const f of localImports(path.join(root, a))) gated.add(relTo(root, f));   // a runner's file argument (bun-test.ts tools/x-test.ts)
   }
-  return testFilesUnder(ENGINE).filter((f) => !gated.has(f));
+  return testFilesUnder(root).filter((f) => !gated.has(f));
 }
-/** Every test-named file under `root`'s tools/, bench/, mcpl/ and test/, at any depth (not in node_modules or the test helpers' folders). */
+/** Every test-named file under `root`'s tools/, bench/, mcpl/ and test/, at any depth: not in node_modules, nor in test/'s
+ *  helper folders (harness, stubs, fixtures, labs: a test/ convention, so a tools/fixtures/x-test.ts is still found; review
+ *  #375 16). A symlink counts as what it points at: a linked test is a test, a linked folder is scanned, once (#375 17). */
 export function testFilesUnder(root: string): string[] {
-  const out: string[] = [];
-  const NOT_TESTS = new Set(["harness", "stubs", "fixtures", "labs", "node_modules"]);
-  const scan = (d: string): void => { if (!fs.existsSync(path.join(root, d))) return; for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true }))
-    if (e.isDirectory()) { if (!NOT_TESTS.has(e.name)) scan(`${d}/${e.name}`); }
-    else if (e.isFile() && TEST_NAME.test(e.name)) out.push(`${d}/${e.name}`); };
+  const out: string[] = [], seen = new Set<string>();
+  const HELPERS = new Set(["harness", "stubs", "fixtures", "labs"]);
+  const scan = (d: string): void => { const at = path.join(root, d); if (!fs.existsSync(at)) return;
+    const real = fs.realpathSync(at); if (seen.has(real)) return; seen.add(real);   // a link back up the tree is scanned once
+    for (const e of fs.readdirSync(at, { withFileTypes: true })) {
+      const st = e.isSymbolicLink() ? (() => { try { return fs.statSync(path.join(at, e.name)); } catch { return null; } })() : e;   // a dangling link is nothing
+      if (st?.isDirectory()) { if (e.name !== "node_modules" && !(d.split("/")[0] === "test" && HELPERS.has(e.name))) scan(`${d}/${e.name}`); }
+      else if (st?.isFile() && TEST_NAME.test(e.name)) out.push(`${d}/${e.name}`);
+    } };
   for (const d of ["tools", "bench", "mcpl", "test"]) scan(d);
   return out.sort();
+}
+/** `--write`: lowers the baseline at `at` to `now`, or refuses (and writes nothing) as writeRefusal says. */
+export function writeBaseline(now: Record<string, Record<string, number>>, at: string): string | null {
+  const base = fs.existsSync(at) ? JSON.parse(fs.readFileSync(at, "utf8")) : null;
+  const no = writeRefusal(now, base); if (no) return no;
+  fs.writeFileSync(at, JSON.stringify(now, null, 1) + "\n"); return null;
 }
 /** Why `--write` must not write `now` over `base` (null: a missing file), or null when it may. */
 export function writeRefusal(now: Record<string, Record<string, number>>, base: Record<string, Record<string, number>> | null): string | null {
@@ -258,9 +271,15 @@ if (import.meta.main) {
   check(`H${i++} ungated: ungated.json names only files that exist and are still out of the gate (a gated or deleted one comes off)`, stale.length === 0, stale.join("\n      "));
   // the scan reaches every depth of tools/, bench/ and mcpl/, not only test/ (G4-101): a planted test in a subfolder is found
   { const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-101-"));
-    for (const f of ["tools/assets/a-test.ts", "tools/water/b-check.ts", "mcpl/vectors/deep/c-probe.ts", "bench/seatlab/d-bench.ts", "test/x/e-test.ts", "mcpl/node_modules/p/f-test.ts", "test/harness/g-test.ts", "tools/h.ts"]) { fs.mkdirSync(path.dirname(path.join(tmp, f)), { recursive: true }); fs.writeFileSync(path.join(tmp, f), ""); }
-    const got = testFilesUnder(tmp); fs.rmSync(tmp, { recursive: true, force: true });
-    check(`H${i++} ungated: the scan finds a test-named file at any depth of tools/, bench/, mcpl/ and test/, once each (not node_modules or test helpers)`, JSON.stringify(got) === JSON.stringify(["bench/seatlab/d-bench.ts", "mcpl/vectors/deep/c-probe.ts", "test/x/e-test.ts", "tools/assets/a-test.ts", "tools/water/b-check.ts"]), got); }
+    for (const f of ["tools/assets/a-test.ts", "tools/water/b-check.ts", "mcpl/vectors/deep/c-probe.ts", "bench/seatlab/d-bench.ts", "test/x/e-test.ts", "mcpl/node_modules/p/f-test.ts", "test/harness/g-test.ts", "tools/h.ts",
+      "tools/assets/fixtures/i-test.ts", "mcpl/labs/j-check.ts", "elsewhere/k-test.ts", "elsewhere/sub/l-test.ts"]) { fs.mkdirSync(path.dirname(path.join(tmp, f)), { recursive: true }); fs.writeFileSync(path.join(tmp, f), ""); }
+    // links (review #375 17): a linked test file, a linked folder of tests, and a link back up the tree (scanned once, no loop)
+    linkInto(path.join(tmp, "elsewhere/k-test.ts"), path.join(tmp, "tools/assets/m-test.ts")); linkInto(path.join(tmp, "elsewhere/sub"), path.join(tmp, "bench/linked")); linkInto(path.join(tmp, "tools"), path.join(tmp, "tools/assets/up"));
+    const got = testFilesUnder(tmp), viaUngated = ungatedTests(tmp, []); fs.rmSync(tmp, { recursive: true, force: true });
+    const want = ["bench/linked/l-test.ts", "bench/seatlab/d-bench.ts", "mcpl/labs/j-check.ts", "mcpl/vectors/deep/c-probe.ts", "test/x/e-test.ts", "tools/assets/a-test.ts", "tools/assets/fixtures/i-test.ts", "tools/assets/m-test.ts", "tools/water/b-check.ts"];
+    check(`H${i++} ungated: the scan finds a test-named file at any depth of tools/, bench/, mcpl/ and test/, once each, through links too (not node_modules, nor test/'s helper folders: a tools/fixtures test is found)`, JSON.stringify(got) === JSON.stringify(want), got);
+    // …and the gate's ungated list is that scan (less what the rows reach): the row above can't stay green over a shallower list (review #375 26)
+    check(`H${i++} ungated: ungatedTests reads that scan (a scratch tree with no rows: every planted test is ungated)`, JSON.stringify(viaUngated) === JSON.stringify(want), viaUngated); }
   console.log(`[hygiene] tests still out of the gate: ${out.length}`);
 
   // underscore-names: new files are lowercase-hyphen (CONTRIBUTING); underscore-names.json is today's exceptions, and it only shrinks
@@ -287,14 +306,22 @@ if (import.meta.main) {
   // --write only lowers (G2-086): an emptied or missing baseline is no licence to write today's debt in as the new floor
   { const R = writeRefusal, debt = { "a.ts": { "bare-wait": 2 } };
     const got = { emptied: R(debt, {}), missing: R(debt, null), lower: R({ "a.ts": { "bare-wait": 1 } }, debt), raise: R(debt, { "a.ts": { "bare-wait": 1 } }), clean: R({}, null) };
-    check(`H${i++} --write refuses to raise the baseline, also from an emptied {} one or a missing file; a lowering writes`, !!got.emptied && !!got.missing && got.lower === null && !!got.raise && !!got.clean, got); }
+    check(`H${i++} --write refuses to raise the baseline, also from an emptied {} one or a missing file; a lowering writes`, !!got.emptied && !!got.missing && got.lower === null && !!got.raise && !!got.clean, got);
+    // …and --write's own path keeps to it (review #375 26): on a scratch baseline, missing and emptied are refused and left as
+    // they were, a lowering is written
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hyg-086-")), at = path.join(tmp, "base.json"), W = writeBaseline;
+    const missing = W(debt, at), missingStays = !fs.existsSync(at);
+    fs.writeFileSync(at, "{}\n"); const emptied = W(debt, at), emptiedStays = fs.readFileSync(at, "utf8") === "{}\n";
+    fs.writeFileSync(at, JSON.stringify(debt)); const lower = W({ "a.ts": { "bare-wait": 1 } }, at), lowered = JSON.parse(fs.readFileSync(at, "utf8"))["a.ts"]?.["bare-wait"];
+    fs.rmSync(tmp, { recursive: true, force: true });
+    const w = { missing: !!missing, missingStays, emptied: !!emptied, emptiedStays, lower, lowered };
+    check(`H${i++} --write: a missing or emptied baseline file is refused and left alone; a lowering is written`, w.missing && w.missingStays && w.emptied && w.emptiedStays && w.lower === null && w.lowered === 1, w); }
   // then the gate's code against the baseline (may only go down: --write refuses a raise; a hand-edited raise is review's to catch)
   const now = measure();
-  const base = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, "utf8")) : null;
   if (process.argv.includes("--write")) {
-    const no = writeRefusal(now, base);
+    const no = writeBaseline(now, BASE);
     if (no) { console.log(`refused: ${no}`); process.exit(1); }
-    fs.writeFileSync(BASE, JSON.stringify(now, null, 1) + "\n"); console.log(`wrote ${rel(BASE)}`);
+    console.log(`wrote ${rel(BASE)}`);
   }
   const { over, under } = compare(now, JSON.parse(fs.existsSync(BASE) ? fs.readFileSync(BASE, "utf8") : "{}"));
   check(`H${i++} no file is over its baseline (new debt of a known class can't land)`, over.length === 0, over.join("\n      "));
