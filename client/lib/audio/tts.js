@@ -303,7 +303,7 @@ export function startPacer() {
     for (let n = 0; n + FRAME <= owed; n += FRAME) {
       const data = new Float32Array(FRAME);
       fillSpeech(data);
-      // what was written is what the senders carry: the HUD's "the room hears you" reads it (micstate.js micGateInfo),
+      // what was written is what the senders carry: the HUD's "your voice is going out" reads it (micstate.js micGateInfo),
       // because the analyser that could measure the track runs on the AudioContext clock this pacer exists to avoid
       let sq = 0;
       for (let k = 0; k < FRAME; k++) sq += data[k] * data[k];

@@ -86,10 +86,17 @@ export const xrGlyphAvailable = () => !!xrHook;
 export const xrLive = () => { try { return !!xrHook?.live?.(); } catch { return false; } };
 export function flipXr() { xrHook?.onclick?.(); }
 
+// What the HUD glyph last drew: the poll's change key only, never an input to a paint.
 let micHot = false, micMuted = null, micPaintedOn = null;
-// The glyph's inputs, ONE derivation for the HUD and the in-VR indicator: a mute shows only on a mic that is on and
-// silent (gold outranks it, and an off mic is slashed already).
-const glyphArgs = (on = micIsOn()) => ({ on, hot: micHot, muted: on && !micHot ? micMuted : null });
+// The glyph's inputs, ONE derivation for the HUD and the in-VR indicator, read LIVE: an event-driven paint (a PTT
+// release, V turning the mic off) draws the state as it is now, not as the last 8 Hz poll saw it. A mute shows only on
+// a mic that is on and silent (gold outranks it, and an off mic is slashed already). Never throws: a throw would
+// freeze the glyph.
+const glyphArgs = (on = micIsOn()) => {
+  let hot = false, reason = null;
+  try { hot = roomHears(); reason = muteReason(); } catch { /* drawn as not hot, not muted */ }
+  return { on, hot, reason, muted: on && !hot ? reason : null };
+};
 // on/off is the LIVE transport's mic state (what V toggles); gold is micstate.js roomHears(), whatever that state is.
 // roomHears() means the server is receiving your voice; whether anyone listens (their consent, distance, an empty room)
 // is not counted, so no word here claims it.
@@ -111,12 +118,13 @@ function paint() {
   const on = micIsOn();
   micPaintedOn = on;
   const deaf = on && !receivingVoice();
-  const { muted } = glyphArgs(on);
-  micBtn.innerHTML = MIC_SVG(on, micHot, !!muted);
+  const { hot, reason, muted } = glyphArgs(on);
+  micHot = hot; micMuted = reason;   // the poll repaints when the live state leaves what was drawn
+  micBtn.innerHTML = MIC_SVG(on, hot, !!muted);
   micBtn.style.opacity = deaf ? '0.55' : '1';
   micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here — none of it goes out to the room'
     : muted ? 'mic on, but muted — none of your voice goes out to the room'
-    : !on ? (micHot ? 'mic off — your synthesized voice is going out to the room'
+    : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
       : pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
     : pttMode() ? (pttHeld() ? 'push-to-talk: V held (release to stop)' + GOLD_NOTE
                              : 'push-to-talk armed — hold V to speak')
@@ -150,7 +158,7 @@ setInterval(() => {
   // the mic's on/off is in the key too: the transport can turn it off with no 'audio:mic' event (a swap, a replay)
   let hot = false, muted = null, on = false;
   try { hot = roomHears(); muted = muteReason(); on = micIsOn(); } catch { /* never throw: a throw would freeze the glyph */ }
-  if (hot !== micHot || muted !== micMuted || on !== micPaintedOn) { micHot = hot; micMuted = muted; paint(); }
+  if (hot !== micHot || muted !== micMuted || on !== micPaintedOn) paint();
 }, 125);
 
 // ---- pair API for the ∃ menu: rows toggle these; per-glyph pins decide whether each hangs off the ∃
@@ -282,6 +290,8 @@ setInterval(placeMic, 2000);          // safety net only
 bus.on('audio:hush', paint);
 bus.on('audio:receive', paint);
 bus.on('audio:mic', paint);   // without it the glyph repaints only from its poll
+bus.on('audio:mute', paint);
+bus.on('audio:ptt-held', paint);   // any holder of the key (V, the XR controller's A/X): gold ends with the release
 bus.on('style', paint);
 bus.on('xr:state', paint);
 // build mode moves the ∃ into the workspace's corner and re-inks the glyphs: re-seat and repaint once its CSS is on

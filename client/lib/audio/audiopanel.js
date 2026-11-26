@@ -98,10 +98,11 @@ function micFloorRow() {
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
   // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree on what goes out
-  let hot = false;
+  let hot = false, lookAt = 0, bgNow = null;
   const micIsLive = micLive;
   const paintLive = () => {
-    lvl.style.background = hot ? LVL_LIVE : (!micIsLive() || muteReason()) ? LVL_DARK : LVL_WARM;
+    const bg = hot ? LVL_LIVE : (!micIsLive() || muteReason()) ? LVL_DARK : LVL_WARM;
+    if (bg !== bgNow) { bgNow = bg; lvl.style.background = bg; }
   };
   paintLive();
   bus.on('audio:mic', paintLive);
@@ -126,9 +127,11 @@ function micFloorRow() {
     // transport's peak crossed the marker with the gate shut), muted or not
     const level = micDeviceLevel();
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
-    // repaint only on a state change (this runs at frame rate)
-    const next = roomHears();
+    // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
+    // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates
+    const next = roomHears(), now = performance.now();
     if (next !== hot) { hot = next; paintLive(); }
+    else if (now - lookAt >= 125) { lookAt = now; paintLive(); }
     requestAnimationFrame(beat);
   };
   requestAnimationFrame(beat);

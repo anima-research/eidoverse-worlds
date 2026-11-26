@@ -193,7 +193,7 @@ t('setup: the synth lane is on the sender, with mic intent off, and nothing gold
 t('mic off by the transport alone (no audio:mic event), silent: the glyph repaints slashed, no synth waves',
   !!(await tryUntil('the glyph follows the mic off', () => slashed() && !waves() && /^mic off/.test(document.querySelector('#micbtn').title))), state());
 room = 0.3; playing = true;
-t('TTS speaking with the mic off: the glyph is gold (the room hears it)', !!(await tryUntil('the synth voice goes gold', () => gold())), state());
+t('TTS speaking with the mic off: the glyph is gold (it is going out to the room)', !!(await tryUntil('the synth voice goes gold', () => gold())), state());
 t('...and so is the bar', !!(await tryUntil('the bar agrees', () => barGold())), state());
 t('...its glyph keeps the slash and adds sound waves: a shape, not only a colour, tells it from off and muted',
   slashed() && waves(), state());
@@ -237,6 +237,38 @@ t('muted rebuild: the sender got the new track already off', !!rebuilt && pc.tx[
 ms.toggleMute(false);
 t('...on at unmute, and gold while it plays', !!rebuilt && rebuilt.enabled === true && !!(await tryUntil('rebuilt lane gold', () => gold())), state());
 playing = false;
+
+// ── 7. every paint draws the state as it is now, not as the last poll saw it ───────────────────────────────────────
+const xrGold = () => xrLast().includes('drop-shadow');
+synthOn = false;
+await sfu.sfuMic(true);
+negotiated(pc);
+vc.setPttMode(true); ms.setPttHeld(true);
+t('setup: the device lane is gold under the held key, on the HUD and in VR',
+  !!(await tryUntil('gold under PTT', () => gold() && xrShows() && xrGold())), `${state()} ${xrState()}`);
+window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV' }));
+t('PTT keyup: not gold in the same turn (the paint reads roomHears live, not the last poll)',
+  ms.roomHears() === false && !gold() && /push-to-talk armed/.test(document.querySelector('#micbtn').title), state());
+ms.setPttHeld(true);
+await tryUntil('gold again under the key, in VR too', () => gold() && xrShows() && xrGold());
+ms.setPttHeld(false);   // the XR controller's A/X release (xr.js): setPttHeld alone, no key event
+t('VR controller release: the indicator and the HUD glyph drop gold in the same turn, with no tick', !xrGold() && xrShows()
+  && mt.micIndicatorState() === 'on' && !gold(), `${state()} ${xrState()}`);
+ms.setPttHeld(true);
+await tryUntil('gold again before turning the mic off', () => gold());
+await ms.toggleMic();   // V or a click: the mic off, and no synth provider to take over
+t('toggleMic off with no synth provider: no waves, not gold, and the VR key is not hot-off, in the same turn',
+  ms.roomHears() === false && !gold() && !waves() && mt.micIndicatorState() === 'off'
+  && !/synthesized/.test(document.querySelector('#micbtn').title), `${state()} key=${mt.micIndicatorState()}`);
+// the bar's warm/dark follows a mic the transport turns off with no event
+vc.setPttMode(false);
+await sfu.sfuMic(true);
+await tryUntil('the mic back on', () => mt.micLive());
+ms.setPttHeld(false); vc.setPttMode(true);   // on, key up: the bar is warm
+t('setup: mic on, key up: the bar is warm', !!(await tryUntil('warm bar', () => /154, 138, 94|#9a8a5e/i.test(lvl.style.background))), state());
+await sfu.sfuMic(false);   // the transport alone, no audio:mic
+t('the transport turns the mic off with no event: the bar goes dark',
+  !!(await tryUntil('dark bar', () => /107, 95, 66|#6b5f42/i.test(lvl.style.background))), state());
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
