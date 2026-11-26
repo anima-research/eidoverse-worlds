@@ -27,6 +27,24 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const hut = ag.look(0).split("\n").find((l: string) => l.includes("[hut]")) ?? "";
   ok(hut !== "" && !/collides as/.test(hut), "347/4 look: a structure's anchor doesn't claim its box collides", hut); }
 
+// #347 bot 3: measure {check: true} on a thing whose collision is owned elsewhere (a structure's anchor) or off for bodies
+// doesn't say its collider.shape "box" makes it one solid box: the browser fits that model no collider
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  const box = { shape: "box" }, base = { model: "zz/hall.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1, collide: "box" };
+  ag.entities.set("solid", { id: "solid", ...base, collider: box });
+  ag.entities.set("hut", { id: "hut", ...base, collider: box, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  ag.entities.set("ghost", { id: "ghost", ...base, collider: { ...box, enabled: false } });
+  const report = { walkIn: { roomScale: true }, levels: [{ y: 0, area: 20, reachable: 20 }], warnings: [] };
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(report)) : realFetch(u))) as typeof fetch;
+  let said: Record<string, string> = {};
+  try { for (const id of ["solid", "hut", "ghost"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
+  finally { globalThis.fetch = realFetch; }
+  ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
+  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
+    ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),
+      `347/3 measure check: ${id === "hut" ? "a structure's anchor" : "a thing with its collision off"} isn't one solid box, and says why`, said[id]); }
+
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };
   await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "Moss", days: 2, global: true } });

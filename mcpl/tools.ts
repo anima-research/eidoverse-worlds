@@ -184,6 +184,7 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
 import { recordComponents } from "../shared/protocol/view.js";
+import { solidOffRecord } from "./agent-result.ts";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
 import { PoseClips } from "./pose-clips.ts";
@@ -453,7 +454,14 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP
   catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${ms / 1000} s; calling again may work`
     : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
-  return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  const what = `${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`;
+  // collision owned elsewhere (agent-result.ts collisionElsewhere): the browser fits this model no collider, so its
+  // collide override says nothing about who can go inside
+  const none = !e ? null : solidOffRecord(e) ? "its collision is off for bodies: walk-through"
+    : recordComponents(e).structure ? "it is a structure's anchor, hidden: bodies meet the structure's own walls and floors" : null;
+  if (!none) return text(describeCheck(what, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  return text(`${what} has no collider of its own (${none}). What follows is the model's own geometry, as the check reads it.\n`
+    + describeCheck(what, r, ag.placesOn(e!).length, e!.id));
 };
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
