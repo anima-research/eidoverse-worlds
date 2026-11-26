@@ -644,9 +644,10 @@ addEventListener('mousemove', (e) => {
     dragging.armed = true;
     if (dragging.shiftPick) {
       // a Shift-press on one of several selected things re-selects the group it pressed, led by it, so the check below would
-      // always pass: first the group must still be selected (led by any of them), or a selection changed meanwhile is dropped
-      // with the press, not overwritten by it (bot #352 `4`, cold read)
-      if (dragging.many && !selectionHolds(Sel.selection().ids?.[0], dragging.many)) { dragging = null; return; }
+      // always pass: first the selection must still be exactly that group (led by any of them, nothing taken out or added), or
+      // a selection changed meanwhile is dropped with the press, not overwritten by it (bot #352 `4`, cold read)
+      const s = Sel.selection();
+      if (dragging.many && !(s.ids?.length === dragging.many.length && selectionHolds(s.ids[0], dragging.many))) { dragging = null; return; }
       if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }
       else select(dragging.id);
       dragging.shiftPick = false;

@@ -25,7 +25,7 @@
 //       nothing (MM34); a pivot-tool drag holds nothing against an older lock question and writes the pivot it was given
 //       (MM30), and a press after a tool key mid-drag drags the new tool's seat (MM39); a gizmo drag held still keeps
 //       relaying (MM31); a selection change before the travel drops the press, as does a dropped follower and a changed
-//       Shift-press group (MM32, MM36, MM40), while an unchanged one drags (MM41); a planar group
+//       Shift-press group, shrunk or grown (MM32, MM36, MM40, MM42), while an unchanged one drags (MM41); a planar group
 //       drag goes no further than 20 m (MM33); a press whose ray misses the plane takes hold once a ray meets it within that
 //       reach, moving nothing there (MM12), and not where a ray meets it beyond reach (MM35); a press on a large thing's end
 //       far from its origin takes hold at once (MM37), and a grazing press past a tall thing doesn't (MM38)
@@ -929,6 +929,22 @@ try {
         !!atT && drag?.armed === true && myActs().length === n0 + 1 && !!dy && dy[0] > 0.005 && Math.abs(dy[0] - dy[1]) < 0.01 && Math.abs(T1[0] - T0[0]) < 0.01 && Math.abs(T1[2] - T0[2]) < 0.01
           && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-tbl"), NODE.get("mm-box")]), { atT, drag, dy, T0, T1, B0, B1, sel, acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // …and with a thing ADDED to the selection meanwhile (the chair, Ctrl-clicked in): the selection is no longer the group the
+    // press picked, so the press is dropped, nothing moves, and the chair stays selected (re-selecting the group would drop it)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true, arms: false, preArm: () => page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl', 'mm-chair']); return true;`) });
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      check("MM42 a Shift-press on the table, then the chair added to the selection before the travel, drops the press: nothing moves or is written, and the chair stays selected",
+        !!atT && drag === null && myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0)
+          && JSON.stringify(sel) === JSON.stringify(["mm-box", "mm-tbl", "mm-chair"].map((n) => NODE.get(n))), { atT, drag, sel, local, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
 
