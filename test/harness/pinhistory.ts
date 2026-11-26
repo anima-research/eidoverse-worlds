@@ -9,7 +9,7 @@
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
 //     a branch that brought the file new: its latest change is judged even though the base never had it.
-// The version rules (sameVersionChanged, engine-check EN4) judge both. The changelog rule (unacknowledged) judges both on
+// The version rules (sameVersionChanged, engine-check EN4) judge both, reading them as main's code does (readAsMain). The changelog rule (unacknowledged) judges both on
 // main itself (the base is HEAD), with no base, or with a base that isn't an ancestor of HEAD; on a branch whose base is
 // an ancestor of HEAD it judges only the base (see unacknowledged).
 // @ts-nocheck
@@ -90,11 +90,25 @@ export function load(root: string, rev: string, why: string, files: string[]) {
 const loaded = (root: string, revs: { rev: string; why: string }[], files: string[]) =>
   revs.map(({ rev, why }) => ({ rev, why, was: load(root, rev, why, files) })).filter((o) => files.some((f) => o.was[f] != null));
 
-/** The earlier versions to judge, both of them loaded: [{rev, why, was: {file: parsed|null}}] (the version rules'). */
+/** The version rules' read of one earlier version, as main's code reads it: a file git can't show (absent, or a blob a
+ *  partial clone lacks) is no file, and JSON null is no version, so a version where every file is either is left out.
+ *  Text that isn't JSON throws (main's code threw too), now naming the file and the revision. The changelog rule reads
+ *  strictly instead (load). */
+function readAsMain(root: string, rev: string, why: string, files: string[]) {
+  return Object.fromEntries(files.map((f) => { const t = showAt(root, rev, f); if (t == null) return [f, null];
+    try { return [f, JSON.parse(t)]; } catch (err: any) { throw new Error(`pinhistory: ${f} at ${rev.slice(0, 8)} (${why}) is not valid JSON (${err?.message ?? err}), so nothing can be judged from it`); } }));
+}
+
+/** The earlier versions to judge, both of them read as main's code reads them (readAsMain): [{rev, why, was: {file:
+ *  parsed|null}}] (the version rules'). */
 export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
   const { base, prev, revs } = revisions(root, files, readNow, argv);
-  return { base, prev, out: loaded(root, revs, files) };
+  return { base, prev, out: revs.map(({ rev, why }) => ({ rev, why, was: readAsMain(root, rev, why, files) })).filter((o) => files.some((f) => o.was[f] != null)) };
 }
+
+/** A caught throw's words for a red row: pinhistory's own message as it is; anything else (a bug in a suite) with its
+ *  stack; never empty, so `"threw" in r` and the message agree. TRV, LWV, EN4 and N10 catch with it. */
+export const reason = (err: any) => { const m = String(err?.message ?? err ?? ""); return (m.startsWith("pinhistory:") ? m : String(err?.stack || m)) || "a throw with no message"; };
 
 /** On a branch: the base is an ancestor of HEAD and not HEAD itself. A git failure is a throw, never read as an answer. */
 function onBranchOf(root: string, base: string) {

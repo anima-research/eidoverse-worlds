@@ -121,8 +121,8 @@ check("N5", "PROTOCOL.md never calls a code file normative", !codeNormative.leng
 // N10: N6/N7 compare the pins to the code, so the code and a pin edited together, with no changelog line, passed them
 { const files = [RC_PIN, RB_PIN]; const now = (f: string) => (existsSync(ROOT + f) ? readFileSync(ROOT + f, "utf8") : null);
   const what = `a pin break is acknowledged in the record: every break between an earlier ${RC_PIN} / ${RB_PIN} and now is a \`  - <break>\` line spec/REGISTRY-CHANGELOG.md gained since then: on a branch, the base's (the newest merge-base with origin/anima/upstream main, or --base), which is the branch's net change, what reaches main; on main itself, or with a --base that isn't an ancestor of HEAD, the previous version too (before the newest change); with no base, only the previous version`;
-  let r: any; try { r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {} }, is[RB_PIN] ?? {})); } catch (err: any) { r = { threw: String(err?.message ?? err) }; }   // a throw (a base it can't read) is a red row, as pretrans's C() makes it
-  check("N10", what, !r.threw && r.judged.length >= 1 && !r.out.length, r.threw ? { threw: r.threw } : { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }); }
+  let r: any; try { r = PH.unacknowledged(ROOT, files, "spec/REGISTRY-CHANGELOG.md", now, (was, is) => pinBreaksC12(was[RC_PIN] ?? {}, was[RB_PIN] ?? {}, is[RC_PIN] ?? { codes: {} }, is[RB_PIN] ?? {})); } catch (err: any) { r = { threw: PH.reason(err) }; }   // a throw (a base it can't read) is a red row, as pretrans's C() makes it
+  const threw = "threw" in r; check("N10", what, !threw && r.judged.length >= 1 && !r.out.length, threw ? { threw: r.threw } : { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }); }
 
 // N11: tel0s's #260 rulings (11-06, delegated by antra) are written: D1 posture and exit rule, D2, D6, and D8 (no roles row's source
 // is a lead's or house's call any more: each is ratified, or marked `proposal · lead`)

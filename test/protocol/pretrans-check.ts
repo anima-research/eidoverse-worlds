@@ -835,6 +835,39 @@ await C("D13c", "the version rule judges the previous version whole (pinhistory 
   const now = (f: string) => fs.readFileSync(path.join(R, f), "utf8");
   const r = PH.sameVersionChanged(R, "vec.json", now, [{ law: "L1", versionOf: (x: any) => x.L1v, data: ["L1d"] }, { law: "L2", versionOf: (x: any) => x.L2v, data: ["L2d"] }], undefined, ["--base", main]);
   return [r.out.some((o: any) => o.law === "L1" && o.version === "2" && o.field === "L1d"), r]; });
+await C("D13d", "the version rules (sameVersionChanged, EN4's earlier) read an earlier version as main's code does: a version whose file is JSON null is left out, not refused (v1 d1, then null, then v1 d1 again, with no base: judged nothing, nothing changed, no throw); an earlier version that isn't JSON throws, naming the file and the revision (the changelog rule reads strictly: D13b)", () => {
+  const R = scratch("d13d") + "repo"; fs.mkdirSync(R);
+  const g = (...a: string[]) => { const r = require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
+  const put = (t: string) => fs.writeFileSync(path.join(R, "vec.json"), t), commit = (m: string) => { g("add", "-A"); g("commit", "-q", "-m", m); return g("rev-parse", "HEAD"); };
+  const vec = (o: any) => JSON.stringify(o, null, 1) + "\n", now = (f: string) => fs.readFileSync(path.join(R, f), "utf8");
+  const laws = [{ law: "L1", versionOf: (x: any) => x?.L1v, data: ["L1d"] }];
+  const sv = () => { try { return PH.sameVersionChanged(R, "vec.json", now, laws, undefined, []); } catch (err: any) { return { threw: String(err?.message ?? err), out: [] }; } };
+  const en4 = () => { try { return { out: PH.earlier(R, ["vec.json"], now, []).out.length }; } catch (err: any) { return { threw: String(err?.message ?? err) }; } };
+  const pb = process.env.PIN_BASE; delete process.env.PIN_BASE;   // no base: the scratch repo has no main ref
+  try {
+    g("init", "-q", "-b", "main"); g("config", "core.autocrlf", "false"); g("config", "core.eol", "lf");
+    put(vec({ L1v: "1", L1d: "d1" })); commit("v1 d1"); const n = (put("null\n"), commit("JSON null")); put(vec({ L1v: "1", L1d: "d1" })); commit("v1 d1 again");
+    const isNull = { sv: sv(), en4: en4() };
+    put("<<<<<<< HEAD\n"); commit("conflict markers"); put(vec({ L1v: "1", L1d: "d1" })); const bad = g("rev-parse", "HEAD");   // uncommitted: the previous version (HEAD) isn't JSON
+    const notJson = { sv: sv(), en4: en4() }; const at = new RegExp(`^pinhistory: vec\\.json at ${bad.slice(0, 8)} \\(the previous version\\) is not valid JSON`);
+    return [!("threw" in isNull.sv) && !isNull.sv.out.length && !("threw" in isNull.en4) && at.test(notJson.sv.threw ?? "") && at.test(notJson.en4.threw ?? ""), { isNull, notJson, nullCommit: n.slice(0, 8) }];
+  } finally { if (pb === undefined) delete process.env.PIN_BASE; else process.env.PIN_BASE = pb; } });
+await C("D13e", "a version rule that throws is one red row, not a crashed suite: trig-check (TRV), laws-check (LWV) and engine-check (EN4, both files) run against a history whose conformance files at the base aren't JSON each fail just those rows, each with pinhistory's reason in its detail, and still print their tally (normative-check's N10 already did); an error that isn't pinhistory's keeps its stack, and an empty one still reads as a throw", () => {
+  const S = scratch("d13e") + "repo"; fs.mkdirSync(S); const cp = require("node:child_process");
+  const g = (...a: string[]) => { const r = cp.spawnSync("git", ["-C", S, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
+  const files = ["spec/conformance/trig.json", "spec/conformance/laws.json", "spec/conformance/physics/digests.json", "spec/conformance/physics/digests-exact.json"];
+  g("init", "-q", "-b", "main"); g("config", "core.autocrlf", "false"); g("config", "core.eol", "lf");
+  for (const f of files) { fs.mkdirSync(path.dirname(path.join(S, f)), { recursive: true }); fs.writeFileSync(path.join(S, f), "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> main\n"); }
+  g("add", "-A"); g("commit", "-q", "-m", "conformance files with conflict markers"); const base = g("rev-parse", "HEAD");
+  const run = (suite: string) => { const r = cp.spawnSync(process.execPath, [path.join(T, "test/protocol", `${suite}.ts`)], { cwd: T, encoding: "utf8", timeout: 300000,
+    env: { ...process.env, GIT_DIR: path.join(S, ".git"), PIN_BASE: base, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return `${r.stdout ?? ""}${r.stderr ?? ""}`; };   // the working tree stays the real one
+  const want: [string, string[]][] = [["trig-check", ["TRV"]], ["laws-check", ["LWV"]], ["engine-check", ["EN4 digests.json", "EN4 digests-exact.json"]]];
+  const seen = Object.fromEntries(want.map(([suite, rows]) => { const o = run(suite); const tally = o.match(new RegExp(`\\[${suite}\\] (\\d+) passed, (\\d+) failed`));
+    const red = rows.map((id) => o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && /"threw":"pinhistory: [^"]* is not valid JSON/.test(l)));
+    return [suite, { tally: tally?.[0] ?? null, failed: tally ? +tally[2] : null, red, tail: tally ? undefined : o.trim().split("\n").slice(-4) }]; }));
+  let why: any; try { why = { own: PH.reason(new Error("pinhistory: x")), bug: PH.reason(new TypeError("not a pin")), empty: PH.reason("") }; } catch (err: any) { why = { threw: String(err?.message ?? err) }; }   // the catches' words
+  const words = why.own === "pinhistory: x" && /TypeError: not a pin\n\s+at /.test(why.bug ?? "") && (why.empty ?? "").length > 0;
+  return [want.every(([suite, rows]) => seen[suite].failed === rows.length && seen[suite].red.every(Boolean)) && words, { seen, why }]; });
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
