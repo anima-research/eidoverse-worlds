@@ -41,7 +41,9 @@ const held: (() => void)[] = []; let flaky = false;
 // slowfail.glb: its first read is held and then fails; any read asked while that one is held answers at once
 const slowFail: (() => void)[] = [];
 let movingDown = false;   // moving.glb: answers until it is set, then fails (as flaky.glb, for the placement rows)
-ag.ground.geomFor = async (lib: string) => lib === "moving.glb" ? (movingDown ? null : crateGeom) : lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
+// hall.glb: room-scale (5×3×5 m) with no top surface filled enough to stand on: the summary has no deck to register
+const hallGeom = { bbox: { min: [-2.5, 0, -2.5], max: [2.5, 3, 2.5], size: [5, 3, 5] }, topSurfaces: [] };
+ag.ground.geomFor = async (lib: string) => lib === "hall.glb" ? hallGeom : lib === "moving.glb" ? (movingDown ? null : crateGeom) : lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
   : lib === "held.glb" ? new Promise((r) => { held.push(() => r(crateGeom)); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
   : lib === "nogeom.glb" ? null : lib === "slowfail.glb" ? (slowFail.length ? crateGeom : new Promise((r) => { slowFail.push(() => r(null)); })) : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
@@ -212,6 +214,15 @@ for (const [what, id, x, model, keeps] of [["(control) the same model", "badpos"
   ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); await ag.ground.supportReady();
   check(`a re-birth as ${what} at a position that can't be read ${keeps ? "keeps" : "lets go of"} the old support`,
     had && await settled() && !!supportHolders()[`anchor/${id}`] === keeps && ag.ground.supportIds.has(id) === keeps, JSON.stringify(Object.keys(supportHolders())));
+}
+
+// (#347 bot 11 on 0c28db5e9) the summary fallback for a room-scale model with no deck registers nothing, and says so
+{
+  const seams: string[] = []; const realSeam = ag.noteSupportSeam; ag.noteSupportSeam = (id: string, why: string) => { seams.push(`${id}: ${why}`); };
+  ag.entities.set("hall", { id: "hall", model: "hall.glb", pos: [670, 0, 0], yaw: 0, actor: "x" });
+  await ag.ground.syncSupport("hall"); ag.noteSupportSeam = realSeam;
+  check("a room-scale model with no deck to stand on registers none, and declares the abstention", await settled() && !ag.ground.supportIds.has("hall") && seams.some((l) => l.startsWith("hall:")),
+    JSON.stringify(seams));
 }
 
 // (#347 reader) an anchor still reads its model's own description: its places (the model's `building` extras, read

@@ -510,7 +510,7 @@ export class AgentGround {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
       }
-    }                                                   // room-scale with no readable decks: browser-only, declared
+    } else this.a.noteSupportSeam(id, `room-scale (${w.toFixed(1)}×${d.toFixed(1)}m, ${h.toFixed(1)}m tall) with no top surface filled enough to stand on — abstaining, no decks (a browser fits its triangles)`);
     if (ids.length) this.hold(id, ids, e);
   }
 
