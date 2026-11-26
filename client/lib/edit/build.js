@@ -643,6 +643,10 @@ addEventListener('mousemove', (e) => {
     if (1 + dragging.follow.length > MM.MAX_GROUP) { flashHint(MM.tooManyHint(1 + dragging.follow.length), 6000); dragging = null; return; }
     dragging.armed = true;
     if (dragging.shiftPick) {
+      // a Shift-press on one of several selected things re-selects the group it pressed, led by it, so the check below would
+      // always pass: first the group must still be selected (led by any of them), or a selection changed meanwhile is dropped
+      // with the press, not overwritten by it (bot #352 `4`, cold read)
+      if (dragging.many && !selectionHolds(Sel.selection().ids?.[0], dragging.many)) { dragging = null; return; }
       if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }
       else select(dragging.id);
       dragging.shiftPick = false;

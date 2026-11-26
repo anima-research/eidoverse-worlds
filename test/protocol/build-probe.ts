@@ -22,12 +22,13 @@
 //       drag released where it began puts back what it took from an older drag's refusal, and so does an over-cap gizmo
 //       drag (which holds nothing, and lets its hint show while held); a gizmo release writes a follower whose object was
 //       swapped mid-drag where the drag put it; a follower whose object goes away mid-drag makes either release write
-//       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30), and a press after a tool key mid-drag drags the
-//       new tool's seat (MM39); a gizmo drag held still keeps
-//       relaying (MM31); a selection change before the travel drops the press, a dropped follower too (MM32, MM36); a planar group drag goes no further
-//       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
-//       nothing there (MM12), and not where a ray first meets it beyond reach (MM35); a press
-//       on a large thing's end far from its origin takes hold at once (MM37), a grazing press past a tall thing doesn't (MM38)
+//       nothing (MM34); a pivot-tool drag holds nothing against an older lock question and writes the pivot it was given
+//       (MM30), and a press after a tool key mid-drag drags the new tool's seat (MM39); a gizmo drag held still keeps
+//       relaying (MM31); a selection change before the travel drops the press, as does a dropped follower and a changed
+//       Shift-press group (MM32, MM36, MM40); a planar group drag goes no further than 20 m (MM33); a press whose ray misses
+//       the plane takes hold once a ray meets it within that reach, moving nothing there (MM12), and not where a ray meets
+//       it beyond reach (MM35); a press on a large thing's end far from its origin takes hold at once (MM37), and a grazing
+//       press past a tall thing doesn't (MM38)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -893,6 +894,22 @@ try {
       check("MM36 a follower the press picked, dropped from the selection before the travel, drops the press: it never arms, nothing moves, nothing is sent",
         !!atF && picked?.includes(NODE.get("mm-tbl")) && armed === false && myActs().length === n0 && refused?.length === 0 && sent === 0 && near(local?.[0], B0) && near(local?.[1], T0),
         { atF, picked, armed, refused, sent, local, B0, T0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // …and a Shift-press on a selected thing that isn't the primary (it would lead the group, re-selected at the arm), once the
+    // selection has changed meanwhile: the press is dropped, and the changed selection stays (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true, arms: false, preArm: () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`) });
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      check("MM40 a Shift-press on the table (selected, not the primary), then a selection change before the travel, drops the press: nothing moves or is written, and the chair stays selected",
+        !!atT && drag === null && myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-chair")]),
+        { atT, drag, sel, local, B0, T0, acts: actsSince(n0) });
       if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
