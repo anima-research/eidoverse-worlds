@@ -230,6 +230,16 @@ function scheduleLoad(id, ent, gen, tier = null) {
         if (t) t.retierAt = Date.now();
         return;
       }
+      // a re-tier answered with the tier already worn (a lod ask the sequencer answered with the original, then the
+      // full ask on approach; or the other way) draws the same geometry: keep the standing object and move only its
+      // ask. Swapping it would rebuild its collider, lamps and caster (re-registered unwarmed, its shadow dropping out
+      // and fading back) for nothing. As Godot's mesh LOD switches inside the instance and never re-creates the node.
+      if (standing && !isPlaceholder(standing) && standing.userData?.lib === cur.model
+        && (standing.userData.tier ?? 'full') === (obj.userData.tierServed ?? 'full')) {
+        standing.userData.tierAsked = obj.userData.tierAsked;
+        resStats.retiersKept++;
+        return;
+      }
       realizeModel(id, cur, obj);
     },
   }).done.catch((e) => {
@@ -795,7 +805,7 @@ const canRetier = (id, ent) => canDemote(id, ent);
 
 const R_HYST = 20;     // the band that keeps a walk along the edge quiet
 const DIAG_DEFAULT = 12; // assumed bbox diagonal (m) before geom lands: err large, so a big thing near the edge still loads
-const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0 };
+const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0, retiersKept: 0 };   // retiersKept: answered the tier worn, no swap
 
 function residencyRadius(ent) {
   const s = ent?.model ? libGeom.get(ent.model)?.bbox?.size : null;
