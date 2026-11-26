@@ -40,7 +40,8 @@ const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0
 const held: (() => void)[] = []; let flaky = false;
 // slowfail.glb: its first read is held and then fails; any read asked while that one is held answers at once
 const slowFail: (() => void)[] = [];
-ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
+let movingDown = false;   // moving.glb: answers until it is set, then fails (as flaky.glb, for the placement rows)
+ag.ground.geomFor = async (lib: string) => lib === "moving.glb" ? (movingDown ? null : crateGeom) : lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
   : lib === "held.glb" ? new Promise((r) => { held.push(() => r(crateGeom)); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
   : lib === "nogeom.glb" ? null : lib === "slowfail.glb" ? (slowFail.length ? crateGeom : new Promise((r) => { slowFail.push(() => r(null)); })) : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
@@ -194,6 +195,24 @@ const offPending = ag.ground.syncSupport("offpend");
 const offHeld = held.length === 1; ag.entities.get("offpend").disabled = true; held.splice(0).forEach((r) => r()); await offPending;
 check("a crate switched off while its geometry is in flight registers none", offHeld && await settled() && !supportHolders()["anchor/offpend"] && !ag.ground.supportIds.has("offpend"),
   JSON.stringify(Object.keys(supportHolders())));
+
+// (#347 bot 6 on 0c28db5e9) a support kept across reads that fail is kept for the same model AT THE SAME PLACE: one
+// moved (or resized, or given another collider) while nothing can be read is a ghost floor at its old place, so it goes
+ag.entities.set("moved", { id: "moved", model: "moving.glb", pos: [610, 0, 0], yaw: 0, actor: "x" });
+await ag.ground.syncSupport("moved"); const movedHad = await registered("anchor/moved");
+movingDown = true; ag.entities.set("moved", { ...ag.entities.get("moved"), pos: [620, 0, 0] });
+ag.onThingChange({ id: "moved", what: "born" }, null, false, "x", Date.now()); await ag.ground.supportReady();
+check("a thing re-born somewhere else while its reads fail lets go of the support at its old place", movedHad && await settled() && !supportHolders()["anchor/moved"] && !ag.ground.supportIds.has("moved") && deck(610).onto === null,
+  JSON.stringify({ holders: Object.keys(supportHolders()), at: deck(610) }));
+// (#347 bot 8 on 0c28db5e9) a position that can't be read keeps the old support only for the model it was fitted for
+for (const [what, id, x, model, keeps] of [["(control) the same model", "badpos", 630, "crate.glb", true], ["another model", "badpos2", 650, "rug.glb", false]] as const) {
+  ag.entities.set(id, { id, model: "crate.glb", pos: [x, 0, 0], yaw: 0, actor: "x" });
+  await ag.ground.syncSupport(id); const had = await registered(`anchor/${id}`);
+  ag.entities.set(id, { ...ag.entities.get(id), model, pos: [Number.NaN, 0, 0] });
+  ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); await ag.ground.supportReady();
+  check(`a re-birth as ${what} at a position that can't be read ${keeps ? "keeps" : "lets go of"} the old support`,
+    had && await settled() && !!supportHolders()[`anchor/${id}`] === keeps && ag.ground.supportIds.has(id) === keeps, JSON.stringify(Object.keys(supportHolders())));
+}
 
 // (#347 reader) an anchor still reads its model's own description: its places (the model's `building` extras, read
 // with its bytes by meshFor, the only reader), though it stands on nothing, and inside its tracked sync, so they're

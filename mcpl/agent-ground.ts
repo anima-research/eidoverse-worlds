@@ -85,6 +85,8 @@ const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
  *  survey (docs/research/deck-fill-threshold.md); a real-but-open deck (a
  *  catwalk) is abstained on by design and a body falls to terrain instead. */
 const DECK_FILL = 0.45;
+/** Where and how a thing is placed, as its support is fitted from it: the transform and the collider override decide() reads. */
+const placeKey = (e: Entity) => JSON.stringify([e.pos, e.yaw ?? 0, e.scale ?? 1, e.scale3 ?? null, e.q ?? null, e.collide ?? null]);
 
 export class AgentGround {
   constructor(readonly a: WorldAgent) {}
@@ -296,9 +298,9 @@ export class AgentGround {
   supportIds = new Map<string, string[]>();
   /** Each awaited fit's own reservation, a token: its bid is no identity, since a later sync of the same thing reuses it. */
   private fits = new Map<string, object>();
-  private reserve(id: string, bid: string, model: string): object {
+  private reserve(id: string, bid: string, e: Entity): object {
     const t = {};
-    this.hold(id, [bid], model); this.fits.set(id, t);
+    this.hold(id, [bid], e); this.fits.set(id, t);
     return t;
   }
   /** This agent's claim token on shared support boxes, per INSTANCE: two agents
@@ -394,9 +396,10 @@ export class AgentGround {
     return p;
   }
 
-  /** The model each held support was registered for (set with supportIds, cleared with it in dropSupport). */
-  private supportModel = new Map<string, string>();
-  private hold(id: string, ids: string[], model: string) { this.supportIds.set(id, ids); this.supportModel.set(id, model); }
+  /** What each held support was registered for: the model, and where and how it was placed (set with supportIds,
+   *  cleared with it in dropSupport). A support kept across failed reads must be this same model at this same place. */
+  private supportFit = new Map<string, { model: string; place: string }>();
+  private hold(id: string, ids: string[], e: Entity) { this.supportIds.set(id, ids); this.supportFit.set(id, { model: e.model, place: placeKey(e) }); }
   async syncSupport(id: string) {
     const before = this.a.entities.get(id);
     // only a model carries a collider; a thing that lost its model (a rejoin folds every thing as born) lets go of the old
@@ -417,10 +420,11 @@ export class AgentGround {
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
     if (!e || e.model !== before.model || this.a.closed) return;
-    // nothing can be read for its model: a support registered for another model (or for none on record) goes; one
-    // registered for this same model stays, as on main (a transient /geom or /library failure doesn't take a floor
-    // away). A later sync of this model that has reserved or registered has recorded this model, so it is left alone.
-    if (!g && !mesh) { if (this.supportModel.get(id) !== e.model) this.dropSupport(id); return; }
+    // nothing can be read for its model: a support registered for another model or another placement (or for none on
+    // record) goes, as a ghost floor; one registered for this same model at this same place stays, as on main (a
+    // transient /geom or /library failure doesn't take a floor away). A later sync of this thing that has reserved or
+    // registered has recorded what it fitted, so it is left alone.
+    if (!g && !mesh) { const had = this.supportFit.get(id); if (had?.model !== e.model || had.place !== placeKey(e)) this.dropSupport(id); return; }
     // started moving, got mounted, or lost its collision / became an anchor / was switched off while its geometry was in
     // flight — replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e) || switchedOff(this.a.entities, id)) { this.dropSupport(id); return; }
@@ -433,7 +437,8 @@ export class AgentGround {
       // If position is readable, the entity has moved and any box at its old
       // address is now a ghost floor. Retaining existing support is correct
       // only when position itself is unreadable and the move did not land.
-      if (isFiniteVec3(e.pos)) this.dropSupport(id);
+      // A support fitted for another model is no floor of this one, wherever it is.
+      if (isFiniteVec3(e.pos) || this.supportFit.get(id)?.model !== e.model) this.dropSupport(id);
       this.a.noteMalformed("support-sync", { id, pos: e.pos, yaw: e.yaw, scale: e.scale });
       return;
     }
@@ -449,7 +454,7 @@ export class AgentGround {
       const bid = `${this.a.world}/${id}`;
       void registerSupport(this.supportHolder, bid, lying.min, lying.max,
         stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
-      this.hold(id, [bid], e.model);
+      this.hold(id, [bid], e);
       return;
     }
     // The real collider when the triangles are to hand: fitted by the same
@@ -460,11 +465,11 @@ export class AgentGround {
       // awaited, unlike the summary boxes: a joining body's feet wait on the fit
       // (supportReady). The id is RESERVED first, so a remove/mount/close during
       // the wait has something to drop, and a fit landing afterwards is taken back out.
-      const t = this.reserve(id, bid, e.model);
+      const t = this.reserve(id, bid, e);
       const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
       if (this.overtaken(id, t, e.model)) return;
       if (ok) return;
-      this.supportIds.delete(id); this.supportModel.delete(id);
+      this.supportIds.delete(id); this.supportFit.delete(id);
     }
     if (!g) return;
     // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
@@ -494,10 +499,10 @@ export class AgentGround {
         // the certification is a MODEL-frame bound; this spawn's scale must not stretch it past the world bound
         // (a grid certified to 3cm serves a ×1.25 spawn but not a ×2)
         const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
-        const t = this.reserve(id, bid, e.model);   // reserved across the await, as the mesh fit is
+        const t = this.reserve(id, bid, e);   // reserved across the await, as the mesh fit is
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (this.overtaken(id, t, e.model)) return;
-        this.supportIds.delete(id); this.supportModel.delete(id);
+        this.supportIds.delete(id); this.supportFit.delete(id);
         if (fit) ids.push(bid);
         // refused grid: a DECLARED abstention (the body finds terrain), never a floating false floor
         else this.a.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
@@ -506,7 +511,7 @@ export class AgentGround {
         ids.push(bid);
       }
     }                                                   // room-scale with no readable decks: browser-only, declared
-    if (ids.length) this.hold(id, ids, e.model);
+    if (ids.length) this.hold(id, ids, e);
   }
 
   /** After an awaited fit reserved as `t`: did a close, a remove, a mount, a motion or a later sync overtake it?
@@ -524,6 +529,6 @@ export class AgentGround {
 
   dropSupport(id: string) {
     for (const bid of this.supportIds.get(id) ?? []) void removeSupport(this.supportHolder, bid);
-    this.supportIds.delete(id); this.supportModel.delete(id); this.fits.delete(id);
+    this.supportIds.delete(id); this.supportFit.delete(id); this.fits.delete(id);
   }
 }
