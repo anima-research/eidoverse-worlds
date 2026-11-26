@@ -197,7 +197,7 @@ try {
     const boxId = sceneId(a, "leftbox"), boxBid = `${a.world}/${boxId}`, mine = a.ground.supportHolder;
     const { supportHolders } = await import("../../mcpl/physics.ts");
     const holds = () => (supportHolders()[boxBid] ?? []).includes(mine);
-    await tryUntil("the body holds the box up", holds, { ms: 5000, step: 25 });
+    const heldUp = await tryUntil("the body holds the box up", holds, { ms: 5000, step: 25 });   // the row's precondition (#347 bot 20)
     // the tower, by its id (this body is a later instance than the one that named it: sceneId doesn't know "tower")
     const towerId = [...a.ground.supportIds.keys()].find((k) => k !== boxId), towerFit = () => supportShape(`${a.world}/${towerId}`);
     const towerBefore = towerFit();
@@ -206,6 +206,10 @@ try {
     a.ws.close();
     await until("the body has dropped and tried to dial again", () => a.ws.readyState === 3 && dialled > 0, { ms: 10_000, step: 25 });
     delete a.connect;
+    // (#347 bot 21) the tower's fit is taken out of the shared collider map while the body is away (its own records kept),
+    // so only a fresh fit by the rejoin can bring it back: the old support kept across the drop can't pass the control
+    const { removeSupport } = await import("../../mcpl/physics.ts");
+    await removeSupport(mine, `${a.world}/${towerId}`); const towerOut = towerFit() == null;
     const other: any = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_ });
     await other.connect();
     const gone = await legacyVerb(other, "remove", { id: boxId });
@@ -214,12 +218,12 @@ try {
     await a.connect();
     await a.ground.supportReady();
     check("a body that rejoins after a thing was removed while it was away lets go of that thing's support",
-      !!gone && !a.entities.has(boxId) && await tryUntil("the box is let go", () => !holds() && !a.ground.supportIds.has(boxId), { ms: 3000, step: 25 }) !== undefined
+      !!heldUp && !!gone && !a.entities.has(boxId) && await tryUntil("the box is let go", () => !holds() && !a.ground.supportIds.has(boxId), { ms: 3000, step: 25 }) !== undefined
 ,
-      JSON.stringify({ gone, holders: supportHolders()[boxBid], ids: a.ground.supportIds.get(boxId) }));
+      JSON.stringify({ heldUp, gone, holders: supportHolders()[boxBid], ids: a.ground.supportIds.get(boxId) }));
     const towerBack = await tryUntil("the tower is fitted again", () => towerFit() === "exact", { ms: 5000, step: 25 });
-    check("...while what the cut still holds is fitted again (the tower)", towerBefore === "exact" && !!towerBack && a.ground.supportIds.has(towerId),
-      JSON.stringify({ towerId, before: towerBefore, now: towerFit() }));
+    check("...while what the cut still holds is fitted again (the tower)", towerBefore === "exact" && towerOut && !!towerBack && a.ground.supportIds.has(towerId),
+      JSON.stringify({ towerId, before: towerBefore, towerOut, now: towerFit() }));
   }
   console.log("\nwalking while a placed thing's shape is still loading:");
   {
