@@ -30,6 +30,7 @@ import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../render/scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../render/materials.js';
+import { discardObject } from '../render/discard.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 import { stillArriving, footprintOf } from '../arrivalnear.js';   // the arrival hold's rules (arrivalhold.js)
 
@@ -154,7 +155,7 @@ const isPlaceholder = (obj) => Boolean(obj?.userData?.placeholder);
 function clearReservation(id) {
   const cur = entities.get(id);
   if (cur === null || isPlaceholder(cur)) {
-    if (cur) (cur.parent ?? scene).remove(cur);
+    if (cur) { (cur.parent ?? scene).remove(cur); discardObject(cur); }   // the stand-in's box goes with what drew it
     entities.delete(id);
     syncCompLight(id);   // the stand-in it rode is gone: park at the fold, or drop
   }
@@ -214,10 +215,12 @@ function scheduleLoad(id, ent, gen, tier = null) {
       const cur = state.st.entities[id];
       const t = tracked.get(id);
       if (t?.gen === gen) t.loading = false;
+      // every return below that does not wear the clone discards it (render/discard.js): loadGLB compiled it
       // the world may have moved on while the bytes flew: retired, re-spawned with a different model (its own job
       // follows), demoted-then-reset, or the realizer was reset
-      if (signal.aborted || t?.gen !== gen) return;
+      if (signal.aborted || t?.gen !== gen) { discardObject(obj); return; }
       if (!cur || modelOf(cur) !== ent.model) {
+        discardObject(obj);
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) untrack(id);
         return;
@@ -228,6 +231,18 @@ function scheduleLoad(id, ent, gen, tier = null) {
       if (standing && !isPlaceholder(standing) && standing.userData?.lib && !canRetier(id, cur)) {
         resStats.retiersRefused++;
         if (t) t.retierAt = Date.now();
+        discardObject(obj);
+        return;
+      }
+      // a re-tier answered with the tier already worn (a lod ask the sequencer answered with the original, then the
+      // full ask on approach; or the other way) draws the same geometry: keep the standing object and move only its
+      // ask. Swapping it would rebuild its collider, lamps and caster (re-registered unwarmed, its shadow dropping out
+      // and fading back) for nothing. As Godot's mesh LOD switches inside the instance and never re-creates the node.
+      if (standing && !isPlaceholder(standing) && standing.userData?.lib === cur.model
+        && (standing.userData.tier ?? 'full') === (obj.userData.tierServed ?? 'full')) {
+        standing.userData.tierAsked = obj.userData.tierAsked;
+        resStats.retiersKept++;
+        discardObject(obj);
         return;
       }
       realizeModel(id, cur, obj);
@@ -252,6 +267,7 @@ function teardownRealized(id, obj, phase) {
   releaseGLB(obj.userData?.glbKey ?? obj.userData?.lib);
   cancelOwner(`entity:${id}`);
   release(id, phase);
+  discardObject(obj);       // it leaves the scene now (both callers): what drawing it made goes with it
 }
 
 function realizeModel(id, cur, obj) {
@@ -273,6 +289,7 @@ function realizeModel(id, cur, obj) {
     // a real object being replaced (a tier swap) releases what it held; a placeholder held nothing
     if (!isPlaceholder(stand)) teardownRealized(id, stand, 'swap');
     (stand.parent ?? scene).remove(stand);   // the real thing takes the spot
+    if (isPlaceholder(stand)) discardObject(stand);   // a stand-in's box (a real one went in teardownRealized)
   }
   retainGLB(obj.userData.glbKey ?? cur.model);   // the proto is worn: eviction must not undress it
   obj.userData.lib = cur.model;
@@ -466,7 +483,7 @@ function setEmptyMarker(g, on) {
     m.castShadow = m.receiveShadow = false;
     m.renderOrder = 999;
     g.add(m);
-  } else if (!on && cur) g.remove(cur);
+  } else if (!on && cur) { g.remove(cur); discardObject(cur); }   // the marker shares _emGeo/_emMat with every Empty
 }
 
 // ---- light components -------------------------------------------------------
@@ -564,6 +581,7 @@ function retire(id) {
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);
   if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
+  if (obj) discardObject(obj);    // a model, a stand-in's box or an Empty's marker: none is drawn again
   dropMeshPart(id);
   const rode = obj?.userData?.mountedTo;
   // a carrier that leaves the fold with only a stand-in: its cargo steps off that, the same way (one that is only being
@@ -795,7 +813,7 @@ const canRetier = (id, ent) => canDemote(id, ent);
 
 const R_HYST = 20;     // the band that keeps a walk along the edge quiet
 const DIAG_DEFAULT = 12; // assumed bbox diagonal (m) before geom lands: err large, so a big thing near the edge still loads
-const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0 };
+const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0, retiersKept: 0 };   // retiersKept: answered the tier worn, no swap
 
 function residencyRadius(ent) {
   const s = ent?.model ? libGeom.get(ent.model)?.bbox?.size : null;

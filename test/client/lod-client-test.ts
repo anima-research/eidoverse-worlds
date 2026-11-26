@@ -107,6 +107,16 @@ const obj = (id: string) => stub.entities.get(id);
 const loadsOf = (id: string) => stub.loads.filter((l: any) => l.model === lib(id));
 const drain = () => { for (let i = 0; i < 50 && M.promoteTailPending() > 0; i++) M.drainPromoteTail(); };
 const res = () => M.residencyDebug();
+/** three's object 'dispose' count per mesh of `o` (the stub loader counts it; render/discard.js dispatches it), the
+ *  frame's mesh component left out: a dropped object reads all 1s, a worn one all 0s */
+const disposals = (o: any) => { const n: number[] = []; o?.traverse((m: any) => { if (m.isMesh && !m.userData.meshPart) n.push(m.userData.disposed ?? 0); }); return n; };
+const discarded = (o: any) => { const n = disposals(o); return n.length > 0 && n.every((k) => k === 1); };
+const untouched = (o: any) => { const n = disposals(o); return n.length > 0 && n.every((k) => k === 0); };
+/** count three's object 'dispose' on the meshes of an object the stub loader did not make (a stand-in's box, an
+ *  Empty's marker), as the stub loader counts its clones' */
+const watch = (o: any) => { o?.traverse((m: any) => { if (m.isMesh && !m.userData.counted) { m.userData.counted = true; m.addEventListener('dispose', () => { m.userData.disposed = (m.userData.disposed ?? 0) + 1; }); } }); return o; };
+/** the last clone the loader handed out for `id`'s lib */
+const lastClone = (id: string) => [...stub.clones].reverse().find((c: any) => String(c.userData.glbKey).startsWith(lib(id)));
 
 M.initModelsRealizer();          // geom side-channel + fold wiring (+ a 2Hz beat we ignore: we beat by hand)
 S.hydrate(emptyView());
@@ -236,9 +246,209 @@ for (const [what, dep] of deps) {
   check(`${what}: the loaded clone is NOT worn — the standing object stays, asked lod, collider untouched, refusal counted`,
     same && obj(id)?.userData.tierAsked === 'lod' && sinceMark(mark, id).length === 0 && res().retiersRefused === refusedBefore + 1,
     JSON.stringify({ same, asked: obj(id)?.userData.tierAsked, colliderOps: sinceMark(mark, id), refused: res().retiersRefused - refusedBefore }));
+  check(`${what}: the refused clone is discarded (its meshes got three's object dispose) and the standing object is not`,
+    lastClone(id) !== before && discarded(lastClone(id)) && untouched(before), JSON.stringify({ clone: disposals(lastClone(id)), standing: disposals(before) }));
 }
 check('no realizer error was reported through the whole realizer half', stub.reports.length === 0,
   stub.reports.map((r: any) => `${r.where}: ${r.e?.message ?? r.e}`).join(' | '));
+
+// ---- 4b. a re-tier that brings the tier already worn is no swap (render lab 11-26: a still room churned its caster
+// budget for ~12 s after the capture camera moved 40 m into it; 14 props had asked lod, been answered the original,
+// and each was torn down and rebuilt as the same original when the ask flipped back to full: collider, caster
+// (re-registered unwarmed: its shadow dropped and faded back) and lamps all re-made for identical geometry)
+console.log('\n  same-tier re-asks — the ask moves, the worn object stays\n');
+{
+  const { tracked } = await import('../../client/lib/realize/lifecycle.js');
+  const id = 'same';
+  spawnAt(id, 70, false);   // far, no variant: asked lod, answered the original
+  await settle(); drain();
+  const before = obj(id);
+  check('same: joined asked lod, wearing the original (tier full)', before?.userData.tierAsked === 'lod' && before?.userData.tier === 'full');
+  const mark = stub.colliderLog.length, lampMark = stub.lampLog.length, loads0 = loadsOf(id).length, caster0 = stub.casters.get(id);
+  const lampOps = () => stub.lampLog.slice(lampMark).filter((e: any) => e[1] === `entity:${id}`);
+  const kept0 = res().retiersKept;
+  // the move itself refits the collider in place (a `place`); a swap is a remove + fit
+  const swapOps = () => sinceMark(mark, id).filter((op: string) => op !== 'refit');
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true });   // walked toward: the sweep wants full
+  M.residencySweep(); await settle(); drain();
+  check('walked in: the ask goes to full (one fetch) and the standing object is KEPT: same object, caster never released, collider and lamps untouched',
+    loadsOf(id).length === loads0 + 1 && obj(id) === before && obj(id)?.userData.tierAsked === 'full' && stub.casters.get(id) === caster0
+      && swapOps().length === 0 && lampOps().length === 0 && res().retiersKept === kept0 + 1,
+    JSON.stringify({ loads: loadsOf(id).length - loads0, same: obj(id) === before, asked: obj(id)?.userData.tierAsked, caster: stub.casters.get(id) === caster0, colliderOps: swapOps(), lampOps: lampOps(), kept: res().retiersKept - kept0 }));
+  check('walked in: the clone it did not wear is discarded (three\'s object dispose on each mesh); the standing object is not',
+    discarded(lastClone(id)) && lastClone(id) !== before && untouched(before), JSON.stringify({ clone: disposals(lastClone(id)), standing: disposals(before) }));
+  // and back out: the lod ask goes out again and is answered the original again → kept. (This stub answers every ask
+  // afresh. Live, a repeat lod ask is answered from the proto the loader already caches under lib#lod, so a bake that
+  // landed since reaches a placement only after an eviction or a reload: a known follow-up, not this row's claim.)
+  const t: any = tracked.get(id); if (t) t.retierAt = 0;   // past the 5 s cooldown
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 70] }, merge: true });
+  M.residencySweep(); await settle(); drain();
+  check('walked out: the lod ask goes out again, is answered the original again, and the standing object is KEPT',
+    loadsOf(id).length === loads0 + 2 && loadsOf(id).at(-1)?.tier === 'lod' && obj(id) === before && obj(id)?.userData.tierAsked === 'lod'
+      && stub.casters.get(id) === caster0 && swapOps().length === 0 && lampOps().length === 0 && res().retiersKept === kept0 + 2,
+    JSON.stringify({ loads: loadsOf(id).length - loads0, same: obj(id) === before, asked: obj(id)?.userData.tierAsked, colliderOps: swapOps(), kept: res().retiersKept - kept0 }));
+  // the control: a bake landed meanwhile and (in this stub) the next lod ask is answered a DIFFERENT tier: a swap
+  stub.server.variants.add(lib(id));
+  if (t) t.retierAt = 0;
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true }); M.residencySweep(); await settle(); drain();
+  if (t) t.retierAt = 0;
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 70] }, merge: true }); M.residencySweep(); await settle(); drain();
+  check('control: once the sequencer has baked it, the lod answer IS a different tier and the swap lands (new object, tier lod)',
+    obj(id) !== before && obj(id)?.userData.tier === 'lod' && obj(id)?.userData.tierAsked === 'lod', JSON.stringify(obj(id)?.userData));
+  check('…and the swap discards the object it replaced (each mesh once), not the one that replaced it',
+    discarded(before) && untouched(obj(id)), JSON.stringify({ replaced: disposals(before), now: disposals(obj(id)) }));
+}
+
+// ---- 4c. same-tier keeps against the realizer's other paths (rows from the 11-26 cold review): a shared library
+// model, the ask flipping back mid-flight, a bake mid-flight, an edit hold, a delete mid-flight, a pending heavy tail,
+// the dial; and the drop sites that discard what they let go of (render/discard.js)
+console.log('\n  same-tier keeps — shared libs, in-flight interleavings, the pending tail, the drop sites\n');
+{
+  const { tracked } = await import('../../client/lib/realize/lifecycle.js');
+  const cool = (id: string) => { const t: any = tracked.get(id); if (t) t.retierAt = 0; };
+  const place = (id: string, z: number) => door('set', { id, component: 'transform', value: { pos: [0, 0, z] }, merge: true });
+  const beat = async () => { M.residencySweep(); await settle(); };
+  const ud = (id: string) => obj(id)?.userData;
+  const net = (k: string) => stub.retained.get(k) ?? 0;
+
+  // R1: one library model, two placements; only one crosses the band edge
+  const SH = 'eidoverse/assets/models/shared.glb';
+  bus.emit('lib-geom', { [SH]: GEOM });
+  door('create', { id: 'sh-a', model: SH, components: { transform: { pos: [0, 0, 70] } } });
+  door('create', { id: 'sh-b', model: SH, components: { transform: { pos: [0, 0, 5] } } });
+  await settle(); drain();
+  const A0 = obj('sh-a'), B0 = obj('sh-b');
+  check('R1a shared: A (70m) asked lod wears full under key #lod; B (5m) asked full under the bare key',
+    ud('sh-a')?.tierAsked === 'lod' && ud('sh-a')?.tier === 'full' && ud('sh-a')?.glbKey === `${SH}#lod` && ud('sh-b')?.tierAsked === 'full' && ud('sh-b')?.glbKey === SH, JSON.stringify([ud('sh-a'), ud('sh-b')]));
+  const kept0 = res().retiersKept;
+  place('sh-a', 10); await beat(); drain();
+  check('R1b shared: A walks in → A kept, ask full; B untouched; retiersKept +1',
+    obj('sh-a') === A0 && ud('sh-a')?.tierAsked === 'full' && obj('sh-b') === B0 && res().retiersKept === kept0 + 1, JSON.stringify({ a: obj('sh-a') === A0, b: obj('sh-b') === B0, kept: res().retiersKept - kept0 }));
+  // (the two protos of one model this leaves, sh-a on #lod and sh-b on the bare key, are a known follow-up)
+  check('R1d shared: A (tier full, asked full) and B both own colliders', stub.colliders.has('sh-a') && stub.colliders.has('sh-b'));
+  stub.server.variants.add(SH); cool('sh-a'); place('sh-a', 70); await beat(); drain();
+  check('R1e shared: baked, A walks out → A swaps to lod (no collider), B is the same object, asked full, collider kept',
+    obj('sh-a') !== A0 && ud('sh-a')?.tier === 'lod' && !stub.colliders.has('sh-a') && obj('sh-b') === B0 && ud('sh-b')?.tierAsked === 'full' && stub.colliders.has('sh-b'), JSON.stringify([ud('sh-a'), ud('sh-b')]));
+  cool('sh-a'); place('sh-a', 10); await beat(); drain();
+  check('R1f shared: A walks back in → swaps to full with a collider; B still the same object; refs balance (#lod 0, bare 2)',
+    ud('sh-a')?.tier === 'full' && stub.colliders.has('sh-a') && obj('sh-b') === B0 && net(`${SH}#lod`) === 0 && net(SH) === 2, JSON.stringify({ a: ud('sh-a'), lodRefs: net(`${SH}#lod`), fullRefs: net(SH) }));
+
+  // R2: the ask flips back while the answer is in flight (no variant)
+  spawnAt('ff', 70, false); await settle(); drain();
+  const F0 = obj('ff'); let n0 = loadsOf('ff').length;
+  stub.setHold(true); place('ff', 10); await beat();
+  place('ff', 70);   // walked back out mid-flight
+  for (let i = 0; i < 3; i++) await beat();
+  check('R2a in flight: no second ask stacks while one is out', loadsOf('ff').length === n0 + 1 && stub.held.length === 1, `loads +${loadsOf('ff').length - n0}, held ${stub.held.length}`);
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  check('R2b the stale full answer is kept (asked full) — and the next beat past the cooldown asks lod again: nothing lost',
+    obj('ff') === F0 && ud('ff')?.tierAsked === 'full', JSON.stringify(ud('ff')));
+  cool('ff'); await beat(); drain();
+  check('R2c …lod asked again, kept, asked lod', loadsOf('ff').length === n0 + 2 && loadsOf('ff').at(-1)?.tier === 'lod' && obj('ff') === F0 && ud('ff')?.tierAsked === 'lod', JSON.stringify({ loads: loadsOf('ff').length - n0, ud: ud('ff') }));
+
+  // R3: a bake lands while the lod ask is in flight
+  cool('ff'); place('ff', 10); await beat(); drain();   // asked full again, kept
+  stub.setHold(true); cool('ff'); place('ff', 70); await beat();
+  stub.server.variants.add(lib('ff'));
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  check('R3 bake during flight (this stub reads its answer at release; live the cached #lod proto answers): swap lands once, tier lod, collider gone, one #lod ref',
+    obj('ff') !== F0 && ud('ff')?.tier === 'lod' && !stub.colliders.has('ff') && net(`${lib('ff')}#lod`) === 1, JSON.stringify({ ud: ud('ff'), refs: net(`${lib('ff')}#lod`) }));
+
+  // R4: an edit hold begins while a SAME-tier answer is in flight
+  spawnAt('eh', 70, false); await settle(); drain();
+  const E0 = obj('eh'); const ref0 = res().retiersRefused, k0 = res().retiersKept;
+  stub.setHold(true); place('eh', 10); await beat();
+  stub.editHolds.add('eh');
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  check('R4a edit hold during a same-tier flight: refused (counted), not "kept"; object and ask unchanged',
+    obj('eh') === E0 && ud('eh')?.tierAsked === 'lod' && res().retiersRefused === ref0 + 1 && res().retiersKept === k0, JSON.stringify({ ud: ud('eh'), refused: res().retiersRefused - ref0, kept: res().retiersKept - k0 }));
+  check('R4a\' …and the refused clone is discarded, the standing object is not', discarded(lastClone('eh')) && untouched(E0), JSON.stringify({ clone: disposals(lastClone('eh')), standing: disposals(E0) }));
+  stub.editHolds.delete('eh'); cool('eh'); await beat(); drain();
+  check('R4b hold over: the full ask goes again and is kept', obj('eh') === E0 && ud('eh')?.tierAsked === 'full' && res().retiersKept === k0 + 1, JSON.stringify(ud('eh')));
+
+  // R5: deleted while a same-tier answer is in flight (an id is never reused, so there is no re-create case)
+  spawnAt('rc', 70, false); await settle(); drain();
+  stub.setHold(true); place('rc', 10); await beat();
+  door('delete', { id: 'rc' });
+  await settle();
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  const keys = [lib('rc'), `${lib('rc')}#lod`];
+  check('R5\' delete in flight: the late clone is discarded (no one wears it)', discarded(lastClone('rc')), JSON.stringify(disposals(lastClone('rc'))));
+  check('R5 delete in flight: nothing stands, no collider, refs net 0, no report',
+    !stub.entities.has('rc') && !stub.colliders.has('rc') && keys.reduce((n, k2) => n + net(k2), 0) === 0 && stub.reports.length === 0,
+    JSON.stringify({ has: stub.entities.has('rc'), refs: keys.map(net), reports: stub.reports.map((r: any) => String(r.e?.message ?? r.e)) }));
+
+  // R6: the heavy tail is still pending when the same-tier answer arrives
+  spawnAt('pt', 70, false); await settle();   // NOT drained: collider and caster not yet landed
+  const P0 = obj('pt'); const pend = M.promoteTailPending();
+  place('pt', 10); await beat();
+  check('R6a pending tail: kept while its tail is still queued', obj('pt') === P0 && ud('pt')?.tierAsked === 'full' && pend > 0 && M.promoteTailPending() > 0, JSON.stringify({ pend, now: M.promoteTailPending(), ud: ud('pt') }));
+  drain();
+  check('R6b …and the tail still lands on it: collider fitted, caster registered for THIS object', stub.colliders.get('pt')?.obj === P0 && stub.casters.get('pt') === P0);
+
+  // R7: the dial path with a kept object: "full detail" then "auto" at distance
+  spawnAt('dl', 70, false); await settle(); drain();
+  const D0 = obj('dl'); const dn = loadsOf('dl').length;
+  M.modelQuality.setQuality('full'); for (const id of ['dl']) cool(id); await beat(); drain();
+  M.modelQuality.setQuality('auto'); cool('dl'); await beat(); drain();
+  for (let i = 0; i < 3; i++) await beat();
+  check('R7 dial full → auto at 70m: two asks (full, lod), same object throughout, collider kept, then quiet',
+    obj('dl') === D0 && loadsOf('dl').length === dn + 2 && ud('dl')?.tierAsked === 'lod' && stub.colliders.get('dl')?.obj === D0, JSON.stringify({ loads: loadsOf('dl').length - dn, ud: ud('dl') }));
+  // the other drop sites: a demote and a retire discard the object they take out of the scene; a swap leaves the
+  // frame's mesh component (re-homed onto the new object) alone
+  spawnAt('dm', 5); await settle(); drain();
+  const DM0 = obj('dm');
+  place('dm', 400); await beat();   // past the residency radius + its band: a stand-in replaces it
+  check('R8a demote: the stand-in replaces it and the object it replaced is discarded', obj('dm') !== DM0 && obj('dm')?.userData.placeholder === true && discarded(DM0), JSON.stringify(disposals(DM0)));
+  spawnAt('rt', 5); await settle(); drain();
+  const RT0 = obj('rt');
+  door('delete', { id: 'rt' }); await settle();
+  check('R8b retire: the object that left the world is discarded', !stub.entities.has('rt') && discarded(RT0), JSON.stringify(disposals(RT0)));
+  stub.server.variants.add(lib('mp'));
+  bus.emit('lib-geom', { [lib('mp')]: GEOM });
+  door('create', { id: 'mp', model: lib('mp'), components: { transform: { pos: [0, 0, 70] }, mesh: { shape: 'box', size: [1, 1, 1] } } });
+  await settle(); drain();
+  const MP0 = obj('mp'); const part = (() => { let p: any = null; MP0?.traverse((n: any) => { if (n.userData.meshPart) p = n; }); return p; })();
+  part?.addEventListener('dispose', () => { part.userData.disposed = (part.userData.disposed ?? 0) + 1; });
+  place('mp', 10); await beat(); drain();   // asked full, served full: a different tier from the lod it wore, a swap
+  check('R8c swap with a mesh component: the old model object is discarded, the mesh component is not and rides the new one',
+    !!part && obj('mp') !== MP0 && discarded(MP0) && !(part.userData.disposed > 0) && part.parent === obj('mp'),
+    JSON.stringify({ part: !!part, swapped: obj('mp') !== MP0, old: disposals(MP0), partDisposed: part?.userData.disposed ?? 0, onNew: part?.parent === obj('mp') }));
+  // the stand-ins (11-26 second review: makePlaceholder puts a new Mesh on the session-long _phGeo/_phMat for every
+  // far join and every demote, and each promote, retire or cleared reservation dropped it undiscarded: +16 listeners on
+  // _phMat per walk-away/walk-back of the loft, live)
+  spawnAt('pa', 400); await settle();   // far: a reservation with a sized stand-in, nothing loading
+  const PA0 = watch(obj('pa'));
+  check('R9 setup: a far join stands a placeholder in', PA0?.userData.placeholder === true && untouched(PA0), JSON.stringify(PA0?.userData));
+  place('pa', 5); await beat(); drain();
+  check('R9a promote: the model that lands discards the stand-in it replaces', obj('pa') !== PA0 && !obj('pa')?.userData.placeholder && discarded(PA0), JSON.stringify(disposals(PA0)));
+  const PA1 = obj('pa'); place('pa', 400); await beat();
+  const PA2 = watch(obj('pa'));
+  check('R9b demote then promote: the demote\'s stand-in is discarded in its turn', PA2?.userData.placeholder === true && discarded(PA1), JSON.stringify(disposals(PA1)));
+  place('pa', 5);
+  await beat(); drain();
+  check('R9b\' …on the promote', !obj('pa')?.userData.placeholder && discarded(PA2), JSON.stringify(disposals(PA2)));
+  spawnAt('pr', 400); await settle();
+  const PR0 = watch(obj('pr'));
+  door('delete', { id: 'pr' }); await settle();
+  check('R9c retire of a stand-in: its box is discarded', PR0?.userData.placeholder === true && !stub.entities.has('pr') && discarded(PR0), JSON.stringify(disposals(PR0)));
+  // an Empty's edit marker (one Mesh on the session-long _emGeo/_emMat per Empty, added and removed with build mode)
+  door('create', { id: 'em', components: { transform: { pos: [2, 0, 0] } } }); await settle();
+  bus.emit('build-mode', true);
+  const EM = (() => { let m: any = null; obj('em')?.traverse((n: any) => { if (n.userData?.emptyMarker) m = n; }); return watch(m); })();
+  bus.emit('build-mode', false);
+  check('R9d an Empty\'s marker leaving with build mode is discarded', !!EM && !EM.parent && discarded(EM), JSON.stringify({ marker: !!EM, d: disposals(EM) }));
+  // the reservation cleared when the fold lost the thing while its load flew (site 2: no public path reaches it with the
+  // gen unmoved, so the fold is edited behind the realizer's back here, last in this section)
+  spawnAt('cr', 400); await settle();
+  const CR0 = watch(obj('cr'));
+  stub.setHold(true); place('cr', 5); await beat();
+  delete S.state.st.entities['cr'];
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  check('R9e a cleared reservation: the stand-in and the clone nobody wears are both discarded (sites 2 and its stand-in)',
+    CR0?.userData.placeholder === true && !stub.entities.has('cr') && discarded(CR0) && discarded(lastClone('cr')), JSON.stringify({ standIn: disposals(CR0), clone: disposals(lastClone('cr')) }));
+  check('4c: no realizer error reported', stub.reports.length === 0, stub.reports.map((r: any) => `${r.where}: ${r.e?.message ?? r.e}`).join(' | '));
+}
 
 // ---- 5. the other entry points (round three): the REAL governor's lever crosses into the sweep; the dial's callback is gated
 console.log('\n  entry points — the governor lever and the dial callback\n');

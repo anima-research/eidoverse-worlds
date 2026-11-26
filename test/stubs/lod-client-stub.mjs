@@ -76,8 +76,14 @@ export async function loadGLB(lib, { tier = 'full' } = {}) {
   g.userData.glbKey = ask.tier === 'lod' ? `${lib}#lod` : lib;
   g.userData.tierServed = tierOf(json, server.recipe);
   g.userData.tierAsked = ask.tier;
+  // three's object 'dispose' (what frees the RenderObjects a compile made, RenderObject.onObjectDispose): counted per
+  // mesh, so a row can tell a clone the realizer dropped (one each) from one it wears (none)
+  g.traverse((n) => { if (n.isMesh) { n.userData.counted = true; n.addEventListener('dispose', () => { n.userData.disposed = (n.userData.disposed ?? 0) + 1; }); } });
+  clones.push(g);
   return g;
 }
+/** every clone loadGLB handed out, in order */
+export const clones = [];
 
 // ---- colliders.js -----------------------------------------------------------
 export const colliders = new Map();

@@ -413,6 +413,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["models-field", "client/models-field-test.ts", 1], // house client I173: an override's clone is wrapped once
   ["lod-policy", "client/lod-policy-test.ts", 1], // #156: the tier is chosen before the fetch (dial, distance against the radius, pressure), never asked without a published recipe
   ["lod-client", "client/lod-client-test.ts", 1], // #170: the dial, the residency sweep, the loader's wire, an owned sequencer's answer, the in-place swap and the collider agree
+  ["clone-discard", "client/clone-discard-check.ts", 1], // a model object the client lets go of (a dropped loadGLB clone, a swap, the build ghost) takes its RenderObjects with it, the shared proto untouched: real loader, headless WebGL 2
   ["realized-lifecycle", "client/realized-lifecycle-test.ts", 1], // the model realizer's lifecycle over a held loader: full life, remove mid-load, re-model over a held load, demote/promote, reset, sockets
   ["components-wire", "client/components-wire-test.ts", 1], // components from the door to the realizer: an Empty is an invisible group (a light-carrying one is a light), lamps, colliders, parents, an imported lamp
   ["axes", "shared/axes-test.ts", 1], // the axis letters are one table (shared/axes.js); motion takes negative letters, look-at's door and turn don't (as before)
@@ -472,7 +473,7 @@ export const CORE = ["kernel", "trig", "laws", "engine", "normative", "gov-reser
 // every suite that launches a Chromium (directly, through playwright, or through test/harness/harness.ts scratchBench). The
 // gate checks this list against the files themselves (browserLauncher), so a new browser suite can't hide in MAIN:
 // a host without Chromium would fail it there, and a host with one would run Chromes it didn't budget for.
-export const BROWSER = ["browser", "comps-parity", "world-card", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
+export const BROWSER = ["browser", "clone-discard", "comps-parity", "world-card", "level-dive", "water-cross", "toast-group", "client", "refusedjoin", "client-b2", "build-client", "access-panel", "lock-strength", "swim-lists", "shiplist-probe", "xss-probe", "party-probe", "colour-picker", "vrmic-exec", "xr-nullfb", "client-tools", "harness"];
 export const laneOf = (name: string): Lane => (CORE.includes(name) ? "core" : BROWSER.includes(name) ? "browser" : "main");
 // the order the gate runs them: core (in CORE's order), then main, then browser
 export const ORDER = [...CORE, ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "main"), ...SUITES.map(([n]) => n).filter((n) => laneOf(n) === "browser")];

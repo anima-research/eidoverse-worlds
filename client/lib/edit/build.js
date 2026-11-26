@@ -11,6 +11,7 @@ import { THREE, scene, camera, canvas } from '../core.js';
 import { bus, report } from '../base.js';
 import { loadGLB, libLabels, modelName } from '../assets.js';
 import { makeLightGizmo } from '../render/lightgizmo.js';
+import { discardObject } from '../render/discard.js';
 import { entities, metaOf, bagOf, editHolds } from '../world.js';
 import { reindexCollider } from '../colliders.js';
 import { heightAt } from '../terrain.js';
@@ -267,7 +268,8 @@ export async function holdGhost(lib, label) {
 }
 
 export function cancelGhost() {
-  if (ghost) { scene.remove(ghost.obj); ghost = null; release(); }
+  // the ghost is never drawn again (placing makes a new thing): what drawing and loadGLB's compile made for it goes
+  if (ghost) { scene.remove(ghost.obj); discardObject(ghost.obj); ghost = null; release(); }
 }
 
 // Turn and size the thing in hand before the click: Q / E turn (15°, Shift 1°), , / . size (×1.1, Shift ×1.01), clamped
