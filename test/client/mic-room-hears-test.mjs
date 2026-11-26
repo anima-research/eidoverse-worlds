@@ -21,6 +21,8 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 let room = 0;   // the RMS the analyser hears: 0 is also what a stalled headless AudioContext reads
 let analyserThrows = false, gumFails = false;
+let ctxState = 'running';   // the AudioContext's state: 'suspended' sends silence through the gate's graph
+let gainThrows = false;     // a gain whose automation throws: the gate falls back to a step (`value =`)
 const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['ramp', v, seconds from now]
 const node = () => ({ connect() {}, disconnect() {} });
 const mkTrack = (label) => ({ kind: 'audio', label, enabled: true, readyState: 'live', stop() { this.readyState = 'ended'; } });
@@ -31,11 +33,12 @@ Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: { getUserMe
   return new FakeStream([mkTrack('device')]); } }, configurable: true });
 mock.module(lib('audio/audioctx.js'), () => ({
   audioContext: () => ({
-    currentTime: 0, sampleRate: 48000, state: 'running', destination: node(),
+    currentTime: 0, sampleRate: 48000, get state() { return ctxState; }, destination: node(),
     createAnalyser: () => ({ ...node(), fftSize: 0, getFloatTimeDomainData(buf) { if (analyserThrows) throw new Error('analyser gone'); buf.fill(room); } }),
     createMediaStreamSource: () => node(),
-    createGain: () => ({ ...node(), gain: { value: 0,
-      setTargetAtTime(v, t, tau) { this.value = v; gainLog.push(['target', v, tau]); },
+    createGain: () => ({ ...node(), gain: { _v: 0, get value() { return this._v; },
+      set value(v) { this._v = v; if (gainThrows) gainLog.push(['step', v]); },
+      setTargetAtTime(v, t, tau) { if (gainThrows) throw new Error('automation refused'); this._v = v; gainLog.push(['target', v, tau]); },
       cancelScheduledValues() {}, setValueAtTime(v) { this.value = v; },
       linearRampToValueAtTime(v, t) { this.value = v; gainLog.push(['ramp', v, t - this._t0]); }, _t0: 0 } }),
     createDelay: () => ({ ...node(), delayTime: { value: 0, setTargetAtTime() {} } }),
@@ -419,6 +422,10 @@ t('synth fallback under PTT, key up, speaking: gold, with the waves, and the too
   !!fallback && !!(await tryUntil('the fallback goes gold', () => gold() && waves()
     && /synthesized voice is going out/.test(document.querySelector('#micbtn').title))), `${state()} key=${mt.micIndicatorState()}`);
 t('...and the VR key is its own (hot-synth)', mt.micIndicatorState() === 'hot-synth', mt.micIndicatorState());
+analyserThrows = true;   // a synth lane sends whatever the provider writes: an unreadable level must not hide it
+await pause('the analyser throws while the synth voice speaks: three glyph polls', 400);
+t('synth voice speaking, the level unreadable: still gold (micGateInfo does not throw)', ms.roomHears() === true && gold(), state());
+analyserThrows = false;
 // a synth frame stamped in the same millisecond as an unmute is the old side's
 const realPerf = performance.now.bind(performance), realDate = Date.now;
 const P = realPerf(), D = realDate();
@@ -460,6 +467,54 @@ t('a level that cannot be read closes the gate: the gain is driven to 0 (not lef
 analyserThrows = false; room = 0.02;
 const wAfter = lvlNow.style.width;
 t('the meter outlives a throwing analyser (its loop keeps going)', !!(await tryUntil('the bar moves after the throw', () => lvlNow.style.width !== wAfter)), lvlNow.style.width);
+room = 0;
+
+// ── 10. round six: an unreadable level under the held key, a mute or mic-off is a cut, a stepped gain, a suspended context
+await sfu.sfuMic(false); await sfu.sfuMic(true); negotiated(pc);
+vc.setPttMode(true); room = 0.3; ms.setPttHeld(true);
+t('setup: gold under the held key', !!(await tryUntil('gold under the key', () => gold())), state());
+gainLog.length = 0; analyserThrows = true;
+await pause('the analyser throws under the held key: three glyph polls', 400);
+const heldGain = gainLog.filter((g) => g[0] === 'target' || g[0] === 'ramp').at(-1);
+let heldInfo = null; try { heldInfo = ms.micGateInfo(); } catch { heldInfo = 'threw'; }
+t('PTT held, the level unreadable: the gate stays open (the key decides) and the glyph says so: gold, micGateInfo does not throw',
+  !!heldGain && heldGain[1] === 1 && heldInfo !== 'threw' && ms.roomHears() === true && gold(), `${JSON.stringify(gainLog.slice(-2))} ${state()}`);
+analyserThrows = false; ms.setPttHeld(false); vc.setPttMode(false);
+// a mute and the mic off are deliberate closes: cuts, not the voice-activation fade
+room = 0.3;
+await tryUntil('the gate open by level', () => gold());
+gainLog.length = 0; ms.toggleMute(true);
+const muteGain = gainLog.at(-1) || [];
+t('voice activation open, then mute: the gain is cut (a ramp to 0 within 10 ms)', muteGain[0] === 'ramp' && muteGain[1] === 0 && muteGain[2] <= 0.01, JSON.stringify(gainLog));
+ms.toggleMute(false);
+await tryUntil('open again', () => gold());
+gainLog.length = 0; ms.setMicLive(false);
+const offGain = gainLog.at(-1) || [];
+t('voice activation open, then the device reported not live: the gain is cut', offGain[0] === 'ramp' && offGain[1] === 0 && offGain[2] <= 0.01, JSON.stringify(gainLog));
+ms.setMicLive(true);
+t('setup: open again by level', !!(await tryUntil('open again', () => gold())), state());
+// a gain whose automation throws takes a step: there is no fade to call sending
+gainThrows = true; gainLog.length = 0;
+room = 1e-4;
+const stepped = await tryUntil('the hang ends and the gain steps to 0', () => gainLog.some((g) => g[0] === 'step' && g[1] === 0), { ms: 3000 });
+const sendingAfterStep = ms.roomHears();
+gainThrows = false;
+t('a gain that steps shut (automation refused) is shut: no phantom fade counted as sending', !!stepped && sendingAfterStep === false,
+  `stepped=${!!stepped} roomHears=${sendingAfterStep} log=${JSON.stringify(gainLog.slice(-4))} micOn=${ms.micOn()} ptt=${vc.pttMode()} live=${ms.micDeviceLive()}`);
+// a suspended AudioContext sends silence through the gate
+vc.setPttMode(true); ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+ctxState = 'suspended';
+t('the AudioContext suspended: the gated lane sends silence, so not gold', !!(await tryUntil('gold goes out', () => !gold() && ms.roomHears() === false)), state());
+ctxState = 'running';
+t('...and running again, gold again', !!(await tryUntil('gold back', () => gold())), state());
+ms.setPttHeld(false); vc.setPttMode(false);
+// releasing the microphone is a deliberate close too
+room = 0.3;
+t('setup: the gate open by level', !!(await tryUntil('the gate open by level', () => gold())), state());
+gainLog.length = 0; ms.releaseMicrophone();
+const relGain = gainLog.at(-1) || [];
+t('releaseMicrophone: the gain is cut, not faded', relGain[0] === 'ramp' && relGain[1] === 0 && relGain[2] <= 0.01, JSON.stringify(gainLog));
 room = 0;
 
 console.log(`\n${ok} ok, ${bad} failed`);

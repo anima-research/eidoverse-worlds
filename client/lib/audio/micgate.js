@@ -128,16 +128,22 @@ export function driveGate(open, { cut = false } = {}) {
     // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
     // double-smooths and the gate never fully closes)
     const tau = open ? ATTACK_TAU : RELEASE_TAU;
+    let stepped = false;
     try {
       p.setTargetAtTime(target, _ctx.currentTime, tau);
-    } catch { p.value = target; }
-    _env = { at: now, from, to: target, tau: tau * 1000 };
+    } catch { p.value = target; stepped = true; }
+    // a gain that took a step is already at its target: no fade to report as sending
+    _env = { at: now, from: stepped ? target : from, to: target, tau: tau * 1000 };
   }
   _wanted = target;
 }
 
 /** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
  *  the voice-activation hang (sound in it is sent), false at once after a cut. False with no graph. */
+/** Is the gate's audio graph running? A suspended (or closed) AudioContext sends silence through the gated lane, whatever
+ *  the gain says. True with no graph (a raw or synth lane doesn't pass through it). */
+export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running';
+
 export const gateSending = () => {
   if (!_gain) return false;
   if (_env.cutEnd !== undefined) return false;   // a cut is 5 ms: closed for anything a person or an indicator sees
@@ -374,7 +380,9 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
       if (now - _lastOnset > 1500) { _lastOnset = now; announce(); }
     },
     /** `speaking` is what the room is getting: the held answer when there is one, else threshold plus hang-time. */
-    info: () => ({ level: level(), noise: _noise, on: threshold(),
+    // the level read is guarded here as in tick(): a throw would make every reader (roomHears, the glyph) fail toward
+    // not gold while the gate, the held key, a raw lane or a synth voice still sends
+    info: () => ({ level: (() => { try { return level(); } catch { return 0; } })(), noise: _noise, on: threshold(),
       speaking: decide(Date.now()) }),
   };
 }

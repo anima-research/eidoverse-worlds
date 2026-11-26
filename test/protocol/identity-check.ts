@@ -345,6 +345,24 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     fern.raw({ type: "voice-moderate", id: "Moss", muted: false });
     const after = (await tryUntil("the moderator's unmute reaches the SFU", async () => { const m = (await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? []; return m.includes("Moss") ? null : m; }, { ms: 5000 })) ?? ["Moss"];
     ok(!!wrenErr && still.includes("Moss") && !after.includes("Moss"), "RS2 a builder's voice-moderate is refused (needs mute, told in an error); the moderator's unmute lifts it", [wrenErr, still, after]);
+    // RS2c (#349): rights re-sent by a role change agree with the SFU. A timed voice mute ends by the clock, and the 2 s
+    // sweep is what lifts it at the SFU; a role change landing between the two used to tell the person "unmuted" while
+    // ingress still dropped them (their glyph gold, nothing heard). The role change now runs the sweep first.
+    { const diagMuted = async () => ((await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json()).moderatorMuted ?? []);
+      fern.raw({ type: "voice-moderate", id: "Moss", muted: true, minutes: 0.05 });   // 3 s
+      const mutedNow = await tryUntil("Moss's 3 s mute reaches him and the SFU", async () => {
+        const r = [...m2.msgs].reverse().find((m) => m.type === "your-rights")?.rights;
+        return r?.muted?.channels?.includes("voice") && (await diagMuted()).includes("Moss") ? r.muted.until : null; }, { ms: 5000, step: 20 });
+      // wait out the mute by the clock, then change a role at once: well inside the 2 s before the next sweep
+      await tryUntil("the mute has ended by the clock", () => typeof mutedNow === "number" && Date.now() > mutedNow + 20, { ms: 6000, step: 5 });
+      const kr = m2.msgs.length;
+      await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "member" } });
+      const told = await tryUntil("Moss is re-sent his rights, unmuted", () => m2.msgs.slice(kr).find((m) => m.type === "your-rights" && !m.rights?.muted), { ms: 5000, step: 5 });
+      const atSfu = await diagMuted();
+      ok(typeof mutedNow === "number" && !!told && !atSfu.includes("Moss"),
+        "RS2c rights re-sent by a role change after a timed voice mute ends agree with the SFU (the sweep runs first: told unmuted means unmuted)",
+        [mutedNow, !!told, atSfu]);
+      await own.req("set", { id: "@world", component: `roles:${you(jw)}`, value: { role: "builder" } }); }
     // RS3 (R 10-28, conventional): a kick removes them now and they may come straight back; a kick with a length is refused
     const timed = await fern.req("kick", { who: you(jm2), minutes: 5 });
     const kk = await fern.req("kick", { who: you(jm2), reason: "cool off" });

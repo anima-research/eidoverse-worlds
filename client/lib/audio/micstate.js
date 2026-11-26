@@ -12,7 +12,7 @@ const flashHint = (msg) => import('../ui/ui.js').then((u) => u.flashHint(msg, 40
 import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
-         gateUnavailable, ungatedConsent, onUngatedConsent, gateSending,
+         gateUnavailable, ungatedConsent, onUngatedConsent, gateSending, gateRunning,
          makeOnsetGate, makeLevelMeter, HANG_MS, SYNTH_AUDIBLE } from './micgate.js';
 // Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
@@ -158,8 +158,9 @@ export const micGateInfo = () => {
   if (!micOn()) return { ...info, speaking: false };
   // a raw lane has no gain: its tracks are the wire (driven by the drive closure above; consent is what keeps them open)
   if (gateUnavailable()) return { ...info, speaking: ungatedConsent() && someTrackOn(_raw?.getAudioTracks?.() ?? []) };
-  // a gated lane is sending while the gate is open (threshold, hang, the held key) or its gain is still fading out
-  return { ...info, speaking: !!info.speaking || gateSending() };
+  // a gated lane is sending while the gate is open (threshold, hang, the held key) or its gain is still fading out, and
+  // only while its audio graph runs: a suspended AudioContext sends silence
+  return { ...info, speaking: gateRunning() && (!!info.speaking || gateSending()) };
 };
 /** Is the lane on the wire a synthesized voice (a synth provider, not a microphone)? */
 export const laneSynthetic = () => !!_lane?.synthetic;
@@ -291,7 +292,7 @@ export function releaseMicrophone() {
   // after the first release, so repeats are harmless.
   if (_raw) for (const t of _raw.getTracks()) t.stop();
   _deviceLive = false;
-  driveGate(false);
+  driveGate(false, { cut: true });   // a deliberate close, as mute and mic-off are: no fade
   detachSource();
   _raw = null;
   _released = true;

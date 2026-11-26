@@ -10,9 +10,10 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 let room = 0;   // the RMS the stub "microphone" hears right now
 let noGraph = false;   // true: this device can't build the gate graph
+let levelThrows = false;   // the analyser can't be read (a device gone mid-read)
 mock.module(lib('audio/audioctx.js'), () => ({
   audioContext: () => noGraph ? { currentTime: 0, sampleRate: 48000, state: 'running',
-    createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
+    createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { if (levelThrows) throw new Error('analyser gone'); buf.fill(room); }, connect() {}, disconnect() {} }),
     createMediaStreamSource: () => ({ connect() {}, disconnect() {} }) } : ({
     currentTime: 0, sampleRate: 48000, state: 'running',
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
@@ -71,6 +72,13 @@ ms.gateFor({ getTracks: () => [rawTrack], getAudioTracks: () => [rawTrack] });
 t('setup: the gate graph is unavailable and raw is consented', mg.gateUnavailable() === true && mg.ungatedConsent() === true);
 room = 0.01; await pause('under the line and past the 700ms hang, so a threshold gate would be shut by now', 1100);
 t('consented raw lane, voice activation: gold under the line (the room hears everything)', gold() === true && ms.micGateInfo().speaking === true);
+// the raw lane's tracks are the wire: an unreadable level must not read as silence while they send
+levelThrows = true;
+await pause('the analyser throws on a live raw lane: three glyph polls', 400);
+let rawInfo = null; try { rawInfo = ms.micGateInfo(); } catch { rawInfo = 'threw'; }
+t('consented raw lane, the level unreadable: its tracks still send, and the glyph stays gold (micGateInfo does not throw)',
+  rawTrack.enabled === true && rawInfo !== 'threw' && rawInfo?.speaking === true && ms.roomHears() === true && gold() === true);
+levelThrows = false;
 vc.setPttMode(true); await pause('PTT key up on a raw lane closes the wire', 300);
 t('consented raw lane, PTT key up: not gold, and the raw track is off', gold() === false && rawTrack.enabled === false);
 vc.setPttMode(false);
