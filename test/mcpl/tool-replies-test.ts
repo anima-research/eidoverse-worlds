@@ -27,6 +27,17 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const hut = ag.look(0).split("\n").find((l: string) => l.includes("[hut]")) ?? "";
   ok(hut !== "" && !/collides as/.test(hut), "347/4 look: a structure's anchor doesn't claim its box collides", hut); }
 
+// #347 bot 13 on 0c28db5e9: mounted cargo collides as its carrier, and a switched-off thing has no collider at all (the
+// browser's collisionOwnedElsewhere mount clause; models_field offIn): look doesn't say either collides as a box
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  ag.entities.set("cart", { id: "cart", model: "zz/cart.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1 });
+  ag.entities.set("cargo", { id: "cargo", model: "zz/crate.glb", kind: "thing", pos: [1, 1, 1], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, parent: { to: "cart", offset: [0, 1, 0] } });
+  ag.mounts.set("cargo", { to: "cart", offset: [0, 1, 0] });
+  ag.entities.set("dark", { id: "dark", model: "zz/crate.glb", kind: "thing", pos: [2, 0, 2], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, disabled: true });
+  const L = ag.look(0).split("\n"), cargo = L.find((l: string) => l.includes("[cargo]")) ?? "", dark = L.find((l: string) => l.includes("[dark]")) ?? "";
+  ok(cargo !== "" && !/collides as/.test(cargo), "347/13 look: mounted cargo doesn't claim its box collides", cargo);
+  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, and says it is switched off", dark); }
+
 // #347 bot 3: measure {check: true} on a thing whose collision is owned elsewhere (a structure's anchor) or off for bodies
 // doesn't say its collider.shape "box" makes it one solid box: the browser fits that model no collider
 { const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
@@ -40,10 +51,14 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const small = { walkIn: { roomScale: false }, levels: [], warnings: [{ kind: "solid", message: "1.0×1.0m and 1.0m tall is under the walk-in size: the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: \"mesh\"}" }] };
   ag.entities.set("smallghost", { id: "smallghost", ...base, model: "zz/crate.glb", collider: { ...box, enabled: false } });
   ag.entities.set("smallsolid", { id: "smallsolid", ...base, model: "zz/crate.glb", collide: undefined, collider: undefined });
+  // #347 bot 14 on 0c28db5e9: mounted cargo and a switched-off thing have no collider of their own either
+  ag.entities.set("cart", { id: "cart", ...base, collider: undefined, collide: undefined });
+  ag.entities.set("cargo", { id: "cargo", ...base, collider: box, parent: { to: "cart", offset: [0, 1, 0] } }); ag.mounts.set("cargo", { to: "cart", offset: [0, 1, 0] });
+  ag.entities.set("dark", { id: "dark", ...base, collider: box, disabled: true });
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(String(u).includes("crate") ? small : report)) : realFetch(u))) as typeof fetch;
   let said: Record<string, string> = {};
-  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
+  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid", "cargo", "dark"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
   finally { globalThis.fetch = realFetch; }
   ok(/SOLID — under the walk-in size/.test(said.smallsolid) && /collider \{shape/.test(said.smallsolid), "347/3 (control) measure check: a small thing is solid, with the server's advice", said.smallsolid);
   ok(!/SOLID|nobody can go inside|shape: \\?"mesh/.test(said.smallghost) && /no collider of its own/.test(said.smallghost) && /collision is off/.test(said.smallghost),
@@ -51,9 +66,9 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   // its report has no floors (and, the solid warning dropped, no problems): "every floor ... can be reached" would be vacuous
   ok(!/every floor/.test(said.smallghost) && /no floor/.test(said.smallghost), "347 measure check: a report with no floors doesn't say every floor can be reached", said.smallghost);
   ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
-  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
+  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/], ["cargo", /rides \[?cart/], ["dark", /switched off/]] as const)
     ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),
-      `347/3 measure check: ${id === "hut" ? "a structure's anchor" : "a thing with its collision off"} isn't one solid box, and says why`, said[id]); }
+      `347/3 measure check: ${({ hut: "a structure's anchor", ghost: "a thing with its collision off", cargo: "mounted cargo (347/14)", dark: "a switched-off thing (347/14)" } as any)[id]} isn't one solid box, and says why`, said[id]); }
 
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };

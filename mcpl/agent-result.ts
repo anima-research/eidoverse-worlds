@@ -41,6 +41,17 @@ export function switchedOff(entities: ReadonlyMap<string, any>, id: string): boo
   for (let k: string | undefined = id, n = 0; k && n < 33; k = entities.get(k)?.parent?.to, n++) if (entities.get(k)?.disabled === true) return true;
   return false;
 }
+/** Why a thing has no collider of its own, or null when it has one: what look and the build check say instead of its
+ *  collider's shape. The browser's collisionOwnedElsewhere with its mount clause (mounted cargo collides as its carrier),
+ *  and offIn (a switched-off thing has no collider at all). */
+export function noOwnCollider(e: any, a: { entities: ReadonlyMap<string, any>; mounts: ReadonlyMap<string, { to: string }> }): string | null {
+  if (switchedOff(a.entities, e.id)) return "it is switched off (disabled, itself or what it hangs under): no collider, not drawn";
+  if (solidOffRecord(e)) return "its collision is off for bodies: walk-through";
+  if (recordComponents(e).structure) return "it is a structure's anchor, hidden: bodies meet the structure's own walls and floors";
+  const m = a.mounts.get(e.id);
+  if (m) return `it rides [${m.to}]: mounted cargo has no collider of its own, it collides as its carrier`;
+  return null;
+}
 /** A structure as a body meets it: its data, unless its collision is off for bodies or it is switched off, itself or up
  *  its chain (the browser then fits it no wall or floor: client/lib/realize/structure.js `solid`, and `realize`'s offIn).
  *  storeyUnder, floorsAt, walkStructures and look's "where you are" take their structures from here; a floor walk's ground

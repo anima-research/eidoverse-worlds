@@ -184,7 +184,7 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
 import { recordComponents } from "../shared/protocol/view.js";
-import { solidOffRecord } from "./agent-result.ts";
+import { noOwnCollider } from "./agent-result.ts";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
 import { PoseClips } from "./pose-clips.ts";
@@ -455,10 +455,9 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP
     : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   const what = `${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`;
-  // collision owned elsewhere (agent-result.ts collisionElsewhere): the browser fits this model no collider, so its
-  // collide override says nothing about who can go inside
-  const none = !e ? null : solidOffRecord(e) ? "its collision is off for bodies: walk-through"
-    : recordComponents(e).structure ? "it is a structure's anchor, hidden: bodies meet the structure's own walls and floors" : null;
+  // no collider of its own (agent-result.ts noOwnCollider: off, switched off, an anchor, mounted): the browser fits this
+  // model no collider, so its collide override says nothing about who can go inside
+  const none = !e ? null : noOwnCollider(e, ag);
   return text(describeCheck(what, r, e ? ag.placesOn(e).length : 0, e?.id, none ? undefined : e?.collide, none));
 };
 
