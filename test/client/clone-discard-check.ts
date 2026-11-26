@@ -19,13 +19,20 @@
 // Bindings.js), and RenderObject.onObjectDispose is backend-independent; the RTX 4080 / WebGPU counts are also the live
 // probe's (render lab, 11-26).
 // The device must stay up while it counts: a lost device makes no RenderObjects (three's compileAsync and render return
-// early), so every count holds still, CD1 and CD3 go red and CD2 and CD4 pass on nothing (CDG). On windows-latest it does
-// not stay up: headless Chrome there takes the WebGPU device away ~0.4 s after boot ("Instance dropped in popErrorScope",
-// #378's run 45874280243: the harness's GPU guard, harness.ts), and a forced WebGL 2 context is null, so no backend
-// can draw for this bench. There, and only there (WebGPU, not forced), CD1-CD4 print n/a with the evidence and an
-// OPTIONAL line the gate's receipt lists; CDG passes only when the loss is the browser's (gpulost fired or three saw it).
-// Elsewhere a lost device fails CDG. CLONE_DISCARD_KILL_GPU=crash emulates that runner on a host with a GPU
-// (CDP Browser.crashGpuProcess after boot): the CI counts exactly (listeners/programs/uniformBuffers 4/14/30, lit 0).
+// early), so every count holds still, CD1 and CD3 go red and CD2 and CD4 pass on nothing (CDG). Dead = gpulost fired,
+// three saw the loss, or something called device.destroy() once the bench began (wrapped here: gpulost and three both
+// ignore a destroy the page makes). On windows-latest the device does not stay up: headless Chrome there takes the WebGPU
+// device away ~0.4 s after boot ("Instance dropped in popErrorScope", #378's run 45874280243, where CD1's "before" is
+// 4/14/30, the never-compiled proto: the harness's GPU guard, harness.ts), and a forced WebGL 2 context is null, so no
+// backend can draw for this bench. There, and only there (WebGPU, not forced), and only if the device was ALREADY dead
+// when the bench's own code began (preDead, sampled after boot, hydration and 10 frames, before setup), CD1-CD4 print n/a
+// with the evidence and an OPTIONAL line the gate's receipt lists. Anything else that ends dead fails CDG: a loss during
+// setup or the counts, on any platform, is the bench's or the code's. What preDead can't separate: a loss the code under
+// test causes during BOOT (before the sample) reads as the runner's. Low risk: main's own boot loses it the same way there
+// (comps-parity, main bc9b163a4, run 45781801288), and Linux/macOS (WebGL 2, CDG required) boot the same code.
+// The page-exception row drops headless GPU noise only once the device is dead; on a live one every error counts.
+// CLONE_DISCARD_KILL_GPU=crash emulates the runner on a host with a GPU (CDP Browser.crashGpuProcess before setup: CI's
+// counts exactly, 4/14/30, lit 0); =crash-mid crashes it after CD1's arm instead (CDG must fail).
 // Mutations (must go red, by hand): discardObject a no-op (CD2, CD4); dispose the geometry/materials too (CD3);
 // discardObject entering every child, the other placement included (CD3 when the standing one rides it: not set up here).
 import { scratchBench, mkCheck } from "../harness/harness.ts";
@@ -69,7 +76,9 @@ const KILL_GPU = process.env.CLONE_DISCARD_KILL_GPU;
 // the page's GPU: gpulost's own verdict (it fires on a lost WebGL context or WebGPU device, the browser's 'destroyed' included)
 // and three's (renderer._isDeviceLost: compileAsync and render return early from then on)
 const gpuState = () => js(`const { renderer } = await import('/lib/core.js');
-  return { fired: !!globalThis.__gpuLost?.fired, lost: !!renderer._isDeviceLost, backend: renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu' };`);
+  return { fired: !!globalThis.__gpuLost?.fired, lost: !!renderer._isDeviceLost, destroyed: globalThis.__cdDestroyed ?? 0, backend: renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu' };`);
+// gone by any of the three: gpulost, three, or a device.destroy() call (gpulost and three both ignore one made by the page)
+const isDead = (g: any) => !!(g?.fired || g?.lost || g?.destroyed > 0);
 // headless GPU noise, as level-dive, water-cross and colour-picker filter it: a dead device's error scopes reject
 const GPU_NOISE = /popErrorScope|sky finish/;
 const rows: [string, boolean, string][] = [];   // CD1-CD4, checked once the device is known to have stayed up
@@ -84,11 +93,16 @@ try {
   }
   await until("the world hydrated", () => js("return (await import('/lib/state.js')).state.hydrated;"), { ms: 30000 });
   await js("for (let i = 0; i < 10; i++) await new Promise((r) => requestAnimationFrame(r)); return true;");
-  if (KILL_GPU === "crash") {   // emulate windows-latest's headless device loss (see the header)
-    await cdp.send("Browser.crashGpuProcess", {});
-    await until("the device is gone (the emulated runner)", async () => { const g = await gpuState(); return g.fired || g.lost; }, { ms: 15000 });
-  }
+  const crashGpu = async (why: string) => { await cdp.send("Browser.crashGpuProcess", {}); await until(why, async () => isDead(await gpuState()), { ms: 15000 }); };
+  if (KILL_GPU === "crash") await crashGpu("the device is gone (the emulated runner)");   // emulate windows-latest's headless loss (see the header)
 
+  // the device before any of the bench's own code runs: the runner takes it ~0.4 s after boot; a loss after this is the bench's
+  const pre = await gpuState(), preDead = isDead(pre);
+  // a destroy() from here on is the bench's or the code under test's: count it (gpulost marks it ours and stays quiet, and
+  // three ignores reason 'destroyed', so without this a discard that destroyed the device would read as "stayed up")
+  await js(`const { renderer } = await import('/lib/core.js'), d = renderer.backend?.device;
+    if (d?.destroy && !d.__cdWrapped) { const d0 = d.destroy; d.destroy = function (...a) { globalThis.__cdDestroyed = (globalThis.__cdDestroyed ?? 0) + 1; return d0.apply(this, a); }; d.__cdWrapped = true; }
+    return true;`);
   const setup = await js(`const g = globalThis, { THREE, renderer, camera } = await import('/lib/core.js'), R = await import('/lib/render/render.js');
     g.__A = await import('/lib/assets.js'); g.__D = await import('/lib/render/discard.js');
     R.setWorldHold(true);
@@ -122,6 +136,7 @@ try {
     for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r)); const b = g.__count();
     return { listeners: b.listeners - a.listeners, programs: b.programs - a.programs, uniformBuffers: b.uniformBuffers - a.uniformBuffers, before: a, after: b };`);
   const plain = await arm(false);
+  if (KILL_GPU === "crash-mid") await crashGpu("the device is gone (a loss mid-bench)");   // a loss the bench must not call the runner's
   later(`CD1 control: ${N} clones dropped plain leave RenderObjects behind (listeners, uniform buffers grow)`, plain.listeners > 0 && plain.uniformBuffers > 0, JSON.stringify(plain));
   const disc = await arm(true);
   later(`CD2 ${N} clones dropped through discardObject leave nothing: listeners, uniform buffers and programs do not grow`,
@@ -146,8 +161,8 @@ try {
     for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r)); const b = g.__count();
     return { listeners: b.listeners - a.listeners, uniformBuffers: b.uniformBuffers - a.uniformBuffers, programs: b.programs - a.programs };`).catch((e: any) => ({ error: String(e).slice(0, 300) }));
   later(`CD4 the build ghost: held and put down ${N} times, its clones leave no listeners on the shared proto`, !ghost.error && ghost.listeners <= 0, JSON.stringify(ghost));
-  const gpu = await gpuState(), dead = gpu.fired || gpu.lost, ev = JSON.stringify({ ...gpu, platform: process.platform, forcedWebGL: FORCE_WEBGL, counts: plain });
-  if (dead && !FORCE_WEBGL && gpu.backend === "webgpu") {
+  const gpu = await gpuState(), dead = isDead(gpu), ev = JSON.stringify({ ...gpu, preDead, platform: process.platform, forcedWebGL: FORCE_WEBGL, counts: plain });
+  if (dead && preDead && !FORCE_WEBGL && gpu.backend === "webgpu") {
     check("CDG the device was the browser's to lose: headless WebGPU, taken away (gpulost or three saw it), on the host where WebGL 2 isn't forced", true, ev);
     for (const [name] of rows) console.log(`n/a  ${name} — no live device to count on (CDG): not a pass`);
     console.log(`OPTIONAL clone-discard-counts: CD1-CD4 not observable on ${process.platform}: the headless WebGPU device was lost before the counts (${ev}); they run where a device stays up (Linux/macOS WebGL 2, a host with a GPU)`);
@@ -155,7 +170,7 @@ try {
     check("CDG the GPU device stayed up through the bench (a lost one makes no RenderObjects: every count would hold still)", !dead, ev);
     for (const [name, ok, detail] of rows) check(name, ok, detail);
   }
-  const real = errors.filter((e) => !GPU_NOISE.test(e));
+  const real = dead ? errors.filter((e) => !GPU_NOISE.test(e)) : errors;
   check("no page exception (beyond headless GPU noise)", real.length === 0, real.slice(0, 3).join(" | "));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
 console.log(`[clone-discard-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
