@@ -33,20 +33,46 @@ let onFit: (() => void) | null = null;
 const rugTop = new Proxy({ version: 1, n: 24, minXZ: [-1.25, -0.75], sizeXZ: [2.5, 1.5], lie: 0.2, certSpread: 0.02, cells: Array(24 * 24).fill(0.3) },
   { get(t: any, k) { if (k === "version" && onFit) { const f = onFit; onFit = null; f(); } return t[k]; } });
 const rugGeom = { bbox: { min: [-1.25, 0, -0.75], max: [1.25, 0.3, 0.75], size: [2.5, 0.3, 1.5] }, topSurfaces: [], lie: 0.2, topGrid: rugTop };
-// held.glb: its geometry answers only when the row releases it
-let release = null as (() => void) | null;
-ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : crateGeom;
+// badrug.glb: the same rug, its grid one the fitter refuses (a version it doesn't read)
+const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0.75], sizeXZ: [2.5, 1.5], lie: 0.2, certSpread: 0.02, cells: Array(24 * 24).fill(0.3) } };
+// held.glb: its geometry answers only when the row releases it; flaky.glb: answers until `flaky` is set, then fails
+let release = null as (() => void) | null, flaky = false;
+ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
+  : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom) : crateGeom;
 const becomeAnchor = (id: string) => {
   ag.entities.get(id).structure = { levels: [{ y: 0, tiles: [[0, 0]] }] };
   ag.onThingChange({ id, what: "comp", comp: "structure" }, null, true, "x", Date.now());
 };
 console.log("an agent's support for a structure's anchor:");
 
-// a plain crate is a 2 m deck (the control: the stub and the registry work)
+// #347 bot 2 (first, while the sim is still loading, so each grid fit waits there): a later sync of the same thing
+// reuses its bid, so a reservation is told apart by more than the bid. Each rug is resized (scale3, its lie under the
+// uneven line) once its grid fit is waiting, and the second sync registers a plain box under the same bid.
+const resizedWhileFitting = async (id: string, model: string, x: number) => {
+  ag.entities.set(id, { id, model, pos: [x, 0, 0], yaw: 0, actor: "x" });
+  let oldDone = false;
+  const old = ag.ground.syncSupport(id).then(() => { oldDone = true; });
+  const reserved = !!(await tryUntil(`${id}'s grid fit reserved`, () => ag.ground.supportIds.has(id), { ms: 5000 }));
+  ag.entities.get(id).scale3 = [1, 0.4, 1];
+  await ag.ground.syncSupport(id);
+  const overlapped = reserved && !oldDone;   // the later sync finished while the old fit still waited
+  await old;
+  return overlapped;
+};
+const [badOverlap, goodOverlap] = await Promise.all([resizedWhileFitting("bad", "badrug.glb", 190), resizedWhileFitting("good", "rug.glb", 210)]);
+const ids = () => JSON.stringify({ holders: Object.keys(supportHolders()), supportIds: [...ag.ground.supportIds] });
+check("a refused grid fit overtaken by a resize leaves the newer box registered and tracked (no ghost)",
+  badOverlap && await settled() && !!supportHolders()["anchor/bad"] && !!ag.ground.supportIds.get("bad")?.includes("anchor/bad"), ids());
+check("a grid fit that landed, overtaken by a resize, doesn't take out the newer box under its bid",
+  goodOverlap && await settled() && !!supportHolders()["anchor/good"] && supportShape("anchor/good") !== "grid" && !!ag.ground.supportIds.get("good")?.includes("anchor/good"), ids());
+
+// a plain crate is a 2 m deck (the control: the stub and the registry work, and the box is a real one to stand on)
 ag.entities.set("crate", { id: "crate", model: "crate.glb", pos: [10, 0, 0], yaw: 0, actor: "x" });
 await ag.ground.syncSupport("crate");
 const C: any = await import("../../client/lib/colliders.js");   // after the agent has loaded physics (its core shim)
-check("(control) a plain crate registers support", await registered("anchor/crate"), JSON.stringify(Object.keys(supportHolders())));
+const deck = (x: number) => C.surfaceUnder(x, 0, () => 0);
+check("(control) a plain crate registers support: a box whose top stands 2 m up", await registered("anchor/crate") && deck(10).onto != null && Math.abs(deck(10).y - 2) < 1e-6,
+  JSON.stringify({ holders: Object.keys(supportHolders()), on: deck(10) }));
 
 // the same model carrying a structure is only an anchor
 ag.entities.set("cabin", { id: "cabin", model: "crate.glb", pos: [30, 0, 0], yaw: 0, actor: "x", structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
@@ -71,7 +97,15 @@ await ag.ground.supportReady();   // the comp event's syncSupport is tracked: wa
 check("a structure comp event drops the anchor's support", evtHad && await settled() && !supportHolders()["anchor/evt"], JSON.stringify(Object.keys(supportHolders())));
 delete ag.entities.get("evt").structure;
 ag.onThingChange({ id: "evt", what: "comp", comp: "structure" }, null, true, "x", Date.now());
-check("...and removing the structure makes it an ordinary crate again", await registered("anchor/evt"), JSON.stringify(Object.keys(supportHolders())));
+check("...and removing the structure makes it an ordinary crate again, 2 m up", await registered("anchor/evt") && Math.abs(deck(70).y - 2) < 1e-6, JSON.stringify({ holders: Object.keys(supportHolders()), on: deck(70) }));
+
+// #347 bot 9: the drop before the fetch. With no geometry to be had the sync returns before its re-check, so the
+// structure event's only drop is the one issued before it asks
+ag.entities.set("nullg", { id: "nullg", model: "flaky.glb", pos: [230, 0, 0], yaw: 0, actor: "x" });
+await ag.ground.syncSupport("nullg"); const nullHad = await registered("anchor/nullg");
+flaky = true; becomeAnchor("nullg");
+await ag.ground.supportReady();
+check("a thing that becomes an anchor while its geometry can't be read still drops its support", nullHad && await settled() && !supportHolders()["anchor/nullg"], JSON.stringify(Object.keys(supportHolders())));
 
 // becoming an anchor while its geometry is in flight: the re-check after the fetch refuses it
 ag.entities.set("pend", { id: "pend", model: "held.glb", pos: [130, 0, 0], yaw: 0, actor: "x" });
@@ -84,8 +118,9 @@ ag.entities.set("rug", { id: "rug", model: "rug.glb", pos: [150, 0, 0], yaw: 0, 
 await ag.ground.syncSupport("rug");
 check("(control) a rug with a lying top registers grid support", await registered("anchor/rug") && supportShape("anchor/rug") === "grid", JSON.stringify(Object.keys(supportHolders())));
 ag.entities.set("rug2", { id: "rug2", model: "rug.glb", pos: [170, 0, 0], yaw: 0, actor: "x" });
-let fired = false; onFit = () => { fired = true; becomeAnchor("rug2"); };
+// (#347 bot 6) the event comes once the fit has landed, its holder added, before the sync resumes from its await
+let landedFirst = false; onFit = () => queueMicrotask(() => { landedFirst = !!supportHolders()["anchor/rug2"]; becomeAnchor("rug2"); });
 await ag.ground.syncSupport("rug2");
-check("a rug that becomes an anchor while its grid fit is in flight keeps none", fired && await settled() && !supportHolders()["anchor/rug2"] && !ag.ground.supportIds.has("rug2"), JSON.stringify(Object.keys(supportHolders())));
+check("a rug that becomes an anchor while its grid fit is in flight keeps none", landedFirst && await settled() && !supportHolders()["anchor/rug2"] && !ag.ground.supportIds.has("rug2"), JSON.stringify(Object.keys(supportHolders())));
 
 done();

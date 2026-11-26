@@ -11,7 +11,7 @@ import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 
-import { type ActResult, type Entity, type Pose, done, refused, RAGDOLL_ROOT_DROP, WORLD_READ_MS, isSocketRec } from "./agent-result.ts";
+import { type ActResult, type Entity, type Pose, bodyStructure, done, refused, RAGDOLL_ROOT_DROP, WORLD_READ_MS, isSocketRec } from "./agent-result.ts";
 export { voiceNote } from "./agent-senses.ts";
 import { AgentSenses } from "./agent-senses.ts";
 export { GLIDE_ARRIVE_M } from "./agent-flight.ts";
@@ -1784,7 +1784,7 @@ export class WorldAgent {
   private walkStructures(support: WalkSupport): WalkStructure[] {
     const nowMs = this.serverNow(), out: WalkStructure[] = [];
     for (const e of this.entities.values()) {
-      const data = recordComponents(e).structure;
+      const data = bodyStructure(e);   // one whose collision is off for bodies has no wall to route around (storeyUnder's rule)
       if (!data) continue;
       const skip = (why: string) => {
         if (typeof data !== "object") return;

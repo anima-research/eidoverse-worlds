@@ -1196,5 +1196,21 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
   const told = String(lying.look()).split("\n").find((l: string) => l.includes("(inside [house]")) ?? "";
   check("a body laid down upstairs is told the upper floor's room, as a standing one is", told.startsWith(upstairsRoom), told);
 }
+// #347 bot 1: a building whose collision is off for bodies (collider.enabled false, or blocks without bodies) has no
+// wall or floor a walker meets in the browser (client/lib/realize/structure.js `solid`, fitStructureBoxes): no upper
+// floor to stand on, no wall to route around or be refused by
+console.log("\na building with its collision off for bodies\n");
+for (const [what, collider, off] of [["collider.enabled false", { enabled: false }, true], ["blocks without bodies", { blocks: ["things"] }, true],
+  ["(control) blocks with bodies", { blocks: ["bodies", "things"] }, false]] as const) {
+  const up = agentIn(upperY), out = agentIn(0);
+  up.entities.get("house").collider = collider; out.entities.get("house").collider = collider;
+  const under = up.ground.storeyUnder(0.5, 0.5, upperY), floors = up.ground.floorsAt(0.5, 0.5, { entity: "house", level: 1 });
+  const walk = await tryWalk(out, 0.5, -3);   // from the kitchen out through its north wall (the shell has no ground-floor door)
+  if (off) check(`${what}: no upper floor to stand on, and a walk out through its wall sets off`,
+    under === null && up.ground.groundAt(0.5, 0.5, upperY) === 0 && floors.length === 1 && floors[0].entity === null && walk.setOff,
+    JSON.stringify({ under, floors, walk }));
+  else check(`${what}: its upper floor holds the feet, and its wall refuses the walk`,
+    under?.entity === "house" && floors.length === 2 && !walk.setOff && /no route/.test(walk.refusal), JSON.stringify({ under, floors, walk }));
+}
 console.log(failures ? `\n${failures} failed` : "\nall passed");
 process.exit(failures ? 1 : 0);
