@@ -18,6 +18,14 @@
 // client picks its own backend. Both backends count programs and uniform buffers in three's common layer (Pipelines.js,
 // Bindings.js), and RenderObject.onObjectDispose is backend-independent; the RTX 4080 / WebGPU counts are also the live
 // probe's (render lab, 11-26).
+// The device must stay up while it counts: a lost device makes no RenderObjects (three's compileAsync and render return
+// early), so every count holds still, CD1 and CD3 go red and CD2 and CD4 pass on nothing (CDG). On windows-latest it does
+// not stay up: headless Chrome there takes the WebGPU device away ~0.4 s after boot ("Instance dropped in popErrorScope",
+// #378's run 45874280243: the harness's GPU guard, harness.ts), and a forced WebGL 2 context is null, so no backend
+// can draw for this bench. There, and only there (WebGPU, not forced), CD1-CD4 print n/a with the evidence and an
+// OPTIONAL line the gate's receipt lists; CDG passes only when the loss is the browser's (gpulost fired or three saw it).
+// Elsewhere a lost device fails CDG. CLONE_DISCARD_KILL_GPU=crash emulates that runner on a host with a GPU
+// (CDP Browser.crashGpuProcess after boot): the CI counts exactly (listeners/programs/uniformBuffers 4/14/30, lit 0).
 // Mutations (must go red, by hand): discardObject a no-op (CD2, CD4); dispose the geometry/materials too (CD3);
 // discardObject entering every child, the other placement included (CD3 when the standing one rides it: not set up here).
 import { scratchBench, mkCheck } from "../harness/harness.ts";
@@ -57,6 +65,15 @@ const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const N = 6;
 // WebGL 2 except on Windows, where the runner's forced WebGL 2 context is null (see the header)
 const FORCE_WEBGL = process.platform !== "win32";
+const KILL_GPU = process.env.CLONE_DISCARD_KILL_GPU;
+// the page's GPU: gpulost's own verdict (it fires on a lost WebGL context or WebGPU device, the browser's 'destroyed' included)
+// and three's (renderer._isDeviceLost: compileAsync and render return early from then on)
+const gpuState = () => js(`const { renderer } = await import('/lib/core.js');
+  return { fired: !!globalThis.__gpuLost?.fired, lost: !!renderer._isDeviceLost, backend: renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu' };`);
+// headless GPU noise, as level-dive, water-cross and colour-picker filter it: a dead device's error scopes reject
+const GPU_NOISE = /popErrorScope|sky finish/;
+const rows: [string, boolean, string][] = [];   // CD1-CD4, checked once the device is known to have stayed up
+const later = (name: string, ok: boolean, detail: string) => { rows.push([name, ok, detail]); };
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 180, deviceScaleFactor: 1, mobile: false });
   await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cd${FORCE_WEBGL ? "&webgl=1" : ""}` });
@@ -67,6 +84,10 @@ try {
   }
   await until("the world hydrated", () => js("return (await import('/lib/state.js')).state.hydrated;"), { ms: 30000 });
   await js("for (let i = 0; i < 10; i++) await new Promise((r) => requestAnimationFrame(r)); return true;");
+  if (KILL_GPU === "crash") {   // emulate windows-latest's headless device loss (see the header)
+    await cdp.send("Browser.crashGpuProcess", {});
+    await until("the device is gone (the emulated runner)", async () => { const g = await gpuState(); return g.fired || g.lost; }, { ms: 15000 });
+  }
 
   const setup = await js(`const g = globalThis, { THREE, renderer, camera } = await import('/lib/core.js'), R = await import('/lib/render/render.js');
     g.__A = await import('/lib/assets.js'); g.__D = await import('/lib/render/discard.js');
@@ -101,9 +122,9 @@ try {
     for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r)); const b = g.__count();
     return { listeners: b.listeners - a.listeners, programs: b.programs - a.programs, uniformBuffers: b.uniformBuffers - a.uniformBuffers, before: a, after: b };`);
   const plain = await arm(false);
-  check(`CD1 control: ${N} clones dropped plain leave RenderObjects behind (listeners, uniform buffers grow)`, plain.listeners > 0 && plain.uniformBuffers > 0, JSON.stringify(plain));
+  later(`CD1 control: ${N} clones dropped plain leave RenderObjects behind (listeners, uniform buffers grow)`, plain.listeners > 0 && plain.uniformBuffers > 0, JSON.stringify(plain));
   const disc = await arm(true);
-  check(`CD2 ${N} clones dropped through discardObject leave nothing: listeners, uniform buffers and programs do not grow`,
+  later(`CD2 ${N} clones dropped through discardObject leave nothing: listeners, uniform buffers and programs do not grow`,
     disc.listeners <= 0 && disc.uniformBuffers <= 0 && disc.programs <= 0, JSON.stringify({ discarded: disc, plain }));
 
   const swap = await js(`const g = globalThis, A = g.__A, D = g.__D, MS = g.__MS;
@@ -116,7 +137,7 @@ try {
     let diff = 0; if (ref && after) for (let j = 0; j < ref.length; j++) if (ref[j] !== after[j]) diff++;
     let lit = 0; if (after) for (let j = 0; j < after.length; j += 4) if (after[j] > 60) lit++;
     return { settled: !!ref && !!after, diff, lit, sharedDisposed: g.__sharedDisposed - d0, listeners: [c0.listeners, cDrawn.listeners, c1.listeners], ubos: [c0.uniformBuffers, cDrawn.uniformBuffers, c1.uniformBuffers] };`);
-  check("CD3 a drawn object discarded with its replacement on its spot and another placement beside it: the frame after is the frame before it came, no shared geometry or material disposed, the standing two keep their RenderObjects",
+  later("CD3 a drawn object discarded with its replacement on its spot and another placement beside it: the frame after is the frame before it came, no shared geometry or material disposed, the standing two keep their RenderObjects",
     swap.settled && swap.diff === 0 && swap.lit > 0 && swap.sharedDisposed === 0 && swap.listeners[1] > swap.listeners[0] && swap.listeners[2] === swap.listeners[0],
     JSON.stringify(swap));
 
@@ -124,8 +145,18 @@ try {
     for (let i = 0; i < ${N}; i++) { await B.holdGhost(${JSON.stringify(MODEL)}, 'pair'); B.cancelGhost(); }
     for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r)); const b = g.__count();
     return { listeners: b.listeners - a.listeners, uniformBuffers: b.uniformBuffers - a.uniformBuffers, programs: b.programs - a.programs };`).catch((e: any) => ({ error: String(e).slice(0, 300) }));
-  check(`CD4 the build ghost: held and put down ${N} times, its clones leave no listeners on the shared proto`, !ghost.error && ghost.listeners <= 0, JSON.stringify(ghost));
-  check("no page exception", errors.length === 0, errors.slice(0, 3).join(" | "));
+  later(`CD4 the build ghost: held and put down ${N} times, its clones leave no listeners on the shared proto`, !ghost.error && ghost.listeners <= 0, JSON.stringify(ghost));
+  const gpu = await gpuState(), dead = gpu.fired || gpu.lost, ev = JSON.stringify({ ...gpu, platform: process.platform, forcedWebGL: FORCE_WEBGL, counts: plain });
+  if (dead && !FORCE_WEBGL && gpu.backend === "webgpu") {
+    check("CDG the device was the browser's to lose: headless WebGPU, taken away (gpulost or three saw it), on the host where WebGL 2 isn't forced", true, ev);
+    for (const [name] of rows) console.log(`n/a  ${name} — no live device to count on (CDG): not a pass`);
+    console.log(`OPTIONAL clone-discard-counts: CD1-CD4 not observable on ${process.platform}: the headless WebGPU device was lost before the counts (${ev}); they run where a device stays up (Linux/macOS WebGL 2, a host with a GPU)`);
+  } else {
+    check("CDG the GPU device stayed up through the bench (a lost one makes no RenderObjects: every count would hold still)", !dead, ev);
+    for (const [name, ok, detail] of rows) check(name, ok, detail);
+  }
+  const real = errors.filter((e) => !GPU_NOISE.test(e));
+  check("no page exception (beyond headless GPU noise)", real.length === 0, real.slice(0, 3).join(" | "));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
 console.log(`[clone-discard-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
 await bench.cleanup(tally.failed ? 1 : 0);
