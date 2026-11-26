@@ -70,6 +70,28 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
     ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),
       `347/3 measure check: ${({ hut: "a structure's anchor", ghost: "a thing with its collision off", cargo: "mounted cargo (347/14)", dark: "a switched-off thing (347/14)" } as any)[id]} isn't one solid box, and says why`, said[id]); }
 
+// #347 bot 16 and 17 on 0c28db5e9: with no collider of its own, the check's findings are the model's alone (bodies meet
+// none of them), and a structure's hidden anchor model's rooms aren't offered to be saved as the structure's places
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  const base = { model: "zz/hall.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1 };
+  ag.entities.set("open", { id: "open", ...base });
+  ag.entities.set("hut", { id: "hut", ...base, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  ag.entities.set("ghost", { id: "ghost", ...base, collider: { enabled: false } });
+  const report = { walkIn: { roomScale: true }, levels: [{ y: 0, area: 20, reachable: 12 }], warnings: [{ kind: "unreachable", message: "8m² of the floor at 0m can't be reached from outside" }],
+    suggested: { rooms: [{ id: "back", min: [0, 0, 0], area: 8 }], doors: [], stairs: [], places: { back: { at: [0, 0, 2] } } } };
+  const clear = { ...report, levels: [{ y: 0, area: 20, reachable: 20 }], warnings: [] };
+  const realFetch = globalThis.fetch; let serve: any = report;
+  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(serve)) : realFetch(u))) as typeof fetch;
+  const said: Record<string, string> = {};
+  try { for (const id of ["open", "hut", "ghost"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id }));
+    serve = clear; said.hutClear = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id: "hut" })); }
+  finally { globalThis.fetch = realFetch; }
+  ok(/^Problems:/m.test(said.open) && /component: "places"/.test(said.open), "347/16 (control) measure check: a solid model's problems are its own, and its rooms can be named", said.open);
+  for (const id of ["hut", "ghost"]) ok(/Problems in the model alone/.test(said[id]) && !/^Problems:/m.test(said[id]), `347/16 measure check: ${id === "hut" ? "an anchor's" : "a collision-off thing's"} problems are said to be the model's alone`, said[id]);
+  ok(!/every floor under its roof can be reached/.test(said.hutClear) && /model alone/.test(said.hutClear), "347/16 measure check: a clear hidden model isn't said to make the structure's floors reachable", said.hutClear);
+  ok(!/component: "places"/.test(said.hut) && /not the structure's/.test(said.hut), "347/17 measure check: an anchor's hidden model's rooms aren't offered as the structure's places", said.hut);
+  ok(/component: "places"/.test(said.ghost), "347/17 (control) measure check: a collision-off thing's own visible rooms can still be named", said.ghost); }
+
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };
   await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "Moss", days: 2, global: true } });
