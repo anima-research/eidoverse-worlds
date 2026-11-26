@@ -7,6 +7,7 @@
 import { PNG } from "pngjs";
 import { scratchBench, mkCheck } from "../harness/harness.ts";
 import { until } from "../gate/wait.ts";
+import { beyondGpuNoise } from "../harness/gpu-noise.ts";
 
 const WORLD = "water-cross";
 const bench = await scratchBench("water-cross", { worlds: [WORLD] });
@@ -134,8 +135,8 @@ try {
     : "WP5 the sky's fog still reaches above the water (a dense red fog paints the view down red)", wp5 !== "fail", JSON.stringify({ verdict: wp5, ...wp5ev }));
   // a not-observable WP5 passes, so the gate would drop its row: an OPTIONAL line is what the gate's tally and receipt keep
   if (wp5 === "n/a") console.log(`OPTIONAL wp5-fog: colour observation N/A on ${JSON.stringify(wp5ev.adapter)} (water-cross ran and its other rows are required passes; only WP5 can't see colour here: fallback adapter, reference near-black): red ${JSON.stringify(redMean)}, ref ${JSON.stringify(refMean)}, settled ${!!shotSettled}`);
-  const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
-  check("WP6 no page errors", real.length === 0, JSON.stringify(real.slice(0, 4)));
+  const { real, gpuGone } = await beyondGpuNoise(errors, evalJson);   // GPU noise dropped only once the device is gone (gpu-noise.ts)
+  check("WP6 no page errors", real.length === 0, JSON.stringify({ gpuGone, real: real.slice(0, 4) }));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
 console.log(`[crossing-pipelines-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
 await bench.cleanup(tally.failed ? 1 : 0);

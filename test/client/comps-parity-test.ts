@@ -13,6 +13,7 @@
 // Hygiene (memory reference_browser_probe_hygiene.md): wait on conditions, every gate prints its stage, teardown in finally.
 import { scratchBench, mkCheck } from '../harness/harness.ts';
 import { tryUntil } from '../gate/wait.ts';
+import { beyondGpuNoise } from '../harness/gpu-noise.ts';
 import { pagedEval } from '../harness/idalias.ts';
 
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('comps-parity', { worlds: ['parity'], owner: 'editbot', serverEnv: { TRUST_NAMES: '1', ACT_RATE: '1000' } });
@@ -51,7 +52,10 @@ try {
   check('the change event fired for crate.label', await becomes(`window.__seen.length >= 1`), JSON.stringify(await evalJson(`window.__seen`)));
   const seen = await evalJson(`window.__seen`);
   check('AT THE EVENT the Hierarchy row and the Inspector read the same label (one record, not two caches)', Array.isArray(seen) && seen.length >= 1 && seen.every((s: any) => s.row === 'tall crate' && s.insp === 'tall crate'), JSON.stringify(seen));
-  check('no page errors', (await evalJson(`window.__errs`))?.length === 0, JSON.stringify(await evalJson(`window.__errs`)));
+  // windows-latest's headless Chrome takes the WebGPU device away just after boot and its error scopes reject: about 2 runs
+  // in 8 on main failed here on that alone (bc9b163a4, run 45781801288). Dropped only once the device is gone (gpu-noise.ts).
+  const { real, gpuGone } = await beyondGpuNoise((await evalJson(`window.__errs`)) ?? [], evalJson);
+  check('no page errors (beyond headless GPU noise)', real.length === 0, JSON.stringify({ gpuGone, real }));
 } finally {
   console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
   await cleanup(tally.failed ? 1 : 0);
