@@ -155,16 +155,57 @@ for (const [what, id, x, overtake] of [
   const towerAg: any = new WorldAgent({ url: `ws://127.0.0.1:${lib.port}/ws`, name: "places-bot", world: "anchor" });
   towerAg.entities.set("hut", { id: "hut", model: "fixtures/tower.glb", pos: [300, 0, 0], yaw: 0, actor: "x",
     structure: { levels: [{ y: 0, tiles: [[0, 0]] }] }, places: { yard: { at: [0, 0, 8] } } });
-  await towerAg.ground.syncSupport("hut");
+  await towerAg.ground.syncSupport("hut"); await towerAg.ground.modelRead("fixtures/tower.glb");   // read beside the sync, not in it
   const names = towerAg.placesOn(towerAg.entities.get("hut")).map((p: any) => p.name).sort();
   check("an anchor whose model nobody loaded first lists the model's places (entrance) beside its own (yard), and has no support",
     names.includes("entrance") && names.includes("yard") && !towerAg.ground.supportIds.has("hut") && !supportHolders()["anchor/hut"], JSON.stringify({ names, holders: Object.keys(supportHolders()) }));
   // the same for a thing with its collision off (it read no bytes on main either): a model of its own, also loaded first here
   towerAg.entities.set("shed", { id: "shed", model: "fixtures/tower2.glb", pos: [320, 0, 0], yaw: 0, actor: "x", collider: { enabled: false } });
-  await towerAg.ground.syncSupport("shed");
+  await towerAg.ground.syncSupport("shed"); await towerAg.ground.modelRead("fixtures/tower2.glb");
   const shed = towerAg.placesOn(towerAg.entities.get("shed")).map((p: any) => p.name);
   check("...and so does a thing with its collision off", shed.includes("entrance") && !towerAg.ground.supportIds.has("shed"), JSON.stringify(shed));
   lib.stop(true);
+}
+
+// (#347 round 5) a thing nobody stands on has its model read for its places in a lane that real fits pass, never
+// awaited by the sync or supportReady. Three collision-off things whose models are held at the server, synced ahead
+// of a plain floor: the floor's model is read and supportReady answers while all three are still held.
+{
+  const { buildGlb } = await import("../fixtures/two-storey-fixture.ts");
+  const glb = await buildGlb([[-2, 0, -2, 2, 0.2, 2]]);
+  const heldDeco: (() => void)[] = [], fetched: Record<string, number> = {}; let letGo = false;
+  const srv = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(r) {
+    const p = new URL(r.url).pathname; fetched[p] = (fetched[p] ?? 0) + 1;
+    if (p.startsWith("/library/lane/deco")) { if (!letGo) await new Promise<void>((go) => heldDeco.push(go)); return new Response(glb); }
+    if (p === "/library/lane/floor.glb" || p === "/library/lane/shared.glb") return new Response(glb);
+    return new Response("", { status: 404 });
+  } });
+  const q: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "lane-bot", world: "lane" });
+  q.ground.geomFor = async () => null;   // the mesh alone: what's measured is the queue
+  for (let i = 1; i <= 3; i++) q.entities.set(`d${i}`, { id: `d${i}`, model: `lane/deco${i}.glb`, pos: [400 + i * 10, 0, 0], yaw: 0, actor: "x", collider: { enabled: false } });
+  q.entities.set("floor", { id: "floor", model: "lane/floor.glb", pos: [400, 0, 0], yaw: 0, actor: "x" });
+  // and a model first asked for in the lane (by a collision-off thing, queued behind the held ones), then by a fit
+  q.entities.set("d4", { id: "d4", model: "lane/shared.glb", pos: [450, 0, 0], yaw: 0, actor: "x", collider: { enabled: false } });
+  q.entities.set("plain", { id: "plain", model: "lane/shared.glb", pos: [460, 0, 0], yaw: 0, actor: "x" });
+  for (const id of ["d1", "d2", "d3", "d4", "floor", "plain"]) q.ground.trackSupport(q.ground.syncSupport(id));
+  // supportReady's own bound (3 s) is the deadline: a floor queued behind the held reads leaves its sync pending
+  await q.ground.supportReady(3000);
+  const held = heldDeco.length;
+  check("a floor synced behind three collision-off things whose models are held is fitted, and supportReady answers, while they still wait",
+    q.ground.supportPending.size === 0 && held > 0 && !!supportHolders()["lane/floor"], JSON.stringify({ pending: q.ground.supportPending.size, held, fetched, floor: !!supportHolders()["lane/floor"] }));
+  check("...and a fit of a model whose read was waiting in the lane takes it out of the lane (fitted while the held ones wait)",
+    held > 0 && !!supportHolders()["lane/plain"], JSON.stringify({ held, fetched, plain: !!supportHolders()["lane/plain"] }));
+  // let go: the held ones answer, and any asked for from here answers at once
+  letGo = true; heldDeco.splice(0).forEach((go) => go());
+  for (let i = 1; i <= 3; i++) await q.ground.modelRead(`lane/deco${i}.glb`);
+  const { meshGovernor } = await import("../../mcpl/agent-ground.ts");
+  check("...and once let go, every read lands and nothing is left in either lane", meshGovernor.active === 0 && meshGovernor.queued === 0 && meshGovernor.metaActive === 0,
+    JSON.stringify({ active: meshGovernor.active, queued: meshGovernor.queued, meta: meshGovernor.metaActive }));
+  // a model that can't be read is asked for once in a while, not once per sync: twenty collision-off things share one
+  for (let i = 1; i <= 20; i++) { q.entities.set(`b${i}`, { id: `b${i}`, model: "lane/bad.glb", pos: [400, 0, 50 + i], yaw: 0, actor: "x", collider: { enabled: false } });
+    await q.ground.syncSupport(`b${i}`); await q.ground.modelRead("lane/bad.glb"); }
+  check("twenty things sharing a model that can't be read (404) fetch it once", fetched["/library/lane/bad.glb"] === 1, JSON.stringify(fetched));
+  q.close(); srv.stop(true);
 }
 
 done();
