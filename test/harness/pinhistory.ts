@@ -116,7 +116,9 @@ function onBranchOf(root: string, base: string) {
  *  line names (#363: main's light.decay A → B → C, a line each, judged from the branch's pre-merge pin as A → C).
  *  ASSUMPTIONS: a branch's intermediate steps are not judged, only what reaches main, so a stacked PR, or a staging server
  *  that keeps data across a branch's commits, is not protected by this rule. The base is the newest of the local
- *  origin/anima/upstream main refs, so a stale local main ref makes a local run lenient; CI's fresh fetch is authoritative.
+ *  origin/anima/upstream main refs, so a stale local main ref can make a local run wrong either way: lenient (a path main
+ *  added since the stale ref is new to it, so a break of it goes unjudged) or falsely red (main's own acknowledged steps
+ *  since the stale ref compose into a break no line names, as #363's did). CI's fresh fetch is authoritative.
  *  A base whose tree has none of the paths (the branch brings them new, #260) still counts as judged: nothing in main can
  *  break.
  *  On main itself (the base is HEAD), with no base, or with a --base / PIN_BASE that isn't an ancestor of HEAD, the
