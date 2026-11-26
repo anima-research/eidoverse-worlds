@@ -35,6 +35,26 @@ const renderArg = (o) => o.type === 'undefined' ? 'undefined' : 'value' in o ? S
   : o.description === 'Object' && o.preview ? `{${o.preview.properties.map((p) => `${p.name}: ${p.value}`).join(', ')}}`
   : o.subtype === 'array' && o.preview ? `[${o.preview.properties.filter((p) => +p.name >= 0).map((p) => p.value).join(', ')}]` : o.description;
 const fnSource = (fn, arg) => typeof fn === 'function' ? `(${fn})(${arg === undefined ? '' : JSON.stringify(arg)})` : String(fn);
+// playwright's timeouts: 0 is no timeout at all (review #375 9), not a deadline already past
+const pwMs = (t, d = 30_000) => t === 0 ? Infinity : t ?? d;
+// a CDP RemoteObject's value: -0, NaN, ±Infinity and bigints come as unserializableValue, not value (review #375 10)
+const valueOf = (ro) => 'value' in ro ? ro.value : ro.unserializableValue === undefined ? undefined
+  : ro.unserializableValue.endsWith('n') ? BigInt(ro.unserializableValue.slice(0, -1)) : Number(ro.unserializableValue);
+// a route's pattern as playwright reads it: a glob (** anything, * no slash), a RegExp, or a predicate on the URL
+const urlMatcher = (pattern) => typeof pattern === 'function' ? (u) => pattern(new URL(u))
+  : typeof pattern === 'string' ? ((re) => (u) => re.test(u))(new RegExp('^' + pattern.split('**').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]*')).join('.*') + '$')) : (u) => pattern.test(u);
+// where a pointer action aims, run in the page with `this` the element: the centre of its box clipped to the viewport (a
+// fixed element taller than the window is aimed at its visible part, as playwright clips its quads; review #375 6), once
+// it is scrolled into view, or false while it is invisible or (hit) the element on top there is not it or inside it
+// (playwright's hit-target check). One evaluation: the point checked is the point returned (review #375 8)
+const AIM = function (hit) {
+  const r0 = this.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(this).visibility !== 'hidden')) return false;
+  this.scrollIntoView({ block: 'center', inline: 'center' });
+  const r = this.getBoundingClientRect(), L = Math.max(r.left, 0), R = Math.min(r.right, innerWidth), T = Math.max(r.top, 0), B = Math.min(r.bottom, innerHeight);
+  if (!(R > L && B > T)) return false;
+  const x = (L + R) / 2, y = (T + B) / 2; if (!hit) return { x, y };
+  const h = document.elementFromPoint(x, y); return !!h && this.contains(h) ? { x, y } : false;
+};
 
 /** A browser-level CDP connection with flat sessions: send(method, params, sessionId), on(event, fn). */
 function cdpClient(ws) {
@@ -73,31 +93,34 @@ export async function launchCdp({ args = [], exe = findChrome() } = {}) {
     await until('Chrome exits', () => child.exitCode !== null || child.signalCode !== null, { ms: 5000 }).catch(() => {});
     killChild(child); try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* locked: goes with the scratch dir */ }
   };
-  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false, mobile = false, deviceScaleFactor = 1, userAgent = null } = {}) => {
+  const page = async ({ initScripts = [], permissions = [], viewport = null, touch = false, mobile = false, deviceScaleFactor = 1, userAgent = null, ctxRoutes = [] } = {}) => {
     const { browserContextId } = await C.send('Target.createBrowserContext', { disposeOnDetach: true });
     const { targetId } = await C.send('Target.createTarget', { url: 'about:blank', browserContextId });
     const { sessionId } = await C.send('Target.attachToTarget', { targetId, flatten: true });
-    const pg = makePage(C, sessionId, { targetId, browserContextId, metrics: { mobile, deviceScaleFactor } });
+    const pg = makePage(C, sessionId, { targetId, browserContextId, metrics: { mobile, deviceScaleFactor }, ctxRoutes });
     await pg._init({ initScripts, permissions, viewport, touch, userAgent });
     return pg;
   };
   // playwright's context: init scripts collected, then applied to each page it opens
   const newContext = async ({ viewport = null, permissions = [], hasTouch = false, isMobile = false, deviceScaleFactor = 1, userAgent = null } = {}) => {
-    // …and its routes, on each page it has opened and will open (a page's own route still added after them)
-    const inits = [], pages = [], routes = [];
+    // …and its routes: one list its pages read at each request, after their own (playwright's precedence; review #375 4), so
+    // a route added or removed reaches every open page at once and no page holds a copy to race over (review #375 12)
+    const inits = [], pages = new Set(), routes = [];
+    // a page closed meanwhile is gone from the set, and one that fails can't keep the others from the change (review #375 13)
+    const sync = async () => { for (const p of [...pages]) await p._syncFetch().catch(() => {}); };
     return {
       addInitScript: async (fn, arg) => { inits.push([fn, arg]); },
-      // each installed as its own wrapper w, so unroute removes only the context's routes, never a page's own for that pattern
-      route: async (pattern, handler) => { const w = (...a) => handler(...a); routes.push([pattern, handler, w]); for (const p of pages) await p.route(pattern, w); },
-      unroute: async (pattern, handler) => { for (let i = routes.length - 1; i >= 0; i--) if (routes[i][0] === pattern && (!handler || routes[i][1] === handler)) { const [, , w] = routes.splice(i, 1)[0]; for (const p of pages) await p.unroute(pattern, w); } },
-      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits }); for (const [pt, , w] of routes) await p.route(pt, w); pages.push(p); return p; },
-      close: async () => { for (const p of pages) await p.close(); },
+      route: async (pattern, handler) => { routes.unshift({ pattern, test: urlMatcher(pattern), handler }); await sync(); },
+      unroute: async (pattern, handler) => { for (let i = routes.length - 1; i >= 0; i--) if (routes[i].pattern === pattern && (!handler || routes[i].handler === handler)) routes.splice(i, 1); await sync(); },
+      newPage: async () => { const p = await page({ viewport, permissions, touch: hasTouch, mobile: isMobile, deviceScaleFactor, userAgent, initScripts: inits, ctxRoutes: routes });
+        pages.add(p); const close = p.close; p.close = async () => { pages.delete(p); await close(); }; return p; },
+      close: async () => { for (const p of [...pages]) await p.close(); },
     };
   };
   return { page, newContext, newPage: () => page(), close, port };
 }
 
-function makePage(C, S, { targetId, browserContextId, metrics }) {
+function makePage(C, S, { targetId, browserContextId, metrics, ctxRoutes = [] }) {
   const send = (m, p) => C.send(m, p, S);
   const handlers = { console: new Set(), pageerror: new Set(), dialog: new Set(), request: new Set(), requestfinished: new Set(), requestfailed: new Set(), framenavigated: new Set() };
   const routes = [], reqs = new Map();
@@ -129,7 +152,8 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
         continue: () => { done.v = true; return send('Fetch.continueRequest', { requestId: p.requestId }); },
         abort: () => { done.v = true; return send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'Failed' }); },
       };
-      const h = routes.find((r) => r.test(url));
+      // the latest-registered match first, the page's own before its context's (playwright's order)
+      const h = routes.find((r) => r.test(url)) ?? ctxRoutes.find((r) => r.test(url));
       if (h) Promise.resolve(h.handler(route)).catch(() => {}); else void route.continue();
     }
   });
@@ -138,7 +162,7 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
   const evaluateOnce = async (fn, arg, byValue = true) => {
     const r = await send('Runtime.evaluate', { expression: fnSource(fn, arg), awaitPromise: true, returnByValue: byValue, userGesture: true });
     if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
-    return byValue ? r.result.value : r.result;
+    return byValue ? valueOf(r.result) : r.result;
   };
   const evaluate = async (fn, arg, byValue = true) => {
     let out, err = null, lost = null;
@@ -149,12 +173,9 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
     if (!done) throw lost;
     return out;
   };
-  const center = async (sel, timeout = 30_000, hit = false) => {
-    // hit: …and takes the pointer at its centre (playwright's hit-target check, click/hover/tap only; focus/fill/press/type never do it)
-    await until(`${sel} is on the page, visible${hit ? ' and not covered' : ''}`, () => evaluate(([s, hit]) => { const e = document.querySelector(s); if (!e) return false; const r0 = e.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(e).visibility !== 'hidden')) return false; if (!hit) return true;
-      e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && e.contains(h); }, [sel, hit]), { ms: timeout });
-    return evaluate((s) => { const e = document.querySelector(s); e.scrollIntoView({ block: 'center', inline: 'center' }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }, sel);
-  };
+  // hit: …and takes the pointer there (playwright's hit-target check, click/hover/tap only; focus/fill/press/type never do it)
+  const center = (sel, timeout, hit = false) => until(`${sel} is on the page, visible${hit ? ' and not covered' : ''}`,
+    () => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? (${AIM}).call(e, ${hit}) : false; })()`), { ms: pwMs(timeout) });
   let mods = 0, mx = 0, my = 0, buttons = 0;
   const mouse = {
     move: async (x, y) => { mx = x; my = y; await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, modifiers: mods, buttons }); },
@@ -182,17 +203,18 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
   const callOn = async (objectId, fn, args = [], byValue = true) => {
     const r = await send('Runtime.callFunctionOn', { objectId, functionDeclaration: String(fn), arguments: args.map((value) => ({ value })), awaitPromise: true, returnByValue: byValue, userGesture: true });
     if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
-    return byValue ? r.result.value : r.result;
+    return byValue ? valueOf(r.result) : r.result;
   };
   const handleOf = (ro) => {
     const id = ro.objectId, on = (fn, args, byValue) => callOn(id, fn, args, byValue);
-    const h = { jsonValue: async () => id ? on(function () { return this; }) : ro.value, dispose: async () => { if (id) await send('Runtime.releaseObject', { objectId: id }).catch(() => {}); }, asElement: () => null };
+    const h = { jsonValue: async () => id ? on(function () { return this; }) : valueOf(ro), dispose: async () => { if (id) await send('Runtime.releaseObject', { objectId: id }).catch(() => {}); }, asElement: () => null };
     if (ro.subtype !== 'node') return h;
     const el = Object.assign(h, { asElement: () => el,
       evaluate: (fn, a) => on(`function (a) { return (${fn})(this, a); }`, [a]),
       evaluateHandle: async (fn, a) => handleOf(await on(`function (a) { return (${fn})(this, a); }`, [a], false)),
       $: async (s) => { const r = await on(function (s) { return this.querySelector(s); }, [s], false); return r.subtype === 'null' ? null : handleOf(r); },
-      click: async ({ button = 'left' } = {}) => { const { x, y } = await on(function () { this.scrollIntoView({ block: 'center', inline: 'center' }); const r = this.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }); await mouse.click(x, y, { button }); },
+      // the selector click's wait, on this element: visible and (unless force) taking the pointer, up to its timeout (review #375 3)
+      click: async ({ button = 'left', timeout, force = false } = {}) => { const { x, y } = await until(`the element is visible${force ? '' : ' and not covered'}`, () => on(AIM, [!force]), { ms: pwMs(timeout) }); await mouse.click(x, y, { button }); },
       focus: () => on(function () { this.focus(); }),
       press: async (k) => { await el.focus(); await keyboard.press(k); },
       getAttribute: (n) => on(function (n) { return this.getAttribute(n); }, [n]),
@@ -209,47 +231,47 @@ function makePage(C, S, { targetId, browserContextId, metrics }) {
       await pg.setViewportSize(viewport ?? size);
       if (touch) await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
       for (const [fn, arg] of initScripts) await pg.addInitScript(fn, arg);
+      if (ctxRoutes.length) await pg._syncFetch();
     },
     evaluate,
     waitForTimeout: (ms) => pause("Playwright's waitForTimeout (the bare wait is counted at its caller)", ms),
     evaluateHandle: async (fn, arg) => handleOf(await evaluate(fn, arg, false)),
-    waitForFunction: async (fn, arg, { timeout = 30_000, polling = 100 } = {}) => {
+    waitForFunction: async (fn, arg, { timeout, polling = 100 } = {}) => {
       // each poll is raced against what is left of the timeout: an evaluation that never settles (a hung import) ends the wait
-      const end = performance.now() + timeout * WAIT_SCALE;   // until's own deadline, scaled the same
-      const poll = () => { let t; return Promise.race([evaluate(fn, arg), new Promise((res) => { t = setTimeout(() => res(false), Math.max(0, end - performance.now())); })]).finally(() => clearTimeout(t)); };
-      const v = await until(`page condition ${String(fn).slice(0, 80)}`, poll, { ms: timeout, step: typeof polling === 'number' ? polling : 100 });
+      const ms = pwMs(timeout), end = performance.now() + ms * WAIT_SCALE;   // until's own deadline, scaled the same
+      // no deadline (timeout 0): no race either, since setTimeout reads an Infinity delay as 1 ms
+      const poll = () => { if (end === Infinity) return evaluate(fn, arg); let t; return Promise.race([evaluate(fn, arg), new Promise((res) => { t = setTimeout(() => res(false), Math.max(0, end - performance.now())); })]).finally(() => clearTimeout(t)); };
+      const v = await until(`page condition ${String(fn).slice(0, 80)}`, poll, { ms, step: typeof polling === 'number' ? polling : 100 });
       return { jsonValue: async () => v };
     },
-    waitForSelector: async (sel, { state = 'visible', timeout = 30_000 } = {}) => until(`${sel} ${state}`, () => evaluate(([s, st]) => {
+    waitForSelector: async (sel, { state = 'visible', timeout } = {}) => until(`${sel} ${state}`, () => evaluate(([s, st]) => {
       const e = document.querySelector(s);
       if (st === 'detached') return !e; if (st === 'attached') return !!e;
       const vis = !!e && e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden' && getComputedStyle(e).display !== 'none';
       return st === 'hidden' ? !vis : vis;
-    }, [sel, state]), { ms: timeout }),
+    }, [sel, state]), { ms: pwMs(timeout) }),
     addInitScript: async (fn, arg) => { await send('Page.addScriptToEvaluateOnNewDocument', { source: typeof fn === 'function' ? fnSource(fn, arg) : String(fn) }); },
-    goto: async (url, { waitUntil = 'load', timeout = 30_000 } = {}) => {
+    goto: async (url, { waitUntil = 'load', timeout } = {}) => {
       const nav = await send('Page.navigate', { url });
       if (nav?.errorText) throw new Error(`goto ${url}: ${nav.errorText}`);
-      await until(`the page loaded ${url}`, () => evaluate((w) => w === 'domcontentloaded' ? document.readyState !== 'loading' : document.readyState === 'complete', waitUntil).catch(() => false), { ms: timeout });
+      await until(`the page loaded ${url}`, () => evaluate((w) => w === 'domcontentloaded' ? document.readyState !== 'loading' : document.readyState === 'complete', waitUntil).catch(() => false), { ms: pwMs(timeout) });
     },
     reload: async (o = {}) => pg.goto(await evaluate(() => location.href), o),
     url: () => pg._url,
     on: (ev, f) => { (handlers[ev] ?? new Set()).add(f); },
     off: (ev, f) => { handlers[ev]?.delete(f); },
-    waitForEvent: (ev, { timeout = 30_000 } = {}) => new Promise((res, rej) => {
+    waitForEvent: (ev, { timeout } = {}) => new Promise((res, rej) => {
       const f = (x) => { handlers[ev].delete(f); res(x); }; handlers[ev].add(f);
-      until(`a ${ev}`, () => !handlers[ev].has(f), { ms: timeout }).catch((e) => { handlers[ev].delete(f); rej(e); });
+      until(`a ${ev}`, () => !handlers[ev].has(f), { ms: pwMs(timeout) }).catch((e) => { handlers[ev].delete(f); rej(e); });
     }),
-    route: async (pattern, handler) => {
-      const test = typeof pattern === 'function' ? (u) => pattern(new URL(u)) : typeof pattern === 'string' ? ((re) => (u) => re.test(u))(new RegExp('^' + pattern.split('**').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]*')).join('.*') + '$')) : (u) => pattern.test(u);
-      routes.push({ pattern, test, handler });
-      await send('Fetch.enable', { patterns: [{ urlPattern: '*' }] });
-    },
-    // playwright's: the routes with this pattern (and this handler, if given) stop; with none left, requests go straight through
+    // the latest route first, as playwright (it unshifts)
+    route: async (pattern, handler) => { routes.unshift({ pattern, test: urlMatcher(pattern), handler }); await pg._syncFetch(); },
+    // playwright's: the routes with this pattern (and this handler, if given) stop; with none left (its context's too), requests go straight through
     unroute: async (pattern, handler) => {
       for (let i = routes.length - 1; i >= 0; i--) if (routes[i].pattern === pattern && (!handler || routes[i].handler === handler)) routes.splice(i, 1);
-      if (!routes.length) await send('Fetch.disable');
+      await pg._syncFetch();
     },
+    _syncFetch: () => routes.length || ctxRoutes.length ? send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }) : send('Fetch.disable'),
     // force: playwright's, skips the hit-target wait (the visible wait stays: cdp-pw needs a box to aim at)
     click: async (sel, { button = 'left', timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.click(x, y, { button }); },
     hover: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.move(x, y); },
