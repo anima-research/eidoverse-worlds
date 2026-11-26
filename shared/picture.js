@@ -55,8 +55,10 @@ export function normalizePicture(data, { clip = false } = {}) {
   const picture = { src: data.src, width: PICTURE_DEFAULTS.width, lit: 'scene' };
   if (data.width !== undefined) { const w = Number(data.width); if (Number.isFinite(w) && w > 0) picture.width = Math.min(PICTURE_MAX_WIDTH, w); else notes.push('width is a number of metres above 0 — using 1'); }
   if (data.description != null) {
-    const d = String(data.description).replace(/\s+/g, ' ').trim();
-    if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
+    // a write is measured as written, as the door measures it (checks.js ranges.maxLen: graphemes of the value), so the two
+    // can't disagree over a run of spaces; what is kept is the collapsed text
+    const raw = String(data.description), d = raw.replace(/\s+/g, ' ').trim();
+    if (graphemes(raw) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(raw).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); picture.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
     else if (d) picture.description = d;
   }

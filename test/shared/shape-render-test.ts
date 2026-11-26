@@ -241,6 +241,17 @@ await tryRow('DS', async () => {
     const wm = Ma.normalizeMaterial(lm), rm = Ma.normalizeMaterial(lm, { clip: true });
     check('DS7 …material too: a write refuses an over-long description, a read clips it with a note', !wm.ok && /at most 200/.test(wm.why ?? '') && rm.ok && rm.material.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rm.notes.some((n) => /clipped/.test(n)), [wm, rm.ok && rm.notes]);
     check('DS7 …and its realizer reads a stored bag that way', /function applyFrom[\s\S]{0,200}normalizeMaterial\(data, \{ clip: true \}\)/.test(src('material.js'))); }
+  { // the door and the three helpers count a description the same way (graphemes of the string as written): a run of
+    // spaces the helper would collapse is still counted, so a value the door refuses is refused by its helper too
+    const Ma = await import('../../shared/material.js');
+    const W = scratchWorld('ds-count').seed({ frame: { pos: [0, 0, 0] }, radio: { pos: [1, 0, 0] }, telly: { pos: [2, 0, 0] } });
+    const bag = { picture: (d) => ({ src: 'store/images/0123456789abcdef.png', description: d }), sound: (d) => ({ src: 'store/audio/0123456789abcdef.ogg', description: d, t0: 1 }),
+      material: (d) => ({ node: 'screen', texture: 'store/images/0123456789abcdef.png', description: d }) };
+    const helper = { picture: (v) => Pi.normalizePicture(v), sound: (v) => So.normalizeSound(v), material: (v) => Ma.normalizeMaterial(v) };
+    const on = { picture: 'frame', sound: 'radio', material: 'telly' };
+    for (const [d, want] of [['a'.repeat(198) + '  b', false], ['a'.repeat(198) + ' b', true]] as const) for (const c of ['picture', 'sound', 'material']) {
+      const door = W.call('set', { id: on[c], component: c, value: bag[c](d) }), h = helper[c](bag[c](d));
+      check(`DS7b ${c}: a ${d.length}-character description${d.includes('  ') ? ' with a double space' : ''} is ${want ? 'taken' : 'refused'} by the door and its helper alike`, !!door.ok === want && !!h.ok === want, [door.refused, h.ok || h.why]); } }
   const { renameFields } = await import('../../tools/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);

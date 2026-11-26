@@ -28,8 +28,10 @@ export function normalizeMaterial(data, { clip = false } = {}) {
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   const material = { node: data.node.trim(), texture: data.texture, lit: 'scene' };
   if (data.description != null) {
-    const d = String(data.description).replace(/\s+/g, ' ').trim();
-    if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
+    // a write is measured as written, as the door measures it (checks.js ranges.maxLen: graphemes of the value), so the two
+    // can't disagree over a run of spaces; what is kept is the collapsed text
+    const raw = String(data.description), d = raw.replace(/\s+/g, ' ').trim();
+    if (graphemes(raw) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(raw).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); material.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
     else if (d) material.description = d;
   }
