@@ -16,7 +16,7 @@ export const PE32W = { size: 568, pid: 8, ppid: 32 } as const;
 export function decodeEntry(dv: DataView): Row { return { pid: dv.getUint32(PE32W.pid, true), ppid: dv.getUint32(PE32W.ppid, true), pgid: 0, zombie: false }; }
 /** Which source answered the last Windows table read: "toolhelp32" (in process) or "powershell" (Win32_Process). */
 export const winTable = { source: "" as "" | "toolhelp32" | "powershell" };
-type K32 = { CreateToolhelp32Snapshot(f: number, p: number): bigint; Process32FirstW(h: bigint, e: unknown): number; Process32NextW(h: bigint, e: unknown): number; CloseHandle(h: bigint): number };
+type K32 = { CreateToolhelp32Snapshot(f: number, p: number): bigint; Process32FirstW(h: bigint, e: unknown): number; Process32NextW(h: bigint, e: unknown): number; CloseHandle(h: bigint): number; GetLastError(): number };
 let k32: { sym: K32; ptr: (b: Uint8Array) => unknown } | null | undefined;
 /** The Windows table from CreateToolhelp32Snapshot, or null when bun:ffi or kernel32 can't be had or the snapshot fails
  *  (the caller then asks PowerShell). A snapshot is a local kernel call: it doesn't wait on WMI, so it can't hang. */
@@ -26,20 +26,32 @@ export function toolhelpTable(): Row[] | null {
     try {
       const { dlopen, FFIType, ptr } = require("bun:ffi");
       const h = FFIType.u64, sym = dlopen("kernel32.dll", { CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: h },
-        Process32FirstW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, Process32NextW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, CloseHandle: { args: [h], returns: FFIType.i32 } }).symbols as K32;
+        Process32FirstW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, Process32NextW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, CloseHandle: { args: [h], returns: FFIType.i32 }, GetLastError: { args: [], returns: FFIType.u32 } }).symbols as K32;
       k32 = { sym, ptr };
     } catch (e) { k32 = null; console.error(`[procgroup] no in-process Windows process table (${(e as Error).message}); asking PowerShell`); }
   }
   if (!k32) return null;
   const snap = k32.sym.CreateToolhelp32Snapshot(0x2 /* TH32CS_SNAPPROCESS */, 0);
-  if (snap === 0xffffffffffffffffn || snap === 0n) return null;   // INVALID_HANDLE_VALUE
+  if (snap === 0xffffffffffffffffn || snap === 0n) { snapshotFailed(`CreateToolhelp32Snapshot failed, error ${k32.sym.GetLastError()}`); return null; }   // INVALID_HANDLE_VALUE
   try {
-    const buf = new Uint8Array(PE32W.size), dv = new DataView(buf.buffer), rows: Row[] = [];
-    dv.setUint32(0, PE32W.size, true);
-    for (let ok = k32.sym.Process32FirstW(snap, k32.ptr(buf)); ok; ok = k32.sym.Process32NextW(snap, k32.ptr(buf))) rows.push(decodeEntry(dv));
-    return rows.length ? rows : null;
+    const buf = new Uint8Array(PE32W.size), dv = new DataView(buf.buffer); dv.setUint32(0, PE32W.size, true);
+    const sym = k32.sym, at = k32.ptr(buf), w = walkSnapshot(() => sym.Process32FirstW(snap, at), () => sym.Process32NextW(snap, at), () => sym.GetLastError(), () => decodeEntry(dv));
+    if (!w.rows) snapshotFailed(w.why); return w.rows;
   } finally { k32.sym.CloseHandle(snap); }
 }
+const ERROR_NO_MORE_FILES = 18;
+/** A snapshot's walk: the rows, or null with why when it stopped on anything but ERROR_NO_MORE_FILES (a table cut short
+ *  would hide a suite's processes from the sweep: the caller asks PowerShell instead). The calls are passed in for tests. */
+export function walkSnapshot(first: () => number, next: () => number, lastError: () => number, read: () => Row): { rows: Row[] | null; why: string } {
+  const rows: Row[] = [];
+  for (let ok = first(); ok; ok = next()) rows.push(read());
+  const err = lastError();
+  if (err !== ERROR_NO_MORE_FILES) return { rows: null, why: `the process walk stopped after ${rows.length} entries with error ${err}, not ERROR_NO_MORE_FILES` };
+  return rows.length ? { rows, why: "" } : { rows: null, why: "the snapshot listed no process" };
+}
+let warned = false;
+/** Said once per process: a snapshot that fails here is asked of PowerShell from then on, read by read, as before. */
+function snapshotFailed(why: string) { if (!warned) { warned = true; console.error(`[procgroup] the in-process Windows process table failed (${why}); asking PowerShell`); } }
 
 /** Every process on this machine, as far as this OS lets us see it. */
 export function processTable(platform: NodeJS.Platform = process.platform): Row[] {

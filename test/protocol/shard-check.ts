@@ -104,7 +104,8 @@ fs.rmSync(tmp, { recursive: true, force: true });
     return [o, { of, shards: cs.map((c: any) => c.shard).join(","), sameOf: cs.every((c: any) => c.of === of), gateOf: gateOf[o] }]; }));
   const steps = JSON.stringify(y.jobs.shard.steps) + JSON.stringify(y.jobs.gate.steps);
   ok(Object.values(per).every((p: any) => p.sameOf && Number.isInteger(p.of) && p.shards === Array.from({ length: p.of }, (_, i) => i + 1).join(",") && p.gateOf === p.of)
-    && JSON.stringify(Object.keys(gateOf).sort()) === JSON.stringify([...sm.os].sort()) && steps.includes('--shard \\"${{ matrix.shard }}/${{ matrix.of }}\\"') && steps.includes("merge-receipts.ts --of ${{ matrix.of }}"),
-    "W1 the workflow runs shards 1..N of each OS's N (run.ts --shard I/N) and merges that OS with --of N, the same N in both jobs", per); }
+    && JSON.stringify(Object.keys(gateOf).sort()) === JSON.stringify([...sm.os].sort())
+    && y.jobs.shard.name === "shard (${{ matrix.os }}, ${{ matrix.shard }})" && y.jobs.gate.name === "gate (${{ matrix.os }})" && steps.includes('--shard \\"${{ matrix.shard }}/${{ matrix.of }}\\"') && steps.includes("merge-receipts.ts --of ${{ matrix.of }}"),
+    "W1 the workflow runs shards 1..N of each OS's N (run.ts --shard I/N) and merges that OS with --of N, the same N in both jobs; the jobs keep their check names (`of` would otherwise join them)", { per, names: [y.jobs.shard.name, y.jobs.gate.name] }); }
 
 done(`: ${names.length} suites`);

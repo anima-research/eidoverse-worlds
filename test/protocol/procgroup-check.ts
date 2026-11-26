@@ -5,7 +5,7 @@
 // parent already exited (Windows keeps the dead parent's id on the child). PG5–PG12, PG14, PG16 and PG17: zombies, the async
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
-// PG24/PG25: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
+// PG24–PG26: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -221,6 +221,11 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const r = (PG as any).decodeEntry?.(dv);
   check("PG24 a Windows snapshot entry (PROCESSENTRY32W, 568 bytes) is read as its own pid (offset 8) and parent (offset 32), not a neighbouring field",
     (PG as any).PE32W?.size === 568 && r?.pid === 4242 && r?.ppid === 777, r); }
+{ // PG26: a snapshot walk that stops on an error other than ERROR_NO_MORE_FILES is no table (the caller then asks PowerShell), never a short one
+  const walk = (PG as any).walkSnapshot, fake = (n: number, err: number) => { let i = 0; return walk(() => (i++ < n ? 1 : 0), () => (i++ < n ? 1 : 0), () => err, () => ({ pid: i, ppid: 0, pgid: 0, zombie: false })); };
+  const whole = walk && fake(3, 18), cut = walk && fake(2, 5), none = walk && fake(0, 18);
+  check("PG26 a Windows process walk counts only when it ends on ERROR_NO_MORE_FILES: stopped by another error after 2 entries, or listing none, it is no table (the caller asks PowerShell), never a short one",
+    whole?.rows?.length === 3 && cut?.rows === null && /error 5/.test(cut?.why) && none?.rows === null, { whole: whole?.rows?.length, cut, none }); }
 if (win) { // PG25: the in-process snapshot is what answers on Windows, and it sees a suite's tree as Win32_Process does
   // the child names the process it started once it has: the tree is whole from then on (its console host may still be arriving)
   const script = "const {spawn}=require('node:child_process'); const g=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); console.log('grandchild '+g.pid); setInterval(()=>{},1000);";
