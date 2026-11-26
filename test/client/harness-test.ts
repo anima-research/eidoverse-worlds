@@ -236,14 +236,18 @@ else { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctr
       let err = ''; try { await pg.fill('#off', 'hello'); await pg.press('#off', 'End'); } catch (e) { err = String(e).slice(0, 160); }
       const st = await pg.evaluate(() => { const i = document.getElementById('off') as any; const r = { v: i.value, focused: document.activeElement === i }; i.remove(); return r; });
       return [!err && st.v === 'hello' && st.focused, { err, ...st }]; });
-    await row('cdp-pw: a force click (by selector or handle) on a button outside the viewport throws, as playwright ("Element is outside of the viewport"), never a silent no-op (round 4)', async () => {
+    await row('cdp-pw: a force click (by selector or handle), hover or tap on a button outside the viewport throws, as playwright ("Element is outside of the viewport"), never a silent no-op (round 4)', async () => {
       await pg.evaluate(() => { const b = document.createElement('button'); b.id = 'offb'; b.textContent = 'x'; b.style.cssText = 'position:fixed;left:-9999px;top:0;width:100px'; b.onclick = () => { b.dataset.n = '1'; }; document.body.append(b); });
       const tryIt = async (f: () => Promise<unknown>) => { try { await f(); return ''; } catch (e) { return String(e).slice(0, 160); } };
       const bySel = await tryIt(() => pg.click('#offb', { force: true, timeout: 3000 }));
       const h = (await pg.evaluateHandle(() => document.getElementById('offb'))).asElement();
       const byHandle = await tryIt(() => h.click({ force: true, timeout: 3000 }));
+      const hov = await tryIt(() => pg.hover('#offb', { force: true, timeout: 3000 }));
+      const tap = await tryIt(() => pg.tap('#offb', { force: true, timeout: 3000 }));
+      const locHov = await tryIt(() => pg.locator('#offb').hover({ force: true, timeout: 3000 }));
       const n = await pg.evaluate(() => { const b = document.getElementById('offb'); const v = b?.dataset.n ?? '0'; b?.remove(); return v; });
-      return [/outside of the viewport/.test(bySel) && /outside of the viewport/.test(byHandle) && n === '0', { bySel, byHandle, n }]; });
+      const out = (x: string) => /outside of the viewport/.test(x);
+      return [out(bySel) && out(byHandle) && out(hov) && out(tap) && out(locHov) && n === '0', { bySel, byHandle, hov, tap, locHov, n }]; });
     await row('cdp-pw: click({force:true}) skips the hit-target wait, as playwright (it lands on what is on top)', async () => {
       await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'glass'; o.style.cssText = 'position:fixed;inset:0;opacity:0'; o.onclick = () => { o.dataset.hit = '1'; }; document.body.append(o); });
       // the overlay stays up throughout: a click that waited on it throws at its timeout, so no clock is judged (review #375 19)
