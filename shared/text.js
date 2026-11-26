@@ -48,9 +48,16 @@ export function quoted(s, max = 200) {
   return `«${body}${g.length > max ? '…' : ''}»`;
 }
 
-// the first character in an RTL or LTR block decides a paragraph's base direction (near the bidi algorithm's P2–P3, which
-// a canvas then applies; Arabic-Indic digits and their separators are numbers, not letters, so P2 skips them: G2-082)
-const RTL = /(?![\u0660-\u066c\u06f0-\u06f9])[֐-ࣿיִ-﷿ﹰ-﻿]/u, LTR = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ぀-ヿ一-鿿가-힯]/u;
+// a paragraph's base direction is its first strong character's (the bidi algorithm's P2–P3, which a canvas then applies).
+// RTL is the bidi table's R and AL, exactly (Unicode 15's DerivedBidiClass, checked code point by code point): the RTL
+// blocks and RLM, less their marks and the neutrals, separators and numbers inside them (the Arabic comma is CS,
+// Arabic-Indic digits AN, the percent sign ET: G2-082, #377 review 3 and 8). LTR is a letter or spacing mark of any
+// other script, and LRM (the table's L also has symbols and Indic digits, which are skipped here; a few modifier letters
+// it calls neutral are taken as letters).
+const RTL_NOT = '\\p{M}\\u0600-\\u0607\\u0609\\u060a\\u060c\\u060e\\u060f\\u0660-\\u066c\\u06dd\\u06de\\u06e9\\u06f0-\\u06f9\\u07f6-\\u07f9\\u0890\\u0891\\u08e2' +
+  '\\ufb29\\ufd3e-\\ufd4f\\ufdcf\\ufdfd-\\ufdff\\ufeff\\u{1091f}\\u{10b39}-\\u{10b3f}\\u{10d30}-\\u{10d39}\\u{10e60}-\\u{10e7e}\\u{1eef0}\\u{1eef1}';
+const RTL_BLOCKS = '\\u0590-\\u08ff\\u200f\\ufb1d-\\ufdcf\\ufdf0-\\ufdff\\ufe70-\\ufeff\\u{10800}-\\u{10fff}\\u{1e800}-\\u{1efff}';
+const RTL = new RegExp(`(?![${RTL_NOT}])[${RTL_BLOCKS}]`, 'u'), LTR = /[\p{L}\p{Mc}\u200e]/u;
 export function directionOf(p) { for (const ch of p) { if (RTL.test(ch)) return 'rtl'; if (LTR.test(ch)) return 'ltr'; } return 'ltr'; }
 
 /** Break text into lines no wider than `width`. measure(str) → width. Returns [{text, dir}] (dir per paragraph). */
