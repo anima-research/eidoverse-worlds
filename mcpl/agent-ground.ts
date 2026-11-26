@@ -2,7 +2,7 @@
 // Its public members are the body's (one-line delegates in agent.ts), and it calls them there (this.a.x), as before.
 
 import type { WorldAgent } from "./agent.ts";
-import { type Entity, bodyStructure, collisionElsewhere, WORLD_READ_MS } from "./agent-result.ts";
+import { type Entity, bodyStructure, collisionElsewhere, solidOffRecord, WORLD_READ_MS } from "./agent-result.ts";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, waterParams } from "../shared/terrainshape.js";
 import { flatHeightOf } from "../shared/terrainmath.js";
 import { analyzeWater, waterGridSeg } from "../shared/waterkind.js";
@@ -38,53 +38,22 @@ const MESH_CONCURRENCY = 3;
 const MESH_MAX_BYTES = 48 * 1024 * 1024, MESH_MAX_TRIS = 1_000_000;
 /** What the governor is doing, for debugging and tests: jobs running and
  *  queued now, the most ever running at once, and why any model fell back. */
-export const meshGovernor = { active: 0, queued: 0, maxActive: 0, metaActive: 0, fallbacks: new Map<string, string>() };
+export const meshGovernor = { active: 0, queued: 0, maxActive: 0, fallbacks: new Map<string, string>() };
 const meshWaiting: (() => void)[] = [];
-/** The metadata lane: reads of a model only for its own description (its places), for a thing nobody is fitting
- *  (an anchor, collision off, moving, mounted). At most META_SLOTS of them run at once, one never takes a slot a fit
- *  is waiting for, and a fit asking for the same model promotes its waiting read (meshFor). */
-const META_SLOTS = 1;
-const metaWaiting: { key: string; go: (lane: Lane) => void }[] = [];
-type Lane = "fit" | "meta";
-/** A model that can't be read (missing, too large, not a GLB with triangles) isn't asked for again until then. A
- *  timeout, a 5xx, a 408, a 429 or a dropped connection isn't remembered: the thing's next sync asks again. */
-const MESH_FAIL_MS = 30_000;
-const meshFailed = new Map<string, number>();
-/** Tests: forget every decoded model and every remembered failure, so the next sync fetches afresh. */
-export function forgetMeshCache() { meshCache.clear(); meshBytes.clear(); meshFailed.clear(); }
-async function meshSlot<T>(job: () => Promise<T>, meta: string | null = null): Promise<T> {
-  let lane: Lane = "fit";
-  if (meta === null) {
-    if (meshGovernor.active >= MESH_CONCURRENCY) {
-      meshGovernor.queued++;
-      await new Promise<void>((r) => meshWaiting.push(r));   // the slot is handed over, not re-contended
-      meshGovernor.queued--;
-    } else meshGovernor.active++;
-  } else if (meshGovernor.active < MESH_CONCURRENCY && meshGovernor.metaActive < META_SLOTS) {
-    meshGovernor.active++; meshGovernor.metaActive++; lane = "meta";
-  } else {
+/** Tests: forget every decoded model, so the next sync fetches afresh. */
+export function forgetMeshCache() { meshCache.clear(); meshBytes.clear(); }
+async function meshSlot<T>(job: () => Promise<T>): Promise<T> {
+  if (meshGovernor.active >= MESH_CONCURRENCY) {
     meshGovernor.queued++;
-    lane = await new Promise<Lane>((r) => metaWaiting.push({ key: meta, go: r }));   // a lane slot, or a fit's if promoted
+    await new Promise<void>((r) => meshWaiting.push(r));   // the slot is handed over, not re-contended
     meshGovernor.queued--;
-  }
+  } else meshGovernor.active++;
   meshGovernor.maxActive = Math.max(meshGovernor.maxActive, meshGovernor.active);
   try { return await job(); }
   finally {
-    if (lane === "meta") meshGovernor.metaActive--;
-    const next = meshWaiting.shift();   // a fit waiting always goes first
-    const m = !next && meshGovernor.metaActive < META_SLOTS ? metaWaiting.shift() : undefined;
-    if (next) next();
-    else if (m) { meshGovernor.metaActive++; m.go("meta"); }
-    else meshGovernor.active--;
+    const next = meshWaiting.shift();
+    if (next) next(); else meshGovernor.active--;
   }
-}
-/** A fit wants a model whose read is waiting in the metadata lane: it waits as a fit now (a slot if one is free). */
-function promoteMeta(key: string) {
-  const i = metaWaiting.findIndex((w) => w.key === key);
-  if (i < 0) return;
-  const [w] = metaWaiting.splice(i, 1);
-  if (meshGovernor.active < MESH_CONCURRENCY) { meshGovernor.active++; w.go("fit"); }
-  else meshWaiting.push(() => w.go("fit"));
 }
 function trimMeshCache(key: string, m: CollisionMesh) {
   meshBytes.set(key, m.positions.byteLength + m.indices.byteLength);
@@ -384,34 +353,26 @@ export class AgentGround {
   modelMetaOf(lib: string): unknown { return modelMeta.get(`${this.a.httpBase}|${lib}`); }
   /** The model's collision triangles, decoded from the bytes /library serves
    *  (shared by every agent in the process — see meshCache). */
-  /** Tests and tools: resolves once this model's read, if one is under way (a fit's or the metadata lane's), has
-   *  landed, so its places (modelMetaOf) are what they will be. */
-  async modelRead(lib: string): Promise<void> { await meshCache.get(`${this.a.httpBase}|${lib}`); }
-  /** `meta`: read only for the model's own description (its places), by a thing nobody is fitting: the metadata lane
-   *  (meshSlot), which fits pass, and which nothing awaits. */
-  private meshFor(lib: string, meta = false): Promise<CollisionMesh | null> {
+  private meshFor(lib: string): Promise<CollisionMesh | null> {
     const key = `${this.a.httpBase}|${lib}`;
     let p = meshCache.get(key);
-    if (p) { meshCache.delete(key); meshCache.set(key, p); if (!meta) promoteMeta(key); return p; }   // most recently used last
-    if ((meshFailed.get(key) ?? 0) > Date.now()) return Promise.resolve(null);   // it couldn't be read a moment ago
+    if (p) { meshCache.delete(key); meshCache.set(key, p); return p; }   // most recently used last
     // bounded: a stalled /library must not hold up the /geom fallback, and
-    // a transient failure is forgotten so a later sync tries again (one that won't change is remembered: meshFailed)
+    // a failure is forgotten so a later sync tries again
     // governed: a few at a time, none too large (meshSlot, MESH_MAX_*)
     const fallback = (why: string) => { meshGovernor.fallbacks.set(key, why); return null; };
-    const lasting = (why: string) => { meshFailed.set(key, Date.now() + MESH_FAIL_MS); return fallback(why); };
     p = meshSlot(async () => {
       const r = await fetch(`${this.a.httpBase}/library/${lib}`, { signal: AbortSignal.timeout(MESH_FETCH_MS) });
-      // a 5xx, a 408 (timed out) or a 429 (rate-limited) is "not now", so it isn't remembered; any other 4xx is
-      if (!r.ok) return r.status >= 500 || r.status === 408 || r.status === 429 ? fallback(`HTTP ${r.status}`) : lasting(`HTTP ${r.status}`);
+      if (!r.ok) return fallback(`HTTP ${r.status}`);
       const len = Number(r.headers.get("content-length"));
-      if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return lasting(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
+      if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return fallback(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
       const b = await r.arrayBuffer();
-      if (b.byteLength > MESH_MAX_BYTES) return lasting(`${(b.byteLength / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`);
+      if (b.byteLength > MESH_MAX_BYTES) return fallback(`${(b.byteLength / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`);
       const m = await collisionTriangles(new Uint8Array(b));
-      if (!m) return lasting("not a readable GLB with triangles");
-      if (m.indices.length / 3 > MESH_MAX_TRIS) return lasting(`${m.indices.length / 3} triangles is over the ${MESH_MAX_TRIS} exact-collision limit`);
+      if (!m) return fallback("not a readable GLB with triangles");
+      if (m.indices.length / 3 > MESH_MAX_TRIS) return fallback(`${m.indices.length / 3} triangles is over the ${MESH_MAX_TRIS} exact-collision limit`);
       return m;
-    }, meta ? key : null)
+    })
       .then((m) => { if (!m) meshCache.delete(key); else { meshGovernor.fallbacks.delete(key); trimMeshCache(key, m); if (m.building) modelMeta.set(key, m.building); } return m; })
       .catch((err) => { meshCache.delete(key); fallback(String(err?.name === "TimeoutError" ? "fetch timed out" : err?.message ?? err)); return null; });   // no mesh: the /geom summary path stands in
     meshCache.set(key, p);
@@ -436,11 +397,14 @@ export class AgentGround {
   async syncSupport(id: string) {
     const before = this.a.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
-    // collision off (collider.enabled), or a structure's anchor: nothing to stand on. A moving thing supports nothing
-    // here (drop path as well as skip path); so does mounted cargo, whose parent's transform this code doesn't track.
-    // Its model's bytes carry its own description (its places: modelMetaOf, whose only reader is meshFor), so they're
-    // read in the metadata lane, which fits pass and nothing here awaits (supportReady neither).
-    if (collisionElsewhere(before) || this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); void this.meshFor(before.model, true); return; }
+    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
+    // A moving thing supports nothing here (drop path as well as skip path); so
+    // does mounted cargo, whose parent's transform this code doesn't track.
+    if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
+    // A structure's anchor: nothing to stand on (its planner owns the walls), but its model is read here, inside this
+    // tracked sync, as main reads it: the bytes carry the model's own places (modelMetaOf; meshFor is their only
+    // reader), so supportReady waits for them. The drop is issued before the read.
+    if (collisionElsewhere(before)) { this.dropSupport(id); await this.meshFor(before.model); return; }
     const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
     // Re-read and re-CHECK: the id may have been removed and respawned as
     // something else while its geometry was in flight (hence the model comparison).
