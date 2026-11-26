@@ -147,13 +147,13 @@ const namesAny = (files: string[]) => (was: Record<string, any>) => files.some((
  *  The base is walked too: its history is main's, so walking it back to main's last version that names one judges what
  *  main receives. {hit: {rev, why, was} | null, unnamed: [revs passed whose tree held a file], cut}. It stops where the
  *  history does: the files' first version or a root commit (a real start: nothing to hold it to), or a shallow clone's
- *  edge (cut: the history that would judge it is missing, which callers make red when it was still passing a file). */
+ *  edge (cut: the history that would judge it is missing, which callers make red, even where what it passed never held the file: it may have been deleted just beyond the edge). */
 function walkFrom(root: string, start: string, why: string, files: string[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any, shallow: Set<string>) {
   const unnamed: string[] = [], passed: string[] = []; let rev = start;
   for (;;) { const r = read(rev, why);
     if (names(r.was)) return { hit: { rev, why: passed.length ? `${why}, walked back past ${passed.join(", ")}, which name none` : why, was: r.was }, unnamed, cut: false };
     if (r.present.length) unnamed.push(rev); passed.push(rev.slice(0, 8));
-    const o = olderOf(root, rev, files, shallow); if (!o.older) return { hit: null, unnamed, cut: o.cut && unnamed.length > 0 }; rev = o.older; }   // cut while it had passed a file
+    const o = olderOf(root, rev, files, shallow); if (!o.older) return { hit: null, unnamed, cut: o.cut }; rev = o.older; }   // a shallow edge cut it: the version before is missing, whether or not what it passed held the file
 }
 
 /** Each revision read once per rule (strictly about blobs; leniently about JSON: see load). */
