@@ -178,6 +178,7 @@ for (const [what, id, x, overtake] of [
     const p = new URL(r.url).pathname; fetched[p] = (fetched[p] ?? 0) + 1;
     if (p.startsWith("/library/lane/deco")) { if (!letGo) await new Promise<void>((go) => heldDeco.push(go)); return new Response(glb); }
     if (p === "/library/lane/floor.glb" || p === "/library/lane/shared.glb") return new Response(glb);
+    if (p === "/library/lane/busy.glb") return new Response("slow down", { status: 429 });
     return new Response("", { status: 404 });
   } });
   const q: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "lane-bot", world: "lane" });
@@ -205,6 +206,10 @@ for (const [what, id, x, overtake] of [
   for (let i = 1; i <= 20; i++) { q.entities.set(`b${i}`, { id: `b${i}`, model: "lane/bad.glb", pos: [400, 0, 50 + i], yaw: 0, actor: "x", collider: { enabled: false } });
     await q.ground.syncSupport(`b${i}`); await q.ground.modelRead("lane/bad.glb"); }
   check("twenty things sharing a model that can't be read (404) fetch it once", fetched["/library/lane/bad.glb"] === 1, JSON.stringify(fetched));
+  // ...but a 429 (or a 408) is a "not now", not a "never": the thing's next sync asks again
+  q.entities.set("busy", { id: "busy", model: "lane/busy.glb", pos: [400, 0, 90], yaw: 0, actor: "x", collider: { enabled: false } });
+  for (let i = 0; i < 2; i++) { await q.ground.syncSupport("busy"); await q.ground.modelRead("lane/busy.glb"); }
+  check("a model answered 429 (rate-limited) is asked for again on the thing's next sync", fetched["/library/lane/busy.glb"] === 2, JSON.stringify(fetched));
   q.close(); srv.stop(true);
 }
 

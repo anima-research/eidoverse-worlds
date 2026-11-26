@@ -47,7 +47,7 @@ const META_SLOTS = 1;
 const metaWaiting: { key: string; go: (lane: Lane) => void }[] = [];
 type Lane = "fit" | "meta";
 /** A model that can't be read (missing, too large, not a GLB with triangles) isn't asked for again until then. A
- *  timeout, a 5xx or a dropped connection isn't remembered: the next sync asks again. */
+ *  timeout, a 5xx, a 408, a 429 or a dropped connection isn't remembered: the thing's next sync asks again. */
 const MESH_FAIL_MS = 30_000;
 const meshFailed = new Map<string, number>();
 /** Tests: forget every decoded model and every remembered failure, so the next sync fetches afresh. */
@@ -401,7 +401,8 @@ export class AgentGround {
     const lasting = (why: string) => { meshFailed.set(key, Date.now() + MESH_FAIL_MS); return fallback(why); };
     p = meshSlot(async () => {
       const r = await fetch(`${this.a.httpBase}/library/${lib}`, { signal: AbortSignal.timeout(MESH_FETCH_MS) });
-      if (!r.ok) return r.status >= 500 ? fallback(`HTTP ${r.status}`) : lasting(`HTTP ${r.status}`);
+      // a 5xx, a 408 (timed out) or a 429 (rate-limited) is "not now", so it isn't remembered; any other 4xx is
+      if (!r.ok) return r.status >= 500 || r.status === 408 || r.status === 429 ? fallback(`HTTP ${r.status}`) : lasting(`HTTP ${r.status}`);
       const len = Number(r.headers.get("content-length"));
       if (len > MESH_MAX_BYTES) { void r.body?.cancel(); return lasting(`${(len / 1e6).toFixed(0)}MB is over the ${MESH_MAX_BYTES / 1e6 | 0}MB exact-collision limit`); }
       const b = await r.arrayBuffer();
