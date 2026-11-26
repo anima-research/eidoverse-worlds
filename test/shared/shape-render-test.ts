@@ -240,7 +240,8 @@ await tryRow('DS', async () => {
     const Ma = await import('../../shared/material.js'), lm = { node: 'screen', texture: 'store/images/0123456789abcdef.png', description: long };
     const wm = Ma.normalizeMaterial(lm), rm = Ma.normalizeMaterial(lm, { clip: true });
     check('DS7 …material too: a write refuses an over-long description, a read clips it with a note', !wm.ok && /at most 200/.test(wm.why ?? '') && rm.ok && rm.material.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rm.notes.some((n) => /clipped/.test(n)), [wm, rm.ok && rm.notes]);
-    check('DS7 …and its realizer reads a stored bag that way', /function applyFrom[\s\S]{0,200}normalizeMaterial\(data, \{ clip: true \}\)/.test(src('material.js'))); }
+    // its realizer reads a stored bag that way: test/client/material-realizer-test.ts MR1 runs applyFrom's own call
+  }
   { // the door and the three helpers count a description the same way (graphemes of the string as written): a run of
     // spaces the helper would collapse is still counted, so a value the door refuses is refused by its helper too
     const Ma = await import('../../shared/material.js');
