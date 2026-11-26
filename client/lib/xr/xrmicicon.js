@@ -10,7 +10,7 @@ import { micIndicator } from '../audio/mictoggle.js';
 
 const MIC_ICON = { x: -0.17, y: -0.15, z: -0.6, size: 0.032 };   // metres in front of the eyes: ≈3° across, ≈16° left, 14° down
 const LOOK = { off: { opacity: 0.9, scale: 1 }, on: { opacity: 0.45, scale: 0.8 }, muted: { opacity: 0.9, scale: 1 },
-  hot: { opacity: 1, scale: 1 }, 'hot-off': { opacity: 1, scale: 1 } };
+  hot: { opacity: 1, scale: 1 }, 'hot-synth': { opacity: 1, scale: 1 }, 'hot-off': { opacity: 1, scale: 1 } };
 let mesh = null, cv = null, tex = null, state = null, timer = null, painted = 0;
 
 function paint({ state: st, svg }) {

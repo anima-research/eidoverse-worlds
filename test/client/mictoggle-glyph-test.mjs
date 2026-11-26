@@ -80,6 +80,12 @@ rawTrack.enabled = true; ms.setMicLive(true);   // what voicesfu.js sfuMic(true)
 t('muted raw lane: the transport re-enabling it and reporting live (unchanged) closes it at once', rawTrack.enabled === false);
 ms.toggleMute(false);
 t('setup: unmute reopens the raw lane', !!(await tryUntil('the raw lane reopens on unmute', () => rawTrack.enabled)));
+// the transport turns the lane off while the device is still reported live (sfuMic(false)'s window before setMicLive)
+ms.setLaneEnabled(false);
+await pause('gate ticks after the transport turned the raw lane off', 200);
+t('the transport turned the raw lane off: the gate ticks keep it off (they honour setLaneEnabled)', rawTrack.enabled === false);
+ms.setLaneEnabled(true);
+t('setup: the transport turns it back on', !!(await tryUntil('the raw lane back on', () => rawTrack.enabled)));
 mg.allowUngated(false);
 t('consent revoked on a live raw lane: the track is off at once, and micGateInfo says so', rawTrack.enabled === false && ms.micGateInfo().speaking === false);
 await pause('revoked: gate ticks and glyph polls have had time to reopen it', 300);
@@ -98,18 +104,20 @@ const synthTrack = { kind: 'audio', enabled: true, stop() {} };
 const synth = { synthetic: true, getTracks: () => [synthTrack], getAudioTracks: () => [synthTrack] };
 ms.gateFor(synth);
 // the raw lane above left the glyph gold until its next poll: start the synth rows from a repainted, silent glyph
-room = 0.001; await tryUntil('the silent synth lane has repainted the glyph off gold', () => !gold());
+room = 0; await tryUntil('the silent synth lane has repainted the glyph off gold', () => !gold());   // silence: a synth lane sends anything above it
 room = 0.3; await tryUntil('a playing synth voice turns the glyph gold', () => gold());
 t('synth voice playing: gold, and micGateInfo says the room hears it', gold() === true && ms.micGateInfo().speaking === true);
-room = 0.001; await tryUntil('a silent synth voice stops being gold', () => !gold());
+room = 0; await tryUntil('a silent synth voice stops being gold', () => !gold());
 t('synth voice silent: not gold', gold() === false && ms.micGateInfo().speaking === false);
 room = 0.01; await tryUntil('a quiet synth voice (-40 dBFS RMS) turns the glyph gold', () => gold());
 t('synth voice quiet (-40 dBFS): gold, the room hears it', gold() === true && ms.micGateInfo().speaking === true);
 { // hold the clock inside the 700ms hang, as for the device lane
+  // the synth hang runs on performance.now (monotonic); hold both clocks
   const realNow = Date.now, held = Date.now(); Date.now = () => held;
-  room = 0.0001; await pause('a gap between words, the clock held inside the hang: three glyph polls', 400);
+  const realPerf = performance.now.bind(performance), heldPerf = performance.now(); performance.now = () => heldPerf;
+  room = 0; await pause('a gap between words, the clock held inside the hang: three glyph polls', 400);
   t('synth voice, a gap between words: stays gold through the hang', gold() === true && ms.micGateInfo().speaking === true);
-  Date.now = realNow;
+  Date.now = realNow; performance.now = realPerf;
 }
 t('the synth hang ends once the clock runs again', !!(await tryUntil('the synth hang ends once the clock runs again', () => !gold())));
 ms.toggleMute(true); room = 0.3; await pause('muted synth: a playing voice has had time to turn it gold', 400);

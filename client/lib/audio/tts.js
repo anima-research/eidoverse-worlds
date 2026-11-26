@@ -307,14 +307,15 @@ export function startPacer() {
       // because the analyser that could measure the track runs on the AudioContext clock this pacer exists to avoid
       let sq = 0;
       for (let k = 0; k < FRAME; k++) sq += data[k] * data[k];
-      _lastRms = Math.sqrt(sq / FRAME);
-      if (_lastRms > SYNTH_AUDIBLE) _audibleAt = Date.now();
+      const rms = Math.sqrt(sq / FRAME);
+      _lastRms = rms;
       try {
-        // a stream closed between the liveness check and write() rejects async; the next tick rebuilds
+        // a stream closed between the liveness check and write() rejects async; the next tick rebuilds. The frame
+        // counts as sent once the generator has taken it, never before: a rejected write stamps nothing
         void writer.write(new AudioData({
           format: 'f32', sampleRate: OUT_RATE, numberOfFrames: FRAME,
           numberOfChannels: 1, timestamp: Math.round((playhead / OUT_RATE) * 1e6), data,
-        })).catch(() => {});
+        })).then(() => { if (rms > SYNTH_AUDIBLE) _audibleAt = performance.now(); }, () => {});
       } catch (e) { report('tts write', e); }
       playhead += FRAME;
     }
@@ -332,7 +333,7 @@ export function stopPacer() {
   _monSources.clear();
 }
 
-let _lastRms = 0, _audibleAt = 0;   // the last frame the pacer wrote, and when it last wrote one over SYNTH_AUDIBLE
+let _lastRms = 0, _audibleAt = 0;   // the last frame the pacer wrote, and when (performance.now) the generator last took one over SYNTH_AUDIBLE
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */
 export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhead });

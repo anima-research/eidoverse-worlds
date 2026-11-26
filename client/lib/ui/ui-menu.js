@@ -4,7 +4,7 @@ import { confirmCenter } from '../edit/confirmcenter.js';
 import { bus, CONFIG, forgetRememberedWorlds } from '../base.js';
 import { versionReady } from '../version.js';
 import { resizeZoneAt, getFrame, isLocked, setLocked } from './windows.js';
-import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
+import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, micIndicatorState, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
 import { fsvg } from './icons.js';
 import { paint, escapeHtml } from './markup.js';
 import { register as registerAction } from './actions.js';
@@ -320,10 +320,11 @@ function paintEMenu() {
     const on = id === 'glyph:mic' ? micLive() : id === 'glyph:ear' ? earOn() : id === 'lantern' ? isLanternOpen()
       : entry?.action ? !!entry.active?.() : !!getFrame(id)?.visible;
     row.classList.toggle('open', on);
-    // the glyph bakes its ink at build; re-stamp it when the state flips
+    // the glyph bakes its ink at build; re-stamp it when what it draws changes (the mic: on/off, mute, gold, synth)
     const glyph = id === 'glyph:mic' ? micGlyph : id === 'glyph:ear' ? earGlyph : id === 'glyph:xr' ? xrGlyph : null;
-    if (glyph && row.dataset.on !== String(on)) {
-      row.dataset.on = String(on);
+    const drawn = id === 'glyph:mic' ? micIndicatorState() : String(on);
+    if (glyph && row.dataset.on !== drawn) {
+      row.dataset.on = drawn;
       const g = row.querySelector('svg');
       if (g) g.outerHTML = glyph(16);
     }

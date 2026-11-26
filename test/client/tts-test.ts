@@ -29,9 +29,11 @@ class FakeAudioData {
   }
   close() {}
 }
+let rejectWrites = false;   // a generator whose writable refuses frames (a closed stream rejects write() async)
 class FakeWriter {
   closed = false;
-  write(d: FakeAudioData) { written.push({ frames: d.numberOfFrames, ts: d.timestamp, loud: d.loud, sum: d.sum }); return Promise.resolve(); }
+  write(d: FakeAudioData) { written.push({ frames: d.numberOfFrames, ts: d.timestamp, loud: d.loud, sum: d.sum });
+    return rejectWrites ? Promise.reject(new Error("the stream is closed")) : Promise.resolve(); }
   close() { this.closed = true; return Promise.resolve(); }
 }
 let generatorCount = 0;
@@ -145,19 +147,33 @@ console.log("\n— speak: canonical own say → one performance —");
 console.log("\n— the pacer's own record of what it sent (micstate.js reads it: an analyser on the track can be stalled) —");
 {
   const sp = vsrc.synthProvider();
-  const before = Date.now();
+  let before = performance.now();
   await pause("a millisecond, so a frame written now is after `before`", 2);
   written.length = 0;
-  await tts.speak("too quiet");   // the fake engine's 7/32768 ≈ -73 dBFS: speech on the wire, under SYNTH_AUDIBLE
-  await tryUntil("the quiet line played out", drained);
-  check("a line under SYNTH_AUDIBLE does not count as audible", typeof sp.audibleAt === "function" && sp.audibleAt() < before,
-    `audibleAt=${sp.audibleAt?.()} before=${before}`);
-  tts.setTtsSource(async () => ({ pcm: new Int16Array(4000).fill(8000), sampleRate: 22050 }), "fake-engine");   // ≈ -12 dBFS
+  await tts.speak("too quiet");   // the fake engine's 7/32768 ≈ -73 dBFS: speech on the wire, quiet but not silence
+  const quietPlayed = await tryUntil("the quiet line played out", drained);
+  check("a quiet line (-73 dBFS) played out, and counts: the synth lane has no gate, so it was sent",
+    !!quietPlayed && typeof sp.audibleAt === "function" && sp.audibleAt() > before,
+    `played=${!!quietPlayed} audibleAt=${sp.audibleAt?.()} before=${before}`);
+  // a frame the generator refuses was not sent: it stamps nothing
+  await pause("past the quiet line's last stamp", 50);
+  const stampBefore = sp.audibleAt?.() ?? 0;
+  rejectWrites = true; written.length = 0;
+  tts.setTtsSource(async () => ({ pcm: new Int16Array(4000).fill(8000), sampleRate: 22050 }), "fake-engine");
+  await tts.speak("refused");
+  const refusedPlayed = await tryUntil("the refused line played out", drained);
+  await pause("the rejected writes settle", 30);
+  check("a loud line the generator refused (write() rejected): audibleAt does not move",
+    !!refusedPlayed && sp.audibleAt() === stampBefore, `played=${!!refusedPlayed} ${sp.audibleAt()} vs ${stampBefore}`);
+  rejectWrites = false;
+  before = performance.now();
+  await pause("a millisecond, so a frame written now is after `before`", 2);
   written.length = 0;
-  await tts.speak("loud");
-  await tryUntil("the loud line played out", drained);
+  await tts.speak("loud");   // ≈ -12 dBFS
+  const loudPlayed = await tryUntil("the loud line played out", drained);
   const at = sp.audibleAt?.() ?? 0;
-  check("an audible line: audibleAt is when the pacer wrote it", at >= before && at <= Date.now(), `audibleAt=${at} before=${before}`);
+  check("an audible line: audibleAt is when the generator took it (performance.now)", !!loudPlayed && at >= before && at <= performance.now(),
+    `played=${!!loudPlayed} audibleAt=${at} before=${before}`);
   await pause("silence after the line: the pacer keeps writing, all of it silent", 100);
   check("...and silence after it does not move audibleAt", sp.audibleAt() === at, `${sp.audibleAt()} vs ${at}`);
   check("level() reads the last frame written (silence now)", typeof sp.level === "function" && sp.level() < 0.005, `${sp.level?.()}`);

@@ -29,6 +29,7 @@ export const earOn = () => _ear;
 export const glyphPinned = (k) => !!_pinned[k];
 export const setGlyphPinned = (k, v) => { _pinned[k] = !!v; };
 export const micGlyph = G('mic');
+export const micIndicatorState = () => (_mic ? 'on' : 'off');   // ui-menu.js re-stamps the mic row when this changes
 export const earGlyph = G('ear');
 export const xrGlyph = G('xr');
 export const xrGlyphAvailable = () => false;

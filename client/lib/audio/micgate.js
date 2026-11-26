@@ -23,6 +23,12 @@ const RELEASE_TAU = 0.12;
 // Lookahead (s): delay the audio, not the detector, so a low-energy onset (/h/) that never crosses the threshold is
 // still in the delay line when the vowel opens the gate. Costs 50 ms of outbound latency.
 const LOOKAHEAD = 0.05;
+// A deliberate close (push-to-talk released, mute, the mic turned off) is a cut, not a fade: a linear ramp to 0 this
+// long (s), short enough to be "at once" and long enough not to click. The release fade (RELEASE_TAU) is only the
+// voice-activation gate's, after its hang: from full it takes ~0.83 s to fall 60 dB, and sound in it is sent.
+const CUT_S = 0.005;
+// The gain is closed (nothing worth calling voice goes out) below this: -60 dB.
+const GAIN_CLOSED = 0.001;
 
 let _ctx = null, _src = null, _gain = null, _dest = null, _look = null;
 let _rawStream = null, _gatedStream = null, _level = () => 0;
@@ -64,6 +70,7 @@ export function gateStream(stream, levelFn) {
     // noise floor. `_wanted` outlives the graph, so reset it or gateOpenness() reports the previous lane's state.
     _gain.gain.value = 0;
   _wanted = 0;
+    _env = { at: 0, from: 0, to: 0, tau: RELEASE_TAU * 1000 };
     _dest = _ctx.createMediaStreamDestination();
     // src → lookahead delay → gate gain → destination. Without createDelay, connect straight through: a missing
     // enhancement must not fall into the fail-closed no-gate path.
@@ -92,18 +99,50 @@ export function gateStream(stream, levelFn) {
   }
 }
 
-/** Drive the gain from the gate decision. `open` is the gate's boolean; the smoothing lives here. */
-export function driveGate(open) {
+// The envelope as scheduled, on the wall clock (performance.now, ms): what the gain is doing now, worked out from what
+// was asked of it, so it reads true when the audio clock is not being sampled. { at, from, to, tau } is setTargetAtTime;
+// { at, from, cutEnd } is a cut.
+let _env = { at: 0, from: 0, to: 0, tau: RELEASE_TAU * 1000 };
+const envAt = (t) => {
+  const e = _env, dt = Math.max(0, t - e.at);
+  if (e.cutEnd !== undefined) return t >= e.cutEnd ? 0 : e.from * (1 - dt / (e.cutEnd - e.at));
+  return e.to + (e.from - e.to) * Math.exp(-dt / e.tau);
+};
+
+/** Drive the gain from the gate decision. `open` is the gate's boolean; the smoothing lives here. `cut` closes in CUT_S
+ *  instead of fading (a deliberate close: the key released, mute, the mic off). */
+export function driveGate(open, { cut = false } = {}) {
   if (!_gain || !_ctx) return;
-  // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
-  // double-smooths and the gate never fully closes)
+  const now = performance.now(), from = envAt(now);
   const target = open ? 1 : 0;
-  const tau = open ? ATTACK_TAU : RELEASE_TAU;
-  try {
-    _gain.gain.setTargetAtTime(target, _ctx.currentTime, tau);
-  } catch { _gain.gain.value = target; }
+  const p = _gain.gain;
+  if (!open && cut) {
+    if (!(_env.cutEnd !== undefined && from === 0)) {   // already cut shut: nothing to reschedule
+      try {
+        const t = _ctx.currentTime;
+        p.cancelScheduledValues(t); p.setValueAtTime(from, t); p.linearRampToValueAtTime(0, t + CUT_S);
+      } catch { p.value = 0; }
+      _env = { at: now, from, cutEnd: now + CUT_S * 1000 };
+    }
+  } else {
+    // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
+    // double-smooths and the gate never fully closes)
+    const tau = open ? ATTACK_TAU : RELEASE_TAU;
+    try {
+      p.setTargetAtTime(target, _ctx.currentTime, tau);
+    } catch { p.value = target; }
+    _env = { at: now, from, to: target, tau: tau * 1000 };
+  }
   _wanted = target;
 }
+
+/** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
+ *  the voice-activation hang (sound in it is sent), false at once after a cut. False with no graph. */
+export const gateSending = () => {
+  if (!_gain) return false;
+  if (_env.cutEnd !== undefined) return false;   // a cut is 5 ms: closed for anything a person or an indicator sees
+  return envAt(performance.now()) > GAIN_CLOSED;
+};
 
 // ── the ungated lane's only gate ─────────────────────────────────────────────
 // On the consented raw lane there is no gain for driveGate() to drive, so push-to-talk toggles the raw tracks'
@@ -243,9 +282,10 @@ export function makeLevelMeter(getMeasured) {
 
 /** The gate's hang-time: it holds open this long after the last tick over the line. */
 export const HANG_MS = 700;
-/** A synth voice is audible above this RMS (≈ -46 dBFS). A synth lane has no gate; micstate.js reports it speaking while
- *  it is audible, held for HANG_MS, and tts.js's pacer records the last frame it wrote over this (audibleAt). */
-export const SYNTH_AUDIBLE = 0.005;
+/** A synth frame is sound, not silence, above this RMS (-100 dBFS). A synth lane has no gate, so every frame that isn't
+ *  silence is sent however quiet it is; micstate.js reports it speaking while it sends sound, held for HANG_MS, and tts.js's
+ *  pacer records when the generator last took a frame over this (audibleAt). */
+export const SYNTH_AUDIBLE = 1e-5;
 
 /** The speech-onset gate: a block-minima noise floor, a fixed threshold with ~3 dB hysteresis and 700 ms hang-time,
  *  and the once-per-utterance 🎙 announcement. `drive(open)` is the transport's gain hand (it applies its own
@@ -272,7 +312,9 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
   const apply = (now) => drive(decide(now));
 
   function tick() {
-    const lv = level();
+    // a level that can't be read closes the gate, as mute does (a throw here would leave it in its last state, open or not)
+    let lv = 0;
+    try { lv = level(); } catch { lv = 0; }
     if (lv <= 0) {
       // muted: close, do not learn, and drop the speaking latch (or info().speaking reports true while forced shut)
       _above = false; _openUntil = 0;

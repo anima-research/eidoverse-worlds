@@ -20,17 +20,24 @@ GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 
 const lib = (p) => fileURLToPath(new URL(`../../client/lib/${p}`, import.meta.url));
 let room = 0;   // the RMS the analyser hears: 0 is also what a stalled headless AudioContext reads
+let analyserThrows = false, gumFails = false;
+const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['ramp', v, seconds from now]
 const node = () => ({ connect() {}, disconnect() {} });
 const mkTrack = (label) => ({ kind: 'audio', label, enabled: true, readyState: 'live', stop() { this.readyState = 'ended'; } });
 class FakeStream { constructor(tracks) { this._t = tracks; } getTracks() { return this._t; } getAudioTracks() { return this._t; } }
 globalThis.MediaStream = FakeStream;
-Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: { getUserMedia: async () => new FakeStream([mkTrack('device')]) }, configurable: true });
+Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: { getUserMedia: async () => {
+  if (gumFails) throw new DOMException('no microphone', 'NotFoundError');
+  return new FakeStream([mkTrack('device')]); } }, configurable: true });
 mock.module(lib('audio/audioctx.js'), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: 'running', destination: node(),
-    createAnalyser: () => ({ ...node(), fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); } }),
+    createAnalyser: () => ({ ...node(), fftSize: 0, getFloatTimeDomainData(buf) { if (analyserThrows) throw new Error('analyser gone'); buf.fill(room); } }),
     createMediaStreamSource: () => node(),
-    createGain: () => ({ ...node(), gain: { value: 0, setTargetAtTime(v) { this.value = v; } } }),
+    createGain: () => ({ ...node(), gain: { value: 0,
+      setTargetAtTime(v, t, tau) { this.value = v; gainLog.push(['target', v, tau]); },
+      cancelScheduledValues() {}, setValueAtTime(v) { this.value = v; },
+      linearRampToValueAtTime(v, t) { this.value = v; gainLog.push(['ramp', v, t - this._t0]); }, _t0: 0 } }),
     createDelay: () => ({ ...node(), delayTime: { value: 0, setTargetAtTime() {} } }),
     createMediaStreamDestination: () => ({ ...node(), stream: new FakeStream([mkTrack('gated')]) }),
   }),
@@ -59,8 +66,11 @@ mock.module(lib('core.js'), () => ({
   camera: new Obj(), renderer: {},
 }));
 mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial() {} }));
-HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {}, drawImage() {} });
-globalThis.Image = class { set src(v) { xrPaints.push(decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, ''))); } };
+// the indicator's canvas: drawImage records the glyph actually drawn; Image loads (fires onload) as a browser's would
+const xrDrawn = [];
+HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {}, drawImage(img) { xrDrawn.push(img._svg); } });
+globalThis.Image = class { set src(v) { this._svg = decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, '')); xrPaints.push(this._svg);
+  queueMicrotask(() => this.onload?.()); } };
 mock.module(lib('ui/ui.js'), () => ({
   flashHint: () => {},
   makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); (globalThis.__builds ??= {})[opts.id] = build; return el; },
@@ -79,7 +89,10 @@ const negotiated = (pc) => { for (const t of pc.tx) if (t.direction === 'sendonl
 // the synth provider: playing → it is writing audible frames now (heardAt follows the clock); a fresh track per start
 let synthOn = false, playing = false, heardAt = 0;
 const synthTracks = [];
-setInterval(() => { if (playing) heardAt = Date.now(); }, 10);
+// the provider's clock is performance.now (voicesource.js); MRH_WALL=1 stamps Date.now, for a red-first run at a base
+// whose micstate read the wall clock
+const STAMP = process.env.MRH_WALL ? () => Date.now() : () => performance.now();
+setInterval(() => { if (playing) heardAt = STAMP(); }, 10);
 
 document.body.innerHTML = '<div id="hud"></div>';
 const vc = await import(lib('audio/voiceconsent.js'));
@@ -108,7 +121,7 @@ const barGold = () => GOLD.test(lvl.style.background);
 const waves = () => glyph().includes('data-synth');
 const state = () => `glyph gold=${gold()} slash=${slashed()} waves=${waves()} bar=${lvl.style.background} title="${document.querySelector('#micbtn')?.title}"`;
 // the in-VR indicator: what it last drew, and whether that is what the HUD's glyph would draw now
-const xrLast = () => xrPaints.at(-1) || '';
+const xrLast = () => xrDrawn.at(-1) || '';   // what the headset was last DRAWN, not only asked for
 const xrShows = () => xrLast() === mt.micIndicatorSvg(84);
 // the indicator's SVG goes to the headset as a standalone data:image/svg+xml, which is XML: every attribute needs a value
 // (a bare `data-x`, fine in the HUD's innerHTML, makes the image fail to load in VR)
@@ -212,7 +225,7 @@ t('the provider falls silent: the gold goes out after the hang', !!(await tryUnt
 // ── 4. mute ends the synth hang without a poll in between (finding 4) ─────────────────────────────────────────────
 room = 0.3; playing = true;
 await tryUntil('playing again', () => gold());
-playing = false; heardAt = Date.now() - 5; room = 0;   // the voice stops just before the mute
+playing = false; heardAt = STAMP() - 5; room = 0;   // the voice stops just before the mute
 ms.toggleMute(true); ms.toggleMute(false);            // and no poll runs in between
 t('mute then unmute with the voice silent: not speaking, at once (the mute ended the hang)',
   ms.micGateInfo().speaking === false && (ms.roomHears?.() ?? false) === false, JSON.stringify(ms.micGateInfo()));
@@ -254,8 +267,10 @@ t('PTT keyup: not gold in the same turn (the paint reads roomHears live, not the
 ms.setPttHeld(true);
 await tryUntil('gold again under the key, in VR too', () => gold() && xrShows() && xrGold());
 ms.setPttHeld(false);   // the XR controller's A/X release (xr.js): setPttHeld alone, no key event
-t('VR controller release: the indicator and the HUD glyph drop gold in the same turn, with no tick', !xrGold() && xrShows()
-  && mt.micIndicatorState() === 'on' && !gold(), `${state()} ${xrState()}`);
+const askedNow = xrPaints.at(-1) || '';
+t('VR controller release: the indicator asks for the plain glyph and the HUD drops gold in the same turn, with no tick',
+  !askedNow.includes('drop-shadow') && mt.micIndicatorState() === 'on' && !gold(), `${state()} ${xrState()}`);
+t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
 ms.setPttHeld(true);
 await tryUntil('gold again before turning the mic off', () => gold());
 await ms.toggleMic();   // V or a click: the mic off, and no synth provider to take over
@@ -274,8 +289,8 @@ t('the transport turns the mic off with no event: the bar goes dark',
 
 // ── 8. airtight: one read per VR paint, a throwing answer, the bar's loop across a VR exit, the panel rebuilt ────────
 const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while V/.test(x)) || '';
-t('the push-to-talk hint says the voice stops going out at once and only the sound fades',
-  /stops going out at once/.test(pttHint) && !/after a short fade/.test(pttHint), pttHint);
+t('the push-to-talk hint says the mic is cut off at once (it is: a 5 ms cut), and that a synth voice is not keyed by V',
+  /cut off at once \(within 5 ms\)/.test(pttHint) && !/after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by V/.test(pttHint), pttHint);
 await sfu.sfuMic(true);
 negotiated(pc);
 ms.setPttHeld(true);
@@ -287,20 +302,27 @@ const realEnabled = laneTrack.enabled;
 let flip = false;
 Object.defineProperty(laneTrack, 'enabled', { configurable: true, get() { flip = !flip; return flip; }, set() {} });
 const pairsFrom = xrPairs.length;
-await pause(`the answer flipping on every read: ${POLLS} and the VR ticks`, 600);
+// an extra reader off the 125 ms beat, so the reads between two VR ticks are not always an even number (that phase would
+// leave the indicator's state constant, and nothing painted to check)
+const jitter = setInterval(() => ms.roomHears(), 37);
+await tryUntil(`the answer flipping on every read: at least 3 VR paints`, () => xrPairs.length - pairsFrom >= 3, { ms: 4000 });
+clearInterval(jitter);
 const pairs = xrPairs.slice(pairsFrom);
-t('in VR, each paint takes its look and its glyph from one read: gold is drawn only at the hot look',
-  pairs.length > 0 && pairs.every((p) => !p.gold || p.opacity === 1) && pairs.every((p) => p.opacity !== 0.45 || !p.gold),
+t('in VR, each paint takes its look and its glyph from one read: gold is drawn at the hot look and only there',
+  pairs.length > 0 && pairs.every((p) => p.gold === (p.opacity === 1)),
   JSON.stringify(pairs.slice(0, 6)));
 // roomHears() throwing on every call
+let huds = 0, warns = 0;
+const realWarn = console.warn; console.warn = (...a) => { if (/roomHears\(\) threw/.test(String(a[0]))) warns++; else realWarn(...a); };
 Object.defineProperty(laneTrack, 'enabled', { configurable: true, get() { throw new Error('a track that throws'); }, set() {} });
 await pause('the throw lands on a poll and a paint', 300);
-let huds = 0;
 const mo = new MutationObserver(() => huds++);
 mo.observe(document.querySelector('#micbtn'), { childList: true });
 await pause(`roomHears throwing: ${POLLS}`, 1000);
 mo.disconnect();
+console.warn = realWarn;
 t('roomHears throwing: the HUD glyph is not repainted on every poll (and shows not gold)', huds <= 1 && !gold(), `${huds} paints in 1 s; ${state()}`);
+t('...and the broken read is told to the console, once (not at frame rate)', warns === 1, `${warns} warnings in 1.3 s`);
 t('...and the bar fails toward not gold while it throws (its frame loop reads a throw as not hot)', !barGold(), state());
 delete laneTrack.enabled; laneTrack.enabled = realEnabled;
 t('...and the bar\'s frame loop outlives the throw: gold again once the answer is', !!(await tryUntil('the bar gold again', () => gold() && barGold())), state());
@@ -327,10 +349,118 @@ const fresh = document.createElement('div'); fresh.id = 'sec-audio'; document.bo
 globalThis.__builds.audio(fresh);
 const newLvl = fresh.querySelector('[data-lvl]');
 await pause('the old row\'s frame loop sees it detached', 300);
-oldLvl.style.background = 'rgb(1, 2, 3)';   // a sentinel only a live listener on the old row would overwrite
+// sentinels only a live listener would overwrite: the bar's colour (mic, mute, micfloor) and the row's dimming (ptt)
+const oldRow = oldLvl.closest('.sp-row'), newRow = newLvl?.closest('.sp-row');
+for (const el of [oldLvl, newLvl]) el.style.background = 'rgb(1, 2, 3)';
+for (const el of [oldRow, newRow]) el.style.opacity = '0.33';
 ms.toggleMute(true); ms.toggleMute(false); bus.emit('audio:mic', true); bus.emit('audio:micfloor');
-t('the panel rebuilt: the detached row no longer listens (its sentinel stands), the new row does',
-  oldLvl.style.background === 'rgb(1, 2, 3)' && !!newLvl && newLvl !== oldLvl, `old=${oldLvl.style.background}`);
+vc.setPttMode(false); vc.setPttMode(true);   // audio:ptt, both ways
+t('the panel rebuilt: the detached row no longer listens (both sentinels stand)',
+  oldLvl.style.background === 'rgb(1, 2, 3)' && oldRow.style.opacity === '0.33', `old bar=${oldLvl.style.background} old row=${oldRow.style.opacity}`);
+t('...and the new row does (mute repaints its bar, push-to-talk dims it)',
+  !!newLvl && newLvl !== oldLvl && newLvl.style.background !== 'rgb(1, 2, 3)' && newRow.style.opacity === '0.45',
+  `new bar=${newLvl?.style.background} new row=${newRow?.style.opacity}`);
+const lvlNow = newLvl;   // the rows below read the rebuilt panel's bar
+const barGoldNow = () => GOLD.test(lvlNow.style.background);
+
+// ── 9. round five: the gain's real envelope, a mute with the mic off, the synth fallback, the clocks, the menus ─────
+// a gated lane under push-to-talk: the release is a cut, not a 120 ms fade
+await sfu.sfuMic(true); negotiated(pc);
+ms.setPttHeld(true);
+t('setup: gold under the key', !!(await tryUntil('gold under the key', () => gold() && barGoldNow())), state());
+gainLog.length = 0;
+ms.setPttHeld(false);
+const last = gainLog.at(-1) || [];
+t('PTT release cuts the gain: a ramp to 0 within 10 ms, not the voice-activation fade (setTargetAtTime τ 120 ms)',
+  last[0] === 'ramp' && last[1] === 0 && last[2] <= 0.01 && !gainLog.some((g) => g[0] === 'target' && g[1] === 0 && g[2] >= 0.1),
+  JSON.stringify(gainLog));
+t('...and gold ends with it, in the same turn', ms.roomHears() === false && !gold(), state());
+// voice activation: after the hang the gain fades over ~0.83 s (to -60 dB), and sound in the fade is sent: gold holds
+vc.setPttMode(false);
+room = 0.3;
+t('setup: voice activation, speaking: gold', !!(await tryUntil('gold by level', () => gold())), state());
+gainLog.length = 0;
+room = 1e-4;   // under the line, not muted (0 reads as muted)
+// anchored on the event, not a fixed pause (a loaded host stretches timers): the hang has ended when the gate schedules
+// its release fade
+const fadeBegan = await tryUntil('the hang ends and the release fade is scheduled',
+  () => gainLog.some((g) => g[0] === 'target' && g[1] === 0 && g[2] >= 0.1) && performance.now(), { ms: 3000 });
+const sendingAtFade = ms.roomHears();
+t('voice activation: as the release fade begins (the hang over), the lane still counts as sending (sound is still going out)',
+  !!fadeBegan && sendingAtFade === true, `fade=${!!fadeBegan} roomHears=${sendingAtFade} gain=${JSON.stringify(gainLog.slice(-2))}`);
+const closedAt = await tryUntil('the fade closes', () => !gold() && ms.roomHears() === false && performance.now(), { ms: 4000 });
+t('...and gold ends only once the gain has closed (-60 dB, ~0.83 s into the fade: at least 0.6 s after it began)',
+  !!closedAt && !!fadeBegan && closedAt - fadeBegan >= 600, `closed ${closedAt && fadeBegan ? Math.round(closedAt - fadeBegan) : '?'} ms into the fade`);
+room = 0;
+// a moderator's mute with the mic off: the tooltip names it (V can't make the voice reach the room)
+await sfu.sfuMic(false);
+await tryUntil('mic off', () => !mt.micLive());
+bus.emit('your-rights', { role: 'member', muted: { channels: ['voice'], until: null } });
+t('mic off under a moderator mute: the tooltip names the moderator, not "V to talk"',
+  !!(await tryUntil('the tooltip names the moderator', () => /moderator/.test(document.querySelector('#micbtn').title)
+    && !/V to talk|arm push-to-talk/.test(document.querySelector('#micbtn').title))), state());
+// the menus' mic icon: the same glyph as the HUD (slash for a mute, gold while going out)
+await sfu.sfuMic(true); negotiated(pc);
+await tryUntil('mic on, moderator-muted', () => mt.micLive() && slashed());
+t('the menu mic icon shows the moderator mute (slashed), as the HUD does', /x1="7" y1="4"/.test(mt.micGlyph(16)), mt.micGlyph(16));
+bus.emit('your-rights', { role: 'member' });
+vc.setPttMode(true); ms.setPttHeld(true);
+await tryUntil('gold again', () => gold());
+t('...and gold while the voice is going out', mt.micGlyph(16).includes('drop-shadow'), mt.micGlyph(16));
+ms.setPttHeld(false);
+// a synth voice standing in for a mic that couldn't be opened, under push-to-talk with the key up
+synthOn = true; gumFails = true;
+await sfu.sfuMic(false);   // mic off with a provider: the synth lane
+await sfu.sfuMic(true);    // wanted mic, no device to open: the synth provider supplies the lane
+const fallback = await tryUntil('the synth fallback is on the sender', () => pc.tx[0].sender.track === synthTracks.at(-1) && synthTracks.at(-1));
+negotiated(pc);
+playing = true;
+t('synth fallback under PTT, key up, speaking: gold, with the waves, and the tooltip says it is going out (not "hold V")',
+  !!fallback && !!(await tryUntil('the fallback goes gold', () => gold() && waves()
+    && /synthesized voice is going out/.test(document.querySelector('#micbtn').title))), `${state()} key=${mt.micIndicatorState()}`);
+t('...and the VR key is its own (hot-synth)', mt.micIndicatorState() === 'hot-synth', mt.micIndicatorState());
+// a synth frame stamped in the same millisecond as an unmute is the old side's
+const realPerf = performance.now.bind(performance), realDate = Date.now;
+const P = realPerf(), D = realDate();
+playing = false;
+performance.now = () => P; Date.now = () => D;
+heardAt = STAMP();   // the provider's last sound, stamped this very millisecond
+ms.toggleMute(true); ms.toggleMute(false);   // the boundary lands in the same millisecond
+const sameMs = ms.micGateInfo().speaking;
+performance.now = realPerf; Date.now = realDate;
+t('a sound stamped in the same millisecond as an unmute does not count after it', sameMs === false, `speaking=${sameMs}`);
+// the wall clock stepping back does not hold the synth hang open
+playing = true;
+await tryUntil('the synth lane gold again', () => gold());
+playing = false;
+Date.now = () => realDate() - 10000;   // the wall clock steps back 10 s, and runs on from there
+const endsAnyway = await tryUntil('the synth hang ends after a wall-clock step', () => !gold(), { ms: 3000 });
+const stepInfo = `${JSON.stringify(ms.micGateInfo())} heardAt=${heardAt} now=${Date.now()}`;
+Date.now = realDate;
+t('a wall-clock step back does not hold the synth hang open (its times are performance.now)', !!endsAnyway, `${state()} ${stepInfo}`);
+synthOn = false; gumFails = false;
+// the meter stops sampling while its panel is hidden, and survives a throw
+await sfu.sfuMic(false); await sfu.sfuMic(true); negotiated(pc);
+vc.setPttMode(false); room = 0.05;
+await tryUntil('the bar moves', () => parseFloat(lvlNow.style.width) > 0);
+fresh.style.display = 'none';
+await pause('the hidden row sees itself hidden', 300);
+const hiddenW = lvlNow.style.width; room = 0.2;
+await pause(`hidden: the level changes for ${POLLS}`, 400);
+t('the audio panel hidden: its meter stops sampling (the bar does not move)', lvlNow.style.width === hiddenW, `${hiddenW} → ${lvlNow.style.width}`);
+fresh.style.display = '';
+t('...and shown again, it resumes', !!(await tryUntil('the bar moves again', () => lvlNow.style.width !== hiddenW)), lvlNow.style.width);
+room = 0.3;
+await tryUntil('the gate open by level', () => gold());
+gainLog.length = 0;
+analyserThrows = true;
+await pause('the analyser throws for a while', 300);
+t('a level that cannot be read closes the gate: the gain is driven to 0 (not left open)',
+  gainLog.length > 0 && gainLog.at(-1)[1] === 0, JSON.stringify(gainLog.slice(-3)));
+analyserThrows = false; room = 0.02;
+const wAfter = lvlNow.style.width;
+t('the meter outlives a throwing analyser (its loop keeps going)', !!(await tryUntil('the bar moves after the throw', () => lvlNow.style.width !== wAfter)), lvlNow.style.width);
+room = 0;
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);

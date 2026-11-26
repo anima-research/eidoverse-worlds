@@ -1,7 +1,7 @@
 // mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
-import { micOn, toggleMic, setPttHeld, pttHeld, roomHears, muteReason } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld, roomHears, muteReason, laneSynthetic } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -28,11 +28,11 @@ const INK = {
   get slash() { return tok('--dim', '#7d8f8a'); },
 };
 
-const MIC_SVG = (on, hot, muted = false) => {
+const MIC_SVG = (on, hot, muted = false, synth = !on) => {
   const c = hot ? INK.hot : on ? INK.on : INK.off;
   const slash = !on || muted;
-  // hot with the mic off can only be a synth voice (a device lane sends nothing with the mic off): its badge
-  const waves = hot && !on;
+  // the badge of a synthesized voice going out, the mic on (a synth fallback for a mic that failed) or off
+  const waves = hot && synth;
   return `
 <svg viewBox="0 0 32 32" width="26" height="26" style="${hot ? `filter:drop-shadow(0 0 5px ${INK.hot})` : ''}">
   <g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round">
@@ -93,9 +93,9 @@ let micHot = false, micMuted = null, micPaintedOn = null;
 // a mic that is on and silent (gold outranks it, and an off mic is slashed already). Never throws: a throw would
 // freeze the glyph.
 const glyphArgs = (on = micIsOn()) => {
-  let hot = false, reason = null;
-  try { hot = roomHears(); reason = muteReason(); } catch { /* drawn as not hot, not muted */ }
-  return { on, hot, reason, muted: on && !hot ? reason : null };
+  let hot = false, reason = null, synth = false;
+  try { hot = roomHears(); reason = muteReason(); synth = laneSynthetic(); } catch { /* drawn as not hot, not muted */ }
+  return { on, hot, reason, synth, muted: on && !hot ? reason : null };
 };
 // on/off is the LIVE transport's mic state (what V toggles); gold is micstate.js roomHears(), whatever that state is.
 // roomHears() means the server is receiving your voice; whether anyone listens (their consent, distance, an empty room)
@@ -118,14 +118,19 @@ function paint() {
   const on = micIsOn();
   micPaintedOn = on;
   const deaf = on && !receivingVoice();
-  const { hot, reason, muted } = glyphArgs(on);
+  const { hot, reason, synth, muted } = glyphArgs(on);
   micHot = hot; micMuted = reason;   // the poll repaints when the live state leaves what was drawn
-  micBtn.innerHTML = MIC_SVG(on, hot, !!muted);
+  micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
   micBtn.style.opacity = deaf ? '0.55' : '1';
   micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here — none of it goes out to the room'
     : muted ? 'mic on, but muted — none of your voice goes out to the room'
     : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
+      // a mute holds whatever V does: say so rather than offer V
+      : reason === 'moderator' ? 'mic off — and a moderator has muted your voice here: turning the mic on won\'t reach the room'
+      : reason ? 'mic off, and muted — turning the mic on won\'t reach the room'
       : pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
+    // a synth voice standing in for a mic that couldn't be opened: V keys nothing, and it is going out now
+    : hot && synth ? 'mic on, but no microphone is open: your synthesized voice is going out to the room'
     : pttMode() ? (pttHeld() ? 'push-to-talk: V held (release to stop)' + GOLD_NOTE
                              : 'push-to-talk armed — hold V to speak')
     : deaf ? 'mic on — but you are not hearing the room (click the headphones to listen)'
@@ -193,15 +198,17 @@ export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" heigh
  *  synth voice going out with the mic off; muted = on, but a self or moderator mute (the same glyph). ONE read of the
  *  state gives both the key and the glyph (`svg` draws from that read), so the two can't disagree. */
 export const micIndicator = () => {
-  const { on, hot, muted } = glyphArgs();
-  const state = hot ? (on ? 'hot' : 'hot-off') : !on ? 'off' : muted ? 'muted' : 'on';
-  const svg = (size = 64) => MIC_SVG(on, hot, !!muted)
+  const { on, hot, muted, synth } = glyphArgs();
+  const state = hot ? (!on ? 'hot-off' : synth ? 'hot-synth' : 'hot') : !on ? 'off' : muted ? 'muted' : 'on';
+  const svg = (size = 64) => MIC_SVG(on, hot, !!muted, synth)
     .replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
   return { state, svg };
 };
 export const micIndicatorState = () => micIndicator().state;
 export const micIndicatorSvg = (size = 64) => micIndicator().svg(size);
-export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
+/** The menus' mic icon (the ∃ menu, the VR ring): the HUD glyph's own state, gold and slash included, at their size. */
+export const micGlyph = (size = 16) => { const { on, hot, muted, synth } = glyphArgs();
+  return MIC_SVG(on, hot, !!muted, synth).replace('width="26" height="26"', `width="${size}" height="${size}"`); };
 /** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of build mode). */
 export const micGlyphFor = (on, hot) => MIC_SVG(!!on, !!hot);
 export const earGlyphFor = (on) => EAR_SVG(!!on);

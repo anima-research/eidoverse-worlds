@@ -68,7 +68,8 @@ function checkRow(label, hint, checked, onChange) {
 // mic sensitivity: a slider over a LIVE level bar (animates only while its row is in the DOM). The meter wears the mic
 // badge's palette (mictoggle.js INK.hot): gold = your voice is going out to the room (micstate.js roomHears: the server
 // receives it; who listens is not counted; a synth voice included), warm = mic on but nothing is going out (under the floor, past the hang, push-to-talk with the key up,
-// not connected), dark = muted (the bar still moves, so it can be tuned) or mic off (the bar is empty).
+// not connected), dark = muted (on a gated lane the bar still moves, so it can be tuned; a consented raw lane's mute turns
+// its one track off, so the bar reads silence there) or mic off (the bar is empty).
 const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';
@@ -120,21 +121,31 @@ function micFloorRow() {
   };
   meter.onpointerdown = (ev) => { meter.setPointerCapture(ev.pointerId); setFromX(ev); };
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
+  let beatWarnAt = -Infinity;
   const beat = () => {
     if (!row.isConnected) { for (const off of row._unsubs.splice(0)) off(); return; }
+    // hidden (Settings closed, another tab): no sampling for a meter nobody sees; look again 4× a second
+    if (row.checkVisibility && !row.checkVisibility()) { setTimeout(() => requestAnimationFrame(beat), 250); return; }
+    // the next frame first, so a throw below can't end the loop (and with it the detach cleanup above)
+    requestAnimationFrame(beat);
+    try { sample(); } catch (e) {
+      const t = performance.now();
+      if (t - beatWarnAt >= 60000) { beatWarnAt = t; console.warn('[audio panel] the mic meter threw; it reads not gold', e); }
+      if (hot) { hot = false; paintLive(); }
+    }
+  };
+  const sample = () => {
     // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
     // transport's peak crossed the marker with the gate shut), muted or not
     const level = micDeviceLevel();
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
     // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates
-    // a throw here would end this rAF chain with the bar frozen in whatever it showed: read as not hot
-    let next = false;
-    try { next = roomHears(); } catch { /* not gold */ }
+    // roomHears() never throws (micstate.js): a broken read is not gold, and is told to the console
+    const next = roomHears();
     const now = performance.now();
     if (next !== hot) { hot = next; paintLive(); }
     else if (now - lookAt >= 125) { lookAt = now; paintLive(); }
-    requestAnimationFrame(beat);
   };
   requestAnimationFrame(beat);
   return row;
@@ -177,8 +188,8 @@ function paint(body) {
   // PTT sits between the mic switch and the sensitivity floor because it decides whether the floor is in use
   body_.append(checkRow('push-to-talk',
     'transmit only while V is held down — replaces voice activation, so the ' +
-    'sensitivity floor below is not used while this is on. Release V and your voice ' +
-    'stops going out at once (the gold goes with it); only the sound you were making fades out briefly.',
+    'sensitivity floor below is not used while this is on. Release V and your mic is cut off at once ' +
+    '(within 5 ms), and the gold goes with it. A synthesized voice is not keyed by V.',
     pttMode(), (on) => setPttMode(on)));
   const floorRow = micFloorRow();
   body_.append(floorRow);
