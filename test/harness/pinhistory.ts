@@ -10,7 +10,7 @@
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
 //     a branch that brought the file new: its latest change is judged even though the base never had it.
 // The version rules (sameVersionChanged, engine-check EN4) judge both, each walked back along first parents to the newest
-// version that names one (see earlier). The changelog rule (unacknowledged) judges both on
+// version that names one (see earlier); a base that is HEAD itself is no base for them (versionRevs). The changelog rule (unacknowledged) judges both on
 // main itself (the base is HEAD), with no base, or with a base that isn't an ancestor of HEAD; on a branch whose base is
 // an ancestor of HEAD it judges only the base (see unacknowledged).
 // @ts-nocheck
@@ -105,9 +105,12 @@ function shallowOf(root: string) {
 
 /** The version before the one a revision holds, along first parents: {older, cut}. older is the parent of the newest commit
  *  (at or before rev) that changed the files, or null where there is none: the files' first version or a root commit (a
- *  real start: cut false), or a commit a shallow clone cut its history at (the history is missing: cut true). */
+ *  real start: cut false), or a commit a shallow clone cut its history at (the history is missing: cut true), including an
+ *  edge where the files are absent (deleted there), which no path-limited log can see: then the first-parent chain's end is checked. */
 function olderOf(root: string, rev: string, files: string[], shallow: Set<string>) {
-  const c = git(root, ["log", "--first-parent", "-n", "1", "--format=%H", rev, "--", ...files])?.trim(); if (!c) return { older: null, cut: false };
+  const c = git(root, ["log", "--first-parent", "-n", "1", "--format=%H", rev, "--", ...files])?.trim();
+  if (!c) { if (!shallow.size) return { older: null, cut: false };   // no commit changed the files: their first version, unless a shallow edge cut that history off
+    const chain = (git(root, ["rev-list", "--first-parent", rev]) ?? "").trim().split("\n"); return { older: null, cut: shallow.has(chain[chain.length - 1]) }; }
   const p = git(root, ["rev-parse", "--verify", "-q", `${c}^1`])?.trim() || null;
   return { older: p, cut: !p && shallow.has(c) };
 }
@@ -118,6 +121,18 @@ const loaded = (root: string, revs: { rev: string; why: string }[], files: strin
 
 /** A JSON object that isn't an array: the only shape that can name a version. */
 const isObj = (x: any) => x != null && typeof x === "object" && !Array.isArray(x);
+
+/** The versions the version rules start from: the base and the previous version, except a base that is HEAD itself (on main,
+ *  --base HEAD): it is the commit the working tree came from, so it judges nothing a version before it wouldn't, and as a
+ *  hit it would stand in for a version a shallow edge cut off. Where the previous version is HEAD (an uncommitted change),
+ *  HEAD stays, as the previous version. */
+function versionRevs(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
+  const { base, prev } = revisions(root, files, readNow, argv); const head = git(root, ["rev-parse", "HEAD"])?.trim() ?? null;
+  const revs: { rev: string; why: string }[] = [];
+  if (base && base !== head) revs.push({ rev: base, why: "the base" });
+  if (prev && !revs.some((o) => o.rev === prev)) revs.push({ rev: prev, why: "the previous version" });
+  return { base, prev, revs };
+}
 
 /** EN4's sense of "names a version": a file that is an object with at least one key (a version). */
 const namesAny = (files: string[]) => (was: Record<string, any>) => files.some((f) => isObj(was[f]) && Object.keys(was[f]).length > 0);
@@ -134,7 +149,7 @@ function walkFrom(root: string, start: string, why: string, files: string[], nam
   for (;;) { const r = read(rev, why);
     if (names(r.was)) return { hit: { rev, why: passed.length ? `${why}, walked back past ${passed.join(", ")}, which name none` : why, was: r.was }, unnamed, cut: false };
     if (r.present.length) unnamed.push(rev); passed.push(rev.slice(0, 8));
-    const o = olderOf(root, rev, files, shallow); if (!o.older) return { hit: null, unnamed, cut: o.cut && r.present.length > 0 }; rev = o.older; }
+    const o = olderOf(root, rev, files, shallow); if (!o.older) return { hit: null, unnamed, cut: o.cut && unnamed.length > 0 }; rev = o.older; }   // cut while it had passed a file
 }
 
 /** Each revision read once per rule (strictly about blobs; leniently about JSON: see load). */
@@ -157,7 +172,7 @@ function walked(root: string, files: string[], revs: { rev: string; why: string 
  *  none" in its detail; with cut (a shallow clone's edge stopped the walk), the row is red. `names` says what naming a version is (default: a file that
  *  is an object with a key). */
 export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[], names = namesAny(files)) {
-  const { base, prev, revs } = revisions(root, files, readNow, argv);
+  const { base, prev, revs } = versionRevs(root, files, readNow, argv);
   return { base, prev, ...walked(root, files, revs, names, reader(root, files)) };
 }
 
@@ -235,7 +250,7 @@ export function unacknowledged(root: string, files: string[], changelog: string,
  *  earlier blob git can't read, since what it named is unknown. Callers catch a throw as one red row (TRV, LWV, EN4; N10). */
 export function sameVersionChanged(root: string, file: string, readNow: (f: string) => string | null, laws: { law: string; versionOf: (x: any) => any; data: string[] }[], norm: (field: string, x: any) => any = (_f, x) => x, argv?: string[]) {
   const t = readNow(file); let now: any; try { now = t == null ? null : JSON.parse(t); } catch (err: any) { throw new Error(`pinhistory: ${file} as it is now is not valid JSON (${err?.message ?? err})`); }
-  const { revs } = revisions(root, [file], readNow, argv); const read = reader(root, [file]);
+  const { revs } = versionRevs(root, [file], readNow, argv); const read = reader(root, [file]);
   const j = (f: string, x: any) => JSON.stringify(norm(f, x));
   const out: { rev: string; law: string; version: string; field: string }[] = [], judged: string[] = [], unjudged: string[] = [], unheld: string[] = [], unnamed = new Set<string>();
   for (const L of laws) { const w = walked(root, [file], revs, (was) => isObj(was[file]) && typeof L.versionOf(was[file]) === "string", read); w.unnamed.forEach((u) => unnamed.add(u));
