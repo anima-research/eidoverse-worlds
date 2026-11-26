@@ -112,6 +112,9 @@ const res = () => M.residencyDebug();
 const disposals = (o: any) => { const n: number[] = []; o?.traverse((m: any) => { if (m.isMesh && !m.userData.meshPart) n.push(m.userData.disposed ?? 0); }); return n; };
 const discarded = (o: any) => { const n = disposals(o); return n.length > 0 && n.every((k) => k === 1); };
 const untouched = (o: any) => { const n = disposals(o); return n.length > 0 && n.every((k) => k === 0); };
+/** count three's object 'dispose' on the meshes of an object the stub loader did not make (a stand-in's box, an
+ *  Empty's marker), as the stub loader counts its clones' */
+const watch = (o: any) => { o?.traverse((m: any) => { if (m.isMesh && !m.userData.counted) { m.userData.counted = true; m.addEventListener('dispose', () => { m.userData.disposed = (m.userData.disposed ?? 0) + 1; }); } }); return o; };
 /** the last clone the loader handed out for `id`'s lib */
 const lastClone = (id: string) => [...stub.clones].reverse().find((c: any) => String(c.userData.glbKey).startsWith(lib(id)));
 
@@ -411,6 +414,39 @@ console.log('\n  same-tier keeps — shared libs, in-flight interleavings, the p
   check('R8c swap with a mesh component: the old model object is discarded, the mesh component is not and rides the new one',
     !!part && obj('mp') !== MP0 && discarded(MP0) && !(part.userData.disposed > 0) && part.parent === obj('mp'),
     JSON.stringify({ part: !!part, swapped: obj('mp') !== MP0, old: disposals(MP0), partDisposed: part?.userData.disposed ?? 0, onNew: part?.parent === obj('mp') }));
+  // the stand-ins (11-26 second review: makePlaceholder puts a new Mesh on the session-long _phGeo/_phMat for every
+  // far join and every demote, and each promote, retire or cleared reservation dropped it undiscarded: +16 listeners on
+  // _phMat per walk-away/walk-back of the loft, live)
+  spawnAt('pa', 400); await settle();   // far: a reservation with a sized stand-in, nothing loading
+  const PA0 = watch(obj('pa'));
+  check('R9 setup: a far join stands a placeholder in', PA0?.userData.placeholder === true && untouched(PA0), JSON.stringify(PA0?.userData));
+  place('pa', 5); await beat(); drain();
+  check('R9a promote: the model that lands discards the stand-in it replaces', obj('pa') !== PA0 && !obj('pa')?.userData.placeholder && discarded(PA0), JSON.stringify(disposals(PA0)));
+  const PA1 = obj('pa'); place('pa', 400); await beat();
+  const PA2 = watch(obj('pa'));
+  check('R9b demote then promote: the demote\'s stand-in is discarded in its turn', PA2?.userData.placeholder === true && discarded(PA1), JSON.stringify(disposals(PA1)));
+  place('pa', 5);
+  await beat(); drain();
+  check('R9b\' …on the promote', !obj('pa')?.userData.placeholder && discarded(PA2), JSON.stringify(disposals(PA2)));
+  spawnAt('pr', 400); await settle();
+  const PR0 = watch(obj('pr'));
+  door('delete', { id: 'pr' }); await settle();
+  check('R9c retire of a stand-in: its box is discarded', PR0?.userData.placeholder === true && !stub.entities.has('pr') && discarded(PR0), JSON.stringify(disposals(PR0)));
+  // an Empty's edit marker (one Mesh on the session-long _emGeo/_emMat per Empty, added and removed with build mode)
+  door('create', { id: 'em', components: { transform: { pos: [2, 0, 0] } } }); await settle();
+  bus.emit('build-mode', true);
+  const EM = (() => { let m: any = null; obj('em')?.traverse((n: any) => { if (n.userData?.emptyMarker) m = n; }); return watch(m); })();
+  bus.emit('build-mode', false);
+  check('R9d an Empty\'s marker leaving with build mode is discarded', !!EM && !EM.parent && discarded(EM), JSON.stringify({ marker: !!EM, d: disposals(EM) }));
+  // the reservation cleared when the fold lost the thing while its load flew (site 2: no public path reaches it with the
+  // gen unmoved, so the fold is edited behind the realizer's back here, last in this section)
+  spawnAt('cr', 400); await settle();
+  const CR0 = watch(obj('cr'));
+  stub.setHold(true); place('cr', 5); await beat();
+  delete S.state.st.entities['cr'];
+  for (const x of stub.held.splice(0)) x.release(); stub.setHold(false); await settle(); drain();
+  check('R9e a cleared reservation: the stand-in and the clone nobody wears are both discarded (sites 2 and its stand-in)',
+    CR0?.userData.placeholder === true && !stub.entities.has('cr') && discarded(CR0) && discarded(lastClone('cr')), JSON.stringify({ standIn: disposals(CR0), clone: disposals(lastClone('cr')) }));
   check('4c: no realizer error reported', stub.reports.length === 0, stub.reports.map((r: any) => `${r.where}: ${r.e?.message ?? r.e}`).join(' | '));
 }
 
