@@ -732,7 +732,7 @@ await C("D13", "a pin break is acknowledged in the record, not just against the 
   const F = "spec/registry-pin.json"; const now = (f: string) => (fs.existsSync(path.join(T, f)) ? read(f) : null);
   const r = PH.unacknowledged(T, [F], "spec/REGISTRY-CHANGELOG.md", now, (was, is) => CAT.pinBreakList(was[F] ?? {}, is[F] ?? {}).map((b: any) => b.text), argv);
   return [r.judged.length >= 1 && !r.out.length, { judged: r.judged, base: r.base, unacknowledged: r.out.slice(0, 8) }]; });
-await C("D13b", "on a branch the changelog rule judges what reaches main, the net change against the base, and nothing of the branch's own steps (pinhistory unacknowledged): main's pin goes A → B → C with a line per step, and a branch forked at A that merges it with docs, with its own acknowledged re-pin, or with an acknowledged change made inside the merge owes nothing (judged from its pre-merge pin, main's steps compose into A → C, which no single line names: #363 11-25); nor under CI's merge ref, merged with main or never; nor after main changed a key and then removed it, or renamed a key of a map pinned whole; nor for a branch's intermediate steps on what main never had (a key, a nested field, a new file, inside a merge of main or by a side branch: they never reach main), and a pin file the base lacks still counts as judged (#260's new pins). Still caught with no line: a branch's net break of a main path after its merge; on main itself (the base is HEAD) main's own merge of a PR; and, with a --base that isn't an ancestor of HEAD (a sibling branch that has the change and its line), the branch's own change, judged from its previous version as before. A base whose tree has the pin's path but no pin in it (JSON null, or a blob a partial clone lacks) is refused, never counted as new. The scratch repos fix their own line endings (core.autocrlf false), so a box's git config can't turn a clean checkout into an edit", () => {
+await C("D13b", "on a branch the changelog rule judges what reaches main, the net change against the base, and nothing of the branch's own steps (pinhistory unacknowledged): main's pin goes A → B → C with a line per step, and a branch forked at A that merges it with docs, with its own acknowledged re-pin, or with an acknowledged change made inside the merge owes nothing (judged from its pre-merge pin, main's steps compose into A → C, which no single line names: #363 11-25); nor under CI's merge ref, merged with main or never; nor after main changed a key and then removed it, or renamed a key of a map pinned whole; nor for a branch's intermediate steps on what main never had (a key, a nested field, a new file, inside a merge of main or by a side branch: they never reach main), and a pin file the base lacks still counts as judged (#260's new pins). Still caught with no line: a branch's net break of a main path after its merge; on main itself (the base is HEAD) main's own merge of a PR; and, with a --base that isn't an ancestor of HEAD (a sibling branch that has the change and its line), the branch's own change, judged from its previous version as before. A pin the branch committed and then discarded is never read, even one that isn't JSON: the versions to judge are chosen first. A version judged whose tree has the pin's path but no pin in it (JSON null, text that isn't JSON, or a blob a partial clone lacks, at the base or on main at the previous version) is refused, naming the file and the revision, never counted as new. The scratch repos fix their own line endings (core.autocrlf false), so a box's git config can't turn a clean checkout into an edit", () => {
   const repo = (tag: string) => {
     const R = scratch(`d13b-${tag}`) + "repo"; fs.mkdirSync(R);
     const run = (a: string[]) => require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" });
@@ -760,6 +760,7 @@ await C("D13b", "on a branch the changelog rule judges what reaches main, the ne
   };
   const docs = (r: any) => { r.put("notes.md", "one\n"); r.commit("branch: docs"); };
   const res: Record<string, any> = {};
+  const refusal = (f: () => any, re: RegExp) => { try { return { refused: false, ...f() }; } catch (err: any) { const m = String(err?.message ?? err); return { refused: re.test(m), message: m, out: [], judged: [] }; } };   // refused with these words, or not refused
   { const { r, main } = forked("docs", docs); r.g("merge", "-q", "--no-ff", "--no-edit", "main"); r.put("notes.md", "two\n"); r.commit("docs"); res.docs = r.judge(main);
     r.pin({ x: "D", y: "1", o: { a: "1" } }); r.commit("branch: x C → D"); res.after = r.judge(main); }
   { const { r, main } = forked("repin", (r) => { r.pin({ x: "A", y: "2", o: { a: "1" } }); r.log(line("y", "1", "2")); r.commit("branch: y, acknowledged"); });
@@ -769,7 +770,8 @@ await C("D13b", "on a branch the changelog rule judges what reaches main, the ne
     r.pin({ x: "A" }); r.log(line("y", "1", "2"), `  - y: "2" → gone\n`); const main = r.commit("main: y goes");
     r.g("checkout", "-q", "br"); r.g("merge", "-q", "--no-ff", "--no-edit", "main"); res.mainRemoved = r.judge(main); }
   { const r = repo("order"); r.pin({ v: { old: 0, b: 1 } }); r.log(); r.commit("A"); r.g("checkout", "-q", "-b", "br"); docs(r);   // main renames a key of a map pinned whole
-    r.g("checkout", "-q", "main"); r.pin({ v: { m: 0, b: 1 } }); r.log(`  - v: {"old":0,"b":1} → {"m":0,"b":1}\n`); const main = r.commit("main: old → m");   // (roles.rank's vocabulary, #363)
+    const ren = `  - v: {"old":0,"b":1} → {"m":0,"b":1}\n`; r.g("checkout", "-q", "main"); r.pin({ v: { m: 0, b: 1 } }); r.log(ren); r.commit("main: old → m");   // (roles.rank's vocabulary, #363)
+    r.pin({ v: { m: 0, b: 2 } }); r.log(ren, `  - v: {"m":0,"b":1} → {"m":0,"b":2}\n`); const main = r.commit("main: b 1 → 2");   // a second step, so the old rule composes them into a rename no line names
     r.g("checkout", "-q", "br"); r.g("merge", "-q", "--no-ff", "--no-edit", "main");
     const whole = (was: any, is: any) => { const w = was["pin.json"] ?? {}, n = is["pin.json"] ?? {}; return Object.keys(w).filter((k) => JSON.stringify(w[k]) !== JSON.stringify(n[k])).map((k) => `${k}: ${JSON.stringify(w[k])} → ${JSON.stringify(n[k])}`); };
     res.keyOrder = r.judge(main, whole); }
@@ -777,11 +779,20 @@ await C("D13b", "on a branch the changelog rule judges what reaches main, the ne
     r.g("checkout", "-q", "main"); r.g("checkout", "-q", "-b", "br"); r.pin({ x: "B" }); r.commit("branch: x A → B, no line"); res.notAncestor = r.judge(z); }   // --base a sibling, not an ancestor: judged as main's code did
   { const r = repo("nullbase"); r.put("pin.json", "null\n"); r.log(); const main = r.commit("main: a pin.json of JSON null");   // the base has the path but no pin in it
     r.g("checkout", "-q", "-b", "br"); r.pin({ x: "A" }); r.commit("branch: a pin");
-    try { res.nullBase = { refused: false, ...r.judge(main) }; } catch (err: any) { res.nullBase = { refused: /no pin could be read/.test(String(err?.message)), out: [], judged: [] }; } }
+    res.nullBase = refusal(() => r.judge(main), new RegExp(`pin\\.json at ${main.slice(0, 8)} \\(the base\\) is JSON null`)); }
   { const r = repo("noblob"); r.pin({ x: "A" }); r.log(); const main = r.commit("main: x A");   // a partial clone's base: the tree names the pin, its blob is gone
     r.g("checkout", "-q", "-b", "br"); r.pin({ x: "B" }); r.commit("branch: x A → B, no line");
     const blob = r.g("rev-parse", `${main}:pin.json`); fs.rmSync(path.join(r.R, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
-    try { res.noBlob = { refused: false, ...r.judge(main) }; } catch (err: any) { res.noBlob = { refused: /no pin could be read/.test(String(err?.message)), out: [], judged: [] }; } }
+    res.noBlob = refusal(() => r.judge(main), new RegExp(`pin\\.json at ${main.slice(0, 8)} \\(the base\\) is in its tree but can't be read: git: .+fetch`, "s")); }   // git's own words, then what to do
+  { const r = repo("discarded"); r.pin({ v: "A" }); r.log(); const main = r.commit("main: v A");   // a branch commits an unfinished pin, then puts main's back: what reaches main is main's pin
+    r.g("checkout", "-q", "-b", "br"); r.put("pin.json", "{unfinished\n"); r.commit("branch: a pin half written"); r.pin({ v: "A" }); r.put("notes.md", "one\n"); r.commit("branch: the pin put back, and docs");
+    try { res.discarded = r.judge(main); } catch (err: any) { res.discarded = { threw: String(err?.message ?? err), out: [], judged: [] }; } }
+  { const r = repo("badbase"); r.put("pin.json", "{unfinished\n"); r.log(); const main = r.commit("main: a pin that isn't JSON");   // the base itself can't be parsed: refused, naming the file and the revision
+    r.g("checkout", "-q", "-b", "br"); r.pin({ x: "A" }); r.commit("branch: a pin");
+    res.badBase = refusal(() => r.judge(main), new RegExp(`pin\\.json at ${main.slice(0, 8)} \\(the base\\) is not valid JSON`)); }
+  { const r = repo("noprevblob"); r.pin({ x: "A" }); r.log(); const a = r.commit("main: x A"); r.pin({ x: "B" }); r.commit("main: x A → B, no line");   // on main, the previous version's blob is gone:
+    const blob = r.g("rev-parse", `${a}:pin.json`); fs.rmSync(path.join(r.R, ".git", "objects", blob.slice(0, 2), blob.slice(2)));        // refused, never read as "no pin then"
+    res.noPrevBlob = refusal(() => r.judge(r.g("rev-parse", "HEAD")), new RegExp(`pin\\.json at ${a.slice(0, 8)} \\(the previous version\\) is in its tree but can't be read`)); }
   { const { r, main } = forked("inmerge", docs); r.mergeEdit("main", () => { r.pin({ x: "Q", y: "1", o: { a: "1" } }); r.log(AB, BC, line("x", "C", "Q")); }); res.inMerge = r.judge(main); }
   { const { r, main } = forked("key", (r) => { r.pin({ x: "A", y: "1", o: { a: "1" }, z: "1" }); r.commit("branch: z, new"); });
     r.mergeEdit("main", () => r.pin({ x: "C", y: "1", o: { a: "1" }, z: "2" })); res.key = r.judge(main); }
@@ -806,8 +817,8 @@ await C("D13b", "on a branch the changelog rule judges what reaches main, the ne
   const has = (k: string, t: string) => res[k].out.some((o: any) => o.text === t);
   const clean = (k: string) => !res[k].out.length && res[k].judged.length >= 1;
   const held = { docs: clean("docs"), repin: clean("repin"), inMerge: clean("inMerge"), ciRef: clean("ciRef"), ciNever: clean("ciNever"), mainRemoved: clean("mainRemoved"), keyOrder: clean("keyOrder"),
-    key: clean("key"), field: clean("field"), file: clean("file"), side: clean("side"), after: has("after", 'x: "C" → "D"'), notAncestor: has("notAncestor", 'x: "A" → "B"'), nullBase: res.nullBase.refused, noBlob: res.noBlob.refused, onMain: has("onMain", 'x: "C" → "E"') };
-  return [Object.values(held).every(Boolean), { held, out: Object.fromEntries(Object.entries(res).map(([k, v]) => [k, v.out])) }]; });
+    key: clean("key"), field: clean("field"), file: clean("file"), side: clean("side"), after: has("after", 'x: "C" → "D"'), notAncestor: has("notAncestor", 'x: "A" → "B"'), nullBase: res.nullBase.refused, noBlob: res.noBlob.refused, badBase: res.badBase.refused, noPrevBlob: res.noPrevBlob.refused, discarded: !res.discarded.threw && clean("discarded"), onMain: has("onMain", 'x: "C" → "E"') };
+  return [Object.values(held).every(Boolean), { held, out: Object.fromEntries(Object.entries(res).map(([k, v]) => [k, v.threw ?? v.message ?? v.out])) }]; });
 await C("D13c", "the version rule judges the previous version whole (pinhistory sameVersionChanged): a branch that put L1 at v2 and then changed v2's data inside its merge of main, where main moved L2 on, is caught (a version main never had, which only the previous version can judge)", () => {
   const R = scratch("d13c") + "repo"; fs.mkdirSync(R);
   const g = (...a: string[]) => require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" });
