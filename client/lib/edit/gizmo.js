@@ -54,7 +54,10 @@ function ensure() {
   helper = controls.getHelper();
   helper.name = 'edit-gizmo';
   scene.add(helper);
-  controls.addEventListener('dragging-changed', (e) => (e.value ? beginDrag() : endDrag()));
+  // a release re-seats the controls at once (sync): a tool key during the drag is held off until it ends (sync returns early
+  // while one is in flight), and the next press must not come before the four-frame sync with the new tool and the old seat,
+  // a pivot drag on the thing itself measuring a proxy left elsewhere (bot #352 `41`)
+  controls.addEventListener('dragging-changed', (e) => (e.value ? beginDrag() : (endDrag(), sync())));
   controls.addEventListener('objectChange', onChange);
   setPointerVeto(() => !!controls?.axis || !!controls?.dragging);
   // Ctrl held = snapping (Blender's Ctrl, Maya's grid): 10 cm, 5°, 0.1×

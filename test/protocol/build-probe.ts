@@ -22,7 +22,8 @@
 //       drag released where it began puts back what it took from an older drag's refusal, and so does an over-cap gizmo
 //       drag (which holds nothing, and lets its hint show while held); a gizmo release writes a follower whose object was
 //       swapped mid-drag where the drag put it; a follower whose object goes away mid-drag makes either release write
-//       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30); a gizmo drag held still keeps
+//       nothing (MM34); a pivot-tool drag holds nothing against an older lock question (MM30), and a press after a tool key mid-drag drags the
+//       new tool's seat (MM39); a gizmo drag held still keeps
 //       relaying (MM31); a selection change before the travel drops the press, a dropped follower too (MM32, MM36); a planar group drag goes no further
 //       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
 //       nothing there (MM12), and not where a ray first meets it beyond reach (MM35); a press
@@ -812,6 +813,28 @@ try {
       await page(`(await import('/lib/edit/build.js')).setTool('move'); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' }); return true;`);
       await unpivot();
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a tool key during a gizmo drag takes effect when it ends: the release re-seats the controls at once, so a press on the
+    // still-visible handle right after it (before the four-frame sync) is a pivot drag on the proxy seated at the box, never
+    // one on the box itself measuring a proxy left on another thing (bot #352 `41`; the cold read's repro). The pivot it
+    // writes is the control's (MM30)
+    { await page(`(await import('/lib/edit/selection.js')).set(['mm-tbl']); (await import('/lib/edit/build.js')).setTool('pivot'); return true;`);
+      const onT = await waitFor(`globalThis.__gizmo?.().attached === 'mm-tbl' && globalThis.__gizmo?.().viaProxy === true`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const onB = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box' && globalThis.__gizmo?.().viaProxy === false`);
+      const seat = await evalJson(`Promise.all([import('/lib/world.js')]).then(([w]) => ({ proxy: globalThis.__gizmo().proxyPos, tbl: w.entities.get('mm-tbl').position.toArray(), box: w.entities.get('mm-box').position.toArray() }))`);
+      check("MM39 (setup) the proxy left seated on the table by the pivot tool, then the move gizmo on the box", onT && onB && near(seat?.proxy, seat?.tbl, 0.05) && !near(seat?.proxy, seat?.box, 0.05), seat);
+      // in one turn, no frame between: a move drag begins, P is pressed, it ends; the handle is pressed again and let go
+      const vp = await page(`const b = await import('/lib/edit/build.js'); const c = globalThis.__gizmo().controls;
+        c.dispatchEvent({ type: 'dragging-changed', value: true }); b.setTool('pivot'); c.dispatchEvent({ type: 'dragging-changed', value: false });
+        c.dispatchEvent({ type: 'dragging-changed', value: true }); const vp = globalThis.__gizmo().viaProxy; c.dispatchEvent({ type: 'dragging-changed', value: false }); return vp;`);
+      await frames(3); await caughtUp();
+      const P1 = pivotOn(), same = JSON.stringify(P1) === JSON.stringify(P_ctrl) || near(P1, P_ctrl, 0.005);
+      check("MM39 a press right after a gizmo drag that P was pressed during is a pivot drag on the proxy at the box, and writes the box's own pivot (the control's), not the table's place",
+        vp === true && same, { vp, pivot: P1, control: P_ctrl });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`); await unpivot();
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
 
     // a gizmo group drag whose handle is held still keeps its claims: TransformControls sends objectChange only when the pointer
