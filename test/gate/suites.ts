@@ -490,8 +490,10 @@ export function localImports(f: string, seen = new Set<string>()): Set<string> {
 }
 
 /** The shell's environment as a suite inherits it: a live server's address or credential exported there is dropped, so a
- *  suite that starts its own server unless WORLD_URL names one (knockdown) never reaches a live door from the gate (G4-103). */
-export const LIVE_TARGET = ["WORLD_URL", "JOIN_TOKEN", "WORLD_TOKEN", "WORLD", "PORT"];
+ *  suite that starts its own server unless WORLD_URL names one (knockdown) never reaches a live door from the gate (G4-103).
+ *  These are the names a gated suite reads for one; JOIN_KEY too, the door key an owned world otherwise takes from the
+ *  shell (probe-harness ownedWorld, boot-check: review #375 27). */
+export const LIVE_TARGET = ["WORLD_URL", "JOIN_TOKEN", "WORLD_TOKEN", "WORLD", "PORT", "JOIN_KEY"];
 export const inheritedEnv = (env: Record<string, string | undefined>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).filter(([k, v]) => v !== undefined && !LIVE_TARGET.includes(k.toUpperCase()))) as Record<string, string>;
 
@@ -546,10 +548,18 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
     record() { return dropped.map((l) => l + "\n").join("") + out; },
   };
 }
-/** `doc` with the lines between `begin` and `end` replaced by `body`, or null when it has no such block (run.ts --write-manifest). */
-export function spliceGenerated(doc: string, begin: string, end: string, body: string): string | null {
+/** Where `doc`'s one generated block lies (just past `begin`, and at `end`), or null when it has none, or more than one
+ *  marker of either kind: a pasted second block, or one inside another, and which to rewrite or check would be a guess
+ *  (review #375 15). run.ts --check-manifest and --write-manifest both read it from here. */
+export function generatedBlock(doc: string, begin: string, end: string): { a: number; b: number } | null {
   const a = doc.indexOf(begin), b = doc.indexOf(end);
-  return a < 0 || b < a ? null : doc.slice(0, a + begin.length) + "\n" + body.trim() + "\n" + doc.slice(b);
+  return a < 0 || b < a || doc.includes(begin, a + 1) || doc.includes(end, b + 1) ? null : { a: a + begin.length, b };
+}
+/** `doc` with the lines between `begin` and `end` replaced by `body`, or null when it has no one such block (run.ts
+ *  --write-manifest). A CRLF doc (a Windows checkout under core.autocrlf) gets CRLF lines, so the file keeps one ending (review #375 14). */
+export function spliceGenerated(doc: string, begin: string, end: string, body: string): string | null {
+  const at = generatedBlock(doc, begin, end), nl = doc.includes("\r\n") ? "\r\n" : "\n";
+  return at ? doc.slice(0, at.a) + nl + body.trim().replace(/\r?\n/g, nl) + nl + doc.slice(at.b) : null;
 }
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
  *  (where checks print what they saw), at most `per` each, so a FAIL says WHAT it saw as well as which row failed. */

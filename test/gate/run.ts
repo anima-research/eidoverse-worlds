@@ -35,7 +35,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
-import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, inheritedEnv, laneOf, localImports, spliceGenerated, suitePath } from "./suites.ts";
+import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, generatedBlock, inheritedEnv, laneOf, localImports, spliceGenerated, suitePath } from "./suites.ts";
 import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
 
 
@@ -111,9 +111,9 @@ function manifest() {
 const DOC = ENGINE + "docs/contributing/GATE-MANIFEST.md", BEGIN = "<!-- BEGIN GENERATED: bun test/gate/run.ts --manifest -->", END = "<!-- END GENERATED -->";
 function manifestDrift(): string | null {
   if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} is missing`;
-  const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
-  if (a < 0 || b < a) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`;
-  return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
+  const t = fs.readFileSync(DOC, "utf8"), at = generatedBlock(t, BEGIN, END);
+  if (!at) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block, or more than one (${BEGIN} … ${END})`;
+  return t.slice(at.a, at.b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
      : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --write-manifest rewrites it)`;
 }
 
@@ -191,7 +191,7 @@ if (argv.includes("--library")) {
 }
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
 if (argv.includes("--write-manifest")) { const t = fs.existsSync(DOC) ? fs.readFileSync(DOC, "utf8") : "", next = spliceGenerated(t, BEGIN, END, manifest());
-  if (next === null) { console.error(`--write-manifest: ${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`); process.exit(1); }
+  if (next === null) { console.error(`--write-manifest: ${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block, or more than one (${BEGIN} … ${END})`); process.exit(1); }
   fs.writeFileSync(DOC, next); console.log(`wrote ${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table`); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/contributing/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
 const laneArg = valueOf("--lane");
