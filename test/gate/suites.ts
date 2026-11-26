@@ -158,7 +158,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["debug-tabs", "client/debug-tabs-test.ts", 1], // the debug window builds only the chosen tab's groups (revived D6)
   ["governor-xr", "client/governor-xr-test.ts", 1], // in a headset the frame governor never moves the pixel ratio (revived D6)
   ["xr-entry-effects", "client/xr-entry-effects-test.mjs", 1], // the XR entry effect owner, executed: entering applies each effect once, exit undoes it (#197 review)
-  ["xr-session-lifecycle", "client/xr-session-lifecycle-test.mjs", 1], // the XR session clock's lifecycle, executed (#197 Blocker 2)
+  ["xr-session-lifecycle", "client/xr-session-lifecycle-test.mjs", 1], // the XR session clock's lifecycle, executed (#197 Blocker 2); a frame waiting on an ended session is handed to the window clock, once
   ["xrpanels", "client/xrpanels-test.ts", 1], // the VR seam of the schema factory: panels as headset quads
   ["xrpass", "client/xrpass-test.mjs", 1], // stereo cameras get their own chain map (xrpass.js), once, even when three's rebuild re-enters
   ["xrpixelratio", "client/xrpixelratio-test.mjs", 1], // while presenting, setPixelRatio is deferred and applied at exit (xrpixelratio.js, #32)
@@ -391,7 +391,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["micgate-onset", "client/micgate-onset-test.mjs", 1], // the onset gate on a held clock: one tick opens, the hang holds and ends, a restarted gate starts closed
   ["mictoggle-glyph", "client/mictoggle-glyph-test.mjs", 3], // the HUD glyph is gold on micstate roomHears (the gate's side here): the line, the hang, PTT, a consented raw lane, a synth voice
   ["mic-meter-gate", "client/mic-meter-gate-test.mjs", 1], // the sensitivity bar is gold on the gate's decision (its threshold and hang, a synth voice), still moves while muted, and is empty with the mic off
-  ["mic-room-hears", "client/mic-room-hears-test.mjs", 1], // gold means your voice is going out to the room, through the real transport: an unconnected, unnegotiated or failed leg is not gold, mute and a moderator's mute show as mute (HUD and in-VR indicator), a synth voice with the mic off is gold off the provider's own record and wears sound waves, the transport's off outlasts an unmute, and every paint (a PTT release on V or the controller, V with no synth) draws the live state
+  ["mic-room-hears", "client/mic-room-hears-test.mjs", 1], // gold means your voice is going out to the room, through the real transport: an unconnected, unnegotiated or failed leg is not gold, mute and a moderator's mute show as mute (HUD and in-VR indicator), a synth voice with the mic off is gold off the provider's own record and wears sound waves, the transport's off outlasts an unmute, and every paint (a PTT release on V or the controller, V with no synth) draws the live state; leaving VR mid-gold, a throwing answer and a rebuilt panel leave no stale gold
   ["stt-ptt", "client/stt-ptt-test.mjs", 1], // captions under push-to-talk: nothing posts with the key up; a release still flushes what was heard while held
   ["micstate", "client/micstate-test.mjs", 1], // every micstate export executed; releaseMicrophone keeps its lanes; the SFU hook is the one mic transport
   ["voice-wire", "shared/voice-wire-test.ts", 1], // voice state (mic, hear) on the pose wire, shared with everyone in the world per the owner's ruling; a late joiner sees it

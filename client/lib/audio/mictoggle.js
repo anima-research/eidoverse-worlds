@@ -155,9 +155,12 @@ function paint() {
 setInterval(() => {
   // gold = micstate.js roomHears(): the gate's decision (threshold, hang, PTT, mute, a raw lane, a synth voice), the
   // lane's track, the transport carrying it and the moderator mute; never a level or a mic state of our own
-  // the mic's on/off is in the key too: the transport can turn it off with no 'audio:mic' event (a swap, a replay)
-  let hot = false, muted = null, on = false;
-  try { hot = roomHears(); muted = muteReason(); on = micIsOn(); } catch { /* never throw: a throw would freeze the glyph */ }
+  // the mic's on/off is in the key too: the transport can turn it off with no 'audio:mic' event (a swap, a replay).
+  // It is read outside the try (micIsOn never throws): inside, a throwing roomHears() would leave it false against a
+  // painted true, and the glyph would repaint on every poll. A throw reads as what paint() draws for one.
+  const on = micIsOn();
+  let hot = false, muted = null;
+  try { hot = roomHears(); muted = muteReason(); } catch { /* as glyphArgs: not hot, not muted */ }
   if (hot !== micHot || muted !== micMuted || on !== micPaintedOn) paint();
 }, 125);
 
@@ -185,17 +188,19 @@ registerAction({ id: 'voice:mic', title: 'microphone on / off', group: 'voice', 
 registerAction({ id: 'voice:ear', title: 'hear voices on / off', group: 'voice', icon: 'headphones',
   keywords: ['ear', 'hush', 'deafen', 'headphones', 'listen', 'voice'], run: () => flipEar() });
 export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" height="26"', `width="${size}" height="${size}"`);
-/** For the in-VR indicator (xrmicicon.js), which repaints when this key changes: one key per distinct glyph, so every
+/** For the in-VR indicator (xrmicicon.js), which repaints when the key changes: one key per distinct glyph, so every
  *  input to MIC_SVG is in it. hot = your voice is going out (micstate.js roomHears, the HUD glyph's gold); hot-off = a
- *  synth voice going out with the mic off; muted = on, but a self or moderator mute (the same glyph). */
-export const micIndicatorState = () => {
+ *  synth voice going out with the mic off; muted = on, but a self or moderator mute (the same glyph). ONE read of the
+ *  state gives both the key and the glyph (`svg` draws from that read), so the two can't disagree. */
+export const micIndicator = () => {
   const { on, hot, muted } = glyphArgs();
-  return hot ? (on ? 'hot' : 'hot-off') : !on ? 'off' : muted ? 'muted' : 'on';
+  const state = hot ? (on ? 'hot' : 'hot-off') : !on ? 'off' : muted ? 'muted' : 'on';
+  const svg = (size = 64) => MIC_SVG(on, hot, !!muted)
+    .replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
+  return { state, svg };
 };
-export const micIndicatorSvg = (size = 64) => {
-  const { on, hot, muted } = glyphArgs();
-  return MIC_SVG(on, hot, !!muted).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
-};
+export const micIndicatorState = () => micIndicator().state;
+export const micIndicatorSvg = (size = 64) => micIndicator().svg(size);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
 /** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of build mode). */
 export const micGlyphFor = (on, hot) => MIC_SVG(!!on, !!hot);

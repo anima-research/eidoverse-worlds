@@ -6,26 +6,27 @@
 import { THREE, camera, renderer } from '../core.js';
 import { bus } from '../base.js';
 import { quadMaterial } from './quadcolour.js';
-import { micIndicatorState, micIndicatorSvg } from '../audio/mictoggle.js';
+import { micIndicator } from '../audio/mictoggle.js';
 
 const MIC_ICON = { x: -0.17, y: -0.15, z: -0.6, size: 0.032 };   // metres in front of the eyes: ≈3° across, ≈16° left, 14° down
 const LOOK = { off: { opacity: 0.9, scale: 1 }, on: { opacity: 0.45, scale: 0.8 }, muted: { opacity: 0.9, scale: 1 },
   hot: { opacity: 1, scale: 1 }, 'hot-off': { opacity: 1, scale: 1 } };
 let mesh = null, cv = null, tex = null, state = null, timer = null, painted = 0;
 
-function paint(st) {
+function paint({ state: st, svg }) {
   const g = cv.getContext('2d'), css = getComputedStyle(document.documentElement);
   const panel = (css.getPropertyValue('--panel-rgb').trim() || '5 20 20').split(/\s+/).join(',');
   g.clearRect(0, 0, 128, 128);
   g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fillStyle = `rgba(${panel},0.85)`; g.fill();
   const img = new Image(), mine = ++painted;
   img.onload = () => { if (mine !== painted) return; g.drawImage(img, 22, 22, 84, 84); tex.needsUpdate = true; };
-  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(micIndicatorSvg(84));
+  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg(84));
   tex.needsUpdate = true;
   const look = LOOK[st] ?? LOOK.off;
   mesh.material.opacity = look.opacity; mesh.scale.setScalar(look.scale);
 }
-function tick() { const st = micIndicatorState(); if (st !== state) { state = st; paint(st); } }
+// one read per tick: the key and the glyph it paints come from the same micIndicator() call
+function tick() { const ind = micIndicator(); if (ind.state !== state) { state = ind.state; paint(ind); } }
 function show() {
   if (!mesh) {
     cv = document.createElement('canvas'); cv.width = cv.height = 128;

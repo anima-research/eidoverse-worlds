@@ -105,10 +105,9 @@ function micFloorRow() {
     if (bg !== bgNow) { bgNow = bg; lvl.style.background = bg; }
   };
   paintLive();
-  bus.on('audio:mic', paintLive);
-  bus.on('audio:mute', paintLive);
-  // dragging the threshold repaints at once, not on the next level sample
-  bus.on('audio:micfloor', () => paintLive());
+  // the row's listeners go with the row (the panel can be rebuilt): beat() drops them once it is detached
+  row._unsubs = [bus.on('audio:mic', paintLive), bus.on('audio:mute', paintLive),
+    bus.on('audio:micfloor', () => paintLive())];   // dragging the threshold repaints at once, not on the next sample
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
@@ -122,14 +121,17 @@ function micFloorRow() {
   meter.onpointerdown = (ev) => { meter.setPointerCapture(ev.pointerId); setFromX(ev); };
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
   const beat = () => {
-    if (!row.isConnected) return;
+    if (!row.isConnected) { for (const off of row._unsubs.splice(0)) off(); return; }
     // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
     // transport's peak crossed the marker with the gate shut), muted or not
     const level = micDeviceLevel();
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
     // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates
-    const next = roomHears(), now = performance.now();
+    // a throw here would end this rAF chain with the bar frozen in whatever it showed: read as not hot
+    let next = false;
+    try { next = roomHears(); } catch { /* not gold */ }
+    const now = performance.now();
     if (next !== hot) { hot = next; paintLive(); }
     else if (now - lookAt >= 125) { lookAt = now; paintLive(); }
     requestAnimationFrame(beat);
@@ -175,8 +177,8 @@ function paint(body) {
   // PTT sits between the mic switch and the sensitivity floor because it decides whether the floor is in use
   body_.append(checkRow('push-to-talk',
     'transmit only while V is held down — replaces voice activation, so the ' +
-    'sensitivity floor below is not used while this is on. Release V and the ' +
-    'room stops hearing you after a short fade.',
+    'sensitivity floor below is not used while this is on. Release V and your voice ' +
+    'stops going out at once (the gold goes with it); only the sound you were making fades out briefly.',
     pttMode(), (on) => setPttMode(on)));
   const floorRow = micFloorRow();
   body_.append(floorRow);
@@ -187,7 +189,7 @@ function paint(body) {
     floorRow.style.pointerEvents = off ? 'none' : '';
   };
   dimFloor();
-  bus.on('audio:ptt', dimFloor);
+  floorRow._unsubs.push(bus.on('audio:ptt', dimFloor));   // goes with the row, as its own listeners do
 
   // 'hear voices' is the same bit the 🎧 glyph toggles; ticking it from a fully-revoked state grants consent too
   const hearRow = checkRow('hear voices',

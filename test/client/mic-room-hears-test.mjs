@@ -47,12 +47,14 @@ mock.module(lib('audio/ttsrow.js'), () => ({ ttsSection: () => document.createEl
 mock.module(lib('player/remotes.js'), () => ({ remotes: new Map() }));
 mock.module(lib('player/controller.js'), () => ({ myState: { pos: { x: 0, y: 0, z: 0 } } }));
 // the in-VR indicator's world: a camera that takes children, a canvas with a 2d context, an Image that records each paint
-const xrPaints = [];
+const xrPaints = [], xrPairs = [];   // each glyph drawn, and (glyph gold?, the look's opacity) as each paint sets them
 class Obj { constructor() { this.position = { set() {} }; this.scale = { setScalar(v) { this.v = v; } }; }
   removeFromParent() {} add() {} }
 mock.module(lib('core.js'), () => ({
   THREE: { CanvasTexture: class {}, SRGBColorSpace: 'srgb', PlaneGeometry: class {},
-    MeshBasicMaterial: class { constructor(o) { Object.assign(this, o); } },
+    MeshBasicMaterial: class { constructor(o) { Object.assign(this, o); }
+      set opacity(v) { this._o = v; xrPairs.push({ gold: (xrPaints.at(-1) || '').includes('drop-shadow'), opacity: v }); }
+      get opacity() { return this._o; } },
     Mesh: class extends Obj { constructor(g, m) { super(); this.material = m; } } },
   camera: new Obj(), renderer: {},
 }));
@@ -61,7 +63,7 @@ HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}
 globalThis.Image = class { set src(v) { xrPaints.push(decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, ''))); } };
 mock.module(lib('ui/ui.js'), () => ({
   flashHint: () => {},
-  makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); return el; },
+  makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); (globalThis.__builds ??= {})[opts.id] = build; return el; },
 }));
 
 // the peer connection: one inactive floor transceiver, as the server offers; `negotiated()` is the answer landing
@@ -269,6 +271,66 @@ t('setup: mic on, key up: the bar is warm', !!(await tryUntil('warm bar', () => 
 await sfu.sfuMic(false);   // the transport alone, no audio:mic
 t('the transport turns the mic off with no event: the bar goes dark',
   !!(await tryUntil('dark bar', () => /107, 95, 66|#6b5f42/i.test(lvl.style.background))), state());
+
+// ── 8. airtight: one read per VR paint, a throwing answer, the bar's loop across a VR exit, the panel rebuilt ────────
+const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while V/.test(x)) || '';
+t('the push-to-talk hint says the voice stops going out at once and only the sound fades',
+  /stops going out at once/.test(pttHint) && !/after a short fade/.test(pttHint), pttHint);
+await sfu.sfuMic(true);
+negotiated(pc);
+ms.setPttHeld(true);
+t('setup: the mic back on, gold under the key (glyph, bar, VR)',
+  !!(await tryUntil('gold under the key', () => gold() && barGold() && xrGold())), `${state()} ${xrState()}`);
+const laneTrack = pc.tx[0].sender.track;
+const realEnabled = laneTrack.enabled;
+// a track whose `enabled` flips on every read: two reads of roomHears() in a row disagree
+let flip = false;
+Object.defineProperty(laneTrack, 'enabled', { configurable: true, get() { flip = !flip; return flip; }, set() {} });
+const pairsFrom = xrPairs.length;
+await pause(`the answer flipping on every read: ${POLLS} and the VR ticks`, 600);
+const pairs = xrPairs.slice(pairsFrom);
+t('in VR, each paint takes its look and its glyph from one read: gold is drawn only at the hot look',
+  pairs.length > 0 && pairs.every((p) => !p.gold || p.opacity === 1) && pairs.every((p) => p.opacity !== 0.45 || !p.gold),
+  JSON.stringify(pairs.slice(0, 6)));
+// roomHears() throwing on every call
+Object.defineProperty(laneTrack, 'enabled', { configurable: true, get() { throw new Error('a track that throws'); }, set() {} });
+await pause('the throw lands on a poll and a paint', 300);
+let huds = 0;
+const mo = new MutationObserver(() => huds++);
+mo.observe(document.querySelector('#micbtn'), { childList: true });
+await pause(`roomHears throwing: ${POLLS}`, 1000);
+mo.disconnect();
+t('roomHears throwing: the HUD glyph is not repainted on every poll (and shows not gold)', huds <= 1 && !gold(), `${huds} paints in 1 s; ${state()}`);
+t('...and the bar fails toward not gold while it throws (its frame loop reads a throw as not hot)', !barGold(), state());
+delete laneTrack.enabled; laneTrack.enabled = realEnabled;
+t('...and the bar\'s frame loop outlives the throw: gold again once the answer is', !!(await tryUntil('the bar gold again', () => gold() && barGold())), state());
+// the bar's loop across a VR exit: a frame still waiting on the session when it ends
+const { installFrameClock } = await import(lib('xr/xr_frame_clock.js'));
+const ses = { cbs: new Map(), n: 0, ends: [],
+  requestAnimationFrame(cb) { this.cbs.set(++this.n, cb); return this.n; }, cancelAnimationFrame(id) { this.cbs.delete(id); },
+  addEventListener(type, cb) { if (type === 'end') this.ends.push(cb); },
+  tick() { const cbs = [...this.cbs.values()]; this.cbs.clear(); for (const cb of cbs) cb(performance.now()); },
+  end() { for (const cb of this.ends.splice(0)) cb(); } };
+installFrameClock({ win: window, session: ses, saved: null });
+const pump = setInterval(() => ses.tick(), 16);   // presenting: the session's clock drives every rAF loop
+t('setup: in VR the bar\'s loop runs on the session clock, gold while talking',
+  !!(await tryUntil('the bar on the session clock', () => ses.cbs.size > 0 && barGold())), state());
+clearInterval(pump);   // the session stops calling back...
+ses.end();             // ...and ends while you are still talking
+ms.setPttHeld(false);  // then you stop
+t('VR exit while gold: the bar\'s loop comes back on the window clock and the bar leaves gold',
+  !!(await tryUntil('the bar leaves gold after the exit', () => !barGold())), state());
+// the panel rebuilt: the old row's listeners go with it
+const oldSec = document.querySelector('#sec-audio'), oldLvl = lvl;
+oldSec.remove();
+const fresh = document.createElement('div'); fresh.id = 'sec-audio'; document.body.appendChild(fresh);
+globalThis.__builds.audio(fresh);
+const newLvl = fresh.querySelector('[data-lvl]');
+await pause('the old row\'s frame loop sees it detached', 300);
+oldLvl.style.background = 'rgb(1, 2, 3)';   // a sentinel only a live listener on the old row would overwrite
+ms.toggleMute(true); ms.toggleMute(false); bus.emit('audio:mic', true); bus.emit('audio:micfloor');
+t('the panel rebuilt: the detached row no longer listens (its sentinel stands), the new row does',
+  oldLvl.style.background === 'rgb(1, 2, 3)' && !!newLvl && newLvl !== oldLvl, `old=${oldLvl.style.background}`);
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
