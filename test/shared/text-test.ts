@@ -26,7 +26,7 @@ const dirs: [string, string, string][] = [
   ["\u066d", "rtl", "the Arabic five-pointed star (AL) is strong"], ["\u061b", "rtl", "the Arabic semicolon (AL) is strong"],
   ["\u061f", "rtl", "the Arabic question mark (AL) is strong"], ["\u064b", "ltr", "an Arabic vowel mark (NSM) is skipped"],
   ["\u05be", "rtl", "the Hebrew maqaf (R) is strong"], ["\ufd3e", "ltr", "the ornate parenthesis (ON) is skipped"],
-  ["\u0600", "ltr", "the Arabic number sign (AN) is skipped"], ["\u200f", "rtl", "a right-to-left mark (R) is strong"],
+  ["\u0600", "ltr", "the Arabic number sign (AN) is skipped"], ["\ufeff", "ltr", "a byte-order mark (U+FEFF, BN) is skipped"], ["\u200f", "rtl", "a right-to-left mark (R) is strong"],
 ];
 for (const [c, want, why] of dirs) check(`${why}: "${c} apples" reads ${want}`, directionOf(`${c} apples`) === want, directionOf(`${c} apples`));
 check("the review's case: \"١، apples\" (digit, comma, then Latin) reads left to right", directionOf("١، apples") === "ltr", directionOf("١، apples"));
