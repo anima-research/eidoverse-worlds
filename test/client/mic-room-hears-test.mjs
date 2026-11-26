@@ -7,7 +7,8 @@
 // audiopanel.js. Stubbed at the browser boundary: RTCPeerConnection (a transceiver list whose negotiated direction the
 // test sets), MediaStream and getUserMedia, an AudioContext whose analyser hears `room`, and a synth provider that keeps
 // its own record of when it last wrote an audible frame (as tts.js's pacer does). net.js, ui.js, chat.js, stt.js,
-// ttsrow.js, audiounlock.js and the player modules are no-ops.
+// ttsrow.js, audiounlock.js and the player modules are no-ops. The in-VR indicator (xrmicicon.js) runs for real on a
+// stubbed camera, canvas and Image, which records every glyph it is asked to draw.
 //
 // Run: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/mic-room-hears-test.mjs
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
@@ -45,6 +46,19 @@ mock.module(lib('audio/audiounlock.js'), () => ({ playWhenAllowed: () => {} }));
 mock.module(lib('audio/ttsrow.js'), () => ({ ttsSection: () => document.createElement('div') }));
 mock.module(lib('player/remotes.js'), () => ({ remotes: new Map() }));
 mock.module(lib('player/controller.js'), () => ({ myState: { pos: { x: 0, y: 0, z: 0 } } }));
+// the in-VR indicator's world: a camera that takes children, a canvas with a 2d context, an Image that records each paint
+const xrPaints = [];
+class Obj { constructor() { this.position = { set() {} }; this.scale = { setScalar(v) { this.v = v; } }; }
+  removeFromParent() {} add() {} }
+mock.module(lib('core.js'), () => ({
+  THREE: { CanvasTexture: class {}, SRGBColorSpace: 'srgb', PlaneGeometry: class {},
+    MeshBasicMaterial: class { constructor(o) { Object.assign(this, o); } },
+    Mesh: class extends Obj { constructor(g, m) { super(); this.material = m; } } },
+  camera: new Obj(), renderer: {},
+}));
+mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial() {} }));
+HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {}, drawImage() {} });
+globalThis.Image = class { set src(v) { xrPaints.push(decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, ''))); } };
 mock.module(lib('ui/ui.js'), () => ({
   flashHint: () => {},
   makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); return el; },
@@ -78,6 +92,8 @@ initVoiceSfu('p');
 const mt = await import(lib('audio/mictoggle.js'));
 const { initAudioPanel } = await import(lib('audio/audiopanel.js'));
 initAudioPanel();
+await import(lib('xr/xrmicicon.js'));
+bus.emit('xr:state', true);   // in VR: the indicator ticks at the HUD's cadence
 
 let ok = 0, bad = 0;
 const t = (n, cond, d = '') => { cond ? ok++ : bad++; console.log(`${cond ? 'ok  ' : 'FAIL'} ${n}${cond ? '' : `  — ${d}`}`); };
@@ -87,7 +103,16 @@ const slashed = () => glyph().includes('x1="7" y1="4"');
 const lvl = document.querySelector('#sec-audio [data-lvl]');
 const GOLD = /255, 214, 107|#ffd66b/i;
 const barGold = () => GOLD.test(lvl.style.background);
-const state = () => `glyph gold=${gold()} slash=${slashed()} bar=${lvl.style.background} title="${document.querySelector('#micbtn')?.title}"`;
+const waves = () => glyph().includes('data-synth');
+const state = () => `glyph gold=${gold()} slash=${slashed()} waves=${waves()} bar=${lvl.style.background} title="${document.querySelector('#micbtn')?.title}"`;
+// the in-VR indicator: what it last drew, and whether that is what the HUD's glyph would draw now
+const xrLast = () => xrPaints.at(-1) || '';
+const xrShows = () => xrLast() === mt.micIndicatorSvg(84);
+// the indicator's SVG goes to the headset as a standalone data:image/svg+xml, which is XML: every attribute needs a value
+// (a bare `data-x`, fine in the HUD's innerHTML, makes the image fail to load in VR)
+const xmlAttrsOk = (svg) => [...svg.matchAll(/<([^>]+)>/g)].every(([, tag]) =>
+  /^\/?[\w:-]+\/?$/.test(tag.replace(/\s+[\w:-]+="[^"]*"/g, '').replace(/\s*\/$/, '/').trim()));
+const xrState = () => `xr key=${mt.micIndicatorState()} paints=${xrPaints.length} lastSlash=${xrLast().includes('x1="7" y1="4"')} current=${xrShows()}`;
 const POLLS = 'three glyph polls and many bar frames';
 
 // ── 1. the transport carries it, or nobody hears it (finding 3) ────────────────────────────────────────────────────
@@ -101,20 +126,37 @@ pc.connectionState = 'connecting'; pc.iceConnectionState = 'checking';
 await pause(`ICE still checking, the key down: ${POLLS}`, 400);
 t('ICE stalled with the gate open: the glyph is not gold', !gold(), state());
 t('...and neither is the bar', !barGold(), state());
-negotiated(pc); pc.connectionState = 'connected'; pc.iceConnectionState = 'connected';
+pc.connectionState = 'connected'; pc.iceConnectionState = 'connected';
+pc.tx[0].currentDirection = null;   // connected, but the answer naming this sender's direction has not been applied
+await pause(`connected, the sender's negotiated direction still null: ${POLLS}`, 400);
+t('connected with the sender not yet negotiated (currentDirection null): not gold', !gold() && !barGold(), state());
+negotiated(pc);
 t('setup: connected and negotiated, the open lane turns both gold',
   !!(await tryUntil('the carried lane goes gold', () => gold() && barGold())), state());
 pc.connectionState = 'failed'; pc.iceConnectionState = 'failed';
 t('ICE fails under an open gate: the gold goes out', !!(await tryUntil('a failed connection leaves gold', () => !gold() && !barGold())), state());
 pc.connectionState = 'connected'; pc.iceConnectionState = 'connected';
 await tryUntil('gold again once connected', () => gold());
+t('the published lane is carried; another stream holding the same track is not (the lane is what was published)',
+  ms.laneCarried() === true && sfu.sfuCarries(new FakeStream([pc.tx[0].sender.track])) === false,
+  `laneCarried=${ms.laneCarried()} other=${sfu.sfuCarries(new FakeStream([pc.tx[0].sender.track]))}`);
+t('in VR, gold: the indicator draws the HUD glyph (hot)', mt.micIndicatorState() === 'hot'
+  && !!(await tryUntil('the indicator repaints hot', () => xrShows())), xrState());
+t('gold with the mic on carries no synth waves', !waves(), state());
+// the words claim only what the code knows: the server gets your voice; who listens (consent, distance) is not counted
+const meterHint = document.querySelector('#sec-audio [data-meter]')?.title || '';
+const micTitle = document.querySelector('#micbtn').title;
+t('the gold is named for what it means: "going out to the room" (glyph and bar), and nothing says the room hears you',
+  /gold while your voice is going out to the room/.test(micTitle) && /gold while your voice is going out to the room/.test(meterHint)
+  && !/hears you|is hearing/.test(micTitle + meterHint), `title="${micTitle}" hint="${meterHint}"`);
 
 // ── 2. muted: the icon says so (Winifred's third point), and a moderator's mute is a mute ──────────────────────────
 ms.toggleMute(true);
 await tryUntil('the glyph repaints for the mute', () => !gold() && slashed());
 t('muted: the glyph is not the ordinary on icon (it carries the slash), and not gold',
   !gold() && slashed() && glyph() !== mt.micGlyphFor(true, false), state());
-t('muted: its tooltip says the room hears nothing', /muted/.test(document.querySelector('#micbtn').title), state());
+t('muted: its tooltip says none of your voice goes out', /muted — none of your voice goes out/.test(document.querySelector('#micbtn').title), state());
+t('muted carries no synth waves (only a synth voice going out with the mic off does)', !waves(), state());
 ms.toggleMute(false);
 await tryUntil('unmuted, gold again', () => gold() && !slashed());
 bus.emit('your-rights', { role: 'member', muted: { channels: ['voice'], until: null } });
@@ -124,7 +166,23 @@ t('...the glyph shows the mute and the tooltip names the moderator',
   slashed() && /moderator/.test(document.querySelector('#micbtn').title), state());
 bus.emit('your-rights', { role: 'member' });
 t('the moderator lifts it: gold again', !!(await tryUntil('gold after the lift', () => gold() && barGold())), state());
-ms.setPttHeld(false); vc.setPttMode(false);
+ms.setPttHeld(false);
+await tryUntil('key up: the gold goes out', () => !gold());
+t('in VR, mic on and silent: the indicator draws the plain on glyph', mt.micIndicatorState() === 'on'
+  && !!(await tryUntil('the indicator repaints on', () => xrShows() && !xrLast().includes('x1="7" y1="4"'))), xrState());
+ms.toggleMute(true);   // a mute landing while silent: gold never changes, only the slash does
+t('in VR, muted while silent: the indicator repaints with the slash (key "muted")', !!(await tryUntil('the indicator repaints muted',
+  () => mt.micIndicatorState() === 'muted' && xrShows() && xrLast().includes('x1="7" y1="4"'))), xrState());
+ms.toggleMute(false);
+t('...and unmuted, the slash goes from the indicator', !!(await tryUntil('the indicator repaints unmuted',
+  () => mt.micIndicatorState() === 'on' && xrShows() && !xrLast().includes('x1="7" y1="4"'))), xrState());
+bus.emit('your-rights', { role: 'member', muted: { channels: ['voice'], until: null } });
+t("in VR, a moderator's mute while silent: the indicator shows it", !!(await tryUntil('the indicator repaints for the moderator',
+  () => mt.micIndicatorState() === 'muted' && xrShows() && xrLast().includes('x1="7" y1="4"'))), xrState());
+bus.emit('your-rights', { role: 'member' });
+t('...and lifted, the stale slash goes', !!(await tryUntil('the indicator repaints after the lift',
+  () => mt.micIndicatorState() === 'on' && xrShows() && !xrLast().includes('x1="7" y1="4"'))), xrState());
+vc.setPttMode(false);
 
 // ── 3. a synth voice published with the mic off (finding 2), heard on a stalled analyser (finding 1) ───────────────
 synthOn = true;
@@ -132,9 +190,17 @@ await sfu.sfuMic(false);   // mic off with a provider: the swap publishes the sy
 const synthLane = await tryUntil('the swap put the synth track on the sender', () => synthTracks.length && pc.tx[0].sender.track === synthTracks.at(-1) && synthTracks.at(-1));
 t('setup: the synth lane is on the sender, with mic intent off, and nothing gold yet', !!synthLane && sfu.sfuMicOn() === false
   && !!(await tryUntil('a silent synth lane is not gold', () => !gold() && !barGold())), state());
+t('mic off by the transport alone (no audio:mic event), silent: the glyph repaints slashed, no synth waves',
+  !!(await tryUntil('the glyph follows the mic off', () => slashed() && !waves() && /^mic off/.test(document.querySelector('#micbtn').title))), state());
 room = 0.3; playing = true;
 t('TTS speaking with the mic off: the glyph is gold (the room hears it)', !!(await tryUntil('the synth voice goes gold', () => gold())), state());
 t('...and so is the bar', !!(await tryUntil('the bar agrees', () => barGold())), state());
+t('...its glyph keeps the slash and adds sound waves: a shape, not only a colour, tells it from off and muted',
+  slashed() && waves(), state());
+t('in VR, a synth voice going out with the mic off: its own key ("hot-off"), and the indicator draws it',
+  mt.micIndicatorState() === 'hot-off' && !!(await tryUntil('the indicator repaints hot-off', () => xrShows() && xrLast().includes('data-synth'))), xrState());
+t('...and every glyph the indicator drew is well-formed XML (it loads as an image in the headset)',
+  xrPaints.length > 0 && xrPaints.every(xmlAttrsOk), xrPaints.filter((x) => !xmlAttrsOk(x)).map((x) => x.match(/<[^>]*data-[^>]*>/)?.[0]).join(' | '));
 room = 0;   // the analyser hears nothing (a stalled headless clock) while the generator keeps sending speech
 await pause(`the analyser silent past the 700 ms hang while the provider still writes speech: ${POLLS}`, 1000);
 t('analyser silent, provider writing speech: still gold (the provider\'s record, not the analyser)', gold() && barGold(), state());

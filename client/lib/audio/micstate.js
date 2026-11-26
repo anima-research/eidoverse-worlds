@@ -162,8 +162,10 @@ let _carrier = null;
 export const setLaneCarrier = (fn) => { _carrier = fn; };
 export const laneCarried = () => { try { return !!_lane && !!_carrier?.(_lane); } catch { return false; } };
 
-/** THE ONE ANSWER TO "DOES THE ROOM HEAR ME RIGHT NOW". The lane is sending (micGateInfo), its track is on, the
- *  transport carries it to the room, and no moderator has muted you. Every indicator that goes gold asks here. */
+/** THE ONE ANSWER TO "IS MY VOICE GOING OUT TO THE ROOM RIGHT NOW". The lane is sending (micGateInfo), its track is
+ *  on, the transport carries it to the server, and no moderator has muted you (the server would drop it). It stops at
+ *  the server: the SFU forwards only to listeners who consented to hear voices, and distance fades it, so whether
+ *  anyone hears it (consent, distance, an empty room) is not counted. Every indicator that goes gold asks here. */
 export const roomHears = () => !!_lane && !_modMuted && someTrackOn(laneTracks()) && laneCarried()
   && !!micGateInfo().speaking;
 

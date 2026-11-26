@@ -66,8 +66,8 @@ function checkRow(label, hint, checked, onChange) {
 }
 
 // mic sensitivity: a slider over a LIVE level bar (animates only while its row is in the DOM). The meter wears the mic
-// badge's palette (mictoggle.js INK.hot): gold = the room is getting your voice (micstate.js roomHears, a synth voice
-// included), warm = mic on but the room isn't getting it (under the floor, past the hang, push-to-talk with the key up,
+// badge's palette (mictoggle.js INK.hot): gold = your voice is going out to the room (micstate.js roomHears: the server
+// receives it; who listens is not counted; a synth voice included), warm = mic on but nothing is going out (under the floor, past the hang, push-to-talk with the key up,
 // not connected), dark = muted (the bar still moves, so it can be tuned) or mic off (the bar is empty).
 const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
@@ -78,9 +78,9 @@ function micFloorRow() {
   row.className = 'sp-row row wide';
   // the marker opens the gate; it does not filter what is sent: the hang keeps quieter sound going out after speech, and a
   // consented ungated lane sends everything
-  const hint = 'voice-activation threshold: sound over the white marker opens your mic to the room, and it stays open ' +
+  const hint = 'voice-activation threshold: sound over the white marker opens your mic, and it stays open ' +
     'for a moment after you drop below it, so quieter sound right after speech is sent too — raise it if typing ' +
-    'opens the mic; the bar shows your live mic level, gold while the room hears you';
+    'opens the mic; the bar shows your live mic level, gold while your voice is going out to the room';
   const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =
     `<span class="nm" title="${hint}">mic sensitivity</span>` +
@@ -97,7 +97,7 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree with what the room gets
+  // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree on what goes out
   let hot = false;
   const micIsLive = micLive;
   const paintLive = () => {

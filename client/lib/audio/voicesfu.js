@@ -30,7 +30,7 @@ export function sfuCarries(lane) {
   return pc.getTransceivers().some((t) => !!t.sender?.track && tracks.includes(t.sender.track)
     && (t.currentDirection === 'sendonly' || t.currentDirection === 'sendrecv'));
 }
-setLaneCarrier(sfuCarries);   // micstate.js roomHears(): the transport's leg of "the room hears you"
+setLaneCarrier(sfuCarries);   // micstate.js roomHears(): the transport's leg of "your voice is going out"
 /** Intent, as distinct from sfuMicOn(): a press before `pc` exists sets only this, and the bridge
  *  replays it once the credential lands. */
 export const sfuMicWanted = () => wantMic;
