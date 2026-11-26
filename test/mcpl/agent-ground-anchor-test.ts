@@ -40,10 +40,12 @@ const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0
 const held: (() => void)[] = []; let flaky = false;
 // slowfail.glb: its first read is held and then fails; any read asked while that one is held answers at once
 const slowFail: (() => void)[] = [];
-let movingDown = false;   // moving.glb: answers until it is set, then fails (as flaky.glb, for the placement rows)
+let movingDown = false;
+// nullheld.glb: no geometry, answered only when the row lets go (so a respawn's own sync can't drop before overtaken runs)
+const nullHeld: (() => void)[] = [];   // moving.glb: answers until it is set, then fails (as flaky.glb, for the placement rows)
 // hall.glb: room-scale (5×3×5 m) with no top surface filled enough to stand on: the summary has no deck to register
 const hallGeom = { bbox: { min: [-2.5, 0, -2.5], max: [2.5, 3, 2.5], size: [5, 3, 5] }, topSurfaces: [] };
-ag.ground.geomFor = async (lib: string) => lib === "hall.glb" ? hallGeom : lib === "moving.glb" ? (movingDown ? null : crateGeom) : lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
+ag.ground.geomFor = async (lib: string) => lib === "nullheld.glb" ? new Promise((r) => { nullHeld.push(() => r(null)); }) : lib === "hall.glb" ? hallGeom : lib === "moving.glb" ? (movingDown ? null : crateGeom) : lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
   : lib === "held.glb" ? new Promise((r) => { held.push(() => r(crateGeom)); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
   : lib === "nogeom.glb" ? null : lib === "slowfail.glb" ? (slowFail.length ? crateGeom : new Promise((r) => { slowFail.push(() => r(null)); })) : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
@@ -136,18 +138,20 @@ check("a rug that becomes an anchor while its grid fit is in flight keeps none",
 
 // (#347 cold read) a fit in flight overtaken with no drop of its own: the thing vanishes with no "gone" (a rejoin's
 // snapshot clears the entities and folds the new cut from an empty view, agent.ts), or it is respawned as a model whose
-// geometry can't be read (a new record, as the fold writes one; that sync returns before dropping). Only overtaken's
-// own drop takes the landed fit back out.
+// geometry can't be read (a new record, as the fold writes one). Only overtaken's own drop takes the landed fit back
+// out: the respawn's own sync, which would drop the old model's support too, is held on its read until the row has
+// checked (#347 bot 19 on 0c28db5e9: with it answering at once, the row passed with overtaken's drop removed).
 for (const [what, id, x, overtake] of [
   ["vanishes without a gone event", "rug3", 250, (id: string) => ag.entities.delete(id)],
   ["is respawned as a model whose geometry can't be read", "rug4", 270, (id: string) => {
-    ag.entities.set(id, { ...ag.entities.get(id), model: "nogeom.glb" }); ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); }],
+    ag.entities.set(id, { ...ag.entities.get(id), model: "nullheld.glb" }); ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); }],
 ] as const) {
   ag.entities.set(id, { id, model: "rug.glb", pos: [x, 0, 0], yaw: 0, actor: "x" });
   let landed = false; onFit = () => queueMicrotask(() => { landed = !!supportHolders()[`anchor/${id}`]; overtake(id); });
-  await ag.ground.syncSupport(id); await ag.ground.supportReady();
-  check(`a rug whose grid fit is in flight when it ${what} keeps none`, landed && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id),
-    JSON.stringify(Object.keys(supportHolders())));
+  await ag.ground.syncSupport(id);
+  const ok = landed && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id);
+  nullHeld.splice(0).forEach((r) => r()); await ag.ground.supportReady();
+  check(`a rug whose grid fit is in flight when it ${what} keeps none`, ok, JSON.stringify(Object.keys(supportHolders())));
 }
 
 // (#347 bot 1 on 127233507) a re-sync that ends with nothing to fit lets go of the old support: the thing lost its model,
@@ -164,7 +168,11 @@ for (const [what, id, x, next] of [
     JSON.stringify(Object.keys(supportHolders())));
 }
 
-// ...but a sync whose reads fail after a later sync of the same thing began leaves that later sync's support alone
+// ...but a sync whose reads fail after a later sync of the same thing began leaves that later sync's support alone.
+// (#347 bot 18 on 0c28db5e9) A guard row, not a scene: the stub answers a second read while the first is held, which
+// the real caches don't (geomFor and meshFor share a pending read, so two syncs of one model see the same answer, and
+// a failed read is evicted only once it has answered, so a later sync's fresh read resumes after the older one). It
+// pins the recorded-fit check against the order the stub forces, should the caches ever let reads differ.
 ag.entities.set("raced", { id: "raced", model: "slowfail.glb", pos: [530, 0, 0], yaw: 0, actor: "x" });
 const older = ag.ground.syncSupport("raced");
 await ag.ground.syncSupport("raced"); const later = await registered("anchor/raced");
