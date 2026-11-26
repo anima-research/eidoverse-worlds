@@ -91,7 +91,37 @@ const rc7 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run
   { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 60_000 });
 const out7 = rc7.stdout.toString() + rc7.stderr.toString();
 ok(/^ok\s+\S*i-buntest-passes-test\.ts/m.test(out7), "full run: a passing bun:test file is a pass", out7.slice(-500));
-ok(/^RED\s+\S*j-buntest-fails-test\.ts/m.test(out7) && rc7.exitCode === 1, "full run: …and a failing one is red", { code: rc7.exitCode, out: out7.slice(-300) });
+// …red because its test failed, not because `bun test` found no file to run ("had no matches" exits 1 too: windows-latest, #375)
+ok(/^RED\s+\S*j-buntest-fails-test\.ts/m.test(out7) && /Ran 1 test across 1 file/.test(out7) && rc7.exitCode === 1, "full run: …and a failing one is red, its test having run", { code: rc7.exitCode, out: out7.slice(-300) });
+// a bun:test file is one that imports test/it/describe from bun:test, under any alias, called any way (test.skip,
+// test.each), not only a bare `test(` at a line's start (review #375 5)
+const dir9 = path.join(root, "buntest-forms"); fs.mkdirSync(dir9);
+fs.writeFileSync(path.join(dir9, "m-buntest-modifiers-test.ts"), `import { test, expect } from "bun:test";\ntest.skip("later", () => {});\ntest.each([1])("one %d", (n) => { expect(n).toBe(1); });\n`);
+fs.writeFileSync(path.join(dir9, "n-buntest-alias-test.ts"), `import { test as check, expect } from "bun:test";\ncheck("one", () => { expect(1).toBe(1); });\n`);
+const rc9 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir9, "--jobs", "1", "--timeout", "20"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 60_000 });
+const out9 = rc9.stdout.toString() + rc9.stderr.toString();
+ok(/^ok\s+\S*m-buntest-modifiers-test\.ts/m.test(out9) && /^ok\s+\S*n-buntest-alias-test\.ts/m.test(out9) && rc9.exitCode === 0, "full run: a bun:test file that calls test.skip/test.each, or imports test under another name, runs under `bun test` and passes", { code: rc9.exitCode, out: out9.slice(-500) });
+// --import-only: a bun:test file that throws a TypeError at its top level is dead, as a script is; `bun test` prints no
+// "Bun v…" crash trailer but "# Unhandled error between tests" with no test run (review #375 2). One whose TypeError
+// is inside a test ran its tests: it loaded. And a check line that reaches the runner after the crash text (two pipes'
+// chunks arrive in either order; a child's late line stands in for that here) means the file ran: loaded (review #375 7).
+const dir10 = path.join(root, "toperr-forms"); fs.mkdirSync(dir10);
+fs.writeFileSync(path.join(dir10, "o-buntest-toperr-test.ts"), `import { test, expect } from "bun:test";\nconst stubbed: any = {};\nstubbed.notExported();\ntest("one", () => { expect(1).toBe(1); });\n`);
+fs.writeFileSync(path.join(dir10, "p-buntest-intest-err-test.ts"), `import { test } from "bun:test";\ntest("one", () => { const late: any = {}; late.notExported(); });\n`);
+fs.writeFileSync(path.join(dir10, "q-check-after-crash-test.ts"), `import { spawn } from "node:child_process";\nspawn(process.execPath, ["-e", "setTimeout(() => console.log('  ✓ a row that ran'), 300)"], { stdio: ["ignore", "inherit", "inherit"] });\nconst late: any = {};\nlate.notExported();\n`);
+const rc10 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir10, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 60_000 });
+const out10 = rc10.stdout.toString() + rc10.stderr.toString();
+ok(/^DEAD\s+\S*o-buntest-toperr-test\.ts\s+—\s+TypeError/m.test(out10) && rc10.exitCode === 1, "--import-only: a bun:test file's top-level TypeError is dead at import too", { code: rc10.exitCode, out: out10.slice(-500) });
+ok(/^ok\s+\S*p-buntest-intest-err-test\.ts/m.test(out10), "--import-only: …while one whose TypeError is inside a test loaded", out10.slice(-500));
+ok(/^ok\s+\S*q-check-after-crash-test\.ts/m.test(out10), "--import-only: a check line anywhere in the output means the file ran, whichever pipe's chunk came first", out10.slice(-500));
+// a test file on another Windows drive than the checkout (windows-latest: the checkout on D:, the scratch on C:):
+// relative() is then absolute and `./C:/…` a name filter matching nothing, so it runs from its own folder (review #375 1)
+{ const { bunTestCall } = (await import("../gate/suites.ts")) as any;
+  const got = typeof bunTestCall === "function" ? { other: bunTestCall("D:\\a\\repo", "C:\\Users\\t\\x-test.ts", path.win32), same: bunTestCall("D:\\a\\repo", "D:\\a\\repo\\test\\y-test.ts", path.win32), posix: bunTestCall("/r", "/r/test/z-test.ts", path.posix) } : null;
+  ok(!!got && JSON.stringify(got) === JSON.stringify({ other: { cwd: "C:\\Users\\t", arg: "./x-test.ts" }, same: { cwd: "D:\\a\\repo", arg: "./test/y-test.ts" }, posix: { cwd: "/r", arg: "./test/z-test.ts" } }),
+    "a bun:test file runs as a ./ path bun reads as a file: from the checkout, or from its own folder when it is on another drive (win32 paths)", got); }
 // --skip-suites: a row's runner file argument (bun-test.ts test/server/screenshots-test.ts) is the gate's too, so
 // client-tools skips it rather than running its tests a second time (cold review of hep/pkg-test-infra F1)
 const argRows = SUITES.flatMap(([n, f]) => f.split(" ").slice(1).filter((a) => /\.(?:ts|mjs|js)$/.test(a)).map((a) => [n, a] as const));

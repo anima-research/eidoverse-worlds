@@ -497,6 +497,14 @@ export const inheritedEnv = (env: Record<string, string | undefined>): Record<st
 
 export function suitePath(file: string) { return path.resolve(ENGINE, "test", file.split(" ")[0]); }
 
+/** How `bun test` is pointed at one file: a `./` path with `/` separators (bun reads anything else as a name filter), from
+ *  `root`, or from the file's own folder when no relative path reaches it (another Windows drive: windows-latest's
+ *  checkout is on D:, its temp dir on C:, and `./C:/…` matched nothing; review #375 1). `p` is path, or path.win32 in a test. */
+export function bunTestCall(root: string, file: string, p: typeof path = path): { cwd: string; arg: string } {
+  const r = p.relative(root, file);
+  return p.isAbsolute(r) ? { cwd: p.dirname(file), arg: "./" + p.basename(file) } : { cwd: root, arg: "./" + r.split(p.sep).join("/") };
+}
+
 /** A file that launches a Chromium, directly or through the bench helpers (a helper counts where it is CALLED; a runner
  *  that starts other files says so with the marker comment `gate: launches a browser`). run.ts keeps every such suite in
  *  the browser lane, run-client.ts runs such files one at a time. */
