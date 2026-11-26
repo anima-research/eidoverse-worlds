@@ -795,7 +795,10 @@ const HOUSE = {
     const noEast = at({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0], [0, 0, 1], [1, 0, 0]] }] }, 0.5, 0.5);
     check("...a room missing only its east wall is open on its east and nowhere else", /Ways out: open to the outside on its east \(no wall\)\.$/.test(noEast), noEast);
     const half = at({ levels: [{ tiles: [[0, 0, "floor", "A"]], walls: [[2, 0, 0]] }] }, 0.8, 0.2);
-    check("...a lone half is open on the two sides it touches, not on its solid diagonal", /Ways out: open to the outside on its north and east \(no wall\)\.$/.test(half), half); }
+    check("...a lone half is open on the two sides it touches, not on its solid diagonal", /Ways out: open to the outside on its north and east \(no wall\)\.$/.test(half), half);
+    // a tiled neighbour is not enough: the half of it this side meets is unfloored (↗, floored on B only), so it is outside
+    const ledge = at({ levels: [{ tiles: [[0, 0], [1, 0, "floor", "B"]], walls: [[0, 0, 0], [0, 0, 1], [1, 0, 0], [3, 1, 0]] }] }, 0.5, 0.5);
+    check("...a side facing a tiled cell's unfloored half is open to the outside", /Ways out: open to the outside on its east \(no wall\)\.$/.test(ledge), ledge); }
   // a freestanding doored diagonal inside one room joins the room to itself: it is no way out of it, and the room's
   // real way out (an exterior door, listed AFTER the diagonal, so a skip that ends the walk early drops it) is kept
   const ring3 = [0, 1, 2].flatMap((i) => [[0, i, 0], [0, i, 3], [1, 0, i], [1, 3, i]]);
