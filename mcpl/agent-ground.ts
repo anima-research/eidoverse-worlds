@@ -394,9 +394,14 @@ export class AgentGround {
     return p;
   }
 
+  /** Each id's latest sync: one that ends with nothing to fit drops the old support only if no later sync has begun. */
+  private syncSeq = new Map<string, number>();
   async syncSupport(id: string) {
+    const seq = (this.syncSeq.get(id) ?? 0) + 1;
+    this.syncSeq.set(id, seq);
     const before = this.a.entities.get(id);
-    if (!before?.model) return;  // only a model carries a collider
+    // only a model carries a collider; a thing that lost its model (a rejoin folds every thing as born) lets go of the old
+    if (!before?.model) { this.dropSupport(id); return; }
     if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
     // A moving thing supports nothing here (drop path as well as skip path); so
     // does mounted cargo, whose parent's transform this code doesn't track.
@@ -410,7 +415,10 @@ export class AgentGround {
     // something else while its geometry was in flight (hence the model comparison).
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
-    if ((!g && !mesh) || !e || e.model !== before.model || this.a.closed) return;
+    if (!e || e.model !== before.model || this.a.closed) return;
+    // nothing can be read for its model (a re-born thing whose new model can't be read): the old support is not this
+    // model's, so it goes, unless a later sync of this thing has begun (that one decides)
+    if (!g && !mesh) { if (this.syncSeq.get(id) === seq) this.dropSupport(id); return; }
     // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }

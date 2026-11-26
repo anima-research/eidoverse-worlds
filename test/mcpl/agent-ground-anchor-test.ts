@@ -38,9 +38,11 @@ const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0
 // held.glb: its geometry answers only when the row releases it; flaky.glb: answers until `flaky` is set, then fails
 // every held read is kept and released together: a second read of held.glb must not strand the first
 const held: (() => void)[] = []; let flaky = false;
+// slowfail.glb: its first read is held and then fails; any read asked while that one is held answers at once
+const slowFail: (() => void)[] = [];
 ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
   : lib === "held.glb" ? new Promise((r) => { held.push(() => r(crateGeom)); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
-  : lib === "nogeom.glb" ? null : crateGeom;
+  : lib === "nogeom.glb" ? null : lib === "slowfail.glb" ? (slowFail.length ? crateGeom : new Promise((r) => { slowFail.push(() => r(null)); })) : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
 ag.ground.meshFor = async () => null;
 const becomeAnchor = (id: string) => {
@@ -144,6 +146,28 @@ for (const [what, id, x, overtake] of [
   check(`a rug whose grid fit is in flight when it ${what} keeps none`, landed && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id),
     JSON.stringify(Object.keys(supportHolders())));
 }
+
+// (#347 bot 1 on 127233507) a re-sync that ends with nothing to fit lets go of the old support: the thing lost its model,
+// or its new model can't be read (a rejoin folds every thing as born, and the sweep drops only what the cut lost)
+for (const [what, id, x, next] of [
+  ["loses its model", "unmodelled", 490, (e: any) => { const { model, ...rest } = e; return rest; }],
+  ["is re-born with a model that can't be read", "unreadable", 510, (e: any) => ({ ...e, model: "nogeom.glb" })],
+] as const) {
+  ag.entities.set(id, { id, model: "crate.glb", pos: [x, 0, 0], yaw: 0, actor: "x" });
+  await ag.ground.syncSupport(id); const had = await registered(`anchor/${id}`);
+  ag.entities.set(id, next(ag.entities.get(id)));
+  ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); await ag.ground.supportReady();
+  check(`a thing that ${what} lets go of its old support`, had && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id),
+    JSON.stringify(Object.keys(supportHolders())));
+}
+
+// ...but a sync whose reads fail after a later sync of the same thing began leaves that later sync's support alone
+ag.entities.set("raced", { id: "raced", model: "slowfail.glb", pos: [530, 0, 0], yaw: 0, actor: "x" });
+const older = ag.ground.syncSupport("raced");
+await ag.ground.syncSupport("raced"); const later = await registered("anchor/raced");
+slowFail.splice(0).forEach((fail) => fail()); await older;
+check("a sync whose reads fail after a later sync of the same thing fitted it leaves that fit alone", later && await settled() && !!supportHolders()["anchor/raced"] && ag.ground.supportIds.has("raced"),
+  JSON.stringify(Object.keys(supportHolders())));
 
 // (#347 reader) an anchor still reads its model's own description: its places (the model's `building` extras, read
 // with its bytes by meshFor, the only reader), though it stands on nothing, and inside its tracked sync, so they're

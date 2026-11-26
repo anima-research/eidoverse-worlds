@@ -1206,11 +1206,15 @@ for (const [what, collider, off] of [["collider.enabled false", { enabled: false
   up.entities.get("house").collider = collider; out.entities.get("house").collider = collider;
   const under = up.ground.storeyUnder(0.5, 0.5, upperY), floors = up.ground.floorsAt(0.5, 0.5, { entity: "house", level: 1 });
   const walk = await tryWalk(out, 0.5, -3);   // from the kitchen out through its north wall (the shell has no ground-floor door)
+  // look's "where you are" (a room's doors, or "sealed") reads the same structures the routes do (#347 bot 2 on 127233507)
+  const inside = String(out.look()).split("\n").some((l: string) => l.includes("(inside [house]"));
   if (off) check(`${what}: no upper floor to stand on, and a walk out through its wall sets off`,
     under === null && up.ground.groundAt(0.5, 0.5, upperY) === 0 && floors.length === 1 && floors[0].entity === null && walk.setOff,
     JSON.stringify({ under, floors, walk }));
   else check(`${what}: its upper floor holds the feet, and its wall refuses the walk`,
     under?.entity === "house" && floors.length === 2 && !walk.setOff && /no route/.test(walk.refusal), JSON.stringify({ under, floors, walk }));
+  check(off ? `${what}: look tells of no room in it (no "sealed" room the routes walk out of)` : `${what}: look tells of the room the body stands in`,
+    inside === !off, String(out.look()).split("\n").find((l: string) => l.includes("inside [")) ?? "(no room line)");
 }
 console.log(failures ? `\n${failures} failed` : "\nall passed");
 process.exit(failures ? 1 : 0);
