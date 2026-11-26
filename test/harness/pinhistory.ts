@@ -49,12 +49,16 @@ export function tipOf(root: string, argv: string[] = process.argv.slice(2)) {
 }
 
 /** The commit holding the files' version before their current one (current = the working tree), or null (never changed). */
-export function previousOf(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
+export function previousOf(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) { return previousCut(root, files, readNow, argv).prev; }
+
+/** previousOf, and whether it found none because a shallow clone's edge is the files' newest change: {prev, cut}. The commit
+ *  it reached has no parent; listed in .git/shallow, its parent was cut off, and the version before is missing, not absent. */
+function previousCut(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
   const now = files.map(readNow); const same = (rev: string) => files.every((f, k) => showAt(root, rev, f) === now[k]);
-  if (!same("HEAD")) return git(root, ["rev-parse", "HEAD"])?.trim() || null;
+  if (!same("HEAD")) return { prev: git(root, ["rev-parse", "HEAD"])?.trim() || null, cut: false };
   for (const r of (git(root, ["log", "--first-parent", "--format=%H", tipOf(root, argv), "--", ...files]) ?? "").split("\n").filter(Boolean)) {
-    const p = git(root, ["rev-parse", "--verify", "-q", `${r}^1`])?.trim(); if (!p) return null; if (!same(p)) return p; }
-  return null;
+    const p = git(root, ["rev-parse", "--verify", "-q", `${r}^1`])?.trim(); if (!p) return { prev: null, cut: shallowOf(root).has(r) }; if (!same(p)) return { prev: p, cut: false }; }
+  return { prev: null, cut: false };
 }
 
 /** The lines a file gained between a commit and the working tree (a removed line is not "added"). */
@@ -127,11 +131,11 @@ const isObj = (x: any) => x != null && typeof x === "object" && !Array.isArray(x
  *  hit it would stand in for a version a shallow edge cut off. Where the previous version is HEAD (an uncommitted change),
  *  HEAD stays, as the previous version. */
 function versionRevs(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
-  const { base, prev } = revisions(root, files, readNow, argv); const head = git(root, ["rev-parse", "HEAD"])?.trim() ?? null;
+  const base = baseOf(root, argv); const { prev, cut } = previousCut(root, files, readNow, argv); const head = git(root, ["rev-parse", "HEAD"])?.trim() ?? null;
   const revs: { rev: string; why: string }[] = [];
   if (base && base !== head) revs.push({ rev: base, why: "the base" });
   if (prev && !revs.some((o) => o.rev === prev)) revs.push({ rev: prev, why: "the previous version" });
-  return { base, prev, revs };
+  return { base, prev, revs, prevCut: cut };
 }
 
 /** EN4's sense of "names a version": a file that is an object with at least one key (a version). */
@@ -158,8 +162,8 @@ const reader = (root: string, files: string[]) => { const seen = new Map<string,
 /** Walk each of revs (the base, the previous version) to the version that names one: {out: [{rev, why, was}] (deduplicated:
  *  the walks can meet), unnamed: [labels of the versions passed that held a file but named none], cut: a walk found
  *  nothing because a shallow clone's edge stopped it while it was still passing a file}. */
-function walked(root: string, files: string[], revs: { rev: string; why: string }[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any) {
-  const out: { rev: string; why: string; was: Record<string, any> }[] = [], passed = new Set<string>(), shallow = shallowOf(root); let cut = false;
+function walked(root: string, files: string[], revs: { rev: string; why: string }[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any, prevCut = false) {
+  const out: { rev: string; why: string; was: Record<string, any> }[] = [], passed = new Set<string>(), shallow = shallowOf(root); let cut = prevCut;   // prevCut: no previous version, because the edge is the newest change
   for (const { rev, why } of revs) { const w = walkFrom(root, rev, why, files, names, read, shallow); for (const u of w.unnamed) passed.add(u); if (!w.hit && w.cut) cut = true;
     if (w.hit && !out.some((x) => x.rev === w.hit!.rev)) out.push(w.hit); }
   return { out, cut, unnamed: [...passed].map((r) => `${r.slice(0, 8)} (${files.join(", ")} there: not JSON, JSON null, or no version)`) };
@@ -172,14 +176,14 @@ function walked(root: string, files: string[], revs: { rev: string; why: string 
  *  none" in its detail; with cut (a shallow clone's edge stopped the walk), the row is red. `names` says what naming a version is (default: a file that
  *  is an object with a key). */
 export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[], names = namesAny(files)) {
-  const { base, prev, revs } = versionRevs(root, files, readNow, argv);
-  return { base, prev, ...walked(root, files, revs, names, reader(root, files)) };
+  const { base, prev, revs, prevCut } = versionRevs(root, files, readNow, argv);
+  return { base, prev, ...walked(root, files, revs, names, reader(root, files), prevCut) };
 }
 
 /** What a version rule judged, for its row's title: "<rev> (<why>), ..." plus any version that names none; "no earlier
  *  version" only when there was none at all. */
-export const judgedText = (e: { out: { rev: string; why: string }[]; unnamed?: string[] }) =>
-  [e.out.map((o) => `${o.rev.slice(0, 8)} (${o.why})`).join(", ") || (e.unnamed?.length ? "none" : "no earlier version"), ...(e.unnamed?.length ? [`naming no version: ${e.unnamed.join(", ")}`] : [])].join("; ");
+export const judgedText = (e: { out: { rev: string; why: string }[]; unnamed?: string[]; cut?: boolean }) =>
+  [e.out.map((o) => `${o.rev.slice(0, 8)} (${o.why})`).join(", ") || (e.unnamed?.length || e.cut ? "none" : "no earlier version"), ...(e.cut && !e.out.length ? ["a shallow clone's edge cut off the version before"] : []), ...(e.unnamed?.length ? [`naming no version: ${e.unnamed.join(", ")}`] : [])].join("; ");
 
 /** A caught throw's words for a red row: pinhistory's own message as it is; anything else (a bug in a suite) with its
  *  stack; never empty, so `"threw" in r` and the message agree. */
@@ -250,11 +254,11 @@ export function unacknowledged(root: string, files: string[], changelog: string,
  *  earlier blob git can't read, since what it named is unknown. Callers catch a throw as one red row (TRV, LWV, EN4; N10). */
 export function sameVersionChanged(root: string, file: string, readNow: (f: string) => string | null, laws: { law: string; versionOf: (x: any) => any; data: string[] }[], norm: (field: string, x: any) => any = (_f, x) => x, argv?: string[]) {
   const t = readNow(file); let now: any; try { now = t == null ? null : JSON.parse(t); } catch (err: any) { throw new Error(`pinhistory: ${file} as it is now is not valid JSON (${err?.message ?? err})`); }
-  const { revs } = versionRevs(root, [file], readNow, argv); const read = reader(root, [file]);
+  const { revs, prevCut } = versionRevs(root, [file], readNow, argv); const read = reader(root, [file]);
   const j = (f: string, x: any) => JSON.stringify(norm(f, x));
   const out: { rev: string; law: string; version: string; field: string }[] = [], judged: string[] = [], unjudged: string[] = [], unheld: string[] = [], unnamed = new Set<string>();
-  for (const L of laws) { const w = walked(root, [file], revs, (was) => isObj(was[file]) && typeof L.versionOf(was[file]) === "string", read); w.unnamed.forEach((u) => unnamed.add(u));
-    if (!w.out.length && w.unnamed.length) (w.cut ? unjudged : unheld).push(`${L.law}: ${judgedText(w)}`);
+  for (const L of laws) { const w = walked(root, [file], revs, (was) => isObj(was[file]) && typeof L.versionOf(was[file]) === "string", read, prevCut); w.unnamed.forEach((u) => unnamed.add(u));
+    if (!w.out.length && w.cut) unjudged.push(`${L.law}: ${judgedText(w)}`); else if (!w.out.length && w.unnamed.length) unheld.push(`${L.law}: ${judgedText(w)}`);
     for (const { rev, why, was } of w.out) { const label = `${rev.slice(0, 8)} (${why})`; if (!judged.includes(label)) judged.push(label);
       const v = L.versionOf(was[file]); if (!isObj(now) || v !== L.versionOf(now)) continue;
       for (const f of L.data) if (j(f, was[file][f]) !== j(f, now[f])) out.push({ rev: rev.slice(0, 8), law: L.law, version: v, field: f }); } }
