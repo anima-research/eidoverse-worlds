@@ -677,6 +677,24 @@ export function openingsOf(level, room) {
   return out;
 }
 
+/** The sides of a room with no wall on them, where it is open to the outside, in N, E, S, W order. A room's nodes meet
+ *  other rooms only across walls (deriveRooms), so an unwalled side of one of its nodes that isn't another of its own
+ *  leads out: off the floor, or onto a cut cell's unfloored half. A diagonal is always a wall, never an open side. */
+export function openSidesOf(level, room) {
+  const lv = level.level, mine = new Set(room.cells), open = new Set();
+  for (const node of room.cells) {
+    const [x, z] = node.split(':')[0].split(',').map(Number);
+    for (let i = 0; i < 4; i++) {
+      const [side, back] = SIDE_OF[i], [dx, dz] = STEP[i];
+      if (nodeOnSide(lv, x, z, side) !== node) continue;   // that side of a cut cell is its other half's
+      const [axis, ex, ez] = edgeBetween(x, z, x + dx, z + dz);
+      if (!lv.walls.has(edgeKey(axis, ex, ez)) && !mine.has(nodeOnSide(lv, x + dx, z + dz, back))) open.add(side);
+    }
+  }
+  return ['N', 'E', 'S', 'W'].filter((s) => open.has(s)).map((s) => SIDES[s]);
+}
+const listed = (xs) => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
+
 /** One sentence for the room a point stands in, or null. Sides are the grid's own compass, and the phrasing says so. */
 export function describeHere(plan, lx, lz, ly = 0) {
   // the room's own level, never one re-derived from the cell key (cell keys are x,z: §13)
@@ -689,9 +707,11 @@ export function describeHere(plan, lx, lz, ly = 0) {
   const doors = ways.filter((o) => o.kind !== 'window');
   const wins = ways.filter((o) => o.kind === 'window');
   const phrase = (o) => `a ${o.kind} on its ${o.side} to ${o.to ?? 'outside'}`;
+  const open = openSidesOf(level, room);   // sealed means walled all round, not only doorless
+  const exits = [...doors.map(phrase), ...(open.length ? [`open to the outside on its ${listed(open)} (no wall)`] : [])];
   const parts = [`You are in ${name} — ${w}×${d}m, ${room.area}m².`];
-  parts.push(doors.length
-    ? `Ways out: ${doors.map(phrase).join('; ')}.`
+  parts.push(exits.length
+    ? `Ways out: ${exits.join('; ')}.`
     : `No doors — this room is sealed.`);
   if (wins.length) parts.push(`Also ${wins.map(phrase).join('; ')}.`);
   return parts.join(' ');
