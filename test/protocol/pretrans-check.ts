@@ -954,7 +954,7 @@ await C("D13g", "the walk in the real suites: trig-check, laws-check and engine-
     return [suite, { behindFailed: failed(b, suite), behindRed: rows.map((id) => b.some((l) => l.startsWith(`FAIL ${id}`))), cleanFailed: failed(run(clean, suite), suite), placeholderFailed: failed(run(placeholder, suite), suite),
       behindFails: b.filter((l) => l.startsWith("FAIL")).map((l) => l.slice(0, 120)) }]; }));
   return [want.every(([suite, rows]) => seen[suite].behindFailed === rows.length && seen[suite].behindRed.every(Boolean) && seen[suite].cleanFailed === 0 && seen[suite].placeholderFailed === 0), seen]; });
-await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file of {engine version: {scenario: digest}}): for each version and scenario, back to the newest version that holds that digest, so a version left out for a commit, an empty version entry, or a scenario left out for a commit hides nothing (each history ends with that digest changed under its version: caught); {} and a deleted file too; with nothing changed, nothing is", () => {
+await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file of {engine version: {scenario: digest}}): for each version and scenario, back to the newest version that holds that digest, so a version left out for a commit, an empty version entry, or a scenario left out for a commit hides nothing (each history ends with that digest changed under its version: caught); {} and a deleted file too; with nothing changed, nothing is. A digest gone now behind a version that names none ({}, JSON null, conflict markers, a deleted file; a whole engine version too) is still found and reported gone, and a scenario retired and then re-added with other data is caught; a version that holds valid digests is never listed as naming none just because it lacks a new scenario", () => {
   const J = (o: any) => JSON.stringify(o, null, 1) + "\n";
   const hist = (tag: string, steps: (string | null)[], last: string) => { const R = scratch(`d13h-${tag}`) + "repo"; fs.mkdirSync(R);
     const g = (...a: string[]) => { const r = require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
@@ -963,7 +963,7 @@ await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file
     fs.writeFileSync(path.join(R, "f.json"), last);   // the working tree: the change being judged
     const pb = process.env.PIN_BASE; delete process.env.PIN_BASE;
     try { const r = PH.versionsChanged(R, "f.json", (f: string) => (fs.existsSync(path.join(R, f)) ? fs.readFileSync(path.join(R, f), "utf8") : null), []);
-      return r.changed.flatMap((c: any) => c.keys.map(([s, x]: any) => `${c.version}.${s}=${x}`)); }
+      const got = r.changed.flatMap((c: any) => c.keys.map(([s, x]: any) => `${c.version}.${s}=${x}`)); return tag === "added" ? { got, unnamed: r.unnamed } : got; }
     catch (err: any) { return `threw: ${String(err?.message ?? err)}`; } finally { if (pb === undefined) delete process.env.PIN_BASE; else process.env.PIN_BASE = pb; } };
   const res: Record<string, any> = {
     versionLeftOut: hist("vout", [J({ v1: { a: "1" }, v2: { b: "1" } }), J({ v1: { a: "1" } })], J({ v1: { a: "1" }, v2: { b: "2" } })),
@@ -971,8 +971,16 @@ await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file
     scenarioLeftOut: hist("sout", [J({ v1: { a: "1", b: "1" } }), J({ v1: { a: "1" } })], J({ v1: { a: "1", b: "2" } })),
     emptyFile: hist("fempty", [J({ v1: { a: "1" } }), "{}\n"], J({ v1: { a: "2" } })),
     deleted: hist("fdel", [J({ v1: { a: "1" } }), null], J({ v1: { a: "2" } })),
-    unchanged: hist("same", [J({ v1: { a: "1" }, v2: { b: "1" } }), J({ v1: { a: "1" } })], J({ v1: { a: "1" }, v2: { b: "1" } })) };
-  const want: Record<string, string[]> = { versionLeftOut: ["v2.b=1"], emptyEntry: ["v1.a=1"], scenarioLeftOut: ["v1.b=1"], emptyFile: ["v1.a=1"], deleted: ["v1.a=1"], unchanged: [] };
+    unchanged: hist("same", [J({ v1: { a: "1" }, v2: { b: "1" } }), J({ v1: { a: "1" } })], J({ v1: { a: "1" }, v2: { b: "1" } })),
+    goneBehindEmpty: hist("gempty", [J({ v1: { a: "1", x: "1" } }), "{}\n"], J({ v1: { a: "1" } })),          // x is gone now, and the version before it names none:
+    goneBehindDeleted: hist("gdel", [J({ v1: { a: "1", x: "1" } }), null], J({ v1: { a: "1" } })),            // its key comes from the walk, not from now, the base or the previous version
+    goneBehindNull: hist("gnull", [J({ v1: { a: "1", x: "1" } }), "null\n"], J({ v1: { a: "1" } })),
+    goneBehindMarkers: hist("gmark", [J({ v1: { a: "1", x: "1" } }), "<<<<<<< HEAD\n"], J({ v1: { a: "1" } })),
+    versionGoneBehindEmpty: hist("gver", [J({ v1: { a: "1" }, v2: { b: "1" } }), "{}\n"], J({ v1: { a: "1" } })),
+    added: hist("added", [J({ v1: { a: "1" } })], J({ v1: { a: "1", n: "1" } })),   // a PR adding a scenario: the version before holds valid digests, so it is judged and never listed as naming none
+    retiredReadded: hist("rere", [J({ v1: { a: "1", x: "1" } }), J({ v1: { a: "1" } }), J({ v1: { a: "1" }, v9: { q: "1" } })], J({ v1: { a: "1", x: "2" }, v9: { q: "1" } })) };
+  const want: Record<string, string[]> = { versionLeftOut: ["v2.b=1"], emptyEntry: ["v1.a=1"], scenarioLeftOut: ["v1.b=1"], emptyFile: ["v1.a=1"], deleted: ["v1.a=1"], unchanged: [],
+    goneBehindEmpty: ["v1.x=1"], goneBehindDeleted: ["v1.x=1"], goneBehindNull: ["v1.x=1"], goneBehindMarkers: ["v1.x=1"], versionGoneBehindEmpty: ["v2.b=1"], retiredReadded: ["v1.x=1"], added: { got: [], unnamed: [] } as any };
   return [Object.entries(want).every(([k, w]) => JSON.stringify(res[k]) === JSON.stringify(w)), res]; });
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;

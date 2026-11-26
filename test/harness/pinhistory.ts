@@ -235,7 +235,8 @@ export function sameVersionChanged(root: string, file: string, readNow: (f: stri
 }
 
 /** EN4's rule, per digest, for a file of {engine version: {scenario: digest}}: "a version's digests never change under its
- *  name". Each (version, scenario) found now, at the base or at the previous version walks on its own (walkFrom), back to
+ *  name". Each (version, scenario) found now, or in the newest version at or behind the base or the previous version that
+ *  names any, walks on its own (walkFrom), back to
  *  the newest version that holds that digest: a version left out for a commit, an empty version entry, a scenario left out,
  *  {}, JSON null, text that isn't JSON or an absent file holds none, so none of them hides the digest before it. Where the
  *  digest found differs from now's (or is gone now), it is changed. {out: [{rev, why}] (what was judged, for judgedText),
@@ -245,12 +246,12 @@ export function versionsChanged(root: string, file: string, readNow: (f: string)
   const t = readNow(file); let now: any; try { now = t == null ? null : JSON.parse(t); } catch (err: any) { throw new Error(`pinhistory: ${file} as it is now is not valid JSON (${err?.message ?? err})`); }
   const { revs } = revisions(root, [file], readNow, argv); const read = reader(root, [file]);
   const keys = new Map<string, [string, string]>(); const add = (o: any) => { if (isObj(o)) for (const [v, d] of Object.entries<any>(o)) if (isObj(d)) for (const sc of Object.keys(d)) keys.set(JSON.stringify([v, sc]), [v, sc]); };
-  add(now); for (const { rev, why } of revs) add(read(rev, why).was[file]);
-  const out: { rev: string; why: string }[] = [], unnamed = new Set<string>(), changed = new Map<string, { rev: string; version: string; entry: any; keys: [string, any][] }>();
+  add(now); const whole = walked(root, [file], revs, namesAny([file]), read); for (const o of whole.out) add(o.was[file]);   // and from the newest version at or behind the base and the previous version that names any: a digest gone now behind {} or a deletion is still found
+  const out: { rev: string; why: string }[] = [], changed = new Map<string, { rev: string; version: string; entry: any; keys: [string, any][] }>();
   for (const [v, sc] of keys.values()) {
-    const w = walked(root, [file], revs, (was) => isObj(was[file]) && isObj(was[file][v]) && was[file][v][sc] != null, read); w.unnamed.forEach((u) => unnamed.add(u));
+    const w = walked(root, [file], revs, (was) => isObj(was[file]) && isObj(was[file][v]) && was[file][v][sc] != null, read);
     for (const { rev, why, was } of w.out) { if (!out.some((o) => o.rev === rev && o.why === why)) out.push({ rev, why });
       const x = was[file][v][sc]; if (now?.[v]?.[sc] === x) continue;
       const g = changed.get(`${rev} ${v}`) ?? { rev, version: v, entry: was[file][v], keys: [] }; g.keys.push([sc, x]); changed.set(`${rev} ${v}`, g); } }
-  return { out, unnamed: [...unnamed], changed: [...changed.values()] };
+  return { out, unnamed: whole.unnamed, changed: [...changed.values()] };   // naming none: only a version whose whole file names none (not one that just lacks a key)
 }
