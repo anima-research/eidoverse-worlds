@@ -35,11 +35,19 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   ag.entities.set("hut", { id: "hut", ...base, collider: box, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
   ag.entities.set("ghost", { id: "ghost", ...base, collider: { ...box, enabled: false } });
   const report = { walkIn: { roomScale: true }, levels: [{ y: 0, area: 20, reachable: 20 }], warnings: [] };
+  // a small model: the server calls it solid and advises collider.shape "mesh" (server/buildcheck.ts), which a thing with
+  // no collider of its own can't use
+  const small = { walkIn: { roomScale: false }, levels: [], warnings: [{ kind: "solid", message: "1.0×1.0m and 1.0m tall is under the walk-in size: the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: \"mesh\"}" }] };
+  ag.entities.set("smallghost", { id: "smallghost", ...base, model: "zz/crate.glb", collider: { ...box, enabled: false } });
+  ag.entities.set("smallsolid", { id: "smallsolid", ...base, model: "zz/crate.glb", collide: undefined, collider: undefined });
   const realFetch = globalThis.fetch;
-  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(report)) : realFetch(u))) as typeof fetch;
+  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(String(u).includes("crate") ? small : report)) : realFetch(u))) as typeof fetch;
   let said: Record<string, string> = {};
-  try { for (const id of ["solid", "hut", "ghost"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
+  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
   finally { globalThis.fetch = realFetch; }
+  ok(/SOLID — under the walk-in size/.test(said.smallsolid) && /collider \{shape/.test(said.smallsolid), "347/3 (control) measure check: a small thing is solid, with the server's advice", said.smallsolid);
+  ok(!/SOLID|nobody can go inside|shape: \\?"mesh/.test(said.smallghost) && /no collider of its own/.test(said.smallghost) && /collision is off/.test(said.smallghost),
+    "347/3 measure check: a small thing with its collision off isn't solid, and isn't told to change its collider shape", said.smallghost);
   ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
   for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
     ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),

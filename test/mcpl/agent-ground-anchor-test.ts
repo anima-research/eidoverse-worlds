@@ -38,7 +38,8 @@ const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0
 // held.glb: its geometry answers only when the row releases it; flaky.glb: answers until `flaky` is set, then fails
 let release = null as (() => void) | null, flaky = false;
 ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
-  : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom) : crateGeom;
+  : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
+  : lib === "nogeom.glb" ? null : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
 ag.ground.meshFor = async () => null;
 const becomeAnchor = (id: string) => {
@@ -126,5 +127,21 @@ ag.entities.set("rug2", { id: "rug2", model: "rug.glb", pos: [170, 0, 0], yaw: 0
 let landedFirst = false; onFit = () => queueMicrotask(() => { landedFirst = !!supportHolders()["anchor/rug2"]; becomeAnchor("rug2"); });
 await ag.ground.syncSupport("rug2");
 check("a rug that becomes an anchor while its grid fit is in flight keeps none", landedFirst && await settled() && !supportHolders()["anchor/rug2"] && !ag.ground.supportIds.has("rug2"), JSON.stringify(Object.keys(supportHolders())));
+
+// (#347 cold read) a fit in flight overtaken with no drop of its own: the thing vanishes with no "gone" (a rejoin's
+// snapshot clears the entities and folds the new cut from an empty view, agent.ts), or it is respawned as a model whose
+// geometry can't be read (a new record, as the fold writes one; that sync returns before dropping). Only overtaken's
+// own drop takes the landed fit back out.
+for (const [what, id, x, overtake] of [
+  ["vanishes without a gone event", "rug3", 250, (id: string) => ag.entities.delete(id)],
+  ["is respawned as a model whose geometry can't be read", "rug4", 270, (id: string) => {
+    ag.entities.set(id, { ...ag.entities.get(id), model: "nogeom.glb" }); ag.onThingChange({ id, what: "born" }, null, false, "x", Date.now()); }],
+] as const) {
+  ag.entities.set(id, { id, model: "rug.glb", pos: [x, 0, 0], yaw: 0, actor: "x" });
+  let landed = false; onFit = () => queueMicrotask(() => { landed = !!supportHolders()[`anchor/${id}`]; overtake(id); });
+  await ag.ground.syncSupport(id); await ag.ground.supportReady();
+  check(`a rug whose grid fit is in flight when it ${what} keeps none`, landed && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id),
+    JSON.stringify(Object.keys(supportHolders())));
+}
 
 done();
