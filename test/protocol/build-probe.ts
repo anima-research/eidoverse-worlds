@@ -25,10 +25,10 @@
 //       nothing (MM34); a pivot-tool drag holds nothing against an older lock question and writes the pivot it was given
 //       (MM30), and a press after a tool key mid-drag drags the new tool's seat (MM39); a gizmo drag held still keeps
 //       relaying (MM31); a selection change before the travel drops the press, as does a dropped follower and a changed
-//       Shift-press group (MM32, MM36, MM40); a planar group drag goes no further than 20 m (MM33); a press whose ray misses
-//       the plane takes hold once a ray meets it within that reach, moving nothing there (MM12), and not where a ray meets
-//       it beyond reach (MM35); a press on a large thing's end far from its origin takes hold at once (MM37), and a grazing
-//       press past a tall thing doesn't (MM38)
+//       Shift-press group (MM32, MM36, MM40), while an unchanged one drags (MM41); a planar group
+//       drag goes no further than 20 m (MM33); a press whose ray misses the plane takes hold once a ray meets it within that
+//       reach, moving nothing there (MM12), and not where a ray meets it beyond reach (MM35); a press on a large thing's end
+//       far from its origin takes hold at once (MM37), and a grazing press past a tall thing doesn't (MM38)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -911,6 +911,24 @@ try {
         !!atT && drag === null && myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-chair")]),
         { atT, drag, sel, local, B0, T0, acts: actsSince(n0) });
       if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // the same Shift-press on the table with the selection unchanged is a vertical drag of the lot, led by it: one act raising
+    // both by the same height, and the table first in the selection (MM10, MM11 and MM14 press the primary; this one doesn't)
+    // (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-tbl"), T0), 3000);
+      const B1 = pose("mm-box"), T1 = pose("mm-tbl"), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      const dy = T1 && B1 ? [T1[1] - T0[1], B1[1] - B0[1]] : null;
+      check("MM41 a Shift-press on the table (selected, not the primary) with the selection unchanged drags the lot up: one act, both risen by the same height, the table now leading the selection",
+        !!atT && drag?.armed === true && myActs().length === n0 + 1 && !!dy && dy[0] > 0.005 && Math.abs(dy[0] - dy[1]) < 0.01 && Math.abs(T1[0] - T0[0]) < 0.01 && Math.abs(T1[2] - T0[2]) < 0.01
+          && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-tbl"), NODE.get("mm-box")]), { atT, drag, dy, T0, T1, B0, B1, sel, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
       await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
     }
 
