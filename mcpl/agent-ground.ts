@@ -397,11 +397,13 @@ export class AgentGround {
   async syncSupport(id: string) {
     const before = this.a.entities.get(id);
     if (!before?.model) return;  // only a model carries a collider
-    if (collisionElsewhere(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled), or a structure's anchor: nothing to stand on
-    // A moving thing supports nothing here (drop path as well as skip path); so
-    // does mounted cargo, whose parent's transform this code doesn't track.
-    if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
-    const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
+    // the model's bytes carry its own description too (its places: modelMetaOf), and meshFor is their only reader, so
+    // they're read whatever the thing supports; the drops below are issued before this or any other await
+    const meshP = this.meshFor(before.model);
+    // collision off (collider.enabled), or a structure's anchor: nothing to stand on. A moving thing supports nothing
+    // here (drop path as well as skip path); so does mounted cargo, whose parent's transform this code doesn't track.
+    if (collisionElsewhere(before) || this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); await meshP; return; }
+    const [g, mesh] = await Promise.all([this.geomFor(before.model), meshP]);
     // Re-read and re-CHECK: the id may have been removed and respawned as
     // something else while its geometry was in flight (hence the model comparison).
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)

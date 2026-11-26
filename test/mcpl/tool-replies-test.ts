@@ -48,6 +48,8 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   ok(/SOLID — under the walk-in size/.test(said.smallsolid) && /collider \{shape/.test(said.smallsolid), "347/3 (control) measure check: a small thing is solid, with the server's advice", said.smallsolid);
   ok(!/SOLID|nobody can go inside|shape: \\?"mesh/.test(said.smallghost) && /no collider of its own/.test(said.smallghost) && /collision is off/.test(said.smallghost),
     "347/3 measure check: a small thing with its collision off isn't solid, and isn't told to change its collider shape", said.smallghost);
+  // its report has no floors (and, the solid warning dropped, no problems): "every floor ... can be reached" would be vacuous
+  ok(!/every floor/.test(said.smallghost) && /no floor/.test(said.smallghost), "347 measure check: a report with no floors doesn't say every floor can be reached", said.smallghost);
   ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
   for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
     ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),

@@ -36,9 +36,10 @@ const rugGeom = { bbox: { min: [-1.25, 0, -0.75], max: [1.25, 0.3, 0.75], size: 
 // badrug.glb: the same rug, its grid one the fitter refuses (a version it doesn't read)
 const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0.75], sizeXZ: [2.5, 1.5], lie: 0.2, certSpread: 0.02, cells: Array(24 * 24).fill(0.3) } };
 // held.glb: its geometry answers only when the row releases it; flaky.glb: answers until `flaky` is set, then fails
-let release = null as (() => void) | null, flaky = false;
+// every held read is kept and released together: a second read of held.glb must not strand the first
+const held: (() => void)[] = []; let flaky = false;
 ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
-  : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
+  : lib === "held.glb" ? new Promise((r) => { held.push(() => r(crateGeom)); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom)
   : lib === "nogeom.glb" ? null : crateGeom;
 // no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
 ag.ground.meshFor = async () => null;
@@ -115,8 +116,8 @@ check("a thing that becomes an anchor while its geometry can't be read still dro
 // becoming an anchor while its geometry is in flight: the re-check after the fetch refuses it
 ag.entities.set("pend", { id: "pend", model: "held.glb", pos: [130, 0, 0], yaw: 0, actor: "x" });
 const pending = ag.ground.syncSupport("pend");
-const held = !!release; becomeAnchor("pend"); release?.(); await pending;
-check("a thing that becomes an anchor while its geometry is in flight registers none", held && await settled() && !supportHolders()["anchor/pend"], JSON.stringify(Object.keys(supportHolders())));
+const wasHeld = held.length === 1; becomeAnchor("pend"); const reads = held.length; held.splice(0).forEach((r) => r()); await pending;
+check("a thing that becomes an anchor while its geometry is in flight registers none, and its event asks no second time", wasHeld && reads === 1 && await settled() && !supportHolders()["anchor/pend"], JSON.stringify(Object.keys(supportHolders())));
 
 // ...and while its grid fit is in flight: the fit that lands is taken back out
 ag.entities.set("rug", { id: "rug", model: "rug.glb", pos: [150, 0, 0], yaw: 0, actor: "x" });
@@ -142,6 +143,28 @@ for (const [what, id, x, overtake] of [
   await ag.ground.syncSupport(id); await ag.ground.supportReady();
   check(`a rug whose grid fit is in flight when it ${what} keeps none`, landed && await settled() && !supportHolders()[`anchor/${id}`] && !ag.ground.supportIds.has(id),
     JSON.stringify(Object.keys(supportHolders())));
+}
+
+// (#347 reader) an anchor still reads its model's own description: its places (the model's `building` extras, read
+// with its bytes by meshFor, the only reader), though it stands on nothing. The two-storey fixture declares an arrival
+// `outside`, listed as the place `entrance`; no other thing here has loaded the model first.
+{
+  const { buildGlb, boxes, building } = await import("../fixtures/two-storey-fixture.ts");
+  const glb = await buildGlb(boxes, { building });
+  const lib = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (r) => /^\/library\/fixtures\/tower[0-9]*\.glb$/.test(new URL(r.url).pathname) ? new Response(glb) : new Response("", { status: 404 }) });
+  const towerAg: any = new WorldAgent({ url: `ws://127.0.0.1:${lib.port}/ws`, name: "places-bot", world: "anchor" });
+  towerAg.entities.set("hut", { id: "hut", model: "fixtures/tower.glb", pos: [300, 0, 0], yaw: 0, actor: "x",
+    structure: { levels: [{ y: 0, tiles: [[0, 0]] }] }, places: { yard: { at: [0, 0, 8] } } });
+  await towerAg.ground.syncSupport("hut");
+  const names = towerAg.placesOn(towerAg.entities.get("hut")).map((p: any) => p.name).sort();
+  check("an anchor whose model nobody loaded first lists the model's places (entrance) beside its own (yard), and has no support",
+    names.includes("entrance") && names.includes("yard") && !towerAg.ground.supportIds.has("hut") && !supportHolders()["anchor/hut"], JSON.stringify({ names, holders: Object.keys(supportHolders()) }));
+  // the same for a thing with its collision off (it read no bytes on main either): a model of its own, also loaded first here
+  towerAg.entities.set("shed", { id: "shed", model: "fixtures/tower2.glb", pos: [320, 0, 0], yaw: 0, actor: "x", collider: { enabled: false } });
+  await towerAg.ground.syncSupport("shed");
+  const shed = towerAg.placesOn(towerAg.entities.get("shed")).map((p: any) => p.name);
+  check("...and so does a thing with its collision off", shed.includes("entrance") && !towerAg.ground.supportIds.has("shed"), JSON.stringify(shed));
+  lib.stop(true);
 }
 
 done();

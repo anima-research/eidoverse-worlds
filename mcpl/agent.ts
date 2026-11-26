@@ -776,6 +776,9 @@ export class WorldAgent {
             this.feetSettling = true;
             await this.applyView(false, null, null);
             if (this.closed) { clearTimeout(timeout); reject(new Error("agent closed while it joined")); break; }   // bot #333 13
+            // a thing removed while this body was away folds no "gone" (the cut is adopted from an empty view): let go of
+            // the support of everything this cut doesn't hold
+            for (const id of [...this.ground.supportIds.keys()]) if (!this.entities.has(id)) this.ground.dropSupport(id);
             void this.ground.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();

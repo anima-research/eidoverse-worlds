@@ -1620,7 +1620,7 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   L.push(`${what}: ${none ? `no collider of its own (${none}); as a model, ${r.walkIn?.roomScale ? "walk-in" : "under the walk-in size"}` : r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
     + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
   if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
-  else L.push("No problems found: every floor under its roof can be reached from outside.");
+  else L.push((r.levels ?? []).length ? "No problems found: every floor under its roof can be reached from outside." : "No problems found, and no floor for the check to walk.");
   const s = r.suggested ?? {};
   const parts = [
     ...(s.rooms ?? []).map((x: any) => `${x.id} (a room, floor ${x.min[1]}m, ${x.area}m²)`),
