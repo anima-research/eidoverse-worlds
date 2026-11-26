@@ -444,14 +444,17 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
   const t0 = rid.redial?.tries, r = rid.redial, next0 = r.next, reset0 = r.reset, asks = []; let atJoin = null;
   r.next = (floor, rand) => { const wait = next0.call(r, floor, rand ?? (() => 0)); asks.push({ tries: r.tries, wait }); return wait; };
   r.reset = () => { atJoin ??= r.tries; reset0.call(r); };
+  // time the drop to the next DIAL (the interval the backoff sets), not to a finished join (review bot r1 F1)
+  const connect0 = rid.connect; let dialAt = null;
+  rid.connect = function (...a) { dialAt ??= performance.now(); return connect0.apply(this, a); };
   try {
     const dropped = performance.now(); rid.ws.close(1000, "a drop");
     await tryUntil("the drop asked the shared backoff", () => asks.length, { ms: 1500, step: 10 });
     ok(t0 === 0 && asks.length === 1 && asks[0].tries === 1, "AT15 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, asks });
     await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
-    const back = Math.round(performance.now() - dropped);
-    ok(rid.joined && atJoin === 1 && asks.length === 1 && rid.redial?.tries === 0 && back < 1500, "AT15 …it gets back in by itself on that wait, and the join resets the backoff", { joined: rid.joined, atJoin, asks, tries: rid.redial?.tries, back });
-  } finally { r.next = next0; r.reset = reset0; }
+    const dial = dialAt === null ? null : Math.round(dialAt - dropped);
+    ok(rid.joined && atJoin === 1 && asks.length === 1 && rid.redial?.tries === 0 && dial !== null && dial < 1500, "AT15 …it dials again on that wait and gets back in by itself, and the join resets the backoff", { joined: rid.joined, atJoin, asks, tries: rid.redial?.tries, dial });
+  } finally { r.next = next0; r.reset = reset0; rid.connect = connect0; }
   rid.close(); }
 
 // ---- AT16: upload puts a file in the world's store, and create places it ----
