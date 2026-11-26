@@ -606,7 +606,7 @@ export class AgentSenses {
       // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
       const feet = selfEff?.ok ? me.y : this.a.feetY(this.a.isSlumped());
       for (const e of this.a.entities.values()) {
-        const data = bodyStructure(e);   // as the routes read it: one with collision off has no room to be sealed in
+        const data = bodyStructure(e, this.a.entities);   // as the routes read it: one with collision off, or switched off, has no room to be sealed in
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);

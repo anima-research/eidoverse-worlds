@@ -2,7 +2,7 @@
 // Its public members are the body's (one-line delegates in agent.ts), and it calls them there (this.a.x), as before.
 
 import type { WorldAgent } from "./agent.ts";
-import { type Entity, bodyStructure, collisionElsewhere, solidOffRecord, WORLD_READ_MS } from "./agent-result.ts";
+import { type Entity, bodyStructure, collisionElsewhere, solidOffRecord, switchedOff, WORLD_READ_MS } from "./agent-result.ts";
 import { shapeParams, shapedHeightAt, requestGrid, setGridFetcher, waterParams } from "../shared/terrainshape.js";
 import { flatHeightOf } from "../shared/terrainmath.js";
 import { analyzeWater, waterGridSeg } from "../shared/waterkind.js";
@@ -195,7 +195,7 @@ export class AgentGround {
     const terrain = this.a.heightAt(x, z), nowMs = this.a.serverNow();
     let best: { entity: string; level: number; height: number } | null = null;
     for (const e of this.a.entities.values()) {
-      const data = bodyStructure(e);   // none whose collision is off for bodies
+      const data = bodyStructure(e, this.a.entities);   // none whose collision is off for bodies, or switched off
       if (!data) continue;
       try {
         const plan = this.planFor(e.id, data);
@@ -225,7 +225,7 @@ export class AgentGround {
     const terrain = this.a.heightAt(x, z), nowMs = this.a.serverNow();
     const floors: Floor[] = [{ entity: null, level: -1, height: terrain }];
     for (const e of this.a.entities.values()) {
-      const data = bodyStructure(e);   // none whose collision is off for bodies
+      const data = bodyStructure(e, this.a.entities);   // none whose collision is off for bodies, or switched off
       if (!data) continue;
       try {
         const plan = this.planFor(e.id, data);
@@ -401,7 +401,9 @@ export class AgentGround {
     const before = this.a.entities.get(id);
     // only a model carries a collider; a thing that lost its model (a rejoin folds every thing as born) lets go of the old
     if (!before?.model) { this.dropSupport(id); return; }
-    if (solidOffRecord(before)) { this.dropSupport(id); return; }   // collision off (collider.enabled): nothing to stand on
+    // collision off (collider.enabled), or switched off (disabled, itself or up its chain: the browser loads no model and
+    // fits no collider, models_field offIn): nothing to stand on
+    if (solidOffRecord(before) || switchedOff(this.a.entities, id)) { this.dropSupport(id); return; }
     // A moving thing supports nothing here (drop path as well as skip path); so
     // does mounted cargo, whose parent's transform this code doesn't track.
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
@@ -419,9 +421,9 @@ export class AgentGround {
     // registered for this same model stays, as on main (a transient /geom or /library failure doesn't take a floor
     // away). A later sync of this model that has reserved or registered has recorded this model, so it is left alone.
     if (!g && !mesh) { if (this.supportModel.get(id) !== e.model) this.dropSupport(id); return; }
-    // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
-    // replay folds a mount right behind the spawn that triggered this fetch
-    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
+    // started moving, got mounted, or lost its collision / became an anchor / was switched off while its geometry was in
+    // flight — replay folds a mount right behind the spawn that triggered this fetch
+    if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e) || switchedOff(this.a.entities, id)) { this.dropSupport(id); return; }
     const s = e.scale ?? 1;
     // a stretched thing's per-axis scale (scale3), beside the one number decide() reads, as the browser's applyScale
     const s3 = Array.isArray(e.scale3) && e.scale3.length === 3 && e.scale3.every(Number.isFinite) ? e.scale3 as number[] : [s, s, s];

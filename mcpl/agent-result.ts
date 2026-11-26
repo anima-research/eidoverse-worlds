@@ -34,9 +34,19 @@ export const solidOffRecord = (e: any) => solidOff(e, "bodies");
 /** No collider of its own: collision off for bodies, or a structure's anchor (its planner owns the walls). The browser's
  *  client/lib/realize/models_field.js collisionOwnedElsewhere, minus mounts (the agent handles those on its own). */
 export const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordComponents(e).structure;
-/** A structure as a body meets it: its data, unless its collision is off for bodies (the browser then fits it no wall
- *  or floor: client/lib/realize/structure.js `solid`). Every floor and route reader takes its structures from here. */
-export const bodyStructure = (e: any): unknown => (solidOffRecord(e) ? undefined : recordComponents(e).structure);
+/** Switched off (componentspec `disabled`), itself or anything it hangs under: no client loads or draws it, and it has
+ *  no collider, wall or floor. The browser's client/lib/realize/models_field.js offIn (the engine's simlayer offChain),
+ *  over the agent's records, whose `parent` is the fold's. */
+export function switchedOff(entities: ReadonlyMap<string, any>, id: string): boolean {
+  for (let k: string | undefined = id, n = 0; k && n < 33; k = entities.get(k)?.parent?.to, n++) if (entities.get(k)?.disabled === true) return true;
+  return false;
+}
+/** A structure as a body meets it: its data, unless its collision is off for bodies or it is switched off, itself or up
+ *  its chain (the browser then fits it no wall or floor: client/lib/realize/structure.js `solid`, and `realize`'s offIn).
+ *  storeyUnder, floorsAt, walkStructures and look's "where you are" take their structures from here; a floor walk's ground
+ *  (agent.ts walkProbeGround) reads the floor walkSupport picked through storeyUnder (docs/research/headless-storeys.md). */
+export const bodyStructure = (e: any, entities: ReadonlyMap<string, any>): unknown =>
+  (solidOffRecord(e) || switchedOff(entities, e.id) ? undefined : recordComponents(e).structure);
 /** How far below its supporting surface a settled ragdoll's root lies. */
 export const RAGDOLL_ROOT_DROP = 0.7;
 /** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's

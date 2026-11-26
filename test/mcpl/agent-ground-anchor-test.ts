@@ -169,6 +169,32 @@ slowFail.splice(0).forEach((fail) => fail()); await older;
 check("a sync whose reads fail after a later sync of the same thing fitted it leaves that fit alone", later && await settled() && !!supportHolders()["anchor/raced"] && ag.ground.supportIds.has("raced"),
   JSON.stringify(Object.keys(supportHolders())));
 
+// (#347 bot 2 on 0c28db5e9) a thing switched off (componentspec disabled) has no collider in the browser (models_field
+// offIn: not loaded, retired): its support goes with it, on the comp event, at birth and while its geometry is in flight,
+// and comes back when it is switched on again. (A thing under a carrier rides it and supports nothing here anyway.)
+const disable = (id: string, on: boolean) => {
+  if (on) ag.entities.get(id).disabled = true; else delete ag.entities.get(id).disabled;
+  ag.onThingChange({ id, what: "comp", comp: "disabled" }, null, true, "x", Date.now());
+};
+ag.entities.set("switch", { id: "switch", model: "crate.glb", pos: [550, 0, 0], yaw: 0, actor: "x" });
+await ag.ground.syncSupport("switch"); const switchHad = await registered("anchor/switch");
+disable("switch", true); await ag.ground.supportReady();
+check("a crate switched off (disabled) lets go of its support", switchHad && await settled() && !supportHolders()["anchor/switch"] && !ag.ground.supportIds.has("switch"),
+  JSON.stringify(Object.keys(supportHolders())));
+disable("switch", false);
+check("...and switched on again it is a crate 2 m up again", await registered("anchor/switch") && Math.abs(deck(550).y - 2) < 1e-6, JSON.stringify(deck(550)));
+// born switched off: nothing is fitted, and its geometry isn't even asked for (the browser downloads no switched-off model)
+ag.entities.set("bornoff", { id: "bornoff", model: "held.glb", pos: [570, 0, 0], yaw: 0, actor: "x", disabled: true });
+ag.onThingChange({ id: "bornoff", what: "born" }, null, false, "x", Date.now());
+const bornAsked = held.length; held.splice(0).forEach((r) => r()); await ag.ground.supportReady();
+check("a crate already switched off when it is born (a join) registers none, and asks for no geometry", bornAsked === 0 && await settled() && !supportHolders()["anchor/bornoff"] && !ag.ground.supportIds.has("bornoff"),
+  JSON.stringify({ bornAsked, holders: Object.keys(supportHolders()) }));
+ag.entities.set("offpend", { id: "offpend", model: "held.glb", pos: [590, 0, 0], yaw: 0, actor: "x" });
+const offPending = ag.ground.syncSupport("offpend");
+const offHeld = held.length === 1; ag.entities.get("offpend").disabled = true; held.splice(0).forEach((r) => r()); await offPending;
+check("a crate switched off while its geometry is in flight registers none", offHeld && await settled() && !supportHolders()["anchor/offpend"] && !ag.ground.supportIds.has("offpend"),
+  JSON.stringify(Object.keys(supportHolders())));
+
 // (#347 reader) an anchor still reads its model's own description: its places (the model's `building` extras, read
 // with its bytes by meshFor, the only reader), though it stands on nothing, and inside its tracked sync, so they're
 // known once supportReady returns. The two-storey fixture declares an arrival `outside`, listed as the place
