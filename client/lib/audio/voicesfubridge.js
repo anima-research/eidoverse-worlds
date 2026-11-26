@@ -12,8 +12,15 @@ import { remotes } from '../player/remotes.js';
 import { myState } from '../player/controller.js';
 import { isHushed, volumeFor, receivingVoice, VOICE_FULL_M, VOICE_SILENT_M } from './voiceconsent.js';
 import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
+import { setModeratorMute } from './micstate.js';
 
 const send = (o) => { sendJoined(o); };
+
+// A moderator's voice mute is enforced at the SFU's ingress (server.ts sanctionSweep), so the room hears nothing from us
+// while it stands: micstate.js roomHears() and the mic glyph must say so. The same test the server applies.
+const voiceMuted = (r) => !!r?.muted?.channels?.includes('voice');
+setModeratorMute(voiceMuted(net.myRights));
+bus.on('your-rights', (r) => setModeratorMute(voiceMuted(r)));
 
 // A synth track arriving while no mic is published becomes the lane, via sfuMic(false) → sfuPublish
 // (a replaceTrack alone only repairs senders that exist). A live mic wins outright, as in voicesource.js; so does a

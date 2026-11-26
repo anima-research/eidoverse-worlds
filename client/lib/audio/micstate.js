@@ -12,8 +12,8 @@ const flashHint = (msg) => import('../ui/ui.js').then((u) => u.flashHint(msg, 40
 import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
-         gateUnavailable, ungatedConsent,
-         makeOnsetGate, makeLevelMeter, HANG_MS } from './micgate.js';
+         gateUnavailable, ungatedConsent, onUngatedConsent,
+         makeOnsetGate, makeLevelMeter, HANG_MS, SYNTH_AUDIBLE } from './micgate.js';
 // Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
 
@@ -24,19 +24,43 @@ let _muted = false;
 export const isMuted = () => _muted;
 export function toggleMute(on) {
   _muted = on === undefined ? !_muted : !!on;
+  // a synth voice heard before this moment is not heard after it: the synth hang restarts here (see micGateInfo)
+  _synthFrom = Date.now();
   gateAudio(Date.now());   // apply immediately — mute is authoritative
-  muteSynth();
+  applySynthTracks();
   bus.emit('audio:mute', _muted);
   return _muted;
 }
 
-// A synth lane has no gate to close, so mute disables its tracks; unmute re-enables only those, never one already off when
-// mute began (one the transport turns off DURING a mute comes back on: harmless today, it carries silence).
-let _mutedSynth = [];
-function muteSynth() {
-  if (!_muted) { for (const t of _mutedSynth) t.enabled = true; _mutedSynth = []; return; }
+// The server's moderator mute (voicesfubridge.js, from your-rights): the SFU drops this speaker at ingress, so the room
+// hears nothing whatever the lane does. Not a lane control; roomHears() and the indicators read it.
+let _modMuted = false;
+export function setModeratorMute(on) {
+  const next = !!on;
+  if (next === _modMuted) return;
+  _modMuted = next;
+  bus.emit('audio:mute', _muted);
+}
+/** Why the room can't hear a lane that is on: 'self' (toggleMute), 'moderator' (the server's mute), or null. */
+export const muteReason = () => (_muted ? 'self' : _modMuted ? 'moderator' : null);
+
+// The transport's own on/off for the lane's tracks (voicesfu.js sfuMic writes it here, never on the tracks). A synth
+// lane has no gate to close, so mute sits on top of it there: its tracks are on exactly when the transport has them on
+// and the person has not muted. Unmute restores the transport's answer, so a track the transport turned off during a
+// mute stays off. A device lane's tracks follow the transport alone: mute closes the gate (and the raw lane's tracks,
+// in the drive closure).
+let _laneOn = true;
+export function setLaneEnabled(on, stream = _lane) {
+  // a stream that is not (or no longer) the lane has no mute layered on it: its tracks take the answer as it is
+  if (stream !== _lane) { for (const t of stream?.getTracks?.() ?? []) t.enabled = !!on; return; }
+  _laneOn = !!on;
+  if (!_lane) return;
+  if (_lane.synthetic) applySynthTracks();
+  else for (const t of _lane.getTracks?.() ?? []) t.enabled = _laneOn;
+}
+function applySynthTracks() {
   if (!_lane?.synthetic) return;
-  for (const t of _lane.getTracks()) if (t.enabled) { t.enabled = false; _mutedSynth.push(t); }
+  for (const t of _lane.getTracks?.() ?? []) t.enabled = _laneOn && !_muted;
 }
 
 // ── push-to-talk: the key IS the gate ───────────────────────────────────────
@@ -100,33 +124,57 @@ const gateAudio = (now) => _onset.apply(now);
 const startOnsetWatch = () => _onset.start();
 const stopOnsetWatch = () => _onset.stop();
 
-// A synth voice has no gate (gateFor passes it through): audible is speaking, held through the gaps between words
-// for the onset gate's own hang (micgate.js HANG_MS).
-const SYNTH_AUDIBLE = 0.005;   // RMS ≈ -46 dBFS
-let _synthUntil = 0;
+// Re-consenting to a raw lane (micgate.js allowUngated) re-applies the gate at once, so its tracks open in the same call.
+onUngatedConsent(() => gateAudio(Date.now()));
 
-/** What the gate is actually doing right now — for the meter and for tuning. */
-// `speaking` is what the room gets: the lane's authority (no lane, muted) is
-// applied here as in the drive closure (for synth, as muteSynth), so the pill and the audio agree.
+// A synth voice has no gate (gateFor passes it through): audible is speaking, held through the gaps between words
+// for the onset gate's own hang (micgate.js HANG_MS). When it was last audible is the source's own record where it
+// keeps one (tts.js's pacer: `audibleAt` on the synthetic stream, voicesource.js), because the generator reaches WebRTC
+// without the AudioContext, whose clock can stall while it plays. A source without one is sampled through the analyser
+// on each read. Only sound from _synthFrom on counts: a mute or a new synth lane starts the hang afresh.
+let _synthFrom = 0, _synthAt = 0;
+function synthHeardAt(level) {
+  const at = _lane.audibleAt?.();
+  if (typeof at === 'number') return at;
+  if (level > SYNTH_AUDIBLE) _synthAt = Date.now();
+  return _synthAt;
+}
+const laneTracks = () => _lane?.getAudioTracks?.() ?? _lane?.getTracks?.() ?? [];
+const someTrackOn = (tracks) => tracks.some((t) => t.enabled && t.readyState !== 'ended');
+
+/** What the lane is sending right now, before the transport: the gate's threshold and hang, the held key, mute, a raw
+ *  lane, a synth voice. The room hearing it is roomHears(), which adds the transport and the moderator mute. */
 export const micGateInfo = () => {
   const info = _onset.info();
   if (_lane?.synthetic) {
-    const now = Date.now();
-    if (_muted) _synthUntil = 0;
-    else if (info.level > SYNTH_AUDIBLE) _synthUntil = now + HANG_MS;
-    return { ...info, speaking: now <= _synthUntil };
+    const now = Date.now(), at = synthHeardAt(info.level);
+    return { ...info, speaking: !_muted && at >= _synthFrom && now - at <= HANG_MS };
   }
   if (!micOn()) return { ...info, speaking: false };
-  // a raw lane is the drive closure above: closed without consent, else open whenever the mic is on under voice activation
-  if (gateUnavailable() && !ungatedConsent()) return { ...info, speaking: false };
-  if (gateUnavailable() && !pttMode()) return { ...info, speaking: true };
+  // a raw lane has no gain: its tracks are the wire (driven by the drive closure above; consent is what keeps them open)
+  if (gateUnavailable()) return { ...info, speaking: ungatedConsent() && someTrackOn(_raw?.getAudioTracks?.() ?? []) };
   return info;
 };
 
+// The transport says whether it is carrying the lane to the room right now (voicesfu.js registers it: a connected
+// peer connection with the lane's track on a sender negotiated to send). Without a transport nothing carries it.
+let _carrier = null;
+export const setLaneCarrier = (fn) => { _carrier = fn; };
+export const laneCarried = () => { try { return !!_lane && !!_carrier?.(_lane); } catch { return false; } };
+
+/** THE ONE ANSWER TO "DOES THE ROOM HEAR ME RIGHT NOW". The lane is sending (micGateInfo), its track is on, the
+ *  transport carries it to the room, and no moderator has muted you. Every indicator that goes gold asks here. */
+export const roomHears = () => !!_lane && !_modMuted && someTrackOn(laneTracks()) && laneCarried()
+  && !!micGateInfo().speaking;
+
 /** Live mic level 0..1 for UI. */
 export function micAnalyserLevel() { return _meter(); }
-/** Live device level 0..1, muted or not: the sensitivity bar still moves while muted, so it can be tuned. */
-export const micDeviceLevel = () => _deviceMeter();
+/** The sensitivity bar's level 0..1. A device lane: the device while it is on, muted or not (the bar still moves while
+ *  muted, so it can be tuned), and 0 once the mic is off. A synth lane: the source's own level where it keeps one. */
+export const micDeviceLevel = () => {
+  if (_lane?.synthetic) { const l = _lane.level?.(); return typeof l === 'number' ? l : _deviceMeter(); }
+  return _deviceLive ? _deviceMeter() : 0;
+};
 
 // ── the transport-facing seam ───────────────────────────────────────────────
 
@@ -140,7 +188,13 @@ const stopDevice = (s) => { if (s && !s.synthetic) for (const t of s.getTracks()
  *  decides, never the transport. */
 export function gateFor(rawStream) {
   if (_raw !== rawStream) stopDevice(_raw);
-  if (!rawStream || rawStream.synthetic) { _raw = _gated = _lane = rawStream; _synthUntil = 0; muteSynth(); return rawStream; }
+  _laneOn = true;   // a lane the transport is about to publish starts on
+  if (!rawStream || rawStream.synthetic) {
+    _raw = _gated = _lane = rawStream;
+    _synthFrom = Date.now(); _synthAt = 0;
+    applySynthTracks();   // muted: off before any sender gets it
+    return rawStream;
+  }
   _raw = rawStream;
   // Reuse a standing lane: attachSource returns the same gated stream the
   // senders already hold, so returning from a release costs zero renegotiation.

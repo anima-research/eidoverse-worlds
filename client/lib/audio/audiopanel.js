@@ -20,7 +20,7 @@ const micLive = () => {
 };
 import { bus } from '../base.js';
 import { ttsSection } from './ttsrow.js';
-import { micOn, toggleMic, micGateInfo, micDeviceLevel, isMuted } from './micstate.js';
+import { micOn, toggleMic, roomHears, micDeviceLevel, muteReason } from './micstate.js';
 // CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
 import { CONFIG } from '../base.js';
 
@@ -66,8 +66,9 @@ function checkRow(label, hint, checked, onChange) {
 }
 
 // mic sensitivity: a slider over a LIVE level bar (animates only while its row is in the DOM). The meter wears the mic
-// badge's palette (mictoggle.js INK.hot): gold = the room is getting your voice, warm = live but the room isn't
-// getting it (under the floor, or push-to-talk with the key up), dark = muted (still moves) or not publishing.
+// badge's palette (mictoggle.js INK.hot): gold = the room is getting your voice (micstate.js roomHears, a synth voice
+// included), warm = mic on but the room isn't getting it (under the floor, past the hang, push-to-talk with the key up,
+// not connected), dark = muted (the bar still moves, so it can be tuned) or mic off (the bar is empty).
 const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';
@@ -75,8 +76,11 @@ const LVL_DARK = '#6b5f42';
 function micFloorRow() {
   const row = document.createElement('div');
   row.className = 'sp-row row wide';
-  const hint = 'mic level below the marker is treated as room noise, not speech, and isn\'t sent as voice ' +
-    '(speech-to-text, when on, still hears it) — raise it if typing pings nearby agents; the bar shows your live mic level';
+  // the marker opens the gate; it does not filter what is sent: the hang keeps quieter sound going out after speech, and a
+  // consented ungated lane sends everything
+  const hint = 'voice-activation threshold: sound over the white marker opens your mic to the room, and it stays open ' +
+    'for a moment after you drop below it, so quieter sound right after speech is sent too — raise it if typing ' +
+    'opens the mic; the bar shows your live mic level, gold while the room hears you';
   const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =
     `<span class="nm" title="${hint}">mic sensitivity</span>` +
@@ -93,12 +97,11 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // gold is micstate.js micGateInfo().speaking, the HUD glyph's own answer, so the two agree with what the room gets
+  // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree with what the room gets
   let hot = false;
   const micIsLive = micLive;
   const paintLive = () => {
-    if (!micIsLive() || isMuted()) { hot = false; lvl.style.background = LVL_DARK; return; }
-    lvl.style.background = hot ? LVL_LIVE : LVL_WARM;
+    lvl.style.background = hot ? LVL_LIVE : (!micIsLive() || muteReason()) ? LVL_DARK : LVL_WARM;
   };
   paintLive();
   bus.on('audio:mic', paintLive);
@@ -124,7 +127,7 @@ function micFloorRow() {
     const level = micDeviceLevel();
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate)
-    const next = !!micGateInfo().speaking;
+    const next = roomHears();
     if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };

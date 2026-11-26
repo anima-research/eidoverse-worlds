@@ -12,7 +12,11 @@ import { report } from '../base.js';
 //   start(): MediaStreamTrack       — begin producing; returns the live track
 //   stop(): void                    — cease producing (track may end)
 //   label?: string                  — shown in the audio panel
+//   audibleAt?(): number            — Date.now() of the last frame it wrote over micgate.js SYNTH_AUDIBLE
+//   level?(): number                — the RMS of the last frame it wrote
 // }
+// The last two are the provider's own account of what it sent, read by micstate.js through the synthetic stream: the
+// track reaches WebRTC without the AudioContext, so an analyser on it can hear silence while the room hears speech.
 // One provider, replaceable. null = this body has no synthetic voice.
 let provider = null;
 
@@ -55,9 +59,12 @@ export async function voiceSource({ micWanted = true } = {}) {
 
 /** The synth provider's track as a stream, marked synthetic so callers can tell it from a device. */
 function synthStream() {
-  const track = provider.start();
+  const p = provider;
+  const track = p.start();
   const ms = new MediaStream([track]);
   // synthetic: the caller must not wrap it in the WebAudio gate (no room noise; the gate's clock is dead in headless bodies)
   ms.synthetic = true;
+  if (typeof p.audibleAt === 'function') ms.audibleAt = () => p.audibleAt();
+  if (typeof p.level === 'function') ms.level = () => p.level();
   return ms;
 }

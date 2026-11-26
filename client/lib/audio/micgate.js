@@ -33,8 +33,16 @@ let _gateUnavailable = false;   // the graph could not be built on this device
 let _ungatedConsent = false;    // explicit "transmit raw anyway" choice
 export const gateUnavailable = () => _gateUnavailable;
 export const ungatedConsent = () => _ungatedConsent;
-// revoking closes a live raw lane now: the consent is what keeps it open (micstate.js's drive closure re-checks it each tick)
-export function allowUngated(on) { _ungatedConsent = !!on; if (!on && _gateUnavailable) driveRawTracks(false); }
+// A change of consent takes effect at once, in both directions: revoking closes a live raw lane, and re-consenting
+// re-applies the gate's whole answer (micstate.js's drive closure, registered through onUngatedConsent), so the raw
+// tracks and what micGateInfo reports agree without waiting for the next tick.
+let _onConsent = null;
+export const onUngatedConsent = (fn) => { _onConsent = fn; };
+export function allowUngated(on) {
+  _ungatedConsent = !!on;
+  if (!on && _gateUnavailable) driveRawTracks(false);
+  try { _onConsent?.(); } catch (e) { report('ungated consent', e); }
+}
 
 /** Wrap a mic stream in the gate graph. Returns the gated stream for WebRTC, or
  *  null when the graph can't be built (the raw stream under allowUngated). */
@@ -235,6 +243,9 @@ export function makeLevelMeter(getMeasured) {
 
 /** The gate's hang-time: it holds open this long after the last tick over the line. */
 export const HANG_MS = 700;
+/** A synth voice is audible above this RMS (≈ -46 dBFS). A synth lane has no gate; micstate.js reports it speaking while
+ *  it is audible, held for HANG_MS, and tts.js's pacer records the last frame it wrote over this (audibleAt). */
+export const SYNTH_AUDIBLE = 0.005;
 
 /** The speech-onset gate: a block-minima noise floor, a fixed threshold with ~3 dB hysteresis and 700 ms hang-time,
  *  and the once-per-utterance 🎙 announcement. `drive(open)` is the transport's gain hand (it applies its own
@@ -300,8 +311,8 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
   return {
     /** Re-measure the room on every start: a floor learned in a quiet session would gate you out of a loud one. */
     start() {
-      if (_timer) return;
-      _above = false; _openUntil = 0;   // a reacquired lane starts closed, not inside the old hang
+      if (_timer) return;   // already watching: nothing below runs, so the latch and the floor carry on as they are
+      _above = false; _openUntil = 0;   // a watch started from stopped starts closed, not inside the old hang
       _noise = 0.01; _settle = 0;
       _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
       _blockMin = Infinity; _blockStart = Date.now();

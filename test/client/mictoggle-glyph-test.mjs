@@ -18,7 +18,7 @@ mock.module(lib('audio/audioctx.js'), () => ({
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(room); }, connect() {}, disconnect() {} }),
     createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
     createGain: () => ({ gain: { value: 0, setTargetAtTime(v) { this.value = v; } }, connect() {}, disconnect() {} }),
-    createMediaStreamDestination: () => ({ stream: { getTracks: () => [], getAudioTracks: () => [] } }),
+    createMediaStreamDestination: () => { const tr = { kind: 'audio', enabled: true, stop() {} }; return { stream: { getTracks: () => [tr], getAudioTracks: () => [tr] } }; },
     createDelay: () => ({ delayTime: { value: 0, setTargetAtTime() {} }, connect() {}, disconnect() {} }),
   }),
 }));
@@ -37,6 +37,8 @@ const t = (n, cond) => { cond ? ok++ : bad++; console.log(`${cond ? 'ok  ' : 'FA
 document.body.innerHTML = '<div id="hud"></div>';
 const vc = await import(lib('audio/voiceconsent.js'));
 const ms = await import(lib('audio/micstate.js'));
+// the transport carries whatever lane it is given: this suite is the gate's side (mic-room-hears-test.mjs runs the real one)
+ms.setLaneCarrier?.(() => true);
 vc.setMicFloor(0.16);                              // 80%: the line is -12 dBFS ≈ 0.25 RMS
 const track = { kind: 'audio', enabled: true, stop() {} };
 ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
@@ -83,7 +85,9 @@ t('consent revoked on a live raw lane: the track is off at once, and micGateInfo
 await pause('revoked: gate ticks and glyph polls have had time to reopen it', 300);
 t('consent revoked: ticks keep it off, and the glyph is not gold', rawTrack.enabled === false && gold() === false);
 mg.allowUngated(true);
-t('re-consented: the lane opens again and the glyph is gold', !!(await tryUntil('the re-consented raw lane reopens', () => rawTrack.enabled && gold())));
+t('re-consented: the raw track is on in the same call, agreeing with micGateInfo (no tick between)',
+  rawTrack.enabled === true && ms.micGateInfo().speaking === true);
+t('re-consented: the glyph is gold', !!(await tryUntil('the re-consented raw lane goes gold', () => rawTrack.enabled && gold())));
 mg.allowUngated(false);
 noGraph = false;
 
@@ -93,6 +97,8 @@ ms.setMicLive(false);
 const synthTrack = { kind: 'audio', enabled: true, stop() {} };
 const synth = { synthetic: true, getTracks: () => [synthTrack], getAudioTracks: () => [synthTrack] };
 ms.gateFor(synth);
+// the raw lane above left the glyph gold until its next poll: start the synth rows from a repainted, silent glyph
+room = 0.001; await tryUntil('the silent synth lane has repainted the glyph off gold', () => !gold());
 room = 0.3; await tryUntil('a playing synth voice turns the glyph gold', () => gold());
 t('synth voice playing: gold, and micGateInfo says the room hears it', gold() === true && ms.micGateInfo().speaking === true);
 room = 0.001; await tryUntil('a silent synth voice stops being gold', () => !gold());
@@ -112,7 +118,8 @@ ms.toggleMute(false);
 t('synth voice unmuted: its track is on again', synthTrack.enabled === true);
 await tryUntil('an unmuted playing synth voice is gold again', () => gold());
 t('synth voice unmuted: gold again', gold() === true);
-synthTrack.enabled = false; ms.toggleMute(true); ms.toggleMute(false);
+ms.setLaneEnabled(false);   // the transport turns the lane off (voicesfu.js sfuMic(false) with no provider)
+ms.toggleMute(true); ms.toggleMute(false);
 t('mute and unmute never re-enable a synth track the transport turned off', synthTrack.enabled === false);
 ms.toggleMute(true);
 const rebuilt = { kind: 'audio', enabled: true, stop() {} };   // the generator rebuilt while muted

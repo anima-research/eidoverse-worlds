@@ -389,8 +389,9 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["sfu-mic-gated", "client/sfu-mic-gated-test.mjs", 1], // the SFU transport publishes the gated stream, never the raw device: each sender path executed on the gated lane
   ["mic-ptt", "client/mic-ptt-test.mjs", 1], // push-to-talk: the gate decision executed under both regimes, the hang time and the rate limit
   ["micgate-onset", "client/micgate-onset-test.mjs", 1], // the onset gate on a held clock: one tick opens, the hang holds and ends, a restarted gate starts closed
-  ["mictoggle-glyph", "client/mictoggle-glyph-test.mjs", 3], // the HUD glyph is gold on micGateInfo's decision: the line, the hang, PTT, a consented raw lane, a synth voice
-  ["mic-meter-gate", "client/mic-meter-gate-test.mjs", 1], // the sensitivity bar is gold on the gate's decision (its threshold and hang, a synth voice), and still moves while muted
+  ["mictoggle-glyph", "client/mictoggle-glyph-test.mjs", 3], // the HUD glyph is gold on micstate roomHears (the gate's side here): the line, the hang, PTT, a consented raw lane, a synth voice
+  ["mic-meter-gate", "client/mic-meter-gate-test.mjs", 1], // the sensitivity bar is gold on the gate's decision (its threshold and hang, a synth voice), still moves while muted, and is empty with the mic off
+  ["mic-room-hears", "client/mic-room-hears-test.mjs", 1], // gold means the room hears you, through the real transport: an unconnected or failed ICE is not gold, mute and a moderator's mute show as mute, a synth voice with the mic off is gold off the provider's own record, and the transport's off outlasts an unmute
   ["stt-ptt", "client/stt-ptt-test.mjs", 1], // captions under push-to-talk: nothing posts with the key up; a release still flushes what was heard while held
   ["micstate", "client/micstate-test.mjs", 1], // every micstate export executed; releaseMicrophone keeps its lanes; the SFU hook is the one mic transport
   ["voice-wire", "shared/voice-wire-test.ts", 1], // voice state (mic, hear) on the pose wire, shared with everyone in the world per the owner's ruling; a late joiner sees it

@@ -8,6 +8,7 @@ import { report, bus } from '../base.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
 import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
+import { SYNTH_AUDIBLE } from './micgate.js';
 
 // The registered synthesizer, (text) => Promise<{pcm: Int16Array, sampleRate}>; null = microphone only.
 let ttsFn = null;
@@ -302,6 +303,12 @@ export function startPacer() {
     for (let n = 0; n + FRAME <= owed; n += FRAME) {
       const data = new Float32Array(FRAME);
       fillSpeech(data);
+      // what was written is what the senders carry: the HUD's "the room hears you" reads it (micstate.js micGateInfo),
+      // because the analyser that could measure the track runs on the AudioContext clock this pacer exists to avoid
+      let sq = 0;
+      for (let k = 0; k < FRAME; k++) sq += data[k] * data[k];
+      _lastRms = Math.sqrt(sq / FRAME);
+      if (_lastRms > SYNTH_AUDIBLE) _audibleAt = Date.now();
       try {
         // a stream closed between the liveness check and write() rejects async; the next tick rebuilds
         void writer.write(new AudioData({
@@ -324,6 +331,8 @@ export function stopPacer() {
   for (const s of _monSources) { try { s.stop(); } catch { /* already ended */ } }
   _monSources.clear();
 }
+
+let _lastRms = 0, _audibleAt = 0;   // the last frame the pacer wrote, and when it last wrote one over SYNTH_AUDIBLE
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */
 export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhead });
@@ -422,4 +431,7 @@ setSynthProvider({
   available: () => isTtsEnabled() && canSynthesize(),
   start: () => { const t = ensureGenerator(); startPacer(); return t; },
   stop: () => stopPacer(),
+  // what the pacer wrote, not what an analyser hears (voicesource.js passes these on with the synthetic stream)
+  audibleAt: () => _audibleAt,
+  level: () => (pacer ? _lastRms : 0),
 });

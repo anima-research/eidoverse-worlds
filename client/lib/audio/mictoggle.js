@@ -1,7 +1,7 @@
 // mictoggle — the mic badge beside the ∃ (self-injecting; main.js, ui-menu.js and the XR modules import its state): mic off by default, since a body
 // wakes up silent. A headphone glyph beside it gates INCOMING voice separately; V toggles the mic.
 
-import { micOn, toggleMic, setPttHeld, pttHeld, micGateInfo } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld, roomHears, muteReason } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -10,7 +10,9 @@ import { bus } from '../base.js';
 import { register as registerAction } from '../ui/actions.js';
 import { pathData } from '../ui/icons.js';
 
-// Three states: off = dim + slash · live = brand · hot (the room is getting your voice) = attention gold with a glow.
+// Four states: off = dim + slash · on = brand · muted = brand + slash (on, but the room hears nothing) · hot (the room is
+// getting your voice) = attention gold with a glow. Hot needs no mic: a synthesized voice published with the mic off
+// is heard too, and then the slash stays (the mic is off) under the gold.
 // ONE palette for both glyphs: they read as a pair, so any divergence reads as a state difference. The headphone's
 // stroke is thinner (its filled cups carry more ink than the mic's thin strokes) so the two weigh the same to the eye.
 // Inks come from the token sheet, read off the BUTTON on each paint so live token edits and build mode's re-pointed
@@ -25,8 +27,9 @@ const INK = {
   get slash() { return tok('--dim', '#7d8f8a'); },
 };
 
-const MIC_SVG = (on, hot) => {
+const MIC_SVG = (on, hot, muted = false) => {
   const c = hot ? INK.hot : on ? INK.on : INK.off;
+  const slash = !on || muted;
   return `
 <svg viewBox="0 0 32 32" width="26" height="26" style="${hot ? `filter:drop-shadow(0 0 5px ${INK.hot})` : ''}">
   <g fill="none" stroke="${c}" stroke-width="2" stroke-linecap="round">
@@ -34,7 +37,7 @@ const MIC_SVG = (on, hot) => {
     <path d="M8 15 a8 8 0 0 0 16 0"/>
     <line x1="16" y1="23" x2="16" y2="27"/>
     <line x1="11" y1="27" x2="21" y2="27"/>
-    ${on ? '' : `<line x1="7" y1="4" x2="25" y2="28" stroke="${INK.slash}"/>`}
+    ${slash ? `<line x1="7" y1="4" x2="25" y2="28" stroke="${on && muted ? INK.on : INK.slash}"/>` : ''}
   </g>
 </svg>`;
 };
@@ -79,8 +82,8 @@ export const xrGlyphAvailable = () => !!xrHook;
 export const xrLive = () => { try { return !!xrHook?.live?.(); } catch { return false; } };
 export function flipXr() { xrHook?.onclick?.(); }
 
-let micHot = false;
-// the glyph reads the LIVE transport: it must never say private while the room hears you
+let micHot = false, micMuted = null;
+// on/off is the LIVE transport's mic state (what V toggles); gold is micstate.js roomHears(), whatever that state is
 const micIsOn = () => {
   // never throw: a throw aborts the tick before paint() and freezes the glyph
   // prefer the cheap getter: relayDiag() allocates, and this runs 8×/s
@@ -92,18 +95,23 @@ const micIsOn = () => {
 // mic and hearing state ride the pose packet to everyone, agents included (docs/reference/POSE-WIRE.md "Voice state — who sees
 // it"); the tooltip says so
 const SHARED = '\nmic and hearing on/off are visible to everyone in this world';
+// every tooltip is true in every moment of its state: whether the room hears you right now is the gold, not the words
+const GOLD_NOTE = ' — gold while the room hears you';
 function paint() {
   if (!micBtn) return;
   const on = micIsOn();
   const deaf = on && !receivingVoice();
-  micBtn.innerHTML = MIC_SVG(on, on && micHot);
+  const muted = on && !micHot && micMuted;
+  micBtn.innerHTML = MIC_SVG(on, micHot, !!muted);
   micBtn.style.opacity = deaf ? '0.55' : '1';
-  // under PTT an armed mic isn't heard until the key is down: never say live while private, or private while live
-  micBtn.title = !on ? (pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
-    : pttMode() ? (pttHeld() ? 'transmitting — release V to stop'
+  micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here — the room hears nothing from you'
+    : muted ? 'mic on, but muted — the room hears nothing from you'
+    : !on ? (micHot ? 'mic off — the room is hearing your synthesized voice'
+      : pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
+    : pttMode() ? (pttHeld() ? 'push-to-talk: V held (release to stop)' + GOLD_NOTE
                              : 'push-to-talk armed — hold V to speak')
-    : deaf ? 'mic LIVE — but you are not hearing the room (click the headphones to listen)'
-    : 'mic LIVE — the world hears you (V)';
+    : deaf ? 'mic on — but you are not hearing the room (click the headphones to listen)'
+    : 'mic on (V to turn off)' + GOLD_NOTE;
   micBtn.title += SHARED;
   if (xrBtn) {
     const live = xrLive();
@@ -127,10 +135,11 @@ function paint() {
 }
 // hot = the room is getting your voice: polled at 8 Hz
 setInterval(() => {
-  if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
-  // gold = the gate's own decision (micstate.js micGateInfo: threshold, hang, PTT, mute, a raw lane, a synth voice), never a level of our own
-  const hot = !!micGateInfo().speaking;
-  if (hot !== micHot) { micHot = hot; paint(); }
+  // gold = micstate.js roomHears(): the gate's decision (threshold, hang, PTT, mute, a raw lane, a synth voice), the
+  // lane's track, the transport carrying it and the moderator mute; never a level or a mic state of our own
+  let hot = false, muted = null;
+  try { hot = roomHears(); muted = muteReason(); } catch { /* never throw: a throw would freeze the glyph */ }
+  if (hot !== micHot || muted !== micMuted) { micHot = hot; micMuted = muted; paint(); }
 }, 125);
 
 // ---- pair API for the ∃ menu: rows toggle these; per-glyph pins decide whether each hangs off the ∃
@@ -157,9 +166,9 @@ registerAction({ id: 'voice:mic', title: 'microphone on / off', group: 'voice', 
 registerAction({ id: 'voice:ear', title: 'hear voices on / off', group: 'voice', icon: 'headphones',
   keywords: ['ear', 'hush', 'deafen', 'headphones', 'listen', 'voice'], run: () => flipEar() });
 export const xrGlyph = (size = 16) => XR_SVG(xrLive()).replace('width="26" height="26"', `width="${size}" height="${size}"`);
-/** For the in-VR indicator (xrmicicon.js): hot = on and loud (raw level; under PTT only while the key or left A/X is held). */
-export const micIndicatorState = () => (!micIsOn() ? 'off' : micHot ? 'hot' : 'on');
-export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
+/** For the in-VR indicator (xrmicicon.js): hot = the room hears you (micstate.js roomHears, the HUD glyph's gold). */
+export const micIndicatorState = () => (micHot ? 'hot' : !micIsOn() ? 'off' : 'on');
+export const micIndicatorSvg = (size = 64) => MIC_SVG(micIsOn(), micHot, !micHot && !!micMuted).replace('width="26" height="26"', `width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"`);
 export const micGlyph = (size = 16) => MIC_SVG(micIsOn(), false).replace('width="26" height="26"', `width="${size}" height="${size}"`);
 /** The glyphs for a given state, in the inks they would paint now (harness: client-check MIC reads them in and out of build mode). */
 export const micGlyphFor = (on, hot) => MIC_SVG(!!on, !!hot);

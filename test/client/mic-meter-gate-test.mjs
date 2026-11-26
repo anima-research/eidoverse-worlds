@@ -22,7 +22,7 @@ mock.module(at('../../client/lib/audio/audioctx.js'), () => ({
     createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData(buf) { buf.fill(level); }, connect() {}, disconnect() {} }),
     createMediaStreamSource: () => ({ connect() {}, disconnect() {} }),
     createGain: () => ({ gain: { value: 0, setTargetAtTime(v) { this.value = v; } }, connect() {}, disconnect() {} }),
-    createMediaStreamDestination: () => ({ stream: { getTracks: () => [], getAudioTracks: () => [] } }),
+    createMediaStreamDestination: () => { const tr = { kind: 'audio', enabled: true, stop() {} }; return { stream: { getTracks: () => [tr], getAudioTracks: () => [tr] } }; },
     createDelay: () => ({ delayTime: { value: 0, setTargetAtTime() {} }, connect() {}, disconnect() {} }),
   }),
 }));
@@ -32,6 +32,8 @@ localStorage.clear();
 const vc = await import('../../client/lib/audio/voiceconsent.js');
 const { initAudioPanel } = await import('../../client/lib/audio/audiopanel.js');
 const ms = await import('../../client/lib/audio/micstate.js');
+// the transport carries whatever lane it is given: this suite is the gate's side (mic-room-hears-test.mjs runs the real one)
+ms.setLaneCarrier?.(() => true);
 const track = { kind: 'audio', enabled: true, stop() {} };
 ms.gateFor({ getTracks: () => [track], getAudioTracks: () => [track] });
 window.relayDiag = () => ({ micPublished: true });
@@ -80,7 +82,14 @@ t('unmuted: live again', GOLD.test(lvl.style.background), lvl.style.background);
 level = 0.0005;
 await tryUntil('the device goes quiet and the bar leaves gold, so the synth row starts from warm', () => WARM.test(lvl.style.background));
 t('setup: the bar is warm before the synth voice', WARM.test(lvl.style.background), lvl.style.background);
-ms.setMicLive(false);
+// mic off with no synth provider (voicesfu.js sfuMic(false)): the device stays held, but the mic is off, so the bar is empty
+// (as on main), unlike mute, where it keeps moving for tuning
+const { bus } = await import('../../client/lib/base.js');
+level = vc.micFloor();
+ms.setMicLive(false); window.relayDiag = () => ({ micPublished: false }); bus.emit('audio:mic', false);   // as sfuMic(false) and the bridge do
+await pause('mic off, a loud room: many frames', 300);
+t('mic off: the bar is empty, though the held device hears a loud room', pct(lvl.style.width) === 0, lvl.style.width);
+t('...and dark', DARK.test(lvl.style.background) && ms.micGateInfo().speaking === false, lvl.style.background);
 const synthTrack = { kind: 'audio', enabled: true, stop() {} };   // a fresh source: gateFor stops the device
 const synth = { synthetic: true, getTracks: () => [synthTrack], getAudioTracks: () => [synthTrack] };
 ms.gateFor(synth);
