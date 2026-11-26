@@ -7,6 +7,7 @@ import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { scratchSequencer } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
+import { readCappedBytes } from "../../server/request-body.ts";
 
 const S = suite("upload-cap-test"), { check } = S;
 
@@ -25,11 +26,16 @@ try {
   const chunks = [over.subarray(0, 400_000), over.subarray(400_000, 800_000), over.subarray(800_000)];
   u = await up(new ReadableStream({ pull(c) { const n = chunks.shift(); if (n) c.enqueue(n); else c.close(); } }));
   check("...and chunked, with no length to trust: 413, the same cap", u.status === 413 && /^too large \(1MB cap\)/.test(u.text), `${u.status} ${u.text.slice(0, 80)}`);
-  // a body far past the cap is cancelled once it passes it, never read to its end. The pull count measures the client's read-ahead
-  // (40-64 of 100 kB under load against a 1 MB cap), so the row asserts only that the 100 MB end was never reached.
-  let pulls = 0; const block = new Uint8Array(100_000);
+  // over the wire the client's pull count is read-ahead until the 413 arrives, not the server's reading, so the row asserts the refusal only
+  const block = new Uint8Array(100_000); let pulls = 0;
   u = await up(new ReadableStream({ pull(c) { if (++pulls > 1000) c.close(); else c.enqueue(block); } }));
-  check("...and a 100 MB stream is cancelled past the cap, not read to its end", u.status === 413 && pulls <= 1000, `${u.status} after ${pulls} pulls of 100 kB`);
+  check("...and a 100 MB stream is refused in the cap's words", u.status === 413 && /^too large \(1MB cap\)/.test(u.text), `${u.status} ${u.text.slice(0, 80)} after ${pulls} pulls`);
+  // in process there is no read-ahead: the reader stops at the pull that passes the cap (11 of 100 kB for 1 MB) and cancels the stream
+  let inPulls = 0, cancelled = false;
+  const req = new Request("http://x/", { method: "POST", duplex: "half", body: new ReadableStream({
+    pull(c) { if (++inPulls > 1000) c.close(); else c.enqueue(block); }, cancel() { cancelled = true; } }) } as RequestInit);
+  const out = await readCappedBytes(req, 1_000_000);
+  check("readCappedBytes stops at the pull that passes the cap and cancels the rest", out === null && cancelled && inPulls <= 12, `${out === null ? "refused" : "read"} after ${inPulls} pulls, cancelled=${cancelled}`);
   const stored = (() => { try { return readdirSync(join(OPT, "store"), { recursive: true }).length; } catch { return 0; } })();
   check("...and nothing refused was stored", stored === 0, `${stored} entries under store/`);
   u = await up(new Uint8Array(1_000_000));
