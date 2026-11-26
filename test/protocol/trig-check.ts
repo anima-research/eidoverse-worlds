@@ -24,8 +24,8 @@ if (process.argv.includes("--write")) {
   if (moved.length) { console.log(`refusing to write: ${moved.join(", ")} would change under ${LAW} (a change meant to alter results is a new version: bump LAW in trig-check.ts)`); process.exit(1); }
   fs.writeFileSync(FILE, JSON.stringify({ law: LAW, kernel: SIMMATH_ID, contract: CONTRACT, note: "inputs and outputs are IEEE-754 float64 bits, big-endian hex", ...now }, null, 1) + "\n"); console.log(`trig.json written (${LAW})`); process.exit(0); }
 const { check, done } = suite("trig-check");
-const want = fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE, "utf8")) : null;
-check("TR0 the trig vectors exist", !!want);
+const { value: want, bad } = PH.parsedNow(FILE);   // conflict markers in the file are TR0's red, not a crashed suite
+check("TR0 the trig vectors exist and parse", !!want, bad ? { bad } : undefined);
 if (want) for (const k of ["sin", "cos", "atan2"] as const) {
   const off = (want[k] as string[][]).filter((row, i) => JSON.stringify(row) !== JSON.stringify(now[k][i]));
   check(`TR ${k}: the reference reproduces every pinned output bit for bit (${want[k].length} rows)`, want[k].length === now[k].length && !off.length, off.slice(0, 3));
@@ -33,7 +33,7 @@ if (want) for (const k of ["sin", "cos", "atan2"] as const) {
 check(`TRC the file says what a second reader must do: the kernel it pins (${SIMMATH_ID}) and its contract (the reference kernel's bits, not libm's; sin(pi/6) not 0.5 by design; port the kernel; the table only checks a port), as the kernel states them now`,
   want?.kernel === SIMMATH_ID && want?.contract === CONTRACT && bits(sinT(Math.PI / 6)) !== bits(0.5) && (want?.sin ?? []).some((r: string[]) => r[0] === bits(Math.PI / 6) && r[1] !== bits(0.5)), { kernel: want?.kernel, contract: want?.contract === CONTRACT || want?.contract });
 { const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/trig.json";
-  let r: any; try { r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), [{ law: "trig", versionOf: (x) => x?.law, data: [...DATA] }]); } catch (err: any) { r = { threw: String(err?.message ?? err) }; }   // a throw (a record it can't read) is a red row, as N10's
-  if (r.out?.length) console.log("     ", JSON.stringify(r).slice(0, 400));
-  check(`TRV the file names its law's version (${LAW}), and an earlier trig.json under the same version (the base's, the previous) pinned the same outputs: a change in pinned output is a new version`, !r.threw && want?.law === LAW && !r.out.length, r.threw ? { threw: r.threw } : { law: want?.law, LAW }); }
+  let r: any; try { r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), [{ law: "trig", versionOf: (x) => x?.law, data: [...DATA] }]); } catch (err: any) { r = { threw: PH.reason(err) }; }   // a throw (a record it can't read) is a red row, as N10's; a bug keeps its stack
+  if (r.out?.length) console.log("     ", JSON.stringify(r).slice(0, 400)); const threw = "threw" in r;
+  check(`TRV the file names its law's version (${LAW}), and an earlier trig.json under the same version (the base's, the previous) pinned the same outputs: a change in pinned output is a new version`, !threw && want?.law === LAW && !r.out.length, threw ? { threw: r.threw } : { law: want?.law, LAW }); }
 done();

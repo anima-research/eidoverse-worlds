@@ -23,7 +23,7 @@ import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-1
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { ENGINE, scratch } from "../gate/common.ts";
+import { ENGINE, scratch, linkInto } from "../gate/common.ts";
 import { CAPACITY } from "../../shared/protocol/authority.js";
 import { translatorVersion } from "../../tools/import-v1/translate-v1.js";
 import { pin, LAB_EPOCH } from "../gate/clock.ts";
@@ -835,7 +835,7 @@ await C("D13c", "the version rule judges the previous version whole (pinhistory 
   const now = (f: string) => fs.readFileSync(path.join(R, f), "utf8");
   const r = PH.sameVersionChanged(R, "vec.json", now, [{ law: "L1", versionOf: (x: any) => x.L1v, data: ["L1d"] }, { law: "L2", versionOf: (x: any) => x.L2v, data: ["L2d"] }], undefined, ["--base", main]);
   return [r.out.some((o: any) => o.law === "L1" && o.version === "2" && o.field === "L1d"), r]; });
-await C("D13d", "the version rule (pinhistory sameVersionChanged) reads an earlier version that isn't JSON (a branch's committed conflict markers, fixed later) as naming no version, never as a failure, so the fix isn't held red by the broken commit before it; the base still judges what the branch hands main (a v1 whose data changed is caught); the newest version must parse (conflict markers in the working tree are refused); and a conformance file the base lacks is not refused", () => {
+await C("D13d", "the version rule (pinhistory sameVersionChanged) reads an earlier version that isn't JSON (a branch's committed conflict markers, fixed later) as naming no version, never as a failure, so the fix isn't held red by the broken commit before it; the base still judges what the branch hands main (a v1 whose data changed is caught); the newest version must parse (conflict markers in the working tree are refused); and a conformance file the base lacks is not refused. A version that names no version (not JSON, or JSON null) can't hide the one before it: with no base (EN4's input too), or on main after a fast-forward (the base is HEAD), the previous version is the newest along first parents that names one, so a same-version data change behind a broken commit is still caught; a history with no such version says so in what was judged, never 'no earlier version'", () => {
   const R = scratch("d13d") + "repo"; fs.mkdirSync(R);
   const g = (...a: string[]) => { const r = require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
   const put = (f: string, t: string) => fs.writeFileSync(path.join(R, f), t), vec = (o: any) => JSON.stringify(o, null, 1) + "\n";
@@ -848,9 +848,33 @@ await C("D13d", "the version rule (pinhistory sameVersionChanged) reads an earli
   put("vec.json", vec({ L1v: "1", L1d: "dX" })); const caught = judge("vec.json", main);                                                // v1's data changed: the base still sees it
   put("vec.json", "<<<<<<< HEAD\n"); const nowBroken = judge("vec.json", main);                                                         // the newest version must parse
   put("vec.json", vec({ L1v: "2", L1d: "d2" })); put("new.json", vec({ L1v: "1", L1d: "n1" })); commit("branch: a conformance file main never had"); const newFile = judge("new.json", main);
-  return [!fixed.threw && !fixed.out.length && caught.out.some((o: any) => o.law === "L1" && o.version === "1" && o.field === "L1d") && /JSON/.test(nowBroken.threw ?? "") && !newFile.threw && !newFile.out.length,
-    { fixed: fixed.threw ?? fixed.out, caught: caught.threw ?? caught.out, nowBroken: nowBroken.threw ?? "not refused", newFile: newFile.threw ?? newFile.out }]; });
-await C("D13e", "a version rule that can't read the record is one red row, not a crashed suite: trig-check (TRV), laws-check (LWV) and engine-check (EN4, both files) run against a history whose conformance blobs are gone each fail just those rows, with the reason, and still print their tally (normative-check's N10 already did)", () => {
+  const pb = process.env.PIN_BASE; delete process.env.PIN_BASE;   // "no base": the scratch repo has no main ref, and no PIN_BASE
+  const hidden = (tag: string, broken: string) => {   // main v1 d1; the branch commits a version naming none, then v1 dX (the same version, other data)
+    const H = scratch(`d13d-${tag}`) + "repo"; fs.mkdirSync(H);
+    const h = (...a: string[]) => { const r = require("node:child_process").spawnSync("git", ["-C", H, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
+    const hput = (t: string) => fs.writeFileSync(path.join(H, "vec.json"), t), hc = (m: string) => { h("add", "-A"); h("commit", "-q", "-m", m); return h("rev-parse", "HEAD"); };
+    const hnow = (f: string) => fs.readFileSync(path.join(H, f), "utf8"), laws = [{ law: "L1", versionOf: (x: any) => x?.L1v, data: ["L1d"] }];
+    const sv = (argv: string[]) => { try { return PH.sameVersionChanged(H, "vec.json", hnow, laws, undefined, argv); } catch (err: any) { return { threw: String(err?.message ?? err), out: [] }; } };
+    h("init", "-q", "-b", "main"); h("config", "core.autocrlf", "false"); h("config", "core.eol", "lf"); hput(vec({ L1v: "1", L1d: "d1" })); const m = hc("main: v1 d1");
+    h("checkout", "-q", "-b", "br"); hput(broken); hc("branch: a version naming none"); hput(vec({ L1v: "1", L1d: "dX" })); hc("branch: v1 dX, the same version");
+    const r: any = { withBase: sv(["--base", m]), noBase: sv([]) };
+    try { r.en4 = PH.earlier(H, ["vec.json"], hnow, []).out.some((o: any) => o.was["vec.json"]?.L1d === "d1"); } catch (err: any) { r.en4 = String(err?.message ?? err); }
+    h("checkout", "-q", "main"); h("merge", "-q", "--ff-only", "br"); r.ff = sv(["--base", "HEAD"]);
+    return r; };
+  const hit = (r: any) => !r.threw && r.out.some((o: any) => o.law === "L1" && o.version === "1" && o.field === "L1d");
+  const markers = hidden("markers", `<<<<<<< HEAD\n${vec({ L1v: "1", L1d: "d1" })}=======\n${vec({ L1v: "1", L1d: "dX" })}>>>>>>> x\n`), isNull = hidden("null", "null\n");
+  let none: any; { const N = scratch("d13d-none") + "repo"; fs.mkdirSync(N);   // the only earlier version names none: judged says so
+    const n = (...a: string[]) => require("node:child_process").spawnSync("git", ["-C", N, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" });
+    n("init", "-q", "-b", "main"); fs.writeFileSync(path.join(N, "vec.json"), "<<<<<<< HEAD\n"); n("add", "-A"); n("commit", "-q", "-m", "broken");
+    fs.writeFileSync(path.join(N, "vec.json"), vec({ L1v: "1", L1d: "d1" })); n("add", "-A"); n("commit", "-q", "-m", "fixed");
+    try { const e = PH.earlier(N, ["vec.json"], (f: string) => fs.readFileSync(path.join(N, f), "utf8"), []); none = { judged: PH.judgedText(e), out: e.out.length }; } catch (err: any) { none = { threw: String(err?.message ?? err) }; } }
+  if (pb === undefined) delete process.env.PIN_BASE; else process.env.PIN_BASE = pb;
+  const hid = (r: any) => hit(r.withBase) && hit(r.noBase) && r.en4 === true && hit(r.ff);
+  const show = (r: any) => Object.fromEntries(Object.entries(r).map(([k, v]: any) => [k, v?.threw ?? v?.out ?? v]));
+  return [!fixed.threw && !fixed.out.length && caught.out.some((o: any) => o.law === "L1" && o.version === "1" && o.field === "L1d") && /^pinhistory: vec\.json as it is now is not valid JSON/.test(nowBroken.threw ?? "") && !newFile.threw && !newFile.out.length
+    && hid(markers) && hid(isNull) && !none.threw && none.out === 0 && /naming no version/.test(none.judged ?? "") && !/no earlier version/.test(none.judged ?? ""),
+    { fixed: fixed.threw ?? fixed.out, caught: caught.threw ?? caught.out, nowBroken: nowBroken.threw ?? "not refused", newFile: newFile.threw ?? newFile.out, markers: show(markers), isNull: show(isNull), none }]; });
+await C("D13e", "a version rule that can't read the record is one red row, not a crashed suite: trig-check (TRV), laws-check (LWV) and engine-check (EN4, both files) run against a history whose conformance blobs are gone each fail just those rows, each with pinhistory's reason in its detail, and still print their tally (normative-check's N10 already did); an error that isn't pinhistory's keeps its stack, and an empty one still reads as a throw", () => {
   const S = scratch("d13e") + "repo"; fs.mkdirSync(S); const cp = require("node:child_process");
   const g = (...a: string[]) => { const r = cp.spawnSync("git", ["-C", S, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
   const files = ["spec/conformance/trig.json", "spec/conformance/laws.json", "spec/conformance/physics/digests.json", "spec/conformance/physics/digests-exact.json"];
@@ -862,9 +886,21 @@ await C("D13e", "a version rule that can't read the record is one red row, not a
     env: { ...process.env, GIT_DIR: path.join(S, ".git"), PIN_BASE: base, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return `${r.stdout ?? ""}${r.stderr ?? ""}`; };
   const want: [string, string[]][] = [["trig-check", ["TRV"]], ["laws-check", ["LWV"]], ["engine-check", ["EN4 digests.json", "EN4 digests-exact.json"]]];
   const seen = Object.fromEntries(want.map(([suite, rows]) => { const o = run(suite); const tally = o.match(new RegExp(`\\[${suite}\\] (\\d+) passed, (\\d+) failed`));
-    const red = rows.map((id) => o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && /can't be read/.test(l)));
+    const red = rows.map((id) => o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && /"threw":"pinhistory: [^"]* can't be read: git: /.test(l)));   // the reason itself, not the title
     return [suite, { tally: tally?.[0] ?? null, failed: tally ? +tally[2] : null, red, tail: tally ? undefined : o.trim().split("\n").slice(-4) }]; }));
-  return [want.every(([suite, rows]) => seen[suite].failed === rows.length && seen[suite].red.every(Boolean)), seen]; });
+  const why = { own: PH.reason(new Error("pinhistory: x")), bug: PH.reason(new TypeError("not a pin")), empty: PH.reason("") };   // `throw ""`: no message and no stack   // the catches' words: a bug keeps its stack
+  const words = why.own === "pinhistory: x" && /TypeError: not a pin\n\s+at /.test(why.bug) && why.empty.length > 0;
+  return [want.every(([suite, rows]) => seen[suite].failed === rows.length && seen[suite].red.every(Boolean)) && words, { seen, why }]; });
+await C("D13f", "a conformance file that doesn't parse now (conflict markers in the working tree) is a red row in its own suite, never a crashed suite: a copy of the tree whose trig.json, laws.json and physics digests hold conflict markers runs trig-check, laws-check and engine-check to their tally, with TR0, LW0 and EN0 failing on \"not valid JSON\"", () => {
+  const X = scratch("d13f") + "tree"; for (const d of ["shared", "test/protocol", "test/harness", "test/gate", "spec/conformance"]) fs.cpSync(path.join(T, d), path.join(X, d), { recursive: true });
+  fs.copyFileSync(path.join(T, "package.json"), path.join(X, "package.json")); linkInto(fs.realpathSync(path.join(T, "node_modules")), path.join(X, "node_modules"));
+  for (const f of ["trig.json", "laws.json", "physics/digests.json", "physics/digests-exact.json"]) fs.writeFileSync(path.join(X, "spec/conformance", f), "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> main\n");
+  const run = (suite: string) => { const r = require("node:child_process").spawnSync(process.execPath, [path.join(X, "test/protocol", `${suite}.ts`)], { cwd: X, encoding: "utf8", timeout: 300000,
+    env: { ...process.env, GIT_DIR: path.join(X, ".no-git"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return `${r.stdout ?? ""}${r.stderr ?? ""}`; };   // no history: only the file as it is now
+  const seen = Object.fromEntries([["trig-check", "TR0"], ["laws-check", "LW0"], ["engine-check", "EN0"]].map(([suite, id]) => { const o = run(suite);
+    const tally = o.match(new RegExp(`\\[${suite}\\] (\\d+) passed, (\\d+) failed`))?.[0] ?? null;
+    return [suite, { tally, red: o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && /not valid JSON/.test(l)), tail: tally ? undefined : o.trim().split("\n").slice(-4) }]; }));
+  return [Object.values(seen).every((v: any) => v.tally && v.red), seen]; });
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
