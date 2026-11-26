@@ -95,10 +95,10 @@ export function normalizeSound(data, { clip = false } = {}) {
     else notes.push('t0 is not an epoch-ms number — ignored; listeners will not agree on the playhead');
   } else if (sound.playing) notes.push('no t0 — the authority stamps one when it starts; without it each client starts from the top');
   if (data.description != null) {
-    // a write is measured as written, as the door measures it (checks.js ranges.maxLen: graphemes of the value), so the two
-    // can't disagree over a run of spaces; what is kept is the collapsed text
-    const raw = String(data.description), d = raw.replace(/\s+/g, ' ').trim();
-    if (graphemes(raw) > SOUND_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(raw).toLocaleString('en')} characters (at most ${SOUND_DESCRIPTION_MAX})` };
+    // measured as it is kept and sent, collapsed: every write path commits this value, so the door's ranges.maxLen then
+    // measures the same string (#377 review 2)
+    const d = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(d) > SOUND_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${SOUND_DESCRIPTION_MAX})` };
     if (graphemes(d) > SOUND_DESCRIPTION_MAX) { notes.push(`description clipped to ${SOUND_DESCRIPTION_MAX} characters`); sound.description = graphemeList(d).slice(0, SOUND_DESCRIPTION_MAX).join(''); }
     else if (d) sound.description = d;
   }

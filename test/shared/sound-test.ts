@@ -44,12 +44,8 @@ check("an https link is taken with its tier; http and a bare host are refused, l
 const nLook = normalizeSound({ src: GOOD, description: "  many   spaces and " + "x".repeat(300) });
 // an over-long description is refused naming the cap (the door's bound), never clipped
 check("an over-long description is refused, naming the cap", nLook.ok === false && new RegExp(`^description is \\d+ characters \\(at most ${SOUND_DESCRIPTION_MAX}\\)$`).test(nLook.why), JSON.stringify(nLook));
-// a write is measured as written, as the door's ranges.maxLen measures it (#377 review 2): spaces count, so a value that
-// is at the cap only after its spaces collapse is refused, as the door refuses it; what a taken value keeps is collapsed
-const spaced = "  many   spaces and " + "y".repeat(SOUND_DESCRIPTION_MAX - 16), nOver = normalizeSound({ src: GOOD, description: spaced });
-check("a description at the cap only after whitespace collapses is refused, as the door refuses it", spaced.length > SOUND_DESCRIPTION_MAX && nOver.ok === false && /^description is 204 characters/.test(nOver.why), JSON.stringify(nOver));
-const nFit = normalizeSound({ src: GOOD, description: "many  spaces and " + "y".repeat(SOUND_DESCRIPTION_MAX - 17) });
-check("a description at the cap as written is taken, its spaces collapsed", nFit.ok && nFit.sound.description.length === SOUND_DESCRIPTION_MAX - 1 && nFit.sound.description.startsWith("many spaces and "), JSON.stringify(nFit.ok ? nFit.sound.description.length : nFit));
+const nFit = normalizeSound({ src: GOOD, description: "  many   spaces and " + "y".repeat(SOUND_DESCRIPTION_MAX - 16) });
+check("a description exactly at the cap, after whitespace collapses, is taken whole", nFit.ok && nFit.sound.description.length === SOUND_DESCRIPTION_MAX && nFit.sound.description.startsWith("many spaces and "), JSON.stringify(nFit.ok ? nFit.sound.description.length : nFit));
 const nNo = normalizeSound({ src: GOOD, t0: 1 });
 check("no description is allowed but noted", nNo.ok && !nNo.sound.description && nNo.notes.some((x) => /no description/.test(x)));
 const nUnk = normalizeSound({ src: GOOD, description: "x", t0: 1, speed: 2, _mine: 1 });
