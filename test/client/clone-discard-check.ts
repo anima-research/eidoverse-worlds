@@ -12,9 +12,12 @@
 // The realizer's drop sites (a refused or same-tier re-tier, a stale load, a swap, a demote, a retire) are lod-client 4b/4c,
 // over a stub loader that counts the dispose events; this bench is what those events buy, on the real thing.
 //   bun test/client/clone-discard-check.ts   (its own scratch server, library, world and Chromium)
-// WebGL 2 only: headless Chromium here destroys its WebGPU device at once (the harness's GPU guard); the RTX 4080 /
-// WebGPU counts are the live probe's (render lab, 11-26). Both backends count programs and uniform buffers in three's
-// common layer (Pipelines.js, Bindings.js), and RenderObject.onObjectDispose is backend-independent.
+// WebGL 2 on Linux/macOS: headless Chromium there destroys its WebGPU device at once (the harness's GPU guard). NOT on
+// Windows: with the runner's software flags (chrome.ts) a forced WebGL 2 context is null, core.js's renderer.init() throws
+// and the page never boots (#378's windows-latest run 45863011154; as party-probe, swim-lists, water-cross), so there the
+// client picks its own backend. Both backends count programs and uniform buffers in three's common layer (Pipelines.js,
+// Bindings.js), and RenderObject.onObjectDispose is backend-independent; the RTX 4080 / WebGPU counts are also the live
+// probe's (render lab, 11-26).
 // Mutations (must go red, by hand): discardObject a no-op (CD2, CD4); dispose the geometry/materials too (CD3);
 // discardObject entering every child, the other placement included (CD3 when the standing one rides it: not set up here).
 import { scratchBench, mkCheck } from "../harness/harness.ts";
@@ -52,10 +55,16 @@ bench.cws.addEventListener("message", (ev) => {
 });
 const js = (body: string) => evalJson(`(async () => { ${body} })()`);
 const N = 6;
+// WebGL 2 except on Windows, where the runner's forced WebGL 2 context is null (see the header)
+const FORCE_WEBGL = process.platform !== "win32";
 try {
   await cdp.send("Emulation.setDeviceMetricsOverride", { width: 320, height: 180, deviceScaleFactor: 1, mobile: false });
-  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cd&webgl=1` });
-  await until("the client's render path", () => evalJson("import('/lib/render/render.js').then(() => true, () => false)").catch(() => false), { ms: 60000 });
+  await cdp.send("Page.navigate", { url: `${BASE}/?world=${WORLD}&spectate=1&name=cd${FORCE_WEBGL ? "&webgl=1" : ""}` });
+  try { await until("the client's render path", () => evalJson("import('/lib/render/render.js').then(() => true, () => false)").catch(() => false), { ms: 60000 }); }
+  catch (e) {   // say why: the import's own rejection (a null forced WebGL 2 context reads as "getSupportedExtensions" of null)
+    const why = await evalJson("import('/lib/render/render.js').then(() => 'loaded', (x) => String(x?.stack ?? x).slice(0, 400))").catch((x: any) => String(x));
+    throw new Error(`${(e as Error).message}; the import says: ${why} | page errors: ${JSON.stringify(errors.slice(0, 4))}`);
+  }
   await until("the world hydrated", () => js("return (await import('/lib/state.js')).state.hydrated;"), { ms: 30000 });
   await js("for (let i = 0; i < 10; i++) await new Promise((r) => requestAnimationFrame(r)); return true;");
 
@@ -84,7 +93,8 @@ try {
     g.__settle = async () => { let prev = null; for (let i = 0; i < 90; i++) { await new Promise((r) => requestAnimationFrame(r)); const px = g.__frame(); if (prev && px.every((v, j) => v === prev[j])) return px; prev = px; } return null; };
     g.__MS = MS; g.__S = S;
     return { backend: renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu', meshes: geos.size, mats: mats.size, ...g.__count() };`);
-  check("CD0 the bench: the client's WebGL 2 renderer, the model's proto (2 meshes, 2 materials) worn by one placement", setup?.backend === "webgl" && setup.meshes === 2 && setup.mats === 2, JSON.stringify(setup));
+  check(`CD0 the bench: the client's ${FORCE_WEBGL ? "WebGL 2" : "own"} renderer, the model's proto (2 meshes, 2 materials) worn by one placement`,
+    (!FORCE_WEBGL || setup?.backend === "webgl") && !!setup?.backend && setup.meshes === 2 && setup.mats === 2, JSON.stringify(setup));
 
   const arm = (discard: boolean) => js(`const g = globalThis; await g.__settle(); const a = g.__count();
     for (let i = 0; i < ${N}; i++) { const o = await g.__A.loadGLB(${JSON.stringify(MODEL)}); ${discard ? "g.__D.discardObject(o);" : ""} }
