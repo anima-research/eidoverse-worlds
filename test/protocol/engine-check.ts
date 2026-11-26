@@ -93,13 +93,13 @@ const of = { exact: exactDigestOf, rounded: digestOf, replay: (t: string) => rep
 // the old side is always the acknowledgement's receipt, never a log read from git (a merge parent may hold another dialect)
 const covers = (a: any, ver: string, d: Record<string, string>, nowV: Record<string, string>, R = FR.receiptOf(a, DIR)) => [...R.bad, ...FR.uncovered(a, ver, scenarios, d, nowV, R.log, cur, of)];
 for (const [F, now] of [[`${REL}digests.json`, pinned], [`${REL}digests-exact.json`, exact]] as const) {
-  let e: any; try { e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null)); }
+  let e: any; try { e = PH.versionsChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null)); }   // per digest: a version or scenario left out for a commit hides nothing
   catch (err: any) { check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: nothing, the rule threw)`, false, { threw: PH.reason(err) }); continue; }   // one red row, as N10's
-  const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => { const m = Object.entries<any>(d).filter(([s, x]) => now?.[ver]?.[s] !== x);
+  const moved = e.changed.flatMap(({ rev, version: ver, entry: d, keys: m }: any) => {
     const a = F.endsWith("exact.json") && m.length ? repins.find((r) => r.exactOld === FR.sha(PH.showAt(ROOT, rev, F) ?? "") && r.exactNew === FR.sha(fs.readFileSync(ROOT + F, "utf8"))) : null;
     const why = a ? covers(a, ver, d, now?.[ver] ?? {}) : [];
     if (a && !why.length) return [];
-    return [...why, ...m.map(([s, x]) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}${a ? "" : " (no acknowledgement binds these two files)"}`)]; }));
+    return [...why, ...m.map(([s, x]: any) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}${a ? "" : " (no acknowledgement binds these two files)"}`)]; });
   check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: ${PH.judgedText(e)})`, !moved.length, !e.out.length && e.unnamed.length ? { judged: PH.judgedText(e) } : moved.slice(0, 6)); }   // a history that starts with no version: green, its reason kept
 // EN9: each acknowledgement's receipt holds the bytes it hashes; the one in force (its exactNew is today's file) replays to it
 // from the receipt alone, so a squash with no PR ancestry still verifies it
