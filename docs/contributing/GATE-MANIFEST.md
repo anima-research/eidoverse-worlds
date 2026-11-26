@@ -625,7 +625,7 @@ time.
 | 444 | access-panel | browser | `test/protocol/access-panel-probe.ts` | Chromium | ? | 300 s |
 | 445 | lock-strength | browser | `test/client/lock-strength-test.ts` | Chromium | 10 s | 180 s |
 | 446 | swim-lists | browser | `test/client/swim-lists-test.ts` | Chromium | 10 s | 180 s |
-| 447 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 8.1 s | 180 s |
+| 447 | build-client | browser | `test/protocol/build-probe.ts` | Chromium | 85 s | 425 s |
 | 448 | comps-parity | browser | `test/client/comps-parity-test.ts` | Chromium | ? | 300 s |
 | 449 | world-card | browser | `test/client/world-card-probe.ts` | Chromium | ? | 300 s |
 | 450 | shiplist-probe | browser | `test/protocol/shiplist-probe.ts` | Chromium | 197 s | 985 s |
@@ -636,5 +636,5 @@ time.
 | 455 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
 | 456 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 417 (~2279 s), browser 21 (~1228 s); 456 suites in all.
+Lanes: core 18 suites (~79 s), main 417 (~2279 s), browser 21 (~1304 s); 456 suites in all.
 <!-- END GENERATED -->
