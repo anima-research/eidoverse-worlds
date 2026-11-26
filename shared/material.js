@@ -28,8 +28,9 @@ export function normalizeMaterial(data, { clip = false } = {}) {
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   const material = { node: data.node.trim(), texture: data.texture, lit: 'scene' };
   if (data.description != null) {
-    // measured as it is kept and sent, collapsed: every write path commits this value, so the door's ranges.maxLen then
-    // measures the same string (#377 review 2)
+    // measured as it is kept, collapsed, as picture.js and sound.js measure it (their write paths commit that value, so the
+    // door's ranges.maxLen measures the same string: #377 review 2). Nothing writes through this helper yet: the realizer
+    // reads with clip, and a write goes to the door as written
     const d = String(data.description).replace(/\s+/g, ' ').trim();
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); material.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }

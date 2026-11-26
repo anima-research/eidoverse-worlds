@@ -255,7 +255,8 @@ await tryRow('DS', async () => {
     for (const [d, want] of [['a'.repeat(150) + '\n\n' + 'b'.repeat(49), true], ['a'.repeat(198) + '  b', true], ['a'.repeat(199) + ' b', false]] as const) for (const c of ['picture', 'sound', 'material']) {
       const h = helper[c](bag[c](d)), collapsed = d.replace(/\s+/g, ' ').trim();
       const door = W.call('set', { id: on[c], component: c, value: h.ok ? sent(c, h) : bag[c](collapsed) });
-      check(`DS7b ${c}: ${d.length} characters as typed, ${collapsed.length} collapsed: ${want ? 'the helper takes it and the door takes what it sends' : 'the helper refuses it, and so would the door'}`,
+      const how = d.includes('\n\n') ? 'with a blank line' : d.includes('  ') ? 'with a double space' : 'with one space';
+      check(`DS7b ${c}: ${d.length} characters as typed (${how}), ${collapsed.length} collapsed: ${want ? 'the helper takes it and the door takes what it sends' : 'the helper refuses it, and so would the door'}`,
         !!h.ok === want && !!door.ok === want, [h.ok ? sent(c, h).description.length : h.why, door.refused]); } }
   const { renameFields } = await import('../../tools/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
