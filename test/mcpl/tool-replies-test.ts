@@ -36,7 +36,7 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   ag.entities.set("dark", { id: "dark", model: "zz/crate.glb", kind: "thing", pos: [2, 0, 2], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, disabled: true });
   const L = ag.look(0).split("\n"), cargo = L.find((l: string) => l.includes("[cargo]")) ?? "", dark = L.find((l: string) => l.includes("[dark]")) ?? "";
   ok(cargo !== "" && !/collides as/.test(cargo), "347/13 look: mounted cargo doesn't claim its box collides", cargo);
-  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, and says it is switched off", dark);
+  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark) && !/switched off with/.test(dark) && /edit \{id: "dark", set: \{"flags.disabled": false\}\}/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, says it is switched off by its own switch, and names its own id in the edit", dark);
   // switched off through what it hangs under: look names that thing, and the edit that switches it back on
   ag.entities.get("cart").disabled = true;
   const under = ag.look(0).split("\n").find((l: string) => l.includes("[cargo]")) ?? "";
