@@ -34,3 +34,7 @@ What follows from that:
   on its top storey.
 - **Placement.** Each building is placed where it is now (`eff`), as `walkStructures` places it, and one that can't be
   read costs only itself.
+- **Collision off.** A building whose collision is off for bodies (`collider.enabled` false, `blocks` without
+  `bodies`, or a collider on a layer the default mask doesn't scan: `solidOff` in shared/protocol/simlayer.js) has no
+  floor here and no wall for `walkStructures`, as the browser fits it no box (`client/lib/realize/structure.js`
+  `solid`). Every reader takes its structures from `bodyStructure` (`mcpl/agent-result.ts`).

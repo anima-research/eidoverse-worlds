@@ -5,7 +5,7 @@ import type { WorldAgent, Person } from "./agent.ts";
 import { bodyOf } from "../shared/components.js";
 import { describeBody, resolveSeat } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
-import { type Entity, type Pose, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
+import { type Entity, type Pose, bodyStructure, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
 import { briefingLines } from "../shared/briefing.js";
 import { compass } from "../shared/waterkind.js";
 import { groundChange, groundLine } from "./ground-words.ts";
@@ -606,7 +606,7 @@ export class AgentSenses {
       // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
       const feet = selfEff?.ok ? me.y : this.a.feetY(this.a.isSlumped());
       for (const e of this.a.entities.values()) {
-        const data = recordComponents(e).structure;
+        const data = bodyStructure(e);   // as the routes read it: one with collision off has no room to be sealed in
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
@@ -699,7 +699,8 @@ export class AgentSenses {
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it
-      else if (col === "mesh" || col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
+      // a structure's model is only its anchor: no collider of its own (agent-result.ts collisionElsewhere)
+      else if (!c.structure && (col === "mesh" || col === "exact" || col === "box")) aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.a.socketsOf(e.id);
       if (socks.length) {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;

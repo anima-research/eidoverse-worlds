@@ -21,6 +21,40 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const L = ag.look(0).split("\n"), off = L.find((l: string) => l.includes("[off]")) ?? "", on = L.find((l: string) => l.includes("[on]")) ?? "";
   ok(/walk-through/.test(off) && !/collides as/.test(off) && /collides as a box/.test(on), "62 look: a collider with enabled: false reads walk-through; an enabled one collides", { off, on }); }
 
+// #347 bot 4: a structure's anchor has no collider of its own, so look doesn't say it collides as a box
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  ag.entities.set("hut", { id: "hut", model: "zz/crate.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  const hut = ag.look(0).split("\n").find((l: string) => l.includes("[hut]")) ?? "";
+  ok(hut !== "" && !/collides as/.test(hut), "347/4 look: a structure's anchor doesn't claim its box collides", hut); }
+
+// #347 bot 3: measure {check: true} on a thing whose collision is owned elsewhere (a structure's anchor) or off for bodies
+// doesn't say its collider.shape "box" makes it one solid box: the browser fits that model no collider
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  const box = { shape: "box" }, base = { model: "zz/hall.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1, collide: "box" };
+  ag.entities.set("solid", { id: "solid", ...base, collider: box });
+  ag.entities.set("hut", { id: "hut", ...base, collider: box, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  ag.entities.set("ghost", { id: "ghost", ...base, collider: { ...box, enabled: false } });
+  const report = { walkIn: { roomScale: true }, levels: [{ y: 0, area: 20, reachable: 20 }], warnings: [] };
+  // a small model: the server calls it solid and advises collider.shape "mesh" (server/buildcheck.ts), which a thing with
+  // no collider of its own can't use
+  const small = { walkIn: { roomScale: false }, levels: [], warnings: [{ kind: "solid", message: "1.0×1.0m and 1.0m tall is under the walk-in size: the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: \"mesh\"}" }] };
+  ag.entities.set("smallghost", { id: "smallghost", ...base, model: "zz/crate.glb", collider: { ...box, enabled: false } });
+  ag.entities.set("smallsolid", { id: "smallsolid", ...base, model: "zz/crate.glb", collide: undefined, collider: undefined });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(String(u).includes("crate") ? small : report)) : realFetch(u))) as typeof fetch;
+  let said: Record<string, string> = {};
+  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
+  finally { globalThis.fetch = realFetch; }
+  ok(/SOLID — under the walk-in size/.test(said.smallsolid) && /collider \{shape/.test(said.smallsolid), "347/3 (control) measure check: a small thing is solid, with the server's advice", said.smallsolid);
+  ok(!/SOLID|nobody can go inside|shape: \\?"mesh/.test(said.smallghost) && /no collider of its own/.test(said.smallghost) && /collision is off/.test(said.smallghost),
+    "347/3 measure check: a small thing with its collision off isn't solid, and isn't told to change its collider shape", said.smallghost);
+  // its report has no floors (and, the solid warning dropped, no problems): "every floor ... can be reached" would be vacuous
+  ok(!/every floor/.test(said.smallghost) && /no floor/.test(said.smallghost), "347 measure check: a report with no floors doesn't say every floor can be reached", said.smallghost);
+  ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
+  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
+    ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),
+      `347/3 measure check: ${id === "hut" ? "a structure's anchor" : "a thing with its collision off"} isn't one solid box, and says why`, said[id]); }
+
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };
   await handleTool(ctxOf(ag), "act", { verb: "ban", args: { who: "Moss", days: 2, global: true } });
