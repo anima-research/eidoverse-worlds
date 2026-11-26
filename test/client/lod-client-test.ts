@@ -240,6 +240,46 @@ for (const [what, dep] of deps) {
 check('no realizer error was reported through the whole realizer half', stub.reports.length === 0,
   stub.reports.map((r: any) => `${r.where}: ${r.e?.message ?? r.e}`).join(' | '));
 
+// ---- 4b. a re-tier that brings the tier already worn is no swap (render lab 11-26: a still room churned its caster
+// budget for ~12 s after the capture camera moved 40 m into it; 14 props had asked lod, been answered the original,
+// and each was torn down and rebuilt as the same original when the ask flipped back to full: collider, caster
+// (re-registered unwarmed: its shadow dropped and faded back) and lamps all re-made for identical geometry)
+console.log('\n  same-tier re-asks — the ask moves, the worn object stays\n');
+{
+  const { tracked } = await import('../../client/lib/realize/lifecycle.js');
+  const id = 'same';
+  spawnAt(id, 70, false);   // far, no variant: asked lod, answered the original
+  await settle(); drain();
+  const before = obj(id);
+  check('same: joined asked lod, wearing the original (tier full)', before?.userData.tierAsked === 'lod' && before?.userData.tier === 'full');
+  const mark = stub.colliderLog.length, lampMark = stub.lampLog.length, loads0 = loadsOf(id).length, caster0 = stub.casters.get(id);
+  const lampOps = () => stub.lampLog.slice(lampMark).filter((e: any) => e[1] === `entity:${id}`);
+  // the move itself refits the collider in place (a `place`); a swap is a remove + fit
+  const swapOps = () => sinceMark(mark, id).filter((op: string) => op !== 'refit');
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true });   // walked toward: the sweep wants full
+  M.residencySweep(); await settle(); drain();
+  check('walked in: the ask goes to full (one fetch) and the standing object is KEPT: same object, caster never released, collider and lamps untouched',
+    loadsOf(id).length === loads0 + 1 && obj(id) === before && obj(id)?.userData.tierAsked === 'full' && stub.casters.get(id) === caster0
+      && swapOps().length === 0 && lampOps().length === 0,
+    JSON.stringify({ loads: loadsOf(id).length - loads0, same: obj(id) === before, asked: obj(id)?.userData.tierAsked, caster: stub.casters.get(id) === caster0, colliderOps: swapOps(), lampOps: lampOps() }));
+  // and back out: the lod ask crosses the wire again (a bake may have landed since), is answered the original again → kept
+  const t: any = tracked.get(id); if (t) t.retierAt = 0;   // past the 5 s cooldown
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 70] }, merge: true });
+  M.residencySweep(); await settle(); drain();
+  check('walked out: the lod ask goes out again, is answered the original again, and the standing object is KEPT',
+    loadsOf(id).length === loads0 + 2 && loadsOf(id).at(-1)?.tier === 'lod' && obj(id) === before && obj(id)?.userData.tierAsked === 'lod'
+      && stub.casters.get(id) === caster0 && swapOps().length === 0 && lampOps().length === 0,
+    JSON.stringify({ loads: loadsOf(id).length - loads0, same: obj(id) === before, asked: obj(id)?.userData.tierAsked, colliderOps: swapOps() }));
+  // the control: a bake landed meanwhile, so the next lod ask is answered a DIFFERENT tier, and that one is a swap
+  stub.server.variants.add(lib(id));
+  if (t) t.retierAt = 0;
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 10] }, merge: true }); M.residencySweep(); await settle(); drain();
+  if (t) t.retierAt = 0;
+  door('set', { id, component: 'transform', value: { pos: [0, 0, 70] }, merge: true }); M.residencySweep(); await settle(); drain();
+  check('control: once the sequencer has baked it, the lod answer IS a different tier and the swap lands (new object, tier lod)',
+    obj(id) !== before && obj(id)?.userData.tier === 'lod' && obj(id)?.userData.tierAsked === 'lod', JSON.stringify(obj(id)?.userData));
+}
+
 // ---- 5. the other entry points (round three): the REAL governor's lever crosses into the sweep; the dial's callback is gated
 console.log('\n  entry points — the governor lever and the dial callback\n');
 {
