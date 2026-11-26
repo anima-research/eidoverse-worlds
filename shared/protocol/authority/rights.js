@@ -50,7 +50,6 @@ const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
 // Every record since the last LIFT of its kind (unban, unmute) that is still in force counts, and the STRONGEST
 // wins: a weaker record never cancels a stronger one (a short ban never replaces a permanent one). Lifting goes
 // through personLift.
-const latestOf = (w, who, verbs) => { let r = null; for (const m of w.mod) if (m.who === who && verbs.includes(m.verb)) r = m; return r; };
 const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());
 const sinceLift = (recs, verb, lifts) => { let out = []; for (const m of recs) { if (lifts.includes(m.verb)) out = []; else if (m.verb === verb) out.push(m); } return out; };
 const strongest = (a) => a.reduce((x, m) => (!x ? m : x.until === undefined ? x : m.until === undefined || m.until > x.until ? m : x), null);
@@ -148,4 +147,4 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 // read by request, undo and the hands' returns
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
-export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
+export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };

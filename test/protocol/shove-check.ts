@@ -50,6 +50,13 @@ const MUTANTS: [string, string, string | [string, string][], string, string[]][]
   ["by mass", "protocol/authority/manipulate.js", "if (vh > cap + 1e-3 ||", "if (vh > SHOVE.maxV + 1e-3 ||", ["S17"]],
   ["refused shoves unrecorded", "protocol/authority.js", "if (verb === \"punt\" && args?.contact === true) {", "if (false) {", ["S18"]],
   ["not through a wall", "protocol/authority/manipulate.js", "if (hit) refuse(\"out-of-reach\", `${hit} is between you", "if (false) refuse(\"out-of-reach\", `${hit} is between you", ["S19"]],
+  // G4-173: S0, S1, S11, S14, S20 and S25 each have a mutant too
+  ["the kick is no shove", "protocol/authority/bodyverbs.js", "if (a.contact !== undefined) shoveGate(w, st, me, a, flying, actor);\n    else if", "if (true) shoveGate(w, st, me, a, flying, actor);\n    else if", ["S0"]],
+  ["the act says shove", "protocol/authority/bodyverbs.js", "w.append(actOf(w, actor, \"punt\", a,", "w.append(actOf(w, actor, \"punt\", { ...a, contact: undefined },", ["S1"]],
+  ["held: nobody's hand", "protocol/authority/bodyverbs.js", "w.presence.holds[a.id]; if (held) refuse(\"held\"", "w.presence.holds[a.id]; if (false) refuse(\"held\"", ["S11"]],
+  ["a body is not found", "protocol/authority/bodyverbs.js", "const e = st.entities[a.id];\n    if (!e) refuse(\"not-found\", `no '${a.id}'`, \"look lists what's here\", { didYouMean: guess(a.id, Object.keys(st.entities)) });\n    notAThing(st, a.id, \"punted\")", "const e = st.entities[a.id];\n    if (false) refuse(\"not-found\", `no '${a.id}'`, \"look lists what's here\", { didYouMean: guess(a.id, Object.keys(st.entities)) });\n    notAThing(st, a.id, \"punted\")", ["S14"]],
+  ["a socket is not a thing", "protocol/authority/bodyverbs.js", "notAThing(st, a.id, \"punted\"); offRefuse(st, a.id, \"punted\");", "offRefuse(st, a.id, \"punted\");", ["S20"]],
+  ["the wall at the body's own size", "protocol/authority/manipulate.js", "const s = lawOf(me.size).scale;", "const s = 1;", ["S25"]],
   ["CONTROL (no-op: must stay green)", "protocol/physconst.js", "// a contact push (shared/shove.js)", "//  a contact push (shared/shove.js)", []],
 ];
 async function runSelf(tree: string, only: string[] | null) {

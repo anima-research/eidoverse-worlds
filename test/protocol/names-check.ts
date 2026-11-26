@@ -33,6 +33,8 @@
 //   OS  a motion's back-and-forth along an axis is oscillate (R 10-17 21:40; was bob): the registry, the door (bob refused),
 //       the readers (the type as written), the editor's card, the translator (@14, import-v1/shapes.js motionType), the docs
 //   X   the version history records it
+// 13 rows read source text only (P4, P5, W1–W4, O1, O3, S3, A1, A7, K5, OS7): kept by the test trim (M12) as post-PR work,
+// each held by its mutant. W1's behaviour (/worlds' agents list) is agenttools-check AT12's; W1 adds only the people-entry shape.
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -42,6 +44,7 @@ import { custodyAt, modLogAt } from "../../server/custody.ts";
 import { translatorVersion } from "../../tools/import-v1/translate-v1.js";
 import { labClock, pinned } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
+import { editsOf, type Mutant } from "../gate/mutants.ts";
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 
 const BASE = "a6d05a6b";
@@ -50,7 +53,7 @@ const argv = process.argv.slice(2);
 const opt = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
 
 // [name, file under the tree, find, replace, rows]
-const MUTANTS: [string, string, string, string, string[]][] = [
+const MUTANTS: Mutant[] = [   // the shared shape (gate/mutants.ts): several edits are [find, repl, file?][]
   ["hold-limit is hands-full again", "shared/protocol/authority/bodyverbs.js", "refuse(\"hold-limit\",", "refuse(\"hands-full\",", ["N1", "N2"]],
   ["beneath is underfoot again", "shared/protocol/authority/manipulate.js", "refuse(\"beneath\",", "refuse(\"underfoot\",", ["N2"]],
   ["the door takes shove again", "shared/protocol/verbspec.js", "(occupied, or sliding into them)\" } }, was: {", "(occupied, or sliding into them)\" }, shove: { type: \"bool\", doc: \"old spelling of contact\" } }, was: {", ["P2", "P3"]],
@@ -75,7 +78,10 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the registry keeps pose", "shared/protocol/componentspec.js", "hold: \"string\", anim: \"string\", grips:", "hold: \"string\", pose: \"string\", grips:", ["A1"]],
   ["an unknown name is refused", "shared/grab.js", "if (v.anim !== undefined && !(typeof v.anim === 'string' && ANIM_RE.test(v.anim)))", "if (v.anim !== undefined && !HOLD_POSES.includes(v.anim))", ["A3"]],
   ["an unknown name is held as written", "shared/grab.js", "if (g?.anim && ARMS[g.anim] && g.anim !== BOTH_HANDS) return g.anim;", "if (g?.anim) return g.anim;", ["A3"]],
-  ["the station takes pose again", "shared/protocol/componentspec.js", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\",", ["A5"]],
+  // two guards refuse a station's pose: its fields (sockbody's unknown key) and its dropped entry (checks.js); both go (G4-151)
+  ["the station takes pose again", "shared/protocol/componentspec.js", [
+    ["station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\",", "station:   { on: \"thing\", fields: { action: \"string\", anim: \"any\", pose: \"any\","],
+    ["               dropped: { pose: \"renamed anim: a write of pose is taken and stored as anim; a stored one is renamed by the world's maintenance command\" },\n", ""]], "", ["A5"]],
   ["the wire says wingsFolded", "shared/wingpresence.js", "return { poses: folded === true ? [WINGS_FOLDED] : [] };", "return { wingsFolded: folded === true };", ["A6"]],
   ["the old flag isn't read", "shared/wingpresence.js", "return typeof sample.wingsFolded === 'boolean' ? sample.wingsFolded : null;", "return null;", ["A6"]],
   ["the fence drops poses", "server/posecheck.ts", "if (\"poses\" in p) { const c = cleanPoses(p.poses); if (c) p.poses = c; else delete p.poses; }", "delete p.poses;", ["A6"]],
@@ -128,6 +134,8 @@ const MUTANTS: [string, string, string, string, string[]][] = [
   ["the card is still Bob", "shared/descriptors.js", "  Oscillate: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", "  Bob: { type: 'oscillate', show: ['axis', 'amp', 'period', 'phase'],", ["OS1"]],
   ["bob finds nothing", "shared/editschema.js", "Oscillate: ['float', 'hover', 'bob', 'back and forth', 'piston', 'sine']", "Oscillate: ['float', 'hover', 'back and forth', 'piston', 'sine']", ["OS5"]],
   ["Add Component writes bob", "shared/editschema.js", "Oscillate: { type: 'oscillate', amp: 0.3, period: 4 }", "Oscillate: { type: 'bob', amp: 0.3, period: 4 }", ["OS5"]],
+  ["a bob has a sock cycle", "client/lib/avatar/socksignals.js", "    case 'oscillate': {", "    case 'bob': case 'oscillate': {", ["OS4"]],
+  ["the editor gives a bob its motion card", "shared/editschema.js", "export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'oscillate', 'path'];", "export const MOTION_TYPES = ['pendulum', 'spin', 'orbit', 'oscillate', 'path', 'bob'];", ["OS4"]],
   ["the translator keeps bob", "tools/import-v1/translate-v1.js", "  const m = motionType(m0) === m0.type ? m0 : { ...m0, type: motionType(m0) };", "  const m = m0;", ["OS6"]],
   ["AGENTS.md says bob", "AGENTS.md", "`{type: pendulum\\|spin\\|orbit\\|oscillate\\|path, …}`", "`{type: pendulum\\|spin\\|orbit\\|bob\\|path, …}`", ["OS7"]],
   ["the history forgets oscillate", "spec/history/PRE-RELEASE-RENAMES.md", "was `bob`: the door takes the old spelling", "was the old word: the door takes the old spelling", ["OS7"]],
@@ -155,11 +163,15 @@ function mutantTree(tag: string) { const d = scratch(tag);
   for (const k of fs.readdirSync(ENGINE)) if (![".git", "worlds", "store"].includes(k) && !fs.existsSync(path.join(d, k))) try { linkInto(path.join(ENGINE, k), path.join(d, k)); } catch { /* best effort */ }
   return d; }
 if (argv.includes("--mutants")) {
-  let bad = 0, ran = 0;
-  for (const [name, file, find, repl, cases] of MUTANTS) {
-    ran++; const d = mutantTree("namesmut"); const f = path.join(d, file); const src = readLF(f);
-    if (src.split(find).length !== 2) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${file} (the fix moved?)`); continue; }
-    fs.writeFileSync(f, src.replace(find, repl));
+  let bad = 0, ran = 0; const oi = argv.indexOf("--only"), only = oi >= 0 ? (argv[oi + 1] ?? "").split(",") : null;   // as runMutants
+  for (const m of MUTANTS) {
+    const [name, , , , cases] = m;
+    if (only && !cases.some((c) => only.includes(c)) && !(only.includes("CONTROL") && !cases.length)) continue;
+    ran++; const d = mutantTree("namesmut");
+    const edits = editsOf(m).map(([f, a, b]) => [path.join(d, f), a, b] as const);   // the anchors gate reads rows the same way
+    const miss = edits.find(([f, a]) => readLF(f).split(a).length !== 2);
+    if (miss) { bad++; console.log(`FAIL mutant '${name}': its text isn't found exactly once in ${path.relative(d, miss[0])} (the fix moved?)`); continue; }
+    for (const [f, a, b] of edits) fs.writeFileSync(f, readLF(f).replace(a, () => b));
     const r = await runSelf(d, cases.length ? cases : null);
     const redIds = [...r.out.matchAll(/^FAIL (\S+)/gm)].map((m) => m[1]);
     const good = cases.length ? r.code !== 0 && cases.every((c) => redIds.includes(c)) : r.code === 0;
@@ -169,8 +181,15 @@ if (argv.includes("--mutants")) {
   }
   console.log(`[names-check --mutants] ${ran} mutations run, ${bad} wrong (each must turn its rows red; the control must stay green)`); process.exit(bad ? 1 : 0);
 }
+/** Rows that read a file, module or agent method BASE doesn't have, so they throw there (red for the rule: the thing is new),
+ *  each with what its throw must name; a row that throws for anything else is WRONG at base (G4-150). */
+const ABSENT_AT_BASE: Record<string, RegExp> = {
+  U1: /actionbar\.js/, B2: /bodymode\.js/, B3: /bodymode\.js/, K5: /POSE-WIRE\.md/,
+  L1: /animStops|bodyModeNow/, K1: /animStops|bodyModeNow/, K2: /animStops|bodyModeNow/, K3: /animStops|bodyModeNow/, K4: /animStops|bodyModeNow/,
+  OS1: /descriptors\.js/, OS4: /motioneval\.js/, OS7: /PRE-RELEASE-RENAMES\.md/, X1: /PRE-RELEASE-RENAMES\.md/, OLD: /onceanim\.js/,
+};
 if (argv.includes("--control")) {
-  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);
+  const d = scratch("namesctl"); const r0 = archiveTo(ENGINE, BASE, ["shared", "server", "mcpl", "client", "defs", "spec", "docs", "AGENTS.md", "DESIGN.md", "tools/protocol/import-v1"], d);   // defs: E2 reads defs/animations
   if (r0.exitCode !== 0) { console.log(`FAIL can't extract ${BASE}: ${r0.stderr}`); process.exit(1); }
   linkInto(path.join(d, "tools/protocol/import-v1"), path.join(d, "tools/import-v1"));   // the layout of org C3; a link, so its ../../../shared imports still resolve in d
   linkInto(fs.realpathSync(path.join(ENGINE, "node_modules")), path.join(d, "node_modules"));
@@ -180,8 +199,12 @@ if (argv.includes("--control")) {
   if (!lines.length) { console.log(`FAIL control: no row ran at base (exit ${r.code})\n${r.out.split("\n").slice(-8).join("\n")}`); process.exit(1); }
   const guard = (l: string) => /^(ok|FAIL)\s+G\d/.test(l);
   const missing = (l: string) => /Cannot find package/.test(l);   // red for this scratch tree's missing dependency, not for the rule
-  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l))));
-  console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 150)}`).join("\n"));
+  // a row that THREW at base is red for the rule only where base lacks what it reads (ABSENT_AT_BASE); any other throw is
+  // a broken row, not a red one (G4-150)
+  const threw = (l: string) => / — \{"threw":/.test(l);
+  const id = (l: string) => l.replace(/^(ok|FAIL)\s+/, "").split(" ")[0];
+  const wrong = lines.filter((l) => (l.startsWith("ok ") && !guard(l)) || (l.startsWith("FAIL") && (guard(l) || missing(l) || (threw(l) && !ABSENT_AT_BASE[id(l)]?.test(l.slice(l.indexOf('{"threw":')))))));
+  console.log(lines.map((l) => `${wrong.includes(l) ? "WRONG AT BASE:       " : "as expected at base: "}${l.slice(0, 150)}${threw(l) && wrong.includes(l) ? ` …threw: ${l.slice(l.indexOf('{"threw":') + 10, l.indexOf('{"threw":') + 170)}` : ""}`).join("\n"));
   console.log(`[names-check --control] at ${BASE}: ${lines.length} rows, ${wrong.length} wrong (every row red there but the guards, which stay green)`);
   process.exit(wrong.length ? 1 : 0);
 }
@@ -284,10 +307,10 @@ const cases: Case[] = [
       s.call("vic", "move", { to: AGAINST }); const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], shove: true });
       return { r: show(r), fix: r?.refused?.fix ?? "", args: Object.keys(VS.VERBSPEC.punt.args) }; },
     good: (o) => /^refused unknown-arg/.test(o.r) && /contact: true/.test(o.fix) && o.args.includes("contact") && !o.args.includes("shove") },
-  { id: "P3", what: "…with contact: true beside it, refused the same way (and a refused contact push stays unrecorded)", run(s) { cast(s);
+  { id: "P3", what: "…with contact: true beside it, refused the same way, naming shove (and a refused contact push stays unrecorded)", run(s) { cast(s);
       s.call("vic", "move", { to: AGAINST }); const n = s.entries().length; const r = s.call("vic", "punt", { id: "crate", v: [0, 0.2, 1.8], contact: true, shove: true });
       return { r: show(r), logged: s.entries().length - n }; },
-    good: (o) => /^refused unknown-arg/.test(o.r) && o.logged === 0 },
+    good: (o) => /^refused unknown-arg: punt has no argument 'shove'/.test(o.r) && o.logged === 0 },   // naming shove: at base contact was the unknown one (G4-003)
   { id: "P4", what: "…punt's words carry no feet and no kick: the verbspec row, the act tool's punt line, AGENTS.md", run() {
       const d = JSON.stringify(VS.VERBSPEC.punt), t = readText("mcpl/tools.ts"), a = readText("AGENTS.md");
       const punt = (t.match(/punt \{id, power\?\|v\?\} \([^)]*\)/) ?? [""])[0], ag = (a.match(/`punt \{id, power\? \| v\?\}`[^.]*\./) ?? [""])[0];
@@ -389,14 +412,14 @@ const cases: Case[] = [
       const GB = await import(TREE + "shared/grab.js"); const g = GB.grabOf(s.w().state().entities.cup?.c ?? {});
       return { r: show(r), held: GB.holdPoseOf(g, [0.2, 0.2, 0.2]), big: GB.holdPoseOf(g, [1, 1, 1]), torch: GB.holdPoseOf(GB.grabOf({ grabbable: { anim: "torch" } }), [0.2, 0.2, 0.2]), two: GB.holdPoseOf(GB.grabOf({ grabbable: { twoHanded: true } }), [0.2, 0.2, 0.2]), named: GB.HOLD_POSES ?? null }; },
     good: (o) => o.r === "ok" && o.held === "hand" && o.big === "carry" && o.torch === "torch" && o.two === "both-hands" && JSON.stringify(o.named) === '["hand","carry","torch","pistol","shoulder"]' },
-  { id: "A5", what: "…a socket child's station holds anim, never pose; the old sockets map with a body block's pose is refused (schema: no such name)", async run(s) {
+  { id: "A5", what: "…a socket child's station holds anim, never pose (refused, naming pose); the old sockets map with a body block's pose is refused (schema: no such component)", async run(s) {
       s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
       const door = show(s.call("olive", "set", { id: "bench", component: "sockets", value: { bunk: { pos: [0, 0.5, 0], body: { action: "lie", pose: "lie" } } } }));
       const kid = (station: any) => s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station } });
       const old = show(kid({ action: "lie", pose: "lie" })), r = kid({ action: "lie", anim: "lie" });
       const E = s.w().state().entities; const k = Object.keys(E).find((x) => E[x].c.socket?.name === "bunk");
       return { door, old, r: show(r), st: k ? E[k].c.station : null }; },
-    good: (o) => /^refused schema/.test(o.door) && /^refused schema/.test(o.old) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) },
+    good: (o) => /^refused schema/.test(o.door) && /^refused schema: \S+\.station(: unknown key 'pose'|\.pose is gone: renamed anim)/.test(o.old) && o.r === "ok" && o.st?.anim === "lie" && !("pose" in o.st) },
   { id: "A6", what: "(R 15:09) folded wings are the named pose wings-folded on the wire (poses: [names]; [] holds none); an older sample's wingsFolded still reads; the server's fence keeps a clean poses list", async run() {
       const WP = await import(TREE + "shared/wingpresence.js"); const PC = await import(TREE + "server/posecheck.ts");
       const keep = PC.sanePose({ p: [0, 0, 0], poses: ["wings-folded"] }), bad = PC.sanePose({ p: [0, 0, 0], poses: [1, 2] });
@@ -529,13 +552,14 @@ const cases: Case[] = [
       const n = sent.length; await call("anim", { stop: "live" }); ag.joined = false;
       const named = await call("anim", { name: "live" });
       const AD: any = await import(TREE + "shared/animdefs.js"); const side = AD.validateActionBar;
-      s.call("olive", "create-world", { title: s.name }); s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }); s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } });
+      s.call("olive", "create-world", { title: s.name }); const made = [s.call("olive", "create", { id: "cup", model: "book", place: { at: [0, 0] } }), s.call("olive", "create", { id: "bench", model: "crate", place: { at: [4, 0] } })].map(show);
       const g = s.call("olive", "set", { id: "cup", component: "grabbable", value: { anim: "live" } });
       const st = s.call("olive", "create", { components: { parent: { to: "bench" }, transform: { pos: [0, 0.5, 0] }, socket: { name: "bunk" }, station: { action: "lie", anim: "live" } } });
       return { layers: (ag.anims ?? []).map((x: any) => x.name), stops: ag.animStops.map((x: any) => `${x.name}:${x.why}`), held: ag.heldPose != null, clip: ag.clip, mode: ag.bodyModeNow(), fade: sent.slice(n).some((m: any) => m.type === "anim" && m.stop === true),
-        named: named?.isError === true && /reserved/.test(named.content[0].text), def: (AD.validateAnimationDef?.("live", {}) ?? []).length > 0, bar: (side?.({ live: { clip: "dance" } }) ?? []).length > 0, g: show(g), st: show(st) }; },
-    good: (o) => JSON.stringify(o.layers) === '["sit"]' && JSON.stringify(o.stops) === '["live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade && o.named && o.def && o.bar && /^refused/.test(o.g) && /^refused/.test(o.st) },
-  { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name), and the spec gives the rest rule and the relay's anim {stop: true}", run() {
+        named: named?.isError === true && /reserved/.test(named.content[0].text), def: (AD.validateAnimationDef?.("live", {}) ?? []).length > 0, bar: (side?.({ live: { clip: "dance" } }) ?? []).length > 0, made, g: show(g), st: show(st) }; },
+    good: (o) => JSON.stringify(o.layers) === '["sit"]' && JSON.stringify(o.stops) === '["live:stopped","live:stopped"]' && !o.held && o.clip === "sit" && o.mode === "sit" && o.fade && o.named && o.def && o.bar
+      && o.made.every((m: string) => m === "ok") && [o.g, o.st].every((r: string) => /^refused \S+: \S*anim "live" is reserved/.test(r)) },
+  { id: "K5", what: "…the words: the anim tool's description and AGENTS.md spell out stop (true: every layer, the body-mode's rest, never the bind pose, body-mode unchanged; a name: that layer; \"live\": the ad-libbed ones, a reserved name); the pose-wire doc (docs/reference/POSE-WIRE.md) gives the rest rule and the relay's anim {stop: true}, and the spec reserves \"live\"", run() {
       const t = readText("mcpl/tools.ts"); const i = t.indexOf('name: "anim", description: "'); const d = i < 0 ? "" : t.slice(i, t.indexOf("\n", i));
       const a = readText("AGENTS.md"), md = readText("spec/PROTOCOL.md");
       const says = (x: string) => /rests in your body-mode's own anim \(stand: idle/.test(x) && /never the bind pose/i.test(x) && /body-mode[^.]{0,40}unchanged/i.test(x) && /stop: \\?"live\\?"/.test(x) && /reserved/.test(x) && /that layer/.test(x);
@@ -597,11 +621,12 @@ const cases: Case[] = [
       const ME: any = await import(TREE + "shared/motioneval.js"), SS: any = await import(TREE + "client/lib/avatar/socksignals.js"), ES: any = await import(TREE + "shared/editschema.js"), NM: any = await import(TREE + "shared/protocol/names.js");
       const base = { pos: [1, 2, 3], yaw: 0 }, m = (type: string) => ({ type, axis: [0, 0, 1], amp: 0.5, period: 2, phase: 0.3, t0: 1000 });
       const now = ME.evalWholeMotion(base, m("oscillate"), 1700), old = ME.evalWholeMotion(base, m("bob"), 1700);
-      const sch = ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m("bob") }, "d");
-      const groups = JSON.stringify(sch);
+      // the inspector's motion card (its type row) for each; a bob gets none: its component shows as written (raw JSON)
+      const typeRow = (type: string) => JSON.stringify(ES.inspectSchema({ id: "d", model: "book", pos: [0, 0, 0], motion: m(type) }, "d")).match(/"t":"enum","k":"type","label":"type","value":"[^"]*"/)?.[0] ?? null;
       return { now: now.ok && now.pos, old: old.ok && old.pos, cyc: [SS.cycleOf(m("oscillate"), 1700), SS.cycleOf(m("bob"), 1700)].map((c: any) => JSON.stringify(c)), ch: [ES.motionChannels(m("oscillate")), ES.motionChannels(m("bob"))].map((c: any) => [...c.t].join() + "|" + [...c.r].join()),
-        card: /"Oscillate"/.test(groups), typeRow: /"t":"enum","k":"type","label":"type","value":"oscillate"/.test(groups) && !/"value":"bob"/.test(groups), bobCard: /"Bob"/.test(groups), read: "motionType" in NM || "OLD_MOTION_TYPES" in NM }; },
-    good: (o) => Array.isArray(o.now) && Math.abs(o.now[2] - 3) > 0.01 && JSON.stringify(o.now) !== JSON.stringify(o.old) && o.ch[0] === "z|" && o.ch[1] !== o.ch[0] && o.read === false },
+        rows: [typeRow("oscillate"), typeRow("bob")], read: "motionType" in NM || "OLD_MOTION_TYPES" in NM }; },
+    good: (o) => Array.isArray(o.now) && Math.abs(o.now[2] - 3) > 0.01 && JSON.stringify(o.now) !== JSON.stringify(o.old) && o.ch[0] === "z|" && o.ch[1] !== o.ch[0]
+      && o.cyc[0] !== o.cyc[1] && o.cyc[1] === '{"phase":0,"swing":0}' && /"value":"oscillate"$/.test(o.rows[0] ?? "") && o.rows[1] === null && o.read === false },
   { id: "OS5", what: "…Add Component offers Oscillate (bob, float, hover find it) and writes type oscillate", async run() {
       const ES: any = await import(TREE + "shared/editschema.js");
       const r = ES.addOps({ id: "d", model: "book", pos: [0, 0, 0] }, "d", "Oscillate");

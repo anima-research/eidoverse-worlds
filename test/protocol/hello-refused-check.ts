@@ -26,11 +26,25 @@ check("HR1 an update-required refusal says what the server speaks and to update 
   server.stop(true);
   check("HR2 the agent's join refused at the hello rejects in the server's terms (update the client), not a timeout", /update/.test(said) && !/TIMEOUT|timed out/i.test(said) && Date.now() - t0 < 8000, said); }
 
-// HR3: the page (client/lib/net.js), the server's tend and the caption bot read the refusal too (the inline early socket's
-// buffered messages are read by net.js)
-{ const net = read("client/lib/net.js"), tend = read("tools/tend.ts"), cap = read("services/captionbot/world.ts");
-  check("HR3 net.js handles a refused message (live and buffered by the early socket) in refusalWords' terms; tend and the caption bot do too",
-    /case 'refused'/.test(net) && /msg\?\.type === 'refused'/.test(net) && /refusalWords/.test(net) && /msg\.type === "refused"/.test(tend) && /refusalWords/.test(tend) && /msg\.type === 'refused'/.test(cap) && /refusalWords/.test(cap), ""); }
+// HR3: tend and the caption bot, each run against a server that refuses its hello: each says refusalWords' answer, at
+// once (G6-106: they were source greps). The page (client/lib/net.js, live and the early socket's buffered messages) is
+// still read as source: a browser leg needs a server that refuses the page's own hello
+const REFUSAL = { type: "refused", code: "update-required", need: { dialect: NEED.dialect, v: NEED.v } }, WORDS = refusalWords(REFUSAL);
+const refuser = () => Bun.serve({ port: 0, fetch(req, srv) { return srv.upgrade(req) ? undefined : new Response("no", { status: 400 }); },
+  websocket: { message(ws, m) { const msg = JSON.parse(String(m)); if (msg.type === "join") { ws.send(JSON.stringify(REFUSAL)); ws.close(4005, "update-required"); } } } });
+{ const server = refuser(); const t0 = Date.now();
+  const p = Bun.spawn(["bun", ENGINE + "tools/tend.ts", "w"], { cwd: ENGINE, env: { ...process.env, PORT: String(server.port), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdout: "pipe", stderr: "pipe" });
+  const code = await p.exited, err = (await new Response(p.stderr).text()).trim(); server.stop(true);
+  check("HR3 tend refused at the hello exits non-zero with refusalWords' answer, not its timeout", code === 1 && err.includes(WORDS) && !/timeout/.test(err) && Date.now() - t0 < 9000, [code, err.slice(0, 200)]); }
+{ const server = refuser(); const { WorldClient } = await import("../../services/captionbot/world.ts"); const { tryUntil } = await import("../gate/wait.ts"); const said: string[] = [];
+  const bot = new WorldClient({ url: `ws://127.0.0.1:${server.port}/ws`, token: "", world: "w", actor: "captions", screenId: "screen", log: (m) => said.push(m) });
+  bot.connect();
+  await tryUntil("the bot says the refusal", () => said.some((m) => m.includes(WORDS)), { ms: 3000, step: 20 });
+  server.stop(true); bot.close();
+  check("HR3 the caption bot refused at the hello says refusalWords' answer", said.some((m) => m === `world error: ${WORDS}`), said.slice(0, 4)); }
+{ const net = read("client/lib/net.js"); const live = net.slice(net.indexOf("case 'refused':"), net.indexOf("break;", net.indexOf("case 'refused':")));
+  check("HR3 net.js handles a refused message (live and buffered by the early socket) in refusalWords' terms (source)",
+    /noteRefusal\(refusalWords\(msg\)/.test(live) && /msg\?\.type === 'refused'\) noteRefusal\(refusalWords\(msg\)/.test(net), ""); }
 
 console.log(`[hello-refused-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

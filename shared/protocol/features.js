@@ -1,7 +1,7 @@
 // shared/protocol/features.js — feature declarations (docs/decisions/LOG-VOCABULARY.md §F F-1): genesis.body.requires, governance.body.requiresAdd.
 // Pure: the fold (fold.js checkGenesis, fold) calls in here; this module decides what the lists mean.
 
-/** namespace:name@major, ≤ 88 characters; a new major is a new id. */
+/** namespace:name@major, ≤ 88 characters (LOG-VOCABULARY §F; this grammar's longest is 86); a new major is a new id. */
 export const FEATURE_ID = /^[a-z][a-z0-9-]{0,31}:[a-z][a-z0-9-]{0,47}@[1-9][0-9]{0,3}$/;
 export const MAX_FEATURES = 64;
 export const MAX_FEATURE_ID_LEN = 88;

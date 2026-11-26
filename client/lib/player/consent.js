@@ -7,8 +7,8 @@ import { GATES, DEFAULT_GATES, CONSENT_SHAPE } from '../../../shared/protocol/co
 export { GATES };
 /** what each gate covers, in plain words (Settings ▸ body shows them as the tooltips) */
 export const GATE_WORDS = {
-  move: { label: 'Allow being moved', tip: 'Whether other people may move your body: shove or knock you over (a /boom blast too), drag you, carry you, or sit you down on something. On by default.' },
-  touch: { label: 'Allow being posed and touched', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default.' },
+  move: { label: 'Allow being moved', tip: 'Whether other people may move your body: shove or knock you over (a /boom blast too), drag you, carry you, or sit you down on something. On by default, unless this world sets its own default.' },
+  touch: { label: 'Allow being posed and touched', tip: 'Whether other people may put their hands on you (anywhere, intimate places included) or pose your body. Off by default, unless this world sets its own default.' },
 };
 
 // the keys before it, read by readStored: main's two (ew-pushable, ew-posable; save still mirrors the gates into them) and the body switch (ew-body-switch)

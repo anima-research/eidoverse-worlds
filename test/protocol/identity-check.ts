@@ -177,6 +177,7 @@ ok(!srv.dead, "(setup) the server is up", srv.dead ? fs.readFileSync(srv.log + "
 { const a1 = await sock(srv.port); const j1 = await a1.join("garden", "x", { agentToken: mint({ kind: "agent", name: "Wren", sub: "agent:wren@home.test" }) });
   const t1 = await sock(srv.port); const j2 = await t1.join("orchard", "Wren", { agentToken: "tok-wren" });
   ok(j1.snapshot?.you === "Wren", "C2 an aid1 agent whose subject an enrolment lists IS that enrolled agent (named by the enrolment)", [j1.snapshot?.you, j1.errors]);
+  ok(j2.snapshot?.you === "Wren" && !!you(j1) && you(j2) === you(j1), "C2 …the same identity its enrolment token wears (the two doors are one Wren)", [j2.snapshot?.you, you(j2), you(j1), j2.errors]);
   const imp = await sock(srv.port); const j3 = await imp.join("garden", "x", { agentToken: mint({ kind: "agent", name: "Wren", sub: "agent:wren@elsewhere.test" }) });
   ok(j3.snapshot ? (j3.snapshot.you !== "Wren" && you(j3) !== you(j1)) : /reserved agent name/.test(j3.errors.join(" ")), "C2 another aid1 agent whose NAME slugs to an enrolled agent's isn't them (refused as reserved, or its own identity)", [j3.snapshot?.you, j3.errors]);
   a1.close(); t1.close(); imp.close(); }
@@ -283,12 +284,15 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     fern.raw({ type: "voice-moderate", id: "Wren", muted: true }); vis.raw({ type: "voice-moderate", id: "Wren", muted: true });
     await tryUntil("both refusals are answered", () => fern.msgs.slice(kf).some((m) => m.type === "error") && vis.msgs.slice(kv).some((m) => m.type === "error"), { ms: 5000, step: 20 });
     const byOthers = own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
+    const why = (sk, k0) => sk.msgs.slice(k0).find((m) => m.type === "error")?.error ?? null;   // the refusal's cause, not just any error
+    const refusals = [why(fern, kf), why(vis, kv)];
     own.raw({ type: "voice-moderate", id: "Wren", muted: false });
     const owners = () => own.msgs.slice(k).filter((m) => m.type === "voice-moderated").map((m) => m.by);
     await tryUntil("the owner's voice-moderated", () => owners().length > 0, { ms: 5000 });   // the owner's reply, not a fixed pause
     const all = owners();
-    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1,
-      "voice-moderate (mute for everyone) needs the mute permission (an owner has it): a stranger (a builder, meadow's newcomer role) and a member are refused, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all]);
+    ok(jf.snapshot?.yourRights?.role === "builder" && jv.snapshot?.yourRights?.role === "member" && byOthers.length === 0 && all.length === 1
+      && /^muting someone needs mute; you are builder/.test(refusals[0] ?? "") && /^muting someone needs mute; you are member/.test(refusals[1] ?? ""),
+      "voice-moderate (mute for everyone) needs the mute permission (an owner has it): a stranger (a builder, meadow's newcomer role) and a member are refused for it, the owner isn't", [jf.snapshot?.yourRights?.role, jv.snapshot?.yourRights?.role, all, refusals]);
     await own.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
     fern.close(); vis.close(); }
   const elsewhere = await sock(S3.port); const je = await elsewhere.join("garden", "someone-new");
@@ -335,9 +339,10 @@ const S2 = await start({ TRUST_NAMES: "" });   // the public door: typed names a
     // sweep applies the sanctions in force to the new leg
     const kc = m2.msgs.length; m2.raw({ type: "relay-cred" });
     const gotCred = !!(await tryUntil("Moss's fresh relay credential", () => m2.msgs.slice(kc).some((m) => m.type === "relay-cred"), { ms: 5000, step: 20 }));
-    // muted again within a sweep tick (2 s) at the latest: the mint resets the id, the sweep re-applies what is in force
-    const diag3 = (await tryUntil("Moss is muted on the fresh leg", async () => { const d = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json(); return (d.moderatorMuted ?? []).includes("Moss") ? d : null; }, { ms: 6000 })) ?? {};
-    ok(gotCred && (diag3.moderatorMuted ?? []).includes("Moss"), "RS2b a muted person who asks for a fresh relay credential is still muted at the SFU", [gotCred, diag3.moderatorMuted]);
+    // muted again BEFORE the credential is answered: the mint resets the id and its own sweep re-applies what is in force
+    // (server.ts relay-cred), so read at once; waiting out the 2 s sweep tick would pass with the mint's sweep gone (G4-147)
+    const diag3 = await (await fetch(`http://127.0.0.1:${S4.port}/relay-diag?world=heath`)).json();
+    ok(gotCred && (diag3.moderatorMuted ?? []).includes("Moss"), "RS2b a muted person who asks for a fresh relay credential is still muted at the SFU, from the moment it's answered", [gotCred, diag3.moderatorMuted]);
     // a builder (no mute permission) can't, and an unmute by the moderator lifts it at the SFU
     const kw = wren.msgs.length; wren.raw({ type: "voice-moderate", id: "Moss", muted: false });
     const wrenErr = await tryUntil("wren's unmute is answered with an error", () => wren.msgs.slice(kw).find((m) => m.type === "error"), { ms: 5000 });   // the refusal, not a 300 ms guess

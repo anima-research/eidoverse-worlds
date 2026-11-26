@@ -63,6 +63,7 @@ const r0 = Bun.spawnSync(["bun", "tools/world.ts", "found", "yard", "--owner", "
 ok(r0.exitCode === 0, "(setup) found yard, Ann owns it", r0.stderr.toString().slice(-300));
 import { idAliases } from "../harness/idalias.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { TRACK } from "../../shared/mover.js";
 const IDS = idAliases();
 const srv = await startServer(env(), root, { from: 9640 }), { port, proc } = srv;
 let ag = null, ann = null;
@@ -104,7 +105,11 @@ try {
   const call = (name, a = {}) => HANDLERS[name](ag, a, { agent: ag, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, name);
   const entries = () => readLog(fs.readFileSync(path.join(W, "yard", "world.jsonl")));
   const shoves = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && !e.body?.refused && e.body?.args?.id === N(id) && e.body?.args?.contact === true);
-  const anyPunt = (id) => entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`));
+  // G4-131: a refused punt is logged with argNames only (authority.js R7), or not at all, so the log can't say what one was
+  // aimed at: anyPunt is every punt the agent SENT at it (its one route, request "punt") plus any logged by that id
+  const sentPunts: any[] = []; { const req0 = ag.request.bind(ag); ag.request = (verb, args, ...rest) => { if (verb === "punt") sentPunts.push(args); return req0(verb, args, ...rest); }; }
+  const anyPunt = (id) => [...sentPunts.filter((a) => a?.id === N(id)).map((a) => ({ sent: a })),
+    ...entries().filter((e) => e.kind === "request" && e.verb === "punt" && e.actor === HEP && JSON.stringify(e.body ?? {}).includes(`"${N(id)}"`)).map((e) => ({ logged: e.body }))];
   const posOf = (id) => ag.replica?.st?.entities?.[N(id)]?.c?.transform?.pos ?? null;
   const settle = async (id) => { if (await tryUntil(`${id} comes to rest`, () => !ag.replica?.sim?.sim?.bodies?.[N(id)], { ms: 10_000 })) await ann.req("wait", {}); };
   const shaped = (ids) => tryUntil(`${ids.join(", ")} measured`, () => ids.every((id) => Array.isArray(ag.replica?.st?.entities?.[N(id)]?.c?.physics?.shape)), { ms: 4000, step: 50 });
@@ -118,7 +123,7 @@ try {
     const w = await call("move", { to: [0, 4.5] }); await settle("low");
     await tryUntil("the low crate's shove is logged and folded", () => shoves("low").length >= 1 && posOf("low")?.[2] > 2.2, { ms: 3000, step: 50 });
     const s = shoves("low"), p = posOf("low");
-    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {contact: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low").map((e) => e.body) });
+    ok(s.length >= 1, "AS1 a low crate in the walk's path is shoved: a punt {contact: true} by the agent", { n: s.length, sample: s[0] ?? null, any: anyPunt("low") });
     ok(Array.isArray(p) && p[2] > 2.2, "AS1 …and it moved along the walk (+z)", p);
     ok(!w.isError, "AS1 …and the walk arrived (the authority's body steps over a low crate)", T(w)); }
   // AS2
@@ -134,7 +139,7 @@ try {
   { const m0 = await call("move", { to: [10.5, 1.36] }); ok(!m0.isError, "(AS3 setup) the agent stands west of the third crate's face line", T(m0));
     const n0 = anyPunt("still").length;
     const w = await call("move", { to: [12, 1.36] }); await pause("standing beside it: no punt in this window", 2500);
-    ok(!w.isError && anyPunt("still").length === n0, "AS3 walking along its face, then standing beside it 2.5 s: no punt", { punts: anyPunt("still").map((e) => e.body), text: T(w) }); }
+    ok(!w.isError && anyPunt("still").length === n0, "AS3 walking along its face, then standing beside it 2.5 s: no punt", { punts: anyPunt("still"), text: T(w) }); }
   // AS4
   { const m0 = await call("move", { to: [18, 0] }); ok(!m0.isError, "(AS4 setup) the agent stands south of the locked crate", T(m0));
     // what the agent SENDS is watched too: a refused contact punt is counted, never written, so the log alone can't see one
@@ -144,7 +149,7 @@ try {
     await whileWalking(() => walking, () => { reach = Math.max(reach, ag.pos.z); });
     await wp; ag.request = req; await ag.request("wait", {});   // behind any punt on the agent's socket: logged before this reply
     ok(reach >= 0.9, "(AS4 setup) the walk reached the crate (the behaviour at it was exercised)", { reach });
-    ok(anyPunt("locked").length === 0 && sent.length === 0, "AS4 a locked crate in the path: the agent sends no punt at it, and none is in the log", { sent, logged: anyPunt("locked").map((e) => e.body) }); }
+    ok(anyPunt("locked").length === 0 && sent.length === 0, "AS4 a locked crate in the path: the agent sends no punt at it, and none is in the log", { sent, logged: anyPunt("locked") }); }
   // AS5
   { const r = await mk("fixed", { model: "test/tallcrate.glb", components: { transform: { pos: [-6, 0, 2], q: [0, 0, 0, 1], scale: [1, 1, 1] }, physics: { kind: "static" } } });
     ok(r.ok, "(AS5 setup) a static tall crate", r);
@@ -154,10 +159,13 @@ try {
     const w = call("move", { to: [-6, 5] }).finally(() => { walking = false; });
     await whileWalking(() => walking, () => { off = Math.max(off, Math.abs(ag.pos.x + 6)); });
     const t = T(await w), p = posOf("fixed");
-    ok(anyPunt("fixed").length === 0, "AS5 a static crate of the same size in the path: no punt", anyPunt("fixed").map((e) => e.body));
+    ok(anyPunt("fixed").length === 0, "AS5 a static crate of the same size in the path: no punt", anyPunt("fixed"));
     ok(JSON.stringify(p) === JSON.stringify(p0), "AS5 …it stays put", { p0, p });
     ok(/^arrived/.test(t), "AS5 …the walk arrives", t);
-    ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off }); }
+    ok(off > 0.3, "AS5 …routed round it: the body left the straight line", { off });
+    // the helper's control: a punt the authority refuses (a static thing) is still one anyPunt sees
+    const n0 = anyPunt("fixed").length, rp = await ag.request("punt", { id: N("fixed"), v: [0, 0, 1], contact: true });
+    ok(!rp?.ok && anyPunt("fixed").length > n0, "(AS5 control) a refused punt at it is seen by anyPunt, which AS3-AS5's \"no punt\" reads", { refused: rp?.refused, punts: anyPunt("fixed") }); }
   // AS6
   { const r = await crate("heavy", "test/tallcrate.glb", [-12, 0, 2], {}, 2000); ok(r.ok, "(AS6 setup) a 2000 kg dynamic tall crate", r);
     await shaped(["heavy"]); await fitted(["heavy"]);
@@ -201,7 +209,9 @@ try {
     await call("stop", {});
     const tB = T(await wB);
     ok(!/late2/.test(tB), "AS8 …and stopped, it does not report the first walk's crate", tB);
-    ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA); }
+    ok(!/solid|late2 is in the way/.test(tA), "AS8 …nor does the superseded walk claim the authority refused it", tA);
+    // G6-092: and what each did say: neither arrived; each ended as an interrupted walk (superseded, then stopped)
+    ok(/^walk interrupted/.test(tA) && /^walk interrupted/.test(tB), "AS8 …each ended as an interrupted walk, not an arrival or a refusal", { tA, tB }); }
   // AS9
   { const m0 = await call("move", { to: [-18, 0] }); ok(!m0.isError, "(AS9 setup) the agent stands south of AS7's crate, still locked", T(m0));
     const ul = await ann.req("delete", { id: "late", component: "lock" });
@@ -233,26 +243,37 @@ try {
   // is spent (just after other walking; on a slow host, often) waits for it instead of ending refused. Spend it with two raw
   // steps out and back (net nowhere, ~3.9 m of allowance), then ask for an ordinary walk at once
   { const at = Array.isArray(ag.trackAt) ? ag.trackAt.slice() : null; ok(!!at, "(AS16 setup) the authority has the body somewhere", { at });
-    const out = [at[0] - 1.95, at[1], at[2]];
+    const out = [at[0] - 1.95, at[1], at[2]], t0 = performance.now();
     const s1 = await ag.request("move", { to: out }), s2 = await ag.request("move", { to: at });
     ok(s1?.ok && s2?.ok, "(AS16 setup) two steps out and back spend the track", { s1: s1?.refused, s2: s2?.refused });
-    const t = T(await call("move", { to: [at[0] - 3, at[2]] }));
+    // G6-093: the walk's own move requests are watched, so the row shows the track WAS spent (a "not yet" came back first)
+    const slow: any[] = [], req1 = ag.request.bind(ag); let t1 = 0;
+    ag.request = (verb, args, ...rest) => { const r = req1(verb, args, ...rest); if (verb === "move") r.then((x) => { t1 ||= performance.now(); if (x?.refused?.code === "too-fast") slow.push(x.refused); }); return r; };
+    const t = T(await call("move", { to: [at[0] - 3, at[2]] })); ag.request = req1;
+    // the setup leaves the track ≤ cap − 3.9 m, refilling at its speed; the first permit (TRACK.cap / 2, agent.ts) is refused
+    // only while the refill is short of it. t1 − t0 bounds the authority's time from s1 to that permit: past it, none seen is n/a
+    const gapMs = Math.round(t1 - t0), refillMs = Math.floor((TRACK.cap / 2 - (TRACK.cap - 3.9)) / TRACK.speed * 1000);
+    console.log("   AS16:", JSON.stringify({ gapMs, refillMs, tooFast: slow.length }));
+    if (slow.length || (t1 && gapMs < refillMs)) ok(slow.length >= 1, "(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", { slow, t, gapMs, refillMs });
+    else S.na("(AS16 setup) the walk was told too-fast first (the track was spent when it was asked)", `the walk's first permit came ${gapMs} ms after the spend (the track refills its permit in ${refillMs} ms), so the not-yet path wasn't driven (too-fast seen: ${slow.length})`);
     ok(/^arrived/.test(t), "AS16 a walk asked while the track is spent waits for it to refill and arrives (never refused too-fast)", t); }
   // AS15 (review of #260): a rejoin resends what the agent chose with consent. The rejoin reads what the authority holds
-  // and sets only what differs; the agent never sends the gate it closed open, and it is closed after (the authority's
-  // own table between the join and the replay isn't read here: a default that reopens it for that moment would pass)
+  // and sets only what differs; the agent never sends the gate it closed open, and it is closed after. G4-216: the
+  // replay's own first read (consent {}) is the authority's table between the join and the replay: closed there too
   { const closed = await ag.request("consent", { move: false });
-    const sent: any[] = []; const orig = ag.request.bind(ag);
-    ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); return orig(verb, args); };
+    const sent: any[] = []; const orig = ag.request.bind(ag); let held = null;
+    ag.request = (verb: string, args: any) => { if (verb === "consent") sent.push(args); const r = orig(verb, args);
+      if (verb === "consent" && !Object.keys(args ?? {}).length && !held) held = r; return r; };
     let replay = null; const replayOrig = ag.replayConsent.bind(ag); ag.replayConsent = () => (replay = replayOrig());   // the arrival's resend, to await it
     ag.ws?.close();
     await tryUntil("the agent's socket drops", () => !ag.joined, { ms: 5000, step: 50 });
     await tryUntil("the agent rejoins", () => ag.joined, { ms: 15_000, step: 50 });
     await tryUntil("the rejoin's consent replay", () => replay, { ms: 2000, step: 20 }); await replay; delete ag.replayConsent;
-    const after = await orig("consent", {});
+    const after = await orig("consent", {}), between = await held;
     ag.request = orig;
     ok(closed?.ok && ag.joined && sent.length > 0 && sent.every((a) => a?.move !== true) && after?.table?.move === false,
-      "AS15 (R 10-28) a rejoin keeps the agent's gates: it never sends a closed one open, and it is closed after the replay", { closed, joined: ag.joined, sent, table: after?.table }); }
+      "AS15 (R 10-28) a rejoin keeps the agent's gates: it never sends a closed one open, and it is closed after the replay", { closed, joined: ag.joined, sent, table: after?.table });
+    ok(between?.ok && between.table?.move === false, "AS15 …and closed before it: the authority's table, read by the replay before it sends anything, already has move false", { between: between?.table ?? between }); }
   // AS11 (pure: a body that never joins) — a stall blames only a thing the stride presses INTO
   { const stallAgainst = (at) => {
       const b = new WorldAgent({ url: "ws://127.0.0.1:1/ws", name: "Bea", world: "w", avatar: "" });

@@ -72,10 +72,21 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
   const logf = path.join(root, `${tag}.log`);
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "agent:token:opal", AGENT_TOKENS_PATH: OPTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
-  procs.push(p);
-  if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc: p, log: logf }; // bounded: on this host a closed local port can drop the SYN instead of refusing it
-  throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
+  procs.push(p); started.push({ tag, log: logf });
+  // G4-165: ready is OUR child answering: still running, its own log naming this port, and /worlds ok (another server on the
+  // port would answer /worlds too)
+  const ours = () => p.exitCode === null && fs.existsSync(logf) && new RegExp(`sequencer on http://\\S+:${port}\\s`).test(fs.readFileSync(logf, "utf8"));
+  const up = await tryUntil(`the ${tag} server (our child, on :${port}) answers /worlds`, async () => p.exitCode !== null ? "exited"   // bounded: on this host a closed local port can drop the SYN instead of refusing it
+    : ours() && (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok && ours() ? "up" : null, { ms: 115_000, step: 150 });
+  if (up === "up") return { port, proc: p, log: logf };
+  const tail = (f: string) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8").slice(-600) : "");
+  throw new Error(`${tag} server didn't come up (${up ?? "no answer"}, exit ${p.exitCode}): ${tail(logf + ".err")}${tail(logf)}`);
 }
+
+// G4-130: every server this suite starts; S* reads all their logs at the end (server.ts and requestwire.ts say "failed server-side")
+const started: { tag: string; log: string }[] = [];
+const serverFailures = () => started.flatMap(({ tag, log }) => [log, log + ".err"].filter((f) => fs.existsSync(f))
+  .flatMap((f) => fs.readFileSync(f, "utf8").split("\n").filter((l) => /failed server-side/.test(l)).map((l) => `${tag}: ${l.slice(0, 200)}`)));
 
 // ---- a client: joins, keeps every message, sends requests ----
 async function client(port: number, world: string, id: string, extra: any = {}) {
@@ -122,7 +133,7 @@ const srv = await startServer(ENGINE, W4, OPT, "main");
 { const ws0 = await (await fetch(`http://127.0.0.1:${srv.port}/worlds`)).json();
   ok(ws0.worlds?.some((w) => w.name === "garden" && w.loaded === false), "S1 /worlds lists the world on disk before anyone loads it (travel discovery)", ws0); }
 const ann = await client(srv.port, "garden", "Ann", REPLICA);
-ok(ann.snapshot?.dialect === "eidoverse-log" && ann.snapshot?.v === 4, "S1 the snapshot says which log this is and which protocol reads it: {dialect, v}", ann.snapshot?.cut);
+ok(ann.snapshot?.dialect === "eidoverse-log" && ann.snapshot?.v === 4, "S1 the snapshot says which log this is and which protocol reads it: {dialect, v}", { dialect: ann.snapshot?.dialect, v: ann.snapshot?.v, errors: ann.of("error") });
 ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the tool's account local:ann is the name Ann joins as on a TRUST_NAMES server)", ann.snapshot?.yourRights);
 const ANN = ann.snapshot?.actor;
 ok(/^u-[a-z2-7]{20}$/.test(ANN ?? ""), "S1 a joiner is told its identity: an opaque directory id, not its name (round-2 R1)", ann.snapshot?.actor);
@@ -187,7 +198,15 @@ await tryUntil("every client's fold has caught up with the log on disk", () => [
 const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl")));
 const st = fold(L);
 ok(st.status === "ok" && !st.diagnostics.some(([, k]) => String(k).startsWith("malformed")), "S4 the log on disk reads back strictly", st.diagnostics.slice(0, 3));
-ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "request").length >= 6, "S4 ts never decreases; at least six acts are logged (their pairing with results isn't checked here)");
+ok(L.every((e, i) => i === 0 || e.ts >= L[i - 1].ts) && L.filter((e) => e.kind === "request").length >= 6, "S4 ts never decreases; at least six acts are logged");
+{ // G4-130: each act and its result pair up: a change's cause is an earlier accepted act by the same actor; a refused act
+  // causes nothing; an accepted one causes at least one change (a log entry's seq is its index)
+  const causes = new Set(L.filter((e) => e.kind === "change").map((e) => e.cause));
+  const orphan = L.map((e, i) => [e, i]).filter(([e, i]) => e.kind === "change" && !(L[e.cause]?.kind === "request" && L[e.cause].actor === e.actor && !L[e.cause].body?.refused && e.cause < i)).map(([e, i]) => ({ i, cause: e.cause }));
+  const acts = L.map((e, i) => [e, i]).filter(([e]) => e.kind === "request");
+  const refusedWrote = acts.filter(([e, i]) => e.body?.refused && causes.has(i)).map(([e, i]) => `${i} ${e.verb}`), silent = acts.filter(([e, i]) => !e.body?.refused && !causes.has(i)).map(([e, i]) => `${i} ${e.verb}`);
+  ok(causes.size > 0 && !orphan.length && !refusedWrote.length && !silent.length && acts.some(([e]) => e.body?.refused),
+    "S4 each act pairs with its result: every change is caused by an earlier accepted act of its actor, a refused act (there are some) causes none, an accepted one causes at least one", { orphan, refusedWrote, silent }); }
 ok(L.filter((e) => e.kind === "request").every((e) => [ANN, BOB].includes(e.actor) || (e.actor === VIC && e.body?.refused) || (e.actor === "system" && e.verb === "repair-shapes")), "S4 acts are stamped with the connection's identity, never the payload's (Vic's are his refused attempts, recorded: round-2 R7; a system repair-shapes marker, where one is written, is the system's, review r8 M3)", [...new Set(L.map((e) => e.actor))]);
 for (const c of [ann, bob, vic, spec]) ok(digest(heldBy(c).st) === digest(st), `S4 what ${c.id} holds (its own fold of what it was sent) = the log on disk (digest)`);
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
@@ -237,7 +256,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const ag: any = new WorldAgent({ url: `ws://127.0.0.1:${srv.port}/ws`, name: "Bob", world: "garden", avatar: "" });
   await ag.connect(); await tryUntil("the agent has its cut", () => ag.snapshot, { ms: 2000, step: 50 });
   ok(ag.snapshot?.dialect === "eidoverse-log" && ag.snapshot?.v === 4 && !("minor" in (ag.snapshot ?? {})), "S5 the MCPL agent learns from its snapshot which log this is and which protocol reads it", ag.snapshot);
-  ag.verb = () => { throw new Error("a world's building tool must not fire-and-forget"); };
+  // G4-166: WorldAgent has no verb() (a stub of one could never fire). The guard that can: every request frame the agent
+  // sends must have a waiter for its answer (request() registers one first); one without is a fire-and-forget
+  const sentReqs: string[] = [], unwaited: string[] = [];
+  { const send = ag.ws.send.bind(ag.ws); ag.ws.send = (d: any) => { try { const m = JSON.parse(String(d)); if (m?.type === "request") { sentReqs.push(m.verb); if (!ag.pendingRequests?.has(m.id)) unwaited.push(m.verb); } } catch {} return send(d); }; }
   // R 10-17: the agent names what it makes with a placeholder; the reply says the handle and the id it became
   const sp = await HANDLERS.create(ag, { model: "test/cup.glb", place: { at: [2, 2] }, id: "$agentcup" }, {} as any, "create");
   { const m = / id ([a-z2-7]{26})/.exec(sp.content[0].text); if (m) IDS.map.set("agentcup", m[1]); }
@@ -304,6 +326,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(up.isError && wk.isError && ag.myOccupancy?.to === seatId("box"), "S5e …it holds you (leaveBy script): neither detaching nor walking gets you off", [up.content[0].text, wk.content[0].text]);
   const hop = await HANDLERS.attach(ag, { to: IDS.of("carriage"), socket: "rumble" }, {} as any, "attach");
   ok(hop.isError && /from another seat/.test(hop.content[0].text) && ag.myOccupancy?.to === seatId("box"), "S5e …and the rumble seat doesn't take you straight from another (no fromSeat)", hop.content[0].text);
+  ok(sentReqs.includes("create") && sentReqs.includes("place") && !unwaited.length, "S5 every request the agent's tools sent waited for the authority's answer (none fire-and-forget)", { sent: sentReqs.length, unwaited });
   ag.close(); }
 
 // (Bob's own socket was taken over by S5's agent, which joined as Bob: Vic and the watcher are the bystanders here)
@@ -323,7 +346,10 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     "CM1 …not the reason (that's the person's, and the moderator log's); the person removed gets it, and no bystander line", kim.of("error").at(-1));
   // …and a kick the authority accepts for someone who isn't here (a raw id: the agent skips whois for one) tells nobody anything
   const nK = vic.of("moderated").length;
-  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)"); await pause("a kick that removed nobody has had its chance to be narrated (it must not)", 250);
+  ok((await ann.req("kick", { who: KIM })).ok, "CM1 (Ann kicks Kim again, though Kim has gone)");
+  // G6-124: a barrier, not a pause: the narration is sent in the kick's own turn, so a round trip of Vic's sent after Ann's
+  // reply comes back behind any line it sent him
+  ok((await vic.req("whois", { name: "Ann" })).ok, "(CM1) Vic's round trip after the kick is answered");
   ok(vic.of("moderated").length === nK, "CM1 …nobody is told \"Ann removed Kim\" when nobody was removed", vic.of("moderated").slice(nK));
   // CM2 role narration names the person: a role written for someone who never acted here carries their name to clients
   const nv = vic.of("log").length;
@@ -337,13 +363,18 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     "CM3 whois finds someone absent by name (case-folded): their identity, role, not here, and never their account", wz);
   // ---- DR: a live drag is relayed with who is dragging, and its last sample says end (docs/reference/WIRE.md: a live drag is a claim) ----
   { const da = await client(srv.port, "garden", "Dana", REPLICA); const db = await client(srv.port, "garden", "Dev", REPLICA);
-    await ann.req("set", { id: "@world", component: "default-role", value: { role: "builder" } });
+    // Dana builds as garden's newcomer role: a world founded since R 10-21 starts with builder (G4-130: setting it again was a no-op)
+    ok(heldBy(ann)?.st?.entities?.["@world"]?.c?.["default-role"]?.role === "builder", "(DR setup) garden's newcomers build (its founding default-role)", heldBy(ann)?.st?.entities?.["@world"]?.c?.["default-role"]);
     const mk = await da.req("create", { id: "drg", model: "test/cup.glb", place: { at: [2, 2] } });
     const k0 = db.msgs.length; da.send({ type: "drag", id: IDS.of("drg"), pos: [2.5, 0, 2], yaw: 0 });
     await tryUntil("Dev is sent the first sample", () => db.msgs.slice(k0).some((m) => m.type === "drag" && m.id === IDS.of("drg")), { ms: 2000, step: 20 }); da.send({ type: "drag", id: IDS.of("drg"), pos: [3, 0, 2], yaw: 0, end: true });
     await tryUntil("Dev is sent both drag samples", () => db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg")).length >= 2, { ms: 2000 });
-    await pause("a second copy would arrive within the old window", 400); const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
-    ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
+    // G6-125: a barrier, not the old 400 ms: the relay is synchronous, so a second copy of either sample would reach Dev before
+    // a later drag of Dana's does
+    da.send({ type: "drag", id: "dr1-barrier", pos: [0, 0, 0], yaw: 0, end: true });
+    const fenced = await tryUntil("Dev is sent Dana's later drag", () => db.msgs.slice(k0).some((m) => m.type === "drag" && m.id === "dr1-barrier"), { ms: 2000, step: 20 });
+    const got = db.msgs.slice(k0).filter((m) => m.type === "drag" && m.id === IDS.of("drg"));
+    ok(mk?.ok && !!fenced && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
     await ann.req("delete", { id: "@world", component: "default-role" });   // the later rows expect no default-role: a newcomer is a member (CM4's whois)
     await bye(da, db); }
   // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
@@ -392,7 +423,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(kk.isError && /isn't here/.test(T(kk)), "CM4 kicking someone absent says they aren't here", T(kk));
   const ub = await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act");
   ok(!ub.isError && !!(await tryUntil("Vic is told Oz lifted the ban on Zed", () => vic.of("moderated").some((m) => m.text === "Oz lifted the ban on Zed"), { ms: 3000, step: 50 })), "CM4 …and unban by name works, told to bystanders", [T(ub), vic.of("moderated").slice(-2)]);
-  const nU = vic.of("moderated").length; ok(!(await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act")).isError, "CM4 (Oz unbans Zed again)"); await pause("a second unban has had its chance to be narrated (it must not)", 250);
+  const nU = vic.of("moderated").length; ok(!(await HANDLERS.act(oz, { verb: "unban", args: { who: "Zed" } }, {} as any, "act")).isError, "CM4 (Oz unbans Zed again)");
+  ok((await vic.req("whois", { name: "Ann" })).ok, "(CM4) Vic's round trip after the second unban is answered");   // G6-124: CM1's barrier
   ok(vic.of("moderated").length === nU, "CM4 …a second unban changes nothing, and tells nobody anything", vic.of("moderated").slice(nU));
   // CM5 a refusal reaches the flight recorder (world_debug, /debug), with the authority's reason
   await vic.req("create", { id: "vics2", model: "test/cup.glb" });
@@ -420,8 +452,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(!whk.isError && seqs(T(whk)).length > 0 && T(whk).split("\n").filter((l) => /^#\d+/.test(l)).every((l) => /: change /.test(l)), "CM6g world_history {kinds: ['change']} shows what acts wrote", T(whk).slice(0, 400));
   const whw = await HANDLERS.world_history(oz, { after: first - 6, before: first, limit: 50 }, {} as any, "world_history");
   ok(!whw.isError && seqs(T(whw)).length > 0 && seqs(T(whw)).every((n) => n > first - 6 && n < first), "CM6g before and after together read the window between them", T(whw).slice(0, 400));
-  const whd = await HANDLERS.world_history(oz, {}, {} as any, "world_history");
-  ok(seqs(T(whd)).length > 30 || !/more before/.test(T(whd)), "CM6g a page is 50 by default (more than 30 rows, or the whole log)", `${seqs(T(whd)).length} rows`);
+  // G4-167: the page is 50 ENTRIES (an act's results print with it, so it shows fewer rows): read the request the tool sends and
+  // what came back, not a row count ("> 30 rows" passed for any page over 30). garden's log is longer by now: there is more
+  let asked: any = null, whd: any = null; { const req = oz.request.bind(oz); oz.request = async (verb: string, args: any) => { const r = await req(verb, args); if (verb === "history") asked = { limit: args?.limit, got: r?.entries?.length }; return r; };
+    whd = await HANDLERS.world_history(oz, {}, {} as any, "world_history"); oz.request = req; }
+  ok(asked?.limit === 50 && asked?.got === 50 && /more before/.test(T(whd)), "CM6g a page is 50 by default (the tool asks the authority for 50 entries, gets 50, and says there are more before)", { asked, rows: seqs(T(whd)).length });
   // SWEEP-3 G1a: body_state still says posture (main's name for the clip), beside bodyMode and clip
   const bst = JSON.parse(T(await HANDLERS.body_state(oz, {}, {} as any, "body_state")));
   ok("posture" in bst && bst.posture === bst.clip && "bodyMode" in bst, "CM6p body_state carries posture, a twin of clip", JSON.stringify({ posture: bst.posture, clip: bst.clip, bodyMode: bst.bodyMode }));
@@ -518,7 +553,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const seatC = replica[replica[enc("mug_1")].c.parent?.to]?.c;
   ok(seatC?.socket?.name === "seat" && seatC.parent?.to === enc("lamp_1") && JSON.stringify(seatC.transform.pos) === "[0.3,0.75,0.1]" && !("socket" in replica[enc("mug_1")].c.parent) && replica[enc("mug_1")].c.transform.pos.every((v) => Math.abs(v) < 1e-9),
     "S6 a translated mount is in the authority's shape once the world is loaded: the socket is lamp_1's child at the socket's pos, and the mug rides it (parent {to: <the socket>}, at its origin)", [replica[enc("mug_1")].c.parent, replica[enc("mug_1")].c.transform, seatC]);
-  ok(neu.snapshot.dialect === "eidoverse-log" && neu.snapshot.v === 4 && neu.snapshot.yourRights?.role === "owner", "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.yourRights, old.snapshot.cut]);
+  ok(neu.snapshot.dialect === "eidoverse-log" && neu.snapshot.v === 4 && neu.snapshot.yourRights?.role === "owner", "S6 the new copy says {dialect, v}, and Ann still owns it (the original log is read only by the translator)", [neu.snapshot.dialect, neu.snapshot.v, neu.snapshot.yourRights]);
   { const h = await neu.req("history", { verbs: ["say"], limit: 50 });   // arrival-only (R 10-18): no window on join; the owner reads the master log
     ok(JSON.stringify(neu.snapshot.chat.recentChat) === "[]" && (h.entries ?? []).some((e: any) => e.body?.text === "hello from v1"), "S6 the chat comes across into the log (its owner reads it back; nobody's join replays it)", [neu.snapshot.chat.recentChat, (h.entries ?? []).length]); }
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });
@@ -528,7 +563,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 // ---- S8: clients that fold the log themselves (slice 3b): the cut at join, the log stream, no projection ----
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second world");
   const a = await client(srv.port, "meadow", "Ann", { replica: true });
-  ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.cut ?? {}));
+  ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot ?? {}));
   await a.req("set", { id: "@world", component: "default-role", value: { role: "member" } });   // meadow's newcomers play (R 10-21: a new world's build)
   const bv = await client(srv.port, "meadow", "Bob", { replica: true }); // Bob folds the log too: nobody reads the projection
   ok(bv.snapshot?.yourRights?.role === "member", "S8 Bob arrives a member", bv.snapshot?.yourRights);
@@ -549,8 +584,8 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await tryUntil("the joiner that doesn't fold is closed", () => b.ws.readyState === 3, { ms: 2000, step: 50 });
   ok(!b.snapshot && /needs a client that folds its log/.test(b.of("error").at(-1)?.error ?? "") && b.ws.readyState === 3, "S8 a joiner that doesn't fold the log is refused, told why, and closed", [b.of("error").at(-1), b.ws.readyState]);
   const r2 = await a.req("set", { id: "box", component: "label", value: "after the refusal" });
-  await tryUntil("Ann is sent the label's entry", () => a.of("log").some((m: any) => JSON.stringify(m.entries).includes("after the refusal")), { ms: 3000, step: 20 });
-  ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
+  const sentLive = await tryUntil("Ann is sent the label's entry", () => a.of("log").some((m: any) => JSON.stringify(m.entries).includes("after the refusal")), { ms: 3000, step: 20 });   // G6-123: asserted below
+  ok(r2.ok && !!sentLive && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
   ok(a.snapshot.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { replica: true })).snapshot.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
 // ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
@@ -571,8 +606,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.hand === "left" && a.of("holds").at(-1)?.holds?.[IDS.of("ball")]?.by === B, "SP5 …and everyone is told which hand holds it", a.of("holds").at(-1));
   const n = a.of("log").length; b.close();
   await tryUntil("Bob's leaving drops the ball (a launch, and nobody holds it)", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball")) && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, { ms: 2000 });
-  await pause("a second copy would arrive within the old window", 400); const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
-  ok(launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
+  // G6-125: a barrier, not the old 400 ms: Ann's own later say is a later log entry, so once she has it she has every entry before it
+  ok((await a.req("say", { text: "sp3 barrier" })).ok, "(SP3) Ann speaks after the drop");
+  const fenced = await tryUntil("Ann is sent her own later say", () => a.of("log").slice(n).flatMap((m) => m.entries).some((e) => e?.kind === "say" && e.body?.text === "sp3 barrier"), { ms: 2000, step: 20 });
+  const launched = a.of("log").slice(n).flatMap((m) => m.entries).filter((e) => e?.kind === "physics" && e.verb === "launch" && e.body?.id === IDS.of("ball"));
+  ok(!!fenced && launched.length === 1 && a.of("holds").at(-1)?.holds?.[IDS.of("ball")] === undefined, "SP3 Bob leaves holding it: it's dropped into the world (a launch), and nobody holds it", [launched.length, a.of("holds").at(-1)]);
   // wait until the authority has it at rest: the authority's clock is the wall clock made monotonic (server/livehost.ts), so a
   // wall clock that steps back (seen under load) stalls physics time for as long (never reorders it)
   let wr = null; await tryUntil("the authority has it at rest", async () => { wr = await a.req("wait", {}); return !Object.keys(wr?.inFlight ?? {}).length; }, { ms: 10_000, step: 500 });
@@ -592,7 +630,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await pause("the next rows start in a fresh message window", 1100); }
 await bye(ann, bob, vic, spec);
 // ================= CB: the captioner bot (services/captionbot/world.ts) through a real server: the authority's caption tool, the
-// screen's captioners list, the server-stamped leg generation (a duplicate read as a receipt isn't driven here) =================
+// screen's captioners list, the server-stamped leg generation, a duplicate read as a receipt (CB-R) =================
 { const { WorldClient } = await import("../../services/captionbot/world.ts");
   const own = await client(srv.port, "garden", "Ann", REPLICA);
   ok((await own.req("create", { id: "screen1", model: "test/table.glb", place: { at: [6, 6] } })).ok, "CB (setup) a screen");
@@ -607,10 +645,25 @@ await bye(ann, bob, vic, spec);
   await tryUntil("the bot's held lines are written", () => !bot.pendingCount, { ms: 4000, step: 100 });
   bot.caption({ t0: 1, t1: 2, text: "and after" } as any);
   await tryUntil("the bot's held lines are written", () => !bot.pendingCount, { ms: 4000, step: 100 });
+  // G6-126: the bot's queue empties at its receipts; the owner's socket may not have the log yet: wait on what she holds
+  await tryUntil("the owner holds both lines", () => heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.n === 2, { ms: 4000, step: 20 });
   const bag = heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions;
   ok(bot.acked === 2 && bag?.n === 2 && bag?.line?.text === "and after" && bag.title === "the talk" && bag.gen > 0, "CB once listed, the held line and the next land in order; the bag carries the server-stamped leg generation", [bot.acked, bag]);
   const forged = await own.req("caption", { id: "screen1", session: bag?.session, n: 9, t0: 2, t1: 3, text: "x", gen: 999999999999 });
   ok(!forged.ok && /newer leg/.test(forged.refused?.reason ?? "") && heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.gen < 999999999999, "CB a client's own gen is ignored: the server stamps its connection's (the owner's older leg is refused as superseded, however large a gen she sends)", [forged.refused, heldBy(own)?.view()?.entities?.[IDS.of("screen1")]?.captions?.gen]);
+  // CB-R (G4-168): a line that landed but whose receipt was lost is resent; the door refuses the duplicate (at or below its
+  // high-water), and the bot reads that refusal as the receipt: acked once, written once
+  { const ws = bot.ws, real = ws.onmessage; let lost = 0;
+    ws.onmessage = (ev: any) => { const m = JSON.parse(String(ev.data)); if (!lost && m.type === "reply" && m.id === bot.inflightId && m.reply?.ok) { lost++; return; } return real.call(ws, ev); };
+    const a0 = bot.acked, n0 = logs.length;
+    bot.caption({ t0: 2, t1: 3, text: "a lost receipt" } as any);
+    await tryUntil("the resend's dedupe is read as the receipt", () => bot.acked === a0 + 1 && !bot.pendingCount, { ms: 8000, step: 50 });
+    ws.onmessage = real;
+    const L = readLog(fs.readFileSync(path.join(W4, "garden", "world.jsonl"))).filter((e: any) => e.kind === "request" && e.verb === "caption");
+    const wrote = L.filter((e: any) => !e.body?.refused && e.body?.args?.text === "a lost receipt").length, dup = L.at(-1);
+    ok(lost === 1 && bot.acked === a0 + 1 && !bot.pendingCount && logs.slice(n0).some((l) => /no receipt .* resending/.test(l)) && wrote === 1 && !!dup?.body?.refused,
+      "CB-R a resent line that had already landed: the door refuses the duplicate, the bot reads that as its receipt (acked once), and the line is written once",
+      { lost, acked: bot.acked - a0, pending: bot.pendingCount, wrote, last: dup?.body, said: logs.slice(n0) }); }
   bot.close(); await bye(own); }
 
 // ================= S7: joining never founds a world (security review 10-06 H3) =================
@@ -619,8 +672,6 @@ await bye(ann, bob, vic, spec);
     "S7 joining a world name that doesn't exist is refused, and nothing is created on disk", [ghost.msgs.map((m) => m.type), fs.existsSync(path.join(W4, "nobodyhome"))]);
   ghost.close(); }
 
-const errlog = fs.existsSync(srv.log + ".err") ? fs.readFileSync(srv.log + ".err", "utf8") : "";
-ok(!/failed server-side|v1 '.*' write has no path/.test(errlog + fs.readFileSync(srv.log, "utf8")), "S* the server logged no server-side failure", errlog.slice(-600));
 srv.proc.kill();
 
 // ================= SH: chat history pages back through the whole log, across a restart (not only the 40-line chat
@@ -662,9 +713,9 @@ srv.proc.kill();
     ok(hb.ok && (hb.entries ?? []).length === 0 && !(hbAll.entries ?? []).some((e: any) => e.kind === "say") && (ha.entries ?? []).filter((e: any) => e.kind === "say").length === Math.min(200, N0 + lines),
       "SH5 the authority's history request: a non-admin reads no say body from before it arrived (by verbs or not); the owner reads them all", [(hb.entries ?? []).length, (hbAll.entries ?? []).filter((e: any) => e.kind === "say").length, (ha.entries ?? []).length]); }
   ok((await r.req("say", { text: "after bob came" })).ok, "SH6 (Ann speaks once Bob is here)");
-  await tryUntil("Bob is sent Ann's line", () => bob.of("log").some((m: any) => (m.entries ?? []).some((e: any) => e.kind === "say" && e.body?.text === "after bob came")), { ms: 3000, step: 50 });
+  const heardLive = await tryUntil("Bob is sent Ann's line", () => bob.of("log").some((m: any) => (m.entries ?? []).some((e: any) => e.kind === "say" && e.body?.text === "after bob came")), { ms: 3000, step: 50 });   // G6-123: asserted below
   { const { got } = await all(bob); const hb = await bob.req("history", { verbs: ["say"] });
-    ok(got.map((e) => e.args?.text).join("|") === "after bob came" && (hb.entries ?? []).map((e: any) => e.body?.text).join("|") === "after bob came",
+    ok(!!heardLive && got.map((e) => e.args?.text).join("|") === "after bob came" && (hb.entries ?? []).map((e: any) => e.body?.text).join("|") === "after bob came",
       "SH6 what was said while Bob was present reaches him live and reads back in his history (both routes), and nothing older", [got.map((e) => e.args?.text), (hb.entries ?? []).map((e: any) => e.body?.text)]); }
   bob.close(); r.close(); srvB.proc.kill(); }
 
@@ -694,4 +745,5 @@ srv.proc.kill();
   ok(!Object.keys(c.snapshot?.holds ?? {}).length && bodies.includes(IDS.of("ball")) && bodies.includes(IDS.of("torch")), "SK2 …nobody holds them, and a joiner's engine has them back (colliders again)", [c.snapshot?.holds, bodies]);
   c.close(); srvB.proc.kill(); }
 
+ok(started.length >= 5 && !serverFailures().length, `S* none of the ${started.length} servers this suite started logged a server-side failure`, serverFailures().slice(0, 5));
 done();
