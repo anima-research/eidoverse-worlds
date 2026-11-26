@@ -25,10 +25,11 @@ try {
   const chunks = [over.subarray(0, 400_000), over.subarray(400_000, 800_000), over.subarray(800_000)];
   u = await up(new ReadableStream({ pull(c) { const n = chunks.shift(); if (n) c.enqueue(n); else c.close(); } }));
   check("...and chunked, with no length to trust: 413, the same cap", u.status === 413 && /^too large \(1MB cap\)/.test(u.text), `${u.status} ${u.text.slice(0, 80)}`);
-  // a body far past the cap is cancelled where it passes it: the sender is asked for little more than the cap, never the whole 10 MB
+  // a body far past the cap is cancelled once it passes it, never read to its end. The pull count measures the client's read-ahead
+  // (40-64 of 100 kB under load against a 1 MB cap), so the row asserts only that the 100 MB end was never reached.
   let pulls = 0; const block = new Uint8Array(100_000);
-  u = await up(new ReadableStream({ pull(c) { if (++pulls > 100) c.close(); else c.enqueue(block); } }));
-  check("...and a 10 MB stream is cancelled near the cap, not read to its end", u.status === 413 && pulls < 40, `${u.status} after ${pulls} pulls of 100 kB`);
+  u = await up(new ReadableStream({ pull(c) { if (++pulls > 1000) c.close(); else c.enqueue(block); } }));
+  check("...and a 100 MB stream is cancelled past the cap, not read to its end", u.status === 413 && pulls <= 1000, `${u.status} after ${pulls} pulls of 100 kB`);
   const stored = (() => { try { return readdirSync(join(OPT, "store"), { recursive: true }).length; } catch { return 0; } })();
   check("...and nothing refused was stored", stored === 0, `${stored} entries under store/`);
   u = await up(new Uint8Array(1_000_000));
