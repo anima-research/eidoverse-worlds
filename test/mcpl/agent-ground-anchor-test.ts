@@ -39,20 +39,24 @@ const badRugGeom = { ...rugGeom, topGrid: { version: 2, n: 24, minXZ: [-1.25, -0
 let release = null as (() => void) | null, flaky = false;
 ag.ground.geomFor = async (lib: string) => lib === "rug.glb" ? rugGeom : lib === "badrug.glb" ? badRugGeom
   : lib === "held.glb" ? new Promise((r) => { release = () => r(crateGeom); }) : lib === "flaky.glb" ? (flaky ? null : crateGeom) : crateGeom;
+// no model's bytes are served here (noWorldUrl answers 404): the summary path, at once rather than after a round trip
+ag.ground.meshFor = async () => null;
 const becomeAnchor = (id: string) => {
   ag.entities.get(id).structure = { levels: [{ y: 0, tiles: [[0, 0]] }] };
   ag.onThingChange({ id, what: "comp", comp: "structure" }, null, true, "x", Date.now());
 };
 console.log("an agent's support for a structure's anchor:");
 
-// #347 bot 2 (first, while the sim is still loading, so each grid fit waits there): a later sync of the same thing
+// #347 bot 2 (first, while the sim is still loading, so each grid fit waits there: `overlapped` checks it did): a later sync of the same thing
 // reuses its bid, so a reservation is told apart by more than the bid. Each rug is resized (scale3, its lie under the
 // uneven line) once its grid fit is waiting, and the second sync registers a plain box under the same bid.
 const resizedWhileFitting = async (id: string, model: string, x: number) => {
   ag.entities.set(id, { id, model, pos: [x, 0, 0], yaw: 0, actor: "x" });
   let oldDone = false;
   const old = ag.ground.syncSupport(id).then(() => { oldDone = true; });
-  const reserved = !!(await tryUntil(`${id}'s grid fit reserved`, () => ag.ground.supportIds.has(id), { ms: 5000 }));
+  // microtasks only, from here to the second sync's end: the sim's load (file reads) can't land in between
+  for (let n = 0; n < 1000 && !ag.ground.supportIds.has(id); n++) await null;
+  const reserved = ag.ground.supportIds.has(id);
   ag.entities.get(id).scale3 = [1, 0.4, 1];
   await ag.ground.syncSupport(id);
   const overlapped = reserved && !oldDone;   // the later sync finished while the old fit still waited
