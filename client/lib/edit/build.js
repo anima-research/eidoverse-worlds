@@ -25,6 +25,7 @@ import { pushHostHook } from '../render/autohooks.js';
 import { clickable } from './selectmask.js';
 import { outOfMyView } from './myview.js';
 import * as Sel from './selection.js';
+import * as MM from './multimove.js';   // the rest of the selection follows a mesh drag (R, gym 10-17 21:40)
 import { claimEscape } from '../ui/windows.js';
 import { isOwner } from '../../../shared/protocol/roles.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
@@ -176,17 +177,34 @@ export function select(id) {
  *  working on. */
 export function deselectAll() { deselect(); Sel.clear(); }
 export function deselect() {
-  dragging = null;
+  cancelDrag();
+  for (const f of dragCancels) f();   // the gizmo's drag too
   hideInspector();
   followSelection();
 }
+/** End a drag as Esc does: an armed one puts back all it holds (the samples end), writes nothing, and says so. A deselect, an
+ *  undo, leaving build mode or a selection change mid-drag ends it so, then goes ahead (#352 review 8d7c6b9, points 2, 3). */
+function cancelDrag() {
+  const d = dragging; dragging = null;
+  if (!d?.armed) return false;
+  MM.revertHeld(d.gen, MM.idsOf(d.id, d.multi)); release();
+  flashHint('move cancelled — nothing written');
+  return true;
+}
+const dragCancels = [];
+/** Another surface's drag (gizmo.js) ends with this one. */
+export function onDragCancel(fn) { dragCancels.push(fn); }
 export function refreshOutline() {
   if (selected) outline.box.setFromObject(selected.obj);
 }
 // ONE selection: edit/selection.js is the truth; `selected` is its primary resolved to an object, re-resolved on its
 // event and each edit-mode frame (a model swapped under it, a thing gone), the box re-measured. editHolds keeps the
 // residency sweep from demoting what someone is editing (id-based: promotion swaps the object).
+/** Does the selection still hold the gesture: `lead` first, and every one of `ids`? */
+function selectionHolds(lead, ids) { const s = Sel.selection(); return s.kind === 'things' && s.ids[0] === lead && ids.every((x) => s.ids.includes(x)); }
 function followSelection() {
+  // the drag never outlives its captured lead: a selection without it first, or without a follower, cancels it
+  if (dragging?.armed && !selectionHolds(dragging.id, MM.idsOf(dragging.id, dragging.multi))) cancelDrag();
   const sid = buildMode ? primaryThing() : null; const obj = sid != null ? entities.get(sid) : null;
   if (obj) {
     if (!selected || selected.id !== sid || selected.obj !== obj) { if (selected && selected.id !== sid) editHolds.delete(selected.id); selected = { id: sid, obj }; editHolds.add(sid); }
@@ -286,8 +304,8 @@ function ghostKey(e) {
   return true;
 }
 
-/** Where the pointer is aiming, snapped onto whatever surface is under it (entities first, so a thing lands ON the
- *  table), else the ground. */
+/** Where the pointer is aiming: the nearest hit on a thing under it, else (none, or that face is steep) the ground. `onto`
+ *  is the hit object's own entityId, which a model's meshes don't carry (realize/models.js tags its root), so it is null. */
 function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
@@ -324,12 +342,13 @@ export function updateBuild() {
     }
   }
   if (dragging?.armed && selected) {
-    if (tool === 'rotate') {
+    const gesture = dragging.mode;   // the tool at the press: a tool key during the drag changes the next one, not this
+    if (gesture === 'rotate') {
       // ~0.7° per px, drag right = clockwise from above: a turn about world UP composed on the full orientation
       _turn.setFromAxisAngle(_up, -(dragging.clientX - dragging.startX) * 0.012);
       selected.obj.quaternion.copy(_turn).multiply(dragging.startQuat);
       reindexCollider(selected.id); refreshOutline(); relayDrag();
-    } else if (tool === 'scale') {
+    } else if (gesture === 'scale') {
       { const k = Math.exp((dragging.clientX - dragging.startX) * 0.006); const sc = selected.obj.scale.copy(dragging.startScale).multiplyScalar(k); sc.set(...sc.toArray().map((v) => THREE.MathUtils.clamp(v, 0.1, 12))); }   // keeps a stretched thing's proportions
       reindexCollider(selected.id); refreshOutline();
     } else if (dragging.vertical) {
@@ -337,17 +356,33 @@ export function updateBuild() {
       const fov = camera.fov * Math.PI / 180;
       const pxToWorld = (2 * dragging.depth * Math.tan(fov / 2)) / innerHeight;
       const dy = (dragging.startY - dragging.clientY) * pxToWorld;   // up = raise
-      const floor = heightAt(dragging.startPos.x, dragging.startPos.z);
-      const y = Math.max(floor, dragging.startPos.y + dy);
+      // no lower than any member's ground, each from its start; in a group, one already below it (the lead too) stays no
+      // lower without lifting the lot
+      let least = heightAt(dragging.startPos.x, dragging.startPos.z) - dragging.startPos.y;
+      if (dragging.multi) least = Math.min(0, least);
+      for (const f of dragging.multi?.followers ?? []) { _fp.setFromMatrixPosition(f.world); least = Math.max(least, Math.min(0, heightAt(_fp.x, _fp.z) - _fp.y)); }
+      const y = dragging.startPos.y + Math.max(least, dy);
       if (dragging.world) setWorldPosition(selected.obj, _w.set(dragging.startPos.x, y, dragging.startPos.z));
       else selected.obj.position.set(dragging.startPos.x, y, dragging.startPos.z);
       reindexCollider(selected.id);
       refreshOutline();
       relayDrag();
+    } else if (dragging.multi) {
+      // a group slides in the lead's horizontal plane: one thing's surface under the pointer is not the others'. A ray near the
+      // horizon meets that plane hundreds of metres out, so the lead goes no further than GROUP_REACH from where it started; and
+      // a press whose ray missed the plane (looking up at a tall thing) takes hold once a ray meets it within that reach, from
+      // where the lead stands then, so taking hold moves nothing (bot #352 `6`, `7`)
+      dragging.plane ??= planeGrab(dragging.startPos, GROUP_REACH);
+      raycaster.setFromCamera(mouse, camera);
+      if (dragging.plane && raycaster.ray.intersectPlane(dragging.plane.at, _hit)) {
+        _w.copy(_hit).add(dragging.plane.grab).sub(dragging.startPos).setY(0).clampLength(0, GROUP_REACH);
+        setWorldPosition(selected.obj, _w.add(dragging.startPos));
+        reindexCollider(selected.id); refreshOutline(); relayDrag();
+      }
     } else {
       const aim = aimPoint(selected.id);
       if (aim) {
-        // keep the grab offset (you grabbed a crate by its corner, not its pivot); a drop onto a surface still rests ON it
+        // keep the grab offset (you grabbed a crate by its corner, not its pivot); `onto` (rarely set: aimPoint) rests it ON the face
         if (dragging.world) {
           // WORLD points; a mounted child's position is local to its parent, so the target enters that frame last
           _w.copy(aim.point).add(dragging.grab);
@@ -362,11 +397,12 @@ export function updateBuild() {
         relayDrag();
       }
     }
+    if (dragging.multi) MM.apply(dragging.multi, gesture === 'rotate' ? 'rotate' : gesture === 'scale' ? 'scale' : 'move');
   }
 }
 
-const _w = new THREE.Vector3();
-globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool } : null);   // harness window (test/protocol/client-check.ts F)
+const _w = new THREE.Vector3(), _fp = new THREE.Vector3();
+globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool, follow: dragging.follow, skipped: dragging.skipped } : null);   // harness window (test/protocol/client-check.ts F, build-probe.ts MM)
 /** Put an object at a WORLD position, whatever frame it is drawn in (a mounted child sits in its parent's). */
 function setWorldPosition(obj, w) {
   const p = obj.parent;
@@ -378,7 +414,7 @@ function setWorldPosition(obj, w) {
 // relay at pose cadence so others see it move, not teleport
 function relayDrag() {
   const now = performance.now();
-  if (now - (dragging.lastSent ?? 0) < 66) return;
+  if (now - (dragging.lastSent ?? 0) < MM.RELAY_MS) return;
   dragging.lastSent = now;
   const p = selected.obj.position; const q = selected.obj.quaternion;
   sendDrag(selected.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
@@ -386,7 +422,7 @@ function relayDrag() {
 
 // remote drags: applied transiently, no log involvement. A live drag is a CLAIM: while samples flow, `by` is editing
 // `id` (an amber box, and the Hierarchy says 'editing: <name>'); it lapses on the last sample (`end`) or CLAIM_MS of silence.
-const CLAIM_MS = 1500;
+const CLAIM_MS = MM.CLAIM_MS;   // one number with the group cap (edit/multimove.js MAX_GROUP)
 const claims = new Map();   // id -> { by, at, box }
 const claimBox = () => { const b = new THREE.Box3Helper(new THREE.Box3(), 0xe0a33a); b.userData.noCamCollide = true; scene.add(b); return b; };
 function endClaim(id) { const c = claims.get(id); if (!c) return; claims.delete(id); c.box.removeFromParent(); bus.emit('claims', claimsNow()); }
@@ -436,13 +472,19 @@ function selectWhenHere(id, ms = 3000) {
 
 // ---- lock: the `lock` component (writes.js lock) nails a thing down; the authority enforces it for everyone
 function isLocked(id) { return !!bagOf(id)?.lock; }
-function commitPlace(before) {
+function commitPlace(before, multi = null, gen = 0) {
   if (!selected) return;
   const o = selected.obj;
-  // the drag was presence; the release is ONE request (the whole transform, local for a child), expecting where it started
+  // the drag was presence; the release is ONE request (the whole transform, local for a child), expecting where it started —
+  // every follower's transform in the same batch: one act, one Ctrl+Z, one lock question for the lot
   const id = selected.id;
-  Edits.sendOps([OP.setTransform(state.st.entities?.[id] ?? {}, id, { pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) })],
-    { what: `move ${id}`, base: before.comps ? { [id]: before.comps } : null, revert: () => Edits.revertPose(id) });
+  const tf = (x, ob) => OP.setTransform(state.st.entities?.[x] ?? {}, x, { pos: [ob.position.x, ob.position.y, ob.position.z], q: ob.quaternion.toArray(), scale: scaleOf(ob) });
+  const more = MM.ops(multi, (x, ob) => ({ ops: [tf(x, ob)] }));
+  // a follower gone since the drag began: the lot goes back and nothing is written, as the gizmo's release does (bot #352 `1`)
+  if (more.errors.length) { MM.revertHeld(gen, MM.idsOf(id, multi)); flashHint(more.errors.join(' · '), 5000); return; }
+  const n = 1 + (multi?.followers.length ?? 0);
+  Edits.sendOps([tf(id, o), ...more.ops],
+    { what: n > 1 ? `move ${n} things` : `move ${id}`, base: { ...(before.comps ? { [id]: before.comps } : {}), ...more.base }, revert: () => MM.revertHeld(gen, MM.idsOf(id, multi)) });
 }
 
 const _up = new THREE.Vector3(0, 1, 0), _turn = new THREE.Quaternion(), _q = new THREE.Quaternion();
@@ -532,7 +574,15 @@ canvas.addEventListener('mousedown', (e) => {
   // Shift: a click adds it to (or takes it from) the selection, as in the tree; a Shift press that TRAVELS is
   // still the vertical drag, so the thing is selected only once it starts to move
   const shiftPick = e.shiftKey && !!primaryThing() && primaryThing() !== id;   // keys: selectExtend
-  if (!shiftPick) select(id);
+  // a press on a thing that is already one of SEVERAL selected keeps them all (Unity, Blender: grab one, the lot moves): it
+  // leads, so it goes first; a click that never travels still selects just it (on release)
+  const s0 = Sel.selection();
+  const keepMany = !shiftPick && s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id);
+  if (keepMany) { Sel.set([id, ...s0.ids.filter((x) => x !== id)], 'things', Sel.active()); showInspector(id); }
+  else if (!shiftPick) select(id);
+  // the things that will move with it (none under the pivot tool, whose mesh drag drags one thing, never a group)
+  const many = s0.kind === 'things' && s0.ids.length > 1 && s0.ids.includes(id) ? s0.ids : null;
+  const fol = many && tool !== 'pivot' ? MM.followersOf(id, (x) => MM.takes(x, tool)) : { ids: [], skipped: [] };
   // a press is a SELECT; it becomes a drag once the pointer travels (DRAG_SLOP)
   const aim = aimPoint(id);
   // the drag reckons in WORLD space (a mounted child's object position is in its parent's frame)
@@ -551,6 +601,11 @@ canvas.addEventListener('mousedown', (e) => {
     // Shift held at grab = a VERTICAL drag: the pointer's up/down maps to world Y, horizontal position pinned
     vertical: e.shiftKey,   // keys: meshMove
     shiftPick,
+    keepMany,
+    // a Shift-travel on one of several selected things is a vertical drag of the lot, led by it (a Shift click still toggles it)
+    many,
+    follow: fol.ids, skipped: fol.skipped.length,
+    multi: null,   // edit/multimove.js: the followers' start, once it arms
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
@@ -558,9 +613,22 @@ canvas.addEventListener('mousedown', (e) => {
     startPos: at,
     depth: camera.position.distanceTo(at),
     grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
+    plane: fol.ids.length ? planeGrab(at, GROUP_REACH, hit.point) : null,   // a group's drag is planar (updateBuild)
+    mode: tool,     // the gesture, fixed here with the followers it picked
   };
   e.preventDefault();
 });
+
+const GROUP_REACH = 20;   // m: aimPoint's placeable range, here from where the lead started
+/** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it, pointing
+ *  away from it, or meeting it further than `reach` from `from`). The press measures from where its ray met the thing (a press
+ *  on a large thing's far end is near its own hit however far that is from the origin; a ray grazing just below level past a
+ *  tall thing is not); the late take-hold, from where the lead started. */
+function planeGrab(at, reach, from = at) {
+  raycaster.setFromCamera(mouse, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
+  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - from.x, _hit.z - from.z) <= reach ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
+}
 
 // arm the drag only after a few pixels of travel (click vs drag)
 const DRAG_SLOP = 4;
@@ -568,18 +636,36 @@ addEventListener('mousemove', (e) => {
   if (!dragging) return;
   dragging.clientY = e.clientY;                 // vertical drag reads this each frame
   dragging.clientX = e.clientX;                 // rotate/scale tools read this one
-  if (tool === 'select') return;                // select: a press picks, travel never moves
+  if (dragging.mode === 'select') return;       // a press under select picks, travel never moves
   if (!dragging.armed
       && Math.hypot(e.clientX - dragging.startX, e.clientY - dragging.startY) > DRAG_SLOP) {
-    // the press selected it; travel is where a move begins
+    // the press selected it; travel is where a move begins, unless the group is over the cap: then nothing moves
+    if (1 + dragging.follow.length > MM.MAX_GROUP) { flashHint(MM.tooManyHint(1 + dragging.follow.length), 6000); dragging = null; return; }
     dragging.armed = true;
-    if (dragging.shiftPick) { select(dragging.id); dragging.shiftPick = false; }
+    if (dragging.shiftPick) {
+      // a Shift-press on one of several selected things re-selects the group it pressed, led by it, so the check below would
+      // always pass: first the selection must still be exactly that group (led by any of them, nothing taken out or added), or
+      // a selection changed meanwhile is dropped with the press, not overwritten by it (bot #352 `4`, cold read)
+      const s = Sel.selection();
+      if (dragging.many && !(s.ids?.length === dragging.many.length && selectionHolds(s.ids[0], dragging.many))) { dragging = null; return; }
+      if (dragging.many) { Sel.set([dragging.id, ...dragging.many.filter((x) => x !== dragging.id)], 'things', Sel.active()); showInspector(dragging.id); }
+      else select(dragging.id);
+      dragging.shiftPick = false;
+    }
+    // the selection must still hold the press: its thing first and every follower it picked. A selection changed under a press
+    // not yet armed (a reply selecting what it placed, the Hierarchy) drops the press, by the check that cancels an armed drag
+    // (followSelection); nothing has moved yet (bot #352 `4`)
+    if (selected?.id !== dragging.id || !selectionHolds(dragging.id, [dragging.id, ...dragging.follow])) { dragging = null; return; }
+    dragging.multi = MM.begin(dragging.id, dragging.follow);
+    dragging.gen = MM.hold(MM.idsOf(dragging.id, dragging.multi));   // a late refusal of an older drag leaves these to this one
+    if (dragging.skipped) flashHint(MM.skippedHint(dragging.skipped, dragging.mode), 3500);
     engage('meshMove');
   }
 });
 
 addEventListener('mouseup', () => {
   if (dragging && !dragging.armed && dragging.shiftPick) bus.emit('edit-extend', dragging.id);
+  if (dragging && !dragging.armed && dragging.keepMany) select(dragging.id);   // a click, not a drag: just it
   if (dragging?.armed) release();
   if (dragging?.armed && selected) {
     const moved = dragging.before;
@@ -589,10 +675,14 @@ addEventListener('mouseup', () => {
       && Math.abs(o.position.z - moved.pos[2]) < 0.005
       && o.quaternion.angleTo(_q.fromArray(moved.q)) < 1e-4
       && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
-    if (!same) commitPlace(moved);          // release commits ONE clean entry
+    if (!same) commitPlace(moved, dragging.multi, dragging.gen);   // release commits ONE clean entry (the followers in it)
+    // nothing to write, but this drag took its things from any older gesture's refusal still in flight: it puts them back
+    // where the log has them, as that refusal would have (a follower nudged under 5 mm with them) (#352 review, Fable)
+    else MM.revertHeld(dragging.gen, MM.idsOf(dragging.id, dragging.multi));
   }
-  // the last sample says so: others drop the claim at once rather than after CLAIM_MS
-  if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
+  // the last sample says so: others drop the claim at once rather than after CLAIM_MS (a group's: MM.end, the lead's with it)
+  if (dragging?.multi) MM.end(dragging.multi);
+  else if (dragging?.armed) { const o = entities.get(dragging.id); if (o) sendDrag(dragging.id, o.position.toArray(), new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y, o.quaternion.toArray(), { end: true }); }
   dragging = null;
 });
 
@@ -611,7 +701,7 @@ export function setEscapeHook(fn) { escapeHooks.unshift(fn); }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
     // Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
-    if (dragging?.armed) { const id = dragging.id; dragging = null; Edits.revertPose(id); flashHint('move cancelled — nothing written'); return; }
+    if (dragging?.armed && cancelDrag()) return;
     if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSocketArm()) { /* an armed placement is the most transient state */ }

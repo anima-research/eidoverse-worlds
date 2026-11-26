@@ -8,6 +8,27 @@
 //       places it turned and sized, as ONE create (Q and , aren't driven)
 //   SC  the Inspector's "Add Script…" makes a script: upload, then ONE act (script:<name> + its use reaction); another
 //       person's use runs it (bob, a builder here); the Inspector lists it
+//   MM  a mesh drag of one of several selected things moves them all as ONE act (one Ctrl+Z), planar: over a floor, a
+//       box on a selected table and a crate stepping off a platform keep their heights, and so do the things with them;
+//       a rider drawn off its carrier stays out of the batch; a tool switch after the press doesn't change the drag (nor
+//       make a select press one); the pivot tool's drag moves only the one thing; a Shift drag stops at the first member's
+//       ground, and a member already below its ground, leading or following, doesn't lift the lot; a switch to the pivot
+//       tool mid-way through a gizmo drag doesn't take it over (it stays a move); a refused group release puts every member
+//       back and leaves no claim open; a lock question cancelled after a newer drag began puts back only what that newer
+//       drag doesn't hold; an undo, a deselect or a selection change mid-drag (mesh or gizmo) cancels it as Esc does, then
+//       goes ahead, and the gizmo's drag holds its things against a late refusal as the mesh drag does; a
+//       group of 17 refuses to arm (the cap, 16), and a group of 16 lands with every claim ended; a gizmo release the lead
+//       can't write puts back the lead and its followers together; a single-thing gizmo release ends its claim; a newer
+//       drag released where it began puts back what it took from an older drag's refusal, and so does an over-cap gizmo
+//       drag (which holds nothing, and lets its hint show while held); a gizmo release writes a follower whose object was
+//       swapped mid-drag where the drag put it; a follower whose object goes away mid-drag makes either release write
+//       nothing (MM34); a pivot-tool drag holds nothing against an older lock question and writes the pivot it was given
+//       (MM30), and a press after a tool key mid-drag drags the new tool's seat (MM39); a gizmo drag held still keeps
+//       relaying (MM31); a selection change before the travel drops the press, as does a dropped follower and a changed
+//       Shift-press group, shrunk or grown (MM32, MM36, MM40, MM42), while an unchanged one drags (MM41); a planar group
+//       drag goes no further than 20 m (MM33); a press whose ray misses the plane takes hold once a ray meets it within that
+//       reach, moving nothing there (MM12), and not where a ray meets it beyond reach (MM35); a press on a large thing's end
+//       far from its origin takes hold at once (MM37), and a grazing press past a tall thing doesn't (MM38)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -23,7 +44,7 @@ process.env.TRUST_NAMES = "1";
 const CRATE = "eidoverse/assets/models/crate_large_blue.glb";
 let worldsDir = "";
 import { inPage } from "../harness/idalias.ts";
-import { pageWaiter } from "../gate/wait.ts";
+import { pageWaiter, tryUntil, until, pause, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 // R 10-17: the page names what it makes with placeholders (test/harness/idalias.ts pageIds); NODE holds the minted ids
 // once read back, so node-side checks and later page code use them
@@ -43,7 +64,11 @@ const MY = () => entries().find((e: any) => e?.kind === "request" && e.verb === 
 const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e?.kind === "request" && e.actor === MY() && !e.body?.refused);
 const disk = () => fold(entries());
 const waitFor = pageWaiter(evalJson);
-const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
+// a lock question's card counts no press in its first moment once confirmcenter.js has ARM_MS (#359): it wears data-armed
+// when a press can answer it, and a person's press comes then. A client without the rule answers a press at once.
+// Throws with the row's name: a card that never arms must not fail one step later as a vaguer "the press did nothing"
+const cardArmed = (row: string) => until(`${row}: the lock question's card arms (a press can answer it)`, () => evalJson(`import('/lib/edit/confirmcenter.js').then((m) => !('ARM_MS' in m) || document.querySelector('#confirm-center')?.dataset.armed !== undefined)`), { ms: 8000 });
+const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); ms *= WAIT_SCALE; while (Date.now() - t0 < ms) { try { if (pred()) return true; } catch { /* mid-write */ } await sleep(100); } return false; };
 const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
   return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
@@ -51,9 +76,26 @@ const SX = 760, SY = 470;   // the viewport point every gesture aims at (client-
 
 try {
   const bob = new WebSocket(BASE.replace("http", "ws") + "/ws"); const replies = new Map(); let rn = 0; let BOB = "";
-  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; };
+  const fenceSeen: string[] = [], fenceSent = new Map<string, number>();   // caughtUp's fence notes (typing, state 'tool'): who bob saw send one; how many each page id sent
+  const bobDrags: any[] = [];   // the live drags bob is shown (MM15–MM21: which samples end a claim, which put a thing back)
+  bob.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); if (m.type === "reply") replies.get(m.id)?.(m.reply); if (m.type === "snapshot" && m.actor) BOB = m.actor; if (m.type === "drag") bobDrags.push(m); if (m.type === "typing" && m.state === "tool") fenceSeen.push(m.id); };
   await new Promise((r, j) => { bob.onopen = r; bob.onerror = j; });
   const bobReq = (verb: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "request", id, verb, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
+  // everything the page has sent so far has landed: its requests on the record (the authority runs one connection's requests
+  // in order and fsyncs before it answers, so a read's reply comes after every earlier write is on disk), and its drag samples
+  // at bob (one socket each way, relayed in order: a typing note sent after them reaches bob after them). This is what the
+  // MM rows waited for with a fixed sleep: a put-back's or a release's last samples, or a write that should never come.
+  const caughtUp = async () => {
+    // the read must be RUN to prove anything: a rate-cap or read-meter refusal, or an offline/timeout answer, skips the queue
+    const r = await page(`return await (await import('/lib/net.js')).sendRequest('inspect', { id: 'mm-box' });`);
+    if (!r?.ok) throw new Error(`caughtUp: the fence's read was refused (${r?.refused?.code})`);
+    // the note: state 'tool' (server/messages.ts relays ear/think/tool/mic; the client's own senders use none or 'mic'), counted
+    // only from the page's id, so a composing or mic note never closes a fence
+    const me = await evalJson(`import('/lib/net.js').then((m) => m.net.myId)`);
+    const n = (fenceSent.get(me) ?? 0) + 1; fenceSent.set(me, n);
+    await page(`(await import('/lib/net.js')).sendTyping(null, 'tool'); return true;`);
+    await until("bob has every sample the page sent (the fence's typing note reached him)", () => fenceSeen.filter((id) => id === me).length >= n);   // throws: a fence that never closes must not pass a "nothing arrived" row
+  };
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
     window.__refused = []; window.__hints = [];
     import('/lib/base.js').then((m) => { m.bus.on('edit-refused', (e) => __refused.push(e)); m.bus.on('keyhint', (h) => __hints.push(h)); });` });
@@ -183,6 +225,874 @@ try {
     const used = await bobReq("use", { id: thing });
     check("SC5 another builder's use runs it (Bob's): the counter it keeps is on the record, and it spoke", used.ok && await waitDisk(() => disk().entities[thing]?.c["local/counter"]?.n === 1) && entries().some((e) => e.kind === "say" && /used me \(1\)/.test(e.body?.text ?? "")), [used.refused, disk().entities[thing]?.c["local/counter"]]);
     check("SC6 the Inspector lists it under Scripts", await waitFor(`[...document.querySelectorAll('[data-frame="inspector"]')].some((f) => /greeter/.test(f.textContent))`, 6000));
+  }
+  // ---- MM: the selection follows a mesh drag (edit/multimove.js) ----
+  // a furnished corner off to the side of what the earlier sections built: a floor slab, a table on it with a box on the
+  // table, a platform with a crate on it, a chair on the floor; a cart further off carries a kid
+  { NAMES.push("mm-floor", "mm-tbl", "mm-box", "mm-plat", "mm-crate", "mm-chair", "mm-post", "mm-sign", "mm-cart", "mm-kid");
+    const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
+    // the view holds still: five samples in a row, each two frames after the last, see the same camera (polls alone can
+    // land between frames on a slow page and read one matrix twice)
+    const settle = async () => { let last = await camNow(), same = 0;
+      return !!(await tryUntil("the view holds still", async () => { await frames(2); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; return same >= 5 || null; }, { ms: 12000, step: 200 })); };
+    const frames = (n: number) => evalJson(`new Promise((r) => { let k = ${n}; const f = () => (--k ? requestAnimationFrame(f) : r(true)); requestAnimationFrame(f); })`);
+    await settle();
+    const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE, f = c.camera.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize(); const o = c.camera.getWorldPosition(new T.Vector3());
+      return [o.x + f.x * 8 - f.z * 12, o.z + f.z * 8 + f.x * 12]; })`);   // 8 m ahead, 12 m to the right
+    const mk = (id: string, p: number[], sc: number[], extra: any = {}) => page(`const m = await import('/lib/net.js'); return (await m.sendRequest('create', { id: '${id}', model: '${CRATE}', components: { transform: { pos: ${JSON.stringify(p)}, q: [0, 0, 0, 1], scale: ${JSON.stringify(sc)} }, ...${JSON.stringify(extra)} } })).ok;`);
+    const drawn = (id: string) => waitFor(`import('/lib/world.js').then((m) => { const o = m.entities.get('${id}'); return !!o && o.children.length > 0; })`, 12000);
+    const topOf = (id: string) => evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const b = new c.THREE.Box3().setFromObject(w.entities.get('${id}')); return b.isEmpty() ? null : b.max.y; })`);
+    const place = async (id: string, p: number[], sc: number[], extra: any = {}) => { const ok = await mk(id, p, sc, extra); NODE.set(id, await evalJson(`'${id}'`)); return ok && await drawn(id); };
+    const [sx, sz] = G;
+    let ok = await place("mm-floor", [sx, 0, sz], [4, 0.04, 4]);
+    const fy = await tryUntil("the floor has its size", () => topOf("mm-floor"));
+    ok = ok && !!fy && await place("mm-tbl", [sx - 2.5, fy, sz], [1, 0.5, 1]) && await place("mm-plat", [sx + 2, fy, sz], [0.6, 0.3, 0.6]) && await place("mm-chair", [sx, fy, sz + 1.8], [0.3, 0.3, 0.3]);
+    const ty = await tryUntil("the table has its size", () => topOf("mm-tbl")), py = await tryUntil("the platform has its size", () => topOf("mm-plat"));
+    ok = ok && !!ty && !!py && await place("mm-box", [sx - 2.5, ty, sz], [0.4, 0.4, 0.4]) && await place("mm-crate", [sx + 2, py, sz], [0.3, 0.3, 0.3])
+      && await place("mm-post", [sx + 4, -0.3, sz - 4.5], [0.2, 0.5, 0.2]) && await place("mm-sign", [sx + 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3])
+      && await place("mm-cart", [sx, 0, sz - 7], [0.5, 0.5, 0.5]) && await place("mm-kid", [sx, 0, sz - 7], [1, 1, 1], { parent: { to: "mm-cart", order: "a0" } });
+    check("MM (setup) a floor with a table (a box on it), a platform (a crate on it) and a chair; a post sunk 0.3 m and a sign; a cart with a kid further off", ok, { G, fy, ty, py });
+    const frame = async (id: string, r: number) => { await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const b = new THREE.Box3().setFromObject(w.entities.get('${id}')); C.setCamPitch(1); return C.frameOn(b.getCenter(new THREE.Vector3()), ${r});`); await frames(2); await settle(); };
+    // a press pixel ON `lead` whose ray, past it, meets the top of `under` (any, with no `under`) (where an aim that doesn't skip `under` lands)
+    await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
+      const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
+      globalThis.__mmHit = (x, y, lead, under) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+        const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true), L = w.entities.get(lead), U = w.entities.get(under);
+        const past = hs.find((h) => !inside(h.object, L)), up = !!past?.face && past.face.normal.clone().transformDirection(past.object.matrixWorld).y > 0.6;
+        return { onLead: !!hs[0] && inside(hs[0].object, L), onTop: !U || (!!past && inside(past.object, U) && up) }; };
+      globalThis.__mmPress = (lead, under) => { const b = new T.Box3().setFromObject(w.entities.get(lead)), xs = [], ys = [];
+        for (const cx of [b.min.x, b.max.x]) for (const cy of [b.min.y, b.max.y]) for (const cz of [b.min.z, b.max.z]) { const s = new T.Vector3(cx, cy, cz).project(c.camera); xs.push((s.x + 1) / 2 * innerWidth); ys.push((1 - s.y) / 2 * innerHeight); }
+        const mx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2), my = Math.round((Math.min(...ys) + Math.max(...ys)) / 2);
+        for (let r = 0; r < 40; r += 2) for (const [dx, dy] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]]) { const h = __mmHit(mx + dx, my + dy, lead, under); if (h.onLead && h.onTop) return [mx + dx, my + dy]; }
+        return null; };
+      globalThis.__mmPx = (p) => { const s = new T.Vector3(...p).project(c.camera); return [Math.round((s.x + 1) / 2 * innerWidth), Math.round((1 - s.y) / 2 * innerHeight)]; };
+      return true; })`);
+    const pose = (n: string) => disk().entities[NODE.get(n)]?.c.transform?.pos;
+    const near = (a: any, b: any, e = 0.01) => !!a && !!b && a.every((v: number, i: number) => Math.abs(v - b[i]) < e);
+    const dxz = (a: number[], b: number[]) => [a[0] - b[0], a[2] - b[2]];
+    const sameMove = (a0: number[], a1: number[], b0: number[], b1: number[]) => { const [p, q] = [dxz(a1, a0), dxz(b1, b0)]; return Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.01 && Math.hypot(...p) > 0.05; };
+    // press, travel past the slop, move to `to` (`mid` runs mid-drag), release; returns the drag as the page had it once armed
+    const gesture = async (at: number[], to: number[], mid?: () => Promise<any>, opt: { shift?: boolean, preArm?: () => Promise<any>, arms?: boolean } = {}) => {
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, shiftKey: ${!!opt.shift}, clientX: ${at[0]}, clientY: ${at[1]} })), true))`);
+      if (opt.preArm) await opt.preArm();
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at[0] + 6}, clientY: ${at[1]} })), true)`);
+      await waitFor(`globalThis.__buildDrag?.()?.armed === true`, opt.arms === false ? 1500 : undefined); await frames(3);
+      const drag = await evalJson(`globalThis.__buildDrag?.()`);
+      const half = [Math.round((at[0] + to[0]) / 2), Math.round((at[1] + to[1]) / 2)];
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${half[0]}, clientY: ${half[1]} })), true)`); await frames(3);
+      if (mid) { await mid(); await frames(3); }
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${to[0]}, clientY: ${to[1]} })), true)`); await frames(3);
+      await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${to[0]}, clientY: ${to[1]} })), true)`);
+      return drag; };
+    const actsSince = (n0: number) => myActs().slice(n0).map((x) => [x.e.verb, x.e.body?.args?.id ?? x.e.body?.args?.requests?.map((r: any) => r.args?.id)]);
+    const undo = async () => { await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`); await key("KeyZ", { ctrlKey: true }); };
+    const onRecord = (n: string) => waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['${n}']?.c?.transform?.pos ?? null) === ${JSON.stringify(JSON.stringify(pose(n) ?? null))})`);
+
+    await frame("mm-tbl", 1.5);
+    const at = await evalJson(`__mmPress('mm-box', 'mm-tbl')`), to = at ? [at[0] + 30, at[1] + 10] : null;
+    check("MM (setup) a press point on the box whose ray past it meets the table's top", !!at, { at });
+    if (at && to) {
+      // the cart's kid is drawn off its carrier (as a part socket's occupant is, under the part's node): it can't take a move
+      await page(`const { scene } = await import('/lib/core.js'); const w = await import('/lib/world.js'); scene.attach(w.entities.get('mm-kid')); return true;`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-tbl', 'mm-box', 'mm-kid']); return true;`);
+      const T0 = pose("mm-tbl"), B0 = pose("mm-box"), K0 = pose("mm-kid"); let n0 = myActs().length;
+      const sel0 = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      const drag = await gesture(at, to);
+      check("MM0 (precondition) the kid is in the selection, and the drag considered it and left it out", sel0?.includes(NODE.get("mm-kid")) && drag?.skipped === 1 && !drag?.follow?.includes(NODE.get("mm-kid")) && drag?.follow?.includes(NODE.get("mm-tbl")), { sel0, drag });
+      const one = await waitDisk(() => myActs().length === n0 + 1);
+      const act = myActs().at(-1)?.e; const reqs = act?.verb === "batch" ? act.body.args.requests : [];
+      const ids = reqs.map((r: any) => r.args?.id);
+      check("MM1 a mesh drag of one of several selected things is ONE act: a batch setting the box's and the table's transforms",
+        one && act?.verb === "batch" && reqs.length === 2 && ids.includes(NODE.get("mm-box")) && ids.includes(NODE.get("mm-tbl")) && reqs.every((r: any) => r.verb === "set" && r.args.component === "transform"),
+        { acts: actsSince(n0), refused: await evalJson(`__refused.map((r) => r.text)`) });
+      await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0));
+      const T1 = pose("mm-tbl"), B1 = pose("mm-box");
+      check("MM2 (precondition) …the box ended over the floor", !!B1 && Math.abs(B1[0] - sx) < 5 && Math.abs(B1[2] - sz) < 3, { B1, floor: [sx, sz] });
+      check("MM2 …over a floor, the drag is planar: the box keeps its height and the table slides level with it (neither drops to the floor nor sinks)",
+        !!T1 && !!B1 && Math.abs(T1[1] - T0[1]) < 0.01 && Math.abs(B1[1] - B0[1]) < 0.01 && sameMove(T0, T1, B0, B1), { T0, T1, B0, B1, floorTop: fy });
+      check("MM3 …the kid drawn off its carrier stayed out (not in the batch, not moved)", !ids.includes(NODE.get("mm-kid")) && JSON.stringify(pose("mm-kid")) === JSON.stringify(K0), { ids, K0, K1: pose("mm-kid") });
+      await undo();
+      check("MM4 one Ctrl+Z puts the box and the table back", await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0) && JSON.stringify(pose("mm-box")) === JSON.stringify(B0)), { T: pose("mm-tbl"), B: pose("mm-box") });
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // a tool key mid-drag: the gesture stays the one the drag armed with (E would rebuild the followers as a turn from their start)
+      const at2 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at2, [at2[0] + 30, at2[1] + 10], () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`));
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
+      const T2 = pose("mm-tbl"), B2 = pose("mm-box");
+      check("MM7 a switch to rotate mid-drag (setTool, what E calls) doesn't change the gesture: the table still moves with the box, as one act", myActs().length === n0 + 1 && sameMove(T0, T2, B0, B2), { T0, T2, B0, B2, acts: actsSince(n0) });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // the pivot tool moves one thing's pivot, never a group's: its mesh drag moves the pressed thing alone
+      const at3 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/build.js')).setTool('pivot'); (await import('/lib/edit/selection.js')).set(['mm-tbl', 'mm-box']); return true;`);
+      n0 = myActs().length;
+      await gesture(at3, [at3[0] + 30, at3[1] + 10]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000);
+      const pa = myActs().slice(n0).map((x) => x.e);
+      check("MM5 the pivot tool's mesh drag moves the pressed box alone: one set on it, the table where it is",
+        JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0) && pa.length === 1 && pa[0].verb === "set" && pa[0].body?.args?.id === NODE.get("mm-box"), { acts: actsSince(n0), T: pose("mm-tbl") });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (pa.length === 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // a tool key between the press and the arm: the press's tool decides both the gesture and who follows
+      const at5 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at5, [at5[0] + 30, at5[1] + 10], undefined, { preArm: () => page(`(await import('/lib/edit/build.js')).setTool('rotate'); return true;`) });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-tbl")) !== JSON.stringify(T0), 3000);
+      const T5 = pose("mm-tbl"), B5 = pose("mm-box");
+      check("MM9 a switch to rotate between the press and the arm (setTool) doesn't change the drag: the table still moves with the box", myActs().length === n0 + 1 && sameMove(T0, T5, B0, B5), { T0, T5, B0, B5, acts: actsSince(n0) });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-tbl")) === JSON.stringify(T0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3); await settle();
+
+      // Shift: the vertical drag of the lot stops at the first member to reach its ground (the table's feet, not the box's)
+      const at6 = (await evalJson(`__mmPress('mm-box', 'mm-tbl')`)) ?? at;
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      n0 = myActs().length;
+      await gesture(at6, [at6[0], at6[1] + 300], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-box")) !== JSON.stringify(B0), 3000);
+      const T6 = pose("mm-tbl"), B6 = pose("mm-box");
+      const g6 = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${T0[0]}, ${T0[2]}))`);
+      check("MM10 a Shift drag down of the box stops when the selected table reaches its ground: both drop by the table's clearance",
+        myActs().length === n0 + 1 && !!T6 && !!B6 && Math.abs((B0[1] - B6[1]) - (T0[1] - g6)) < 0.01 && Math.abs((T6[1] - T0[1]) - (B6[1] - B0[1])) < 0.01, { T0, T6, B0, B6, ground: g6, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-box")) === JSON.stringify(B0)); }
+      await onRecord("mm-tbl"); await onRecord("mm-box"); await frames(3);
+    }
+
+    // the lead steps off an UNSELECTED platform onto the floor: its surface change is not the followers' (no chair underground)
+    await frame("mm-plat", 2.5);
+    const at4 = await evalJson(`__mmPress('mm-crate', 'mm-plat')`);
+    const to4 = at4 ? await evalJson(`__mmPx([${sx + 2}, ${fy}, ${sz + 2.2}])`) : null;
+    check("MM (setup) a press point on the crate over the platform's top, and a floor point off the platform", !!at4 && !!to4, { at4, to4 });
+    if (at4 && to4) {
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-crate', 'mm-chair']); return true;`);
+      const C0 = pose("mm-crate"), H0 = pose("mm-chair"); const n0 = myActs().length;
+      await gesture(at4, to4);
+      await waitDisk(() => myActs().length === n0 + 1); await waitDisk(() => JSON.stringify(pose("mm-chair")) !== JSON.stringify(H0), 3000);
+      const C1 = pose("mm-crate"), H1 = pose("mm-chair");
+      check("MM6 dragging the crate off the platform keeps the chair on the floor: the crate keeps its height, the chair slides level with it",
+        !!C1 && !!H1 && Math.abs(H1[1] - H0[1]) < 0.01 && Math.abs(C1[1] - C0[1]) < 0.01 && sameMove(H0, H1, C0, C1), { C0, C1, H0, H1, floorTop: fy, acts: actsSince(n0) });
+    }
+
+    // a follower already below its ground (a sunk post) goes no lower, but doesn't lift the lot: a small Shift nudge up raises
+    // the sign and the post by the nudge alone
+    await frame("mm-sign", 1.5);
+    const at7 = await evalJson(`__mmPress('mm-sign', null)`);
+    check("MM (setup) a press point on the sign", !!at7, { at7 });
+    if (at7) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); let n0 = myActs().length;
+      await gesture(at7, [at7[0], at7[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-post")) !== JSON.stringify(P0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM11 a Shift nudge up with a sunk post selected raises both by the nudge (well under the post's 0.3 m depth), not to the post's ground",
+        myActs().length === n0 + 1 && !!S1 && !!P1 && S1[1] - S0[1] > 0.005 && S1[1] - S0[1] < 0.2 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+      await onRecord("mm-post"); await onRecord("mm-sign"); await frames(3);
+
+      // a press under the select tool picks: a switch to move before the travel doesn't make it a drag
+      n0 = myActs().length;
+      await page(`(await import('/lib/edit/build.js')).setTool('select'); (await import('/lib/edit/selection.js')).set(['mm-sign', 'mm-post']); return true;`);
+      await gesture(at7, [at7[0] + 30, at7[1] + 10], undefined, { arms: false, preArm: () => page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`) });
+      await waitDisk(() => myActs().length > n0, 1500);
+      check("MM13 a press under select, then a switch to move before the travel: no drag, nothing written", myActs().length === n0 && JSON.stringify(pose("mm-sign")) === JSON.stringify(S0), { acts: actsSince(n0), S0, S: pose("mm-sign") });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (myActs().length > n0) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-sign")) === JSON.stringify(S0)); }
+      await onRecord("mm-sign"); await frames(3);
+    }
+
+    // the sunk post LEADING a Shift drag: a nudge up raises both by the nudge, not by the post's depth
+    await frame("mm-post", 1.5);
+    const at8 = await evalJson(`__mmPress('mm-post', null)`);
+    check("MM (setup) a press point on the sunk post", !!at8, { at8 });
+    if (at8) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-post', 'mm-sign']); return true;`);
+      const S0 = pose("mm-sign"), P0 = pose("mm-post"); const n0 = myActs().length;
+      const depth = await evalJson(`import('/lib/terrain.js').then((m) => m.heightAt(${P0[0]}, ${P0[2]}) - ${P0[1]})`);
+      await gesture(at8, [at8[0], at8[1] - 10], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-sign")) !== JSON.stringify(S0), 3000);
+      const S1 = pose("mm-sign"), P1 = pose("mm-post");
+      check("MM14 a Shift nudge up led by the sunk post raises both by the nudge (well under its depth), not to its ground",
+        myActs().length === n0 + 1 && depth > 0.25 && !!S1 && !!P1 && P1[1] - P0[1] > 0.005 && P1[1] - P0[1] < depth - 0.1 && Math.abs((P1[1] - P0[1]) - (S1[1] - S0[1])) < 0.01, { depth, S0, S1, P0, P1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => JSON.stringify(pose("mm-post")) === JSON.stringify(P0)); }
+    }
+
+    // a refused group release (bob moved the table under the drag: its expect fails) puts EVERY member back where the log has
+    // it, writes nothing, and leaves no claim open on anyone else's screen (the put-back samples end the drag)
+    await frame("mm-tbl", 1.5);
+    const at9 = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+    check("MM (setup) a press point on the box over the table, again", !!at9, { at9 });
+    if (at9) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const TT0 = disk().entities[NODE.get("mm-tbl")].c.transform, B0 = pose("mm-box"), n0 = myActs().length, r0 = await evalJson(`__refused.length`);
+      const theirs = { ...TT0, pos: [TT0.pos[0] + 0.5, TT0.pos[1], TT0.pos[2]] };
+      let bw: any = null, d0 = 0;
+      await gesture(at9, [at9[0] + 30, at9[1] + 10], async () => {
+        bw = await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: theirs });
+        await waitFor(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['mm-tbl']?.c?.transform?.pos) === ${JSON.stringify(JSON.stringify(theirs.pos))})`);
+        d0 = bobDrags.length; });
+      const refused = await waitFor(`__refused.length > ${r0}`, 6000); await caughtUp();
+      const why = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code)`);
+      const local = await evalJson(`import('/lib/world.js').then((m) => ['mm-box', 'mm-tbl'].map((n) => m.entities.get(n).position.toArray()))`);
+      check("MM15 (setup) bob moves the table during the drag, and the release is refused for it (changed)", bw?.ok && refused && why?.includes("changed"), { bw: bw?.refused, why });
+      check("MM15 a refused group release writes nothing and puts every member back where the log has it: the box where it was, the table where bob put it",
+        myActs().length === n0 && near(pose("mm-box"), B0) && near(pose("mm-tbl"), theirs.pos) && near(local?.[0], B0) && near(local?.[1], theirs.pos), { local, B0, theirs: theirs.pos, disk: [pose("mm-box"), pose("mm-tbl")], acts: actsSince(n0) });
+      const last = Object.fromEntries(["mm-box", "mm-tbl"].map((n) => [n, bobDrags.slice(d0).filter((m) => m.id === NODE.get(n)).at(-1) ?? null]));
+      check("MM15 …and the put-back reopens no claim: the last sample bob saw of each member ends the drag, at the log's pose",
+        Object.values(last).every((m: any) => m?.end === true) && near(last["mm-box"]?.pos, B0) && near(last["mm-tbl"]?.pos, theirs.pos), last);
+      await bobReq("set", { id: NODE.get("mm-tbl"), component: "transform", value: TT0 }); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a lock question still open when a newer drag of the box begins: cancelling it puts back the table (the old drag's alone),
+    // never the box the newer drag now holds, here or on anyone else's screen; the newer drag's release writes the box
+    const at10 = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+    check("MM (setup) a press point on the box over the table, once more", !!at10, { at10 });
+    if (at10) {
+      const lk = await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`if (!globalThis.__reverts) { globalThis.__reverts = []; (await import('/lib/base.js')).bus.on('pose-revert', (e) => __reverts.push(e.id)); } (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gesture(at10, [at10[0] + 30, at10[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      check("MM16 (setup) the table is locked, and the group release asks the lock question", lk && asked);
+      // the newer drag: the box alone, pressed where it is drawn now (the old drag left it moved), held still mid-travel
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const at11 = (await evalJson(`__mmPress('mm-box', null)`)) ?? at10;
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at11[0]}, clientY: ${at11[1]} })), true))`);
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 6}, clientY: ${at11[1]} })), true)`);
+      const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+      await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`); await frames(3);
+      const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await cardArmed("MM16");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]').click(), true)`);
+      await frames(3); await caughtUp();
+      const reverts = await evalJson(`__reverts.slice(${rv0})`);
+      const backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
+      check("MM16 the cancelled lock question puts the table back, but not the box the newer drag holds (no put-back of it here, nor to bob)",
+        armed && reverts.includes(NODE.get("mm-tbl")) && !reverts.includes(NODE.get("mm-box")) && backs.length === 0, { armed, reverts, backs: backs.length });
+      await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${at11[0] + 40}, clientY: ${at11[1] + 10} })), true)`);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
+      check("MM16 …and the newer drag's release writes the box alone (one act), the table left where the log has it", myActs().length === n0 + 1 && !near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // an undo, a deselect or a selection change mid-drag ends the drag as Esc does (everything it holds goes back where the log
+    // has it, the samples end, nothing is written), then the action goes ahead: the drag never outlives its captured lead
+    const lastEnds = (names: string[], d0: number) => Object.fromEntries(names.map((n) => [n, bobDrags.slice(d0).filter((m) => m.id === NODE.get(n)).at(-1)?.end === true]));
+    const localOf = (names: string[]) => evalJson(`import('/lib/world.js').then((m) => ${JSON.stringify(names)}.map((n) => m.entities.get(n).position.toArray()))`);
+    const midCancel = async (label: string, what: () => Promise<any>, extra: (r: any) => boolean = () => true) => {
+      const atC = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      if (!atC) { check(`${label} (setup) a press point on the box over the table`, false); return; }
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length, d0 = bobDrags.length;
+      let during: any = null;
+      await gesture(atC, [atC[0] + 30, atC[1] + 10], async () => { await what(); await frames(3); during = await evalJson(`globalThis.__buildDrag?.() ?? null`); });
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), ends = lastEnds(["mm-box", "mm-tbl"], d0);
+      const r = { during, local, B0, T0, H0, disk: [pose("mm-box"), pose("mm-tbl"), pose("mm-chair")], ends, acts: actsSince(n0) };
+      check(label, during === null && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && near(pose("mm-chair"), H0)
+        && myActs().slice(n0).every((x) => x.e.verb === "undo") && ends["mm-box"] && ends["mm-tbl"] && extra(r), r);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    };
+    // Ctrl+Z: a known act of mine (a label on the chair) for it to take once the drag is cancelled
+    const la = await page(`const W = await import('/lib/edit/writes.js'); const OP = await import('/shared/requests.js'); return (await W.sendOps([OP.set('mm-chair', 'label', 'undo me')], { what: 'label the chair' })).ok;`);
+    await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`);
+    check("MM17 (setup) a label on the chair, my last act", la && disk().entities[NODE.get("mm-chair")]?.c.label === "undo me");
+    await midCancel("MM17 Ctrl+Z mid-drag cancels the drag (the box and the table back where the log has them, every sample ended, nothing written for it), then undoes my last act",
+      () => key("KeyZ", { ctrlKey: true }), () => true);
+    check("MM17 …the undo it carried on with took the chair's label away", await waitDisk(() => !disk().entities[NODE.get("mm-chair")]?.c.label, 4000), disk().entities[NODE.get("mm-chair")]?.c.label);
+    await midCancel("MM18 a deselect mid-drag (Edit ▸ deselect) cancels it: everything back, every sample ended, nothing written",
+      () => page(`(await import('/lib/edit/build.js')).deselectAll(); return true;`));
+    await midCancel("MM19 a selection change mid-drag (the chair selected in the Hierarchy) cancels it: everything back, the chair never dragged, nothing written",
+      () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`));
+
+    // the gizmo's drag ends the same way: Ctrl+Z, or a follower dropped from the selection, mid gizmo drag cancels it as Esc
+    // does; and a late lock-question cancel leaves the box a newer gizmo drag holds (the generation check, as MM16)
+    const gizmoDrag = (lead: string, dx: number) => evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+      return import('/lib/world.js').then((m) => { m.entities.get('${lead}').position.x += ${dx}; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
+    const gizmoUp = () => evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }), true)`);
+    const gizmoCancel = async (label: string, what: () => Promise<any>, extra: () => Promise<boolean> = async () => true) => {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, d0 = bobDrags.length;
+      await gizmoDrag("mm-box", 1); await frames(2);
+      const mid = await localOf(["mm-box", "mm-tbl"]);
+      await what(); await frames(3);
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      await gizmoUp(); await frames(3); await caughtUp();
+      const ends = lastEnds(["mm-box", "mm-tbl"], d0), wrote = myActs().slice(n0).filter((x) => x.e.verb !== "undo");
+      const r = { on, mid, local, B0, T0, disk: [pose("mm-box"), pose("mm-tbl")], ends, acts: actsSince(n0) };
+      check(label, on && !near(mid?.[1], T0) && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0) && wrote.length === 0 && ends["mm-box"] && ends["mm-tbl"] && await extra(), r);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    };
+    {
+      const la2 = await page(`const W = await import('/lib/edit/writes.js'); const OP = await import('/shared/requests.js'); return (await W.sendOps([OP.set('mm-chair', 'label', 'undo me too')], { what: 'label the chair' })).ok;`);
+      await waitFor(`globalThis.__editWrites().undo.at(-1) === ${myActs().at(-1)?.seq}`);
+      check("MM22 (setup) a label on the chair, my last act", la2);
+      await gizmoCancel("MM22 Ctrl+Z mid gizmo drag cancels it (the box and the table it carried back where the log has them, every sample ended, nothing written for it)",
+        () => key("KeyZ", { ctrlKey: true }));
+      check("MM22 …and the undo it carried on with took the chair's label away", await waitDisk(() => !disk().entities[NODE.get("mm-chair")]?.c.label, 4000), disk().entities[NODE.get("mm-chair")]?.c.label);
+      await gizmoCancel("MM23 the table (a follower) dropped from the selection mid gizmo drag cancels it, as a mesh drag's does (MM19): everything back, nothing written",
+        () => page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`));
+    }
+    // the generation check through the gizmo: a group mesh drag asks the lock question; a newer gizmo drag of the box arms;
+    // cancelling the question puts the table back, never the box the gizmo holds, and the gizmo's release writes the box
+    { const atL = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atL && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`if (!globalThis.__reverts) { globalThis.__reverts = []; (await import('/lib/base.js')).bus.on('pose-revert', (e) => __reverts.push(e.id)); } (await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      if (atL) await gesture(atL, [atL[0] + 30, atL[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      check("MM24 (setup) the table locked, the group release asks the lock question, and the gizmo is on the box alone", !!atL && lk && asked && on);
+      await gizmoDrag("mm-box", 0.5); await frames(2);
+      const rv0 = await evalJson(`__reverts.length`), d0 = bobDrags.length;
+      await cardArmed("MM24");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      const reverts = await evalJson(`__reverts.slice(${rv0})`), backs = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-box") && near(m.pos, B0));
+      check("MM24 a lock question cancelled while a newer GIZMO drag holds the box puts the table back, not the box (here or to bob)",
+        reverts.includes(NODE.get("mm-tbl")) && !reverts.includes(NODE.get("mm-box")) && backs.length === 0, { reverts, backs: backs.length });
+      await gizmoUp();
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
+      check("MM24 …and the gizmo's release writes the box alone (one act), the table where the log has it", myActs().length === n0 + 1 && !near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { acts: actsSince(n0), B: pose("mm-box"), T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+    // a newer drag that writes nothing (armed, released within 5 mm: the `same` release) still took the box from the older
+    // drag's refusal: it must put the box back itself, or the box stays at the older drag's unwritten pose (#352 review, Fable)
+    { const atN = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atN && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      if (atN) await gesture(atN, [atN[0] + 30, atN[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const atM = (await evalJson(`__mmPress('mm-box', null)`)) ?? atN;
+      const held = await localOf(["mm-box"]);
+      // press, travel past the slop (it arms and holds the box), release: in one turn, so no frame moves the box between
+      const armed = await evalJson(`import('/lib/core.js').then((m) => { m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atM?.[0]}, clientY: ${atM?.[1]} }));
+        dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atM?.[0] + 6}, clientY: ${atM?.[1]} })); const a = globalThis.__buildDrag?.()?.armed === true;
+        dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atM?.[0] + 6}, clientY: ${atM?.[1]} })); return a; })`);
+      check("MM27 (setup) the table locked, the group release asks the lock question, the box left moved, and a newer drag of the box arms",
+        !!atN && lk && asked && !near(held?.[0], B0) && armed, { asked, held, B0, armed });
+      await cardArmed("MM27");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM27 a newer drag released where it began writes nothing and leaves nothing at the older drag's pose: the box and the table back where the log has them",
+        myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, T0, acts: actsSince(n0) });
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a switch to the pivot tool mid-way through a gizmo drag doesn't take it over: the drag stays the move it began as (as a
+    // mesh drag's does, MM7), so the box and the table land moved as one act, and no pivot is written from a proxy it never rode
+    await frame("mm-tbl", 1.5);
+    await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+    check("MM (setup) the gizmo is on the box", await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
+    { const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, d0 = bobDrags.length;
+      await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+        return import('/lib/world.js').then((m) => { m.entities.get('mm-box').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); return true; }); })()`);
+      await page(`(await import('/lib/edit/build.js')).setTool('pivot'); globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); return true;`);
+      await waitDisk(() => myActs().length > n0, 4000); await waitDisk(() => !near(pose("mm-tbl"), T0), 3000);
+      const acts = myActs().slice(n0).map((x) => x.e), reqs = acts[0]?.verb === "batch" ? acts[0].body.args.requests : [];
+      const moved = (a: any, b: any) => !!a && !!b && Math.abs(b[0] - a[0] - 1) < 0.01 && Math.abs(b[1] - a[1]) < 0.01 && Math.abs(b[2] - a[2]) < 0.01;
+      check("MM8 a gizmo drag the pivot tool is switched to mid-way stays a move: ONE act moving the box and the table by its 1 m, no pivot written",
+        acts.length === 1 && reqs.length === 2 && reqs.every((r: any) => r.args?.component === "transform") && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")) && !disk().entities[NODE.get("mm-box")]?.c.pivot,
+        { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl"), pivot: disk().entities[NODE.get("mm-box")]?.c.pivot ?? null });
+      await caughtUp(); const ends8 = lastEnds(["mm-box", "mm-tbl"], d0);
+      check("MM8 …and the gizmo group release ends every claim, the lead's with the followers' (bob's last sample of each ends the drag)", ends8["mm-box"] && ends8["mm-tbl"], ends8);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+      if (acts.length === 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+    }
+    await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`);
+
+    // a follower's object swapped mid gizmo drag (a tier change, a demotion or a load finishing makes a fresh object at the
+    // fold's pose: realize/models.js exempts only the lead, editHolds), then a pause and a release with no objectChange
+    // between: the release must write the follower where the drag put it, not where its fresh object stands (#352 review D2)
+    { await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gizmoDrag("mm-box", 1); await frames(2);
+      // the swap, as models.js makes it: a fresh object at the fold's pose takes the table's place in `entities`
+      const swapped = await page(`const { THREE, scene } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const net = await import('/lib/net.js');
+        const o = w.entities.get('mm-tbl'), t = net.replica.st.entities['mm-tbl'].c.transform, n = new THREE.Object3D();
+        n.userData.entityId = o.userData.entityId; n.position.fromArray(t.pos); if (t.q) n.quaternion.fromArray(t.q); if (t.scale != null) n.scale.fromArray([].concat(t.scale).length === 3 ? t.scale : [t.scale, t.scale, t.scale]);
+        scene.add(n); n.updateMatrixWorld(true); w.entities.set('mm-tbl', n); globalThis.__mmSwap = { o, n }; return n.position.toArray();`);
+      await frames(4);   // the pause: the gizmo held still, no objectChange
+      // release, then the real object back in its place (the fold's answer moves it to whatever was written)
+      await page(`globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: false }); const { scene } = await import('/lib/core.js'); const w = await import('/lib/world.js');
+        const { o, n } = globalThis.__mmSwap; scene.remove(n); w.entities.set('mm-tbl', o); delete globalThis.__mmSwap; return true;`);
+      await waitDisk(() => myActs().length > n0, 4000); await caughtUp();
+      const moved = (a: any, b: any) => !!a && !!b && Math.abs(b[0] - a[0] - 1) < 0.01 && Math.abs(b[1] - a[1]) < 0.01 && Math.abs(b[2] - a[2]) < 0.01;
+      check("MM29 (setup) the gizmo on the box with the table following, and the table's object swapped for a fresh one at the fold's pose", on && near(swapped, T0), { on, swapped, T0 });
+      check("MM29 a gizmo release after a follower's object was swapped mid-drag writes the follower where the drag put it: ONE act moving the box and the table by its 1 m",
+        myActs().length === n0 + 1 && moved(B0, pose("mm-box")) && moved(T0, pose("mm-tbl")), { acts: actsSince(n0), B0, B: pose("mm-box"), T0, T: pose("mm-tbl") });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // a single-thing gizmo release ends its claim too, as a group's does (MM8): bob's last sample of it ends the drag
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), n0 = myActs().length, d0 = bobDrags.length;
+      await gizmoDrag("mm-box", 0.5); await frames(2); await gizmoUp();
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
+      const e26 = lastEnds(["mm-box"], d0);
+      check("MM26 a single-thing gizmo release (the box alone) ends its claim: bob's last sample of it ends the drag", on && myActs().length === n0 + 1 && e26["mm-box"], { on, e26, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await onRecord("mm-box"); await frames(3);
+    }
+
+    // a gizmo release the lead can't write (a non-number position: editOps refuses it before anything is sent) puts back the
+    // lead AND the followers, as every gizmo exit does (one abort): nothing half-left where the drag had it
+    await frame("mm-tbl", 1.5);
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      await gizmoDrag("mm-box", NaN); await frames(2); await gizmoUp(); await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM25 a gizmo release the lead can't write (editOps refuses a non-number position) puts the lead and the table back, and writes nothing",
+        on && near(local?.[0], B0) && near(local?.[1], T0) && myActs().length === n0, { on, local, B0, T0, acts: actsSince(n0) });
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // the cap (edit/multimove.js MAX_GROUP = 16): 16 things arm and land as one act with every claim ended; 17 refuse to arm and
+    // nothing moves, by a mesh drag or the gizmo, and the status bar says why
+    const GN = Array.from({ length: 16 }, (_, i) => `mm-g${i}`); NAMES.push(...GN);
+    let gok = true;
+    for (const [i, n] of GN.entries()) gok = gok && await place(n, [sx - 9 + (i % 6) * 0.8, 0, sz + 3 + Math.floor(i / 6) * 0.8], [0.2, 0.2, 0.2]);
+    check("MM (setup) 16 small crates in a grid", gok);
+    await frame("mm-g0", 2);
+    const atG = await evalJson(`__mmPress('mm-g0', null)`);
+    check("MM (setup) a press point on the first crate", !!atG, { atG });
+    if (gok && atG) {
+      const P0 = Object.fromEntries([...GN, "mm-chair"].map((n) => [n, pose(n)]));
+      // 17: the 16 crates and the chair
+      await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify([...GN, "mm-chair"])}); return true;`);
+      let n0 = myActs().length;
+      await gesture(atG, [atG[0] + 30, atG[1] + 10], undefined, { arms: false });
+      await waitDisk(() => myActs().length > n0, 1500); await frames(3);
+      const loc24 = await localOf([...GN, "mm-chair"]);
+      const said = await evalJson(`document.body.innerText.includes('at most 16')`);
+      check("MM20 a mesh drag of one of 17 selected things refuses to arm: nothing moves, here or on the record, and the status bar says at most 16",
+        myActs().length === n0 && [...GN, "mm-chair"].every((n, i) => near(loc24?.[i], P0[n]) && near(pose(n), P0[n])) && said, { acts: actsSince(n0), said, lead: [loc24?.[0], P0["mm-g0"]] });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(${JSON.stringify([...GN, "mm-chair"])}); return true;`);
+      const gz = await waitFor(`globalThis.__gizmo?.().attached === 'mm-g0'`);
+      n0 = myActs().length;
+      await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+        return import('/lib/world.js').then((m) => { m.entities.get('mm-g0').position.x += 1; c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; }); })()`);
+      await waitDisk(() => myActs().length > n0, 1500); await frames(3);
+      const locG = await localOf(["mm-g0", "mm-g1"]);
+      check("MM20 …and so does a gizmo drag of 17: nothing written, the lead and the rest where the log has them", gz && myActs().length === n0 && near(locG?.[0], P0["mm-g0"]) && near(locG?.[1], P0["mm-g1"]), { gz, acts: actsSince(n0), locG });
+      await onRecord("mm-g0"); await frames(3);
+      // 16: the crates alone
+      await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify(GN)}); return true;`);
+      n0 = myActs().length; const d0 = bobDrags.length;
+      const drag = await gesture(atG, [atG[0] + 30, atG[1] + 10]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
+      const act = myActs().at(-1)?.e, reqs = act?.verb === "batch" ? act.body.args.requests : [];
+      const ends = lastEnds(GN, d0), open = GN.filter((n) => !ends[n]);
+      check("MM21 a mesh drag of 16 arms and lands as ONE act setting all 16 transforms", drag?.armed === true && myActs().length === n0 + 1 && reqs.length === 16 && GN.every((n) => !near(pose(n), P0[n])), { acts: actsSince(n0).length, reqs: reqs.length });
+      check("MM21 …and the last sample bob saw of every one of the 16 ends its claim", open.length === 0, { open });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-g0"), P0["mm-g0"])); }
+      await onRecord("mm-g0"); await frames(3);
+
+      // a gizmo drag over the cap never moves anything, so it must hold nothing: an older drag's refusal (a lock question
+      // cancelled while it is pressed) still puts the box it led back (#352 review, Fable)
+      await frame("mm-tbl", 1.5);
+      const atO = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atO && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"); n0 = myActs().length;
+      if (atO) await gesture(atO, [atO[0] + 30, atO[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      await page(`(await import('/lib/edit/selection.js')).set(${JSON.stringify(["mm-box", ...GN])}); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const held = await localOf(["mm-box"]);
+      // pressed, never moved (an objectChange would put the box back itself, as a cancelled drag does)
+      await evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: true }), true)`); await frames(2);
+      const sel17 = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids.length)`);
+      check("MM28 (setup) the table locked, the group release asks the lock question, the box left moved, and the gizmo pressed on the box with 17 selected",
+        !!atO && lk && asked && on && sel17 === 17 && !near(held?.[0], B0), { asked, on, sel17, held, B0 });
+      // the gesture's key hints outrank a flash on the status bar, so a drag that never starts must not claim them
+      check("MM28 …and while it is held the status bar says why nothing moves (at most 16)", await waitFor(`document.body.innerText.includes('at most 16')`, 3000));
+      await cardArmed("MM28");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      await gizmoUp(); await frames(3); await caughtUp();
+      check("MM28 a lock question cancelled while an over-cap gizmo drag is pressed on the box puts the box back as well as the table, and nothing is written",
+        myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0), { local, B0, T0, acts: actsSince(n0) });
+      await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' })).ok;`);
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // a follower whose object goes away mid-drag (someone else deletes it, or its object is retired) while it stays selected:
+    // the release writes none of the group and puts the lead back, by the mesh drag and by the gizmo (bot #352 `1`)
+    await frame("mm-tbl", 1.5);
+    { const atV = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      check("MM (setup) a press point on the box over the table, for the vanishing follower", !!atV, { atV });
+      const vanish = () => page(`const w = await import('/lib/world.js'); globalThis.__mmGone = w.entities.get('mm-tbl'); w.entities.delete('mm-tbl'); return true;`);
+      const unvanish = () => page(`const w = await import('/lib/world.js'); if (globalThis.__mmGone) w.entities.set('mm-tbl', globalThis.__mmGone); delete globalThis.__mmGone; return true;`);
+      if (atV) {
+        await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+        const B0 = pose("mm-box"), T0 = pose("mm-tbl"); let n0 = myActs().length;
+        await gesture(atV, [atV[0] + 30, atV[1] + 10], vanish);
+        await frames(3); await caughtUp();
+        let local = await localOf(["mm-box"]); await unvanish();
+        check("MM34 a mesh group drag whose follower's object went away mid-drag writes nothing and puts the lead back",
+          myActs().length === n0 && near(local?.[0], B0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+        await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+        await page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+        const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+        n0 = myActs().length;
+        await gizmoDrag("mm-box", 1); await frames(2); await vanish(); await frames(2); await gizmoUp(); await frames(3); await caughtUp();
+        local = await localOf(["mm-box"]); await unvanish();
+        check("MM34 …and so does a gizmo group drag: nothing written, the lead back where the log has it",
+          on && myActs().length === n0 && near(local?.[0], B0) && near(pose("mm-box"), B0), { on, local, B0, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+        await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+      }
+    }
+
+    // a lock question still open when a pivot-tool drag of its lead begins: the pivot drag moves only the pivot and writes no
+    // transform, so it must hold nothing; cancelling the question puts the box back too (bot #352 `2`). Its release still writes
+    // the pivot it was given, measured against the box as it stood at the press, not the box put back under it: first a control,
+    // the same untouched pivot drag with no question open, says what that pivot is
+    const pivotOn = () => disk().entities[NODE.get("mm-box")]?.c.pivot?.pos ?? null;
+    const pivotDrag = async () => { await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); (await import('/lib/edit/build.js')).setTool('pivot'); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box' && globalThis.__gizmo?.().viaProxy === true`);
+      await evalJson(`(globalThis.__gizmo().controls.dispatchEvent({ type: 'dragging-changed', value: true }), true)`); await frames(2); return on; };
+    const unpivot = async () => { await page(`const m = await import('/lib/net.js'); if (m.replica.st.entities['mm-box']?.c?.pivot) await m.sendRequest('delete', { id: 'mm-box', component: 'pivot' }); return true;`);
+      await waitFor(`import('/lib/net.js').then((m) => !m.replica.st.entities['mm-box']?.c?.pivot)`); };
+    let P_ctrl: any = null;
+    { const on = await pivotDrag(); await gizmoUp(); await frames(3); await caughtUp(); P_ctrl = pivotOn();
+      check("MM30 (setup) a control: an untouched pivot-tool drag of the box, with no question open, writes its pivot", on, { on, pivot: P_ctrl });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`); await unpivot(); await onRecord("mm-box"); await frames(3); }
+    { const atP = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const lk = atP && await page(`const m = await import('/lib/net.js'); return (await m.sendRequest('set', { id: 'mm-tbl', component: 'lock', value: true })).ok;`);
+      await waitFor(`import('/lib/net.js').then((m) => m.replica.st.entities['mm-tbl']?.c?.lock === true)`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl");
+      if (atP) await gesture(atP, [atP[0] + 30, atP[1] + 10]);
+      const asked = await waitFor(`!!document.querySelector('#confirm-center [data-v="cancel"]')`, 6000);
+      const held = await localOf(["mm-box"]);
+      const on = await pivotDrag();
+      check("MM30 (setup) the table locked, the group release asks the lock question, the box left moved, and a pivot-tool gizmo drag pressed on the box",
+        !!atP && lk && asked && on && !near(held?.[0], B0), { asked, on, held, B0 });
+      await cardArmed("MM30");
+      await evalJson(`(document.querySelector('#confirm-center [data-v="cancel"]')?.click(), true)`);
+      await frames(3); await caughtUp();
+      await gizmoUp(); await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]);
+      check("MM30 a lock question cancelled during a pivot-tool drag of the box puts the box back as well as the table (the pivot drag holds nothing)",
+        near(local?.[0], B0) && near(local?.[1], T0) && near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0), { local, B0, T0, disk: [pose("mm-box"), pose("mm-tbl")] });
+      // the pivot it wrote: the record's, and the replica's once it has it, before anything is cleaned up
+      const P1 = pivotOn(), sameP = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b) || near(a, b, 0.005);
+      const rep1 = await tryUntil("the replica has the box's pivot", () => evalJson(`import('/lib/net.js').then((m) => JSON.stringify(m.replica.st.entities['mm-box']?.c?.pivot?.pos ?? null))`).then((j) => (j === JSON.stringify(P1) ? j : null)), { ms: 4000 });
+      check("MM30 …and its release writes the pivot an untouched pivot drag writes (measured against the box as it was at the press), not one off by the put-back",
+        sameP(P1, P_ctrl) && !!rep1, { pivot: P1, control: P_ctrl, replica: rep1 ?? null });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); const m = await import('/lib/net.js'); await m.sendRequest('delete', { id: 'mm-tbl', component: 'lock' }); return true;`);
+      await unpivot();
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3); await settle();
+    }
+
+    // a tool key during a gizmo drag takes effect when it ends: the release re-seats the controls at once, so a press on the
+    // still-visible handle right after it (before the four-frame sync) is a pivot drag on the proxy seated at the box, never
+    // one on the box itself measuring a proxy left on another thing (bot #352 `41`; the cold read's repro). The pivot it
+    // writes is the control's (MM30)
+    { await page(`(await import('/lib/edit/selection.js')).set(['mm-tbl']); (await import('/lib/edit/build.js')).setTool('pivot'); return true;`);
+      const onT = await waitFor(`globalThis.__gizmo?.().attached === 'mm-tbl' && globalThis.__gizmo?.().viaProxy === true`);
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const onB = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box' && globalThis.__gizmo?.().viaProxy === false`);
+      const seat = await evalJson(`Promise.all([import('/lib/world.js')]).then(([w]) => ({ proxy: globalThis.__gizmo().proxyPos, tbl: w.entities.get('mm-tbl').position.toArray(), box: w.entities.get('mm-box').position.toArray() }))`);
+      check("MM39 (setup) the proxy left seated on the table by the pivot tool, then the move gizmo on the box", onT && onB && near(seat?.proxy, seat?.tbl, 0.05) && !near(seat?.proxy, seat?.box, 0.05), seat);
+      // in one turn, no frame between: a move drag begins, P is pressed, it ends; the handle is pressed again and let go
+      const vp = await page(`const b = await import('/lib/edit/build.js'); const c = globalThis.__gizmo().controls;
+        c.dispatchEvent({ type: 'dragging-changed', value: true }); b.setTool('pivot'); c.dispatchEvent({ type: 'dragging-changed', value: false });
+        c.dispatchEvent({ type: 'dragging-changed', value: true }); const vp = globalThis.__gizmo().viaProxy; c.dispatchEvent({ type: 'dragging-changed', value: false }); return vp;`);
+      await frames(3); await caughtUp();
+      const P1 = pivotOn(), same = JSON.stringify(P1) === JSON.stringify(P_ctrl) || near(P1, P_ctrl, 0.005);
+      check("MM39 a press right after a gizmo drag that P was pressed during is a pivot drag on the proxy at the box, and writes the box's own pivot (the control's), not the table's place",
+        vp === true && same, { vp, pivot: P1, control: P_ctrl });
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); return true;`); await unpivot();
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // a gizmo group drag whose handle is held still keeps its claims: TransformControls sends objectChange only when the pointer
+    // moves, so the drag relays every frame on its own; bob keeps getting samples of the lead and the follower (bot #352 `3`)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const on = await waitFor(`globalThis.__gizmo?.().attached === 'mm-box'`);
+      const B0 = pose("mm-box"), n0 = myActs().length;
+      await gizmoDrag("mm-box", 0.5); await frames(2); await caughtUp();
+      const d1 = bobDrags.length; await pause("the handle held still past CLAIM_MS: the elapsed time is what MM31 tests", 1800); await caughtUp();
+      const live = Object.fromEntries(["mm-box", "mm-tbl"].map((n) => [n, bobDrags.slice(d1).filter((m) => m.id === NODE.get(n) && m.end !== true).length]));
+      check("MM31 a gizmo group drag held still past CLAIM_MS (1.5 s) keeps relaying: bob gets fresh samples of the box and of the table while it is held",
+        on && live["mm-box"] > 0 && live["mm-tbl"] > 0, { on, live });
+      await gizmoUp(); await waitDisk(() => myActs().length === n0 + 1, 4000); await caughtUp();
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // a selection change between the press and the travel (a placement's reply selecting what it made, the Hierarchy) drops the
+    // press: the drag never arms on the newly selected thing with the pressed one's start and expect (bot #352 `4`). An armed
+    // drag whose lead left the selection is cancelled on the next frame (followSelection), so the travel and the release come
+    // in one turn, no frame between: the window a quick flick-and-release leaves
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box']); return true;`);
+      const atS = await evalJson(`__mmPress('mm-box', null)`);
+      const B0 = pose("mm-box"), H0 = pose("mm-chair"), n0 = myActs().length, r0 = await evalJson(`__refused.length`);
+      let armed = null;
+      if (atS) {
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atS[0]}, clientY: ${atS[1]} })), true))`);
+        await frames(2); await page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`); await frames(2);
+        armed = await evalJson(`(() => { dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atS[0] + 30}, clientY: ${atS[1] + 10} })); const a = globalThis.__buildDrag?.()?.armed === true;
+          dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atS[0] + 30}, clientY: ${atS[1] + 10} })); return a; })()`);
+      }
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-chair"]), refused = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code ?? r.text)`);
+      check("MM32 a selection change between the press and the travel (the chair selected elsewhere) drops the press: it never arms, nothing moves, nothing is sent (no act, no refusal)",
+        !!atS && armed === false && myActs().length === n0 && refused?.length === 0 && near(local?.[0], B0) && near(local?.[1], H0) && near(pose("mm-chair"), H0), { atS, armed, refused, local, B0, H0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-chair"), H0)); }
+      await onRecord("mm-chair"); await onRecord("mm-box"); await frames(3);
+    }
+
+    // …and so does one that keeps the pressed thing but drops a follower the press picked (the table, deselected in the
+    // Hierarchy): the arm checks the whole selection, as followSelection does for an armed drag (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atF = await evalJson(`__mmPress('mm-box', 'mm-tbl')`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length, r0 = await evalJson(`__refused.length`), d0 = bobDrags.length;
+      let armed = null, picked = null;
+      if (atF) {
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${atF[0]}, clientY: ${atF[1]} })), true))`);
+        await frames(2); picked = await evalJson(`globalThis.__buildDrag?.()?.follow ?? null`);
+        await page(`(await import('/lib/edit/selection.js')).set(['mm-box']); return true;`); await frames(2);
+        armed = await evalJson(`(() => { dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${atF[0] + 30}, clientY: ${atF[1] + 10} })); const a = globalThis.__buildDrag?.()?.armed === true;
+          dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${atF[0] + 30}, clientY: ${atF[1] + 10} })); return a; })()`);
+      }
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl"]), refused = await evalJson(`__refused.slice(${r0}).map((r) => r.refused?.code ?? r.text)`);
+      const sent = bobDrags.slice(d0).filter((m) => m.id === NODE.get("mm-tbl") || m.id === NODE.get("mm-box")).length;
+      check("MM36 a follower the press picked, dropped from the selection before the travel, drops the press: it never arms, nothing moves, nothing is sent",
+        !!atF && picked?.includes(NODE.get("mm-tbl")) && armed === false && myActs().length === n0 && refused?.length === 0 && sent === 0 && near(local?.[0], B0) && near(local?.[1], T0),
+        { atF, picked, armed, refused, sent, local, B0, T0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // …and a Shift-press on a selected thing that isn't the primary (it would lead the group, re-selected at the arm), once the
+    // selection has changed meanwhile: the press is dropped, and the changed selection stays (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true, arms: false, preArm: () => page(`(await import('/lib/edit/selection.js')).set(['mm-chair']); return true;`) });
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      check("MM40 a Shift-press on the table (selected, not the primary), then a selection change before the travel, drops the press: nothing moves or is written, and the chair stays selected",
+        !!atT && drag === null && myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0) && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-chair")]),
+        { atT, drag, sel, local, B0, T0, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // the same Shift-press on the table with the selection unchanged is a vertical drag of the lot, led by it: one act raising
+    // both by the same height, and the table first in the selection (MM10, MM11 and MM14 press the primary; this one doesn't)
+    // (bot #352 `4`, cold read)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true });
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-tbl"), T0), 3000);
+      const B1 = pose("mm-box"), T1 = pose("mm-tbl"), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      const dy = T1 && B1 ? [T1[1] - T0[1], B1[1] - B0[1]] : null;
+      check("MM41 a Shift-press on the table (selected, not the primary) with the selection unchanged drags the lot up: one act, both risen by the same height, the table now leading the selection",
+        !!atT && drag?.armed === true && myActs().length === n0 + 1 && !!dy && dy[0] > 0.005 && Math.abs(dy[0] - dy[1]) < 0.01 && Math.abs(T1[0] - T0[0]) < 0.01 && Math.abs(T1[2] - T0[2]) < 0.01
+          && JSON.stringify(sel) === JSON.stringify([NODE.get("mm-tbl"), NODE.get("mm-box")]), { atT, drag, dy, T0, T1, B0, B1, sel, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // …and with a thing ADDED to the selection meanwhile (the chair, Ctrl-clicked in): the selection is no longer the group the
+    // press picked, so the press is dropped, nothing moves, and the chair stays selected (re-selecting the group would drop it)
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atT = await evalJson(`__mmPress('mm-tbl', null)`);
+      const B0 = pose("mm-box"), T0 = pose("mm-tbl"), H0 = pose("mm-chair"), n0 = myActs().length;
+      let drag = null;
+      if (atT) drag = await gesture(atT, [atT[0], atT[1] - 30], undefined, { shift: true, arms: false, preArm: () => page(`(await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl', 'mm-chair']); return true;`) });
+      await frames(3); await caughtUp();
+      const local = await localOf(["mm-box", "mm-tbl", "mm-chair"]), sel = await evalJson(`import('/lib/edit/selection.js').then((m) => m.selection().ids)`);
+      check("MM42 a Shift-press on the table, then the chair added to the selection before the travel, drops the press: nothing moves or is written, and the chair stays selected",
+        !!atT && drag === null && myActs().length === n0 && near(local?.[0], B0) && near(local?.[1], T0) && near(local?.[2], H0)
+          && JSON.stringify(sel) === JSON.stringify(["mm-box", "mm-tbl", "mm-chair"].map((n) => NODE.get(n))), { atT, drag, sel, local, acts: actsSince(n0) });
+      if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+      await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+    }
+
+    // a planar group drag whose ray runs out toward the horizon meets the plane hundreds of metres out: the lot goes no further
+    // than the drag's reach (20 m, aimPoint's placeable range) from where the lead started (bot #352 `7`)
+    await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const b = new THREE.Box3().setFromObject(w.entities.get('mm-box')); C.setCamPitch(0.12); return C.frameOn(b.getCenter(new THREE.Vector3()), 3);`);
+    await frames(2); await settle();
+    { await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-box', 'mm-tbl']); return true;`);
+      const atR = await evalJson(`__mmPress('mm-box', null)`);
+      const far = atR && await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, B = w.entities.get('mm-box').getWorldPosition(new T.Vector3());
+        const pl = new T.Plane(new T.Vector3(0, 1, 0), -B.y), rc = new T.Raycaster(), h = new T.Vector3();
+        for (let y = ${atR?.[1]}; y > 4; y--) { rc.setFromCamera(new T.Vector2(${atR?.[0]} / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+          if (rc.ray.intersectPlane(pl, h) && Math.hypot(h.x - B.x, h.z - B.z) > 150) return [${atR?.[0]}, y]; }
+        return null; })`);
+      check("MM (setup) a press point on the box, and a point above it whose ray meets the box's plane over 150 m out", !!atR && !!far, { atR, far });
+      if (atR && far) {
+        const B0 = pose("mm-box"), T0 = pose("mm-tbl"), n0 = myActs().length;
+        await gesture(atR, far);
+        await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => !near(pose("mm-box"), B0), 3000);
+        const B1 = pose("mm-box"), T1 = pose("mm-tbl"), d = B1 ? Math.hypot(B1[0] - B0[0], B1[2] - B0[2]) : null;
+        check("MM33 a planar group drag run out toward the horizon carries the lot at most 20 m (one act, both level, the same move), not hundreds of metres",
+          myActs().length === n0 + 1 && d != null && d > 5 && d <= 20.01 && Math.abs(B1[1] - B0[1]) < 0.01 && sameMove(B0, B1, T0, T1), { d, B0, B1, T0, T1, acts: actsSince(n0) });
+        if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-box"), B0) && near(pose("mm-tbl"), T0)); }
+        await onRecord("mm-box"); await onRecord("mm-tbl"); await frames(3);
+      }
+    }
+
+    // a press whose ray points above the lead's plane (looking up at a tall pole): the group takes hold the first frame a ray
+    // meets the plane within reach (20 m of where the lead started), from where the lead stands then, so taking hold moves
+    // nothing; from there the lead moves by exactly what the hit does (bot #352 `6`; the row reverted with the late grab in
+    // a913e4e8a, back with the reach limit). Points down one screen column, each ray dipping more: F meets the plane 25–60 m
+    // out (beyond reach), N is the first within 15 m, M between N and the bottom, B at the bottom
+    NAMES.push("mm-pole", "mm-stool");
+    const poleOk = await place("mm-pole", [sx - 4, 0, sz - 4.5], [0.3, 3, 0.3]) && await place("mm-stool", [sx - 5.5, 0, sz - 4.5], [0.3, 0.3, 0.3]);
+    check("MM (setup) a tall pole and a stool", poleOk);
+    await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const b = new THREE.Box3().setFromObject(w.entities.get('mm-pole')); C.setCamPitch(-0.3); return C.frameOn(b.getCenter(new THREE.Vector3()), 2);`);
+    await frames(2); await settle();
+    const up = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
+      const O = P.getWorldPosition(new T.Vector3()), cy = c.camera.getWorldPosition(new T.Vector3()).y, pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y);
+      const ray = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray; };
+      const hit = (x, y) => { const h = new T.Vector3(); return ray(x, y).intersectPlane(pl, h) ? [h.x, h.z] : null; };
+      const dist = (x, y) => { const h = hit(x, y); return h ? Math.hypot(h[0] - O.x, h[1] - O.z) : Infinity; };
+      const b = new T.Box3().setFromObject(P), mid = new T.Vector3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2).project(c.camera);
+      const px = Math.round((mid.x + 1) / 2 * innerWidth); let py = 10;   // on screen: a press a person could make
+      while (py < innerHeight - 10 && !(__mmHit(px, py, 'mm-pole', null).onLead && ray(px, py).direction.y > 0.05)) py += 4;
+      const at = py < innerHeight - 10 ? [px, py] : null;
+      let f = py; while (f < innerHeight - 4 && !(dist(px, f) > 25 && dist(px, f) < 60)) f += 1;
+      let n = f; while (n < innerHeight - 4 && !(dist(px, n) <= 15)) n += 1;
+      const B = innerHeight - 4, m = Math.round((n + B) / 2), pt = (y, dx) => ({ px: [px + dx, y], hit: hit(px + dx, y), dist: dist(px + dx, y) });
+      return { at, F: f < innerHeight - 4 ? pt(f, 0) : null, N: pt(n, 10), M: pt(m, 20), B: B - n >= 40 ? pt(B, 30) : null, camAbove: cy > O.y + 0.05, cy, oy: O.y }; })`);
+    const pts = !!up?.at && !!up?.F && up.F.dist > 25 && up.F.dist < 60 && up.N?.dist <= 20 && !!up?.B && up?.camAbove;
+    check("MM (setup) a press point on the pole whose ray points up from above its origin, a point whose ray meets the plane 25–60 m out, and three within reach", pts, up);
+    const mv = async (p: number[]) => { await evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${p[0]}, clientY: ${p[1]} })), true)`); await frames(3); };
+    const plus = (L: number[], a: number[], b: number[]) => [L[0] + b[0] - a[0], L[1], L[2] + b[1] - a[1]];   // L moved by the hit's move a → b
+    // press, arm, then the given points in order, reading the lead after each; release on the last; returns the lead after each
+    const poleDrag = async (route: any[]) => {
+      await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${up.at[0]}, clientY: ${up.at[1]} })), true))`);
+      await mv([up.at[0] + 6, up.at[1]]); const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+      const seen: any[] = []; for (const q of route) { await mv(q.px); seen.push((await localOf(["mm-pole"]))?.[0]); }
+      const last = route.at(-1).px; await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${last[0]}, clientY: ${last[1]} })), true)`);
+      return { armed, seen }; };
+    if (poleOk && pts) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
+      const L0 = pose("mm-pole"), F0 = pose("mm-stool"); let n0 = myActs().length;
+      // MM12: N, M, B. It takes hold at N (the lead stays at L0), then moves by the hit's move from N
+      let r = await poleDrag([up.N, up.M, up.B]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      let L1 = pose("mm-pole"), F1 = pose("mm-stool");
+      check("MM12 a group drag pressed with the ray above the lead's plane takes hold where a ray first meets it within reach, moving nothing there (the lead still at its start)",
+        r.armed && near(r.seen[0], L0, 0.1), { seen: r.seen, L0, N: up.N });
+      check("MM12 …then the lead moves by exactly the hit's move from the take-hold, and the release writes that: one act, both level, the same move",
+        near(r.seen[1], plus(L0, up.N.hit, up.M.hit), 0.1) && myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1),
+        { seen: r.seen, wantM: plus(L0, up.N.hit, up.M.hit), L1, wantB: plus(L0, up.N.hit, up.B.hit), F0, F1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
+      await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+      // MM35: F first (its ray meets the plane beyond reach: no take-hold there), then N, then B
+      n0 = myActs().length;
+      r = await poleDrag([up.F, up.N, up.B]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      L1 = pose("mm-pole"); F1 = pose("mm-stool");
+      check("MM35 a ray that first meets the plane beyond reach (25–60 m) takes no hold there: the lead is still at its start after F, and after N, where it does take hold",
+        r.armed && near(r.seen[0], L0, 0.1) && near(r.seen[1], L0, 0.1), { seen: r.seen, L0, F: up.F, N: up.N });
+      check("MM35 …and the release writes the move from N's hit to B's: one act, both level, the same move",
+        myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && sameMove(F0, F1, L0, L1), { L1, want: plus(L0, up.N.hit, up.B.hit), acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
+      await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+    }
+
+    // a press on the pole whose ray dips just below level meets the pole's plane far beyond reach (40–400 m): the press, too,
+    // takes hold only within 20 m of where its ray met the thing, so a small travel can't throw the group (cold read of
+    // f43cf6787; the reviewer's row, Esc sent as the key handler reads it)
+    if (poleOk && pts) {
+      const tall = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
+        const O = P.getWorldPosition(new T.Vector3()), pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y);
+        const ray = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray; };
+        const dist = (x, y) => { const h = new T.Vector3(); return ray(x, y).intersectPlane(pl, h) ? Math.hypot(h.x - O.x, h.z - O.z) : Infinity; };
+        const px = ${up.at[0]}; for (let y = 10; y < innerHeight - 10; y += 1) { const d = dist(px, y); if (d > 40 && d < 400 && __mmHit(px, y, 'mm-pole', null).onLead) return { at: [px, y], dist: d, dist2: dist(px, y + 16) }; }
+        return null; })`);
+      check("MM (setup) a press point on the pole whose ray meets its plane 40–400 m out", !!tall, tall);
+      if (tall) {
+        await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
+        const L0 = pose("mm-pole"), n0 = myActs().length;
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${tall.at[0]}, clientY: ${tall.at[1]} })), true))`);
+        await mv([tall.at[0], tall.at[1] + 6]); const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+        await mv([tall.at[0], tall.at[1] + 16]); const seen = (await localOf(["mm-pole"]))?.[0];
+        await key("Escape"); await frames(2);
+        const cancelled = await evalJson(`globalThis.__buildDrag?.() === null`);
+        await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${tall.at[0]}, clientY: ${tall.at[1] + 16} })), true)`); await frames(3); await caughtUp();
+        const moved = seen ? Math.hypot(seen[0] - L0[0], seen[2] - L0[2]) : null, back = (await localOf(["mm-pole"]))?.[0];
+        check("MM38 a 16 px travel from a grazing press on the pole (its ray meeting the plane far beyond reach) moves the lead less than 1 m; Esc then ends it with nothing written",
+          armed && moved != null && moved < 1 && cancelled && myActs().length === n0 && near(back, L0), { tall, armed, seen, L0, moved, cancelled, back, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0)); }
+        await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+      }
+    }
+
+    // a press on a large thing's far end, more than 20 m from its origin: the press ray met the thing, so the group drag takes
+    // hold at the press (the reach is for the late take-hold's grazing rays, not the press's) (cold read of #352 `6`)
+    NAMES.push("mm-long");
+    const longOk = await place("mm-long", [sx - 4, 0, sz + 20], [20, 0.3, 0.3]);
+    await page(`const { THREE } = await import('/lib/core.js'); const w = await import('/lib/world.js'); const C = await import('/lib/player/controller.js');
+      const L = w.entities.get('mm-long'), O = L.getWorldPosition(new THREE.Vector3()), b = new THREE.Box3().setFromObject(L);
+      C.setCamPitch(0.7); return C.frameOn(new THREE.Vector3(Math.min(b.max.x - 1, O.x + 24), b.max.y, (b.min.z + b.max.z) / 2), 2);`);
+    await frames(2); await settle();
+    // any pixel on it whose ray meets its plane more than 20 m from its origin (the screen scanned, so the framing needn't be exact)
+    const far = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, L = w.entities.get('mm-long');
+      const O = L.getWorldPosition(new T.Vector3()), b = new T.Box3().setFromObject(L), pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y), rc = new T.Raycaster(), h = new T.Vector3();
+      let best = null;
+      for (let y = 20; y < innerHeight - 20; y += 8) for (let x = 20; x < innerWidth - 20; x += 8) {
+        rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+        if (!rc.intersectObject(L, true).length || !rc.ray.intersectPlane(pl, h)) continue;
+        const d = Math.hypot(h.x - O.x, h.z - O.z); if (d > 24 && d < 32 && (!best || d < best.dist) && __mmHit(x, y, 'mm-long', null).onLead) best = { at: [x, y], dist: d };
+      }
+      return best ? { ...best, len: b.max.x - b.min.x } : { diag: true, len: b.max.x - b.min.x, O: O.toArray(), cam: c.camera.getWorldPosition(new T.Vector3()).toArray() }; })`);
+    check("MM (setup) a long thing (about 50 m), and a press point on its far end whose ray meets its plane 24–32 m from its origin", longOk && !!far?.at && far.dist > 24, { longOk, far });
+    if (longOk && far?.at && far.dist > 24) {
+      await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-long', 'mm-stool']); return true;`);
+      const L0 = pose("mm-long"), F0 = pose("mm-stool"), n0 = myActs().length;
+      await gesture(far.at, [far.at[0] + 30, far.at[1] + 10]);
+      await waitDisk(() => myActs().length === n0 + 1, 4000); await waitDisk(() => JSON.stringify(pose("mm-stool")) !== JSON.stringify(F0), 3000);
+      const L1 = pose("mm-long"), F1 = pose("mm-stool");
+      check("MM37 a group drag pressed on a large thing's far end (over 20 m from its origin) takes hold at the press: one act, both level, the same move",
+        myActs().length === n0 + 1 && !!L1 && !!F1 && Math.abs(L1[1] - L0[1]) < 0.01 && Math.abs(F1[1] - F0[1]) < 0.01 && sameMove(F0, F1, L0, L1), { L0, L1, F0, F1, acts: actsSince(n0) });
+      if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-long"), L0)); }
+      await onRecord("mm-long"); await onRecord("mm-stool"); await frames(3);
+    }
   }
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();

@@ -8,16 +8,18 @@ import { entities, bagOf } from '../world.js';
 import { sendDrag } from '../net.js';
 import { registerSystem } from '../render/frameloop.js';
 import { sceneSelected } from '../scenegraph.js';
-import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import { getTool, getSpace, isBuilding, refreshOutline, setPointerVeto, setEscapeHook, onDragCancel } from './build.js';
 import * as Edits from './writes.js';
 import { reindexCollider } from '../colliders.js';
 import { engage, release } from './keyhints.js';
 import { boxOf } from '../realize/models.js';
 import { foldRecord } from './inspect.js';
-import { editOps, inspectSchema, fieldAt, poseEdits } from '../../../shared/editschema.js';
+import { editOps, poseEdits } from '../../../shared/editschema.js';
 import * as OP from '../../../shared/requests.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { gripEditing } from './gripedit.js';
+import * as MM from './multimove.js';   // the rest of the selection follows the drag (R, gym 10-17 21:40)
+import * as Sel from './selection.js';
 
 const R2D = 180 / Math.PI;
 let controls = null;
@@ -25,11 +27,15 @@ let helper = null;
 let attachedId = null;
 let start = null;        // { rec, comps? } at drag start (the components the release's expect names)
 let cancelled = false;   // Esc during the drag: the thing goes back, the release writes nothing
+let multi = null;        // the other selected things following this drag (edit/multimove.js), or null
+let gen = 0;             // this drag's generation (MM.hold): a late refusal of an older one leaves its things to this one
+let dragTool = null;     // the tool at the press: a tool key mid-drag changes the next drag, not this one (#352 review, point 4)
 let lastSent = 0;
 // the pivot (Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as the thing,
 // and the thing follows it: objWorld = proxy × offset (offset fixed at drag start), so a turn or a size goes about the pivot.
 const proxy = new THREE.Object3D(); proxy.name = 'edit-gizmo-pivot';
 let viaProxy = false, offset = null;
+let pivotFrame = null;   // a pivot drag's thing's world matrix at the press: the release measures the proxy against it
 const _m = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pp = new THREE.Vector3(), _ps = new THREE.Vector3();
 const pivotOf = (id) => { const p = bagOf(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : null; };
 /** Put the proxy at obj's pivot in the world, turned as obj is, unscaled. */
@@ -48,7 +54,10 @@ function ensure() {
   helper = controls.getHelper();
   helper.name = 'edit-gizmo';
   scene.add(helper);
-  controls.addEventListener('dragging-changed', (e) => (e.value ? beginDrag() : endDrag()));
+  // a release re-seats the controls at once (sync): a tool key during the drag is held off until it ends (sync returns early
+  // while one is in flight), and the next press must not come before the four-frame sync with the new tool and the old seat,
+  // a pivot drag on the thing itself measuring a proxy left elsewhere (bot #352 `41`)
+  controls.addEventListener('dragging-changed', (e) => (e.value ? beginDrag() : (endDrag(), sync())));
   controls.addEventListener('objectChange', onChange);
   setPointerVeto(() => !!controls?.axis || !!controls?.dragging);
   // Ctrl held = snapping (Blender's Ctrl, Maya's grid): 10 cm, 5°, 0.1×
@@ -60,23 +69,15 @@ function ensure() {
 }
 
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
-/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged; a light has no orientation or
- *  scale to drag. A lock doesn't stop the drag: the release asks the authority, which asks a person who may lift it. */
-function editable(id, mode) {
-  const rec = foldRecord(id); const obj = entities.get(id);
-  // A parented thing: three parents it (realize/models.js), so its position IS the local transform pos.* edits; a
-  // thing riding a part socket (a moving node) stays out.
-  const rides = !!rec?.parent;
-  if (!rec || !obj || (rides && obj.parent !== entities.get(rec.parent.to ?? rec.parent))) return false;
-  const sc = inspectSchema(rec, id);
-  const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
-  const f = fieldAt(sc, key);
-  return !!f && !f.disabled;
-}
+/** Can this thing take THIS gesture? A thing riding a part socket can't be dragged. A lock doesn't stop the drag: the
+ *  release asks the authority, which asks a person who may lift it. */
+const editable = MM.takes;   // the gesture test the followers share (edit/multimove.js)
 
 function sync() {
-  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority
-  if (start) return;
+  // a drag in flight keeps its handles even if a lock lands meanwhile: the release asks the authority. Leaving build mode, or
+  // a selection without its thing first or without one of its followers, cancels it as Esc does, as the mesh drag's does
+  // (build.js followSelection; #352 review 8d7c6b9, points 2, 3)
+  if (start) { if (!cancelled && (!isBuilding() || sceneSelected() !== attachedId || !MM.idsOf(attachedId, multi).every((x) => Sel.selection().ids?.includes(x)))) cancelDrag(); return; }
   const id = sceneSelected();
   const want = isBuilding() && !gripEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;   // the grip editor's handles replace these
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
@@ -94,16 +95,38 @@ function sync() {
 
 function beginDrag() {
   if (!attachedId) return;
-  engage('gizmo');
   if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), comps: Edits.compsOf(attachedId) } : null;
   cancelled = false;
+  dragTool = getTool();
+  // every other selected thing moves with it (the pivot tool moves one thing's pivot: never a group's). One that can't take
+  // this gesture (a part socket's occupant) stays put, and the hint says so
+  multi = null;
+  if (start && dragTool !== 'pivot') {
+    const f = MM.followersOf(attachedId, (id) => editable(id, controls.mode));
+    // over the cap the drag doesn't start: held where the log has it (as Esc holds it), nothing written. It holds nothing
+    // either (generation 0 is no gesture's), so an older drag's refusal still puts its things back; and it claims no key
+    // hints, which would outrank the flash saying why (#352 review, Fable)
+    if (1 + f.ids.length > MM.MAX_GROUP) { gen = 0; cancelled = true; import('../ui/ui.js').then((m) => m.flashHint(MM.tooManyHint(1 + f.ids.length), 6000)); return; }
+    multi = MM.begin(attachedId, f.ids);
+    if (f.skipped.length) import('../ui/ui.js').then((m) => m.flashHint(MM.skippedHint(f.skipped.length, controls.mode), 3500));
+  }
+  engage('gizmo');
+  // on every other path, so no exit puts back by the previous drag's generation. The pivot tool's drag moves the pivot, never
+  // the thing, and its release writes no transform: it holds nothing (generation 0), so an older drag's refusal still puts
+  // the thing back (bot #352 `2`)
+  gen = dragTool === 'pivot' ? 0 : MM.hold(MM.idsOf(attachedId, multi));
+  // …and since an older refusal may then put the thing back mid-drag, the release measures where the proxy ended against the
+  // frame the thing had at the press (where the proxy was seated), not where it stands at the release
+  pivotFrame = null;
+  if (dragTool === 'pivot') { const o = entities.get(attachedId); if (o) { o.updateWorldMatrix(true, false); pivotFrame = o.matrixWorld.clone(); } }
 }
+const gizmoGesture = () => ({ translate: 'move', rotate: 'rotate', scale: 'scale' }[controls?.mode] ?? 'move');
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
-  if (cancelled) { bus.emit('pose-revert', { id: attachedId }); return; }   // Esc held it where the log has it
-  if (getTool() === 'pivot') { refreshOutline(); return; }   // the pivot tool moves the pivot only: the thing stays
+  if (cancelled) { bus.emit('pose-revert', { id: attachedId }); for (const f of multi?.followers ?? []) bus.emit('pose-revert', { id: f.id }); return; }   // Esc held it where the log has it
+  if (dragTool === 'pivot') { refreshOutline(); return; }   // the pivot tool moves the pivot only: the thing stays
   if (viaProxy && offset) {   // the thing follows the proxy: world = proxy × offset, then into its parent's frame
     proxy.updateMatrixWorld(true);
     _m.multiplyMatrices(proxy.matrixWorld, offset);
@@ -111,8 +134,9 @@ function onChange() {
     _m.decompose(obj.position, obj.quaternion, obj.scale);
   }
   reindexCollider(attachedId); refreshOutline();
+  if (multi) MM.apply(multi, gizmoGesture(), controls.space === 'local' ? 'local' : 'world');
   const now = performance.now();
-  if (now - lastSent >= 66) {
+  if (now - lastSent >= MM.RELAY_MS) {
     lastSent = now; const p = obj.position; const q = obj.quaternion;
     // yaw for older peers (the heading), q for everyone who reads it
     sendDrag(attachedId, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
@@ -132,7 +156,8 @@ function endPivotDrag() {
   if (cancelled) { cancelled = false; return; }
   if (!obj) return;
   obj.updateWorldMatrix(true, false);
-  let p = proxy.position.clone().applyMatrix4(obj.matrixWorld.clone().invert()).toArray().map((v) => Math.round(v * 1e4) / 1e4);
+  const frame = pivotFrame ?? obj.matrixWorld; pivotFrame = null;
+  let p = proxy.position.clone().applyMatrix4(frame.clone().invert()).toArray().map((v) => Math.round(v * 1e4) / 1e4);
   const box = boxOf(id); let snapped = null;
   if (box) { const s = obj.getWorldScale(new THREE.Vector3()); let best = null;
     for (const [name, h] of hotspots(box)) { const d = Math.hypot(...h.map((v, i) => (v - p[i]) * [s.x, s.y, s.z][i])); if (d < 0.15 && (!best || d < best.d)) best = { name, h, d }; }
@@ -142,12 +167,15 @@ function endPivotDrag() {
   import('../ui/ui.js').then((m) => m.flashHint(snapped ? m.html`pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
   bus.emit('pivot-set', { id, pos: p, snapped });
 }
+/** A release that writes nothing: the lead and every follower go back where the log has it, together (architecture read D6). */
+function abort(m, id) { start = null; MM.revertHeld(gen, MM.idsOf(id, m)); MM.end(m); }
 function endDrag() {
   release();
-  if (getTool() === 'pivot') { endPivotDrag(); return; }
-  if (cancelled) { cancelled = false; start = null; return; }
+  const m = multi; multi = null;
+  if (dragTool === 'pivot') { endPivotDrag(); return; }   // a pivot drag (it has no followers); a switch to pivot mid-drag is not one
+  if (cancelled) { cancelled = false; start = null; MM.end(m); return; }
   const id = attachedId; const obj = id && entities.get(id);
-  if (!obj || !start?.rec) { start = null; return; }
+  if (!obj || !start?.rec) { abort(m, id); return; }
   const rec = foldRecord(id) ?? start.rec;
   // only the fields this gesture moved and this thing HAS (shared/editschema.js poseEdits); editOps makes them one transform
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
@@ -156,25 +184,41 @@ function endDrag() {
   // about a pivot, a turn or a size ALSO moves the origin (it swings round the pivot): send the position with it
   const set = viaProxy && mode !== 'move' ? { ...poseEdits(rec, id, 'move', pose), ...poseEdits(rec, id, mode, pose) } : poseEdits(rec, id, mode, pose);
   const { ops, errors } = editOps(rec, id, set);   // the authority asks about locks
-  if (errors.length || !ops.length) { start = null; return; }
-  // the drag was presence; the release is ONE request, expecting where the drag started
-  const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;
-  const base = start.comps ? { [id]: start.comps } : null; start = null;
-  bus.emit('gizmo-release', { id, ops });
-  Edits.sendOps(ops, { what, base, revert: () => Edits.revertPose(id) });
+  if (errors.length || !ops.length) { abort(m, id); return; }
+  // the followers' writes ride the same request: each one's own fields (a turn about its pivot moves its origin too). Posed
+  // once more first: a follower's object swapped since the last objectChange (a tier change, a demotion or a load finishing;
+  // realize/models.js exempts only the lead) stands at the fold's pose, and a gizmo held still sends no objectChange (#352 D2)
+  if (m) MM.apply(m, gizmoGesture(), controls.space === 'local' ? 'local' : 'world');
+  const more = MM.ops(m, (fid) => { const fr = foldRecord(fid); if (!fr) return null;
+    const o2 = entities.get(fid).quaternion; const fp = { pos: entities.get(fid).position.toArray(), q: [o2.x, o2.y, o2.z, o2.w], scale: entities.get(fid).scale.toArray() };
+    return editOps(fr, fid, mode === 'move' ? poseEdits(fr, fid, 'move', fp) : { ...poseEdits(fr, fid, 'move', fp), ...poseEdits(fr, fid, mode, fp) }); });
+  if (more.errors.length) { abort(m, id); import('../ui/ui.js').then((u) => u.flashHint(more.errors.join(' · '), 5000)); return; }
+  const all = [...ops, ...more.ops];
+  // the drag was presence; the release is ONE request (one act, one Ctrl+Z, one lock question for the lot), expecting where the drag started
+  const n = 1 + (m?.followers.length ?? 0);
+  const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${n > 1 ? `${n} things` : id}`;
+  const base = start.comps || Object.keys(more.base).length ? { ...(start.comps ? { [id]: start.comps } : {}), ...more.base } : null; start = null;
+  bus.emit('gizmo-release', { id, ops: all, ids: [id, ...(m?.followers.map((f) => f.id) ?? [])] });
+  const g = gen; Edits.sendOps(all, { what, base, revert: () => MM.revertHeld(g, MM.idsOf(id, m)) });
+  MM.end(m ?? { leadId: id });   // after the request, so it never queues behind the last samples; a lone drag's lead ends too
 }
 
 /** Esc mid-drag: cancel the gesture (nothing is written; the thing goes back). */
 function cancelDrag() {
   if (!start || !attachedId) return false;
-  cancelled = true; Edits.revertPose(attachedId); refreshOutline();
+  cancelled = true; MM.revertHeld(gen, MM.idsOf(attachedId, multi)); refreshOutline();
   import('../ui/ui.js').then((m) => m.flashHint('cancelled — nothing written'));
   return true;
 }
 
 export function initGizmo() {
   setEscapeHook(cancelDrag);
+  onDragCancel(() => { if (!cancelled) cancelDrag(); });   // a deselect or an undo mid-drag (build.js deselect)
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
+  // a drag in hand is posed and relayed every frame, as the mesh drag is (updateBuild): TransformControls sends objectChange
+  // only when the pointer moves, and a handle held still must keep its claims (the lead's and the followers' round-robin)
+  // fresh on everyone else's screen (bot #352 `3`)
+  registerSystem('gizmo-held', () => { if (start && !cancelled) onChange(); });
   bus.on('tool', sync); bus.on('tool-space', sync); bus.on('selection', sync); bus.on('build-mode', sync); bus.on('comp', sync); bus.on('grip-edit', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }
