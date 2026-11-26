@@ -23,6 +23,8 @@ let room = 0;   // the RMS the analyser hears: 0 is also what a stalled headless
 let analyserThrows = false, gumFails = false;
 let ctxState = 'running';   // the AudioContext's state: 'suspended' sends silence through the gate's graph
 let gainThrows = false;     // a gain whose automation throws: the gate falls back to a step (`value =`)
+const ctxListeners = [];    // 'statechange' listeners on the contexts the gate built (a resume is told through them)
+let gateGain = null;        // the gate's own gain (the last one automated), to stand for the audio clock across a suspend
 const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['ramp', v, seconds from now]
 const node = () => ({ connect() {}, disconnect() {} });
 const mkTrack = (label) => ({ kind: 'audio', label, enabled: true, readyState: 'live', stop() { this.readyState = 'ended'; } });
@@ -34,11 +36,12 @@ Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: { getUserMe
 mock.module(lib('audio/audioctx.js'), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, get state() { return ctxState; }, destination: node(),
+    addEventListener(type, fn) { if (type === 'statechange') ctxListeners.push(fn); },
     createAnalyser: () => ({ ...node(), fftSize: 0, getFloatTimeDomainData(buf) { if (analyserThrows) throw new Error('analyser gone'); buf.fill(room); } }),
     createMediaStreamSource: () => node(),
     createGain: () => ({ ...node(), gain: { _v: 0, get value() { return this._v; },
       set value(v) { this._v = v; if (gainThrows) gainLog.push(['step', v]); },
-      setTargetAtTime(v, t, tau) { if (gainThrows) throw new Error('automation refused'); this._v = v; gainLog.push(['target', v, tau]); },
+      setTargetAtTime(v, t, tau) { if (gainThrows) throw new Error('automation refused'); this._v = v; gateGain = this; gainLog.push(['target', v, tau]); },
       cancelScheduledValues() {}, setValueAtTime(v) { this.value = v; },
       linearRampToValueAtTime(v, t) { this.value = v; gainLog.push(['ramp', v, t - this._t0]); }, _t0: 0 } }),
     createDelay: () => ({ ...node(), delayTime: { value: 0, setTargetAtTime() {} } }),
@@ -505,10 +508,43 @@ t('a gain that steps shut (automation refused) is shut: no phantom fade counted 
 vc.setPttMode(true); ms.setPttHeld(true);
 await tryUntil('gold under the key', () => gold());
 ctxState = 'suspended';
-t('the AudioContext suspended: the gated lane sends silence, so not gold', !!(await tryUntil('gold goes out', () => !gold() && ms.roomHears() === false)), state());
+t('the AudioContext suspended: the gated lane sends nothing (no packets), so not gold', !!(await tryUntil('gold goes out', () => !gold() && ms.roomHears() === false)), state());
 ctxState = 'running';
 t('...and running again, gold again', !!(await tryUntil('gold back', () => gold())), state());
 ms.setPttHeld(false); vc.setPttMode(false);
+// a suspend during the voice-activation release fade: the audio clock stops with the gain part-way down, the wall clock
+// runs on; on resume the gain carries on from where it stopped, and sound goes out
+room = 0.3;
+t('setup: the gate open by level (for the suspend)', !!(await tryUntil('the gate open by level', () => gold())), state());
+gainLog.length = 0; room = 1e-4;
+t('setup: the release fade begins', !!(await tryUntil('the fade is scheduled', () => gainLog.some((g) => g[0] === 'target' && g[1] === 0 && g[2] >= 0.1), { ms: 3000 })));
+ctxState = 'suspended';
+await pause('suspended past the whole fade on the wall clock', 1000);
+// where the audio clock left the gain (the reviewer's measurement); set here because this stub's automation lands at
+// once, where a real param stays put while its context is suspended
+if (gateGain) gateGain._v = 0.371;
+ctxState = 'running';
+for (const fn of ctxListeners) fn();   // the context says it runs again
+const sendingOnResume = ms.roomHears();
+t('resumed mid-fade: the gain is still at 0.37 and fading, so the lane counts as sending (gold), not dark',
+  sendingOnResume === true && !!(await tryUntil('gold on resume', () => gold())), `roomHears=${sendingOnResume} ${state()}`);
+t('...and gold ends once that fade has closed', !!(await tryUntil('the resumed fade closes', () => !gold() && ms.roomHears() === false, { ms: 4000 })), state());
+room = 0;
+// a synth voice with the mic off, muted by a moderator (Winifred's third-family review): the tooltip names the mute
+synthOn = true; gumFails = false;
+await sfu.sfuMic(false); negotiated(pc);   // mic off with a provider: the synth lane
+playing = true;
+t('setup: the synth voice going out with the mic off (gold, waves)', !!(await tryUntil('synth gold', () => gold() && waves())), state());
+bus.emit('your-rights', { role: 'member', muted: { channels: ['voice'], until: null } });
+playing = false;   // the word the server is now dropping ends here
+t('a synth voice, the mic off, muted by a moderator: not gold, and the tooltip names the moderator, not "V to talk"',
+  !!(await tryUntil('the tooltip names the moderator', () => !gold() && /moderator has muted/.test(document.querySelector('#micbtn').title)
+    && !/V to talk|arm push-to-talk/.test(document.querySelector('#micbtn').title))), state());
+bus.emit('your-rights', { role: 'member' });   // lifted inside the 700 ms hang
+const goldAfterLift = ms.roomHears();
+t('the mute lifted inside the synth hang: the word the server dropped does not turn gold after it', goldAfterLift === false, `roomHears=${goldAfterLift}`);
+synthOn = false;
+await sfu.sfuMic(true); negotiated(pc); vc.setPttMode(false);
 // releasing the microphone is a deliberate close too
 room = 0.3;
 t('setup: the gate open by level', !!(await tryUntil('the gate open by level', () => gold())), state());

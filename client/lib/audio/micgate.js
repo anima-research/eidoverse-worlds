@@ -58,6 +58,7 @@ export function gateStream(stream, levelFn) {
   _level = levelFn || (() => 0);
   try {
     _ctx = audioContext();
+    anchorOnResume(_ctx);
     if (!_ctx || typeof _ctx.createMediaStreamDestination !== 'function') {
       _gateUnavailable = true;
       _rawWanted = _ungatedConsent ? 1 : 0;      // a consented raw lane is open until PTT says otherwise
@@ -138,12 +139,30 @@ export function driveGate(open, { cut = false } = {}) {
   _wanted = target;
 }
 
-/** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
- *  the voice-activation hang (sound in it is sent), false at once after a cut. False with no graph. */
-/** Is the gate's audio graph running? A suspended (or closed) AudioContext sends silence through the gated lane, whatever
- *  the gain says. True with no graph (a raw or synth lane doesn't pass through it). */
+/** Is the gate's audio graph running? A suspended (or closed) AudioContext sends nothing through the gated lane (no
+ *  packets: measured in headless Chrome, while a raw device track keeps sending), whatever the gain says. True with no
+ *  graph (a raw or synth lane doesn't pass through it). */
 export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running';
 
+// The envelope runs on performance.now, the gain on the audio clock, and a suspended context stops only the latter: a
+// suspend during the release fade leaves the gain where it was (measured: 0.37 on resume). So when the context runs
+// again, the envelope restarts from the gain's own value. A cut is 5 ms and stays a cut.
+const _anchored = new WeakSet();
+function anchorOnResume(ctx) {
+  if (!ctx?.addEventListener || _anchored.has(ctx)) return;
+  _anchored.add(ctx);
+  ctx.addEventListener('statechange', () => {
+    if (ctx !== _ctx || ctx.state !== 'running' || !_gain || _env.cutEnd !== undefined) return;
+    let g = NaN;
+    try { g = Number(_gain.gain.value); } catch { /* unreadable: keep the envelope */ }
+    if (!Number.isFinite(g)) return;
+    const tau = _wanted ? ATTACK_TAU : RELEASE_TAU;
+    _env = { at: performance.now(), from: g, to: _wanted, tau: tau * 1000 };
+  });
+}
+
+/** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
+ *  the voice-activation hang (sound in it is sent), false at once after a cut. False with no graph. */
 export const gateSending = () => {
   if (!_gain) return false;
   if (_env.cutEnd !== undefined) return false;   // a cut is 5 ms: closed for anything a person or an indicator sees

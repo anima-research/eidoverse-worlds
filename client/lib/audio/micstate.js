@@ -39,6 +39,8 @@ export function setModeratorMute(on) {
   const next = !!on;
   if (next === _modMuted) return;
   _modMuted = next;
+  // as for a self mute: a synth voice the server dropped before this moment is not heard after it (the hang restarts)
+  _synthFrom = performance.now();
   bus.emit('audio:mute', _muted);
 }
 /** Why the room can't hear a lane that is on: 'self' (toggleMute), 'moderator' (the server's mute), or null. */
