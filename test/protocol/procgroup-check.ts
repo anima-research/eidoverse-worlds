@@ -5,6 +5,7 @@
 // parent already exited (Windows keeps the dead parent's id on the child). PG5–PG12, PG14, PG16 and PG17: zombies, the async
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
+// PG24/PG25: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -213,5 +214,33 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
       { got, installs, stamp });
   }
 }
+
+{ // PG24: a PROCESSENTRY32W is read at the documented offsets (pid 8, parent 32), whatever the fields around them hold
+  const dv = new DataView(new ArrayBuffer(568)); dv.setUint32(0, 568, true);
+  for (const [at, v] of [[4, 11], [8, 4242], [16, 13], [24, 17], [28, 19], [32, 777], [36, 23], [40, 29]] as const) dv.setUint32(at, v, true);
+  const r = (PG as any).decodeEntry?.(dv);
+  check("PG24 a Windows snapshot entry (PROCESSENTRY32W, 568 bytes) is read as its own pid (offset 8) and parent (offset 32), not a neighbouring field",
+    (PG as any).PE32W?.size === 568 && r?.pid === 4242 && r?.ppid === 777, r); }
+if (win) { // PG25: the in-process snapshot is what answers on Windows, and it sees a suite's tree as Win32_Process does
+  // the child names the process it started once it has: the tree is whole from then on (its console host may still be arriving)
+  const script = "const {spawn}=require('node:child_process'); const g=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); console.log('grandchild '+g.pid); setInterval(()=>{},1000);";
+  const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  let said = ""; child.stdout!.on("data", (b) => { said += b.toString(); });
+  await tryUntil("the suite's process has started its own", () => /grandchild \d+/.test(said), { ms: 10_000 });
+  const grand = Number(said.match(/grandchild (\d+)/)![1]);
+  const members = async () => PG.suiteMembers(child.pid!, await PG.processTableAsync("win32"), "win32").sort((a, b) => a - b);
+  await tryUntil("the snapshot sees the process the suite started", async () => (await members()).includes(grand), { ms: 5000 });
+  const t0 = performance.now(); const snap = await PG.processTableAsync("win32"); const ms = performance.now() - t0, source = (PG as any).winTable?.source;
+  const viaSnap = suiteMembers(child.pid!, snap, "win32").sort((a, b) => a - b);
+  const ps = spawnSync("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8", timeout: 60_000 });
+  const viaWmi = suiteMembers(child.pid!, parseWinTable(ps.stdout ?? ""), "win32").sort((a, b) => a - b);
+  const later = await members();   // read after WMI's: between the two the tree only grows (nothing here kills any of it)
+  const me = snap.find((r) => r.pid === process.pid), within = (x: number[], y: number[]) => x.every((p) => y.includes(p));
+  await PG.killSuiteAsync(child.pid!, "SIGKILL", "win32");
+  let after: number[] = []; await tryUntil("none of the suite's processes is left", async () => !(after = await PG.suiteMembersAsync(child.pid!)).length, { ms: 5000, step: 200 });
+  check("PG25 (win32) the process table is the kernel's snapshot, read in process (not PowerShell); it finds a suite's whole tree as Win32_Process does (snapshot ⊆ WMI = the next snapshot), and the kill it drives leaves none of it",
+    source === "toolhelp32" && viaSnap.includes(child.pid!) && viaSnap.includes(grand) && within(viaSnap, viaWmi) && JSON.stringify(viaWmi) === JSON.stringify(later) && me?.ppid === process.ppid && after.length === 0,
+    { source, ms: Math.round(ms), grand, viaSnap, viaWmi, later, after, me, ppid: process.ppid });
+} else na("PG25 the Windows process table read in process", "Windows only; PG24 checks the entry's layout here");
 
 done();

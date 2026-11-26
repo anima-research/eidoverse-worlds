@@ -2,10 +2,44 @@
 //   Linux:   /proc/<pid>/stat (no subprocess per suite)
 //   macOS and other POSIX: `ps -A -o pid=,pgid=,ppid=,stat=`
 //   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
-//            parent links in Win32_Process (they survive the parent's exit, so orphans still count); killed with taskkill.
+//            parent links (they survive the parent's exit, so orphans still count); killed with taskkill. The links come
+//            from the kernel's own snapshot (CreateToolhelp32Snapshot through bun:ffi, in process, ~5 ms), and from
+//            Win32_Process through PowerShell (~0.5 s a read: the gate's per-suite floor on Windows) only when that can't load.
 import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
 
 export type Row = { pid: number; pgid: number; ppid: number; zombie: boolean };
+
+// ---- Windows: the process table from the kernel's snapshot (the same ProcessId/ParentProcessId pairs Win32_Process reports) ----
+/** PROCESSENTRY32W on 64-bit Windows: dwSize at 0, th32ProcessID at 8, th32ParentProcessID at 32, 568 bytes in all. */
+export const PE32W = { size: 568, pid: 8, ppid: 32 } as const;
+/** One PROCESSENTRY32W's (pid, parent) as a Row. */
+export function decodeEntry(dv: DataView): Row { return { pid: dv.getUint32(PE32W.pid, true), ppid: dv.getUint32(PE32W.ppid, true), pgid: 0, zombie: false }; }
+/** Which source answered the last Windows table read: "toolhelp32" (in process) or "powershell" (Win32_Process). */
+export const winTable = { source: "" as "" | "toolhelp32" | "powershell" };
+type K32 = { CreateToolhelp32Snapshot(f: number, p: number): bigint; Process32FirstW(h: bigint, e: unknown): number; Process32NextW(h: bigint, e: unknown): number; CloseHandle(h: bigint): number };
+let k32: { sym: K32; ptr: (b: Uint8Array) => unknown } | null | undefined;
+/** The Windows table from CreateToolhelp32Snapshot, or null when bun:ffi or kernel32 can't be had or the snapshot fails
+ *  (the caller then asks PowerShell). A snapshot is a local kernel call: it doesn't wait on WMI, so it can't hang. */
+export function toolhelpTable(): Row[] | null {
+  if (process.platform !== "win32") return null;
+  if (k32 === undefined) {
+    try {
+      const { dlopen, FFIType, ptr } = require("bun:ffi");
+      const h = FFIType.u64, sym = dlopen("kernel32.dll", { CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: h },
+        Process32FirstW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, Process32NextW: { args: [h, FFIType.ptr], returns: FFIType.i32 }, CloseHandle: { args: [h], returns: FFIType.i32 } }).symbols as K32;
+      k32 = { sym, ptr };
+    } catch (e) { k32 = null; console.error(`[procgroup] no in-process Windows process table (${(e as Error).message}); asking PowerShell`); }
+  }
+  if (!k32) return null;
+  const snap = k32.sym.CreateToolhelp32Snapshot(0x2 /* TH32CS_SNAPPROCESS */, 0);
+  if (snap === 0xffffffffffffffffn || snap === 0n) return null;   // INVALID_HANDLE_VALUE
+  try {
+    const buf = new Uint8Array(PE32W.size), dv = new DataView(buf.buffer), rows: Row[] = [];
+    dv.setUint32(0, PE32W.size, true);
+    for (let ok = k32.sym.Process32FirstW(snap, k32.ptr(buf)); ok; ok = k32.sym.Process32NextW(snap, k32.ptr(buf))) rows.push(decodeEntry(dv));
+    return rows.length ? rows : null;
+  } finally { k32.sym.CloseHandle(snap); }
+}
 
 /** Every process on this machine, as far as this OS lets us see it. */
 export function processTable(platform: NodeJS.Platform = process.platform): Row[] {
@@ -18,6 +52,9 @@ export function processTable(platform: NodeJS.Platform = process.platform): Row[
     });
   }
   if (platform === "win32") {
+    const t = process.platform === "win32" ? toolhelpTable() : null;
+    if (t) { winTable.source = "toolhelp32"; return t; }
+    winTable.source = "powershell";
     const r = spawnSync("powershell.exe", ["-NoProfile", "-Command",
       "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8", timeout: 30_000 });
     // bounded: the gate waits on this, and a stalled WMI query would freeze it
@@ -78,6 +115,7 @@ export async function processTableAsync(platform: NodeJS.Platform = process.plat
 /** The table, or null when it didn't answer in `ms` (killSuiteAsync then falls back to the root's tree). */
 async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { ms?: number; query?: () => Promise<string | null> } = {}): Promise<Row[] | null> {
   if (platform === "linux" && !query) return processTable("linux");   // /proc reads are local files: they don't hang
+  if (platform === "win32" && !query) { const t = toolhelpTable(); if (t) { winTable.source = "toolhelp32"; return t; } winTable.source = "powershell"; }   // a snapshot doesn't hang either
   const ask = query ?? (() => platform === "win32" ? outputOf("powershell.exe", WIN_QUERY, ms) : outputOf("ps", ["-A", "-o", "pid=,pgid=,ppid=,stat="], ms));
   const out = await Promise.race([ask(), new Promise<null>((r) => setTimeout(() => r(null), ms))]);
   if (out === null) { if (platform === "win32") console.error("[procgroup] the Windows process table didn't answer in time; killing by tree only"); return null; }

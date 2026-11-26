@@ -1,8 +1,13 @@
-// test/gate/shard.ts — the gate split over N CI jobs: which suites shard I/N runs (1-based: 1/4 … 4/4), and whether
-// N shard receipts add up to the gate (merge-receipts.ts). Suites are LPT bin-packed by suite-times.json; a time only moves
-// a suite between shards, never in or out of the gate. shard-check.ts holds the rows.
-//   bun test/gate/shard.ts --times <gate log | receipt.json>…   rewrite suite-times.json (each suite's max over the inputs)
+// test/gate/shard.ts — the gate split over N CI jobs: which suites shard I/N runs (1-based: 1/6 … 6/6), and whether
+// N shard receipts add up to the gate (merge-receipts.ts). Suites are LPT bin-packed by suite-times.json, by the times of the
+// OS the shard runs on (party-probe is ~11 min on Linux and ~50 s on Windows); a time only moves a suite between shards,
+// never in or out of the gate. shard-check.ts holds the rows.
+//   bun test/gate/shard.ts --times <receipt.json | dir>…   rewrite suite-times.json from shard receipts: each OS's median of each suite that passed
+//   bun test/gate/shard.ts --fetch-times [runs]           the same from the shard receipts of the last [8] green protocol-gate runs upstream (gh)
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { ENGINE } from "./common.ts";
 import { SUITES, ORDER } from "./suites.ts";
@@ -10,9 +15,12 @@ import { SUITES, ORDER } from "./suites.ts";
 export const TIMES_FILE = ENGINE + "test/gate/suite-times.json";
 export const DEFAULT_SECONDS = 30;   // a suite the timings don't know yet
 export const NAMES = () => SUITES.map(([n]) => n);
+/** The OSes CI runs the gate on, as process.platform names them: suite-times.json has one table each. */
+export const PLATFORMS = ["linux", "darwin", "win32"] as const;
 
-export function loadTimes(file = TIMES_FILE): Record<string, number> {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return {}; }
+/** One OS's times from suite-times.json ({<platform>: {<suite>: seconds}}); {} when the file or the OS's table is missing. */
+export function loadTimes(platform: string = process.platform, file = TIMES_FILE): Record<string, number> {
+  try { const t = JSON.parse(fs.readFileSync(file, "utf8"))?.[platform]; return t && typeof t === "object" && !Array.isArray(t) ? t : {}; } catch { return {}; }
 }
 
 /** "I/N" → {index, of}, 1 ≤ I ≤ N ≤ 64; else the reason it isn't one. */
@@ -44,7 +52,9 @@ export type Receipt = { v: number; verdict: string; head: string; dirty: boolean
 /** Whether `got` (shard receipts, any order, unparseable ones as null) is the whole gate at `head`, split `of` ways as this
  *  checkout's SUITES and timings split it; and the merged receipt (run.ts's shape, plus `shards`). Any problem fails. */
 export function merge(got: { file: string; receipt: Receipt | null }[], o: { of: number; head: string | null; names?: string[]; times?: Record<string, number>; bins?: string[][] }) {
-  const names = o.names ?? NAMES(), bins = o.bins ?? partition(names, o.times ?? loadTimes(), o.of), hash = partitionHash(bins);   // bins: a test's stand-in partition
+  // the split is recomputed with the times of the OS the shards ran on (they must all agree on it: checked below)
+  const platform = got.find((g) => g.receipt?.os?.platform)?.receipt!.os.platform ?? process.platform;
+  const names = o.names ?? NAMES(), bins = o.bins ?? partition(names, o.times ?? loadTimes(platform), o.of), hash = partitionHash(bins);   // bins: a test's stand-in partition
   const problems: string[] = [];
   for (const g of got) if (!g.receipt) problems.push(`${g.file}: not a receipt`);
   const rs = got.filter((g) => g.receipt?.shard).map((g) => ({ file: g.file, r: g.receipt! }));
@@ -94,21 +104,48 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
   return { problems, merged };
 }
 
-// ---- --times: suite-times.json from gate logs (`== name [lane] (file) PASS … 12.3 s`) and receipts (suites[].ms) ----
-export function timesFrom(files: string[], names = NAMES()): Record<string, number> {
-  const t: Record<string, number> = {};
-  const take = (n: string, s: number) => { if (names.includes(n) && Number.isFinite(s)) t[n] = Math.max(t[n] ?? 0, Math.round(s * 10) / 10); };
+// ---- --times: suite-times.json from shard receipts (suites[].ms, os.platform) ----
+/** Each OS's median seconds per suite over the receipts given (files, or dirs walked for *.json). Only suites that passed
+ *  count (a timeout's time is its cap, not the suite's), and a merged receipt (it has `shards`) is skipped: its suites are
+ *  its shards' again. A gate log can't be used: it doesn't name its OS. */
+export function timesFrom(inputs: string[], names = NAMES()): Record<string, Record<string, number>> {
+  const files: string[] = [], walk = (p: string) => { if (fs.statSync(p).isDirectory()) for (const e of fs.readdirSync(p).sort()) walk(path.join(p, e)); else files.push(p); };
+  for (const p of inputs) walk(p);
+  const seen: Record<string, Record<string, number[]>> = {};
   for (const f of files) {
-    const text = fs.readFileSync(f, "utf8");
-    if (f.endsWith(".json")) { for (const s of (JSON.parse(text) as Receipt).suites ?? []) take(s.name, s.ms / 1000); continue; }
-    for (const l of text.split("\n")) { const m = /^== (\S+) \[(?:core|main|browser)\] .* (?:PASS|FAIL|SKIP)\b.* (\d+(?:\.\d+)?) s(?: ·.*)?$/.exec(l); if (m) take(m[1], +m[2]); }
+    if (!f.endsWith(".json")) throw new Error(`${f}: not a receipt (.json); a gate log doesn't say which OS it ran on`);
+    let r: Receipt & { shards?: unknown }; try { r = JSON.parse(fs.readFileSync(f, "utf8")); } catch { throw new Error(`${f}: not JSON`); }
+    if (!Array.isArray(r?.suites) || !r.os?.platform || r.shards) continue;
+    for (const s of r.suites) if (s.status === "pass" && names.includes(s.name) && Number.isFinite(s.ms)) ((seen[r.os.platform] ??= {})[s.name] ??= []).push(s.ms / 1000);
   }
-  return Object.fromEntries(names.filter((n) => n in t).map((n) => [n, t[n]]));
+  const median = (v: number[]) => { const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  return Object.fromEntries(Object.keys(seen).sort().map((p) => [p, Object.fromEntries(names.filter((n) => seen[p][n]).map((n) => [n, Math.round(median(seen[p][n]) * 10) / 10]))]));
+}
+/** Write suite-times.json from `inputs`; an OS none of them ran on keeps the table it had. Says what each OS's table covers. */
+export function writeTimes(inputs: string[], file = TIMES_FILE): string[] {
+  const t = timesFrom(inputs), old = (() => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return {}; } })();
+  const out = Object.fromEntries(PLATFORMS.map((p) => [p, t[p] ?? old?.[p] ?? {}]));
+  fs.writeFileSync(file, JSON.stringify(out, null, 1) + "\n");
+  return PLATFORMS.map((p) => { const missing = NAMES().filter((n) => !(n in out[p]));
+    return `${p.padEnd(6)} ${Object.keys(out[p]).length} suites${t[p] ? "" : " (kept: no receipt from this OS)"}${missing.length ? `; ${missing.length} weigh the default ${DEFAULT_SECONDS} s: ${missing.join(" ")}` : ""}`; });
 }
 if (import.meta.main) {
-  const argv = process.argv.slice(2), files = argv.slice(argv.indexOf("--times") + 1);
-  if (!argv.includes("--times") || !files.length) { console.log("bun test/gate/shard.ts --times <gate log | receipt.json>…"); process.exit(2); }
-  const t = timesFrom(files); fs.writeFileSync(TIMES_FILE, JSON.stringify(t, null, 1) + "\n");
-  const missing = NAMES().filter((n) => !(n in t));
-  console.log(`suite-times.json: ${Object.keys(t).length} suites from ${files.length} file(s)${missing.length ? `; ${missing.length} weigh the default ${DEFAULT_SECONDS} s: ${missing.join(" ")}` : ""}`);
+  const argv = process.argv.slice(2);
+  let inputs: string[] = [], tmp = "";
+  if (argv.includes("--fetch-times")) {
+    // the upstream's green runs (a fork's main can be months stale); each run's shard receipts, every OS
+    const runs = Number(argv[argv.indexOf("--fetch-times") + 1] ?? 8) || 8, repo = "anima-research/eidoverse-worlds";
+    const list = spawnSync("gh", ["run", "list", "-R", repo, "-w", "protocol-gate", "-s", "success", "-L", String(runs), "--json", "databaseId", "-q", ".[].databaseId"], { encoding: "utf8" });
+    if (list.status !== 0) { console.log(`gh run list failed: ${list.stderr.trim()}`); process.exit(1); }
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suite-times-"));
+    for (const id of list.stdout.split("\n").filter(Boolean)) {
+      const d = spawnSync("gh", ["run", "download", id, "-R", repo, "-p", "gate-shard-receipt-*", "-D", path.join(tmp, id)], { encoding: "utf8" });
+      console.log(`  run ${id}: ${d.status === 0 ? "receipts downloaded" : `no receipts (${d.stderr.trim().split("\n").at(-1)})`}`);
+      if (d.status === 0) inputs.push(path.join(tmp, id));
+    }
+  } else if (argv.includes("--times")) inputs = argv.slice(argv.indexOf("--times") + 1);
+  if (!inputs.length) { console.log("bun test/gate/shard.ts --times <receipt.json | dir>…  |  --fetch-times [runs]"); process.exit(2); }
+  try { for (const l of writeTimes(inputs)) console.log(`suite-times.json: ${l}`); }
+  catch (e) { console.log(`suite-times.json: not written: ${(e as Error).message}`); process.exit(1); }
+  finally { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); }
 }

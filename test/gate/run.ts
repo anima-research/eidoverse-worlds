@@ -3,7 +3,7 @@
 //   bun test/gate/run.ts                 the declared gate (= bun run test:protocol): core, then main, then browser
 //   bun test/gate/run.ts hostile phys    only the named suites (a PARTIAL run: it says so, and it is not the gate)
 //   bun test/gate/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
-//   bun test/gate/run.ts --shard 2/4     shard 2 of 4 (1-based; shard.ts packs SUITES); the gate is all 4 merged by merge-receipts.ts
+//   bun test/gate/run.ts --shard 2/6     shard 2 of 6 (1-based; shard.ts packs SUITES by this OS's times); the gate is all 6 merged by merge-receipts.ts
 //   bun test/gate/run.ts --manifest      print the suite table docs/contributing/GATE-MANIFEST.md carries (generated from here)
 //   bun test/gate/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
 //   bun test/gate/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in .siblings/, and install the packages that take them
@@ -35,7 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
 import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
-import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
+import { DEFAULT_SECONDS, loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -197,7 +197,9 @@ if (laneArg && !["core", "main", "browser"].includes(laneArg)) { console.log(`pr
 const shardArg = valueOf("--shard"), shard = argv.includes("--shard") ? parseShard(shardArg) : null;
 if (typeof shard === "string") { console.log(`protocol gate: ${shard}`); process.exit(2); }
 if (shard && (only.length || laneArg)) { console.log("protocol gate: --shard takes no suite names or --lane (a shard is its whole bin)"); process.exit(2); }
-const bins = shard ? partition(SUITES.map(([n]) => n), loadTimes(), shard.of) : [], assigned = shard ? bins[shard.index - 1] : [];
+// packed by THIS OS's times (suite-times.json has one table per OS); the merge recomputes the split with the receipts' OS
+const times = shard ? loadTimes(process.platform) : {}, untimed = SUITES.filter(([n]) => !Object.hasOwn(times, n)).length;
+const bins = shard ? partition(SUITES.map(([n]) => n), times, shard.of) : [], assigned = shard ? bins[shard.index - 1] : [];
 const selected = (name: string) => shard ? assigned.includes(name) : (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
 const partial = only.length > 0 || !!laneArg;   // a shard is not partial: it checks the manifest, and the merge checks coverage
 
@@ -224,7 +226,7 @@ for (const c of CONSUMERS) if (SUITES.some(([n, file]) => selected(n) && reaches
 for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
-if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}`);
+if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}, packed by ${process.platform}'s times${untimed ? ` (${untimed} untimed suite(s) weigh ${DEFAULT_SECONDS} s: bun test/gate/shard.ts --fetch-times)` : ""}`);
 const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
 const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
   RUNTIMES[label] = { found, declared: want, where: extra || undefined };

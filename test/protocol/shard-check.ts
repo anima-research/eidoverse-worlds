@@ -1,11 +1,15 @@
 // test/protocol/shard-check.ts — CI's sharded gate (shard.ts, merge-receipts.ts): shards cover SUITES exactly once whatever
-// the timings say, the same way every time, and a merge passes only the whole gate at one head, every suite green.
+// the timings say, the same way every time, and a merge passes only the whole gate at one head, every suite green. Each OS
+// packs by its own times (T), and the workflow runs every shard of each OS's split (W).
 //   bun test/protocol/shard-check.ts
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { ENGINE } from "../gate/common.ts";
 import { ORDER } from "../gate/suites.ts";
 import { suite } from "../gate/suite.ts";
-import { NAMES, loadTimes, merge, parseShard, partition, partitionHash, DEFAULT_SECONDS, type Receipt } from "../gate/shard.ts";
+import { NAMES, loadTimes, merge, parseShard, partition, partitionHash, timesFrom, DEFAULT_SECONDS, PLATFORMS, TIMES_FILE, type Receipt } from "../gate/shard.ts";
 
 const { ok, done } = suite("shard-check");
 const names = NAMES(), times = loadTimes();
@@ -32,8 +36,8 @@ ok(r1.status === 2 && r2.status === 2 && /1-based|N ≤ 64/.test(r1.stdout) && /
 
 // ---- M: merging the shard receipts ----
 const HEAD = "a".repeat(40);
-const good = (of = 4, bins = partition(names, times, of)): { file: string; receipt: Receipt }[] => bins.map((assigned, i) => ({ file: `shard-${i + 1}.json`, receipt: {
-  v: 1, verdict: "SHARD", head: HEAD, dirty: false, os: { platform: "linux", release: "x", arch: "x64" }, runtimes: {}, library: null, scratch: { dir: `/s${i}`, kept: true }, seconds: 10 + i,
+const good = (of = 4, bins = partition(names, times, of), platform: string = process.platform): { file: string; receipt: Receipt }[] => bins.map((assigned, i) => ({ file: `shard-${i + 1}.json`, receipt: {
+  v: 1, verdict: "SHARD", head: HEAD, dirty: false, os: { platform, release: "x", arch: "x64" }, runtimes: {}, library: null, scratch: { dir: `/s${i}`, kept: true }, seconds: 10 + i,
   tally: { main: { pass: assigned.length, fail: 0, skip: 0 } }, notSelected: names.length - assigned.length, logSha256: "0",
   suites: assigned.map((name) => ({ name, lane: "main", status: "pass", ms: 1, leftovers: 0, outSha256: "0" })),
   shard: { index: i + 1, of, hash: partitionHash(bins), assigned } } }));
@@ -61,5 +65,46 @@ const says = (r: ReturnType<typeof merge>, re: RegExp) => r.problems.length > 0 
   for (const x of g) Object.assign(x.receipt, { prHead: pr, mergeOf: of });
   const r = m(g) as any; ok(r.merged.prHead === pr && JSON.stringify(r.merged.mergeOf) === JSON.stringify(of) && r.merged.shards.every((s: any) => s.prHead === pr),
     "M14 a pull_request run's merged receipt names the PR's head and the merge's parents (the workflow header's promise), as each shard does", { prHead: r.merged.prHead, mergeOf: r.merged.mergeOf }); }
+{ // M15: the merge recomputes the split with the times of the OS the shards ran on, not the merging runner's
+  const w = partition(names, loadTimes("win32"), 6), l = partition(names, loadTimes("linux"), 6);
+  const asWin = merge(good(6, w, "win32"), { of: 6, head: HEAD }), relabelled = merge(good(6, w, "linux"), { of: 6, head: HEAD });
+  ok(partitionHash(w) !== partitionHash(l) && asWin.problems.length === 0 && says(relabelled, /^shard \d\/6: (?:partition|assigned)/),
+    "M15 Windows shards packed by Windows' times merge to PASS on any runner; the same receipts saying Linux FAIL (Linux's times split the gate differently)", { win: asWin.problems.slice(0, 2), relabelled: relabelled.problems.slice(0, 2) }); }
+
+// ---- T: each OS's own times ----
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "shard-check-"));
+{ const f = path.join(tmp, "times.json"); fs.writeFileSync(f, JSON.stringify({ linux: { [names[0]]: 1 }, win32: { [names[0]]: 9 } }));
+  const got = { linux: loadTimes("linux", f)[names[0]], win32: loadTimes("win32", f)[names[0]], darwin: loadTimes("darwin", f) };
+  ok(got.linux === 1 && got.win32 === 9 && JSON.stringify(got.darwin) === "{}", "T1 suite-times.json holds one table per OS: each OS reads its own, an OS with none reads {} (every suite then weighs the default)", got); }
+{ const j = JSON.parse(fs.readFileSync(TIMES_FILE, "utf8")), cover = Object.fromEntries(PLATFORMS.map((p) => [p, names.filter((n) => Number.isFinite(j?.[p]?.[n])).length]));
+  ok(PLATFORMS.every((p) => cover[p] >= 0.9 * names.length), `T2 the checked-in suite-times.json times at least 90% of the ${names.length} suites on each of ${PLATFORMS.join(", ")} (bun test/gate/shard.ts --fetch-times regenerates it)`, cover); }
+{ const rec = (platform: string, suites: [string, string, number][], extra = {}) => ({ v: 1, verdict: "SHARD", head: HEAD, os: { platform }, suites: suites.map(([name, status, ms]) => ({ name, lane: "main", status, ms, leftovers: 0 })), ...extra });
+  const [a, b, c] = names, d = path.join(tmp, "receipts"); fs.mkdirSync(path.join(d, "run2"), { recursive: true });
+  fs.writeFileSync(path.join(d, "l1.json"), JSON.stringify(rec("linux", [[a, "pass", 1000], [b, "pass", 4000]])));
+  fs.writeFileSync(path.join(d, "run2", "l2.json"), JSON.stringify(rec("linux", [[a, "pass", 3000], [b, "fail", 900000]])));
+  fs.writeFileSync(path.join(d, "run2", "l3.json"), JSON.stringify(rec("linux", [[a, "pass", 8000]])));
+  fs.writeFileSync(path.join(d, "w1.json"), JSON.stringify(rec("win32", [[a, "pass", 20000], [c, "pass", 500]])));
+  fs.writeFileSync(path.join(d, "merged.json"), JSON.stringify(rec("win32", [[c, "pass", 99000]], { shards: [] })));
+  const t = timesFrom([d]); fs.writeFileSync(path.join(tmp, "gate.log"), "== x [main] (y) PASS 1.0 s\n");
+  let refused = ""; try { timesFrom([path.join(tmp, "gate.log")]); } catch (e) { refused = (e as Error).message; }
+  ok(t.linux?.[a] === 3 && t.linux?.[b] === 4 && t.win32?.[a] === 20 && t.win32?.[c] === 0.5 && !t.darwin && /doesn't say which OS/.test(refused),
+    "T3 --times takes each OS's median per suite from the receipts (dirs walked), counting only suites that passed and skipping a merged receipt; a gate log is refused (it doesn't name its OS)", { t, refused }); }
+fs.rmSync(tmp, { recursive: true, force: true });
+{ const r = run("--shard", "1/6"), at = r.stdout.match(/partition ([0-9a-f]{12}), packed by (\w+)'s times/);
+  const mine = partitionHash(partition(names, loadTimes(process.platform), 6)).slice(0, 12), other = PLATFORMS.find((p) => p !== process.platform && partitionHash(partition(names, loadTimes(p), 6)).slice(0, 12) !== mine);
+  ok(at?.[1] === mine && at?.[2] === process.platform && !!other, `P7 run.ts --shard packs by this OS's (${process.platform}) times, not another OS's (${other ?? "none differs"})`, at?.slice(1) ?? r.stdout.split("\n").find((l) => /shard/.test(l))); }
+
+// ---- W: the workflow runs each OS's whole split and merges it with the same N ----
+{ const y = Bun.YAML.parse(fs.readFileSync(ENGINE + ".github/workflows/protocol-gate.yml", "utf8")) as any, sm = y.jobs.shard.strategy.matrix, gm = y.jobs.gate.strategy.matrix;
+  // GitHub's expansion: os × shard, less `exclude`, then each `include` row adds its keys to the combinations it matches
+  const combos = sm.os.flatMap((o: string) => sm.shard.map((n: number) => ({ os: o, shard: n }))).filter((c: any) => !(sm.exclude ?? []).some((e: any) => Object.entries(e).every(([k, v]) => c[k] === v)))
+    .map((c: any) => Object.assign(c, ...(sm.include ?? []).filter((i: any) => i.os === c.os)));
+  const gateOf = Object.fromEntries((gm.include ?? []).map((i: any) => [i.os, i.of]));
+  const per = Object.fromEntries(sm.os.map((o: string) => { const cs = combos.filter((c: any) => c.os === o), of = cs[0]?.of;
+    return [o, { of, shards: cs.map((c: any) => c.shard).join(","), sameOf: cs.every((c: any) => c.of === of), gateOf: gateOf[o] }]; }));
+  const steps = JSON.stringify(y.jobs.shard.steps) + JSON.stringify(y.jobs.gate.steps);
+  ok(Object.values(per).every((p: any) => p.sameOf && Number.isInteger(p.of) && p.shards === Array.from({ length: p.of }, (_, i) => i + 1).join(",") && p.gateOf === p.of)
+    && JSON.stringify(Object.keys(gateOf).sort()) === JSON.stringify([...sm.os].sort()) && steps.includes('--shard \\"${{ matrix.shard }}/${{ matrix.of }}\\"') && steps.includes("merge-receipts.ts --of ${{ matrix.of }}"),
+    "W1 the workflow runs shards 1..N of each OS's N (run.ts --shard I/N) and merges that OS with --of N, the same N in both jobs", per); }
 
 done(`: ${names.length} suites`);
