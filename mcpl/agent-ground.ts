@@ -296,9 +296,9 @@ export class AgentGround {
   supportIds = new Map<string, string[]>();
   /** Each awaited fit's own reservation, a token: its bid is no identity, since a later sync of the same thing reuses it. */
   private fits = new Map<string, object>();
-  private reserve(id: string, bid: string): object {
+  private reserve(id: string, bid: string, model: string): object {
     const t = {};
-    this.supportIds.set(id, [bid]); this.fits.set(id, t);
+    this.hold(id, [bid], model); this.fits.set(id, t);
     return t;
   }
   /** This agent's claim token on shared support boxes, per INSTANCE: two agents
@@ -394,10 +394,15 @@ export class AgentGround {
     return p;
   }
 
-  /** Each id's latest sync: one that ends with nothing to fit drops the old support only if no later sync has begun. */
+  /** The model each held support was registered for (set with supportIds, cleared with it in dropSupport). */
+  private supportModel = new Map<string, string>();
+  private hold(id: string, ids: string[], model: string) { this.supportIds.set(id, ids); this.supportModel.set(id, model); }
+  /** Each id's latest sync (a process-unique number, so an id gone and back never reuses one): a sync that ends with
+   *  nothing to fit drops the old support only if no later sync has begun. Forgotten when the thing goes. */
   private syncSeq = new Map<string, number>();
+  private static syncCount = 0;
   async syncSupport(id: string) {
-    const seq = (this.syncSeq.get(id) ?? 0) + 1;
+    const seq = ++AgentGround.syncCount;
     this.syncSeq.set(id, seq);
     const before = this.a.entities.get(id);
     // only a model carries a collider; a thing that lost its model (a rejoin folds every thing as born) lets go of the old
@@ -416,9 +421,10 @@ export class AgentGround {
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
     if (!e || e.model !== before.model || this.a.closed) return;
-    // nothing can be read for its model (a re-born thing whose new model can't be read): the old support is not this
-    // model's, so it goes, unless a later sync of this thing has begun (that one decides)
-    if (!g && !mesh) { if (this.syncSeq.get(id) === seq) this.dropSupport(id); return; }
+    // nothing can be read for its model: a support registered for another model (or for none on record) goes, unless a
+    // later sync of this thing has begun (that one decides); one registered for this same model stays, as on main (a
+    // transient /geom or /library failure doesn't take a floor away)
+    if (!g && !mesh) { if (this.syncSeq.get(id) === seq && this.supportModel.get(id) !== e.model) this.dropSupport(id); return; }
     // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
@@ -447,7 +453,7 @@ export class AgentGround {
       const bid = `${this.a.world}/${id}`;
       void registerSupport(this.supportHolder, bid, lying.min, lying.max,
         stretched ? { position: e.pos, yaw: lying.yaw, scale: 1 } : { ...xform, yaw: lying.yaw });
-      this.supportIds.set(id, [bid]);
+      this.hold(id, [bid], e.model);
       return;
     }
     // The real collider when the triangles are to hand: fitted by the same
@@ -458,11 +464,11 @@ export class AgentGround {
       // awaited, unlike the summary boxes: a joining body's feet wait on the fit
       // (supportReady). The id is RESERVED first, so a remove/mount/close during
       // the wait has something to drop, and a fit landing afterwards is taken back out.
-      const t = this.reserve(id, bid);
+      const t = this.reserve(id, bid, e.model);
       const ok = await registerMeshSupport(this.supportHolder, bid, mesh, { ...xform, collide: e.collide, model: e.model });
       if (this.overtaken(id, t, e.model)) return;
       if (ok) return;
-      this.supportIds.delete(id);
+      this.supportIds.delete(id); this.supportModel.delete(id);
     }
     if (!g) return;
     // its size in the world: a mirrored axis is read as its size, as physics reads it (registerSupport)
@@ -492,10 +498,10 @@ export class AgentGround {
         // the certification is a MODEL-frame bound; this spawn's scale must not stretch it past the world bound
         // (a grid certified to 3cm serves a ×1.25 spawn but not a ×2)
         const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * a3[1] > CERT_MAX_WORLD;
-        const t = this.reserve(id, bid);   // reserved across the await, as the mesh fit is
+        const t = this.reserve(id, bid, e.model);   // reserved across the await, as the mesh fit is
         const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (this.overtaken(id, t, e.model)) return;
-        this.supportIds.delete(id);
+        this.supportIds.delete(id); this.supportModel.delete(id);
         if (fit) ids.push(bid);
         // refused grid: a DECLARED abstention (the body finds terrain), never a floating false floor
         else this.a.noteSupportSeam(id, `uneven top (lie ${(g.lie * a3[1]).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${a3[1]} high)` : ""} — abstaining, no box`);
@@ -504,7 +510,7 @@ export class AgentGround {
         ids.push(bid);
       }
     }                                                   // room-scale with no readable decks: browser-only, declared
-    if (ids.length) this.supportIds.set(id, ids);
+    if (ids.length) this.hold(id, ids, e.model);
   }
 
   /** After an awaited fit reserved as `t`: did a close, a remove, a mount, a motion or a later sync overtake it?
@@ -522,6 +528,7 @@ export class AgentGround {
 
   dropSupport(id: string) {
     for (const bid of this.supportIds.get(id) ?? []) void removeSupport(this.supportHolder, bid);
-    this.supportIds.delete(id); this.fits.delete(id);
+    this.supportIds.delete(id); this.supportModel.delete(id); this.fits.delete(id);
+    if (!this.a.entities.has(id)) this.syncSeq.delete(id);   // gone (or never known): nothing of it to order
   }
 }

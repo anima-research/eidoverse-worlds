@@ -177,12 +177,14 @@ check("a sync whose reads fail after a later sync of the same thing fitted it le
   const { buildGlb, boxes, building } = await import("../fixtures/two-storey-fixture.ts");
   const glb = await buildGlb(boxes, { building });
   // tower-held.glb answers only once the row lets go; tower-404.glb answers 404 the first time, then the model
-  const heldTower: (() => void)[] = []; let asked404 = 0, askedHeld = 0;
+  const heldTower: (() => void)[] = []; let asked404 = 0, askedHeld = 0, flipDown = false;
   const lib = Bun.serve({ port: 0, hostname: "127.0.0.1", async fetch(r) {
     const p = new URL(r.url).pathname;
     if (p === "/library/fixtures/tower.glb") return new Response(glb);
     if (p === "/library/fixtures/tower-held.glb") { askedHeld++; await new Promise<void>((go) => heldTower.push(go)); return new Response(glb); }
     if (p === "/library/fixtures/tower-404.glb") return ++asked404 === 1 ? new Response("", { status: 404 }) : new Response(glb);
+    if (p === "/library/fixtures/flip.glb") return flipDown ? new Response("", { status: 503 }) : new Response(glb);
+    if (p === "/geom") return new Response("", { status: 503 });   // the summary is down throughout: the mesh is the only support
     return new Response("", { status: 404 });
   } });
   const towerAg: any = new WorldAgent({ url: `ws://127.0.0.1:${lib.port}/ws`, name: "places-bot", world: "anchor" });
@@ -211,6 +213,20 @@ check("a sync whose reads fail after a later sync of the same thing fitted it le
   await towerAg.ground.syncSupport("plain404");
   check("a 404 on an anchor's model doesn't stop a later real fit of that model from asking again (and fitting)",
     asked404 === 2 && await registered("anchor/plain404"), JSON.stringify({ asked404, holders: Object.keys(supportHolders()) }));
+  // (#347 round 8) a re-birth of an unchanged model whose reads fail for now keeps its support, as main does: a mesh-only
+  // support, the decoded mesh forgotten, then /library answers 503 (and /geom already does)
+  towerAg.entities.set("keep", { id: "keep", model: "fixtures/flip.glb", pos: [400, 0, 0], yaw: 0, actor: "x" });
+  await towerAg.ground.syncSupport("keep"); const kept = await registered("anchor/keep");
+  const { forgetMeshCache } = await import("../../mcpl/agent-ground.ts");
+  forgetMeshCache(); flipDown = true;
+  towerAg.entities.set("keep", { ...towerAg.entities.get("keep") });
+  towerAg.onThingChange({ id: "keep", what: "born" }, null, false, "x", Date.now()); await towerAg.ground.supportReady();
+  check("a re-birth of an unchanged model whose reads fail for now (503) keeps its support", kept && await settled() && !!supportHolders()["anchor/keep"] && towerAg.ground.supportIds.has("keep"),
+    JSON.stringify(Object.keys(supportHolders())));
+  // ...and when it goes, its sync order is forgotten with it
+  const was = towerAg.entities.get("keep"); towerAg.entities.delete("keep");
+  towerAg.onThingChange({ id: "keep", what: "gone" }, was, false, "x", Date.now());
+  check("a thing that goes leaves no sync order behind", !towerAg.ground.syncSeq.has("keep") && await settled() && !supportHolders()["anchor/keep"], JSON.stringify([...towerAg.ground.syncSeq.keys()]));
   lib.stop(true);
 }
 
