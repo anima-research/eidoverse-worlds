@@ -12,7 +12,7 @@ import { r3, noNeg0 } from "../round.js";
 import { shapeError, isBoxShape } from "../shapes.js";
 import { UP } from "./ctx.js";
 import { Refusal, refuse, said } from "./refuse.js";
-import { readback, delOp, holdsCustody, isE, lockedC, opsQuiet, scratch, setOp } from "./storage.js";
+import { VOLATILE, readback, delOp, holdsCustody, isE, lockedC, opsQuiet, scratch, setOp } from "./storage.js";
 import { aabb, ancestors, descendants, obbs, qYaw, worldT } from "./math.js";
 import { groundOf, groundReady } from "./spatial.js";
 import { allSockets, socketPoint } from "./sockets.js";
@@ -155,11 +155,15 @@ const sameHome = (st, id, home) => { const e = st.entities[id]; const t = e?.c.t
 // returnAfter: at the first request after a thing has been unheld that long since a hand or physics last
 // moved it, the authority sends it home: the same kind of lazy write as a rest. Once: the return is the last thing that
 // moved it, and a return isn't a release.
+const RETURNERS = new WeakMap();   // a state's entities → the things in it whose grabbable returns, in key order
+const returners = (st) => { let a = RETURNERS.get(st.entities); if (a) return a;
+  a = Object.keys(st.entities).filter((id) => { const v = st.entities[id].c.grabbable; return v && typeof v === "object" && v.returnAfter > 0; });
+  if (!VOLATILE.has(st.entities)) RETURNERS.set(st.entities, a); return a; };
 function returnDue(w) {
   if (!holdsCustody(w)) return;   // a server that can't sign for the world doesn't write to it: its reads still work
   const st = w.state(); const now = w.now(); let sf = null; let warned = w.returnWarned;
   if (warned) for (const id of warned.keys()) if (!st.entities[id]) warned.delete(id);   // forget things that are gone
-  for (const [id, e] of Object.entries(st.entities)) {
+  for (const id of returners(st)) { const e = st.entities[id];
     const v = e.c.grabbable; if (!v || typeof v !== "object" || !(v.returnAfter > 0)) continue;
     const g = grabOf(e.c); if (!g?.home || w.presence.holds[id] || lostPlace(st, id)) continue;   // where it is now is unknown: it stays
     if (st.entities["@world"]?.c["physics-engine"]) { sf ??= w.sim(); if (sf.launched[id]) continue; }   // in flight, or its rest isn't logged yet
@@ -202,8 +206,10 @@ function stampResetHomes(ctx, ops) {
 // a returning grabbable's home is its home component (grabbable.home is gone)
 function stampHomes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
-  const after = scratch(ctx.st, ops); const out = ops.slice();
   const ids = new Set(ops.filter((o) => o.op === "create" || (o.op === "set" && ["grabbable", "transform", "parent"].includes(o.comp)) || (o.op === "delete" && o.comp === "parent")).map((o) => o.id));
+  // a thing's grabbable after the write is the one it has now unless an op makes it or writes its grabbable: none that wants a home, no copy of the world
+  if (![...ids].some((id) => wantsHome(ctx.st.entities[id]?.c.grabbable) || ops.some((o) => o.id === id && (o.op === "create" || o.comp === undefined || o.comp === "grabbable")))) return ops;
+  const after = scratch(ctx.st, ops); const out = ops.slice();
   for (const id of ids) {
     const v = after.entities[id]?.c.grabbable; if (!wantsHome(v)) continue;
     const setsH = ops.some((o) => o.comp === "home" && o.id === id);

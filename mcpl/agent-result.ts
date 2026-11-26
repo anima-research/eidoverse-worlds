@@ -2,6 +2,7 @@
 
 import type { PublicPose } from "./body-state.ts";
 import { solidOff } from "../shared/protocol/simlayer.js";
+import { recordComponents } from "../shared/protocol/view.js";
 
 /** An act's answer for its tool. `ok` is false when the call didn't do what it
  *  asked (a refusal, a cut, a climb or glide that fell short, a refused name);
@@ -30,6 +31,12 @@ export const worldYaw = (y: number) => Math.PI / 2 - y;
 export const intYaw = (y: number) => Math.PI / 2 - y;
 /** A record (components flat, view.js) a body doesn't meet: componentspec collider.enabled or .blocks, the authority's own reading. */
 export const solidOffRecord = (e: any) => solidOff(e, "bodies");
+/** No collider of its own: collision off for bodies, or a structure's anchor (its planner owns the walls). The browser's
+ *  client/lib/realize/models_field.js collisionOwnedElsewhere, minus mounts (the agent handles those on its own). */
+export const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordComponents(e).structure;
+/** A structure as a body meets it: its data, unless its collision is off for bodies (the browser then fits it no wall
+ *  or floor: client/lib/realize/structure.js `solid`). Every floor and route reader takes its structures from here. */
+export const bodyStructure = (e: any): unknown => (solidOffRecord(e) ? undefined : recordComponents(e).structure);
 /** How far below its supporting surface a settled ragdoll's root lies. */
 export const RAGDOLL_ROOT_DROP = 0.7;
 /** A read of the world server (roster, terrain, a grid, geometry, bones) not answered by then has failed, as a host's

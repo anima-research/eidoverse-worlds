@@ -11,7 +11,7 @@ import { r3 } from "../shared/protocol/round.js";
 import { BodyStateReader, type BodyObservation } from "./body-state.ts";
 import { mentionRegexFor } from "./mention.ts";
 
-import { type ActResult, type Entity, type Pose, done, refused, RAGDOLL_ROOT_DROP, WORLD_READ_MS, isSocketRec } from "./agent-result.ts";
+import { type ActResult, type Entity, type Pose, bodyStructure, done, refused, RAGDOLL_ROOT_DROP, WORLD_READ_MS, isSocketRec } from "./agent-result.ts";
 export { voiceNote } from "./agent-senses.ts";
 import { AgentSenses } from "./agent-senses.ts";
 export { GLIDE_ARRIVE_M } from "./agent-flight.ts";
@@ -776,6 +776,9 @@ export class WorldAgent {
             this.feetSettling = true;
             await this.applyView(false, null, null);
             if (this.closed) { clearTimeout(timeout); reject(new Error("agent closed while it joined")); break; }   // bot #333 13
+            // a thing removed while this body was away folds no "gone" (the cut is adopted from an empty view): let go of
+            // the support of everything this cut doesn't hold
+            for (const id of [...this.ground.supportIds.keys()]) if (!this.entities.has(id)) this.ground.dropSupport(id);
             void this.ground.supportReady(10_000).then(() => { this.feetSettling = false; });
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             this.joined = true; this.redial.reset();
@@ -1180,8 +1183,8 @@ export class WorldAgent {
           if (fx.ok) this.senses.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
           else this.noteEffGap(id, fx.why);
         }
-        // a motion moves its support, and a collider override changes the policy its walking collider was fitted with
-        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider") this.ground.trackSupport(this.ground.syncSupport(id));
+        // a motion moves its support, a collider override changes its policy, and a structure set or removed decides whether it is only an anchor
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider" || comp === "structure") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
   }
@@ -1784,7 +1787,7 @@ export class WorldAgent {
   private walkStructures(support: WalkSupport): WalkStructure[] {
     const nowMs = this.serverNow(), out: WalkStructure[] = [];
     for (const e of this.entities.values()) {
-      const data = recordComponents(e).structure;
+      const data = bodyStructure(e);   // one whose collision is off for bodies has no wall to route around (storeyUnder's rule)
       if (!data) continue;
       const skip = (why: string) => {
         if (typeof data !== "object") return;
