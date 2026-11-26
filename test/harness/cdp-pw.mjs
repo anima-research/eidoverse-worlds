@@ -43,18 +43,22 @@ const valueOf = (ro) => 'value' in ro ? ro.value : ro.unserializableValue === un
 // a route's pattern as playwright reads it: a glob (** anything, * no slash), a RegExp, or a predicate on the URL
 const urlMatcher = (pattern) => typeof pattern === 'function' ? (u) => pattern(new URL(u))
   : typeof pattern === 'string' ? ((re) => (u) => re.test(u))(new RegExp('^' + pattern.split('**').map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '[^/]*')).join('.*') + '$')) : (u) => pattern.test(u);
-// where a pointer action aims, run in the page with `this` the element: the centre of its box clipped to the viewport (a
-// fixed element taller than the window is aimed at its visible part, as playwright clips its quads; review #375 6), once
-// it is scrolled into view, or false while it is invisible or (hit) the element on top there is not it or inside it
-// (playwright's hit-target check). One evaluation: the point checked is the point returned (review #375 8)
-const AIM = function (hit) {
+// where an action aims, run in the page with `this` the element, once it is scrolled into view: the centre of its box
+// clipped to the viewport (a fixed element taller than the window is aimed at its visible part, as playwright clips its
+// quads; review #375 6), or false while it is invisible. `mode` is playwright's three cases:
+//   'hit'   click/hover/tap: …and false until the element on top there is it or inside it (the hit-target check)
+//   'force' the same with {force}: no hit check, and 'outside' when no part is in the viewport (the caller throws, as
+//           playwright's NonRecoverableDOMError "Element is outside of the viewport"; a click there would land nowhere)
+//   'focus' focus/fill/press/type: visible is enough, in the viewport or not (playwright has no viewport rule for them)
+// One evaluation: the point checked is the point returned (review #375 8)
+const AIM = function (mode) {
   const r0 = this.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(this).visibility !== 'hidden')) return false;
   this.scrollIntoView({ block: 'center', inline: 'center' });
   const r = this.getBoundingClientRect(), L = Math.max(r.left, 0), R = Math.min(r.right, innerWidth), T = Math.max(r.top, 0), B = Math.min(r.bottom, innerHeight);
-  // focus/fill/press/type: visible is enough, as playwright (which has no viewport rule for them): an off-screen input still fills
-  if (!hit) return R > L && B > T ? { x: (L + R) / 2, y: (T + B) / 2 } : { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-  if (!(R > L && B > T)) return false;
-  const x = (L + R) / 2, y = (T + B) / 2;
+  const inView = R > L && B > T;
+  if (mode === 'focus') return inView ? { x: (L + R) / 2, y: (T + B) / 2 } : { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  if (!inView) return mode === 'force' ? 'outside' : false;
+  const x = (L + R) / 2, y = (T + B) / 2; if (mode === 'force') return { x, y };
   const h = document.elementFromPoint(x, y); return !!h && this.contains(h) ? { x, y } : false;
 };
 
@@ -175,9 +179,11 @@ function makePage(C, S, { targetId, browserContextId, metrics, ctxRoutes = [] })
     if (!done) throw lost;
     return out;
   };
-  // hit: …and takes the pointer there (playwright's hit-target check, click/hover/tap only; focus/fill/press/type never do it)
-  const center = (sel, timeout, hit = false) => until(`${sel} is on the page, visible${hit ? ' and not covered' : ''}`,
-    () => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? (${AIM}).call(e, ${hit}) : false; })()`), { ms: pwMs(timeout) });
+  // AIM's point for `sel` in `mode` (above), waited for; a force pointer action outside the viewport throws at once, as playwright
+  const aimed = (what, p) => { if (p === 'outside') throw new Error(`${what}: element is outside of the viewport`); return p; };
+  const center = async (sel, timeout, mode = 'focus') => aimed(sel, await until(`${sel} is on the page, visible${mode === 'hit' ? ' and not covered' : ''}`,
+    () => evaluate(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? (${AIM}).call(e, ${JSON.stringify(mode)}) : false; })()`), { ms: pwMs(timeout) }));
+  const pointer = (force) => force ? 'force' : 'hit';
   let mods = 0, mx = 0, my = 0, buttons = 0;
   const mouse = {
     move: async (x, y) => { mx = x; my = y; await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, modifiers: mods, buttons }); },
@@ -216,7 +222,7 @@ function makePage(C, S, { targetId, browserContextId, metrics, ctxRoutes = [] })
       evaluateHandle: async (fn, a) => handleOf(await on(`function (a) { return (${fn})(this, a); }`, [a], false)),
       $: async (s) => { const r = await on(function (s) { return this.querySelector(s); }, [s], false); return r.subtype === 'null' ? null : handleOf(r); },
       // the selector click's wait, on this element: visible and (unless force) taking the pointer, up to its timeout (review #375 3)
-      click: async ({ button = 'left', timeout, force = false } = {}) => { const { x, y } = await until(`the element is visible${force ? '' : ' and not covered'}`, () => on(AIM, [!force]), { ms: pwMs(timeout) }); await mouse.click(x, y, { button }); },
+      click: async ({ button = 'left', timeout, force = false } = {}) => { const { x, y } = aimed('the element', await until(`the element is visible${force ? '' : ' and not covered'}`, () => on(AIM, [pointer(force)]), { ms: pwMs(timeout) })); await mouse.click(x, y, { button }); },
       focus: () => on(function () { this.focus(); }),
       press: async (k) => { await el.focus(); await keyboard.press(k); },
       getAttribute: (n) => on(function (n) { return this.getAttribute(n); }, [n]),
@@ -275,9 +281,9 @@ function makePage(C, S, { targetId, browserContextId, metrics, ctxRoutes = [] })
     },
     _syncFetch: () => routes.length || ctxRoutes.length ? send('Fetch.enable', { patterns: [{ urlPattern: '*' }] }) : send('Fetch.disable'),
     // force: playwright's, skips the hit-target wait (the visible wait stays: cdp-pw needs a box to aim at)
-    click: async (sel, { button = 'left', timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.click(x, y, { button }); },
-    hover: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await mouse.move(x, y); },
-    tap: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, !force); await touchscreen.tap(x, y); },
+    click: async (sel, { button = 'left', timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, pointer(force)); await mouse.click(x, y, { button }); },
+    hover: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, pointer(force)); await mouse.move(x, y); },
+    tap: async (sel, { timeout, force = false } = {}) => { const { x, y } = await center(sel, timeout, pointer(force)); await touchscreen.tap(x, y); },
     focus: async (sel) => { await center(sel); await evaluate((s) => document.querySelector(s).focus(), sel); },
     press: async (sel, key) => { await pg.focus(sel); await keyboard.press(key); },
     type: async (sel, text) => { await pg.focus(sel); await keyboard.type(text); },
