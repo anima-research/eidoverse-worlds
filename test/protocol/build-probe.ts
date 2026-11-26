@@ -26,7 +26,7 @@
 //       relaying (MM31); a selection change before the travel drops the press, a dropped follower too (MM32, MM36); a planar group drag goes no further
 //       than 20 m (MM33), and a press whose ray misses the plane takes hold once a ray meets it within that reach, moving
 //       nothing there (MM12), and not where a ray first meets it beyond reach (MM35); a press
-//       on a large thing's end far from its origin takes hold at once (MM37)
+//       on a large thing's end far from its origin takes hold at once (MM37), a grazing press past a tall thing doesn't (MM38)
 // The writes go through the real edit code (structure_ui.js, build.js, scriptcard.js, edit/panels.js); gestures are
 // driven at their seams (a mousedown on the canvas, synthetic keydowns, the card's own buttons), as client-check does.
 // @ts-nocheck
@@ -959,6 +959,34 @@ try {
         myActs().length === n0 + 1 && !!L1 && near(L1, plus(L0, up.N.hit, up.B.hit), 0.1) && sameMove(F0, F1, L0, L1), { L1, want: plus(L0, up.N.hit, up.B.hit), acts: actsSince(n0) });
       if (myActs().length === n0 + 1) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0) && near(pose("mm-stool"), F0)); }
       await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+    }
+
+    // a press on the pole whose ray dips just below level meets the pole's plane far beyond reach (40–400 m): the press, too,
+    // takes hold only within 20 m of where its ray met the thing, so a small travel can't throw the group (cold read of
+    // f43cf6787; the reviewer's row, Esc sent as the key handler reads it)
+    if (poleOk && pts) {
+      const tall = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE, P = w.entities.get('mm-pole');
+        const O = P.getWorldPosition(new T.Vector3()), pl = new T.Plane(new T.Vector3(0, 1, 0), -O.y);
+        const ray = (x, y) => { const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera); return rc.ray; };
+        const dist = (x, y) => { const h = new T.Vector3(); return ray(x, y).intersectPlane(pl, h) ? Math.hypot(h.x - O.x, h.z - O.z) : Infinity; };
+        const px = ${up.at[0]}; for (let y = 10; y < innerHeight - 10; y += 1) { const d = dist(px, y); if (d > 40 && d < 400 && __mmHit(px, y, 'mm-pole', null).onLead) return { at: [px, y], dist: d, dist2: dist(px, y + 16) }; }
+        return null; })`);
+      check("MM (setup) a press point on the pole whose ray meets its plane 40–400 m out", !!tall, tall);
+      if (tall) {
+        await page(`(await import('/lib/edit/build.js')).setTool('move'); (await import('/lib/edit/selection.js')).set(['mm-pole', 'mm-stool']); return true;`);
+        const L0 = pose("mm-pole"), n0 = myActs().length;
+        await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${tall.at[0]}, clientY: ${tall.at[1]} })), true))`);
+        await mv([tall.at[0], tall.at[1] + 6]); const armed = await waitFor(`globalThis.__buildDrag?.()?.armed === true`);
+        await mv([tall.at[0], tall.at[1] + 16]); const seen = (await localOf(["mm-pole"]))?.[0];
+        await key("Escape"); await frames(2);
+        const cancelled = await evalJson(`globalThis.__buildDrag?.() === null`);
+        await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${tall.at[0]}, clientY: ${tall.at[1] + 16} })), true)`); await frames(3); await caughtUp();
+        const moved = seen ? Math.hypot(seen[0] - L0[0], seen[2] - L0[2]) : null, back = (await localOf(["mm-pole"]))?.[0];
+        check("MM38 a 16 px travel from a grazing press on the pole (its ray meeting the plane far beyond reach) moves the lead less than 1 m; Esc then ends it with nothing written",
+          armed && moved != null && moved < 1 && cancelled && myActs().length === n0 && near(back, L0), { tall, armed, seen, L0, moved, cancelled, back, acts: actsSince(n0) });
+        if (myActs().length > n0) { await undo(); await waitDisk(() => near(pose("mm-pole"), L0)); }
+        await onRecord("mm-pole"); await onRecord("mm-stool"); await frames(3);
+      }
     }
 
     // a press on a large thing's far end, more than 20 m from its origin: the press ray met the thing, so the group drag takes

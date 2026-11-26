@@ -613,7 +613,7 @@ canvas.addEventListener('mousedown', (e) => {
     startPos: at,
     depth: camera.position.distanceTo(at),
     grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
-    plane: fol.ids.length ? planeGrab(at) : null,   // a group's drag is planar (updateBuild)
+    plane: fol.ids.length ? planeGrab(at, GROUP_REACH, hit.point) : null,   // a group's drag is planar (updateBuild)
     mode: tool,     // the gesture, fixed here with the followers it picked
   };
   e.preventDefault();
@@ -621,13 +621,13 @@ canvas.addEventListener('mousedown', (e) => {
 
 const GROUP_REACH = 20;   // m: aimPoint's placeable range, here from where the lead started
 /** The horizontal plane through `at` and the offset from where the pointer's ray meets it, or null (a ray along it, pointing
- *  away from it, or meeting it further than `reach` from `at`). The press takes any hit: its ray met the thing, so a hit far
- *  from the origin is a press on a large thing's far end. The late take-hold passes GROUP_REACH: its first ray to meet the
- *  plane is the most grazing one. */
-function planeGrab(at, reach = Infinity) {
+ *  away from it, or meeting it further than `reach` from `from`). The press measures from where its ray met the thing (a press
+ *  on a large thing's far end is near its own hit however far that is from the origin; a ray grazing just below level past a
+ *  tall thing is not); the late take-hold, from where the lead started. */
+function planeGrab(at, reach, from = at) {
   raycaster.setFromCamera(mouse, camera);
   const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -at.y);
-  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - at.x, _hit.z - at.z) <= reach ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
+  return raycaster.ray.intersectPlane(plane, _hit) && Math.hypot(_hit.x - from.x, _hit.z - from.z) <= reach ? { at: plane, grab: at.clone().sub(_hit).setY(0) } : null;
 }
 
 // arm the drag only after a few pixels of travel (click vs drag)
