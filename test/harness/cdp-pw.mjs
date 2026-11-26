@@ -51,8 +51,10 @@ const AIM = function (hit) {
   const r0 = this.getBoundingClientRect(); if (!(r0.width > 0 && r0.height > 0 && getComputedStyle(this).visibility !== 'hidden')) return false;
   this.scrollIntoView({ block: 'center', inline: 'center' });
   const r = this.getBoundingClientRect(), L = Math.max(r.left, 0), R = Math.min(r.right, innerWidth), T = Math.max(r.top, 0), B = Math.min(r.bottom, innerHeight);
+  // focus/fill/press/type: visible is enough, as playwright (which has no viewport rule for them): an off-screen input still fills
+  if (!hit) return R > L && B > T ? { x: (L + R) / 2, y: (T + B) / 2 } : { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   if (!(R > L && B > T)) return false;
-  const x = (L + R) / 2, y = (T + B) / 2; if (!hit) return { x, y };
+  const x = (L + R) / 2, y = (T + B) / 2;
   const h = document.elementFromPoint(x, y); return !!h && this.contains(h) ? { x, y } : false;
 };
 

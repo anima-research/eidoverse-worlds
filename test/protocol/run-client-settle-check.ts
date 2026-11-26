@@ -105,11 +105,12 @@ ok(/^ok\s+\S*m-buntest-modifiers-test\.ts/m.test(out9) && /^ok\s+\S*n-buntest-al
 // --import-only: a bun:test file that throws a TypeError at its top level is dead, as a script is; `bun test` prints no
 // "Bun v…" crash trailer but "# Unhandled error between tests" with no test run (review #375 2). One whose TypeError
 // is inside a test ran its tests: it loaded. And a check line that reaches the runner after the crash text (two pipes'
-// chunks arrive in either order; a child's late line stands in for that here) means the file ran: loaded (review #375 7).
+// chunks arrive in either order; a line printed on exit stands in for that here) means the file ran: loaded (review #375 7).
 const dir10 = path.join(root, "toperr-forms"); fs.mkdirSync(dir10);
 fs.writeFileSync(path.join(dir10, "o-buntest-toperr-test.ts"), `import { test, expect } from "bun:test";\nconst stubbed: any = {};\nstubbed.notExported();\ntest("one", () => { expect(1).toBe(1); });\n`);
 fs.writeFileSync(path.join(dir10, "p-buntest-intest-err-test.ts"), `import { test } from "bun:test";\ntest("one", () => { const late: any = {}; late.notExported(); });\n`);
-fs.writeFileSync(path.join(dir10, "q-check-after-crash-test.ts"), `import { spawn } from "node:child_process";\nspawn(process.execPath, ["-e", "setTimeout(() => console.log('  ✓ a row that ran'), 300)"], { stdio: ["ignore", "inherit", "inherit"] });\nconst late: any = {};\nlate.notExported();\n`);
+// (an exit handler prints it after the crash text: a grandchild's late line died with its parent on Windows, round 3)
+fs.writeFileSync(path.join(dir10, "q-check-after-crash-test.ts"), `process.on("exit", () => { console.log("  ✓ a row that ran"); });\nconst late: any = {};\nlate.notExported();\n`);
 const rc10 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir10, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
   { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 60_000 });
 const out10 = rc10.stdout.toString() + rc10.stderr.toString();

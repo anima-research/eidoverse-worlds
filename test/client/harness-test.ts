@@ -231,6 +231,11 @@ else { // a closed terminal (SIGHUP) takes a probe's owned world with it, as Ctr
       const s = (performance.now() - t0) / 1000;   // reported, not judged: a fill that waited on the overlay throws at its 30 s (review #375 19)
       const st = await pg.evaluate(() => { document.getElementById('glass')?.remove(); const i = document.getElementById('in') as any; const r = { v: i.value, focused: document.activeElement === i }; i.value = ''; i.blur(); return r; });
       return [!err && st.v === 'xyz' && st.focused, { err, s, ...st }]; });
+    await row('cdp-pw: fill, focus and press reach an input outside the viewport (fixed at left:-9999px), as playwright: no viewport rule for them (round 3)', async () => {
+      await pg.evaluate(() => { const i = document.createElement('input'); i.id = 'off'; i.style.cssText = 'position:fixed;left:-9999px;top:0;width:100px'; document.body.append(i); });
+      let err = ''; try { await pg.fill('#off', 'hello'); await pg.press('#off', 'End'); } catch (e) { err = String(e).slice(0, 160); }
+      const st = await pg.evaluate(() => { const i = document.getElementById('off') as any; const r = { v: i.value, focused: document.activeElement === i }; i.remove(); return r; });
+      return [!err && st.v === 'hello' && st.focused, { err, ...st }]; });
     await row('cdp-pw: click({force:true}) skips the hit-target wait, as playwright (it lands on what is on top)', async () => {
       await pg.evaluate(() => { const o = document.createElement('div'); o.id = 'glass'; o.style.cssText = 'position:fixed;inset:0;opacity:0'; o.onclick = () => { o.dataset.hit = '1'; }; document.body.append(o); });
       // the overlay stays up throughout: a click that waited on it throws at its timeout, so no clock is judged (review #375 19)
