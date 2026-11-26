@@ -30,6 +30,7 @@ import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../render/scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
 import { prepareMaterial } from '../render/materials.js';
+import { discardObject } from '../render/discard.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 import { stillArriving, footprintOf } from '../arrivalnear.js';   // the arrival hold's rules (arrivalhold.js)
 
@@ -214,10 +215,12 @@ function scheduleLoad(id, ent, gen, tier = null) {
       const cur = state.st.entities[id];
       const t = tracked.get(id);
       if (t?.gen === gen) t.loading = false;
+      // every return below that does not wear the clone discards it (render/discard.js): loadGLB compiled it
       // the world may have moved on while the bytes flew: retired, re-spawned with a different model (its own job
       // follows), demoted-then-reset, or the realizer was reset
-      if (signal.aborted || t?.gen !== gen) return;
+      if (signal.aborted || t?.gen !== gen) { discardObject(obj); return; }
       if (!cur || modelOf(cur) !== ent.model) {
+        discardObject(obj);
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) untrack(id);
         return;
@@ -228,6 +231,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
       if (standing && !isPlaceholder(standing) && standing.userData?.lib && !canRetier(id, cur)) {
         resStats.retiersRefused++;
         if (t) t.retierAt = Date.now();
+        discardObject(obj);
         return;
       }
       // a re-tier answered with the tier already worn (a lod ask the sequencer answered with the original, then the
@@ -238,6 +242,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
         && (standing.userData.tier ?? 'full') === (obj.userData.tierServed ?? 'full')) {
         standing.userData.tierAsked = obj.userData.tierAsked;
         resStats.retiersKept++;
+        discardObject(obj);
         return;
       }
       realizeModel(id, cur, obj);
@@ -262,6 +267,7 @@ function teardownRealized(id, obj, phase) {
   releaseGLB(obj.userData?.glbKey ?? obj.userData?.lib);
   cancelOwner(`entity:${id}`);
   release(id, phase);
+  discardObject(obj);       // it leaves the scene now (both callers): what drawing it made goes with it
 }
 
 function realizeModel(id, cur, obj) {
@@ -573,7 +579,7 @@ function retire(id) {
   cancelOwner(`entity:${id}`);
   promoteTail.delete(id);         // a pending heavy tail dies with the id
   const obj = entities.get(id);
-  if (obj && !isPlaceholder(obj) && obj.userData?.lib) releaseGLB(obj.userData.glbKey ?? obj.userData.lib);
+  if (obj && !isPlaceholder(obj) && obj.userData?.lib) { releaseGLB(obj.userData.glbKey ?? obj.userData.lib); discardObject(obj); }
   dropMeshPart(id);
   const rode = obj?.userData?.mountedTo;
   // a carrier that leaves the fold with only a stand-in: its cargo steps off that, the same way (one that is only being
