@@ -111,8 +111,11 @@ const r4 = (n) => Math.round(n * 1e4) / 1e4;
 const shapeFor = (model, req) => { const m = geomOf(model); if (!m) return null; const b = boxOfM(m);
   if (req === "sphere") return { type: "sphere", radius: r4(Math.max(...[0, 1, 2].map((k) => (b[1][k] - b[0][k]) / 2))), pos: [0, 1, 2].map((k) => r4((b[0][k] + b[1][k]) / 2)) };
   return b.map((c) => c.map(r4)); };
+const SHAPE_COMPS = new Set(["physics", "model", "collider", "mesh", "openable"]);
 function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
+  // only these ops can stamp a shape (the ids below): without one, no copy of the world is made to find none
+  if (!ops.some((o) => o.op === "create" || o.comp === undefined || SHAPE_COMPS.has(o.comp) || o.comp.startsWith("motion:") || o.comp === "motion" || o.comp === "physics-engine")) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
   for (const o of ops) if ((o.op === "set" || o.op === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
