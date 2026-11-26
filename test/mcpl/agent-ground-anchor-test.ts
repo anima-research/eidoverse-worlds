@@ -223,10 +223,6 @@ check("a sync whose reads fail after a later sync of the same thing fitted it le
   towerAg.onThingChange({ id: "keep", what: "born" }, null, false, "x", Date.now()); await towerAg.ground.supportReady();
   check("a re-birth of an unchanged model whose reads fail for now (503) keeps its support", kept && await settled() && !!supportHolders()["anchor/keep"] && towerAg.ground.supportIds.has("keep"),
     JSON.stringify(Object.keys(supportHolders())));
-  // ...and when it goes, its sync order is forgotten with it
-  const was = towerAg.entities.get("keep"); towerAg.entities.delete("keep");
-  towerAg.onThingChange({ id: "keep", what: "gone" }, was, false, "x", Date.now());
-  check("a thing that goes leaves no sync order behind", !towerAg.ground.syncSeq.has("keep") && await settled() && !supportHolders()["anchor/keep"], JSON.stringify([...towerAg.ground.syncSeq.keys()]));
   lib.stop(true);
 }
 

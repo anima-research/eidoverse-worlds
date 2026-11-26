@@ -397,13 +397,7 @@ export class AgentGround {
   /** The model each held support was registered for (set with supportIds, cleared with it in dropSupport). */
   private supportModel = new Map<string, string>();
   private hold(id: string, ids: string[], model: string) { this.supportIds.set(id, ids); this.supportModel.set(id, model); }
-  /** Each id's latest sync (a process-unique number, so an id gone and back never reuses one): a sync that ends with
-   *  nothing to fit drops the old support only if no later sync has begun. Forgotten when the thing goes. */
-  private syncSeq = new Map<string, number>();
-  private static syncCount = 0;
   async syncSupport(id: string) {
-    const seq = ++AgentGround.syncCount;
-    this.syncSeq.set(id, seq);
     const before = this.a.entities.get(id);
     // only a model carries a collider; a thing that lost its model (a rejoin folds every thing as born) lets go of the old
     if (!before?.model) { this.dropSupport(id); return; }
@@ -421,10 +415,10 @@ export class AgentGround {
     // (and a body closed meanwhile has dropped its supports: registering now would leave ghosts)
     const e = this.a.entities.get(id);
     if (!e || e.model !== before.model || this.a.closed) return;
-    // nothing can be read for its model: a support registered for another model (or for none on record) goes, unless a
-    // later sync of this thing has begun (that one decides); one registered for this same model stays, as on main (a
-    // transient /geom or /library failure doesn't take a floor away)
-    if (!g && !mesh) { if (this.syncSeq.get(id) === seq && this.supportModel.get(id) !== e.model) this.dropSupport(id); return; }
+    // nothing can be read for its model: a support registered for another model (or for none on record) goes; one
+    // registered for this same model stays, as on main (a transient /geom or /library failure doesn't take a floor
+    // away). A later sync of this model that has reserved or registered has recorded this model, so it is left alone.
+    if (!g && !mesh) { if (this.supportModel.get(id) !== e.model) this.dropSupport(id); return; }
     // started moving, got mounted, or lost its collision / became an anchor while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.a.mounts.has(id) || collisionElsewhere(e)) { this.dropSupport(id); return; }
@@ -529,6 +523,5 @@ export class AgentGround {
   dropSupport(id: string) {
     for (const bid of this.supportIds.get(id) ?? []) void removeSupport(this.supportHolder, bid);
     this.supportIds.delete(id); this.supportModel.delete(id); this.fits.delete(id);
-    if (!this.a.entities.has(id)) this.syncSeq.delete(id);   // gone (or never known): nothing of it to order
   }
 }
