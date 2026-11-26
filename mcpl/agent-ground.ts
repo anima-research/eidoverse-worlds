@@ -412,7 +412,7 @@ export class AgentGround {
     if (this.hasActiveMotion(before) || this.a.mounts.has(id)) { this.dropSupport(id); return; }
     // A structure's anchor: nothing to stand on (its planner owns the walls), but its model is read here, inside this
     // tracked sync, as main reads it: the bytes carry the model's own places (modelMetaOf; meshFor is their only
-    // reader), so supportReady waits for them. The drop is issued before the read.
+    // reader), so supportReady waits for them, up to its bound (3 s by default). The drop is issued before the read.
     if (collisionElsewhere(before)) { this.dropSupport(id); await this.meshFor(before.model); return; }
     const [g, mesh] = await Promise.all([this.geomFor(before.model), this.meshFor(before.model)]);
     // Re-read and re-CHECK: the id may have been removed and respawned as

@@ -5,7 +5,7 @@ import type { WorldAgent, Person } from "./agent.ts";
 import { bodyOf } from "../shared/components.js";
 import { describeBody, resolveSeat } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
-import { type Entity, type Pose, bodyStructure, noOwnCollider, solidOffRecord, switchedOff, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
+import { type Entity, type Pose, bodyStructure, noOwnCollider, offRoot, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
 import { briefingLines } from "../shared/briefing.js";
 import { compass } from "../shared/waterkind.js";
 import { groundChange, groundLine } from "./ground-words.ts";
@@ -699,8 +699,9 @@ export class AgentSenses {
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
       // switched off (disabled, itself or up its chain): not drawn and no collider, as in the browser (models_field offIn)
-      const dark = switchedOff(this.a.entities, e.id);
-      if (dark) aff.push(`switched off (not drawn, no collider${c.disabled === true ? `: edit {id: "${this.a.handle(e.id)}", set: {"flags.disabled": false}} switches it on` : ": what it hangs under is"})`);
+      // (offRoot: itself, or the thing it hangs under whose switch it is)
+      const dark = offRoot(this.a.entities, e.id);
+      if (dark) aff.push(`switched off${dark === e.id ? "" : ` with [${this.a.handle(dark)}]`} (not drawn, no collider: edit {id: "${this.a.handle(dark)}", set: {"flags.disabled": false}} switches it on)`);
       if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it
       // no collider of its own (agent-result.ts noOwnCollider): a structure's model is only its anchor, and mounted cargo
       // collides as its carrier

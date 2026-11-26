@@ -36,7 +36,11 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   ag.entities.set("dark", { id: "dark", model: "zz/crate.glb", kind: "thing", pos: [2, 0, 2], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, disabled: true });
   const L = ag.look(0).split("\n"), cargo = L.find((l: string) => l.includes("[cargo]")) ?? "", dark = L.find((l: string) => l.includes("[dark]")) ?? "";
   ok(cargo !== "" && !/collides as/.test(cargo), "347/13 look: mounted cargo doesn't claim its box collides", cargo);
-  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, and says it is switched off", dark); }
+  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, and says it is switched off", dark);
+  // switched off through what it hangs under: look names that thing, and the edit that switches it back on
+  ag.entities.get("cart").disabled = true;
+  const under = ag.look(0).split("\n").find((l: string) => l.includes("[cargo]")) ?? "";
+  ok(/switched off with \[cart\]/.test(under) && /edit \{id: "cart", set: \{"flags.disabled": false\}\}/.test(under), "347 look: a thing switched off through its carrier names the carrier and how to switch it on", under); }
 
 // #347 bot 3: measure {check: true} on a thing whose collision is owned elsewhere (a structure's anchor) or off for bodies
 // doesn't say its collider.shape "box" makes it one solid box: the browser fits that model no collider

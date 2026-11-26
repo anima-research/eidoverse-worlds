@@ -37,9 +37,12 @@ export const collisionElsewhere = (e: any) => solidOffRecord(e) || !!recordCompo
 /** Switched off (componentspec `disabled`), itself or anything it hangs under: no client loads or draws it, and it has
  *  no collider, wall or floor. The browser's client/lib/realize/models_field.js offIn (the engine's simlayer offChain),
  *  over the agent's records, whose `parent` is the fold's. */
-export function switchedOff(entities: ReadonlyMap<string, any>, id: string): boolean {
-  for (let k: string | undefined = id, n = 0; k && n < 33; k = entities.get(k)?.parent?.to, n++) if (entities.get(k)?.disabled === true) return true;
-  return false;
+export const switchedOff = (entities: ReadonlyMap<string, any>, id: string): boolean => offRoot(entities, id) !== null;
+/** The thing whose switch has it off: itself or the nearest of what it hangs under carrying disabled (simlayer offChain's
+ *  answer), or null when it is on. */
+export function offRoot(entities: ReadonlyMap<string, any>, id: string): string | null {
+  for (let k: string | undefined = id, n = 0; k && n < 33; k = entities.get(k)?.parent?.to, n++) if (entities.get(k)?.disabled === true) return k;
+  return null;
 }
 /** Why a thing has no collider of its own, or null when it has one: what look and the build check say instead of its
  *  collider's shape. The browser's collisionOwnedElsewhere with its mount clause (mounted cargo collides as its carrier),
