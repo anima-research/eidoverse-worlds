@@ -488,6 +488,10 @@ const cancelAt = rePress.findIndex((g) => g[0] === 'cancel'), openAt = rePress.f
 await pause('past where the cancelled cut would have closed', 120);
 t('a re-press inside the release tail cancels the pending cut before it opens, and the room still hears you after the tail',
   cancelAt >= 0 && openAt > cancelAt && !gainLog.some((g) => g[0] === 'ramp') && ms.roomHears() === true && gold(), `${JSON.stringify(gainLog)} ${state()}`);
+const holdAt = rePress.findIndex((g, i) => i > cancelAt && g[0] === 'set');
+t('...and the gain does not dip: after the cancel it is held at the level it had (near full, not 0) and reopens from there',
+  cancelAt >= 0 && holdAt > cancelAt && holdAt < openAt && rePress[holdAt][1] > 0.9 && near(rePress[holdAt][2], 0)
+  && !rePress.some((g) => (g[0] === 'set' || g[0] === 'ramp') && g[1] === 0), JSON.stringify(rePress));
 ms.setPttHeld(false);
 await tryUntil('key up: the gold goes out', () => !gold());
 // voice activation: after the hang the gain fades over ~0.83 s (to -60 dB), and sound in the fade is sent: gold holds
@@ -623,6 +627,22 @@ ctxState = 'suspended';
 t('the AudioContext suspended: the gated lane sends nothing (no packets), so not gold', !!(await tryUntil('gold goes out', () => !gold() && ms.roomHears() === false)), state());
 ctxState = 'running';
 t('...and running again, gold again', !!(await tryUntil('gold back', () => gold())), state());
+// suspended, the audio clock stops and the gain stays where it was, while the wall-clock model runs on toward open
+ctxState = 'suspended';
+if (gateGain) gateGain._v = 0.02;   // where the audio clock left it (the stub's automation lands at once; a real one would not)
+gainLog.length = 0; ms.toggleMute(true);
+const susCut = gainLog.find((g) => g[0] === 'set');
+t('a cut while the context is suspended starts from the gain\'s own value (0.02), not the wall-clock model (~1): no burst on resume',
+  !!susCut && Math.abs(susCut[1] - 0.02) < 1e-9, JSON.stringify(gainLog));
+await pause('past the cut on the wall clock; the audio clock, suspended, has not run it', 30);
+gainLog.length = 0; ms.toggleMute(false);
+const susOpen = gainLog.slice();
+const sc = susOpen.findIndex((g) => g[0] === 'cancel'), so = susOpen.findIndex((g) => g[0] === 'target' && g[1] === 1);
+t('...and an open after it cancels that cut first (still scheduled on the stopped audio clock), or it would close the reopened gain on resume',
+  sc >= 0 && so > sc, JSON.stringify(susOpen));
+ctxState = 'running';
+for (const fn of ctxListeners) fn();
+await tryUntil('gold back', () => gold());
 ms.setPttHeld(false); vc.setPttMode(false);
 // a suspend during the voice-activation release fade: the audio clock stops with the gain part-way down, the wall clock
 // runs on; on resume the gain carries on from where it stopped, and sound goes out

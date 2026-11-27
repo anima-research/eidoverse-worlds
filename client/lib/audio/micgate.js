@@ -121,7 +121,13 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
   const now = performance.now();
   const target = open ? 1 : 0;
   const p = _gain.gain;
-  const cutPending = _env.cutEnd !== undefined && now < _env.cutEnd;
+  // Where the gain is. Running, the wall-clock model is the gain; suspended, the audio clock (and the gain with it) has
+  // stopped while the model ran on, so read the gain itself, or a cut would jump it back up to the model and ramp
+  // buffered sound out on resume.
+  const level = (t) => {
+    if (!gateRunning()) { const g = Number(p.value); if (Number.isFinite(g)) return g; }
+    return envAt(t);
+  };
   if (!open && cut) {
     // with no delay line there is nothing held back to let out: the tail is the lookahead itself
     const lag = tail && _look ? LOOKAHEAD : 0;
@@ -130,7 +136,7 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
     // each time. Only a cut that closes sooner replaces it (a mute inside a release's tail: stop now).
     const scheduled = _env.cutEnd !== undefined;
     if (!scheduled || cutEnd < _env.cutEnd) {
-      const from = envAt(at);   // the gain where the ramp starts (a held key's attack runs on through the tail)
+      const from = level(at);   // the gain where the ramp starts (a held key's attack runs on through the tail)
       let stepped = false;
       try {
         const t = _ctx.currentTime;
@@ -140,14 +146,16 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
       _env = stepped ? { at: now, from: 0, cutEnd: now } : { at, from, cutEnd, tail: lag > 0 };
     }
   } else {
-    const from = envAt(now);
+    const from = level(now);
     // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
     // double-smooths and the gate never fully closes)
     const tau = open ? ATTACK_TAU : RELEASE_TAU;
     let stepped = false;
     try {
-      // a re-press inside a release's tail: the cut still waiting on the audio clock would close the new word
-      if (cutPending) p.cancelScheduledValues(_ctx.currentTime);
+      // After a cut, cancel what of it the audio clock has not yet run, and hold the gain where it is: a re-press inside a
+      // release's tail, or an open after a cut made while the context was suspended, would otherwise meet that cut and
+      // close the new word. A cut that has already run is past, so the cancel leaves it be.
+      if (_env.cutEnd !== undefined) { const t = _ctx.currentTime; p.cancelScheduledValues(t); p.setValueAtTime(from, t); }
       p.setTargetAtTime(target, _ctx.currentTime, tau);
     } catch { p.value = target; stepped = true; }
     // a gain that took a step is already at its target: no fade to report as sending
