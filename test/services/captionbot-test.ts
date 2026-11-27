@@ -38,7 +38,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { suite } from '../gate/suite.ts';
-import { tryUntil, pause } from '../gate/wait.ts';
+import { until, tryUntil, pause } from '../gate/wait.ts';
 
 const T = suite('captionbot');
 const check = (name: string, ok: boolean, detail = '') => T.check(name, ok, detail || undefined);
@@ -211,6 +211,9 @@ console.log('— H. the world client, offline —');
   // a restart: a new client over the same spool re-queues the three unconfirmed
   // lines ahead of its own (later) session
   writeFileSync(spool, readFileSync(spool, 'utf8') + JSON.stringify({ state: 'acked', key: `${w.session}#3`, at: 1 }) + '\n');
+  // a restart is later in time: a session is its mint's ISO instant then a random nonce (shared/captions.js mintSession), so
+  // two minted in one millisecond order by the nonce alone, half the time backwards (2 of 20 runs failed both rows below)
+  await until("the clock has moved past the first client's session", () => new Date().toISOString() > w.session.slice(0, 24));
   const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool, log: (m) => logs.push(m), agent: false });
   check('a restart re-queues exactly the unconfirmed lines (4 and 5; 3 was confirmed, 1–2 overflowed)', w2.pendingCount === 2 && (w2 as any).pending.map((p: any) => p.args.n).join() === '4,5', JSON.stringify((w2 as any).pending.map((p: any) => p.key)));
   check('…under a session that follows the old one, so they drain first', w2.session > w.session && (w2 as any).pending[0].args.session === w.session);
