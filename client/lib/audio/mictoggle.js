@@ -122,8 +122,11 @@ function paint() {
   micHot = hot; micMuted = reason;   // the poll repaints when the live state leaves what was drawn
   micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
   micBtn.style.opacity = deaf ? '0.55' : '1';
-  micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here — none of it goes out to the room'
-    : muted ? 'mic on, but muted — none of your voice goes out to the room'
+  // speech-to-text doesn't read the mute yet, so while it is on a muted mic still posts captions: say so
+  const muteTail = sttConsented() && sttAvailable()
+    ? ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' : ' — none of your voice goes out to the room';
+  micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here' + muteTail
+    : muted ? 'mic on, but muted' + muteTail
     : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
       // a mute holds whatever V does: say so rather than offer V
       : reason === 'moderator' ? 'mic off — and a moderator has muted your voice here: turning the mic on won\'t reach the room'
@@ -303,6 +306,7 @@ bus.on('audio:hush', paint);
 bus.on('audio:receive', paint);
 bus.on('audio:mic', paint);   // without it the glyph repaints only from its poll
 bus.on('audio:mute', paint);
+bus.on('audio:stt-consent', paint);   // the mute tooltip names captions while speech-to-text is on
 bus.on('audio:ptt-held', paint);   // any holder of the key (V, the XR controller's A/X): gold ends with the release
 bus.on('style', paint);
 bus.on('xr:state', paint);

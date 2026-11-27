@@ -53,7 +53,8 @@ const NET = [...netSrc.matchAll(/^export\s+(?:async\s+)?(?:function\*?|const|let
 for (const m of netSrc.matchAll(/^export\s*\{([^}]*)\}/gm)) for (const n of m[1].split(',')) { const k = n.trim().split(/\s+as\s+/).pop(); if (k) NET.push(k); }
 const net = { joined: false, myRights: null };
 mock.module(lib('net.js'), () => ({ ...Object.fromEntries(NET.filter(n => n !== 'net').map(n => [n, () => {}])), net }));
-mock.module(lib('audio/stt.js'), () => ({ setSTT() {}, sttAvailable: () => false, sttOn: () => false }));
+let sttAv = false;   // speech-to-text available: the mute tooltip's captions clause reads it
+mock.module(lib('audio/stt.js'), () => ({ setSTT() {}, sttAvailable: () => sttAv, sttOn: () => false }));
 mock.module(lib('ui/chat.js'), () => ({ logChat: () => {} }));
 mock.module(lib('audio/audiounlock.js'), () => ({ playWhenAllowed: () => {} }));
 mock.module(lib('audio/ttsrow.js'), () => ({ ttsSection: () => document.createElement('div') }));
@@ -194,6 +195,12 @@ t('in VR, mic on and silent: the indicator draws the plain on glyph', mt.micIndi
 ms.toggleMute(true);   // a mute landing while silent: gold never changes, only the slash does
 t('in VR, muted while silent: the indicator repaints with the slash (key "muted")', !!(await tryUntil('the indicator repaints muted',
   () => mt.micIndicatorState() === 'muted' && xrShows() && xrLast().includes('x1="7" y1="4"'))), xrState());
+const tip = () => document.querySelector('#micbtn').title;
+t('muted, speech-to-text off: the tooltip says none of your voice goes out', /none of your voice goes out/.test(tip()) && !/caption/.test(tip()), tip());
+sttAv = true; vc.setSttConsent(true);
+t('muted, speech-to-text on: the tooltip says captions still post, not that none of it goes out',
+  !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
+vc.setSttConsent(false); sttAv = false;
 ms.toggleMute(false);
 t('...and unmuted, the slash goes from the indicator', !!(await tryUntil('the indicator repaints unmuted',
   () => mt.micIndicatorState() === 'on' && xrShows() && !xrLast().includes('x1="7" y1="4"'))), xrState());
