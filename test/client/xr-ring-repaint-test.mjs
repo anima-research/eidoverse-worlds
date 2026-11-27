@@ -40,6 +40,9 @@ check('the ring closed: nothing is drawn, and nothing throws', drawn.length === 
 open = ringOf(root(), 0); drawn = [];
 repaintSlots(open, texture);
 check('a full repaint (a selection, an act) still redraws every slot', drawn.length === 6, drawn.join());
+open = ringOf(actions()); drawn = []; disposed = [];
+repaintSlots(open, texture);
+check('...on a wheel with no live glyph too: all four drawn, all four old textures disposed', drawn.length === 4 && disposed.length === 4, JSON.stringify({ drawn, disposed }));
 check('liveGlyph: a function svg is live; a string svg, an icon and a spacer are not',
   liveGlyph({ svg: () => '' }) && !liveGlyph({ svg: '<svg/>' }) && !liveGlyph({ icon: 'x' }) && !liveGlyph({ spacer: true }) && !liveGlyph(undefined));
 off();

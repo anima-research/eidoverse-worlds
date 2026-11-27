@@ -31,8 +31,9 @@ const ROWS: Row[] = [
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
   // the ring's repaint on a mic change is xrringpaint.js's (xr-ring-repaint-test runs it): xr.js hands it the open ring and keeps no subscription of its own
   { name: "xr.js follows the mic glyph through xrringpaint.js, with the ring only while it is open", file: "client/lib/xr/xr.js",
-    must: [/import\s*\{[^}]*\bfollowMicIndicator\b[^}]*\}\s*from\s*'\.\/xrringpaint\.js'/, /followMicIndicator\(bus, \(\) => \(radialOpen \? radial : null\), ringIconTexture\)/],
-    not: [[/bus\.on\('mic:indicator'/, "bus.on('mic:indicator', () => repaintRing())"]] },
+    must: [/import\s*\{[^}]*\bfollowMicIndicator\b[^}]*\}\s*from\s*'\.\/xrringpaint\.js'/, /^followMicIndicator\(bus, \(\) => \(radialOpen \? radial : null\), ringIconTexture\);/m,
+      /^function repaintRing\(\) \{ repaintSlots\(radial, ringIconTexture\); \}/m],
+    not: [[/bus\.on\(\s*['"`]mic:indicator/, "bus.on('mic:indicator', () => repaintRing())"]] },
   // locomotion-clip: an extracted policy someone calls
   { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/player/controller.js",
     must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },
