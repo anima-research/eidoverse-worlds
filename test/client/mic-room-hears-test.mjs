@@ -492,6 +492,22 @@ const holdAt = rePress.findIndex((g, i) => i > cancelAt && g[0] === 'set');
 t('...and the gain does not dip: after the cancel it is held at the level it had (near full, not 0) and reopens from there',
   cancelAt >= 0 && holdAt > cancelAt && holdAt < openAt && rePress[holdAt][1] > 0.9 && near(rePress[holdAt][2], 0)
   && !rePress.some((g) => (g[0] === 'set' || g[0] === 'ramp') && g[1] === 0), JSON.stringify(rePress));
+// the menus (the ∃ menu, the VR ring) draw the HUD glyph: mictoggle.js announces each change of its key, in the turn
+// it happens, so they repaint with the HUD and not at a sweep
+const announced = [];
+const offInd = bus.on('mic:indicator', (k) => announced.push(k));
+const relAnn = releaseKey(() => ms.setPttHeld(false));
+const annAtOnce = announced.slice();
+await relAnn.closed();
+const annAtClose = announced.slice();
+ms.toggleMute(true);
+const annMuted = announced.at(-1);
+ms.toggleMute(false);
+offInd();
+t('the indicator\'s key is announced as it changes: nothing at the release (still gold), "on" as the tail closes, "muted" in the turn of a mute',
+  annAtOnce.length === 0 && annAtClose.at(-1) === 'on' && annMuted === 'muted', JSON.stringify({ annAtOnce, annAtClose, annMuted }));
+ms.setPttHeld(true);
+await tryUntil('gold under the key again', () => gold());
 ms.setPttHeld(false);
 await tryUntil('key up: the gold goes out', () => !gold());
 // voice activation: after the hang the gain fades over ~0.83 s (to -60 dB), and sound in the fade is sent: gold holds

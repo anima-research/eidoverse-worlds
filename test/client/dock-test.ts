@@ -250,6 +250,20 @@ check("∃ click opens it — a dropdown now, NOT arranging (HUD layout mode is 
 top("panels")!.click();
 check("Panels ▸ opens its flyout", sub().hidden === false && top("panels")!.classList.contains("subopen"));
 check("voice rows lead: mic, ears, VR", ["glyph:mic", "glyph:ear", "glyph:xr"].every((k) => !!row(k)));
+{ // the mic row follows the HUD glyph as it changes (mictoggle.js announces 'mic:indicator'), not at the 2 s sweep
+  const { __setMicIndicator } = await import("../stubs/dock-stub.mjs") as any;
+  const drawnKey = () => row("glyph:mic")!.querySelector("svg")?.getAttribute("data-key");
+  __setMicIndicator("hot"); bus.emit("mic:indicator", "hot");
+  check("the open menu's mic row re-stamps gold the moment the indicator changes, not at the next 2 s sweep", drawnKey() === "hot", String(drawnKey()));
+  __setMicIndicator("on"); bus.emit("mic:indicator", "on");
+  check("...and back to plain as it ends", drawnKey() === "on", String(drawnKey()));
+  // one read gives the row its key and its glyph: a state that changes between two reads can't leave them apart
+  __setMicIndicator("off"); bus.emit("mic:indicator", "off");   // stamped off first, so the next change re-stamps
+  __setMicIndicator("flip"); bus.emit("mic:indicator", "flip");
+  const r = row("glyph:mic")!;
+  check("the row's recorded key and its drawn glyph come from one read", r.dataset.on === drawnKey(), `${r.dataset.on} vs ${drawnKey()}`);
+  __setMicIndicator(null); bus.emit("mic:indicator", null);
+}
 check("VR row is dead when no headset is sensed (disabled row + disabled pin)", row("glyph:xr")!.disabled && pin("glyph:xr")!.disabled);
 check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "actions", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
 check("the wrench has a row while gated open", !!row("edit"));

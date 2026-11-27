@@ -467,6 +467,8 @@ function repaintRing() {
   if (!radial) return;
   radial.slots.forEach((m, i) => { m.material.map?.dispose(); m.material.map = ringIconTexture(radial.entries[i], i === radial.sel); m.material.needsUpdate = true; });
 }
+// the ring's mic slot draws the HUD glyph (gold, a mute): repaint it as that changes, not only on a selection or an act
+bus.on('mic:indicator', () => { if (radialOpen && radial) repaintRing(); });
 function closeRadial(commit) {
   ringLevel = 'root';
   if (!radial) { radialOpen = false; return; }

@@ -115,7 +115,16 @@ const micIsOn = () => {
 const SHARED = '\nmic and hearing on/off are visible to everyone in this world';
 // every tooltip is true in every moment of its state: whether your voice is going out right now is the gold, not the words
 const GOLD_NOTE = ' — gold while your voice is going out to the room';
+// The menus (the ∃ menu, the VR ring) draw this glyph too: each change of its key is announced on the bus in the turn
+// it is seen (a paint, or the 8 Hz poll), so they repaint with the HUD rather than at their own sweeps.
+let _indKey = null;
+function announceIndicator() {
+  let k;
+  try { k = micIndicator().state; } catch { return; }   // unreadable (or before the module has finished loading): say nothing
+  if (k !== _indKey) { _indKey = k; bus.emit('mic:indicator', k); }
+}
 function paint() {
+  announceIndicator();
   if (!micBtn) return;
   const on = micIsOn();
   micPaintedOn = on;
@@ -181,6 +190,7 @@ setInterval(() => {
   let hot = false, muted = null;
   try { hot = roomHears(); muted = muteReason(); } catch { /* as glyphArgs: not hot, not muted */ }
   if (hot !== micHot || muted !== micMuted || on !== micPaintedOn) paint();
+  else announceIndicator();
 }, 125);
 
 // ---- pair API for the ∃ menu: rows toggle these; per-glyph pins decide whether each hangs off the ∃
