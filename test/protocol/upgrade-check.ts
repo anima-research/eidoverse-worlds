@@ -38,13 +38,14 @@ import { isWorldDir } from "../../server/livehost.ts";
 import { backupWorld } from "../../server/backups.ts";
 import { bootNotice } from "../../server/oldworlds.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { scratchState } from "../harness/harness.ts";
 
 const root = scratch("upgrade");
 let pass = 0, fail = 0;
 const ok = (cond: any, what: string, detail?: any) => { if (cond) { pass++; console.log(`  ok  ${what}`); } else { fail++; console.log(`  FAIL ${what}${detail !== undefined ? ` — ${JSON.stringify(detail).slice(0, 700)}` : ""}`); } };
 const W = path.join(root, "worlds"), B = path.join(root, "backups"), OPT = path.join(root, "opt"); fs.mkdirSync(OPT, { recursive: true });
 const tool = (args: string[], env: Record<string, string> = {}) => { const t0 = performance.now(); const r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE,
-  env: { ...process.env, WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, timeout: 45_000 });
+  env: { ...process.env, WORLDS_DIR: W, ...scratchState(OPT), BACKUPS_DIR: "", PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, timeout: 45_000 });
   return { code: r.exitCode, signal: r.signalCode, ms: Math.round(performance.now() - t0), out: r.stdout.toString() + r.stderr.toString() }; };
 const dryHash = (name: string, env: Record<string, string> = {}) => /^report-hash ([0-9a-f]{64})$/m.exec(tool(["translate", name, "--dry-run", "--no-founder-key"], env).out)?.[1] ?? "no-hash";
 const xlate = (name: string, env: Record<string, string> = {}) => tool(["translate", name, "--no-founder-key", "--operator-only-no-owner", "--approved", dryHash(name, env)], env);
@@ -144,7 +145,7 @@ fs.writeFileSync(sf, JSON.stringify({ [OP]: { sub: "human:test:op", name: "Opal"
   [OP4]: { sub: "human:test:op4", name: "Oren", scopes: ["worlds:join"], exp: Date.now() + 3600_000 },
   [NOB]: { sub: "human:test:nob", name: "Nobody", scopes: ["worlds:join"], exp: Date.now() + 3600_000 } }), { mode: 0o600 });
 const port = await freePort(9440); const slog = path.join(root, "server.log");
-const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
+const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, ...scratchState(OPT), BACKUPS_DIR: "", SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "human:test:op,human:test:op2,human:test:op3,human:test:op4,agent:token:ag", SESSIONS_PATH: sf, AGENT_TOKENS_PATH: AGTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(slog), stderr: Bun.file(slog + ".err") });
 process.on("exit", () => { try { proc.kill(); } catch {} });
 if (!(await tryUntil("the server answers /worlds", async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })))

@@ -21,7 +21,7 @@ import http from "node:http";
 import { ENGINE, scratch, linkFile, canLinkFiles } from "../gate/common.ts";
 import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
-import { freePort } from "../harness/harness.ts";
+import { freePort, scratchState } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const root = scratch("setup");
@@ -44,7 +44,7 @@ fs.writeFileSync(SESS, JSON.stringify({ [ANN]: { sub: "human:test:ann", name: "A
 const V1 = path.resolve(ENGINE, "test/fixtures/v1-worlds/01-build/log.jsonl");
 const worldsDir = (tag) => { const W = path.join(root, tag); const d = path.join(W, "old-x"); fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, "log.jsonl"), fs.readFileSync(V1, "utf8").split("\n").slice(0, 200).filter(Boolean).join("\n") + "\n"); return W; };
-const env = (W, extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), BACKUPS_DIR: path.join(root, `${path.basename(W)}-backups`), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
+const env = (W, extra = {}) => ({ ...process.env, WORLDS_DIR: W, ...scratchState(path.join(root, "opt")), BACKUPS_DIR: path.join(root, `${path.basename(W)}-backups`), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: SESS, HN_ISSUER_KEY: ISSUER, HN_ISS: "id.test", ...extra });
 async function start(W, extra = {}) {
   const port = freePort(9410);   // the shared picker: a fixed 9410++ races other suites in a parallel shard

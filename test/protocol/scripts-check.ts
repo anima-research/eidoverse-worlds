@@ -28,6 +28,7 @@ import { suite } from "../gate/suite.ts";
 const IDS = idAliases();   // the real-server rows: the suite's names ride as placeholders and minted ids
 import { LAB_CATALOGUE, MODELS as LAB_MODELS } from "../harness/labmodels.js";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { scratchState } from "../harness/harness.ts";
 
 const argv = process.argv.slice(2);
 // an act as text for "never names who": without its salts and seal, whose random base64 can spell a name
@@ -1533,7 +1534,7 @@ console.log(JSON.stringify({ platform: process.platform, available: SANDBOX.avai
 // ---------------- S: the real server ----------------
 const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a world builds no v1 BehaviorHost; `use` → script over a WebSocket; a timer fires on the server's own tick; enter reaches scripts; the debug roster lists the authority's view", run: async () => {
   const W4 = path.join(root, "srv"); fs.mkdirSync(W4, { recursive: true });
-  const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
+  const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, ...scratchState(path.join(root, "opt")), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
   const f = Bun.spawnSync(["bun", "tools/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env });
   if (f.exitCode !== 0) return { found: f.stderr.toString() };
   let port = 0; for (let p = 9300; p < 9500; p++) { if (p === 8968 || p === 8970) continue; try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }
@@ -1587,7 +1588,7 @@ const serverCases: Case[] = [{ id: "S1", server: true, what: "the server: a worl
 serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` keeps a say from before the asker arrived out of the console ring; the owner (no floor) still reads it",
   run: async () => {
     const W4 = path.join(root, "srv3"); fs.mkdirSync(W4, { recursive: true });
-    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
+    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, ...scratchState(path.join(root, "opt")), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "" };
     const f = Bun.spawnSync(["bun", "tools/world.ts", "found", "chimes", "--owner", "Ann"], { cwd: ENGINE, env }); if (f.exitCode !== 0) return { found: f.stderr.toString() };
     let port = 0; for (let p = 9700; p < 9900; p++) { try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }
     const logf = path.join(root, "srv3.log");
@@ -1616,7 +1617,7 @@ serverCases.push({ id: "S3", server: true, what: "the server: `debug {script}` k
 serverCases.push({ id: "S2", server: true, what: "the server: while a hostile script (indexOf on crafted text) runs in one world, another world's requests keep answering within the deadline; each hostile run is stopped and shows as a failure (time) against its script",
   run: async () => {
     const W4 = path.join(root, "srv2"); fs.mkdirSync(W4, { recursive: true });
-    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "",
+    const env = { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W4, ...scratchState(path.join(root, "opt")), SKIP_OPT_SWEEP: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "",
       ...(opt("sandbox") ? { EIDO_SANDBOX: opt("sandbox") } : {}) };
     for (const wn of ["alpha", "beta"]) { const f = Bun.spawnSync(["bun", "tools/world.ts", "found", wn, "--owner", "Ann"], { cwd: ENGINE, env }); if (f.exitCode !== 0) return { found: f.stderr.toString() }; }
     let port = 0; for (let p = 9500; p < 9700; p++) { try { const t = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); t.stop(true); port = p; break; } catch { /* taken */ } }

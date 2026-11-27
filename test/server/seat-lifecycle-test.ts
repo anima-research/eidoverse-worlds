@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { WorldAgent } from "../../mcpl/agent.ts";
 import { SeatStore } from "../../server/seats.ts";
 import { HANDLERS } from "../../mcpl/tools.ts";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -65,7 +65,7 @@ const CHILD_LOG = join(SCRATCH, "server-output.txt");
 // it poisons the next run.
 const server = Bun.spawn([process.execPath, "run", "server/server.ts"], {
   cwd: ROOT,
-  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB, OPT_DIR: OPT, PATCH_DIR: PATCH, AGENT_TOKENS_PATH: TOKENS, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" },
+  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB, ...scratchState(OPT), PATCH_DIR: PATCH, AGENT_TOKENS_PATH: TOKENS, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 // preserve the child's own words — a startup crash must be readable, not mute

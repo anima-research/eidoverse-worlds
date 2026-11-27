@@ -15,7 +15,7 @@ import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:c
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 import { verifyToken } from "../../server/aid1.ts";
@@ -91,7 +91,7 @@ const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "..
   env: {
     // a scratch store too: the upload legs write files, and they belong in the scratch dir, not assets/opt
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
-    HN_NATIVE_ORIGIN: HTTP, HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", OPT_DIR: optDir,
+    HN_NATIVE_ORIGIN: HTTP, HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1", ...scratchState(optDir),
     HN_SESSIONS_FILE: join(worldsDir, "sessions.json"),   // never the checkout's .sessions.json (server/auth.ts default)
   },
   stdout: "ignore", stderr: "inherit",

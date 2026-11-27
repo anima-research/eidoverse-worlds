@@ -39,7 +39,7 @@ import os from "node:os";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "../gate/common.ts";
 import { tryUntil, pause } from "../gate/wait.ts";
-import { freePort } from "../harness/harness.ts";
+import { freePort, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
@@ -50,7 +50,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const W = path.join(root, "w"); fs.mkdirSync(W, { recursive: true });
 const TOK = path.join(root, "tokens.json");
 fs.writeFileSync(TOK, JSON.stringify({ "tok-rowan": { id: "Rowan" }, "tok-moss": { id: "Moss" }, "tok-wren": { id: "Wren" }, "tok-fen": { id: "Fen" }, "tok-ivy": { id: "Ivy" } }));
-const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
+const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, ...scratchState(path.join(root, "opt")), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
   BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", AGENT_TOKENS_PATH: TOK, SESSIONS_PATH: path.join(root, "sessions.json"),
   TRUST_NAMES: "1", ACCESS_SWEEP_MS: "250", ...extra });
 const tool = (args) => { const r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE, env: env() }); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
@@ -729,7 +729,7 @@ const gonePid = await exitedPid();
       const w = { name: "t14", clients: new Set([c]), log: { live: { state: () => ({ entities: { "@world": { c: wc } } }) }, expireRoles: () => [], bannedHere: () => false } };
       const gone = []; A.sweepAccess([w], (_w, who, why) => gone.push(why), now); out.sweep[k] = gone; }
     console.log(JSON.stringify(out));`;
-  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, OPT_DIR: path.join(P, "opt"), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
+  const r = Bun.spawnSync(["bun", "-e", code], { cwd: ENGINE, env: { ...process.env, WORLDS_DIR: PW, ...scratchState(path.join(P, "opt")), SERVER_OPERATORS: "", JOIN_TOKEN: "" }, stdout: "pipe", stderr: "pipe" });
   let o = null; try { o = JSON.parse(r.stdout.toString().trim().split("\n").pop()); } catch {}
   ok(o?.door === "listed", "B7 an unloaded world's door leaves out a torn last line (complete JSON, no newline): still listed, not anyone", o?.door ?? r.stderr.toString().slice(-300));
   ok(o?.sweep?.ended?.length === 1 && /access/.test(o.sweep.ended[0]) && o?.sweep?.live?.length === 0,

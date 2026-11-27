@@ -74,8 +74,8 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   const srv = spawn(BUN, ['server/server.ts'], {
     // SKIP_OPT_SWEEP by default: a probe server needs no variants, and the sweeps cost its boot. A probe that wants them
     // passes it in env. Its store and relay incarnation are scratch too (scratchState), never the checkout's assets/opt
-    env: { ...process.env, SKIP_OPT_SWEEP: '1', ...scratchState(), PORT: String(PORT), JOIN_TOKEN: key, WORLDS_DIR: scratch,
-           EIDO_BOOT_NONCE: NONCE, ...extraEnv },
+    env: { ...process.env, SKIP_OPT_SWEEP: '1', PORT: String(PORT), JOIN_TOKEN: key, WORLDS_DIR: scratch,
+           EIDO_BOOT_NONCE: NONCE, ...extraEnv, ...scratchState(extraEnv.OPT_DIR) },
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   const origin = `http://127.0.0.1:${PORT}`;

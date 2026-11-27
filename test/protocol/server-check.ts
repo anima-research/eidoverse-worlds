@@ -33,6 +33,7 @@ import { idAliases } from "../harness/idalias.ts";
 import { shellWord } from "../../server/oldworlds.ts";
 import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { scratchState } from "../harness/harness.ts";
 const IDS = idAliases();
 
 
@@ -70,7 +71,7 @@ const OPTOK = path.join(root, "op-tokens.json"); fs.writeFileSync(OPTOK, JSON.st
 async function startServer(tree: string, worlds: string, opt: string, tag: string) {
   const port = await freePort(8990 + procs.length * 7 + Math.floor(Math.random() * 2000));
   const logf = path.join(root, `${tag}.log`);
-  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
+  const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, ...scratchState(opt), SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", RENAME_COOLDOWN_DAYS: "0.001",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "agent:token:opal", AGENT_TOKENS_PATH: OPTOK, EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
   if (await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).ok, { ms: 115_000, step: 150 })) return { port, proc: p, log: logf }; // bounded: on this host a closed local port can drop the SYN instead of refusing it
@@ -112,7 +113,7 @@ const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
 fs.mkdirSync(W4, { recursive: true });
 await writeBoxGlb(path.join(OPT, "test/table.glb"), [1.2, 0.75, 0.8]);
 await writeBoxGlb(path.join(OPT, "test/cup.glb"), [0.1, 0.12, 0.1]);
-const tool = (args: string[], worlds = W4) => { at(`tool ${args.join(" ")}: started`); const t0 = performance.now(), r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+const tool = (args: string[], worlds = W4) => { at(`tool ${args.join(" ")}: started`); const t0 = performance.now(), r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ENGINE, env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, ...scratchState(OPT), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   at(`tool ${args[0]}: exit ${r.exitCode ?? r.signalCode} in ${Math.round(performance.now() - t0)} ms`); return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 
 const f = tool(["found", "garden", "--owner", "Ann", "--title", "a test garden"]);
