@@ -30,6 +30,7 @@ import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, ea
 import { setPttHeld } from '../audio/micstate.js';
 import { pttMode } from '../audio/voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
+import { repaintSlots, followMicIndicator } from './xrringpaint.js';
 import { markActive } from '../ui/presence.js';
 import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a laser resting on a nameplate opens its card
 import { makeDwell } from '../ui/dwell.js';
@@ -463,12 +464,9 @@ function activateRing(cause) {
   if (e.close) { closeRing('act'); return; }
   repaintRing();                                    // a toggle: show its new state, stay open
 }
-function repaintRing() {
-  if (!radial) return;
-  radial.slots.forEach((m, i) => { m.material.map?.dispose(); m.material.map = ringIconTexture(radial.entries[i], i === radial.sel); m.material.needsUpdate = true; });
-}
-// the ring's mic slot draws the HUD glyph (gold, a mute): repaint it as that changes, not only on a selection or an act
-bus.on('mic:indicator', () => { if (radialOpen && radial) repaintRing(); });
+function repaintRing() { repaintSlots(radial, ringIconTexture); }
+// the ring's mic slot draws the HUD glyph (gold, a mute): its live-glyph slots are redrawn as that changes (xrringpaint.js)
+followMicIndicator(bus, () => (radialOpen ? radial : null), ringIconTexture);
 function closeRadial(commit) {
   ringLevel = 'root';
   if (!radial) { radialOpen = false; return; }

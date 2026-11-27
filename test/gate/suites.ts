@@ -159,6 +159,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["debug-tabs", "client/debug-tabs-test.ts", 1], // the debug window builds only the chosen tab's groups (revived D6)
   ["governor-xr", "client/governor-xr-test.ts", 1], // in a headset the frame governor never moves the pixel ratio (revived D6)
   ["xr-entry-effects", "client/xr-entry-effects-test.mjs", 1], // the XR entry effect owner, executed: entering applies each effect once, exit undoes it (#197 review)
+  ["xr-ring-repaint", "client/xr-ring-repaint-test.mjs", 1], // the VR ring on a change of the mic glyph: only the live-glyph slots are redrawn, a wheel without one rebuilds nothing, a closed ring nothing
   ["xr-session-lifecycle", "client/xr-session-lifecycle-test.mjs", 1], // the XR session clock's lifecycle, executed (#197 Blocker 2); a frame waiting on an ended session is handed to the window clock, once
   ["xrpanels", "client/xrpanels-test.ts", 1], // the VR seam of the schema factory: panels as headset quads
   ["xrpass", "client/xrpass-test.mjs", 1], // stereo cameras get their own chain map (xrpass.js), once, even when three's rebuild re-enters
