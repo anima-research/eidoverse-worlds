@@ -188,8 +188,9 @@ function paint(body) {
   // PTT sits between the mic switch and the sensitivity floor because it decides whether the floor is in use
   body_.append(checkRow('push-to-talk',
     'transmit only while V is held down — replaces voice activation, so the ' +
-    'sensitivity floor below is not used while this is on. Release V and your mic is cut off at once ' +
-    '(within 5 ms), and the gold goes with it. A synthesized voice is not keyed by V.',
+    'sensitivity floor below is not used while this is on. Release V and the end of your last word still goes ' +
+    'out: your mic cuts off 50 ms later (your voice is sent 50 ms behind you), within 5 ms, and the gold goes with ' +
+    'it. A synthesized voice is not keyed by V.',
     pttMode(), (on) => setPttMode(on)));
   const floorRow = micFloorRow();
   body_.append(floorRow);

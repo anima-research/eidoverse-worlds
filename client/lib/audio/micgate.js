@@ -26,6 +26,8 @@ const LOOKAHEAD = 0.05;
 // A deliberate close (push-to-talk released, mute, the mic turned off) is a cut, not a fade: a linear ramp to 0 this
 // long (s), short enough to be "at once" and long enough not to click. The release fade (RELEASE_TAU) is only the
 // voice-activation gate's, after its hang: from full it takes ~0.83 s to fall 60 dB, and sound in it is sent.
+// A push-to-talk release is a cut with a tail: what was said while the key was down is still in the lookahead, so its
+// ramp starts one lookahead later and the end of the last word goes out. A mute or the mic off cuts from now.
 const CUT_S = 0.005;
 // The gain is closed (nothing worth calling voice goes out) below this: -60 dB.
 const GAIN_CLOSED = 0.001;
@@ -102,7 +104,8 @@ export function gateStream(stream, levelFn) {
 
 // The envelope as scheduled, on the wall clock (performance.now, ms): what the gain is doing now, worked out from what
 // was asked of it, so it reads true when the audio clock is not being sampled. { at, from, to, tau } is setTargetAtTime;
-// { at, from, cutEnd } is a cut.
+// { at, from, cutEnd, tail } is a cut whose ramp runs from `at` to `cutEnd` (the gain holds `from` until `at`); `tail`
+// marks a push-to-talk release's, whose sound is still going out until cutEnd.
 let _env = { at: 0, from: 0, to: 0, tau: RELEASE_TAU * 1000 };
 const envAt = (t) => {
   const e = _env, dt = Math.max(0, t - e.at);
@@ -111,26 +114,40 @@ const envAt = (t) => {
 };
 
 /** Drive the gain from the gate decision. `open` is the gate's boolean; the smoothing lives here. `cut` closes in CUT_S
- *  instead of fading (a deliberate close: the key released, mute, the mic off). */
-export function driveGate(open, { cut = false } = {}) {
+ *  instead of fading (a deliberate close: the key released, mute, the mic off). `tail` (the key released) starts that
+ *  cut one lookahead later, so what was said while the key was down still goes out. */
+export function driveGate(open, { cut = false, tail = false } = {}) {
   if (!_gain || !_ctx) return;
-  const now = performance.now(), from = envAt(now);
+  const now = performance.now();
   const target = open ? 1 : 0;
   const p = _gain.gain;
+  const cutPending = _env.cutEnd !== undefined && now < _env.cutEnd;
   if (!open && cut) {
-    if (!(_env.cutEnd !== undefined && from === 0)) {   // already cut shut: nothing to reschedule
+    // with no delay line there is nothing held back to let out: the tail is the lookahead itself
+    const lag = tail && _look ? LOOKAHEAD : 0;
+    const at = now + lag * 1000, cutEnd = at + CUT_S * 1000;
+    // A cut already scheduled stands: the 20 ms tick asks again on every pass, and rescheduling would push it later
+    // each time. Only a cut that closes sooner replaces it (a mute inside a release's tail: stop now).
+    const scheduled = _env.cutEnd !== undefined;
+    if (!scheduled || cutEnd < _env.cutEnd) {
+      const from = envAt(at);   // the gain where the ramp starts (a held key's attack runs on through the tail)
+      let stepped = false;
       try {
         const t = _ctx.currentTime;
-        p.cancelScheduledValues(t); p.setValueAtTime(from, t); p.linearRampToValueAtTime(0, t + CUT_S);
-      } catch { p.value = 0; }
-      _env = { at: now, from, cutEnd: now + CUT_S * 1000 };
+        p.cancelScheduledValues(t); p.setValueAtTime(from, t + lag); p.linearRampToValueAtTime(0, t + lag + CUT_S);
+      } catch { p.value = 0; stepped = true; }
+      // a gain that took a step is shut now: no tail is going out
+      _env = stepped ? { at: now, from: 0, cutEnd: now } : { at, from, cutEnd, tail: lag > 0 };
     }
   } else {
+    const from = envAt(now);
     // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
     // double-smooths and the gate never fully closes)
     const tau = open ? ATTACK_TAU : RELEASE_TAU;
     let stepped = false;
     try {
+      // a re-press inside a release's tail: the cut still waiting on the audio clock would close the new word
+      if (cutPending) p.cancelScheduledValues(_ctx.currentTime);
       p.setTargetAtTime(target, _ctx.currentTime, tau);
     } catch { p.value = target; stepped = true; }
     // a gain that took a step is already at its target: no fade to report as sending
@@ -162,12 +179,16 @@ function anchorOnResume(ctx) {
 }
 
 /** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
- *  the voice-activation hang (sound in it is sent), false at once after a cut. False with no graph. */
+ *  the voice-activation hang (sound in it is sent), and through a push-to-talk release's tail until its cut has
+ *  closed; false at once after a mute's or mic-off's cut. False with no graph. */
 export const gateSending = () => {
   if (!_gain) return false;
-  if (_env.cutEnd !== undefined) return false;   // a cut is 5 ms: closed for anything a person or an indicator sees
+  // a cut from now is 5 ms: closed for anything a person or an indicator sees; a tail sends until it has closed
+  if (_env.cutEnd !== undefined) return !!_env.tail && performance.now() < _env.cutEnd;
   return envAt(performance.now()) > GAIN_CLOSED;
 };
+/** How long (ms) until a push-to-talk release's tail has closed; 0 when none is going out. */
+export const gateTailLeft = () => (_gain && _env.tail ? Math.max(0, _env.cutEnd - performance.now()) : 0);
 
 // ── the ungated lane's only gate ─────────────────────────────────────────────
 // On the consented raw lane there is no gain for driveGate() to drive, so push-to-talk toggles the raw tracks'

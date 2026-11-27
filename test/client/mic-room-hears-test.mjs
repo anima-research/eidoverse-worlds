@@ -25,7 +25,7 @@ let ctxState = 'running';   // the AudioContext's state: 'suspended' sends silen
 let gainThrows = false;     // a gain whose automation throws: the gate falls back to a step (`value =`)
 const ctxListeners = [];    // 'statechange' listeners on the contexts the gate built (a resume is told through them)
 let gateGain = null;        // the gate's own gain (the last one automated), to stand for the audio clock across a suspend
-const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['ramp', v, seconds from now]
+const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['set', v, at] | ['ramp', v, seconds from now] | ['cancel', from]
 const node = () => ({ connect() {}, disconnect() {} });
 const mkTrack = (label) => ({ kind: 'audio', label, enabled: true, readyState: 'live', stop() { this.readyState = 'ended'; } });
 class FakeStream { constructor(tracks) { this._t = tracks; } getTracks() { return this._t; } getAudioTracks() { return this._t; } }
@@ -42,7 +42,7 @@ mock.module(lib('audio/audioctx.js'), () => ({
     createGain: () => ({ ...node(), gain: { _v: 0, get value() { return this._v; },
       set value(v) { this._v = v; if (gainThrows) gainLog.push(['step', v]); },
       setTargetAtTime(v, t, tau) { if (gainThrows) throw new Error('automation refused'); this._v = v; gateGain = this; gainLog.push(['target', v, tau]); },
-      cancelScheduledValues() {}, setValueAtTime(v) { this.value = v; },
+      cancelScheduledValues(t) { gainLog.push(['cancel', t]); }, setValueAtTime(v, t) { this.value = v; gainLog.push(['set', v, t]); },
       linearRampToValueAtTime(v, t) { this.value = v; gainLog.push(['ramp', v, t - this._t0]); }, _t0: 0 } }),
     createDelay: () => ({ ...node(), delayTime: { value: 0, setTargetAtTime() {} } }),
     createMediaStreamDestination: () => ({ ...node(), stream: new FakeStream([mkTrack('gated')]) }),
@@ -136,6 +136,24 @@ const xmlAttrsOk = (svg) => [...svg.matchAll(/<([^>]+)>/g)].every(([, tag]) =>
   /^\/?[\w:-]+\/?$/.test(tag.replace(/\s+[\w:-]+="[^"]*"/g, '').replace(/\s*\/$/, '/').trim()));
 const xrState = () => `xr key=${mt.micIndicatorState()} paints=${xrPaints.length} lastSlash=${xrLast().includes('x1="7" y1="4"')} current=${xrShows()}`;
 const POLLS = 'three glyph polls and many bar frames';
+// A push-to-talk release keeps what was said while the key was down: it is still in the 50 ms lookahead, so the cut's
+// 5 ms ramp starts one lookahead after the release, and the gold holds until that cut has closed. The close repaints
+// the indicators itself (micstate.js 'audio:ptt-tail-end'), so the gold does not wait for a poll. `release` is the
+// gesture; atOnce is what shows in its own turn, closed() what shows as the cut closes.
+const LOOK_S = 0.05, CUT_S = 0.005, TAIL_MS = (LOOK_S + CUT_S) * 1000;
+const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 1e-9;
+const tipNow = () => document.querySelector('#micbtn')?.title || '';
+function releaseKey(release) {
+  const t0 = performance.now();
+  let seen = null;
+  const off = bus.on('audio:ptt-tail-end', () => {
+    seen ??= { ms: performance.now() - t0, gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState(),
+      xrAsked: xrPaints.at(-1) || '', title: tipNow() };
+  });
+  release();
+  const atOnce = { gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState() };
+  return { atOnce, closed: async () => { const r = await tryUntil('the delayed cut closes', () => seen, { ms: 1000 }); off(); return r || null; } };
+}
 
 // ── 1. the transport carries it, or nobody hears it (finding 3) ────────────────────────────────────────────────────
 await sfu.sfuConnect({}, () => {});
@@ -282,15 +300,23 @@ negotiated(pc);
 vc.setPttMode(true); ms.setPttHeld(true);
 t('setup: the device lane is gold under the held key, on the HUD and in VR',
   !!(await tryUntil('gold under PTT', () => gold() && xrShows() && xrGold())), `${state()} ${xrState()}`);
-window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV' }));
-t('PTT keyup: not gold in the same turn (the paint reads roomHears live, not the last poll)',
-  ms.roomHears() === false && !gold() && /push-to-talk armed/.test(document.querySelector('#micbtn').title), state());
+const keyUp = releaseKey(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV' })));
+t('PTT keyup: still gold in the same turn, because the last 50 ms said under the key is still going out',
+  keyUp.atOnce.hears === true && keyUp.atOnce.gold === true, `${JSON.stringify(keyUp.atOnce)} ${state()}`);
+const keyUpClosed = await keyUp.closed();
+t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup), painted by the close itself, not the last poll`,
+  !!keyUpClosed && keyUpClosed.ms >= TAIL_MS && keyUpClosed.hears === false && keyUpClosed.gold === false
+  && /push-to-talk armed/.test(keyUpClosed.title), `${JSON.stringify(keyUpClosed)} ${state()}`);
 ms.setPttHeld(true);
 await tryUntil('gold again under the key, in VR too', () => gold() && xrShows() && xrGold());
-ms.setPttHeld(false);   // the XR controller's A/X release (xr.js): setPttHeld alone, no key event
-const askedNow = xrPaints.at(-1) || '';
-t('VR controller release: the indicator asks for the plain glyph and the HUD drops gold in the same turn, with no tick',
-  !askedNow.includes('drop-shadow') && mt.micIndicatorState() === 'on' && !gold(), `${state()} ${xrState()}`);
+// the XR controller's A/X release (xr.js): setPttHeld alone, no key event
+const vrRel = releaseKey(() => ms.setPttHeld(false));
+t('VR controller release: the HUD and the indicator stay gold while the last 50 ms goes out',
+  vrRel.atOnce.gold === true && vrRel.atOnce.xrKey === 'hot', `${JSON.stringify(vrRel.atOnce)} ${xrState()}`);
+const vrClosed = await vrRel.closed();
+t(`...and as the cut closes (${TAIL_MS} ms on) the indicator asks for the plain glyph and the HUD drops gold, with no tick`,
+  !!vrClosed && vrClosed.ms >= TAIL_MS && !vrClosed.xrAsked.includes('drop-shadow') && vrClosed.xrKey === 'on' && vrClosed.gold === false,
+  `${JSON.stringify(vrClosed && { ...vrClosed, xrAsked: vrClosed.xrAsked.includes('drop-shadow') ? 'gold' : 'plain' })} ${xrState()}`);
 t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
 ms.setPttHeld(true);
 await tryUntil('gold again before turning the mic off', () => gold());
@@ -310,8 +336,9 @@ t('the transport turns the mic off with no event: the bar goes dark',
 
 // ── 8. airtight: one read per VR paint, a throwing answer, the bar's loop across a VR exit, the panel rebuilt ────────
 const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while V/.test(x)) || '';
-t('the push-to-talk hint says the mic is cut off at once (it is: a 5 ms cut), and that a synth voice is not keyed by V',
-  /cut off at once \(within 5 ms\)/.test(pttHint) && !/after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by V/.test(pttHint), pttHint);
+t('the push-to-talk hint says the end of the last word still goes out and the mic cuts off 50 ms after the release, in 5 ms, and that a synth voice is not keyed by V',
+  /Release V and the end of your last word still goes out: your mic cuts off 50 ms later \(your voice is sent 50 ms behind you\), within 5 ms, and the gold goes with it\./.test(pttHint)
+  && !/at once|after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by V/.test(pttHint), pttHint);
 await sfu.sfuMic(true);
 negotiated(pc);
 ms.setPttHeld(true);
@@ -390,12 +417,52 @@ await sfu.sfuMic(true); negotiated(pc);
 ms.setPttHeld(true);
 t('setup: gold under the key', !!(await tryUntil('gold under the key', () => gold() && barGoldNow())), state());
 gainLog.length = 0;
+const gainRel = releaseKey(() => ms.setPttHeld(false));
+const relLog = gainLog.slice();
+const relSet = relLog.find((g) => g[0] === 'set'), last = relLog.at(-1) || [];
+t('PTT release cuts the gain one lookahead later: held at its level until +50 ms, then a ramp to 0 that ends at +55 ms; not the voice-activation fade (setTargetAtTime τ 120 ms)',
+  !!relSet && relSet[1] > 0.9 && near(relSet[2], LOOK_S) && last[0] === 'ramp' && last[1] === 0 && near(last[2], LOOK_S + CUT_S)
+  && !relLog.some((g) => g[0] === 'target' && g[1] === 0 && g[2] >= 0.1), JSON.stringify(relLog));
+t('...and gold holds in the same turn: the room is still getting the end of the word', gainRel.atOnce.hears === true && gainRel.atOnce.gold === true,
+  `${JSON.stringify(gainRel.atOnce)} ${state()}`);
+const gainClosed = await gainRel.closed();
+t(`...and gold ends as the cut closes (${TAIL_MS} ms on), not before and not at a later poll`,
+  !!gainClosed && gainClosed.ms >= TAIL_MS && gainClosed.hears === false && gainClosed.gold === false, `${JSON.stringify(gainClosed)} ${state()}`);
+t('...and the 20 ms ticks over the tail do not reschedule the cut (each would push it later): one hold, one ramp',
+  gainLog.filter((g) => g[0] === 'ramp').length === 1 && gainLog.filter((g) => g[0] === 'set').length === 1, JSON.stringify(gainLog));
+// a mute and the mic off under push-to-talk mean "stop now": the cut starts at once, with no lookahead tail
+const atOnceCut = (log) => { const s = log.filter((g) => g[0] === 'set'), r = log.at(-1) || [];
+  return s.length >= 1 && s.every((g) => near(g[2], 0)) && r[0] === 'ramp' && r[1] === 0 && near(r[2], CUT_S); };
+ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+gainLog.length = 0; ms.toggleMute(true);
+t('PTT held, then mute: the cut starts at once (ends at +5 ms, no lookahead tail) and gold ends in the same turn',
+  atOnceCut(gainLog) && ms.roomHears() === false && !gold(), `${JSON.stringify(gainLog)} ${state()}`);
+ms.toggleMute(false);
+await tryUntil('gold under the key again', () => gold());
+gainLog.length = 0; ms.setMicLive(false);
+// (the answer only: setMicLive is the transport's report and emits no event, so the glyph follows it at its next poll)
+t('PTT held, then the mic off: the cut starts at once and the room stops hearing it in the same turn',
+  atOnceCut(gainLog) && ms.roomHears() === false, `${JSON.stringify(gainLog)} ${state()}`);
+ms.setMicLive(true);
+await tryUntil('gold under the key again', () => gold());
+// a mute inside a release's tail: the person now means to stop at once, so the pending cut is brought forward
+ms.setPttHeld(false); gainLog.length = 0; ms.toggleMute(true);
+t('a mute inside the release tail brings the cut forward: it starts at once, and gold ends in the same turn',
+  atOnceCut(gainLog) && ms.roomHears() === false && !gold(), `${JSON.stringify(gainLog)} ${state()}`);
+ms.toggleMute(false);
+await pause('past the tail', 100);
+// a re-press inside the tail: the pending cut is cancelled, or it would cut the new word 50 ms in
+ms.setPttHeld(true);
+await tryUntil('gold under the key again', () => gold());
+ms.setPttHeld(false); gainLog.length = 0; ms.setPttHeld(true);
+const rePress = gainLog.slice();
+const cancelAt = rePress.findIndex((g) => g[0] === 'cancel'), openAt = rePress.findIndex((g) => g[0] === 'target' && g[1] === 1);
+await pause('past where the cancelled cut would have closed', 120);
+t('a re-press inside the release tail cancels the pending cut before it opens, and the room still hears you after the tail',
+  cancelAt >= 0 && openAt > cancelAt && !gainLog.some((g) => g[0] === 'ramp') && ms.roomHears() === true && gold(), `${JSON.stringify(gainLog)} ${state()}`);
 ms.setPttHeld(false);
-const last = gainLog.at(-1) || [];
-t('PTT release cuts the gain: a ramp to 0 within 10 ms, not the voice-activation fade (setTargetAtTime τ 120 ms)',
-  last[0] === 'ramp' && last[1] === 0 && last[2] <= 0.01 && !gainLog.some((g) => g[0] === 'target' && g[1] === 0 && g[2] >= 0.1),
-  JSON.stringify(gainLog));
-t('...and gold ends with it, in the same turn', ms.roomHears() === false && !gold(), state());
+await tryUntil('key up: the gold goes out', () => !gold());
 // voice activation: after the hang the gain fades over ~0.83 s (to -60 dB), and sound in the fade is sent: gold holds
 vc.setPttMode(false);
 room = 0.3;
@@ -503,7 +570,7 @@ room = 0.3;
 await tryUntil('the gate open by level', () => gold());
 gainLog.length = 0; ms.toggleMute(true);
 const muteGain = gainLog.at(-1) || [];
-t('voice activation open, then mute: the gain is cut (a ramp to 0 within 10 ms)', muteGain[0] === 'ramp' && muteGain[1] === 0 && muteGain[2] <= 0.01, JSON.stringify(gainLog));
+t('voice activation open, then mute: the gain is cut at once (a ramp to 0 that starts now and ends at +5 ms)', atOnceCut(gainLog) && muteGain[0] === 'ramp', JSON.stringify(gainLog));
 ms.toggleMute(false);
 await tryUntil('open again', () => gold());
 gainLog.length = 0; ms.setMicLive(false);

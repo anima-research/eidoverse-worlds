@@ -40,8 +40,8 @@ function show() {
   camera.add(mesh); state = null; tick();
   clearInterval(timer); timer = setInterval(tick, 125);   // the HUD glyph's own cadence
 }
-// the events that change the glyph repaint it at once (the key is read live), so a PTT release on the controller or a
-// mute doesn't wait for the next tick
-for (const ev of ['audio:mic', 'audio:mute', 'audio:ptt-held']) bus.on(ev, () => { if (timer) tick(); });
+// the events that change the glyph repaint it at once (the key is read live), so a PTT release on the controller (and
+// the close of its tail) or a mute doesn't wait for the next tick
+for (const ev of ['audio:mic', 'audio:mute', 'audio:ptt-held', 'audio:ptt-tail-end']) bus.on(ev, () => { if (timer) tick(); });
 function hide() { clearInterval(timer); timer = null; mesh?.removeFromParent(); state = null; }
 bus.on('xr:state', (on) => (on ? show() : hide()));

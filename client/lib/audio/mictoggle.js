@@ -313,7 +313,8 @@ bus.on('audio:mute', paint);
 bus.on('audio:stt-consent', paint);   // the mute tooltip names captions while speech-to-text is on
 bus.on('audio:ptt', paint);   // push-to-talk on or off changes the tooltips' words
 bus.on('your-rights', paint);   // a moderator's chat mute refuses captions
-bus.on('audio:ptt-held', paint);   // any holder of the key (V, the XR controller's A/X): gold ends with the release
+bus.on('audio:ptt-held', paint);   // any holder of the key (V, the XR controller's A/X)
+bus.on('audio:ptt-tail-end', paint);   // the release's tail has gone out: gold ends with the sound
 bus.on('style', paint);
 bus.on('xr:state', paint);
 // build mode moves the ∃ into the workspace's corner and re-inks the glyphs: re-seat and repaint once its CSS is on

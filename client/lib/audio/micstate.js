@@ -12,7 +12,7 @@ const flashHint = (msg) => import('../ui/ui.js').then((u) => u.flashHint(msg, 40
 import { sendTyping } from '../net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
-         gateUnavailable, ungatedConsent, onUngatedConsent, gateSending, gateRunning,
+         gateUnavailable, ungatedConsent, onUngatedConsent, gateSending, gateRunning, gateTailLeft,
          makeOnsetGate, makeLevelMeter, HANG_MS, SYNTH_AUDIBLE } from './micgate.js';
 // Unused here: the meter (micgate.js makeLevelMeter) takes micgate's own audioContext import.
 import { audioContext } from './audioctx.js';
@@ -81,6 +81,20 @@ export function setPttHeld(on) {
   if (next && pttMode() && micOn()) _onset.press(now);
   gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
   bus.emit('audio:ptt-held', next);   // stt.js: captions follow the key
+  watchTail();
+}
+// A release's tail (micgate.js: the end of the last word, still in the lookahead) goes out after the key is up; when its
+// cut has closed the indicators are told, so the gold goes dark with the sound and not at their next poll. A press
+// inside the tail leaves no tail to watch.
+let _tailTimer = null;
+function watchTail() {
+  clearTimeout(_tailTimer); _tailTimer = null;
+  const left = gateTailLeft();
+  if (left > 0) _tailTimer = setTimeout(() => {
+    _tailTimer = null;
+    if (gateTailLeft() > 0) watchTail();   // a timer that fired a hair early waits out the rest
+    else bus.emit('audio:ptt-tail-end');
+  }, Math.ceil(left) + 1);
 }
 bus.on('audio:ptt', (on) => {
   const now = Date.now();
@@ -111,8 +125,10 @@ const _onset = makeOnsetGate({
     // a lane exists, a device is capturing, and the person has not muted.
     const want = micOn() ? open : false;
     // A deliberate close (the key released, mute, the mic off) cuts the gain in 5 ms; only voice activation's own
-    // close, after its hang, fades (and micGateInfo reports the fade as sending: sound in it goes out).
-    driveGate(want, { cut: !want && (pttMode() || !micOn()) });
+    // close, after its hang, fades (and micGateInfo reports the fade as sending: sound in it goes out). The key
+    // released (the mic still on) cuts one lookahead later, so the end of the last word goes out: micGateInfo reports
+    // that tail as sending until the cut has closed. A mute or the mic off means "stop now": the cut starts at once.
+    driveGate(want, { cut: !want && (pttMode() || !micOn()), tail: !want && pttMode() && micOn() });
     // No graph (gate unavailable, raw consented): the decision goes to the raw
     // tracks. PTT closes the wire; voice activation leaves the lane raw, but only
     // while the mic is on, and only while the raw lane is consented. The transport may write a raw track first
