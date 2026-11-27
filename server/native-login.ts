@@ -4,12 +4,12 @@ import type { HnSession } from "./auth.ts";
 import { readCapped } from "./request-body.ts";
 
 // A session issued to a native client: `native`, or `nativeWorld` on an older pairing (auth.ts). It may not approve another pairing. Kept here, so loading the handler runs nothing of auth.ts.
-/** The pairing page's one origin: HN_NATIVE_ORIGIN (empty is unset, as auth.ts reads it), else the public show's. */
-export const nativeOriginOf = (v: string | undefined = process.env.HN_NATIVE_ORIGIN) => v || "https://eidoverse.animalabs.ai";
+const originOf = (v: string) => { try { return new URL(v).origin; } catch { return null; } };
 export const isNativeSession = (s: HnSession) => s.native === true || s.nativeWorld !== undefined;
 
 type Options = {
-  /** This server's public origin, or a reader of it per request (routes pass nativeOriginOf()). */
+  /** This server's public origin, or a reader of it per request (routes pass auth.ts ownOrigin: HN_NATIVE_ORIGIN when set,
+   *  else the request's own, so a self-hosted server with none configured pairs on its own origin, never another site's). */
   origin: string | ((req: Request) => string); login: string; enabled: boolean;
   session(cookie: string | null): HnSession | null;
   issue(session: HnSession): string;
@@ -34,9 +34,12 @@ export function createNativeLogin(o: Options) {
     if (!o.enabled) return json(503, { error: "identity_unavailable" });
     if (path === "/native" && req.method === "GET") return nativePage(o.login);
     if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-    // browser mutations must be same-origin; a native client's start/poll has no Origin and no browser authority
-    const origin = req.headers.get("origin"), own = typeof o.origin === "string" ? o.origin : o.origin(req);
-    if (origin && origin !== own) return json(403, { error: "wrong_origin" });
+    // browser mutations must be same-origin; a native client's start/poll has no Origin and no browser authority. One rule with
+    // the socket guard (auth.ts crossSiteUpgrade): Sec-Fetch-Site decides when sent, so a browser behind a TLS proxy (an https
+    // Origin, an http request) is same-origin as it says; without it, an Origin must be this server's own exactly
+    const site = req.headers.get("sec-fetch-site"), sent = req.headers.get("origin"), own = typeof o.origin === "string" ? o.origin : o.origin(req);
+    const origin = sent === null ? null : originOf(sent);   // normalised as crossSiteUpgrade does; "null" (an opaque origin) is no origin of ours
+    if (site !== null ? site !== "same-origin" : sent !== null && origin !== own) return json(403, { error: "wrong_origin" });
     if (!req.headers.get("content-type")?.startsWith("application/json")) return json(415, { error: "json_required" });
     let body: any;
     try {
@@ -57,7 +60,7 @@ export function createNativeLogin(o: Options) {
       return json(200, { device_code: secret, user_code: code, expires_in: 300, interval: 2 });
     }
     if (path === "/native/approve" || path === "/native/deny") {
-      if (origin !== own) return json(403, { error: "origin_required" });
+      if (site !== "same-origin" && origin !== own) return json(403, { error: "origin_required" });   // a browser's, from this server's page
       const cookie = req.headers.get("cookie");
       const s = o.session(cookie);
       if (!s || s.exp <= t) return json(401, { error: "sign_in_required" });
@@ -88,7 +91,7 @@ export function createNativeLogin(o: Options) {
       const seconds = Math.max(1, Math.floor((exp - t) / 1000));
       // world_scope "*" for native clients from before native sessions became ordinary ones, which read a missing scope as one world
       return json(200, { name: s.name, expires_in: seconds, world_scope: "*" }, {
-        "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${own.startsWith("https:") ? "; Secure" : ""}`,
+        "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${own.startsWith("https:") || req.headers.get("x-forwarded-proto") === "https" ? "; Secure" : ""}`,   // as routes.ts's /auth cookie: behind a TLS proxy too
       });
     }
     return json(404, { error: "not_found" });

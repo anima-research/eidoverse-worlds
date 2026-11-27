@@ -113,14 +113,14 @@ for (const v of ["SERVER_OPERATORS", "WORLD_ADMIN"]) { const s = await start({ [
   const said = r.stdout.toString() + r.stderr.toString(), disk = JSON.parse(fs.readFileSync(sf, "utf8"));
   ok(/1 session\(s\) refused .*kept on disk until it expires/.test(said) && disk[A]?.sub === "agent:token:x" && disk[H]?.sub === "human:test:h",
     "C3s a refused session's boot line is true: after a save it is still on disk (until it expires), proving nobody", { said: said.slice(-300), keys: Object.keys(disk).length }); }
-// C3n: an empty HN_NATIVE_ORIGIN is unset, for the socket guard (auth.ts ownOrigin) and for the native pairing page
+// C3n: an empty HN_NATIVE_ORIGIN is unset, for the socket guard (auth.ts ownOrigin) and for the native pairing page, one reader for both
 { const { ownOrigin } = await import("../../server/auth.ts"), was = process.env.HN_NATIVE_ORIGIN, req = new Request("http://self.test:8940/native/approve", { headers: { host: "self.test:8940" } });
   process.env.HN_NATIVE_ORIGIN = ""; const unset = ownOrigin(req); process.env.HN_NATIVE_ORIGIN = "https://x.test"; const set = ownOrigin(req);
   if (was === undefined) delete process.env.HN_NATIVE_ORIGIN; else process.env.HN_NATIVE_ORIGIN = was;
   ok(unset === "http://self.test:8940" && set === "https://x.test", "C3n an empty HN_NATIVE_ORIGIN means the request's own origin for the socket guard (auth.ts ownOrigin)", { unset, set });
-  const { nativeOriginOf } = await import("../../server/native-login.ts"), routes = fs.readFileSync(new URL("../../server/routes.ts", import.meta.url), "utf8");
-  ok(nativeOriginOf("") === "https://eidoverse.animalabs.ai" && nativeOriginOf(undefined) === nativeOriginOf("") && nativeOriginOf("http://x.test") === "http://x.test" && /origin: nativeOriginOf\(\),/.test(routes),
-    "C3n the native pairing page defaults to the public show's origin, unset or empty, as main did (routes pass nativeOriginOf())", nativeOriginOf("")); }
+  const routes = fs.readFileSync(new URL("../../server/routes.ts", import.meta.url), "utf8");
+  ok(/origin: ownOrigin,/.test(routes) && !/eidoverse\.animalabs\.ai/.test(fs.readFileSync(new URL("../../server/native-login.ts", import.meta.url), "utf8")),
+    "C3n the native pairing page is this server's own origin too (routes pass auth.ts ownOrigin; native-login.ts names no other site): a self-hosted server never pairs on the public show's", routes.match(/origin: [^,]*,/)?.[0]); }
 // C3t: auth.ts's agent-token cache keys on tokens.json AND tokens.example.json (a key the example gains is refused without a
 // touch of tokens.json), and an example-key enrolment keeps its aid1 subs mapping (proven by the aid1 signature, not the key), as main mapped every subs entry
 { const d = fs.mkdtempSync(path.join(root, "c3t-")), tp = path.join(d, "tokens.json"), ep = path.join(d, "tokens.example.json");
