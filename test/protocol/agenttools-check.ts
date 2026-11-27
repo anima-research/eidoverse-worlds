@@ -439,15 +439,22 @@ const call = (name, a = {}) => handleToolDoor({ agent: ag, canPush: () => false,
 // ---- AT15 (review r5 F4): a dropped agent dials again on the browser's schedule (shared/redial.js), not a fixed 1.5 s ----
 { const rid = new WorldAgent({ url: `ws://127.0.0.1:${port}/ws`, name: "Rid", world: "yard", avatar: "" });
   await rid.connect(); await tryUntil("Rid has joined", () => rid.joined, { ms: 3000, step: 50 });
-  const t0 = rid.redial?.tries;
-  rid.ws.close(1000, "a drop");
-  await tryUntil("Rid knows it was dropped", () => !rid.joined, { ms: 200, step: 10 });
-  // the try is counted when the close is handled, which a loaded runner may take a while to get to: watch for it, not a
-  // fixed pause. The redial waits ≥ a connect, so a 5 ms poll sees 1 before the rejoin resets it
-  await tryUntil("the drop counted one try", () => rid.redial?.tries === 1, { ms: 1500, step: 5 });
-  ok(t0 === 0 && rid.redial?.tries === 1, "AT15 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, tries: rid.redial?.tries });
-  await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
-  ok(rid.joined && rid.redial?.tries === 0, "AT15 …it gets back in by itself, and the join resets the backoff", { joined: rid.joined, tries: rid.redial?.tries });
+  // the wait can be ~0 ms, so tries may be 1 for only a few ms: record each ask of the backoff, and the count the join
+  // resets, rather than poll the counter. The ask's rand is pinned to 0 so a dial that ignores the wait (a fixed 1.5 s) shows
+  const t0 = rid.redial?.tries, r = rid.redial, next0 = r.next, reset0 = r.reset, asks = []; let atJoin = null;
+  r.next = (floor, rand) => { const wait = next0.call(r, floor, rand ?? (() => 0)); asks.push({ tries: r.tries, wait }); return wait; };
+  r.reset = () => { atJoin ??= r.tries; reset0.call(r); };
+  // time the drop to the next DIAL (the interval the backoff sets), not to a finished join (review bot r1 F1)
+  const connect0 = rid.connect; let dialAt = null;
+  rid.connect = function (...a) { dialAt ??= performance.now(); return connect0.apply(this, a); };
+  try {
+    const dropped = performance.now(); rid.ws.close(1000, "a drop");
+    await tryUntil("the drop asked the shared backoff", () => asks.length, { ms: 1500, step: 10 });
+    ok(t0 === 0 && asks.length === 1 && asks[0].tries === 1, "AT15 a dropped agent's next dial is the shared backoff's (one try counted)", { t0, asks });
+    await tryUntil("Rid gets back in by itself", () => rid.joined, { ms: 4000, step: 50 });
+    const dial = dialAt === null ? null : Math.round(dialAt - dropped);
+    ok(rid.joined && atJoin === 1 && asks.length === 1 && rid.redial?.tries === 0 && dial !== null && dial < 1500, "AT15 …it dials again on that wait and gets back in by itself, and the join resets the backoff", { joined: rid.joined, atJoin, asks, tries: rid.redial?.tries, dial });
+  } finally { r.next = next0; r.reset = reset0; rid.connect = connect0; }
   rid.close(); }
 
 // ---- AT16: upload puts a file in the world's store, and create places it ----
