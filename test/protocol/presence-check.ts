@@ -14,7 +14,8 @@
 //       refused (a bodydrag to one is dropped silently, the drag being moot; typing goes out with to: null); a
 //       sender with no actor id still reaches by name. (whisper did too until it was removed, R 10-18: now it reaches nobody)
 //   UW  a 3D pose on the wire (from underwater-wire-test): orientation and locomotion relay as sent and reach a late
-//       joiner's snapshot; a zero quaternion and a spectator's pose are never relayed; movement writes nothing to the log
+//       joiner's snapshot; a zero quaternion and a spectator's pose are never relayed; movement writes nothing to the log;
+//       an observer is sent the diver's chat and told when it leaves
 // @ts-nocheck
 import fs from "node:fs";
 import path from "node:path";
@@ -171,12 +172,19 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   ok(!!barrier && !frames(late, "Diver", k).some((p) => p.p?.[0] === 13 || p.q?.[3] === 0), "UW3 a pose with a zero quaternion is dropped, not relayed (in no form, repaired or not)", frames(late, "Diver", k));
   ok(!!barrier && frames(late, "Watcher", k).length === 0, "UW4 a spectator's pose is never relayed", frames(late, "Watcher", k));
   // the control: a say from the diver IS in the log, so the log was read and the actor ids match
+  const kw = watch.msgs.length;
   await diver.req("say", { text: "underwater wire check" });
+  const heard = await tryUntil("Watcher is sent the diver's say", () => watch.since(kw).some((m) => m.type === "log" && (m.entries ?? []).some((e) => e.kind === "say" && e.actor === diver.actor && e.body?.text === "underwater wire check")), { ms: 4000, step: 20 });
+  ok(!!heard, "UW6 the observer is sent the diver's chat", watch.since(kw).map((m) => m.type));
   const entries = fs.readFileSync(jsonl, "utf8").trim().split("\n").slice(logAt).map((l) => JSON.parse(l));
   const ours = new Set([diver.actor, watch.actor, late.actor, tick.actor].filter(Boolean)), theirs = entries.filter((e) => ours.has(e.actor));
   // every entry since logAt, whoever wrote it: a move logged with no actor, or as system, is caught too
   ok(ours.size === 4 && theirs.some((e) => e.kind === "say") && entries.every((e) => e.kind === "say" && ours.has(e.actor)), "UW5 movement is never authored: the only log entry is the control's say", entries.map((e) => [e.kind, e.op ?? e.verb, e.actor ?? null]));
-  for (const s of [diver, watch, late, tick]) s.close(); }
+  const kl = watch.msgs.length;
+  diver.close();
+  const left = await tryUntil("Watcher is told the diver left", () => watch.since(kl).some((m) => m.type === "leave" && m.id === "Diver"), { ms: 4000, step: 20 });
+  ok(!!left, "UW7 the observer sees the diver leave", watch.since(kl).map((m) => [m.type, m.id]));
+  for (const s of [watch, late, tick]) s.close(); }
 
 try { proc.kill(); } catch {}
 done();
