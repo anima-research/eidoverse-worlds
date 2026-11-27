@@ -84,7 +84,7 @@ const floorHint = () => !gateUnavailable()
   : ungatedConsent()
     ? 'the voice gate could not be built on this device and you chose to transmit ungated: the white marker holds ' +
       'nothing back, so everything your microphone picks up is sent while the mic is on, typing and room noise ' +
-      'included, however low the marker is set (push-to-talk, or turning the mic off, still stops it); ' + BAR_NOTE
+      'included, wherever the marker is set (push-to-talk, or turning the mic off, still stops it); ' + BAR_NOTE
     : 'the voice gate could not be built on this device, so the white marker is not in use and your microphone sends ' +
       'nothing unless you tick ‘transmit UNGATED’ below; ' + BAR_NOTE;
 const PTT_KEY = 'transmit only while the push-to-talk key is held down (V, or A/X on a VR controller) — replaces voice ' +
@@ -93,6 +93,9 @@ const pttHint = () => PTT_KEY + (gateUnavailable() || gateLookahead() === false
   // a raw lane's track is switched off, and a gate without a delay line has nothing held back: no tail either way
   ? 'Release the key and your mic cuts off at once (this device has no lookahead, so nothing is sent behind you), ' +
     'and the gold goes with it.'
+  // no gate built yet (the mic has not been on): which of the two this device gets is not known, so both are said
+  : gateLookahead() === null ? 'Release the key and your mic cuts off, and the gold goes with it: 50 ms later where ' +
+    'this device can send your voice 50 ms behind you (the end of your last word still goes out), at once where it can\'t.'
   : 'Release the key and the end of your last word still goes ' +
     'out: your mic cuts off 50 ms later (your voice is sent 50 ms behind you), within 5 ms, and the gold goes with ' +
     'it.') + ' A synthesized voice is not keyed by it.';
@@ -156,7 +159,9 @@ function micFloorRow(onLook = () => {}) {
   const sample = () => {
     // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
     // transport's peak crossed the marker with the gate shut), muted or not
-    const level = micDeviceLevel();
+    // read on its own: an unreadable level empties the bar, and must not skip the gold read below (the voice may be going out)
+    let level = 0;
+    try { level = micDeviceLevel(); } catch (e) { warnRarely('mic-meter', '[audio panel] the mic level could not be read; the bar is empty', e); }
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
     // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates

@@ -122,6 +122,8 @@ initVoiceSfu('p');
 const mt = await import(lib('audio/mictoggle.js'));
 const { initAudioPanel } = await import(lib('audio/audiopanel.js'));
 initAudioPanel();
+// before the mic has ever been on there is no gate, so the panel can't know yet whether a release will have a tail
+const pttHintBeforeGate = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while the push-to-talk key/.test(x)) || '';
 await import(lib('xr/xrmicicon.js'));
 bus.emit('xr:state', true);   // in VR: the indicator ticks at the HUD's cadence
 
@@ -236,6 +238,10 @@ t('in VR, muted while silent: the indicator repaints with the slash (key "muted"
 const tip = () => document.querySelector('#micbtn').title;
 t('muted, speech-to-text off: the tooltip says none of your voice goes out', /none of your voice goes out/.test(tip()) && !/caption/.test(tip()), tip());
 sttAv = true; vc.setSttConsent(true);
+sttAv = false;   // speech-to-text stops being available, with no event: only the words change, and the poll still repaints them
+t('muted, speech-to-text gone with no event: the tooltip is repainted to say none of your voice goes out',
+  !!(await tryUntil('the words follow', () => /none of your voice goes out/.test(tip()) && !/caption/.test(tip()), { ms: 2000 })), tip());
+sttAv = true;
 t('muted, speech-to-text on: the tooltip says captions still post, not that none of it goes out',
   !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
 vc.setPttMode(true);
@@ -383,6 +389,9 @@ const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => 
 t('the push-to-talk hint says the end of the last word still goes out and the mic cuts off 50 ms after the release, in 5 ms, and that a synth voice is not keyed by it',
   /Release the key and the end of your last word still goes out: your mic cuts off 50 ms later \(your voice is sent 50 ms behind you\), within 5 ms, and the gold goes with it\./.test(pttHint)
   && !/at once|after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by it/.test(pttHint), pttHint);
+t('...and before any gate was built it promised neither: 50 ms later where the device can hold the voice back, at once where it can\'t',
+  /cuts off, and the gold goes with it: 50 ms later where this device can send your voice 50 ms behind you .* at once where it can't\./.test(pttHintBeforeGate)
+  && !/still goes out: your mic cuts off 50 ms later/.test(pttHintBeforeGate), pttHintBeforeGate);
 t('...and names the key as it is held: V, or A/X on a VR controller (not V alone)',
   /^transmit only while the push-to-talk key is held down \(V, or A\/X on a VR controller\)/.test(pttHint), pttHint);
 const floorHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /voice-activation threshold/.test(x)) || '';
@@ -685,6 +694,7 @@ const heldGain = gainLog.filter((g) => g[0] === 'target' || g[0] === 'ramp').at(
 let heldInfo = null; try { heldInfo = ms.micGateInfo(); } catch { heldInfo = 'threw'; }
 t('PTT held, the level unreadable: the gate stays open (the key decides) and the glyph says so: gold, micGateInfo does not throw',
   !!heldGain && heldGain[1] === 1 && heldInfo !== 'threw' && ms.roomHears() === true && gold(), `${JSON.stringify(gainLog.slice(-2))} ${state()}`);
+t('...and the bar says so too: gold (an unreadable level empties the bar; it does not skip the gold read)', barGoldNow(), state());
 analyserThrows = false; ms.setPttHeld(false); vc.setPttMode(false);
 // a mute and the mic off are deliberate closes: cuts, not the voice-activation fade
 room = 0.3;
@@ -894,6 +904,17 @@ await tryUntil('gold under the key', () => gold());
   globalThis.setTimeout = realST;
   t(`the tail's timer 400 ms late: a frame still tells its end on time (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer armed at the release), and the gold goes then`,
     closedOnTime(end) && end.ms < 400 && end.gold === false && end.hears === false, `${JSON.stringify(end)} ${state()}`); }
+// ...and a timer tells it where no frame comes (a hidden tab)
+ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+{ const realRaf = globalThis.requestAnimationFrame, waiting = [];
+  globalThis.requestAnimationFrame = (cb) => (waiting.push(cb), 0);   // no frame is called until the tab shows again
+  const rel = releaseKey(() => ms.setPttHeld(false));
+  const end = await rel.closed();
+  globalThis.requestAnimationFrame = realRaf;
+  for (const cb of waiting) realRaf(cb);   // shown again: the loops that were waiting carry on (the bar's among them)
+  t('no frames at all (a hidden tab): the tail\'s timer still tells its end on time, and the gold goes then',
+    closedOnTime(end) && end.gold === false && end.hears === false, `${JSON.stringify(end)} ${state()}`); }
 vc.setPttMode(false);
 // (1, 5) a device that cannot build the gate: the sensitivity and push-to-talk hints say what the raw lane does
 const hintOf = (re) => [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => re.test(x)) || '';

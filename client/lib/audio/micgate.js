@@ -159,7 +159,7 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
     }
   } else {
     // a close while a cut is scheduled (or has run) leaves the cut: driven again it would become this fade (mic-gate-envelope-test.mjs §3)
-    if (!open && _env.cutEnd !== undefined) { _wanted = 0; return; }
+    if (!open && _env.cutEnd !== undefined) return;
     const from = level(now);
     // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
     // double-smooths and the gate never fully closes)
