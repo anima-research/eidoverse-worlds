@@ -705,14 +705,16 @@ console.log("\n  no encoder — geometry work is not the encoder's hostage:");
   if (S.up) {
     const untex = await gridGlb("noenc-untex", 160, false);
     const uh = hashOf(untex);
-    await S.upload(untex, "noenc-untex");
+    const upUntex = await S.upload(untex, "noenc-untex");
     const tex = await gridGlb("noenc-tex", 160, true);
     const th = hashOf(tex);
-    await S.upload(tex, "noenc-tex");
+    const upTex = await S.upload(tex, "noenc-tex");
+    check("(setup) both uploads landed", upUntex.status === 200 && upTex.status === 200, `${upUntex.status} ${upTex.status}`);
     const landed = await settled(() => existsSync(lodVariantPath(join(STORE, `${uh}.glb`))), 45_000);
     check("the UNTEXTURED upload got its LOD — ktx2Skip no longer deletes valid geometry work", landed,
       S.log().split("\n").filter((l) => l.includes("lod") || l.includes("encoder")).slice(-4).join(" | "));
-    await settled(() => existsSync(join(STORE_MIN, `${th}.glb`)) || existsSync(join(STORE_MIN, `${th}.glb.failed`)), 45_000);
+    // the textured upload's store-min pass ran: it WAS queued, so the rows below are about passes that ran
+    check("(setup) the textured upload's store-min pass ran (its shadow or verdict appeared)", await settled(() => existsSync(join(STORE_MIN, `${th}.glb`)) || existsSync(join(STORE_MIN, `${th}.glb.failed`)), 45_000));
     check("(setup) the optimizer drained: every queued pass has run", await S.drained());   // not 1.5 s (G6-141's class)
     check("the TEXTURED upload kept its original: no variant, NO marker (environmental)",
       !existsSync(lodVariantPath(join(STORE, `${th}.glb`))) && !existsSync(`${lodVariantPath(join(STORE, `${th}.glb`))}.failed`));

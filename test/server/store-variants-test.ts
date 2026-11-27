@@ -626,8 +626,10 @@ console.log("\n  no encoder on the box — exit 3, once, and no marker:");
     check("…no variant, no marker (environmental)", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)) && !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
     const glb2 = await fixtureGlb("noenc-upload", 1);
     const h2 = hashOf(glb2);
-    await S.upload(glb2, "noenc-upload");
-    await settled(() => existsSync(join(STORE_MIN, `${h2}.glb`)) || existsSync(join(STORE_MIN, `${h2}.glb.failed`)), 30_000);
+    const up2 = await S.upload(glb2, "noenc-upload");
+    check("(setup) the later upload landed", up2.status === 200 && up2.body?.path === `store/${h2}.glb`, `${up2.status} ${JSON.stringify(up2.body)}`);
+    // its store-min pass ran: the upload WAS queued, so the rows below are about a pass that ran, not one that never did
+    check("(setup) the upload's store-min pass ran (its shadow or verdict appeared)", await settled(() => existsSync(join(STORE_MIN, `${h2}.glb`)) || existsSync(join(STORE_MIN, `${h2}.glb.failed`)), 30_000));
     check("(setup) the optimizer drained: the upload's passes have all run", await S.drained());   // G6-141: not 1.5 s
     const noEncoderLines = S.log().split("\n").filter((l) => l.includes("no encoder")).length;
     check("a later upload does not re-spawn an exit-3 pass — ktx2Skip held (the line appears exactly once)", noEncoderLines === 1, `${noEncoderLines} line(s)`);
