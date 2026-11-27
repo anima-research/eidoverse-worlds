@@ -16,10 +16,10 @@
 // A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs if present (a small source, then the 2048² budget). Sections 4-8 spawn the real
 // sequencer (a port a bind-and-close probe found free; fixture-as-nonce ownership) on a scratch OPT_DIR.
 
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, statSync, unlinkSync, rmdirSync, lstatSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, statSync, unlinkSync, rmdirSync, lstatSync, realpathSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX,
@@ -110,13 +110,15 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
       [lodL("unsupported: skinned/avatar asset (skins)", toolsStamp(other)), lodL(`already light (981 verts < ${LOD_MIN_VERTS})`, "")].every((c) => verdictStands(c, LOD_RECIPE))
       && verdictStands("[optimize] ktx2: no convertible raster images (12ms) — keeping original", KTX2_RECIPE, other));
     const v0 = toolVersions();
+    // the name the contract gives a file: its own basename (bun.exe on Windows, so never a literal "bun:"), its real file's size and mtime
+    const encoderName = (f: string) => { const st = statSync(realpathSync(f)); return `${basename(f)}:${st.size}:${st.mtimeMs}`; };
     check("the digest moves with EVERY tool the CLI runs (gltf-transform, meshoptimizer, draco, sharp, the encoder binary)",
       Object.keys(v0).length >= 7 && Object.keys(v0).every((k) => toolsDigest({ ...v0, [k]: `${v0[k]}+1` }) !== toolsDigest(v0)), v0);
     check("…is canonical (key order does not matter) and delimited (a digest that extends this one is not it)",
       toolsDigest(Object.fromEntries(Object.entries(v0).reverse())) === toolsDigest(v0)
       && hasToolsStamp(`x ${toolsStamp()} y`) && !hasToolsStamp(`${toolsStamp()}0`), toolsDigest(v0));
     check("the encoder is named by basename + size + mtime of its real file, never by running it; absent → none",
-      toolVersions(null).encoder === "none" && /^bun:\d+:[\d.]+$/.test(toolVersions(process.execPath).encoder), toolVersions(process.execPath).encoder);
+      toolVersions(null).encoder === "none" && toolVersions(process.execPath).encoder === encoderName(process.execPath), `${toolVersions(process.execPath).encoder} vs ${encoderName(process.execPath)}`);
   }
   check("a refusal under an OLDER recipe does not", !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel2048")} — keeping original`));
   check("…nor one whose stamp merely EXTENDS this recipe's (texel10240 is not texel1024): the match is delimited, never a prefix",
