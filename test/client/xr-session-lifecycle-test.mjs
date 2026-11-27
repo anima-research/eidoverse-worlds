@@ -295,6 +295,23 @@ console.log('\n— a frame still waiting on the session when it ends is handed t
   check('…and it runs there', ran.length === 1 && ran[0][0] === 'loop' && ran[0][1] === 42, JSON.stringify(ran));
   lateCalls.forEach((cb) => cb(43));   // a session that calls back after its end anyway
   check('…once: a late call from the ended session does not run it again', ran.length === 1, JSON.stringify(ran));
+  // a window clock that refuses one waiting callback at the session's end: the rest are still handed on, and the drop is said
+  { const w3 = fakeWindow(), s3 = fakeSession();
+    w3.__xrClockGen = 0;
+    // the window's own clock, as the frame clock will save and restore it: it refuses the first callback once `refusing`
+    const nativeRaf = w3.requestAnimationFrame; let refusing = false, n = 0;
+    w3.requestAnimationFrame = function (cb) { if (refusing && n++ === 0) throw new Error('the window is going away'); return nativeRaf.call(w3, cb); };
+    installFrameClock({ win: w3, session: s3, saved: null });
+    const ran3 = [];
+    w3.requestAnimationFrame(() => ran3.push('refused')); w3.requestAnimationFrame(() => ran3.push('kept'));
+    refusing = true;
+    const warns = [], realWarn = console.warn;
+    console.warn = (...a) => { warns.push(`${a[0]} ${a[1]?.message ?? ''}`); };
+    s3.end();
+    console.warn = realWarn;
+    w3.calls.splice(0).forEach((cb) => cb(1));
+    check('a window clock that refuses a waiting callback: the others are still handed on, and the dropped loop is told to the console',
+      ran3.join() === 'kept' && warns.length === 1 && /could not be handed to the window clock/.test(warns[0]) && /going away/.test(warns[0]), JSON.stringify({ ran3, warns })); }
   // superseded: a newer session owns the clock, so the old one's waiting callbacks go onto the newer shim
   const w2 = fakeWindow(), a = fakeSession(), b = fakeSession();
   w2.__xrClockGen = 0;

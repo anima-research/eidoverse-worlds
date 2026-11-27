@@ -197,6 +197,14 @@ if (typeof window !== 'undefined') {
   tee(`[boot] cause=${cause} host=${location.host} ${location.pathname}${location.search.replace(/key=[^&]+/, 'key=…')} ua=${navigator.userAgent.slice(0, 120)}`);
 }
 
+/** console.warn at most once a minute per key: for a read that fails at tick or frame rate (micstate.js roomHears). */
+const _warnedAt = new Map();
+export function warnRarely(key, msg, err) {
+  const now = performance.now();
+  if (now - (_warnedAt.get(key) ?? -Infinity) < 60000) return;
+  _warnedAt.set(key, now); console.warn(msg, err);
+}
+
 export function report(context, err) {
   const message = err?.message ?? String(err ?? 'unknown error');
   const key = `${context}:${message}`;

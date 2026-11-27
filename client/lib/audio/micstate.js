@@ -6,7 +6,7 @@
 
 // flashHint lives in ui.js; lazy-imported at its one call site so headless
 // contexts that touch the mic don't drag in ui.js (and THREE).
-import { bus } from '../base.js';
+import { bus, warnRarely } from '../base.js';
 // tone 'attn': a press that did not turn the mic on is "something you asked for didn't happen, and why" (ui.js flashHint)
 const flashHint = (msg) => import('../ui/ui.js').then((u) => u.flashHint(msg, 4000, 'attn')).catch(() => {});
 import { sendTyping } from '../net.js';
@@ -26,7 +26,7 @@ export function toggleMute(on) {
   _muted = on === undefined ? !_muted : !!on;
   // a synth voice heard before this moment is not heard after it: the synth hang restarts here (see micGateInfo)
   _synthFrom = performance.now();
-  gateAudio(Date.now());   // apply immediately — mute is authoritative
+  gateAudio();   // apply immediately — mute is authoritative
   applySynthTracks();
   bus.emit('audio:mute', _muted);
   return _muted;
@@ -75,35 +75,42 @@ export function setPttHeld(on) {
   const next = !!on;
   if (next === _pttHeld) return;
   _pttHeld = next;
-  const now = Date.now();
   // The press is a gesture: announce the 🎙 on it, through the machine's
   // once-per-1.5s rate limit.
-  if (next && pttMode() && micOn()) _onset.press(now);
-  gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
+  if (next && pttMode() && micOn()) _onset.press();
+  gateAudio();   // apply immediately — a 20ms tick is an audible latency here
   bus.emit('audio:ptt-held', next);   // stt.js: captions follow the key
   watchTail();
 }
 // A release's tail (micgate.js: the end of the last word, still in the lookahead) goes out after the key is up; when its
 // cut has closed the indicators are told, so the gold goes dark with the sound and not at their next poll. A press
 // inside the tail leaves no tail to watch.
-let _tailTimer = null;
+// A frame and a timer both watch, and the first to find the tail closed tells: the timer alone ran 5 to 24 ms late (#349's measurement).
+let _tailTimer = null, _tailWatch = 0;
 function watchTail() {
   clearTimeout(_tailTimer); _tailTimer = null;
-  const left = gateTailLeft();
-  if (left > 0) _tailTimer = setTimeout(() => {
-    _tailTimer = null;
-    if (gateTailLeft() > 0) watchTail();   // a timer that fired a hair early waits out the rest
-    else bus.emit('audio:ptt-tail-end');
-  }, Math.ceil(left) + 1);
+  const mine = ++_tailWatch;   // a newer watch, or the tail's end, retires this one's frame and timer
+  if (gateTailLeft() <= 0) return;
+  const going = () => {
+    if (mine !== _tailWatch) return false;
+    if (gateTailLeft() > 0) return true;
+    clearTimeout(_tailTimer); _tailTimer = null; _tailWatch++;
+    bus.emit('audio:ptt-tail-end');
+    return false;
+  };
+  // a timer that fired a hair early waits out the rest
+  const arm = () => { _tailTimer = setTimeout(() => { if (going()) arm(); }, Math.ceil(gateTailLeft()) + 1); };
+  arm();
+  const frame = () => { if (going()) globalThis.requestAnimationFrame(frame); };
+  if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(frame);
 }
 bus.on('audio:ptt', (on) => {
-  const now = Date.now();
   if (on) {
     // Arming closes the gate now, not on the next tick: on an ungated lane that
     // tick would be a window of raw transmission. On the gated lane the close is a
     // cut whose start waits one lookahead if a word is in it (micgate.js: the tail),
     // so watch that tail as a release's is watched, and the gold ends with it.
-    gateAudio(now);
+    gateAudio();
     watchTail();
     return;
   }
@@ -111,7 +118,7 @@ bus.on('audio:ptt', (on) => {
   if (_pttHeld) _pttHeld = false;
   // The drive closure restores an ungated lane to raw-and-open unless muted or
   // the device is off — one writer for the raw tracks.
-  gateAudio(now);
+  gateAudio();
 });
 
 // The onset watcher: micgate.js's makeOnsetGate/makeLevelMeter, instantiated
@@ -144,12 +151,12 @@ const _onset = makeOnsetGate({
   // PTT hands the machine a held answer; null means "decide by level".
   held: () => (pttMode() ? _pttHeld : null),
 });
-const gateAudio = (now) => _onset.apply(now);
+const gateAudio = () => _onset.apply();
 const startOnsetWatch = () => _onset.start();
 const stopOnsetWatch = () => _onset.stop();
 
 // Re-consenting to a raw lane (micgate.js allowUngated) re-applies the gate at once, so its tracks open in the same call.
-onUngatedConsent(() => gateAudio(Date.now()));
+onUngatedConsent(() => gateAudio());
 
 // A synth voice has no gate (gateFor passes it through): audible is speaking, held through the gaps between words
 // for the onset gate's own hang (micgate.js HANG_MS). When it was last audible is the source's own record where it
@@ -190,21 +197,19 @@ export const laneSynthetic = () => !!_lane?.synthetic;
 // peer connection with the lane's track on a sender negotiated to send). Without a transport nothing carries it.
 let _carrier = null;
 export const setLaneCarrier = (fn) => { _carrier = fn; };
-export const laneCarried = () => { try { return !!_lane && !!_carrier?.(_lane); } catch { return false; } };
+const carried = () => !!_lane && !!_carrier?.(_lane);   // may throw: roomHears() is where a throw is told
+export const laneCarried = () => { try { return carried(); } catch { return false; } };
 
 /** THE ONE ANSWER TO "IS MY VOICE GOING OUT TO THE ROOM RIGHT NOW". The lane is sending (micGateInfo), its track is
  *  on, the transport carries it to the server, and no moderator has muted you (the server would drop it). It stops at
  *  the server: the SFU forwards only to listeners who consented to hear voices, and distance fades it, so whether
  *  anyone hears it (consent, distance, an empty room) is not counted. Every indicator that goes gold asks here. */
-// It never throws: a throw reads as not sending (an indicator must fail toward not gold), and is told to the console at
-// most once a minute so a broken read is diagnosable without flooding it at frame rate.
-let _hearsWarnAt = -Infinity;
+// It never throws: a throw (the transport's check included) reads as not sending, and is told to the console (base.js warnRarely).
 export const roomHears = () => {
   try {
-    return !!_lane && !_modMuted && someTrackOn(laneTracks()) && laneCarried() && !!micGateInfo().speaking;
+    return !!_lane && !_modMuted && someTrackOn(laneTracks()) && carried() && !!micGateInfo().speaking;
   } catch (e) {
-    const t = performance.now();
-    if (t - _hearsWarnAt >= 60000) { _hearsWarnAt = t; console.warn('[mic] roomHears() threw; the indicators read it as not sending', e); }
+    warnRarely('room-hears', '[mic] roomHears() threw; the indicators read it as not sending', e);
     return false;
   }
 };
@@ -244,11 +249,13 @@ export function gateFor(rawStream) {
   _released = false;
   _gated = reused || gateStream(rawStream, micAnalyserLevel);
   _lane = _gated;
+  // a reused lane's track comes back on with _laneOn, whatever the transport last wrote to it
+  for (const t of _lane?.getTracks?.() ?? []) t.enabled = true;
   _deviceLive = true;
   startOnsetWatch();
   // Apply the current authority (mute, held key) synchronously: an ungated raw
   // track arrives enabled, and the first tick is 20 ms away.
-  gateAudio(Date.now());
+  gateAudio();
   return _gated;
 }
 
@@ -293,7 +300,7 @@ export function setMicLive(on) {
   _deviceLive = !!on;
   // Liveness is part of the gate's authority, so re-apply now, changed or not: the transport re-enables a raw track
   // before it calls this, and mute or PTT-with-key-up must close it at once.
-  gateAudio(Date.now());
+  gateAudio();
 }
 export const micOn = () => !!_lane && _deviceLive && !_muted;
 /** The device leg of micOn() on its own — what the transport last reported.

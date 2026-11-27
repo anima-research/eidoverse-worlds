@@ -2,14 +2,15 @@
 // grep — the stubs stop at the browser boundary (AudioContext, bus, net) and
 // the code under test is the shipped code, same doctrine as
 // micstate-test.mjs and for the same reason: every prior mic defect in
-// this repo passed source-level checks and failed only when run. (Three rows
-// at the end still read source: the badge's gold, V's typing guard, the
-// panel's dimmed sensitivity row.)
+// this repo passed source-level checks and failed only when run. (Two rows
+// near the end still read source: V's typing guard and the panel's dimmed
+// sensitivity row.)
 //
-// The observable is micgate's gateOpenness() — the gate's INTENT, the same
-// value the "am I being heard" indicator trusts — and gateGainNow(), the gain
-// node's value, which says the decision was written. If these tests and that
-// indicator ever disagree, believe neither and go listen.
+// The observable is micgate's gateOpenness() — the gate's INTENT — and
+// gateGainNow(), the gain node's value, which says the decision was written.
+// The indicators ("is my voice going out") read micstate.js roomHears(), which
+// adds the gain's envelope, the lane's track and the transport: that is
+// mic-room-hears-test.mjs's and mic-gate-envelope-test.mjs's to run.
 //
 // Run: bun test/client/mic-ptt-test.mjs
 import { fileURLToPath } from "node:url";

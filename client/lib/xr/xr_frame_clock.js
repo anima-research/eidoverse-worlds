@@ -73,7 +73,8 @@ export function installFrameClock({ win, session, saved, emulated = false, onEnd
   // native one, or a newer session's shim if one owns the clock. Its old id no longer cancels it.
   const handOn = () => {
     const cbs = [...pending.values()]; pending.clear();
-    for (const cb of cbs) { try { win.requestAnimationFrame(cb); } catch { /* the window's clock refused it */ } }
+    // a refused callback's loop is dead from here: say so (a silent drop reads as a frozen UI with no cause)
+    for (const cb of cbs) { try { win.requestAnimationFrame(cb); } catch (e) { console.warn('[xr] a frame callback waiting at the session\'s end could not be handed to the window clock; its loop has stopped', e); } }
   };
   const restore = () => {
     ended = true;

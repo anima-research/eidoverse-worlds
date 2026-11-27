@@ -2,7 +2,8 @@
 // (a child of the camera, like vrmic.js's plate), small, low-left, drawing the HUD's own glyph (mictoggle.js
 // micIndicatorSvg): off = slashed, on = faint and smaller, muted = on with the slash, at full size so it is noticed,
 // hot = your voice is going out, full, hot-off = a synth voice going out with the mic off. Repainted only when
-// micIndicatorState's key changes, and that key has one value per distinct glyph.
+// micIndicatorState's key changes, and that key has one value per distinct glyph. No clock of its own: mictoggle.js
+// announces each change of the key ('mic:indicator') in the turn the HUD shows it.
 import { THREE, camera, renderer } from '../core.js';
 import { bus } from '../base.js';
 import { quadMaterial } from './quadcolour.js';
@@ -11,7 +12,7 @@ import { micIndicator } from '../audio/mictoggle.js';
 const MIC_ICON = { x: -0.17, y: -0.15, z: -0.6, size: 0.032 };   // metres in front of the eyes: ≈3° across, ≈16° left, 14° down
 const LOOK = { off: { opacity: 0.9, scale: 1 }, on: { opacity: 0.45, scale: 0.8 }, muted: { opacity: 0.9, scale: 1 },
   hot: { opacity: 1, scale: 1 }, 'hot-synth': { opacity: 1, scale: 1 }, 'hot-off': { opacity: 1, scale: 1 } };
-let mesh = null, cv = null, tex = null, state = null, timer = null, painted = 0;
+let mesh = null, cv = null, tex = null, state = null, shown = false, painted = 0;
 
 function paint({ state: st, svg }) {
   const g = cv.getContext('2d'), css = getComputedStyle(document.documentElement);
@@ -37,11 +38,10 @@ function show() {
     mesh.renderOrder = 2999; mesh.frustumCulled = false; mesh.name = 'xr-mic-icon';
   }
   mesh.position.set(MIC_ICON.x, MIC_ICON.y, MIC_ICON.z);
-  camera.add(mesh); state = null; tick();
-  clearInterval(timer); timer = setInterval(tick, 125);   // the HUD glyph's own cadence
+  camera.add(mesh); state = null; shown = true; tick();
 }
-// the events that change the glyph repaint it at once (the key is read live), so a PTT release on the controller (and
-// the close of its tail) or a mute doesn't wait for the next tick
-for (const ev of ['audio:mic', 'audio:mute', 'audio:ptt-held', 'audio:ptt-tail-end']) bus.on(ev, () => { if (timer) tick(); });
-function hide() { clearInterval(timer); timer = null; mesh?.removeFromParent(); state = null; }
+// the HUD's announcement, and the events that change the glyph (the key is read live), so a PTT release on the controller
+// (and the close of its tail) or a mute repaints in its own turn
+for (const ev of ['mic:indicator', 'audio:mic', 'audio:mute', 'audio:ptt-held', 'audio:ptt-tail-end']) bus.on(ev, () => { if (shown) tick(); });
+function hide() { shown = false; mesh?.removeFromParent(); state = null; }
 bus.on('xr:state', (on) => (on ? show() : hide()));
