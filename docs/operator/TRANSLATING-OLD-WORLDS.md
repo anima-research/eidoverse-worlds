@@ -3,6 +3,51 @@
 If you run this server, open the setup link printed in its console (or add your account to `SERVER_OPERATORS`).
 Otherwise ask whoever runs it.
 
+## Quick start: do this, in order
+
+For an operator (human or agent) on the host, one world at a time. Run from the engine checkout; `<dir>` is the server's
+`WORLDS_DIR`, `<world>` the world's folder name. (The splash's **Upgrade world…** button runs steps 2 and 3 for you:
+*Upgrading from the browser*, below.)
+
+**This checklist is procedure, not authorization.** Obtain world-specific operator authority and give the world's
+owners and inhabitants the agreed notice before translating it. Deploying a new protocol version does not by itself
+authorize translating any world.
+
+1. **Back up** `<dir>/<world>/` somewhere off the host. (The tool makes a verified backup in `BACKUPS_DIR` and keeps
+   the old log, but both are on this host: a copy you hold elsewhere is the real undo.) No old-protocol server may still
+   be serving the world: the translation refuses a log that changed since its dry run. A server on this protocol may
+   run meanwhile (it doesn't serve the world until it is translated).
+2. **Dry run** (writes no world):
+   `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --dry-run --no-founder-key`
+   If it refuses because the world has no owner, run it again with `--claim` added and
+   `EIDO_UPGRADER_ACCOUNT=<your account> EIDO_UPGRADER_NAME=<your name>` in front (every translation ends with an owner:
+   *An ownerless world is claimed*, below). Read the report. If its `refused` isn't `null`, stop and read it. It names
+   what this protocol can't carry (a feature it doesn't carry yet, or a person main let only watch) and the change to
+   make on the old server first: make it and run the dry run again, or ask the maintainers. Its
+   last lines are `report-hash <hash>` and the arguments for step 3. (Use the `report-hash`, not the `sha256` inside
+   the report: that one is the old log's.) Approving the report accepts the trial period it states.
+3. **Translate in place:**
+   `WORLDS_DIR=<dir> bun tools/world.ts translate <world> --no-founder-key --approved <report-hash> --operator-only-no-owner`
+   (with `--claim` and the same `EIDO_UPGRADER_…` in front again if step 2 needed them: the claim is in the hash). It
+   backs the world up to `BACKUPS_DIR`, builds and verifies the new world beside the old one, and swaps it in under the
+   same name only if every check passes; the old log stays as `log.original.jsonl`, and the output names the backup.
+   On a failure the original is untouched and it says why (in the rare case that the swap can't put files back, it
+   exits 2 and lists what to move by hand). Each try makes a backup; delete the ones you don't need.
+4. **Check it:** `WORLDS_DIR=<dir> bun tools/world.ts info <world>`, then start the server if it isn't running, join,
+   and look around. For each owner the report listed with no account yet, ask for theirs and bind it with the
+   `operator-repair.ts bind` command the report printed, with `WORLDS_DIR=<dir>` in front (*Binding an imported owner*,
+   below).
+5. **If anything is wrong:** stop the server (one still serving the world would write the translated files back), then
+   `WORLDS_DIR=<dir> bun tools/world.ts rollback <world>` puts the old files back. Once anything has been written to the
+   translated world (a join, a bind), rollback refuses until you add `--discard-changes`, which drops that history; a
+   bind made since stays bound.
+
+**Deploy and translate in the same sitting.** A server on this protocol doesn't serve an untranslated world: its
+operator and owner see the upgrade splash, and everyone else is told the world is unavailable. So a world is closed
+from the moment the new server runs until it is translated.
+
+The rest of this page explains what each step checks and why.
+
 Informative (recut C19, 2026-10-21): how an operator translates a world, moved out of spec/PROTOCOL.md §14, which keeps
 only what a translated log must be. Where this and §14 disagree, §14 wins.
 
