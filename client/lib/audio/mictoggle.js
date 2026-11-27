@@ -125,20 +125,27 @@ function paint() {
   micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
   micBtn.style.opacity = deaf ? '0.55' : '1';
   // speech-to-text doesn't read a voice mute yet, so while it is on a muted mic still posts captions (as say, which a
-  // moderator's chat mute refuses), and under push-to-talk only while V is held: say exactly that
+  // moderator's chat mute refuses), and under push-to-talk only while the key is held (V, or A/X on a VR controller)
+  // and as a release drains what was heard (stt.js keyAllows): say exactly that. With the mic off it would start on the
+  // mic's turning on (stt.js syncSTT), so the mic-off tooltips say the same of turning it on.
   const captionsPost = sttConsented() && sttAvailable() && !chatMuted();
+  const whileKey = pttMode() ? ' while you hold the push-to-talk key, and just after' : '';
   const muteTail = !captionsPost ? ' — none of your voice goes out to the room'
-    : ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' + (pttMode() ? ' while you hold V' : '');
+    : ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' + whileKey;
+  const offTail = (voice) => !captionsPost ? 'turning the mic on won\'t reach the room'
+    : `turning the mic on won't let the room hear ${voice}, but your speech-to-text captions would post${whileKey}`;
   micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here' + muteTail
     : muted ? 'mic on, but muted' + muteTail
     : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
       // a mute holds whatever V does: say so rather than offer V
-      : reason === 'moderator' ? 'mic off — and a moderator has muted your voice here: turning the mic on won\'t reach the room'
-      : reason ? 'mic off, and muted — turning the mic on won\'t reach the room'
+      : reason === 'moderator' ? 'mic off — and a moderator has muted your voice here: ' + offTail('it')
+      : reason ? 'mic off, and muted — ' + offTail('your voice')
       : pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
-    // a synth voice standing in for a mic that couldn't be opened: V keys nothing, and it is going out now
-    : hot && synth ? 'mic on, but no microphone is open: your synthesized voice is going out to the room'
-    : pttMode() ? (pttHeld() ? 'push-to-talk: V held (release to stop)' + GOLD_NOTE
+    // a synth voice standing in for a mic that couldn't be opened: V keys nothing, so it is not offered, silent or not
+    : synth ? (hot ? 'mic on, but no microphone is open: your synthesized voice is going out to the room'
+      : 'mic on, but no microphone is open: your synthesized voice goes out to the room when it speaks, and V does not key it')
+    // the key is V, or A/X on a VR controller (both hold setPttHeld): name the key, not V alone
+    : pttMode() ? (pttHeld() ? 'push-to-talk: key held (release it to stop)' + GOLD_NOTE
                              : 'push-to-talk armed — hold V to speak')
     : deaf ? 'mic on — but you are not hearing the room (click the headphones to listen)'
     : 'mic on (V to turn off)' + GOLD_NOTE;

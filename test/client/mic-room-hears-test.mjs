@@ -219,13 +219,35 @@ sttAv = true; vc.setSttConsent(true);
 t('muted, speech-to-text on: the tooltip says captions still post, not that none of it goes out',
   !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
 vc.setPttMode(true);
-t('muted, speech-to-text on, push-to-talk: captions post only while V is held, and the tooltip says so',
-  !!(await tryUntil('the tooltip says while you hold V', () => /captions still post while you hold V/.test(tip()))), tip());
+// stt.js keyAllows(): the held key (V, or A/X on a VR controller: both are setPttHeld) or the drain of a release
+t('muted, speech-to-text on, push-to-talk: captions post only while the key is held and as a release drains, and the tooltip says so',
+  !!(await tryUntil('the tooltip names the key and the drain', () => /captions still post while you hold the push-to-talk key, and just after/.test(tip()))), tip());
+
 vc.setPttMode(false);
 net.myRights = { role: 'member', muted: { channels: ['voice', 'chat'], until: null } }; bus.emit('your-rights', net.myRights);
 t('muted by a moderator in voice and chat, speech-to-text on: no captions post (say is refused), so none of your voice goes out',
   !!(await tryUntil('the tooltip drops the captions clause', () => /none of your voice goes out/.test(tip()) && !/caption/.test(tip()))), tip());
+// the mic off and muted: turning it on starts consented speech-to-text (stt.js syncSTT), so the tooltip can't promise
+// that nothing reaches the room
 net.myRights = { role: 'member' }; bus.emit('your-rights', net.myRights);
+await sfu.sfuMic(false);
+t('mic off and self-muted, speech-to-text on: turning the mic on won\'t let the room hear your voice, but captions would post',
+  !!(await tryUntil('mic off, self-muted tooltip', () => /^mic off, and muted — turning the mic on won't let the room hear your voice, but your speech-to-text captions would post\n/.test(tip()))), tip());
+vc.setPttMode(true);
+t('...and under push-to-talk, the clause names the key and the drain',
+  !!(await tryUntil('mic off, self-muted, PTT tooltip', () => /captions would post while you hold the push-to-talk key, and just after\n/.test(tip()))), tip());
+vc.setPttMode(false);
+ms.toggleMute(false);
+net.myRights = { role: 'member', muted: { channels: ['voice', 'chat'], until: null } }; bus.emit('your-rights', net.myRights);
+t('mic off under a moderator\'s voice and chat mute, speech-to-text on: turning the mic on won\'t reach the room (no captions either)',
+  !!(await tryUntil('mic off, chat-muted tooltip', () => /^mic off — and a moderator has muted your voice here: turning the mic on won't reach the room\n/.test(tip()))), tip());
+net.myRights = { role: 'member', muted: { channels: ['voice'], until: null } }; bus.emit('your-rights', net.myRights);
+t('mic off under a moderator\'s voice mute, speech-to-text on: turning the mic on won\'t let the room hear it, but captions would post',
+  !!(await tryUntil('mic off, voice-muted tooltip', () => /^mic off — and a moderator has muted your voice here: turning the mic on won't let the room hear it, but your speech-to-text captions would post\n/.test(tip()))), tip());
+net.myRights = { role: 'member' }; bus.emit('your-rights', net.myRights);
+ms.toggleMute(true);
+await sfu.sfuMic(true); negotiated(pc);
+await tryUntil('the mic back on, muted', () => mt.micLive() && slashed());
 vc.setSttConsent(false); sttAv = false;
 ms.toggleMute(false);
 t('...and unmuted, the slash goes from the indicator', !!(await tryUntil('the indicator repaints unmuted',
@@ -419,6 +441,8 @@ const barGoldNow = () => GOLD.test(lvlNow.style.background);
 await sfu.sfuMic(true); negotiated(pc);
 ms.setPttHeld(true);
 t('setup: gold under the key', !!(await tryUntil('gold under the key', () => gold() && barGoldNow())), state());
+t('held, the tooltip names the push-to-talk key, not V alone (A/X on a VR controller hold it too)',
+  /^push-to-talk: key held \(release it to stop\)/.test(tipNow()) && !/V held/.test(tipNow()), tipNow());
 gainLog.length = 0;
 const gainRel = releaseKey(() => ms.setPttHeld(false));
 const relLog = gainLog.slice();
@@ -505,6 +529,9 @@ await sfu.sfuMic(false);   // mic off with a provider: the synth lane
 await sfu.sfuMic(true);    // wanted mic, no device to open: the synth provider supplies the lane
 const fallback = await tryUntil('the synth fallback is on the sender', () => pc.tx[0].sender.track === synthTracks.at(-1) && synthTracks.at(-1));
 negotiated(pc);
+t('synth fallback under PTT, key up, silent: the tooltip says no microphone is open and V does not key the synth voice (not "hold V to speak")',
+  !!fallback && !!(await tryUntil('the quiet fallback tooltip', () => !gold()
+    && /^mic on, but no microphone is open: your synthesized voice goes out to the room when it speaks, and V does not key it\n/.test(tip()))), `${state()}`);
 playing = true;
 t('synth fallback under PTT, key up, speaking: gold, with the waves, and the tooltip says it is going out (not "hold V")',
   !!fallback && !!(await tryUntil('the fallback goes gold', () => gold() && waves()
