@@ -439,7 +439,15 @@ async function startServer(extra: Record<string, string | undefined>, lib?: stri
   const up = proc.exitCode == null && !foreign && ownedBy(version, nonce);   // OUR child, not merely A server
   if (!up) console.log(`      child did not come up OWNED — log tail:\n      ${log.split("\n").slice(-6).join("\n      ")}`);
   const base = `http://127.0.0.1:${PORT}`;
-  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await settled(() => proc.exitCode !== null || proc.signalCode !== null, 5_000); };
+  // a child still alive after its stop would sweep and write into the OPT_DIR the next section's child starts on: TERM,
+  // then KILL, and a (setup) row if even that left it running (`live` keeps it for cleanup until it is gone)
+  const stop = async () => {
+    const gone = () => proc.exitCode !== null || proc.signalCode !== null;
+    try { proc.kill(); } catch { /* gone */ }
+    if (!(await settled(gone, 5_000))) { try { proc.kill("SIGKILL"); } catch { /* gone */ } await settled(gone, 5_000); }
+    check("(setup) the child server exited before the next one starts", gone(), `pid ${proc.pid}`);
+    if (gone()) live = null;
+  };
   // the optimizer has nothing queued or running (/version's opt: upload.ts optStatus) — "nothing more will happen"
   const drained = () => settled(() => fetch(`${base}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json())
     .then((v) => v?.opt?.queued === 0 && v?.opt?.running === false), 45_000);
