@@ -108,6 +108,9 @@ export async function setWaterField(f: { level: number; sample: (x: number, z: n
   m.terrain.setWaterField(f);
 }
 
+// registerSupport, registerSupportGrid, registerMeshSupport and removeSupport each keep exactly ONE await (loadSim)
+// before they touch the collider map, so they land in call order: agent-ground.ts overtaken() relies on a drop's
+// removal landing after the fit it supersedes.
 // Who claims each support box. Ids are world/entity scoped, so agents in one world share a box: it lives until the
 // last holder lets go. A Set, so a holder registering twice counts once.
 const holders = new Map<string, Set<string>>();

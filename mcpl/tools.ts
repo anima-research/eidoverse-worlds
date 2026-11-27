@@ -184,6 +184,7 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
 import { recordComponents } from "../shared/protocol/view.js";
+import { solidOffRecord } from "./agent-result.ts";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
 import { PoseClips } from "./pose-clips.ts";
@@ -453,7 +454,12 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP
   catch (err) { return fail((err as Error)?.name === "TimeoutError" ? `the check didn't answer within ${ms / 1000} s; calling again may work`
     : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
-  return text(describeCheck(`${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`, r, e ? ag.placesOn(e).length : 0, e?.id, e?.collide));
+  const what = `${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`;
+  // collision owned elsewhere (agent-result.ts collisionElsewhere): the browser fits this model no collider, so its
+  // collide override says nothing about who can go inside
+  const none = !e ? null : solidOffRecord(e) ? "its collision is off for bodies: walk-through"
+    : recordComponents(e).structure ? "it is a structure's anchor, hidden: bodies meet the structure's own walls and floors" : null;
+  return text(describeCheck(what, r, e ? ag.placesOn(e).length : 0, e?.id, none ? undefined : e?.collide, none));
 };
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
@@ -1600,18 +1606,21 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
 }
 
 /** A build check (server/buildcheck.ts) as text a reader can act on. */
-function describeCheck(what: string, r: any, named: number, id?: string, collide?: string): string {
+function describeCheck(what: string, r: any, named: number, id?: string, collide?: string, none?: string | null): string {
   const L: string[] = [];
+  // no collider of its own (none says why): nothing is solid, so neither the solid headline nor the server's "solid"
+  // warning (its collider.shape advice does nothing while collision is off) applies
+  if (none) r = { ...r, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
   // spawned with collide: the world fits it that way whatever its size
   if (collide === "exact" || collide === "box") {
     r = { ...r, walkIn: { ...r.walkIn, roomScale: collide === "exact" }, warnings: (r.warnings ?? []).filter((w: any) => w.kind !== "solid") };
     if (collide === "box") r.warnings.unshift({ kind: "solid", message: `it was spawned with collider.shape "box", so it is one solid box: nobody can go inside — what follows is what it would be with collider.shape "mesh" (edit {id, set: {"collider.shape": "mesh"}})` });
   }
   const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
-  L.push(`${what}: ${r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
+  L.push(`${what}: ${none ? `no collider of its own (${none}); as a model, ${r.walkIn?.roomScale ? "walk-in" : "under the walk-in size"}` : r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
     + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
   if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
-  else L.push("No problems found: every floor under its roof can be reached from outside.");
+  else L.push((r.levels ?? []).length ? "No problems found: every floor under its roof can be reached from outside." : "No problems found, and no floor for the check to walk.");
   const s = r.suggested ?? {};
   const parts = [
     ...(s.rooms ?? []).map((x: any) => `${x.id} (a room, floor ${x.min[1]}m, ${x.area}m²)`),

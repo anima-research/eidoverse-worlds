@@ -415,7 +415,7 @@ export function makeSection(title, onOpen, { id = '', host: hostName = 'world' }
   hostFrame.sections.push(api);
   hostFrame.fitStrip();
   // a frame already on screen (restored open) gets its tab once this tick's registrations are in
-  if (!hostFrame._tabQueued) { hostFrame._tabQueued = true; setTimeout(() => { hostFrame._tabQueued = false; hostFrame.ensureTab(); }, 0); }
+  if (!hostFrame._tabQueued) hostFrame._tabQueued = setTimeout(() => { hostFrame._tabQueued = null; hostFrame.ensureTab(); }, 0);
   // the lantern finds a section by its own name ("sky", "audio"): open the panel AND the tab.
   // A mod's section may share a built-in's label; a second id keeps it from merging into
   // (and, on remove, deleting) the built-in's row.
@@ -431,7 +431,10 @@ export function makeSection(title, onOpen, { id = '', host: hostName = 'world' }
 
 /** Fold every open pane away (placing a ghost wants the view): the strips stay, no tab chosen. */
 export function collapseAll() {
-  for (const f of [worldFrame, settingsFrameApi, moderationFrameApi, worldSettingsFrameApi]) for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
+  for (const f of [worldFrame, settingsFrameApi, moderationFrameApi, worldSettingsFrameApi]) {
+    if (f?._tabQueued) { clearTimeout(f._tabQueued); f._tabQueued = null; }   // a queued ensureTab would reopen a tab
+    for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
+  }
 }
 
 export { escapeHtml };   // markup.js's: the one escaper (kudzu C1)

@@ -187,6 +187,40 @@ try {
   await walk(0, -2.4);
   check("goes back down the stair", await walk(2.2, -2.4) && await walk(2.2, 2.4) && near(a.pos.y, gy + FLOOR), `y ${a.pos.y.toFixed(3)}`);
   check("and out the door to the terrain", await walk(0, 2) && await walk(0, 5) && near(a.pos.y, a.heightAt(0, 5)), `y ${a.pos.y.toFixed(3)}`);
+  console.log("\na thing removed while the body was away:");
+  {
+    // a box beside the path; the body drops off the network (not a close: it keeps what it holds up and dials again), a
+    // second session of the same identity removes the box and leaves, and the body's rejoin snapshot no longer has it.
+    // No "gone" is folded for it, so the rejoin itself must let go of its support (agent.ts, the snapshot path)
+    const boxLib = ((await (await fetch(`${h.BASE}/upload?name=left-box`, { method: "POST", body: await buildGlb([[-0.5, 0, -0.5, 0.5, 0.8, 0.5]]) })).json()) as { path: string }).path;
+    await legacyVerb(a, "spawn", { id: "leftbox", lib: boxLib, pos: [10, a.heightAt(10, 0), 0], yaw: 0, collide: "box" });
+    const boxId = sceneId(a, "leftbox"), boxBid = `${a.world}/${boxId}`, mine = a.ground.supportHolder;
+    const { supportHolders } = await import("../../mcpl/physics.ts");
+    const holds = () => (supportHolders()[boxBid] ?? []).includes(mine);
+    await tryUntil("the body holds the box up", holds, { ms: 5000, step: 25 });
+    // the tower, by its id (this body is a later instance than the one that named it: sceneId doesn't know "tower")
+    const towerId = [...a.ground.supportIds.keys()].find((k) => k !== boxId), towerFit = () => supportShape(`${a.world}/${towerId}`);
+    const towerBefore = towerFit();
+    // the drop: its redial is held until the box is gone (the real one runs on the redial's timer)
+    let dialled = 0; a.connect = () => { dialled++; return Promise.resolve(); };
+    a.ws.close();
+    await until("the body has dropped and tried to dial again", () => a.ws.readyState === 3 && dialled > 0, { ms: 10_000, step: 25 });
+    delete a.connect;
+    const other: any = new WorldAgent({ name: "walker", world: "meshcollide", url: URL_ });
+    await other.connect();
+    const gone = await legacyVerb(other, "remove", { id: boxId });
+    other.close();
+    await until("the other session's socket is closed", () => other.ws?.readyState === 3, { ms: 3000, step: 20 });
+    await a.connect();
+    await a.ground.supportReady();
+    check("a body that rejoins after a thing was removed while it was away lets go of that thing's support",
+      !!gone && !a.entities.has(boxId) && await tryUntil("the box is let go", () => !holds() && !a.ground.supportIds.has(boxId), { ms: 3000, step: 25 }) !== undefined
+,
+      JSON.stringify({ gone, holders: supportHolders()[boxBid], ids: a.ground.supportIds.get(boxId) }));
+    const towerBack = await tryUntil("the tower is fitted again", () => towerFit() === "exact", { ms: 5000, step: 25 });
+    check("...while what the cut still holds is fitted again (the tower)", towerBefore === "exact" && !!towerBack && a.ground.supportIds.has(towerId),
+      JSON.stringify({ towerId, before: towerBefore, now: towerFit() }));
+  }
   console.log("\nwalking while a placed thing's shape is still loading:");
   {
     const { forgetMeshCache } = await import("../../mcpl/agent.ts");
