@@ -24,6 +24,7 @@ let analyserThrows = false, gumFails = false;
 let ctxState = 'running';   // the AudioContext's state: 'suspended' sends silence through the gate's graph
 let gainThrows = false;     // a gain whose automation throws: the gate falls back to a step (`value =`)
 const ctxListeners = [];    // 'statechange' listeners on the contexts the gate built (a resume is told through them)
+const ctxOwn = new Map();   // a context's own state, where one context must differ from the rest (a listener → its override)
 let gateGain = null;        // the gate's own gain (the last one automated), to stand for the audio clock across a suspend
 const gainLog = [];   // every automation asked of any gain: ['target', v, tau] | ['set', v, at] | ['ramp', v, seconds from now] | ['cancel', from]
 const node = () => ({ connect() {}, disconnect() {} });
@@ -35,8 +36,8 @@ Object.defineProperty(globalThis.navigator, 'mediaDevices', { value: { getUserMe
   return new FakeStream([mkTrack('device')]); } }, configurable: true });
 mock.module(lib('audio/audioctx.js'), () => ({
   audioContext: () => ({
-    currentTime: 0, sampleRate: 48000, get state() { return ctxState; }, destination: node(),
-    addEventListener(type, fn) { if (type === 'statechange') ctxListeners.push(fn); },
+    currentTime: 0, sampleRate: 48000, get state() { return ctxOwn.get(this._fn) ?? ctxState; }, destination: node(),
+    addEventListener(type, fn) { if (type === 'statechange') { ctxListeners.push(fn); this._fn = fn; } },
     createAnalyser: () => ({ ...node(), fftSize: 0, getFloatTimeDomainData(buf) { if (analyserThrows) throw new Error('analyser gone'); buf.fill(room); } }),
     createMediaStreamSource: () => node(),
     createGain: () => ({ ...node(), gain: { _v: 0, get value() { return this._v; },
@@ -141,22 +142,27 @@ const POLLS = 'three glyph polls and many bar frames';
 // the indicators itself (micstate.js 'audio:ptt-tail-end'), so the gold does not wait for a poll. `release` is the
 // gesture; atOnce is what shows in its own turn, closed() what shows as the cut closes.
 const LOOK_S = 0.05, CUT_S = 0.005, TAIL_MS = (LOOK_S + CUT_S) * 1000;
-// ...and no later than this: the close's own timer fires ~1 ms after the cut, where the glyph's 8 Hz poll could land up
-// to 125 ms after it; a timer that ran late, or a poll standing in for it, reads past this bound
+// ...and not late: the close's own timer fires ~1 ms after the cut, where the glyph's 8 Hz poll could land up to 125 ms
+// after it. "Late" is an order, not a reading of the clock: releaseKey arms a reference timer this long just before the
+// release, and the close must come before it fires. A stalled process (the gate at peak load: 114.9, 186.9 and 100.6 ms
+// were read against a 100 ms wall-clock bound) delays both timers alike, and they still fire in the order they fall due;
+// a tail-end timer set late, or a poll standing in for it, falls due after the reference and is told apart on any machine.
 const TAIL_LATE_MS = 100;
-const closedOnTime = (c) => !!c && c.ms >= TAIL_MS && c.ms < TAIL_LATE_MS;
+const closedOnTime = (c) => !!c && c.ms >= TAIL_MS && !c.late;
 const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 1e-9;
 const tipNow = () => document.querySelector('#micbtn')?.title || '';
 function releaseKey(release) {
   const t0 = performance.now();
-  let seen = null;
+  let seen = null, refFired = false;
   const off = bus.on('audio:ptt-tail-end', () => {
-    seen ??= { ms: performance.now() - t0, gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState(),
+    seen ??= { ms: performance.now() - t0, late: refFired, gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState(),
       xrAsked: xrPaints.at(-1) || '', title: tipNow() };
   });
+  // armed before the release, so it falls due after an on-time close (~56 ms) however late the process runs them both
+  const ref = setTimeout(() => { refFired = true; }, TAIL_LATE_MS);
   release();
   const atOnce = { gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState() };
-  return { atOnce, closed: async () => { const r = await tryUntil('the delayed cut closes', () => seen, { ms: 1000 }); off(); return r || null; } };
+  return { atOnce, closed: async () => { const r = await tryUntil('the delayed cut closes', () => seen, { ms: 1000 }); off(); clearTimeout(ref); return r || null; } };
 }
 
 // ── 1. the transport carries it, or nobody hears it (finding 3) ────────────────────────────────────────────────────
@@ -330,7 +336,7 @@ const keyUp = releaseKey(() => window.dispatchEvent(new KeyboardEvent('keyup', {
 t('PTT keyup: still gold in the same turn, because the last 50 ms said under the key is still going out',
   keyUp.atOnce.hears === true && keyUp.atOnce.gold === true, `${JSON.stringify(keyUp.atOnce)} ${state()}`);
 const keyUpClosed = await keyUp.closed();
-t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup, before ${TAIL_LATE_MS}), painted by the close itself, not the last poll`,
+t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup, before a ${TAIL_LATE_MS} ms timer armed at the release), painted by the close itself, not the last poll`,
   closedOnTime(keyUpClosed) && keyUpClosed.hears === false && keyUpClosed.gold === false
   && /push-to-talk armed/.test(keyUpClosed.title), `${JSON.stringify(keyUpClosed)} ${state()}`);
 ms.setPttHeld(true);
@@ -340,7 +346,7 @@ const vrRel = releaseKey(() => ms.setPttHeld(false));
 t('VR controller release: the HUD and the indicator stay gold while the last 50 ms goes out',
   vrRel.atOnce.gold === true && vrRel.atOnce.xrKey === 'hot', `${JSON.stringify(vrRel.atOnce)} ${xrState()}`);
 const vrClosed = await vrRel.closed();
-t(`...and as the cut closes (${TAIL_MS} ms on, before ${TAIL_LATE_MS}) the indicator asks for the plain glyph and the HUD drops gold, with no tick`,
+t(`...and as the cut closes (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer armed at the release) the indicator asks for the plain glyph and the HUD drops gold, with no tick`,
   closedOnTime(vrClosed) && !vrClosed.xrAsked.includes('drop-shadow') && vrClosed.xrKey === 'on' && vrClosed.gold === false,
   `${JSON.stringify(vrClosed && { ...vrClosed, xrAsked: vrClosed.xrAsked.includes('drop-shadow') ? 'gold' : 'plain' })} ${xrState()}`);
 t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
@@ -457,7 +463,7 @@ t('PTT release cuts the gain one lookahead later: held at its level until +50 ms
 t('...and gold holds in the same turn: the room is still getting the end of the word', gainRel.atOnce.hears === true && gainRel.atOnce.gold === true,
   `${JSON.stringify(gainRel.atOnce)} ${state()}`);
 const gainClosed = await gainRel.closed();
-t(`...and gold ends as the cut closes (${TAIL_MS} ms on), not before and not at a later poll (before ${TAIL_LATE_MS})`,
+t(`...and gold ends as the cut closes (${TAIL_MS} ms on), not before and not at a later poll (before a ${TAIL_LATE_MS} ms timer armed at the release)`,
   closedOnTime(gainClosed) && gainClosed.hears === false && gainClosed.gold === false, `${JSON.stringify(gainClosed)} ${state()}`);
 t('...and the 20 ms ticks over the tail do not reschedule the cut (each would push it later): one hold, one ramp',
   gainLog.filter((g) => g[0] === 'ramp').length === 1 && gainLog.filter((g) => g[0] === 'set').length === 1, JSON.stringify(gainLog));
@@ -549,7 +555,7 @@ t('setup: voice activation, speaking again: gold', !!(await tryUntil('gold by le
   t('arming push-to-talk mid-speech: still gold in the same turn (the word in the lookahead is still going out)',
     arm.atOnce.hears === true && arm.atOnce.gold === true, `${JSON.stringify(arm.atOnce)} ${state()}`);
   const armClosed = await arm.closed();
-  t(`...and audio:ptt-tail-end fires and gold ends as the cut closes (${TAIL_MS} ms on, before ${TAIL_LATE_MS}), not at a later poll`,
+  t(`...and audio:ptt-tail-end fires and gold ends as the cut closes (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer armed at the arming), not at a later poll`,
     closedOnTime(armClosed) && armClosed.hears === false && armClosed.gold === false, `${JSON.stringify(armClosed)} ${state()}`);
   vc.setPttMode(false); }
 room = 1e-4;
@@ -702,6 +708,40 @@ for (const fn of ctxListeners) fn();
 const resHears = ms.roomHears();
 t('...and no tail is reported going out, suspended or on resume: the stopped clock holds no word to send after it',
   susHears === false && resHears === false, `suspended=${susHears} resumed=${resHears} ${state()}`);
+ms.setPttHeld(true);
+await tryUntil('gold back under the key', () => gold());
+// a suspend inside a release's tail, and a resume, with no 20 ms tick between them (throttled timers; here, one turn):
+// the hold is scheduled on the audio clock, which the suspend stops, so on resume the held word would go out for the
+// rest of the lookahead with the tail long over on the wall clock (no gold). The gate's own statechange listener cuts
+// the pending tail the moment the context leaves 'running', from the gain's own value
+await pause('the key held past the attack, so the release has an open gain to hold', 60);
+const tailRel = releaseKey(() => ms.setPttHeld(false));
+const tailHeld = tailRel.atOnce.hears;   // the tail is going out: the context still runs
+if (gateGain) gateGain._v = 0.97;        // where the audio clock holds the gain through the lookahead
+gainLog.length = 0;
+// first, a context the gate built for an earlier lane and has left suspends alone: its listener is still registered, and
+// it must not cut the live lane's tail
+const staleFn = ctxListeners[0];
+ctxOwn.set(staleFn, 'suspended'); staleFn(); ctxOwn.delete(staleFn);
+const staleLog = gainLog.slice(), staleHears = ms.roomHears();
+t('a context the gate has left (an earlier lane\'s) suspends during the live lane\'s tail: its listener cuts nothing, and the tail still goes out',
+  ctxListeners.length > 1 && staleFn !== ctxListeners.at(-1) && staleLog.length === 0 && staleHears === true,
+  `listeners=${ctxListeners.length} hears=${staleHears} ${JSON.stringify(staleLog)}`);
+ctxState = 'suspended';
+for (const fn of ctxListeners) fn();     // every context the gate ever built says its state changed: only the live one acts
+const tailSus = gainLog.slice(), tailSet = tailSus.find((g) => g[0] === 'set');
+t('a suspend inside a release\'s tail, no tick: the pending hold is cut at once (set at +0 from the gain, 0.97; ramp ends at +5 ms), once, however many contexts and lanes were built',
+  tailHeld === true && atOnceCut(tailSus) && !!tailSet && Math.abs(tailSet[1] - 0.97) < 1e-9
+  && tailSus.filter((g) => g[0] === 'cancel').length === 1 && tailSus.length === 3, `held=${tailHeld} ${JSON.stringify(tailSus)}`);
+ctxState = 'running';
+gainLog.length = 0;
+for (const fn of ctxListeners) fn();
+const tailRes = ms.roomHears(), tailResLog = gainLog.slice();
+t('...and on resume, still inside the 55 ms on the wall clock, no tail is reported going out and nothing reopens the gain: only the cut\'s 5 ms ramp is left',
+  tailRes === false && tailResLog.length === 0, `resumed=${tailRes} ${JSON.stringify(tailResLog)} ${state()}`);
+const tailEnd = await tailRel.closed();
+t('...and the watch on that tail still ends (audio:ptt-tail-end, not late), so the indicators repaint dark',
+  !!tailEnd && !tailEnd.late && tailEnd.hears === false && tailEnd.gold === false, `${JSON.stringify(tailEnd)} ${state()}`);
 ms.setPttHeld(true);
 await tryUntil('gold back under the key', () => gold());
 ms.setPttHeld(false); vc.setPttMode(false);

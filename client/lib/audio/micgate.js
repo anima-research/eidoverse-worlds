@@ -175,18 +175,44 @@ export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running
 // The envelope runs on performance.now, the gain on the audio clock, and a suspended context stops only the latter: a
 // suspend during the release fade leaves the gain where it was (measured: 0.37 on resume). So when the context runs
 // again, the envelope restarts from the gain's own value. A cut is 5 ms and stays a cut.
+// A push-to-talk release's tail is the other way about: its hold is scheduled on the audio clock, so a suspend inside it
+// leaves the rest of the hold to run on resume, by when the tail is over on the wall clock: the held word would go out
+// with no gold. driveGate cuts at once when a tick finds the context suspended, but only if a tick runs in time (timers
+// are throttled exactly when contexts are suspended). So the moment the context leaves 'running', a pending tail is cut
+// from the gain's own value, and on resume only the cut's 5 ms ramp is left, as after any cut.
+// One listener per context (_anchored), reading the module's live _ctx, _gain and _env: a rebuilt lane on the same
+// context adds none, and a listener on a context the gate has left does nothing.
 const _anchored = new WeakSet();
 function anchorOnResume(ctx) {
   if (!ctx?.addEventListener || _anchored.has(ctx)) return;
   _anchored.add(ctx);
   ctx.addEventListener('statechange', () => {
-    if (ctx !== _ctx || ctx.state !== 'running' || !_gain || _env.cutEnd !== undefined) return;
+    if (ctx !== _ctx || !_gain) return;
+    if (ctx.state !== 'running') { cutPendingTail(); return; }
+    if (_env.cutEnd !== undefined) return;
     let g = NaN;
     try { g = Number(_gain.gain.value); } catch { /* unreadable: keep the envelope */ }
     if (!Number.isFinite(g)) return;
     const tau = _wanted ? ATTACK_TAU : RELEASE_TAU;
     _env = { at: performance.now(), from: g, to: _wanted, tau: tau * 1000 };
   });
+}
+
+// The context has stopped (suspended, interrupted, closed) with a release's tail still to run: end the tail here. The
+// gain is read, not modelled: the audio clock has stopped, and where it stopped is where the ramp must start. A tail
+// the audio clock had already run reads 0, and cutting from 0 changes nothing.
+function cutPendingTail() {
+  if (_env.cutEnd === undefined || !_env.tail) return;
+  const now = performance.now(), p = _gain.gain;
+  let stepped = false, from = 0;
+  try {
+    const g = Number(p.value), t = _ctx.currentTime;
+    from = Number.isFinite(g) ? g : envAt(now);
+    p.cancelScheduledValues(t); p.setValueAtTime(from, t); p.linearRampToValueAtTime(0, t + CUT_S);
+  } catch { try { p.value = 0; } catch { /* the graph is gone: nothing is going out */ } stepped = true; }
+  // a cut from now, and no tail: gateSending() and gateTailLeft() stop reporting one (micstate's watch on the old tail
+  // still fires at its time, finds none left, and tells the indicators)
+  _env = stepped ? { at: now, from: 0, cutEnd: now } : { at: now, from, cutEnd: now + CUT_S * 1000 };
 }
 
 /** Is the gated lane still letting sound through? True while the gain is above -60 dB: through the release fade after
