@@ -155,7 +155,7 @@ if (import.meta.main) {
     const list = gh(["run", "list", "-R", repo, "-w", "protocol-gate", "-s", "success", "-L", String(runs), "--json", "databaseId", "-q", ".[].databaseId"]);
     if (list.error || list.status !== 0) { console.log(`gh run list failed: ${said(list)}`); process.exit(1); }
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suite-times-"));
-    process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));   // on every way out: process.exit skips a finally
+    process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));   // on each exit this process makes (process.exit skips a finally); a signal still leaves it
     for (const id of list.stdout.split("\n").filter(Boolean)) {
       const d = gh(["run", "download", id, "-R", repo, "-p", "gate-shard-receipt-*", "-D", path.join(tmp, id)]);
       console.log(`  run ${id}: ${d.status === 0 ? "receipts downloaded" : `no receipts (${said(d)})`}`);

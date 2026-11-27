@@ -128,8 +128,10 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "shard-check-"));
     const only = path.join(tmp, "only-darwin-fail"); fs.mkdirSync(only); fs.writeFileSync(path.join(only, "d.json"), JSON.stringify(rec("darwin", [[a, "fail", 1]])));
     const l = ((): string[] => { try { return (S as any).writeTimes([only], f); } catch (e) { return [`threw ${(e as Error).message}`]; } })();
     ok(/^linux .*kept: no receipt from this OS/.test(l.find((x) => /^linux/.test(x)) ?? "") && /^darwin .*kept: no suite passed/.test(l.find((x) => /^darwin/.test(x)) ?? ""), "T5b …\"no receipt from this OS\" is said only of an OS no receipt names", l); } }
-{ // T6: --fetch-times reads its count, and says so when gh isn't there (PATH emptied: nothing here reaches the network or the checked-in table)
-  const cli = (...a: string[]) => spawnSync(process.execPath, ["test/gate/shard.ts", ...a], { cwd: ENGINE, encoding: "utf8", env: { ...process.env, PATH: "", Path: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+{ // T6: --fetch-times reads its count, and says so when gh isn't there. PATH is an empty directory, so no gh can be found and nothing here
+  // reaches the network or the checked-in table (an empty PATH would not do: bun then looks in /usr/bin and /bin, where CI keeps gh)
+  const nobin = path.join(tmp, "nobin"); fs.mkdirSync(nobin);
+  const cli = (...a: string[]) => spawnSync(process.execPath, ["test/gate/shard.ts", ...a], { cwd: ENGINE, encoding: "utf8", env: { ...process.env, PATH: nobin, Path: nobin, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const before = fs.readFileSync(TIMES_FILE, "utf8"), typo = cli("--fetch-times", "typo"), zero = cli("--fetch-times", "0"), nogh = cli("--fetch-times", "3"), out = (r: typeof typo) => (r.stdout + r.stderr).trim().split("\n").slice(-2).join(" / ");
   ok(typo.status === 2 && /takes how many runs.*"typo"/.test(typo.stdout) && zero.status === 2 && /"0"/.test(zero.stdout) && nogh.status === 1 && /gh run list failed: gh could not be started/.test(nogh.stdout) && !/TypeError/.test(nogh.stdout + nogh.stderr) && fs.readFileSync(TIMES_FILE, "utf8") === before,
     "T6 --fetch-times refuses a count that is not a whole number of runs (typo, 0: exit 2, never a silent 8), and with no gh to run says so and how to get it (exit 1), not a TypeError", [typo.status, out(typo), zero.status, out(zero), nogh.status, out(nogh)]);
@@ -142,11 +144,11 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "shard-check-"));
       "T7 --fetch-times with every download failing says so, writes nothing, and leaves no temp dir behind (it exits through process.exit, which skips a finally)", { status: r.status, out: r.stdout.trim().split("\n"), left: fs.readdirSync(td) }); } }
 fs.rmSync(tmp, { recursive: true, force: true });
 { // P7: --plan says the split and runs nothing (a bare --shard here would run the bin for real wherever the preflight passes, this suite among them)
-  const t0 = performance.now(), r = run("--shard", "1/6", "--plan"), secs = (performance.now() - t0) / 1000, at = r.stdout.match(/partition ([0-9a-f]{12}), packed by (\w+)'s times/);
+  const bare = run("--plan"), t0 = performance.now(), r = run("--shard", "1/6", "--plan"), secs = (performance.now() - t0) / 1000, at = r.stdout.match(/partition ([0-9a-f]{12}), packed by (\w+)'s times/);
   const bins = partition(names, loadTimes(process.platform), 6), mine = partitionHash(bins).slice(0, 12), other = PLATFORMS.filter((p) => p !== process.platform && partitionHash(partition(names, loadTimes(p), 6)).slice(0, 12) !== mine);
-  ok(r.status === 0 && at?.[1] === mine && at?.[2] === process.platform && r.stdout.includes(`  suites    ${bins[0].join(" ")}\n`) && !/^(?:== |-- start |runtimes)/m.test(r.stdout),
-    `P7 run.ts --shard 1/6 --plan names this OS's (${process.platform}) split and its suites, and stops there: exit 0, no preflight, no suite started (its hash tells it from ${other.join(", ") || "no other OS's today: their tables split alike"})`,
-    { status: r.status, secs: +secs.toFixed(1), at: at?.slice(1) ?? r.stdout.split("\n").filter((l) => /shard|FAILED/.test(l)).slice(0, 3) }); }
+  ok(bare.status === 2 && /--plan goes with --shard/.test(bare.stdout) && r.status === 0 && at?.[1] === mine && at?.[2] === process.platform && r.stdout.includes(`  suites    ${bins[0].join(" ")}\n`) && !/^(?:== |-- start |runtimes)/m.test(r.stdout),
+    `P7 run.ts --shard 1/6 --plan names this OS's (${process.platform}) split and its suites, and stops there: exit 0, no runtime looked for, no suite started; --plan with no --shard is refused, never a run (its hash tells it from ${other.join(", ") || "no other OS's today: their tables split alike"})`,
+    { bare: [bare.status, bare.stdout.trim().slice(0, 80)], status: r.status, secs: +secs.toFixed(1), at: at?.slice(1) ?? r.stdout.split("\n").filter((l) => /shard|FAILED/.test(l)).slice(0, 3) }); }
 
 // ---- W: the workflow runs each OS's whole split and merges it with the same N ----
 // GitHub's expansion: the lists' product, less `exclude`; then each `include` row adds its keys to every combination it doesn't

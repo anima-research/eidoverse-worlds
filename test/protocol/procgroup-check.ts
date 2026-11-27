@@ -255,24 +255,31 @@ if (win) { // PG25: the in-process snapshot is what answers on Windows, and it s
 
 { // PG27: what a suite left running is asked again on Windows until it is gone or `ms` is up; POSIX asks once
   const L = (PG as any).leftoverMembers as typeof PG.leftoverMembers | undefined;
-  const reads = (seq: number[][]) => { let n = 0; return { read: async () => seq[Math.min(n++, seq.length - 1)], n: () => n }; };
-  const going = reads([[7, 8], [8], []]), staying = reads([[9]]), posix = reads([[7, 8], []]), clean = reads([[]]);
-  const t0 = performance.now(), a = await L?.(1, "win32", { ms: 2000, step: 5, read: going.read }), aMs = performance.now() - t0;
-  const t1 = performance.now(), b = await L?.(1, "win32", { ms: 150, step: 5, read: staying.read }), bMs = performance.now() - t1;
-  const c = await L?.(1, "linux", { ms: 2000, step: 5, read: posix.read }), d = await L?.(1, "win32", { ms: 2000, step: 5, read: clean.read });
-  check("PG27 a suite's leftovers: on Windows a process on its way out as the suite ends is not one (asked again until none is left), a process that stays is (named once the wait is up); a suite that left nothing is asked once, and so is POSIX",
-    a?.length === 0 && going.n() === 3 && aMs < 1000 && JSON.stringify(b) === "[9]" && bMs >= 150 && JSON.stringify(c) === "[7,8]" && posix.n() === 1 && d?.length === 0 && clean.n() === 1,
-    { a, asked: going.n(), aMs: Math.round(aMs), b, bMs: Math.round(bMs), c, posixAsked: posix.n(), cleanAsked: clean.n() }); }
+  const row = (pid: number, ppid: number, pgid = 0): PG.Row => ({ pid, ppid, pgid, zombie: false }), other = row(50, 4);
+  const tables = (seq: PG.Row[][]) => { let n = 0; return { table: async () => [other, ...seq[Math.min(n++, seq.length - 1)]], n: () => n }; };
+  // suite root 1 has exited. going: 7 and its child 8 leave one after the other. staying: 9 stays. orphaned: 20 leaves, and its
+  // child 30 stays with what it starts later (31): the walk from 1 can't reach them once 20 is gone
+  const going = tables([[row(7, 1), row(8, 7)], [row(8, 7)], []]), staying = tables([[row(9, 1)]]), clean = tables([[]]);
+  const orphaned = tables([[row(20, 1), row(30, 20)], [row(30, 20)], [row(30, 20), row(31, 30)]]), posix = tables([[row(7, 1, 1), row(8, 7, 1)], []]);
+  const t0 = performance.now(), a = await L?.(1, "win32", { ms: 2000, step: 5, table: going.table }), aMs = performance.now() - t0;
+  const t1 = performance.now(), b = await L?.(1, "win32", { ms: 150, step: 5, table: staying.table }), bMs = performance.now() - t1;
+  const o = (await L?.(1, "win32", { ms: 150, step: 5, table: orphaned.table }))?.sort((x, y) => x - y);
+  const c = await L?.(1, "linux", { ms: 2000, step: 5, table: posix.table }), d = await L?.(1, "win32", { ms: 2000, step: 5, table: clean.table });
+  check("PG27 a suite's leftovers: on Windows a process on its way out as the suite ends is not one (asked again until none is left); a process that stays is, and so is one whose own parent left meanwhile, with what it started; a suite that left nothing is asked once, and so is POSIX",
+    a?.length === 0 && going.n() === 3 && aMs < 1000 && JSON.stringify(b) === "[9]" && bMs >= 150 && JSON.stringify(o) === "[30,31]" && JSON.stringify(c) === "[7,8]" && posix.n() === 1 && d?.length === 0 && clean.n() === 1,
+    { a, asked: going.n(), aMs: Math.round(aMs), b, bMs: Math.round(bMs), o, c, posixAsked: posix.n(), cleanAsked: clean.n() }); }
 if (win) { // PG28: the same on real processes: the snapshot is quick enough to catch a process that is already leaving
   const L = (PG as any).leftoverMembers as typeof PG.leftoverMembers | undefined;
   // detached: a child that isn't goes with its parent (the job libuv keeps its children in), which is the leaving this row times by hand
   const start = async (grandchild: string) => { const c = spawn(process.execPath, ["-e", `const {spawn}=require('node:child_process'); const g=spawn(process.execPath,['-e',${JSON.stringify(grandchild)}],{stdio:'ignore',detached:true,windowsHide:true}); console.log('grandchild '+g.pid); setTimeout(()=>process.exit(0),300);`], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
-    let said = ""; c.stdout!.on("data", (b) => { said += b.toString(); }); await new Promise((r) => c.on("exit", r)); return { root: c.pid!, grand: Number(said.match(/grandchild (\d+)/)?.[1] ?? NaN) }; };
-  const leaving = await start("setTimeout(()=>{},700)"), atOnce = await PG.suiteMembersAsync(leaving.root), settled = await L?.(leaving.root);
+    let said = ""; c.stdout!.on("data", (b) => { said += b.toString(); }); await new Promise((r) => c.on("close", r)); return { root: c.pid!, grand: Number(said.match(/grandchild (\d+)/)?.[1] ?? NaN) }; };
+  // the leaving one lives 3 s from its start, so it is still there at the first look however slowly it started; the wait ends when it goes
+  const leaving = await start("setTimeout(()=>{},3000)"), atOnce = await PG.suiteMembersAsync(leaving.root), settled = await L?.(leaving.root, "win32", { ms: 20_000 });
   const staying = await start("setInterval(()=>{},1000)"), left = await L?.(staying.root, "win32", { ms: 400 });
-  await PG.killSuiteAsync(staying.root, "SIGKILL", "win32", { exited: true });
-  const gone = await tryUntil("the process that stayed is killed", async () => !(await PG.suiteMembersAsync(staying.root)).length && PG.winTable.source === "toolhelp32", { ms: 5000, step: 100 });
-  check("PG28 (win32) a process still leaving as its suite exits (gone 0.4 s later) is seen at once by the snapshot and is not a leftover; one that stays is, and is killed",
+  for (const p of left ?? []) await PG.killSuiteAsync(p, "SIGKILL", "win32");   // by its own id, as run.ts does
+  if (Number.isFinite(staying.grand)) await PG.killSuiteAsync(staying.grand, "SIGKILL", "win32");   // whatever the row found: nothing of it outlives the suite
+  const gone = await tryUntil("the process that stayed is killed", () => { const t = PG.toolhelpTable(); return !!t && !t.some((r) => r.pid === staying.grand); }, { ms: 5000, step: 100 });
+  check("PG28 (win32) a process still leaving as its suite exits is seen at once by the snapshot and is not a leftover once it has gone; one that stays is, and is killed by its own id",
     atOnce.includes(leaving.grand) && settled?.length === 0 && !!left?.includes(staying.grand) && !!gone, { leaving, atOnce, settled, staying, left, gone });
 } else na("PG28 a leaving process is not a leftover, on real Windows processes", "Windows only; PG27 checks the rule here");
 

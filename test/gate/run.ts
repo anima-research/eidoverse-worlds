@@ -228,6 +228,7 @@ for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.e
 
 console.log(`protocol gate @ ${ENGINE}`);
 if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}, packed by ${process.platform}'s times${untimed ? ` (${untimed} untimed suite(s) weigh ${DEFAULT_SECONDS} s; bun test/gate/shard.ts --fetch-times times the ones that have run green upstream)` : ""}`);
+if (argv.includes("--plan") && !shard) { console.log("protocol gate: --plan goes with --shard I/N (it says what that shard would run)"); process.exit(2); }
 if (shard && argv.includes("--plan")) { console.log(`  suites    ${assigned.join(" ")}`); process.exit(0); }   // the split, said and nothing run (shard-check P7 reads it)
 const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
 const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
@@ -348,8 +349,10 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { kept.add(`\nspawn failed: ${e.message}`); res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
-  const leftovers = child.pid ? (await leftoverMembers(child.pid)).length : 0;   // anything the suite started and left running
+  const left = child.pid ? await leftoverMembers(child.pid) : [], leftovers = left.length;   // anything the suite started and left running
   if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
+  // Windows: also each leftover by its own id, with its tree (one whose parent has gone is out of reach of the walk from the suite's id)
+  if (process.platform === "win32") for (const p of left) if (p !== child.pid) await killGroup(p, "SIGKILL");
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });

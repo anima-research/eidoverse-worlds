@@ -5,7 +5,7 @@
 //            parent links (they survive the parent's exit, so orphans still count); killed with taskkill. The links come
 //            from the kernel's own snapshot (CreateToolhelp32Snapshot through bun:ffi, in process, ~5 ms), and from
 //            Win32_Process through PowerShell (~0.5 s a read: the gate's per-suite floor on Windows) when bun:ffi or kernel32
-//            can't load, when the snapshot call fails, or when its walk stops on anything but ERROR_NO_MORE_FILES.
+//            can't load, when the snapshot call fails, or when its walk stops on anything but ERROR_NO_MORE_FILES or lists nothing.
 import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
 
 export type Row = { pid: number; pgid: number; ppid: number; zombie: boolean };
@@ -138,12 +138,19 @@ export async function suiteMembersAsync(root: number, platform: NodeJS.Platform 
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
 /** What a suite started as `root` left running, read once it has ended. On Windows a suite's own teardown is still landing
- *  as it exits (its kill of a server is a taskkill, a process of its own, and a console host goes after its program): the
- *  PowerShell read took ~0.5 s to look, the snapshot looks ~5 ms on, so there a process counts only if it is still running
- *  `ms` later. POSIX reads once, as it always has. `read` is for tests. */
-export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { ms = 1000, step = 50, read = () => suiteMembersAsync(root, platform) }: { ms?: number; step?: number; read?: () => Promise<number[]> } = {}): Promise<number[]> {
+ *  as it exits (its kill of a server is a taskkill, a process of its own; a child goes with its parent's job a moment after
+ *  it): the PowerShell read took ~0.5 s to look, the snapshot looks ~5 ms on. So there a process counts only if it is
+ *  still running `ms` later; one seen under the suite stays the suite's after its own parent has gone (the walk from `root`
+ *  can't reach it any more), and so does what it starts. The caller kills these by id. POSIX reads once, as it always has.
+ *  `table` is for tests. */
+export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { ms = 1000, step = 50, table = () => processTableAsync(platform) }: { ms?: number; step?: number; table?: () => Promise<Row[]> } = {}): Promise<number[]> {
+  if (platform !== "win32") return suiteMembers(root, await table(), platform);
+  const seen = new Set<number>();
+  const read = async () => { const t = await table(), live = new Set(t.map((r) => r.pid));
+    for (const from of [root, ...seen]) for (const p of suiteMembers(from, t, "win32")) seen.add(p);
+    return [...seen].filter((p) => live.has(p)); };
   let m = await read();
-  if (platform === "win32") for (const end = performance.now() + ms; m.length && performance.now() < end; m = await read()) await new Promise((r) => setTimeout(r, step));
+  for (const end = performance.now() + ms; m.length && performance.now() < end; m = await read()) await new Promise((r) => setTimeout(r, step));
   return m;
 }
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
