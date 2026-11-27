@@ -10,7 +10,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds } from "../harness/harness.ts";
+import { foundWorlds, scratchState } from "../harness/harness.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const PORT = 8420 + (process.pid % 150);
@@ -33,7 +33,7 @@ writeFileSync(agentTokensPath, JSON.stringify({
 }));
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath,
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath,
     SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
