@@ -163,11 +163,12 @@ const leave = async (s) => { s.close(); await tryUntil("the socket is closed", (
   // the barrier, not a sleep: each socket's request is answered after its pose is handled, and a pose staged after both
   // rides the same frame or a later one, so once it arrives any frame carrying theirs has too
   const k = late.msgs.length, tick = await sock("Tick");
-  diver.send({ type: "pose", pose: { ...pose, q: [0, 0, 0, 0] } }); watch.send({ type: "pose", pose });
+  // the invalid sample is marked (x = 13) so a frame carrying it in any form is seen, a q "repaired" to identity included
+  diver.send({ type: "pose", pose: { ...pose, p: [13, -30, 8], q: [0, 0, 0, 0] } }); watch.send({ type: "pose", pose });
   await diver.req("help"); await watch.req("help");
   tick.at(1, 1);
   const barrier = await tryUntil("a pose sent after both is relayed", () => frames(late, "Tick", k).length, { ms: 4000, step: 20 });
-  ok(!!barrier && !frames(late, "Diver", k).some((p) => p.q?.[3] === 0), "UW3 a pose with a zero quaternion is dropped, not relayed", frames(late, "Diver", k));
+  ok(!!barrier && !frames(late, "Diver", k).some((p) => p.p?.[0] === 13 || p.q?.[3] === 0), "UW3 a pose with a zero quaternion is dropped, not relayed (in no form, repaired or not)", frames(late, "Diver", k));
   ok(!!barrier && frames(late, "Watcher", k).length === 0, "UW4 a spectator's pose is never relayed", frames(late, "Watcher", k));
   // the control: a say from the diver IS in the log, so the log was read and the actor ids match
   await diver.req("say", { text: "underwater wire check" });
