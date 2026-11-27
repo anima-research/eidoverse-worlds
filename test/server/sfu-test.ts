@@ -190,7 +190,7 @@ check("undeafened: hears again (the control)", bob.heard > atHear, `heard ${atHe
 const t0 = performance.now();
 sfu.closeLeg("alice");
 const revokeMs = performance.now() - t0;
-check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50 * WAIT_SCALE, `${revokeMs.toFixed(1)}ms (bound ${50 * WAIT_SCALE})`);
+check(`revoke is synchronous (<${50 * WAIT_SCALE}ms${WAIT_SCALE === 1 ? "" : ": 50 ms × PROTOCOL_TIMEOUT_SCALE"}, vs LiveKit's ~4700ms webhook path)`, revokeMs < 50 * WAIT_SCALE, `${revokeMs.toFixed(1)}ms`);
 check("revoked leg is gone", sfu.getLeg("alice") === undefined);
 // 🔴 #130 item 3: routes SURVIVE speaker retirement (deleting them leaked the
 // transceiver — the only handle werift keeps — one per reconnect). The safety
