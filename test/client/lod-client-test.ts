@@ -42,6 +42,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } f
 import { spawn as spawnProc, type ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { scratchState } from "../harness/harness.ts";
 
 const STUB = fileURLToPath(new URL('../stubs/lod-client-stub.mjs', import.meta.url));
 plugin({
@@ -338,7 +339,7 @@ async function gridGlb(tag: string, cells: number, extras: object | null): Promi
 async function startServer() {
   const PORT = freePort(20000);
   const nonce = crypto.randomUUID();
-  const env: Record<string, string | undefined> = { ...process.env, SKIP_OPT_SWEEP: undefined, OPT_DIR: OPT, PORT: String(PORT), JOIN_TOKEN: 'test-door',
+  const env: Record<string, string | undefined> = { ...process.env, SKIP_OPT_SWEEP: undefined, ...scratchState(OPT), PORT: String(PORT), JOIN_TOKEN: 'test-door',
     WORLD_INSTANCE_NONCE: nonce, WORLDS_DIR: mkdtempSync(join(tmpdir(), 'ew-lodc-w-')), EIDOVERSE_DIR: LIB,
     KTX2_TOKTX: join(NOWHERE, 'no-such'), PATH: NOWHERE, HOME: NOWHERE, USERPROFILE: NOWHERE };
   const proc = spawnProc(process.execPath, [join(ROOT, 'server', 'server.ts')], { env, stdio: ['ignore', 'pipe', 'pipe'] });

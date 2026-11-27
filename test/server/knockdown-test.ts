@@ -51,20 +51,33 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // a "human" — a bare socket that joins, watches, and throws its weight around. The relay forwards a shove or a drag only
 // between bodies whose last frames it has, within reach (server/messages.ts bodyRefusal), so `near` publishes a pose
 // beside the target first; `errors` collects the relay's refusals (a refused shove is answered, never silently dropped)
-type Human = { ws: WebSocket; send: (m: any) => void; close: () => void; errors: string[]; near: (who: { pos: { x: number; y: number; z: number } }) => Promise<void> };
+type Human = { ws: WebSocket; send: (m: any) => void; close: () => void; errors: string[]; near: (who: { name: string; pos: { x: number; y: number; z: number }; people: Map<string, any> }) => Promise<void> };
 function human(name: string): Promise<Human> {
   return new Promise((res) => {
     const ws = new WebSocket(`${URL}?name=${name}`);
     const errors: string[] = [];
+    const seen = new Map<string, number[]>();   // the relay's frames as this socket hears them: id -> last p
     const send = (m2: any) => ws.send(JSON.stringify(m2));
     ws.onopen = () => ws.send(JSON.stringify({ type: "join", hello: helloOf(), world: W, id: name, token: TOKEN, replica: true }));
     ws.onmessage = (e) => {
       const m = JSON.parse(String(e.data));
       if (m.type === "error") errors.push(String(m.error));
+      if (m.type === "frame") for (const [id, p] of Object.entries(m.poses ?? {}) as [string, any][]) if (Array.isArray(p?.p)) seen.set(id, p.p);
       if (m.type === "snapshot") res({
         ws, send, errors,
         close: () => ws.close(),
-        near: async (who) => { send({ type: "pose", pose: { p: [who.pos.x - 1, 0, who.pos.z], yaw: 0, speed: 0, clip: "idle" } }); await sleep(300); },
+        // the range check (bodyRefusal) reads both bodies' last frames at the relay: wait until the relay has relayed
+        // ours beside the target (the target hears it) and the target's own at where it now is (we hear it). In a world
+        // without BODY_RANGE, as here, neither is read; the wait is for a world with a range (G4-178)
+        near: async (who) => {
+          const p = [who.pos.x - 1, 0, who.pos.z];
+          send({ type: "pose", pose: { p, yaw: 0, speed: 0, clip: "idle" } });
+          const at = (q: any, x: number, z: number, tol: number) => Array.isArray(q) && Math.hypot(q[0] - x, q[2] - z) < tol;
+          const ok = await tryUntil(`${name}'s frame and ${who.name}'s are both relayed`, () =>
+            at(who.people.get(name)?.pose?.p, p[0], p[2], 0.01) && at(seen.get(who.name), who.pos.x, who.pos.z, 0.5), { ms: 3000, step: 25 });
+          check(`(setup) the relay has ${name}'s frame beside ${who.name}, and ${who.name}'s where it is`, !!ok,
+            `ours as ${who.name} heard it ${JSON.stringify(who.people.get(name)?.pose?.p)}; theirs as we heard it ${JSON.stringify(seen.get(who.name))} vs ${who.pos.x.toFixed(2)},${who.pos.z.toFixed(2)}`);
+        },
       });
     };
   });
@@ -166,6 +179,12 @@ h.send({ type: "bodydrag", target: "kd-bot3", end: true, pinAt: { joint: "head",
 await pause("the nailed body has had its time to fall, were the nail not holding it", 2500);
 check("released with a nail: the agent's sim HANGS the body",
   ag3.pins.size === 1 && ag3.pos.y > -0.3, `pins=${ag3.pins.size} y=${ag3.pos.y.toFixed(2)}`);
+// a dead sim passes the row above too (the drag sample left at 1.2, the nail set): so watch it step, still held (G6-086)
+{ const frames = new Set<unknown>(); let low = Infinity;
+  await tryUntil("the nailed body's own sim steps 10 more frames", () => { frames.add(ag3.heldPose); low = Math.min(low, ag3.pos.y); return frames.size > 10; }, { ms: 3000, step: 20 });
+  check("...its own sim keeps stepping it, still nailed, hung off the drag's root",
+    frames.size > 10 && ag3.pins.size === 1 && low > -0.3 && Math.abs(ag3.pos.y - 1.2) > 0.1,
+    `frames=${frames.size} pins=${ag3.pins.size} lowest y=${low.toFixed(2)} y=${ag3.pos.y.toFixed(2)}`); }
 check("...and told, as the dragger's acts: taken hold of, then nailed",
   ev3.some((t) => /^\S*shover\S*: takes hold of your limp body/.test(t)) && ev3.some((t) => /^\S*shover\S*: nails part of you in place/.test(t)), ev3.join(" | "));
 h.send({ type: "bodydrag", target: "kd-bot3", unpin: { joint: "head" } });

@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, existsSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil, pause } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -65,7 +65,7 @@ const reap = () => { for (const c of spawned) { try { c.kill(); } catch { /* gon
 process.on("exit", reap);
 process.on("uncaughtException", (e) => { reap(); console.error(e); process.exit(1); });
 const world = spawnChild([process.execPath, "server/server.ts"], {
-  PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
+  ...scratchState(), PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
   // the sequencer reads the SAME credential file as the door (as in production, where both read mcpl/tokens.json): the
   // world honours the same enrolments, and the door asks it /access as the agent, so it must know the agent's bearer
   AGENT_TOKENS_PATH: tokensPath, HN_SESSIONS_FILE: join(worldsDir, "sessions.json"),

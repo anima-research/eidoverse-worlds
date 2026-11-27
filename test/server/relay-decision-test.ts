@@ -3,6 +3,10 @@
 import { relayIdentity, parseRelayIdentity, nextIncarnation,
   subscriptionActive, applyConsentUpdate,
 } from "../../server/relaydecision.ts";
+import { bootIncarnation } from "../../server/transport.ts";
+import { scratch } from "../gate/common.ts";
+import { join } from "node:path";
+import { readFileSync, rmSync } from "node:fs";
 import { suite } from "../gate/suite.ts";
 
 const S = suite("relay-decision");
@@ -19,8 +23,16 @@ t("parse refuses genless", parseRelayIdentity("hesperus"), null);
 // ── incarnation (amendment 2) ───────────────────────────────────────────────
 t("first incarnation", nextIncarnation(null, "abc"), "i1-abc");
 t("advance past prev", nextIncarnation("i7-old", "new"), "i8-new");
-t("lost-file restart cannot equal prev (entropy differs)",
-  nextIncarnation(null, "x9") !== nextIncarnation(null, "abc"), true);
+// the boot itself (transport.ts bootIncarnation): a restart that lost its file starts at i1 again, so only the boot's fresh
+// entropy keeps it from equalling the incarnation the lost file held (#333 backlog G4-185)
+{
+  const dir = scratch("relay-incarnation"), file = join(dir, "relay-incarnation");
+  const first = bootIncarnation(dir), second = bootIncarnation(dir);
+  t("a boot with its file advances it", [/^i1-/.test(first), /^i2-/.test(second), readFileSync(file, "utf8")], [true, true, second]);
+  rmSync(file);
+  const lost = bootIncarnation(dir);
+  t("lost-file restart cannot equal prev (the boot's entropy differs)", [/^i1-/.test(lost), lost !== first], [true, true]);
+}
 
 // ── audibility: three independent states (amendment 3) ──────────────────────
 t("no consent → inactive (fail closed)",

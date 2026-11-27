@@ -36,6 +36,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["idle-stall", "server/idle-stall-test.ts", 1], // a download whose reader stalls past Bun's idle timeout still arrives whole
   ["fetchbytes", "client/fetchbytes-test.mjs", 1], // fetchBytes retries 5xx and network failures, never a 4xx, and evicts a failure
   ["variant-status", "server/variant-status-test.ts", 1], // store-variants variantStatus/classifyVariant: every optimization's state for a model
+  ["store-variants", "server/store-variants-test.ts", 1], // the store's KTX2 shadow: helpers, the optimizer's refusal seams (a fake encoder), the real sequencer on a scratch OPT_DIR, the /version-key canary in a scratch tree
+  ["object-lod", "server/object-lod-test.ts", 1], // object LODs: the reducer's refusals, the store door's recipe URL, the library sweep + mutable-source freshness, no-encoder survival, the recipe canary in a scratch tree
   ["optimize-pump", "server/optimize-pump-test.ts", 1], // the optimizer pump with a fake child: estimate, defer, queue
   ["rebuild", "server/rebuild-test.ts", 1], // a Build card's rebuild: rebuildAsset reruns one object's KTX2 + LOD passes; POST /rebuild takes a sign-in, refuses a key in the URL, 4 per address per minute
   ["ktx2-tf-purge", "server/ktx2-tf-purge-test.ts", 1], // the KTX2 purge tool's two detectors on synthetic headers
@@ -58,7 +60,6 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["zone-water", "protocol/zone-water-check.ts", 1], // zone + water (either side) + water-exclusion: the door, shared/zone.js's bodies (the combine law), the client's rebuild rule
   ["water-lifecycle", "mcpl/water-lifecycle-test.ts", 1], // an agent's stature and float follow the current body and water; a late answer for an old body is dropped
   ["waterkind", "shared/waterkind-test.ts", 1], // still water, rivers and the sea, read from the shape a water level fills
-  ["underwater-presence", "server/underwater-presence-test.ts", 1], // underwater presence validation (3D orientation, bad q dropped)
   ["buoyancy", "shared/buoyancy-test.ts", 1], // a floating column on the water surface, and the clock the surface runs on
   ["climb-env", "protocol/climb-env-check.ts", 1], // collider.enabled (collision off), climb routes (shared/climb.js), arrivals and KillZ (shared/spawn.js), the sky gradient and the directional sun
   ["drive", "protocol/drive-check.ts", 1], // a hull driven from its helm: drive + station.input at the door, one driver, plausibility, the hull's own collision, the lease's commits and end (shared/drive.js, authority/drive.js)
@@ -105,6 +106,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["seatlab-measure", "client/seatlab-measure-test.ts", 1], // tools/seatlab measureSeat reports the seat's pose and anchor from its station
   ["msgrate", "server/msgrate-test.ts", 1], // server/msgrate.ts: the message cap is a token bucket (a server stall is not the client's flood)
   ["upload-cap", "server/upload-cap-test.ts", 1], // /upload's whole-body cap bites at UPLOAD_CAP, with a length or chunked (MUTATION-SAMPLE S2)
+  ["request-body-cap", "server/request-body-cap-test.ts", 1], // the other capped reads: /seat-profile, /thumb and /perflog one byte over their caps, and exactly at them (#333 G4-027)
   ["clientlog", "server/clientlog-test.ts", 1], // the /clientlog tee's door and budget (server/clientlog.ts: rate, size, scrub, disk; no read path) and the client's side of it
   ["shape-render", "shared/shape-render-test.ts", 1], // #260 I515: the shape audit's render rows and the v1 importer's; ran only as an import before
   ["originof", "client/originof-test.ts", 1], // #260 I98: the ?orrery= guard (generate.js originOf) takes only an http(s) base, never markup or javascript:
@@ -450,6 +452,8 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["aux-binding", "server/aux-binding-test.ts", 1], // B1 (#57): an aux leg binds to the primary's identity authority, or it does not attach
   ["keepalive", "server/keepalive-test.ts", 1], // the MCPL door's keepalive tolerates a thinking agent: missed pongs survive, a reap only after the full grace
   ["chatbridge", "services/chatbridge-test.ts", 1], // the Discord chat bridge (services/chatbridge) against an owned scratch world, in its DRY_RUN
+  ["captionbot", "services/captionbot-test.ts", 1], // the caption bot's pipeline with a fake STT: segmentation, revision doctrine, the cue, sealing, source loss, the spool's fail-closed promise
+  ["captionbot-cli", "services/captionbot-cli-test.ts", 1], // the shipping captionbot CLI's exit status is the spool's promise (FILE-mode replay, no world reachable)
   ["spoken-say-door", "server/spoken-say-door-test.ts", 1], // #100: the advertised MCPL surface (tools/call say) against an owned door, watched on the world socket
   ["sfu", "server/sfu-test.ts", 1], // the SFU's policy over real RTP (loopback werift peers): the acceptance rows checkable without a browser
   ["sfu-verb-gate", "server/sfu-verb-gate-test.mjs", 1], // every sfu-* verb in server.ts dispatch gates on spectator/surface (the sfu-pos remote-mute hole)

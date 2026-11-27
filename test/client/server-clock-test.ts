@@ -45,7 +45,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { until, tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -93,7 +93,7 @@ const worldsDir = mkdtempSync(join(tmpdir(), "ew-serverclock-"));
 const optDir = mkdtempSync(join(tmpdir(), "ew-serverclock-opt-"));
 foundWorlds(worldsDir, [WORLD, `${WORLD}-b`]);   // a join never founds a world
 const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, ...scratchState(optDir), JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" },
   stdout: "ignore", stderr: "inherit",
 });
 const up = !!(await tryUntil("the server answers", () => fetch(`${HTTP}/`).then(() => true, () => false), { ms: 12_000, step: 150 }));

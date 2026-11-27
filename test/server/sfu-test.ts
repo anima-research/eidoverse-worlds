@@ -8,7 +8,7 @@ import { RTCPeerConnection, MediaStreamTrack, RTCRtpCodecParameters, RtpPacket, 
 import { Sfu } from "../../server/sfu.ts";
 import { installSfuTransportGuard } from "../../server/sfuguard.ts";
 import { suite } from "../gate/suite.ts";
-import { until, tryUntil, pause } from "../gate/wait.ts";
+import { until, tryUntil, pause, WAIT_SCALE } from "../gate/wait.ts";
 
 // Run the ENTIRE suite guarded (review 2026-08-18): the negotiation vectors
 // below are the receipt that the ownership patch is transparent under real
@@ -80,6 +80,8 @@ async function forwardedWhile(room: Sfu, legId: string, speaker: FakePeer, n: nu
   await speaker.speak(n);
   await tryUntil(`the SFU took in ${legId}'s ${n} packets`, () => got >= n);   // a lost loopback packet is a short count, not a throw
   tap.unSubscribe();
+  // positive control (AMB-016/G6-135): with zero ingress, every caller's `fwd === 0` would pass with nothing sent
+  check(`…${legId}'s packets reached the SFU (positive control for the row below)`, got > 0, `ingress ${got}/${n}`);
   return room.diag().forwarded - f0;
 }
 const connected = (...pcs: RTCPeerConnection[]) => pcs.every((pc) => pc.connectionState === "connected");
@@ -184,10 +186,11 @@ const atHear = await heardAll(alice, bob, 20);
 check("undeafened: hears again (the control)", bob.heard > atHear, `heard ${atHear}→${bob.heard}`);
 
 // ── revocation is LOCAL and immediate (no webhook, no TTL) ─────────────────
-const t0 = Date.now();
+// monotonic + PROTOCOL_TIMEOUT_SCALE: WSL's wall clock steps ~2 s, and a CPU quota stretches 50 ms (G4-189, as screenshots-test)
+const t0 = performance.now();
 sfu.closeLeg("alice");
-const revokeMs = Date.now() - t0;
-check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50, `${revokeMs}ms`);
+const revokeMs = performance.now() - t0;
+check(`revoke is synchronous (<${50 * WAIT_SCALE}ms${WAIT_SCALE === 1 ? "" : ": 50 ms × PROTOCOL_TIMEOUT_SCALE"}, vs LiveKit's ~4700ms webhook path)`, revokeMs < 50 * WAIT_SCALE, `${revokeMs.toFixed(1)}ms`);
 check("revoked leg is gone", sfu.getLeg("alice") === undefined);
 // 🔴 #130 item 3: routes SURVIVE speaker retirement (deleting them leaked the
 // transceiver — the only handle werift keeps — one per reconnect). The safety
@@ -556,7 +559,7 @@ check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)
 // process-global error that happens to look UDP-shaped.
 // Proven in child processes because the fatal contract IS process-level.
 {
-  const run = (code: string) => Bun.spawnSync(["bun", "-e", code], { cwd: import.meta.dir + "/../.." });
+  const run = (code: string) => Bun.spawnSync([process.execPath, "-e", code], { cwd: import.meta.dir + "/../.." });
   const unrelated = run(`
     const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
     installSfuTransportGuard();

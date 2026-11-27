@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { tryUntil } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
-import { freePort } from "../harness/harness.ts";
+import { freePort, scratchState } from "../harness/harness.ts";
 
 const S = suite("served-routes");
 const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
@@ -22,7 +22,7 @@ const NONCE = randomUUID();
 const scratch = mkdtempSync(join(tmpdir(), "served-routes-"));
 // process.execPath, not "bun": on Windows the PATH "bun" is a .cmd shim whose pid dies at once, so the server outlives the test
 const server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "served-routes-test", WORLDS_DIR: scratch, EIDO_BOOT_NONCE: NONCE },
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), JOIN_TOKEN: "served-routes-test", WORLDS_DIR: scratch, EIDO_BOOT_NONCE: NONCE },
   stdio: "ignore",
 });
 const childAlive = () => server.exitCode === null && !server.killed;

@@ -199,7 +199,7 @@ check("a re-export's stature shows at once", near(height("plain"), 1.63), height
   // …and so does the operator's tool, over the same store
   const derivation = join(root, "patchonly-derivation.json");
   writeFileSync(derivation, JSON.stringify(profile("patchonly")));
-  const tool = Bun.spawnSync(["bun", join(import.meta.dir, "../../tools/operator/seat-accept.ts"), "propose", derivation, "--operator", "test"], { env: process.env });
+  const tool = Bun.spawnSync([process.execPath, join(import.meta.dir, "../../tools/operator/seat-accept.ts"), "propose", derivation, "--operator", "test"], { env: process.env });
   check("the operator's seat tool takes a body only in PATCH_DIR too", tool.exitCode === 0, tool.stderr.toString().trim());
 }
 

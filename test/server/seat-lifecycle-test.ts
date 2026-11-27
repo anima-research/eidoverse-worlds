@@ -29,9 +29,9 @@ import { fileURLToPath } from "node:url";
 import { WorldAgent } from "../../mcpl/agent.ts";
 import { SeatStore } from "../../server/seats.ts";
 import { HANDLERS } from "../../mcpl/tools.ts";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
-import { until, tryUntil } from "../gate/wait.ts";
+import { until, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -65,7 +65,7 @@ const CHILD_LOG = join(SCRATCH, "server-output.txt");
 // it poisons the next run.
 const server = Bun.spawn([process.execPath, "run", "server/server.ts"], {
   cwd: ROOT,
-  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB, OPT_DIR: OPT, PATCH_DIR: PATCH, AGENT_TOKENS_PATH: TOKENS, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" },
+  env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB, ...scratchState(OPT), PATCH_DIR: PATCH, AGENT_TOKENS_PATH: TOKENS, TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 // preserve the child's own words — a startup crash must be readable, not mute
@@ -181,18 +181,20 @@ try {
   const { idAliases } = await import("../harness/idalias.ts"); const IDS = idAliases();
   const areq = async (verb: string, args: any) => IDS.back(await ag!.request(verb, IDS.out(verb, args)));
   // building is door requests (the agent waits for each answer); sitting is presence (the sit tool, nothing logged)
-  const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 0] }, label: "crate1" } });
+  // the crate stands 2 m off the spawn at (0, 0): over it, a dismount would be pushed out of the crate, not back on its own track
+  const built = await areq("create", { id: "crate1", model: "eidoverse/assets/models/crate_large_blue.glb", components: { transform: { pos: [0, 0, 2] }, label: "crate1" } });
   check("seatbot (the owner) builds the crate through the door", built?.ok === true, JSON.stringify(built?.refused ?? built));
-  // a seat is a socket with a body block ({action, pose, anchor}); the legacy seat authors no support plane
-  const seatL = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair" } };
-  const legacy = await areq("set", { id: "crate1", component: "sockets", value: { seatL } });
+  // a seat is a socket child of the host with a station ({action, anim, anchor}) (G4-187: the old `sockets` component is
+  // refused); the legacy seat's station authors no support plane
+  const { addSocket } = await import("../../shared/requests.js");
+  const mkSeat = (name: string, anchor?: "surface") => { const o = addSocket(IDS.of("crate1"), { name }, { pos: [0, 1, 0], station: { action: "sit", anim: "sitchair", ...(anchor ? { anchor } : {}) } }); return areq(o.verb, o.args); };
+  const legacy = await mkSeat("seatL");
   check("…and gives it a (legacy) seat", legacy?.ok === true, JSON.stringify(legacy?.refused ?? legacy));
-  // the seat-profile correction keys on a socket that authors its support plane: its body anchors at the surface
-  // (D14: body.anchor 'surface', one enum; shared/seatcore.js socketAnchor).
+  // the seat-profile correction keys on a seat that authors its support plane: its body anchors at the surface
+  // (D14: station.anchor 'surface', one enum; shared/seatcore.js socketAnchor).
   // (two of them: one body per socket, and seatbot is still on seatS when probebot sits below)
-  const seatS = { pos: [0, 1, 0], body: { action: "sit", pose: "sitchair", anchor: "surface" } };
-  const surface = await areq("set", { id: "crate1", component: "sockets", value: { seatL, seatS, seatS2: seatS } });
-  check("…and a seat that authors its support plane (body.anchor: surface)", surface?.ok === true, JSON.stringify(surface?.refused ?? surface));
+  const surface = [await mkSeat("seatS", "surface"), await mkSeat("seatS2", "surface")];
+  check("…and a seat that authors its support plane (station.anchor: surface)", surface.every((r) => r?.ok === true), JSON.stringify(surface.map((r) => r?.refused ?? r?.ok)));
   // the agent attaches by what it sees: wait until its view of crate1 carries all three sockets
   const seesSeats = (a: WorldAgent) => [...a.entities.entries()].some(([id, e]: [string, any]) => e.label === "crate1" && a.socketsOf(id).length === 3);
   await until("seatbot sees crate1's three seats", () => seesSeats(ag!));
@@ -260,9 +262,14 @@ try {
     mutated.set(claudeBytes); mutated[claudeBytes.length] = 0x00;
     const re = await fetch(`${BASE}/upload?as=avatar&name=seatprobe&token=${DOOR}`, { method: "POST", body: mutated });
     check("seatprobe bytes re-uploaded (avatar-updated fires)", re.status === 200, `${re.status}`);
-    const line = await tryUntil("probebot's correction stops", () => { const l = probeAg!.look(); return /seat approximate: profile (update pending|stale \(avatar bytes changed\))/.test(l) ? l : null; }, { ms: 12000 });
-    check("the correction STOPS when the event lands: the look says pending or stale",
-      !!line, probeAg.look().split("\n")[0]);
+    // the event is sent before the upload answers (server/upload.ts), and its receipt demotes the verdict to pending at
+    // once: so a short bound, not the refetch's 12 s (G6-132)
+    const t0 = performance.now();
+    const line = await tryUntil("probebot's correction stops", () => { const l = probeAg!.look(); return /seat approximate: profile (update pending|stale \(avatar bytes changed\))/.test(l) ? l : null; }, { ms: 1500, step: 20 });
+    // the bound is the row's own: tryUntil returns a poll that STARTED before its deadline, however late it ends (wait.ts)
+    const took = performance.now() - t0, bound = 1500 * WAIT_SCALE;
+    check("the correction STOPS when the event lands (within 1.5 s of the upload's answer): the look says pending or stale",
+      !!line && took <= bound, `${Math.round(took)} ms (bound ${bound}): ${probeAg.look().split("\n")[0]}`);
     const roster = await (await fetch(`${BASE}/avatars`)).json() as any[];
     const probeSeat = roster.find((e) => e.name === "seatprobe")?.seat;
     check("served verdict for seatprobe: stale, naming which bytes", probeSeat?.status === "stale" && probeSeat?.which === "avatar", JSON.stringify(probeSeat));

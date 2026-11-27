@@ -91,7 +91,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { ENGINE, scratch } from "../gate/common.ts";
-import { freePort } from "../harness/harness.ts";
+import { freePort, scratchState } from "../harness/harness.ts";
 import { runOneShot, FORCED, type OneShotEnd } from "../../server/oneshot.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { emptyState as v1Empty, foldEntry as v1Fold } from "../../tools/import-v1/fold.js";
@@ -119,7 +119,7 @@ const W = path.join(root, "worlds"), OPT = path.join(root, "opt"); fs.mkdirSync(
 const children: { args: string[]; code: number | null; ms: number; framed: boolean; handles: string | null; end: OneShotEnd; accepted: boolean; why: string | null; gone: boolean; left: number[]; group: string; receipt: string | null }[] = [];
 const runWorld = async (pre: string[], args: string[], env: Record<string, string> = {}) => {
   const r = await runOneShot(["bun", ...pre, "tools/world.ts", ...args], { cwd: ENGINE, guardMs: 45_000, label: `inplace-check world.ts ${args.slice(0, 2).join(" ")}`,
-    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, OPT_DIR: OPT, PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
+    env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: W, ...scratchState(OPT), PROTOCOL_SCRATCH: root, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env } });
   children.push({ args: args.slice(0, 2), code: r.code, ms: r.ms, framed: r.framed, handles: r.handles, end: r.end, accepted: r.accepted, why: r.why, gone: r.gone, left: r.left, group: r.group, receipt: r.receipt });
   const out = r.out + r.err;
   if (!r.accepted || r.end !== "exited") console.log(`  [inplace-check] world.ts ${args.slice(0, 2).join(" ")}: ${r.end === "forced process cleanup" ? FORCED : r.end}${r.why ? ` (${r.why})` : ""}; output:\n${out.slice(-800)}`);
@@ -166,7 +166,7 @@ const same = (a: any, b: any) => JSON.stringify(a) === JSON.stringify(b);
 // ---- a real server on the scratch worlds dir ----
 async function boot(tag: string, extra: Record<string, string> = {}, attempt = 1): Promise<{ port: number; proc: any; log: string }> {
   const port = freePort(9240); const log = path.join(root, `${tag}.log`);
-  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, OPT_DIR: OPT, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
+  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: W, ...scratchState(OPT), SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", EIDO_FLIGHT_REHEARSAL: "", ...extra }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
   process.on("exit", () => { try { proc.kill(); } catch {} });
   // the answer must be OUR server's: a sibling shard can take the port between freePort and the bind, and its /worlds answers
@@ -439,7 +439,7 @@ ok(/snapshot\.json agrees/.test(r1.out) && /mtime unchanged: true/.test(r1.out) 
 
 // ================= IP12: the oracle re-runs on the kept originals =================
 { const fp = fingerprint(porch);
-  const o = Bun.spawnSync(["bun", "tools/import-v1/snapshot-oracle.ts", porch], { cwd: ENGINE, env: { ...process.env, ORACLE_SCRATCH: root, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const o = Bun.spawnSync(["bun", "tools/import-v1/snapshot-oracle.ts", porch], { cwd: ENGINE, env: { ...process.env, ORACLE_SCRATCH: root, ...scratchState(OPT), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const out = o.stdout.toString() + o.stderr.toString();
   ok(o.exitCode === 0 && /oracle: 1\/1 compared world\(s\) agree/.test(out) && same(fingerprint(porch), fp), "IP12 snapshot-oracle <translated world> compares its kept originals with the old engine (and agrees), touching nothing", out.slice(-600)); }
 

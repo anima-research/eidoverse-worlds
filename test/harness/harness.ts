@@ -42,10 +42,26 @@ export function freePort(from: number, tries = 40, start = from + Math.floor(Mat
  *  <logDir>/srv-<port>.log(.err). Resolves once `probe` answers 200, or with `dead` if it exits or never does. */
 export async function startServer(env: Record<string, string | undefined>, logDir: string, opts: { from?: number; probe?: string; ms?: number } = {}) {
   const port = freePort(opts.from ?? 9300), log = join(logDir, `srv-${port}.log`);
-  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ROOT, env: { ...env, PORT: String(port) }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
+  const proc = Bun.spawn(["bun", "server/server.ts"], { cwd: ROOT, env: { ...env, ...scratchState(env.OPT_DIR), PORT: String(port) }, stdout: Bun.file(log), stderr: Bun.file(log + ".err") });
   const up = await tryUntil(`the server on ${port} answers ${opts.probe ?? "/version"}`, async () => proc.exitCode != null
     || (await fetch(`http://127.0.0.1:${port}${opts.probe ?? "/version"}`, { signal: AbortSignal.timeout(800) })).ok, { ms: opts.ms ?? 76_000, step: 150 });
   return { port, proc, log, dead: !up || proc.exitCode != null };
+}
+
+/** Where a test's server children keep their writable state, as env: OPT_DIR (the asset store, its variants and markers,
+ *  thumbs, the relay incarnation) and RELAY_STATE_DIR, never the checkout's assets/opt, the server's default. `opt` is the
+ *  suite's own store when it has one; else an OPT_DIR the caller set is kept (the gate gives each suite its own, seeded with
+ *  the prop fixtures); else one temp dir per process, shared by every child it starts (a restarted server finds its store)
+ *  and removed at exit. RELAY_STATE_DIR always follows OPT_DIR: an inherited one may be a live server's. Spread it where a
+ *  child's env names its OPT_DIR, in place of OPT_DIR itself. */
+let stateDir: string | undefined;
+export function scratchState(opt?: string): { OPT_DIR: string; RELAY_STATE_DIR: string } {
+  if (!opt && !process.env.OPT_DIR && !stateDir) {
+    const d = stateDir = mkdtempSync(join(tmpdir(), "eido-opt-"));
+    process.on("exit", () => { if (!process.env.PROTOCOL_KEEP) try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } });
+  }
+  const OPT_DIR = opt || process.env.OPT_DIR || stateDir!;
+  return { OPT_DIR, RELAY_STATE_DIR: OPT_DIR };
 }
 
 /** Found worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005
@@ -184,7 +200,7 @@ export async function scratchSequencer(name: string, opts: ScratchOptions = {}) 
     }
     seq = track(Bun.spawn([process.execPath, ...(opts.preload ? ["--preload", opts.preload] : []), join(ROOT, "server", "server.ts")], {
       cwd: ROOT,
-      env: { ...process.env, JOIN_TOKEN: "", EIDOVERSE_DIR, ...opts.serverEnv,
+      env: { ...process.env, JOIN_TOKEN: "", EIDOVERSE_DIR, OPT_DIR: process.env.OPT_DIR || join(SCRATCH, "opt"), ...opts.serverEnv,   // never the checkout's assets/opt (scratchState)
         PORT: String(PORT), WORLDS_DIR: join(SCRATCH, "worlds"), RELAY_STATE_DIR: SCRATCH, BENCH_NONCE: NONCE },
       stdout: opts.onLine ? "pipe" : Bun.file(join(SCRATCH, "sequencer.log")), stderr: Bun.file(join(SCRATCH, "sequencer.stderr.log")),
     }));

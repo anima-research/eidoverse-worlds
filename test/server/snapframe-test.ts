@@ -19,7 +19,7 @@ import * as fp from "../../client/lib/avatar/fp_view.js";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort, readSequencerLog, ROOT, scratchSequencer } from "../harness/harness.ts";
+import { foundWorlds, freePort, readSequencerLog, ROOT, scratchSequencer, scratchState } from "../harness/harness.ts";
 import { pause, tryUntil, until } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -72,7 +72,7 @@ const WORLDS = mkdtempSync(join(tmpdir(), "snapframe-"));
 foundWorlds(WORLDS, [WORLD]);
 const KEY = { headers: { authorization: `Bearer ${TOKEN}` } };
 const seq = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: TOKEN, SKIP_OPT_SWEEP: "1", WORLDS_DIR: WORLDS },
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), JOIN_TOKEN: TOKEN, SKIP_OPT_SWEEP: "1", WORLDS_DIR: WORLDS },
   stdout: "ignore", stderr: "ignore",
 });
 let mcp: ReturnType<typeof Bun.spawn> | null = null;

@@ -5,7 +5,7 @@
 //    proves it is ours (as boot-check), never an ambient fixed port. A LIVE deployment is explicit: pass its origin,
 //    identity checks skipped.
 import { launchCdp } from './cdp-pw.mjs';
-import { freePort } from './harness.ts';
+import { freePort, scratchState } from './harness.ts';
 import { suite } from '../gate/suite.ts';
 import { until, tryUntil, pause } from '../gate/wait.ts';
 import { spawn, spawnSync } from 'node:child_process';
@@ -72,10 +72,10 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
     if (r.status !== 0) { try { rmSync(scratch, { recursive: true, force: true }); } catch {} throw new Error(`ownedWorld: founding "${name}" failed: ${r.stdout}${r.stderr}`); }
   }
   const srv = spawn(BUN, ['server/server.ts'], {
-    // SKIP_OPT_SWEEP by default: a probe server shares the checkout's OPT_DIR (assets/opt), and its boot sweeps would
-    // build variants INTO the directory a live world serves from. A probe that wants the sweep passes it in env.
+    // SKIP_OPT_SWEEP by default: a probe server needs no variants, and the sweeps cost its boot. A probe that wants them
+    // passes it in env. Its store and relay incarnation are scratch too (scratchState), never the checkout's assets/opt
     env: { ...process.env, SKIP_OPT_SWEEP: '1', PORT: String(PORT), JOIN_TOKEN: key, WORLDS_DIR: scratch,
-           EIDO_BOOT_NONCE: NONCE, ...extraEnv },
+           EIDO_BOOT_NONCE: NONCE, ...extraEnv, ...scratchState(extraEnv.OPT_DIR) },
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   const origin = `http://127.0.0.1:${PORT}`;

@@ -14,7 +14,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { until, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 
@@ -29,7 +29,7 @@ const S = suite("door-frame"), { check } = S;
 // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows whose pid dies at once, so kill() would
 // leave the real server on its port.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, OPT_DIR: join(worldsDir, "opt"), SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath, BENCH_NONCE: NONCE },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, ...scratchState(join(worldsDir, "opt")), SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath, BENCH_NONCE: NONCE },
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {

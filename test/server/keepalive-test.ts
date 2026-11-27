@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil, pause } from "../gate/wait.ts";
 
@@ -28,7 +28,7 @@ const check = (name: string, ok: unknown, extra?: unknown) => S.check(name, ok, 
 // whose pid dies immediately, orphaning both of these on their ports where
 // they poison the next run.
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
+  env: { ...process.env, ...scratchState(), PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {

@@ -8,7 +8,7 @@
 import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort, ROOT } from "../harness/harness.ts";
+import { foundWorlds, freePort, ROOT, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -34,7 +34,7 @@ const check = (name: string, ok: unknown, extra?: unknown) => S.check(name, ok, 
 const CHILD_LOG = join(worldsDir, "server-output.txt");
 const server = Bun.spawn([process.execPath, "run", "server/server.ts"], {
   cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1" },
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", AGENT_TOKENS_PATH: tokensPath, SKIP_OPT_SWEEP: "1" },
   stdout: "pipe", stderr: "pipe",
 });
 for (const [stream, tag] of [[server.stdout, "out"], [server.stderr, "err"]] as const) {

@@ -24,6 +24,7 @@ import { pin, LAB_EPOCH } from "../gate/clock.ts";
 import { suite } from "../gate/suite.ts";
 import { LAB_CATALOGUE } from "../harness/labmodels.js";
 import { helloOf } from "../../shared/protocol/hello.js";
+import { scratchState } from "../harness/harness.ts";
 
 const argv = process.argv.slice(2);
 const S = suite("physseeds", { cap: 500 }), { only } = S;
@@ -155,7 +156,7 @@ const CLK = await imp("client/lib/serverclock.js");
 if (!only || only.some((x) => x.startsWith("SV"))) {
   const SKEW = 3_600_000;
   const W = path.join(root, "worlds-sv"); fs.mkdirSync(W, { recursive: true });
-  const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, OPT_DIR: path.join(root, "opt"), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
+  const env = (extra = {}) => ({ ...process.env, WORLDS_DIR: W, ...scratchState(path.join(root, "opt")), SKIP_OPT_SWEEP: "1", HOST: "127.0.0.1",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", SERVER_OPERATORS: "", TRUST_NAMES: "1", SESSIONS_PATH: path.join(root, "sessions.json"), ...extra });
   // found the world with the authority's clock an hour ahead (an imported world, or a host whose clock was ahead): its log
   // ends at a ts the wall clock hasn't reached
