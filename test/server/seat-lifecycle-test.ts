@@ -31,7 +31,7 @@ import { SeatStore } from "../../server/seats.ts";
 import { HANDLERS } from "../../mcpl/tools.ts";
 import { foundWorlds, freePort } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
-import { until, tryUntil } from "../gate/wait.ts";
+import { until, tryUntil, WAIT_SCALE } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -266,8 +266,10 @@ try {
     // once: so a short bound, not the refetch's 12 s (G6-132)
     const t0 = performance.now();
     const line = await tryUntil("probebot's correction stops", () => { const l = probeAg!.look(); return /seat approximate: profile (update pending|stale \(avatar bytes changed\))/.test(l) ? l : null; }, { ms: 1500, step: 20 });
+    // the bound is the row's own: tryUntil returns a poll that STARTED before its deadline, however late it ends (wait.ts)
+    const took = performance.now() - t0, bound = 1500 * WAIT_SCALE;
     check("the correction STOPS when the event lands (within 1.5 s of the upload's answer): the look says pending or stale",
-      !!line, `${Math.round(performance.now() - t0)} ms: ${probeAg.look().split("\n")[0]}`);
+      !!line && took <= bound, `${Math.round(took)} ms (bound ${bound}): ${probeAg.look().split("\n")[0]}`);
     const roster = await (await fetch(`${BASE}/avatars`)).json() as any[];
     const probeSeat = roster.find((e) => e.name === "seatprobe")?.seat;
     check("served verdict for seatprobe: stale, naming which bytes", probeSeat?.status === "stale" && probeSeat?.which === "avatar", JSON.stringify(probeSeat));
