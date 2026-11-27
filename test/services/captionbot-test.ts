@@ -84,8 +84,10 @@ async function run(script: (n: number, emit: (t: SttTranscript) => void) => void
   const f = framer(tap);
   for (const a of audio) f.write(a);
   f.end();
-  // every segment's session closes at 4× settle, after its finals settled (captioner.ts close): by then each caption is out
-  await tryUntil('every STT session closed', () => provider.sessions.length > 0 && provider.sessions.every((s) => s.closed), { ms: 5_000, step: 5 });
+  // every segment's session closes at 4× settle (captioner.ts close). A final emitted at commit set its settle timer before
+  // that close timer, so it fires first: once every session is closed, each such caption is out. A session that never
+  // opened or closed means the audio never reached the captioner, and a row about what it did NOT emit would be empty
+  check('(setup) the audio opened an STT session, and every session closed', !!(await tryUntil('every STT session closed', () => provider.sessions.length > 0 && provider.sessions.every((s) => s.closed), { ms: 5_000, step: 5 })), `${provider.sessions.length} session(s)`);
   return { out, provider, cap, tap };
 }
 
