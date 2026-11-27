@@ -7,6 +7,8 @@ import { CONFIG } from '../base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
   isHushed, setHush, pttMode } from './voiceconsent.js';
 import { bus } from '../base.js';
+import { net } from '../net.js';
+const chatMuted = () => !!net.myRights?.muted?.channels?.includes('chat');
 import { register as registerAction } from '../ui/actions.js';
 import { pathData } from '../ui/icons.js';
 
@@ -122,9 +124,11 @@ function paint() {
   micHot = hot; micMuted = reason;   // the poll repaints when the live state leaves what was drawn
   micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
   micBtn.style.opacity = deaf ? '0.55' : '1';
-  // speech-to-text doesn't read the mute yet, so while it is on a muted mic still posts captions: say so
-  const muteTail = sttConsented() && sttAvailable()
-    ? ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' : ' — none of your voice goes out to the room';
+  // speech-to-text doesn't read a voice mute yet, so while it is on a muted mic still posts captions (as say, which a
+  // moderator's chat mute refuses), and under push-to-talk only while V is held: say exactly that
+  const captionsPost = sttConsented() && sttAvailable() && !chatMuted();
+  const muteTail = !captionsPost ? ' — none of your voice goes out to the room'
+    : ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' + (pttMode() ? ' while you hold V' : '');
   micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here' + muteTail
     : muted ? 'mic on, but muted' + muteTail
     : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
@@ -307,6 +311,8 @@ bus.on('audio:receive', paint);
 bus.on('audio:mic', paint);   // without it the glyph repaints only from its poll
 bus.on('audio:mute', paint);
 bus.on('audio:stt-consent', paint);   // the mute tooltip names captions while speech-to-text is on
+bus.on('audio:ptt', paint);   // push-to-talk on or off changes the tooltips' words
+bus.on('your-rights', paint);   // a moderator's chat mute refuses captions
 bus.on('audio:ptt-held', paint);   // any holder of the key (V, the XR controller's A/X): gold ends with the release
 bus.on('style', paint);
 bus.on('xr:state', paint);

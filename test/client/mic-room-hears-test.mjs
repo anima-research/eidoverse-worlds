@@ -200,6 +200,14 @@ t('muted, speech-to-text off: the tooltip says none of your voice goes out', /no
 sttAv = true; vc.setSttConsent(true);
 t('muted, speech-to-text on: the tooltip says captions still post, not that none of it goes out',
   !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
+vc.setPttMode(true);
+t('muted, speech-to-text on, push-to-talk: captions post only while V is held, and the tooltip says so',
+  !!(await tryUntil('the tooltip says while you hold V', () => /captions still post while you hold V/.test(tip()))), tip());
+vc.setPttMode(false);
+net.myRights = { role: 'member', muted: { channels: ['voice', 'chat'], until: null } }; bus.emit('your-rights', net.myRights);
+t('muted by a moderator in voice and chat, speech-to-text on: no captions post (say is refused), so none of your voice goes out',
+  !!(await tryUntil('the tooltip drops the captions clause', () => /none of your voice goes out/.test(tip()) && !/caption/.test(tip()))), tip());
+net.myRights = { role: 'member' }; bus.emit('your-rights', net.myRights);
 vc.setSttConsent(false); sttAv = false;
 ms.toggleMute(false);
 t('...and unmuted, the slash goes from the indicator', !!(await tryUntil('the indicator repaints unmuted',
