@@ -429,8 +429,9 @@ console.log("\n  the optimizer, against the fake encoder:");
 }
 
 // ---------------------------------------------- the real sequencer
-// every child gets a scratch OPT_DIR (fixtures, manifest, verdicts) and an EMPTY library, so its sweep has nothing to
-// encode and a killed run leaves nothing in the checkout (G4-192)
+// every child gets a scratch OPT_DIR (fixtures, manifest, verdicts) and an EMPTY library, so the library sweep has nothing
+// to encode and a killed run leaves nothing in the checkout (G4-192). The store sweep does run: it encodes what a section
+// put in the store before boot (5, 5b, 6), with whichever encoder the section names
 const OPT = mkdtempSync(join(tmpdir(), "ew-store-opt-"));
 const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
 mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
@@ -694,7 +695,8 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
   const REAL_SHARED = join(ROOT, "shared", "ktx2.js");
   const pristine = readFileSync(REAL_SHARED);
   // server/ and shared/ copied for real (config.ts resolves ROOT from server/'s realpath, and the pull rewrites a shared file);
-  // everything else the server reads (client/, defs/, mcpl/, node_modules, …) linked read-only
+  // everything else the server reads (client/, defs/, mcpl/, node_modules, …) LINKED, and a link is not read-only: a
+  // write through one lands in this checkout, so the child must write only under its copies and its scratch dirs
   const TREE = mkdtempSync(join(tmpdir(), "ew-canary-tree-")); scratch.push(TREE);
   for (const name of readdirSync(ROOT)) {
     if (name === ".git" || name === "assets" || name === "worlds") continue;
