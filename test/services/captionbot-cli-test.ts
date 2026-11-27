@@ -42,7 +42,8 @@ const envFor = (extra: Record<string, string>) => ({
   ...extra,
 });
 function run(extra: Record<string, string>) {
-  const r = Bun.spawnSync(['bun', CLI], { env: envFor(extra), stdout: 'pipe', stderr: 'pipe' });
+  const r = Bun.spawnSync([process.execPath, CLI],   // this bun, not PATH's (G2-089)
+    { env: envFor(extra), stdout: 'pipe', stderr: 'pipe' });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 
@@ -100,7 +101,7 @@ console.log('\nâ€” E. the spool goes after the lines are on it, before the end â
   let rows = 0, caught = false, code: number | null = null, out = '';
   for (let attempt = 1; attempt <= 3 && !caught; attempt++) {
     rmSync(spool, { recursive: true, force: true }); rmSync(`${spool}.lines`, { force: true });
-    const proc = Bun.spawn(['bun', CLI], { env: envFor({ SPOOL: spool }), stdout: 'pipe', stderr: 'pipe' });
+    const proc = Bun.spawn([process.execPath, CLI], { env: envFor({ SPOOL: spool }), stdout: 'pipe', stderr: 'pipe' });
     // polled every 10 ms: the window is the CLI's 2 s
     rows = (await tryUntil("both lines' rows on the spool", () => { const n = rowsIn(spool); return n >= 2 ? n : 0; }, { ms: 30_000, step: 10 })) ?? rowsIn(spool);
     if (rows === 2) { renameSync(spool, `${spool}.lines`); mkdirSync(spool); }

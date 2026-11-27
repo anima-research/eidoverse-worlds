@@ -28,7 +28,7 @@ const base = fs.mkdtempSync(path.join(process.env.PROTOCOL_SCRATCH ?? os.tmpdir(
 process.on("exit", () => { if (!process.env.PROTOCOL_KEEP) fs.rmSync(base, { recursive: true, force: true }); });
 const W = path.join(base, "worlds"), OPT = path.join(base, "opt");
 fs.mkdirSync(W, { recursive: true }); fs.mkdirSync(OPT, { recursive: true });
-const tool = (args: string[], worlds = W) => { const r = Bun.spawnSync(["bun", "tools/world.ts", ...args], { cwd: ROOT,
+const tool = (args: string[], worlds = W) => { const r = Bun.spawnSync([process.execPath, "tools/world.ts", ...args], { cwd: ROOT,   // this bun, not PATH's (G2-089)
   env: { ...process.env, TRUST_NAMES: "1", WORLDS_DIR: worlds, OPT_DIR: OPT, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() }; };
 
@@ -111,16 +111,18 @@ const shWords = (cmd: string) => { const out: string[] = []; let w: string | nul
 const asRun = (cmd: string, account = "human:test:op") => { const argv = shWords(cmd.replaceAll("<your-account>", account)), env: Record<string, string> = {};
   while (/^[A-Z_]+=/.test(argv[0] ?? "")) { const [k, ...v] = argv.shift()!.split("="); env[k] = v.join("="); }
   return { argv, env }; };
+/** what a shell would exec for that argv: its `bun` is the bun running this suite, which PATH may not hold (G2-089) */
+const execOf = (argv: string[]) => argv[0] === "bun" ? [process.execPath, ...argv.slice(1)] : argv;
 ok(JSON.stringify(shWords(`A='/t/it'\\''s a dir' bun x.ts 'two words'`)) === JSON.stringify(["A=/t/it's a dir", "bun", "x.ts", "two words"]),
   "O9 shWords keeps a quoted word with a space whole and reads the '\\'' escape, as sh does", shWords(`A='/t/it'\\''s a dir' bun x.ts 'two words'`));
 { const { argv, env } = asRun(ot?.command ?? "x=y bun");
   ok(argv[0] === "bun" && argv[1] === "tools/world.ts", "O5 the command runs world.ts", argv);
   const before = fs.readdirSync(path.join(W, "oldtown")).sort();
-  const d = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const d = Bun.spawnSync(execOf(argv), { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const dout = d.stdout.toString() + d.stderr.toString(); const hash = /^report-hash ([0-9a-f]{64})$/m.exec(dout)?.[1];
   ok(d.exitCode === 0 && !!hash && JSON.stringify(fs.readdirSync(path.join(W, "oldtown")).sort()) === JSON.stringify(before) && !isWorldDir(path.join(W, "oldtown")), "O5 the first command (the dry run) prints the report hash and writes nothing", { code: d.exitCode, hash, out: dout.slice(-300) });
   const { argv: argv2 } = asRun((ot?.approve ?? "x=y bun").replace(`--approved <the report hash the dry run printed>`, `--approved ${hash}`));
-  const r = Bun.spawnSync(argv2, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
+  const r = Bun.spawnSync(execOf(argv2), { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "1", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } });
   const out = r.stdout.toString() + r.stderr.toString();
   ok(r.exitCode === 0 && /0 divergences/.test(out) && /approved by the operator/.test(out), "O5 the second, run as printed (the dry run's hash filled in), translates", out.slice(-600));
   ok(isWorldDir(path.join(W, "oldtown")) && !fs.existsSync(oldLog), "O5 …in place: oldtown itself is now a current world");
@@ -129,7 +131,7 @@ ok(JSON.stringify(shWords(`A='/t/it'\\''s a dir' bun x.ts 'two words'`)) === JSO
 
 // ---- O8: an ownerless world, its printed commands run: the operator who runs them claims it (no lockout) ----
 { fs.mkdirSync(path.join(W, "barn")); fs.writeFileSync(path.join(W, "barn", "log.jsonl"), JSON.stringify({ seq: 0, ts: T0, actor: "Pip", verb: "spawn", args: { id: "shed", lib: "test/table.glb" } }) + "\n");
-  const o = oldWorldAt(W, "barn"), run = (cmd: string) => { const { argv, env } = asRun(cmd); const r = Bun.spawnSync(argv, { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return r.stdout.toString() + r.stderr.toString(); };
+  const o = oldWorldAt(W, "barn"), run = (cmd: string) => { const { argv, env } = asRun(cmd); const r = Bun.spawnSync(execOf(argv), { cwd: ROOT, env: { ...process.env, ...env, OPT_DIR: OPT, TRUST_NAMES: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return r.stdout.toString() + r.stderr.toString(); };
   const hash = /^report-hash ([0-9a-f]{64})$/m.exec(run(o?.command ?? "x"))?.[1] ?? "none";
   const out = run((o?.approve ?? "x").replace(`--approved <the report hash the dry run printed>`, `--approved ${hash}`));
   ok(/^claimed: "barn" had no owner/m.test(out) && isWorldDir(path.join(W, "barn")), "O8 an ownerless world's printed commands, run with the operator's account filled in, make that operator its owner (the browser path's claim)", out.slice(-500)); }
