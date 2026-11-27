@@ -690,7 +690,7 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY 
     return s;
   }
   if (s.wings === 'LIMP') {
-    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: "your wings are limp; they open again once you've recovered" });
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: "you're limp; you can take off again once you've recovered" });
     return s;
   }
   if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {

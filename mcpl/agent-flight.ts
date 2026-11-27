@@ -12,7 +12,7 @@ import {
   bestGlide, glideRange, ceilingOf,
 } from "../shared/flight.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
-import { inspectBody } from "../shared/flightbody.js";
+import { FOLD_RELEASED, inspectBody } from "../shared/flightbody.js";
 
 /** How long a flight wait allows for a leg the flight model flies in `legS` seconds of its own time. The tick that
  *  flies it is a timer and runs late under load, so it allows half again, which covers a tick up to 50% late, and
@@ -26,7 +26,6 @@ export const GLIDE_ARRIVE_M = 2.0;
 const FLIGHT_ENDS = {
   landed: "came down", walk: "ended by a walk", knockdown: "knocked down", drag: "taken hold of and dragged", seat: "ended by taking a seat",
   closed: "interrupted: the body was closed", link: "interrupted: the link to the world dropped", respawn: "interrupted: you fell out of the world",
-  avatar: "ended by a change of body",
 } as const;
 export type FlightEnd = keyof typeof FLIGHT_ENDS;
 /** A wait ended by endFlight is answered with its end's code, not its words, so rewording an end changes no control flow. */
@@ -68,18 +67,13 @@ export class AgentFlight {
     }
   }
 
-  /** Resolve the capability, freshly, every time -- never cached. An avatar
-   *  can hot-swap and a grant must not ride across it. */
+  /** Resolve the capability, freshly, every time -- never cached: grants change live. The body isn't asked
+   *  (shared/flightcap.js), and a swap never ends a flight (setAvatar). */
   private flightAllowed(): { ok: boolean; why: string } {
-    // Bone names come from the VRM this body is actually WEARING (re-fetched on
-    // an avatar change): the capability binds to the rig, not a hash. A swap ends
-    // any flight under way (setAvatar). Until they are read the provider gets no
-    // list (unknown), never an empty one (no bones).
-    const bones = this.a.bodyBoneNames;
     // THE WORLD'S GRANT, or one injected for a bench (`agent.flightCap`);
     // nothing else grants flight.
     const prov = this.a.flightCap ?? worldFlightProvider({ rights: () => this.a.myRights, label: "world-grant" });
-    const r = resolveFlight(prov, { identity: this.a.name, avatar: { boneNames: bones } });
+    const r = resolveFlight(prov, { identity: this.a.name });
     return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
   }
 
@@ -220,15 +214,30 @@ export class AgentFlight {
     this.flightSettle();
   }
 
-  /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
+  /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. A fold the body's read released is said
+   *  in the answer, whatever it is. */
   async takeOff(): Promise<ActResult> {
-    await this.a.loadBodyBones();
+    // only a fold waits on the body's bones (it may not fit), and only once per body: after a failed read (a stalled
+    // library) the read runs alongside, as it does with no fold. Bounded (WORLD_READ_MS) and cached once read.
+    if (this.a.wingsFolded && this.a.bodyBonesFailedFor !== this.a.avatar) await this.a.loadBodyBones(); else void this.a.loadBodyBones();
+    return this.withRelease(this.takeOffNow());
+  }
+
+  /** An answer that also says a fold release a bone read made and no answer has said yet (fitFold), whatever it is. */
+  private withRelease(r: ActResult): ActResult {
+    const released = this.a.foldReleaseUnsaid; this.a.foldReleaseUnsaid = false;
+    return released ? { ...r, text: `${r.text}; ${FOLD_RELEASED}` } : r;
+  }
+
+  private takeOffNow(): ActResult {
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     // Wing posture is carried independently of an active flight state. A body
     // can fold without a propulsion grant, so the sky door checks the public
     // posture before it constructs a fresh integrator.
-    if (this.a.wingsFolded) return refused(`still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`);   // shared/flight.js's words, our tool
+    if (this.a.wingsFolded) return refused(this.a.bodyBoneNames   // shared/flight.js's words, our tool; unread bones claim no wings
+      ? `still standing — your wings are folded; open them first (anim {stop: "wings-folded"})`
+      : `still standing — a fold is held; unfold to fly (anim {stop: "wings-folded"}; this body's wings weren't read)`);
     // START FROM THE BODY, ALWAYS: a launch is a fresh flight from wherever the
     // body is, never a stale LANDED/RAGDOLL state's position and phase.
     // A limp fall can't be launched out of: the body is in the air, and starting a fresh flight from the
@@ -261,6 +270,10 @@ export class AgentFlight {
    *  A GROUND posture: it needs no flight state and doesn't make one. */
   async foldWings(fold: boolean): Promise<ActResult> {
     await this.a.loadBodyBones();
+    return this.withRelease(this.foldNow(fold));
+  }
+
+  private foldNow(fold: boolean): ActResult {
     // Folding is body autonomy, not propulsion authority: no `fly` grant needed.
     // The rig decides a fold (a wingless body can't claim the silhouette); an
     // unfold never needs it, and unfolding nothing is the no-op it is on any rig.
@@ -271,15 +284,19 @@ export class AgentFlight {
         // As below: wings found as asked leave the posture so too, and the answer says when that changed it.
         const changed = !this.a.wingsFolded;
         this.a.wingsFolded = true;
-        return done(changed ? `wings are already folded; the posture now shows them folded` : `wings are already folded`);
+        // on the ground it is only the posture that is known to be folded: this body's wings weren't read
+        return done(changed ? `wings are already folded; the posture now shows them folded`
+          : this.a.flight ? `wings are already folded` : `a fold is already held (this body's wings weren't read)`);
       }
       return refused(`wings unchanged — ${BONES_NOT_KNOWN}; calling again reads the model again`);
     }
     const body = inspectBody(bones ?? []);
     if (fold && !body.canAnimateWings) return refused(`this body has no animatable wings to fold`);
-    // Nothing is folded, which is what unfolding asks for.
-    if (!fold && bones != null && !body.canAnimateWings && !this.a.wingsFolded)
+    // Nothing is folded, which is what unfolding asks for; a release a read just made is the answer, said here, so withRelease adds nothing.
+    if (!fold && bones != null && !body.canAnimateWings && !this.a.wingsFolded) {
+      if (this.a.foldReleaseUnsaid) { this.a.foldReleaseUnsaid = false; return done(FOLD_RELEASED); }
       return done(`this body has no folded-wing posture to release`);
+    }
 
     // Never create a flight integrator just for a ground posture (a dormant one
     // would own position on the tick and fight walking); keep an existing one in step.
@@ -308,7 +325,7 @@ export class AgentFlight {
     this.a.wingsFolded = fold;
     if (fold) return done("wings folded — the vigil posture; a fly-mode move refuses until you open them (anim {stop: \"wings-folded\"})");
     if (bones == null) return done(`folded-wing posture released — ${BONES_NOT_KNOWN}`);
-    if (!body.canAnimateWings) return done("folded-wing posture released — this body has no wings");
+    if (!body.canAnimateWings) return done(FOLD_RELEASED);
     const cap = this.flightAllowed();
     return done(cap.ok ? "wings open — the sky is available again"
                        : "wings open — propulsion is still not granted here");
@@ -317,7 +334,6 @@ export class AgentFlight {
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. `took`, when given, is told the course
    *  this glide set and how its wait ended, for land_at to tell whether a later call has taken the flight over. */
   async glideTo(x: number, z: number, took?: { course?: number; got?: string }): Promise<ActResult> {
-    await this.a.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.a.flight || this.a.flight.phase === "GROUND" || this.a.flight.phase === "LANDED") {
@@ -374,7 +390,6 @@ export class AgentFlight {
   /** climb_to (spec §1). cfg.stamina.climbPerMetre stamina a metre; a climb the pool can't afford flies the part it
    *  can and ends there, refused as winded. */
   async climbTo(alt: number): Promise<ActResult> {
-    await this.a.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.a.flight || this.a.flight.phase === "GROUND" || this.a.flight.phase === "LANDED") {
@@ -445,7 +460,6 @@ export class AgentFlight {
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
   async landAt(x: number, z: number): Promise<ActResult> {
-    await this.a.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return refused(`you cannot fly here — ${cap.why}`);
     if (!this.a.flight || this.a.flight.phase === "GROUND" || this.a.flight.phase === "LANDED") {
@@ -566,7 +580,8 @@ export class AgentFlight {
       `${f.phase.toLowerCase()} at ${f.pos.y.toFixed(1)}m, heading ${((f.yaw * 180 / Math.PI + 360) % 360).toFixed(0)}deg, ${f.airspeed.toFixed(1)} m/s`,
       `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s; perches are not implemented)`,
       `from here best glide reaches ${glideRange(cfg, f.pos.y).toFixed(0)}m at ${bg.speed.toFixed(1)} m/s`,
-      `wings ${f.wings} - mode ${f.mode}`,
+      // a body known to have no wings isn't told their state, nor one whose bones aren't read (as take_off's refusal)
+      `${this.a.bodyBoneNames && inspectBody(this.a.bodyBoneNames).canAnimateWings ? `wings ${f.wings} - ` : ""}mode ${f.mode}`,
     ].join("\n");
   }
 }

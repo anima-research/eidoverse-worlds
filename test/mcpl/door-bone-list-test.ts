@@ -3,14 +3,15 @@
 //
 //   bun test/mcpl/door-bone-list-test.ts
 //
-// An empty list means a body with no bones, so the flight check reads it as
-// a body missing its hips, spine and head: a failed fetch kept as that list
-// would refuse every flight act for a skeleton the body has, and fold_wings
-// would say it has no wings.
+// An empty list means a body with no bones, so fold_wings reads it as a body with no wings: a failed fetch kept as
+// that list would say a winged body has none. Flight acts don't wait on the bones (the grant decides,
+// shared/flightcap.js), except a take_off with a fold held, which waits once per body (the fold may not fit); a
+// fold carried into a body with no wing bones (shared/flightbody.js WING_RE) is released.
 
 import { noWorldUrl } from '../harness/no-world.ts';
 import { WorldAgent } from '../../mcpl/agent.ts';
 import { devFlightProvider } from '../../shared/flightcap.js';
+import { FOLD_RELEASED } from '../../shared/flightbody.js';
 import { rigBonesFor, bodyHeightFor } from '../../mcpl/rigbones.ts';
 import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
@@ -31,9 +32,9 @@ function glb(names: string[]): ArrayBuffer {
 }
 const WINGED = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
 
-let serve: () => Promise<Response> = async () => new Response('down', { status: 503 });
+let serve: (o?: any) => Promise<Response> = async () => new Response('down', { status: 503 });
 let fetches = 0;
-(globalThis as any).fetch = async () => { fetches++; return serve(); };
+(globalThis as any).fetch = async (_u: unknown, o?: any) => { fetches++; return serve(o); };
 const DOWN = async () => new Response('down', { status: 503 });
 
 const ag: any = new WorldAgent({ url: noWorldUrl(), name: 'mythos', world: 'bone-bench' });
@@ -43,9 +44,12 @@ const realWarn = console.warn; const warned: string[] = [];
 console.warn = (...args: unknown[]) => { warned.push(args.map(String).join(' ')); };
 
 console.log('\nA FAILED READ');
-let r = await ag.takeOff();
-check('take_off says the bones aren\'t known, not that the skeleton lacks them',
-  /bones aren't known/.test(text(r)) && !/hip|spine|head/i.test(text(r)), text(r));
+const blind: any = new WorldAgent({ url: noWorldUrl(), name: 'blind', world: 'bone-bench' });
+blind.avatar = 'mythos-wings.vrm';
+blind.myRights = { role: 'builder', fly: true };
+let r = await blind.takeOff();
+check("take_off doesn't need the bones: an unreadable body takes off with the grant", /took off/.test(text(r)), text(r));
+r = await ag.loadBodyBones();
 check('the failed read is not kept as an empty list', ag.bodyBoneNames === null);
 check('the failure goes to the door\'s log', warned.some((l) => /couldn't read the bones of mythos-wings\.vrm: 503/.test(l)), warned.join(' | '));
 r = await ag.foldWings(true);
@@ -53,12 +57,14 @@ check('fold_wings says the bones aren\'t known, not that the body has no wings',
   /^wings unchanged — this body's bones aren't known .*; calling again reads the model again$/.test(text(r)) &&
   !/no animatable wings/.test(text(r)), text(r));
 
-console.log('\nTHE NEXT ACT READS AGAIN');
+console.log('\nA FAILED READ ISN\'T KEPT: THE NEXT FOLD READS AGAIN');
 serve = async () => new Response(glb(WINGED));
-r = await ag.takeOff();
-check('once the model can be read, the same body takes off', /took off/.test(text(r)), text(r));
-check('the bones are now known', Array.isArray(ag.bodyBoneNames) && ag.bodyBoneNames.length === WINGED.length);
 let before = fetches;
+r = await ag.foldWings(true);
+check('fold_wings reads the model again, as it says, and folds', fetches === before + 1 && ag.wingsFolded === true, text(r));
+check('the bones are now known', Array.isArray(ag.bodyBoneNames) && ag.bodyBoneNames.length === WINGED.length);
+await ag.foldWings(false);
+before = fetches;
 await ag.loadBodyBones();
 check('a successful read is kept: the next act reads no model', fetches === before, `${fetches - before} more`);
 
@@ -67,9 +73,10 @@ const bare: any = new WorldAgent({ url: noWorldUrl(), name: 'statue', world: 'bo
 bare.avatar = 'statue.vrm';
 bare.myRights = { role: 'builder', fly: true };
 serve = async () => new Response(glb([]));
+await bare.loadBodyBones();
 r = await bare.takeOff();
-check('an empty list read from the model is kept, and still refused for its skeleton',
-  Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /hip|spine|head/i.test(text(r)), text(r));
+check('an empty list read from the model is kept, and the body takes off with the grant (no skeleton is asked for)',
+  Array.isArray(bare.bodyBoneNames) && bare.bodyBoneNames.length === 0 && /took off/.test(text(r)), text(r));
 r = await bare.foldWings(true);
 check('fold_wings on a body read as empty says it has no wings', text(r) === 'this body has no animatable wings to fold', text(r));
 
@@ -82,13 +89,12 @@ r = await vigil.foldWings(false);
 check('unfold_wings releases a folded posture while the bones are unknown',
   vigil.wingsFolded === false && /^folded-wing posture released — this body's bones aren't known/.test(text(r)), text(r));
 
-console.log('\nA BENCH RIG ISN\'T THE WORN BODY');
+console.log('\nA BENCH GRANT ASKS NO BODY');
 const bench: any = new WorldAgent({ url: noWorldUrl(), name: 'mythos', world: 'bone-bench' });
 bench.avatar = 'unread.vrm';
-bench.flightCap = devFlightProvider({ allow: ['mythos'], bones: WINGED });
+bench.flightCap = devFlightProvider({ allow: ['mythos'] });
 r = await bench.takeOff();
-check("a bench provider doesn't fly an unread body on its constructor's rig",
-  !/took off/.test(text(r)) && /bones aren't known/.test(text(r)), text(r));
+check('a bench provider flies its allow-listed pilot whatever the body, read or not', /took off/.test(text(r)), text(r));
 
 console.log('\nAN AVATAR CHANGE');
 const worn: any = new WorldAgent({ url: noWorldUrl(), name: 'mythos', world: 'bone-bench' });
@@ -99,8 +105,8 @@ await worn.loadBodyBones();
 worn.setAvatar('wingless.vrm');
 serve = DOWN;
 r = await worn.takeOff();
-check("after a swap the old body's bones aren't used: the new body's are unknown until read",
-  worn.bodyBoneNames === null && /bones aren't known/.test(text(r)), text(r));
+check("after a swap the old body's bones aren't used (the new body's are unknown until read), and take-off doesn't wait for them",
+  worn.bodyBoneNames === null && /took off/.test(text(r)), text(r));
 
 // the read must really be in flight at the swap: a read served without a fetch would pass the last clause vacuously
 let release: () => void = () => {};
@@ -125,6 +131,174 @@ failLate();
 await slow;
 check("a failed read doesn't clear the list another read just stored",
   Array.isArray(two.bodyBoneNames) && two.bodyBoneNames.length === WINGED.length);
+
+console.log('\nA FOLD DOES NOT RIDE INTO A WINGLESS BODY');
+const vig: any = new WorldAgent({ url: noWorldUrl(), name: 'vig', world: 'bone-bench' });
+vig.avatar = 'mythos-wings.vrm';
+vig.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await vig.loadBodyBones();
+r = await vig.foldWings(true);
+check('(setup) the winged body folds', vig.wingsFolded === true, text(r));
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+vig.setAvatar('wingless.vrm');
+await vig.loadBodyBones();
+check('a swap to a wingless body releases the fold once its bones are read', vig.wingsFolded === false);
+r = await vig.takeOff();
+check("...so take_off isn't refused for wings it doesn't have (and says the swap released the fold)", /^took off/.test(text(r)) && !/wings are folded|fold is held/.test(text(r)) && /posture released/.test(text(r)), text(r));
+const keep: any = new WorldAgent({ url: noWorldUrl(), name: 'keep', world: 'bone-bench' });
+keep.avatar = 'mythos-wings.vrm';
+serve = async () => new Response(glb(WINGED));
+await keep.loadBodyBones();
+await keep.foldWings(true);
+keep.setAvatar('mythos-wings-2.vrm');
+await keep.loadBodyBones();
+check('a swap to another winged body keeps the fold (it is a posture the new wings can hold)', keep.wingsFolded === true);
+
+console.log('\nTAKE-OFF WAITS ON THE LIBRARY ONLY FOR A FOLD, AND ONCE');
+const hang = (o?: any) => new Promise<Response>((_, fail) => o?.signal?.addEventListener('abort', () => fail(o.signal.reason)));
+const within = <T,>(p: Promise<T>, ms: number) => Promise.race([p, new Promise<string>((done) => setTimeout(() => done('(no answer)'), ms))]);
+const open_: any = new WorldAgent({ url: noWorldUrl(), name: 'open', world: 'bone-bench' });
+open_.avatar = 'stalled.vrm'; open_.myRights = { role: 'builder', fly: true };
+serve = hang;
+r = await within(open_.takeOff(), 1000);
+check('with the library stalled, an unfolded take_off answers at once, and flies', /took off/.test(text(r)), text(r));
+const shut: any = new WorldAgent({ url: noWorldUrl(), name: 'shut', world: 'bone-bench' });
+shut.avatar = 'stalled.vrm'; shut.myRights = { role: 'builder', fly: true }; shut.wingsFolded = true;
+const t0 = Date.now();
+r = await within(shut.takeOff(), 15000);
+check("a folded one answers once the read times out, keeping the fold it can't check, and not claiming wings it hasn't read",
+  /a fold is held/.test(text(r)) && /weren't read/.test(text(r)) && !/your wings are folded/.test(text(r)) && shut.wingsFolded === true && Date.now() - t0 < 12000, `${Date.now() - t0} ms: ${text(r)}`);
+before = fetches;
+r = await within(shut.takeOff(), 1000);
+check("...and the next take_off doesn't wait on the library again (its read runs alongside), still keeping the fold", /a fold is held/.test(text(r)) && shut.wingsFolded === true && fetches > before, `${fetches - before} more: ${text(r)}`);
+
+console.log('\nA SWAP RELEASES A FOLD WITHOUT BEING ASKED');
+const kick: any = new WorldAgent({ url: noWorldUrl(), name: 'kick', world: 'bone-bench' });
+kick.avatar = 'mythos-wings.vrm';
+serve = async () => new Response(glb(WINGED));
+await kick.loadBodyBones(); await kick.foldWings(true);
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+kick.setAvatar('wingless.vrm');
+const released = await tryUntil('the swap reads the new body and releases the fold', () => kick.wingsFolded === false, { ms: 2000, step: 5 });
+check("the new body's bones are read on the swap, so its presence stops showing a fold it can't hold", released && kick.wingsFolded === false);
+
+console.log('\nA RESTORED FOLD FITS THE BODY');
+{
+  const RealWS = globalThis.WebSocket;
+  class FakeWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = FakeWS;
+  const back: any = new WorldAgent({ url: noWorldUrl(), name: 'back', world: 'bone-bench' });
+  back.avatar = 'wingless.vrm';
+  serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+  await back.loadBodyBones();
+  back.connect().catch(() => {});
+  await back.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
+  (globalThis as any).WebSocket = RealWS;
+  check('a fold remembered from a winged body is not restored onto this wingless one', back.restoredPose === true && back.wingsFolded === false, `restored ${back.restoredPose}, folded ${back.wingsFolded}`);
+}
+
+console.log('\nA FRESH JOIN FITS A RESTORED FOLD');
+{
+  const RealWS = globalThis.WebSocket;
+  class FakeWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = FakeWS;
+  const fresh: any = new WorldAgent({ url: noWorldUrl(), name: 'fresh', world: 'bone-bench' });
+  fresh.avatar = 'wingless.vrm';
+  let land: () => void = () => {};   // the read is held, so the restored fold is seen before it lands
+  serve = () => new Promise<Response>((done) => { land = () => done(new Response(glb(['Hips', 'Spine', 'Head']))); });
+  const asked = fetches;
+  fresh.connect().catch(() => {});
+  await fresh.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
+  (globalThis as any).WebSocket = RealWS;
+  const heldFirst = fresh.wingsFolded === true;
+  land();
+  const released = await tryUntil('the restore reads the body and releases the fold', () => fresh.wingsFolded === false, { ms: 2000, step: 5 });
+  check('a fold restored with the bones not yet read (first join) is held, then released once they are, by one read', heldFirst && released && fresh.wingsFolded === false && fetches === asked + 1, `held first ${heldFirst}; folded ${fresh.wingsFolded}; ${fetches - asked} reads`);
+}
+
+console.log('\nA RELEASE IS SAID, WHEREVER IT HAPPENS');
+{
+  const RealWS = globalThis.WebSocket;
+  class FakeWS { readyState = 1; onopen: any; onclose: any; onmessage: any; onerror: any; send() {} close() {} }
+  (globalThis as any).WebSocket = FakeWS;
+  const quiet: any = new WorldAgent({ url: noWorldUrl(), name: 'quiet', world: 'bone-bench' });
+  quiet.avatar = 'wingless.vrm';
+  serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+  await quiet.loadBodyBones();
+  quiet.connect().catch(() => {});
+  await quiet.ws.onmessage({ data: JSON.stringify({ type: 'snapshot', present: [], restore: { p: [3, 0, 4], yaw: 0, poses: ['wings-folded'] } }) });
+  (globalThis as any).WebSocket = RealWS;
+  check('a fold a restore releases is said in the inbox', quiet.wingsFolded === false && quiet.inbox.some((e: any) => (e.text ?? '').includes(FOLD_RELEASED)),
+    JSON.stringify(quiet.inbox.map((e: any) => e.text)));
+}
+const raced: any = new WorldAgent({ url: noWorldUrl(), name: 'raced', world: 'bone-bench' });
+raced.avatar = 'mythos-wings.vrm'; raced.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await raced.loadBodyBones(); await raced.foldWings(true);
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+raced.setAvatar('wingless.vrm');
+await tryUntil("the swap's own read releases the fold", () => raced.wingsFolded === false, { ms: 2000, step: 5 });
+r = await raced.takeOff();
+check("a take_off after the swap's read already released the fold still says the release", /^took off/.test(text(r)) && /folded-wing posture released/.test(text(r)), text(r));
+const nogrant: any = new WorldAgent({ url: noWorldUrl(), name: 'nogrant', world: 'bone-bench' });
+nogrant.avatar = 'wingless.vrm'; nogrant.myRights = { role: 'builder', fly: false }; nogrant.wingsFolded = true;
+r = await nogrant.takeOff();
+check('a take_off refused after its read released a fold says the release too', /cannot fly here/.test(text(r)) && /folded-wing posture released/.test(text(r)) && nogrant.wingsFolded === false, text(r));
+
+console.log('\nA TAKE-OFF THAT RELEASES A FOLD SAYS SO');
+const said_: any = new WorldAgent({ url: noWorldUrl(), name: 'said', world: 'bone-bench' });
+said_.avatar = 'wingless.vrm'; said_.myRights = { role: 'builder', fly: true }; said_.wingsFolded = true;
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+r = await said_.takeOff();
+check('take_off on a wingless body carrying a fold flies, and says the fold was released, as the browser does',
+  /^took off/.test(text(r)) && text(r).includes(FOLD_RELEASED) && said_.wingsFolded === false, text(r));
+check("flight_status of a wingless flier doesn't report wings it hasn't got", !/\bwings (OPEN|FOLDED|LIMP)\b/.test(said_.flightStatus()), said_.flightStatus());
+r = await said_.takeOff();
+check('...and a second take_off says no release: the first one said it', !/released/.test(text(r)), text(r));
+const told: any = new WorldAgent({ url: noWorldUrl(), name: 'told', world: 'bone-bench' });
+told.avatar = 'wingless.vrm'; told.myRights = { role: 'builder', fly: true }; told.wingsFolded = true;
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+await told.loadBodyBones();   // the read releases the fold
+r = await told.foldWings(false);
+check("fold_wings' answer is the release it takes over saying, said once, and nothing that denies it",
+  text(r) === FOLD_RELEASED, text(r));
+r = await told.takeOff();
+check('a release fold_wings has answered for is not said again by take_off', /^took off/.test(text(r)) && !/released/.test(text(r)), text(r));
+const back_: any = new WorldAgent({ url: noWorldUrl(), name: 'back', world: 'bone-bench' });
+back_.avatar = 'mythos-wings.vrm'; back_.myRights = { role: 'builder', fly: true };
+serve = async () => new Response(glb(WINGED));
+await back_.loadBodyBones(); await back_.foldWings(true);
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+back_.setAvatar('wingless.vrm'); await back_.loadBodyBones();
+serve = async () => new Response(glb(WINGED));
+back_.setAvatar('mythos-wings.vrm'); await back_.loadBodyBones();
+r = await back_.takeOff();
+check("a release on a body since swapped away isn't said on the next one (it isn't wingless)", /^took off/.test(text(r)) && !/released/.test(text(r)), text(r));
+const refold: any = new WorldAgent({ url: noWorldUrl(), name: 'refold', world: 'bone-bench' });
+refold.avatar = 'wingless.vrm'; refold.wingsFolded = true;
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head']));
+await refold.loadBodyBones();   // the read releases the fold
+r = await refold.foldWings(true);
+check("a refused fold_wings says the release it takes over saying", /no animatable wings/.test(text(r)) && /posture released/.test(text(r)), text(r));
+const same: any = new WorldAgent({ url: noWorldUrl(), name: 'same', world: 'bone-bench' });
+same.avatar = 'wingless.vrm'; same.myRights = { role: 'builder', fly: true }; same.wingsFolded = true;
+await same.loadBodyBones();   // the read releases the fold
+same.setAvatar('wingless.vrm');   // set_avatar naming the body already worn
+r = await same.takeOff();
+check('re-selecting the worn body keeps its unsaid release: take_off says it', /^took off/.test(text(r)) && /posture released/.test(text(r)), text(r));
+console.log('\nONE WING NODE IS A WING (the renderer, wings.js _findWings, moves any node WING_RE matches: [LR]_Wing_(Upper|Lower)[_n])');
+const one: any = new WorldAgent({ url: noWorldUrl(), name: 'one', world: 'bone-bench' });
+one.avatar = 'one-wing.vrm';
+serve = async () => new Response(glb(['Hips', 'Spine', 'Head', 'L_Wing_Upper']));
+r = await one.foldWings(true);
+check('a body with a single wing node folds it', one.wingsFolded === true && /wings folded/.test(text(r)), text(r));
+const unread: any = new WorldAgent({ url: noWorldUrl(), name: 'unread', world: 'bone-bench' });
+unread.avatar = 'unread.vrm'; unread.myRights = { role: 'builder', fly: true };
+serve = DOWN;
+r = await unread.takeOff();
+await tryUntil('the take-off read fails', () => warned.some((l) => /bones of unread\.vrm/.test(l)), { ms: 2000, step: 5 });
+check("flight_status of a flier whose bones aren't read doesn't claim wings either", /^took off/.test(text(r)) && unread.bodyBoneNames === null && !/\bwings (OPEN|FOLDED|LIMP)\b/.test(unread.flightStatus()), unread.flightStatus());
 
 console.log('\nEVERY READER OF A BODY FILE: a failed download is never remembered, a good read is');
 // (a model that downloads but can't be used IS remembered for its version: body-state-test.ts)

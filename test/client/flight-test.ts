@@ -37,9 +37,8 @@ import {
   takeOff, LEAF_PRESETS, foldDown, unfold,
 } from '../../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../../shared/flightpilot.js';
-import { inspectBody, describeBody } from '../../shared/flightbody.js';
-import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight, rigProfile, revoked }
-  from '../../shared/flightcap.js';
+import { inspectBody, WING_RE, FOLD_RELEASED } from '../../shared/flightbody.js';
+import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 import { readFileSync } from 'node:fs';
 import { suite } from "../gate/suite.ts";
 import { slashed } from "../gate/common.ts";
@@ -471,7 +470,7 @@ console.log('\nPILOT -- a human flies the same integrator an agent does');
 }
 
 // ---------------------------------------------------------------- body contract
-console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
+console.log('\nBODY -- wings are found by bone NAMES, and only for flapping');
 {
   // The bone list is DERIVED from the shipped artifact, not typed by hand --
   // an array in a test file cannot go stale against an asset, which is exactly
@@ -484,28 +483,27 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
         fx.bytes === 24755464 && /^[0-9a-f]{64}$/.test(fx.sha256));
   check(`and it carries ${fx.boneCount} bones from the real file`, real.length === fx.boneCount);
   const r = inspectBody(real);
-  check('the shipped body is flight-capable', r.canFly && r.canAnimateWings);
+  check('the shipped body animates its wings', r.canAnimateWings);
   check('four chains, twelve bones', Object.keys(r.chains).length === 4 && r.wingCount === 12);
   check('chains are ordered root-first',
         r.chains['L_Upper'][0] === 'L_Wing_Upper' && r.chains['L_Upper'][2] === 'L_Wing_Upper_2');
 
-  // "More compatible than that": a body with no wings still flies the physics.
+  // "More compatible than that": a body with no wings has nothing to flap (whether it flies is the grant's).
   const wingless = inspectBody(['Hip','Spine01','Spine02','Head']);
-  check('a wingless body still flies (wings just do not animate)',
-        wingless.canFly && !wingless.canAnimateWings);
+  check('a wingless body animates no wings', !wingless.canAnimateWings && wingless.wingCount === 0);
   check('and it SAYS so rather than failing silently',
         wingless.notes.some(n => n.includes('will not animate')));
 
   // Deeper chains are the case that already happened once (2->3 bones, 08-17).
   const deeper = inspectBody([...real, 'L_Wing_Upper_3', 'R_Wing_Upper_3']);
   check('a re-export with DEEPER wing chains still works',
-        deeper.canFly && deeper.canAnimateWings && deeper.wingCount === 14);
+        deeper.canAnimateWings && deeper.wingCount === 14);
 
   const renamed = inspectBody(['Hip','Spine01','Spine02','Head','L_Pinion_1','R_Pinion_1']);
   check('RENAMED wing bones are reported, not silently ignored',
         !renamed.canAnimateWings && renamed.notes.length > 0);
-  check('a body with no skeleton at all is refused',
-        inspectBody([]).canFly === false);
+  check('a body with no skeleton at all has no wings (and no "missing bone" verdict)',
+        !inspectBody([]).canAnimateWings && !('canFly' in inspectBody([])));
 }
 
 // ---------------------------------------------------------------- R3 bounds
@@ -589,75 +587,68 @@ console.log('\nRECEIPTS -- the impact velocity is the impact velocity');
 }
 
 // ---------------------------------------------------------------- capability
-console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
+console.log('\nCAPABILITY -- default deny, action-time, the grant alone');
 {
   const MYTHOS: string[] =
     JSON.parse(readFileSync('test/fixtures/mythos-wings-rig.json', 'utf8')).bones;
   const COMMONS = ['Hip','Spine01','Spine02','Head','NeckTwist01'];   // no wings
 
-  // 1. Default provider / no profile -> nothing.
+  // 1. Default provider -> nothing.
   check('the DEFAULT is deny', denyAllFlight.flightCapability({}).enabled === false);
   check('a MISSING provider is deny, not "no opinion"',
         resolveFlight(null, { identity: 'mythos' }).enabled === false);
   check('and it says why', typeof resolveFlight(null, {}).reason === 'string');
 
-  // 2. The dev provider grants only its allow-list, only on a compatible rig.
-  const dev = devFlightProvider({ allow: ['mythos'], bones: MYTHOS });
+  // 2. The dev provider grants only its allow-list, whatever the body.
+  const dev = devFlightProvider({ allow: ['mythos'] });
   const g = resolveFlight(dev, { identity: 'mythos' });
-  check('bench provider grants the named pilot', g.enabled === true);
-  check('...with a semantic rig profile, not a hash',
-        !!g.profile?.digest && g.profile.version === 'flight-rig/1');
+  check('bench provider grants the named pilot, and says whose grant it is', g.enabled === true && g.source === 'local-dev');
   check('non-Mythos identity is denied by the same provider',
         resolveFlight(dev, { identity: 'someone-else' }).enabled === false);
 
-  // 3. A grant without a profile is refused by the resolver itself -- a
-  //    provider cannot hand out flight it has not justified.
-  const sloppy = { name: 'sloppy', flightCapability: () => ({ enabled: true }) };
-  check('a grant with no rig profile is refused',
+  // 3. Only enabled === true is a yes: a provider answering anything looser is refused by the resolver itself.
+  const sloppy = { name: 'sloppy', flightCapability: () => ({ enabled: 'yes' }) };
+  check('a grant that is not exactly enabled: true is refused',
         resolveFlight(sloppy, { identity: 'mythos' }).enabled === false);
   const thrower = { name: 'bad', flightCapability() { throw new Error('boom'); } };
   check('a provider that throws denies rather than propagating',
         resolveFlight(thrower, {}).enabled === false);
 
-  // 4. Semantic binding: a re-export that keeps the load-bearing names keeps
-  //    flying, even though the asset is a different file.
-  const reexported = [...MYTHOS, 'Hair_lock_00', 'Hair_lock_01'];   // hair added
-  check('adding hair does NOT revoke (same load-bearing rig)',
-        revoked(g.profile, reexported) === false);
-  const deeper = [...MYTHOS, 'L_Wing_Upper_3', 'R_Wing_Upper_3'];
-  check('a DEEPER wing chain is a different rig and revokes honestly',
-        revoked(g.profile, deeper) === true);
-  const renamed = MYTHOS.map(b => b === 'L_Wing_Upper_2' ? 'L_Pinion_2' : b);
-  check('renaming a wing bone revokes', revoked(g.profile, renamed) === true);
+  // 4. A hot-swap changes nothing about permission: the same identity flies the winged body and the wingless one.
+  check('a hot-swap neither grants nor revokes: wingless and winged bodies answer alike',
+        resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: COMMONS } }).enabled === true &&
+        resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: MYTHOS } }).enabled === true &&
+        resolveFlight(dev, { identity: 'someone', avatar: { boneNames: MYTHOS } }).enabled === false);
 
-  // 5. Hot-swap revokes AT THE GATE, without the caller remembering a second
-  //    check. The first cut preferred the provider's constructor bones over
-  //    the live avatar's, so re-resolving after a swap still said yes -- an
-  //    action-time gate resolving against a body that was no longer there.
-  const afterSwap = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: COMMONS } });
-  check('re-resolving after a hot-swap DENIES (no second check needed)',
-        afterSwap.enabled === false, afterSwap.reason);
-  const stillOk = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: MYTHOS } });
-  check('...and the same provider still grants on the real rig', stillOk.enabled === true);
-  check('revoked() agrees with the gate', revoked(g.profile, COMMONS) === true);
-  check('a commons avatar cannot obtain a profile at all',
-        resolveFlight(devFlightProvider({ allow: ['someone'], bones: COMMONS }),
-                      { identity: 'someone' }).enabled === false);
-
-  // 6. Disabling returns ordinary behaviour: with no grant there is no flight
-  //    state to step. The integrator is not reachable without a phase, and a
-  //    denied caller never builds one.
+  // 5. Disabling returns ordinary behaviour: a denied caller gets a reason and nothing to fly with.
   const denied = resolveFlight(denyAllFlight, { identity: 'mythos' });
-  check('a denied caller gets no profile to build flight from',
-        denied.enabled === false && !('profile' in denied));
+  check('a denied caller gets only a reason', denied.enabled === false && Object.keys(denied).sort().join() === 'enabled,reason');
 }
 
+// ------------------------------------------------- the grant, and only the grant
+console.log('\nPERMISSION IS THE GRANT -- no body shape gates flight (R 11-12: clouds, dragons, psychics)');
+{
+  const granted = worldFlightProvider({ rights: () => ({ role: 'member', fly: true }) });
+  const ungranted = worldFlightProvider({ rights: () => ({ role: 'owner', fly: false }) });
+  const VROID = ['J_Bip_C_Hips', 'J_Bip_C_Spine', 'J_Bip_C_Chest', 'J_Bip_C_UpperChest', 'J_Bip_C_Neck', 'J_Bip_C_Head'];
+  const CLOUD = ['Cloud_Root', 'Puff_0', 'Puff_1'];
+  const WINGS = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
+  const bodies: [string, string[] | null][] = [
+    ["a VRoid body (J_Bip_*, aporia's naming)", VROID], ['a cloud: no humanoid bones at all', CLOUD],
+    ['a body read as empty', []], ["a body whose bones aren't known yet", null], ['a winged body', WINGS]];
+  for (const [label, boneNames] of bodies) {
+    const r = resolveFlight(granted, { identity: 'm', avatar: { boneNames } });
+    check(`${label} flies with the grant`, r.enabled === true, r.reason);
+    check(`...and not without it`, !resolveFlight(ungranted, { identity: 'm', avatar: { boneNames } }).enabled);
+  }
+}
+
+
 // ------------------------------------------------- default-deny, for real
-console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
+console.log('\nDEFAULT-DENY -- the grant is the permission, whatever the body');
 {
   // mica, Blocker 1 at cea3c3c: both shipped entry points constructed
-  // `devFlightProvider({allow:[identity]})`, so wearing a rig whose bone names
-  // satisfied rigProfile() authorized itself. "That collapses provenance ('is
+  // `devFlightProvider({allow:[identity]})`, so wearing a winged rig authorized itself. "That collapses provenance ('is
   // this a flier?') into permission ('may this person fly here?')."
   //
   // These are the exact negative tests that review asked for: delete the
@@ -684,16 +675,16 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   check('being the world OWNER does not grant flight',
         !resolveFlight(withRights({ role: 'owner', gen: true, fly: false }),
                        { identity: 'm', avatar: av }).enabled);
+  check('only fly === true grants: fly: 1, fly: "true" and fly: {} are no',
+        [1, 'true', {}].every((fly) => !resolveFlight(withRights({ role: 'member', fly }), { identity: 'm' }).enabled));
   check('an explicit world grant DOES -- and only then',
         resolveFlight(withRights({ role: 'member', gen: false, fly: true }),
                       { identity: 'm', avatar: av }).enabled);
-  // Permission is necessary, not sufficient: a granted identity in a body that
-  // cannot fly is still refused, and for the OTHER reason.
+  // Flight is the world's grant, not the body's shape (more bodies: PERMISSION IS THE GRANT above).
   const wingless = { boneNames: ['hips', 'spine', 'head'] };
-  check('a grant does not make a wingless body fly',
-        !resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless }).enabled);
-  // Each denial's reason, by the branch that gives it: who acts, and what the
-  // body lacks, in the names a wearer knows.
+  check('a grant makes a wingless body fly (a cloud, a dragon, a psychic)',
+        resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless }).enabled === true);
+  // Each denial's reason, by the branch that gives it: who acts, in words a wearer knows.
   const reasonOf = (r: any, avatar: any = av) =>
     resolveFlight(withRights(r), { identity: 'm', ...(avatar ? { avatar } : {}) }).reason ?? '';
   const granted = { role: 'owner', fly: true };
@@ -703,18 +694,13 @@ console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
   check('no grant names who gives flight and the roles set that does it',
         /a role's fly permission, which the world's owner/.test(reasonOf({ role: 'owner', fly: false })) &&
         /set \{id: "@world", component: "roles:<your id>", value: \{can: \{fly: true\}\}, merge: true\}/.test(reasonOf({ role: 'owner', fly: false })), reasonOf({ role: 'owner', fly: false }));
-  check('a wingless body is told it has no wing bones', /no wing bones/.test(reasonOf(granted, wingless)), reasonOf(granted, wingless));
-  const oneChain = { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] };
-  check('four wing bones in one chain are counted as such, not called too few',
-        /wings have 4 bone\(s\) in 1 chain\(s\)/.test(reasonOf(granted, oneChain)) && !/too few/.test(reasonOf(granted, oneChain)),
-        reasonOf(granted, oneChain));
-  const coreless = { boneNames: ['Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1'] };
-  check('missing core bones are named as a wearer knows them (hips, spine)',
-        /missing: hips, spine\)/.test(reasonOf(granted, coreless)), reasonOf(granted, coreless));
-  check('no bone list is its own reason, in both providers',
-        /bones aren't known/.test(reasonOf(granted, null)) &&
-        /bones aren't known/.test(resolveFlight(devFlightProvider({ allow: ['m'] }), { identity: 'm' }).reason ?? ''),
-        reasonOf(granted, null));
+  // The retired body refusals (no wing bones, too few chains, missing core bones, bones unknown) are gone, not reworded.
+  const bodies = [wingless, { boneNames: ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2', 'L_Wing_Upper_3'] },
+    { boneNames: ['Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1'] }, null];
+  check('no body is refused by the grant: wingless, one chain, coreless, or bones not known',
+        bodies.every((b) => resolveFlight(withRights(granted), { identity: 'm', ...(b ? { avatar: b } : {}) }).enabled === true));
+  check('...and the bench provider asks the body nothing either',
+        resolveFlight(devFlightProvider({ allow: ['m'] }), { identity: 'm' }).enabled === true);
   // Live, not captured: revoking grounds a body that was already flying.
   {
     let rights: any = { role: 'builder', fly: true };
@@ -817,9 +803,9 @@ console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
           e.kind === 'unfold.refused' && /limp, not folded/.test(e.reason)));
   check('folding in the air says to land first',
         midair.events.some((e: any) => e.kind === 'fold.refused' && /^airborne \(pilot\).*land first/.test(e.reason)));
-  check('take_off with limp wings says they reopen on recovery',
+  check('take_off limp says the body can go again once recovered (in words a wingless body fits too)',
         takeOff(cfg, { ...ground(), phase: 'RAGDOLL', wings: 'LIMP' }, { groundY: 0 }).events.some((e: any) =>
-          e.kind === 'takeoff.refused' && /limp; they open again/.test(e.reason)));
+          e.kind === 'takeoff.refused' && /^you're limp; you can take off again once you've recovered$/.test(e.reason)));
   check('take_off in the air says the body is already airborne',
         takeOff(cfg, air, { groundY: 0 }).events.some((e: any) =>
           e.kind === 'takeoff.refused' && e.reason === 'already airborne (pilot)'));
@@ -1090,27 +1076,21 @@ console.log('\nISOLATION -- only the gated entry points (and physics.ts below th
           cHigh > cLow + 5.0, `1.0 -> ${cLow.toFixed(2)} m/s, 8.0 -> ${cHigh.toFixed(2)} m/s`);
   }
 
-  // WING NAMES ARE STILL EXACT-CASE while the CORE bones went
-  // case-insensitive (dba4882 onward), and this pins that asymmetry so the
-  // decision is explicit rather than accidental.
-  //
-  // The gate is NOT weakened -- a commons body and a fake-wing rig are both
-  // refused, probed below. The risk runs the other way: an all-lowercase wing
-  // rig is DENIED, which is precisely the failure the core widening was
-  // written to fix ("Hip absent" on a body with 48 good bones), still live one
-  // line above it. Whether to widen WING_RE is a loosening of an authorization
-  // boundary, so it is Mica's call and not a thing to fix quietly. Until then,
-  // this test says out loud what the boundary currently does.
+  // WING NAMES ARE EXACT-CASE, and this pins it so the decision is explicit; a mis-cased rig still flies (the grant
+  // decides), its wings still.
   {
-    const core = ['Hip', 'Spine02', 'Head'];
-    const proper = [...core, 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper',
+    const proper = ['Hip', 'Spine02', 'Head', 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper',
                     'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
-    check('a properly-cased wing rig is granted',
-          rigProfile(proper).ok);
-    check('a commons body is refused (the gate still holds)',
-          !rigProfile(['hips', 'spine', 'head', 'leftHand']).ok);
-    check('KNOWN ASYMMETRY: an all-lowercase wing rig is refused -- Mica to rule',
-          !rigProfile(proper.map(b => b.toLowerCase())).ok);
+    check('a properly-cased wing rig animates its wings', inspectBody(proper).canAnimateWings);
+    const lower = inspectBody(proper.map(b => b.toLowerCase()));
+    check('KNOWN ASYMMETRY: an all-lowercase wing rig is not found to flap', !lower.canAnimateWings);
+    check('one wing node is a wing: the renderer moves any node WING_RE matches (wings.js _findWings)',
+          inspectBody(['Hips', 'L_Wing_Upper']).canAnimateWings && inspectBody(['Hips', 'L_Wing_Upper']).wingCount === 1);
+    // the release names the renderer's exact names, so a body with L_Wing_Tip isn't told it has none (#365 review)
+    const named = FOLD_RELEASED.match(/[LR]_Wing_[A-Za-z]+/g) ?? [];
+    check('FOLD_RELEASED names the four chain roots WING_RE matches, and no wildcard',
+          ['L_Wing_Upper', 'L_Wing_Lower', 'R_Wing_Upper', 'R_Wing_Lower'].every(n => named.includes(n))
+          && named.every(n => WING_RE.test(n)) && !/_Wing_\*/.test(FOLD_RELEASED), FOLD_RELEASED);
   }
 
   // 6. And the whole reason this took three rounds: every report was a

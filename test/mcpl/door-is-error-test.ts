@@ -35,9 +35,11 @@ const ok = (r: any) => r != null && r.rejected == null && !failed(r);
  *  The checks that need a wait to time out stand in for flightAwait instead (the
  *  climb's and the flare's timeouts, and the cut glide's flare), since a real
  *  one would take its whole budget. */
-const midway = async (agent: any, start: Promise<any>, happen: () => void) => {
-  // A waiter left by an earlier call could answer for this one, so none may be waiting yet.
+const midway = async (agent: any, begin: Promise<any> | (() => Promise<any>), happen: () => void) => {
+  // A waiter left by an earlier call could answer for this one, so none may be waiting yet; a door call is passed as a
+  // thunk, since handleTool runs the act synchronously up to its first await, which may register this call's waiter.
   if (agent.flying.flightWaiters.length) return { rejected: 'a flight waiter from an earlier call was still registered' };
+  const start = typeof begin === 'function' ? begin() : begin;
   await tryUntil('the act registers a flight waiter', () => agent.flying.flightWaiters.length, { ms: 2000, step: 5 });
   // An act that never waited on the flight answered from something else, so no check here may pass on it.
   if (!agent.flying.flightWaiters.length) return { rejected: 'the act registered no flight waiter' };
@@ -351,7 +353,7 @@ for (const altitude of [false, true, '', ' ', 'high', [], {}, Infinity, NaN] as 
     failed(r) && said(r) === 'move {mode: "fly"}: altitude is a number of metres' && ag.flight?.course == null, said(r));
 }
 ag.flight.pos.y = 2;
-r = await midway(ag, door('move', { mode: 'fly', altitude: '5' }), () => { ag.flight.pos.y = ag.flight.course.alt; ag.flight.course.reached = true; });
+r = await midway(ag, () => door('move', { mode: 'fly', altitude: '5' }), () => { ag.flight.pos.y = ag.flight.course.alt; ag.flight.course.reached = true; });
 check('move {mode: "fly", altitude: "5"} climbs to 5 m', ok(r) && /^at 5\.0m/.test(said(r)), said(r));
 // A touchdown within the arrival radius is an arrival; farther off, a shortfall.
 /** A glide from a fresh launch whose real wait settles once the body is down at (x, z), or cut (`phase`). */
@@ -579,33 +581,25 @@ for (const [end, later] of [['timed out aloft', 'climb_to'], ['there', 'climb_to
     waiting && gliding && flaring && cleared && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ok(landed),
     `cleared ${cleared}; ${said(r)}; landing: ${said(landed)}`);
 }
-// A climb_to that runs while a landing's glide still waits for the body's bones is taken over by that glide too, since
-// the glide sets the course after its own wait for the bones.
+// Flight acts don't wait on the body's bones (only a folded take_off does: flightcap.js asks no body), so a landing's
+// glide sets its course at once; this replaced a race that existed only while the glide waited for a bone read.
 {
   await relaunch(); ag.flight.stamina = 1e6;
   const fastBones = ag.loadBodyBones;
-  let bonesAsked = 0, releaseBones = () => {};
-  // The landing asks for the bones, then its glide does; the glide's ask is held until the climb is waiting.
-  ag.loadBodyBones = () => ++bonesAsked === 2 ? new Promise((res) => { releaseBones = () => res(ag.bodyBoneNames); }) : fastBones();
+  let bonesAsked = 0;
+  ag.loadBodyBones = (...a: any[]) => { bonesAsked++; return fastBones(...a); };
   const held: ((v: string) => void)[] = [];
   ag.flying.flightAwait = () => new Promise<string>((res) => { held.push(res); });
   const landing = call('land_at', { x: 5, z: 5 });
-  const glideAsked = await tryUntil("the landing's glide asks for the bones", () => bonesAsked === 2, { step: 5 });
-  const climbing = call('climb_to', { altitude: 30 });
-  const climbWaits = await tryUntil('the climb waits on the flight', () => held.length === 1, { step: 5 });
-  releaseBones();
-  const gliding = await tryUntil("the landing's glide waits on the flight", () => held.length === 2, { step: 5 });
+  const gliding = await tryUntil("the landing's glide waits on the flight", () => held.length === 1, { step: 5 });
   const cleared = ag.flight?.course?.kind === 'glide';
-  held[0]('there');
-  r = await climbing;
-  held[1]?.('arrived');
-  const flaring = await tryUntil("the landing's flare waits on the flight", () => held.length === 3, { step: 5 });
-  held[2]?.('down');
+  held[0]?.('arrived');
+  const flaring = await tryUntil("the landing's flare waits on the flight", () => held.length === 2, { step: 5 });
+  held[1]?.('down');
   const landed = await landing;
   ag.loadBodyBones = fastBones; ag.flying.flightAwait = realAwait;
-  check('a climb_to run while a landing\'s glide waits for the bones is taken over by that glide: it takes the course, and the climb is failed as taken over',
-    glideAsked && climbWaits && gliding && flaring && cleared && failed(r) && /^taken over at [0-9.]+m by a later call$/.test(said(r)) && ok(landed),
-    `cleared ${cleared}; ${said(r)}; landing: ${said(landed)}`);
+  check("a landing reads no bones: its glide takes the course at once, and it lands",
+    gliding && flaring && cleared && ok(landed) && bonesAsked === 0, `cleared ${cleared}; asked ${bonesAsked}; landing: ${said(landed)}`);
 }
 // A landing whose glide is refused before it sets a course, as when the flight right goes while the bones load, is
 // refused with the glide's words, and makes no flare.
@@ -770,7 +764,7 @@ check('a fold while the bones are unknown is failed', failed(r) && /^wings uncha
 unread.wingsFolded = true;
 r = await callU('fold_wings');
 check('a fold of wings already folded, while the bones are unknown, changes nothing, and is done',
-  ok(r) && said(r) === 'wings are already folded', said(r));
+  ok(r) && said(r) === "a fold is already held (this body's wings weren't read)", said(r));
 r = await callU('unfold_wings');
 check('releasing a folded posture while the bones are unknown is done',
   ok(r) && /^folded-wing posture released — /.test(said(r)) && unread.wingsFolded === false, said(r));

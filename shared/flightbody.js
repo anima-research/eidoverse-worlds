@@ -1,10 +1,9 @@
-// flightbody — what a body must HAVE to fly, checked by name and nothing else.
+// flightbody — which wings a body can ANIMATE, checked by name and nothing else. It never decides whether a body may fly
+// (that is the world's fly right, shared/flightcap.js); it decides whether wings flap and fold.
 //
-// Flight is bound to a NAMING CONTRACT, not an avatar hash: the rig pipeline recognises bones by name and nothing else.
-// Re-export the body with the same bone names and flight keeps working; rename them and this says so, loudly.
-//
-// It returns a CAPABILITY REPORT, not a boolean: a body with no wing bones still flies the physics (the integrator
-// moves a point and has never heard of a skeleton); it just can't ANIMATE the wings.
+// Wings are bound to a NAMING CONTRACT, which is the same contract hair and wings already flow through in this
+// project (rigtest/EIDOVERSE-DEPLOY.md: "the pipeline recognises bones by NAME and nothing else"). Re-export the body
+// with the same bone names and the wings keep moving; rename them and they stay still (the body still flies).
 //
 // PURE, per shared/README.md: no three, no DOM, no fetch. The caller passes a
 // list of bone names, however it happens to know them.
@@ -13,12 +12,10 @@
 export const WING_RE = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/;
 
 /**
- * @param {string[]} boneNames  every bone in the body, in any order
- * @returns {{
- *   canFly: boolean, canAnimateWings: boolean,
- *   chains: Record<string, string[]>, wingCount: number,
- *   missing: string[], notes: string[]
- * }}
+ * @param {string[]} boneNames  every node name in the body (the renderer, client/lib/avatar/wings.js _findWings, moves
+ *   any node whose name matches WING_RE, bone or not), in any order
+ * @returns {{ canAnimateWings: boolean, chains: Record<string, string[]>, wingCount: number, notes: string[] }}
+ *   canAnimateWings: the renderer finds at least one wing to move (and so to fold)
  */
 export function inspectBody(boneNames) {
   const names = Array.isArray(boneNames) ? boneNames : [];
@@ -34,48 +31,23 @@ export function inspectBody(boneNames) {
     chains[k].sort((a, b) => depthOf(a) - depthOf(b));
   }
   const wingCount = Object.values(chains).reduce((n, c) => n + c.length, 0);
-  // CORE BONES BY ANY SPELLING: each entry is the set of acceptable names for one joint, matched case-insensitively.
-  // Three vocabularies reach here: the Tripo rig's `Hip`/`Spine02`, three-vrm's normalised `hips`/`chest`, and a
-  // Mixamo-derived body's `Hips`/`Spine`.
-  const CORE = [
-    ['hip', 'hips'],
-    ['spine02', 'spine01', 'spine', 'chest', 'upperchest'],
-    ['head'],
-  ];
-  const lower = new Set(names.map(n => String(n).toLowerCase()));
-  const has = (alts) => alts.some(a => lower.has(a));
-  const missing = CORE.filter(alts => !has(alts)).map(alts => alts[0]);
 
   const notes = [];
-  const canAnimateWings = Object.keys(chains).length >= 2 && wingCount >= 4;
-  if (!canAnimateWings) {
-    notes.push(wingCount === 0
-      ? 'no [LR]_Wing_* bones: physics will fly, wings will not animate'
-      : `only ${wingCount} wing bone(s) in ${Object.keys(chains).length} chain(s); ` +
-        'expected 4 chains (L/R x Upper/Lower)');
-  }
-  if (missing.length) notes.push(`missing core bone(s): ${missing.join(', ')}`);
-  // Chains of differing depth are fine and worth SAYING.
+  const canAnimateWings = wingCount > 0;
+  if (!canAnimateWings) notes.push('no [LR]_Wing_Upper / [LR]_Wing_Lower[_n] bones: wings will not animate');
+  // Chains of differing depth are fine and worth SAYING: the wings grew from
+  // two bones to three on 2026-08-17 and nothing in the pipeline counted them.
   const depths = [...new Set(Object.values(chains).map(c => c.length))];
   if (depths.length > 1) notes.push(`wing chains have uneven depth (${depths.join('/')})`);
 
-  return {
-    canFly: missing.length === 0,      // the integrator needs a root, not feathers
-    canAnimateWings,
-    chains, wingCount, missing, notes,
-  };
+  return { canAnimateWings, chains, wingCount, notes };
 }
+
+/** Why a fold was released on a body: said the same way by the agent and the browser. It names the convention rather
+ *  than claiming the body is wingless, since its wings may just be named otherwise. */
+export const FOLD_RELEASED = 'folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move';
 
 function depthOf(name) {
   const m = WING_RE.exec(name);
   return m && m[3] ? Number(m[3]) : 0;
-}
-
-/** A one-line summary for a log or a HUD readout. */
-export function describeBody(report) {
-  if (!report.canFly) return `NOT FLIGHT-CAPABLE: ${report.missing.join(', ')} absent`;
-  const wings = report.canAnimateWings
-    ? `${report.wingCount} wing bones in ${Object.keys(report.chains).length} chains`
-    : 'no animatable wings';
-  return `flight-capable, ${wings}${report.notes.length ? ' -- ' + report.notes.join('; ') : ''}`;
 }

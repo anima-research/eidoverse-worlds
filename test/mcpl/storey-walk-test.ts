@@ -1142,7 +1142,7 @@ console.log("\nGreptile's review of October 19: a floor walk's lowest ground, th
     const ag = agentIn(upperY);
     ag.avatar = "winged.vrm";
     ag.bodyBoneNames = WINGED; ag.bodyBonesFor = ag.avatar;
-    ag.flightCap = devFlightProvider({ allow: [ag.name], bones: WINGED });
+    ag.flightCap = devFlightProvider({ allow: [ag.name] });
     if (laid) { ag.clip = "ragdoll"; ag.heldPose = { hips: [0, 0, 0, 1] }; ag.heldPoseAuthored = false; ag.pos.y = upperY - 0.7; }
     return ag;
   };

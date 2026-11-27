@@ -37,6 +37,7 @@ import { makeNavGrid, NAV_SUBSTEP, NAV_NUDGE, NAV_STEP, type NavProbe, type NavT
 import { names } from "../shared/places.js";
 import { colliderOf } from "../shared/components.js";
 import { MOVER, TRACK, walkToward, toleranceOf, waterStance } from "../shared/mover.js";
+import { FOLD_RELEASED, inspectBody } from "../shared/flightbody.js";
 import { foldedIn, wingFoldPresence } from "../shared/wingpresence.js";
 import { bodyModeTracker, isBodyMode, readBodyMode } from "../shared/bodymode.js";
 import { clampBodyScale } from "../shared/presencewire.js";
@@ -756,6 +757,8 @@ export class WorldAgent {
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
               this.wingsFolded = foldedIn(msg.restore) === true;   // the named pose wings-folded (or an older wingsFolded)
+              this.fitFold();   // ...if this body can hold it
+              if (this.wingsFolded) void this.loadBodyBones();   // bones unread (a first join): the read fits the fold, as on a swap
               this.bodyMode = readBodyMode(msg.restore);   // the body-mode survives a rejoin (an older sample: read from its clip); a declaration until the next real transition
             }
             this.restoredPose = true;
@@ -1703,14 +1706,29 @@ export class WorldAgent {
   /** The vigil posture, mirrored for anything that renders this body. */
   wingsFolded = false;
 
-  /** Bone names of the worn body, for the capability's rig check; null
+  /** Bone names of the worn body, for its wings (fold, flap); null
    *  while they aren't known: until the worn model has been read, after a
    *  read failed, and from an avatar change until the new body is read. */
   bodyBoneNames: string[] | null = null;
   private bodyBonesFor: string | null = null;
+  /** The body whose last bone read failed (a 503, a timeout): take_off doesn't wait on it again (agent-flight.ts). It
+   *  remembers the failure, never the result: the next read still asks the library. */
+  bodyBonesFailedFor: string | null = null;
+  /** A fold fitFold released that no reply has said yet (take_off says it). */
+  foldReleaseUnsaid = false;
 
-  /** Read the worn VRM's bone list, once per avatar. A failed read keeps
-   *  nothing (still unknown); a read landing after an avatar change is dropped. */
+  /** A fold this body can hold: released on a body known to have no wing bones; kept on wings, or on bones not yet known.
+   *  A release is said at once in the inbox, and by the next take_off. */
+  private fitFold() {
+    const known = this.bodyBoneNames && this.bodyBonesFor === this.avatar;
+    if (!this.wingsFolded || !known || inspectBody(this.bodyBoneNames!).canAnimateWings) return;
+    this.wingsFolded = false; this.foldReleaseUnsaid = true;
+    const said = { ts: Date.now(), kind: "act" as const, who: this.name, text: FOLD_RELEASED };
+    this.inbox.push(said); this.onEvent?.(said);
+  }
+
+  /** Read the worn VRM's bone list, once per avatar. A failed read keeps nothing (still unknown; the next read asks
+   *  again); a read landing after an avatar change is dropped. */
   async loadBodyBones(): Promise<string[] | null> {
     const avatar = this.avatar;
     if (this.bodyBoneNames && this.bodyBonesFor === avatar) return this.bodyBoneNames;
@@ -1725,10 +1743,13 @@ export class WorldAgent {
       if (this.avatar === avatar) {
         this.bodyBoneNames = names;
         this.bodyBonesFor = avatar;
+        this.bodyBonesFailedFor = null;
+        this.fitFold();
       }
     } catch (e) {
       // Nothing is kept: a list another read stored for this body stands, and
       // an unknown list stays unknown.
+      if (this.avatar === avatar && this.bodyBonesFor !== avatar) this.bodyBonesFailedFor = avatar;
       console.warn(`[door] couldn't read the bones of ${avatar}: ${(e as Error).message}`);
     }
     return this.bodyBoneNames;
@@ -2737,11 +2758,15 @@ export class WorldAgent {
    *  with the new path and every client rebuilds this remote. Position, held
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
-    if (this.flight) this.endFlight("avatar");   // the new body's rig isn't read yet: it falls, and its next flight act checks it
+    // a swap never ends a flight: flight is the world's grant plus physics, not appearance (lead, 11-12)
+    // the last body's unsaid release isn't the next one's to say (a swap's own lands with its read); the same body's is
+    if (path !== this.avatar) this.foldReleaseUnsaid = false;
     this.avatar = path;
-    // The new body's bones are read before its next flight act or fold.
+    // The new body's bones are read when a fold needs them, and now if a fold is carried (it may not fit this body).
     this.bodyBoneNames = null;
     this.bodyBonesFor = null;
+    this.bodyBonesFailedFor = null;
+    if (this.wingsFolded) void this.loadBodyBones();
     this.selfBodyGeneration = ++this.bodyGenerationCounter;
     this.bodyReader?.forget(this.name);
     // a new body has its own height: re-measure (a reply for the old body is dropped), and float afresh

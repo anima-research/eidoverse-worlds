@@ -298,7 +298,7 @@ async function browserOwnerPart() {
   }));
   mock.module(base + "base.js", () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {}, tee() {} }));
   mock.module(base + "terrain.js", () => ({ heightAt: () => 0, setWaterField() {}, rainSurfaceAt: () => 0 }));
-  mock.module(base + "colliders.js", () => ({ resolveColliders: () => {}, lastBlockedTop: 0, findSeat: () => null, raySegment: () => null,
+  mock.module(base + "colliders.js", () => ({ resolveColliders: () => 0, lastBlockedTop: () => 0, findSeat: () => null, raySegment: () => null,
     frameOf: () => null, lastContacts: () => [], colliders: new Map() }));
   mock.module(base + "arrivalhold.js", () => ({ heightHeld: () => false, holdHeightUntilSolid() {} }));   // the arrival hold reads the models realizer, which is not under test
   mock.module(base + "assets.js", () => ({ forgetBytes() {}, primeFiles: async () => {} }));
@@ -370,11 +370,56 @@ async function browserOwnerPart() {
   pressG(); pressG();
   check("no-grant unfold says propulsion remains unavailable", /propulsion is still not granted/.test(hints.at(-1) ?? ""), hints.at(-1));
   pressG();
+  controller.armFlight(null, "owner");   // a body whose bones couldn't be read (or a capsule): unknown, not "no wings"
+  check("an unread body keeps a carried fold", controller.folded() === true && owner.wingsFolded === true);
   controller.armFlight([], "owner");   // a body with no authored wing chains
-  pressG();
   const rel = packet();
-  check("a wingless swap can release a carried posture", controller.myState.wingsFolded === false && Array.isArray(rel?.poses) && !rel.poses.includes(WINGS_FOLDED));
-  check("the wingless release is truthful", /posture released/.test(hints.at(-1) ?? ""), hints.at(-1));
+  check("a wingless swap releases a carried posture, on the wire too", controller.myState.wingsFolded === false && Array.isArray(rel?.poses) && !rel.poses.includes(WINGS_FOLDED));
+  check("the wingless release is said, in the words G used to say it", hints.at(-1) === "folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move", hints.at(-1));
+  let said = hints.length;
+  pressG();
+  check("G on the wingless body then has nothing to fold or release", hints.length === said && controller.folded() === false, hints.at(-1));
+  controller.setFolded(true);   // a fold restored on rejoin (main.js) onto the wingless body
+  check("a fold restored onto a known wingless body is released where it is set, and says so", controller.folded() === false && owner.wingsFolded === false &&
+    hints.at(-1) === "folded-wing posture released — this body has no bones named L_Wing_Upper / L_Wing_Lower or R_Wing_Upper / R_Wing_Lower (then _1, _2 outward) for the fold to move", hints.at(-1));
+  controller.armFlight(WING_BONES, "owner");
+  pressG();
+  check("G on a winged body folds again", controller.folded() === true && /wings folded/.test(hints.at(-1) ?? ""), hints.at(-1));
+  pressG();   // open the winged body's wings again, so F may take off
+  controller.setRightsHook(() => ({ role: "member", fly: true }));   // as main.js wires it, before the body is armed
+  controller.armFlight(WING_BONES, "owner");
+  bus.emit("key", { code: "KeyF", repeat: false });
+  const up = controller.flying();
+  controller.armFlight([], "owner");   // a swap mid-flight, to a wingless body
+  said = hints.length;
+  owner.root ??= new THREE.Object3D(); owner.setClip ??= () => {}; owner.update ??= () => {};   // updateMe places and animates the body on screen
+  for (let i = 0; i < 10; i++) controller.updateMe(1 / 60, owner);   // the frames whose re-resolve once grounded a swapped body
+  const state = controller.flightReport();
+  check("a swap never ends a flight (lead 11-12): the wingless body flies on, frames later, still piloting",
+    up === true && /state: PILOT/.test(state) && !hints.slice(said).some((h) => /withdrawn/.test(h)), `took off ${up}; ${state.split("\n")[1]}; ${hints.slice(said)}`);
+  bus.emit("key", { code: "KeyF", repeat: false });   // land
+
+  console.log("\nWINGS: ARMING FROM THE BODY ON SCREEN (mybody.js setMe -> controller.armFlightForBody)");
+  const bodyOf = (bones: string[]) => ({ vrm: { scene: { traverse: (f: Function) => bones.forEach((name) => f({ isBone: true, name })) } } });
+  const arm = (av: any) => controller.armFlightForBody?.(av);
+  const firstSay = arm(bodyOf(WING_BONES));
+  check("arming a body with the grant says flight is available", firstSay === "flight available on this body — press F", String(firstSay));
+  pressG();
+  check("(setup) the winged body folds", controller.folded() === true);
+  arm({ vrm: { scene: { traverse() { throw new Error("unreadable"); } } } });
+  check("a body whose skeleton read throws is unknown: the fold is kept", controller.folded() === true);
+  arm({});
+  check("a body with no vrm scene (a capsule) is unknown: the fold is kept", controller.folded() === true);
+  check("/flight on an unread body doesn't count wing bones it hasn't read", /bones not read/.test(controller.flightReport()) && !/\(0 wing bones\)/.test(controller.flightReport()), controller.flightReport().split("\n")[0]);
+  bus.emit("key", { code: "KeyF", repeat: false });
+  check("F with a fold held on an unread body doesn't claim wings it hasn't read", /a fold is held/.test(hints.at(-1) ?? "") && /weren't read/.test(hints.at(-1) ?? "") && !/wings are folded/.test(hints.at(-1) ?? ""), hints.at(-1));
+  const nodes = (names: string[]) => ({ vrm: { scene: { traverse: (f: Function) => names.forEach((name) => f({ isBone: false, name })) } } });
+  arm(nodes(WING_BONES));
+  check("wing nodes that aren't Bones are wings, as the renderer and the agent read them: the fold is kept", controller.folded() === true);
+  arm(bodyOf(["Hips", "Spine", "Head"]));
+  check("a read wingless body releases the fold", controller.folded() === false && /posture released — this body has no bones named L_Wing_Upper \/ L_Wing_Lower or R_Wing_Upper \/ R_Wing_Lower \(then _1, _2 outward\)/.test(hints.at(-1) ?? ""), hints.at(-1));
+  const beeSay = arm(bodyOf(["Hips", "Spine", "Head", "Wings", "Wing_Left_High_Base", "Wing_Left_High1"]));
+  check("a mis-named wing rig flies with the grant; the toast is the plain one", beeSay === "flight available on this body — press F", String(beeSay));
 }
 
 // ---------------------------------------------------------------- the remote renderer: mounted and not

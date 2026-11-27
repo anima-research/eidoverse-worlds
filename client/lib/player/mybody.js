@@ -6,7 +6,7 @@
 import { CONFIG, bus, report, tee } from '../base.js';
 import { DEFAULT_BODY } from '../../../shared/avatardefs.js';
 import { releaseBodyGate } from '../render/bodygate.js';
-import { armFlight, folded } from './controller.js';
+import { armFlightForBody, folded } from './controller.js';
 import { makeAvatar } from '../avatar/avatar.js';
 import { contributeThumbnail } from '../avatar/avatar-thumbnail.js';
 import { setMyAvatarPath, wireAvatarSwitch } from '../edit/catalog.js';
@@ -128,17 +128,10 @@ export function setMe(av) {
   armFlightFor(av);
 }
 
-/** Arm (or disarm) human flight for whatever body this is now.
- *  Re-run on every swap, never cached: the capability binds to the RIG, so a
- *  winged body makes it possible (the world's rights.fly still decides: shared/flightcap.js) and a commons one takes it away. */
+/** Arm flight for whatever body this is now, on every swap (controller.js armFlightForBody), and say what changed. */
 function armFlightFor(av) {
-  try {
-    if (!av?.vrm?.scene) return;
-    const bones = [];
-    av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); });
-    const ok = armFlight(bones, 'me');
-    if (ok) toast?.('flight available on this body — press F');
-  } catch { /* a body that cannot be inspected simply cannot fly */ }
+  const say = armFlightForBody(av, 'me');
+  if (say) toast?.(say);
 }
 
 // ---------------------------------------------------------------- avatar swap
