@@ -3,7 +3,7 @@
 import { admitParticipant } from "../../server/relaydecision.ts";
 import { mintSfuCredential, admitSfuLeg, setSfuConsent, setSfuModeratorMute,
   revokeSfuLeg, sfuDiag, sfuState, registerSfuSender } from "../../server/sfuadapter.ts";
-import { until, tryUntil, pause } from "../gate/wait.ts";
+import { tryUntil, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 
 const S = suite("sfu-adapter");
@@ -238,7 +238,7 @@ check("retirement clears the leg's moderator mute", (sfuDiag(W) as any).moderato
   let hooked = false; pcR.setLocalDescription = async (d: any) => { await sld(d); hooked = true; revokeSfuLeg(WR, "lis"); };   // the revoke lands after the last await, before the send
   registerSfuSender(WR, "lis", (p: any) => sent.push(p));
   setSfuConsent(WR, "lis", 2, true);                 // negotiation fires: sfu-route, then the awaits, then sfu-offer
-  await until("the negotiation reached its last await (the revoke ran)", () => hooked);   // an event, not 600 ms (G6-134)
+  await tryUntil("the negotiation reached its last await (the revoke ran)", () => hooked);   // an event, not 600 ms (G6-134); the row reads `hooked`, so a hook that never ran fails it, and the rows after still run
   await pause("one macrotask: the offer send would follow the hooked await within microtasks", 0);
   check("a leg revoked mid-negotiation is sent no offer (the route was sent, the offer was not)",
     hooked && sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `hooked=${hooked} sent=${JSON.stringify(sent.map((p) => p.type))}`);
@@ -252,7 +252,7 @@ check("retirement clears the leg's moderator mute", (sfuDiag(W) as any).moderato
   let hooked = false; pcR.setLocalDescription = async (d: any) => { await sld(d); hooked = true; mintSfuCredential(WR, "lis", 1, 4); };   // retired and re-minted after the last await
   registerSfuSender(WR, "lis", (p: any) => sent.push(p));
   setSfuConsent(WR, "lis", 2, true);
-  await until("the negotiation reached its last await (the re-mint ran)", () => hooked);
+  await tryUntil("the negotiation reached its last await (the re-mint ran)", () => hooked);
   await pause("one macrotask: the offer send would follow the hooked await within microtasks", 0);
   check("a leg re-minted mid-negotiation is sent no offer from its predecessor's negotiation",
     hooked && sent.some((p) => p.type === "sfu-route") && !sent.some((p) => p.type === "sfu-offer"), `hooked=${hooked} sent=${JSON.stringify(sent.map((p) => p.type))}`);
