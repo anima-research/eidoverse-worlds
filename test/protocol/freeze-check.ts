@@ -15,6 +15,7 @@ import { PERSON_ID } from "../../shared/protocol/ids.js";
 import { ACTOR_ID } from "../../shared/protocol/names.js";
 import { custodyVerdict, readOnlyCustody, backupManifestOf, checkBackupManifest, MANIFEST } from "../../server/custodycheck.ts";
 import { openLive } from "../harness/labhost.ts";
+import { scratchState } from "../harness/harness.ts";
 import { backupWorld } from "../../server/backups.ts";
 import { foundWorld } from "../../server/worldlog.ts";
 import { request } from "../../shared/protocol/authority.js";
@@ -100,7 +101,7 @@ try {
   const freePort = async (from: number) => { for (let p = from; p < from + 200; p++) { const ok = await new Promise((res) => { try { const s = Bun.listen({ hostname: "0.0.0.0", port: p, socket: { data() {} } }); s.stop(true); res(true); } catch { res(false); } }); if (ok) return p; } throw new Error("no free port"); };
   const startServer = async (worlds: string, tag: string, env: Record<string, string>, pre: string[] = []) => {
     const port = await freePort(9100 + procs.length * 7); const logf = path.join(S, `${tag}.log`);
-    const p = Bun.spawn([process.execPath, ...pre, "server/server.ts"], { cwd: ENGINE, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", JOIN_TOKEN: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
+    const p = Bun.spawn([process.execPath, ...pre, "server/server.ts"], { cwd: ENGINE, env: { ...process.env, ...scratchState(), PORT: String(port), WORLDS_DIR: worlds, SKIP_OPT_SWEEP: "1", TRUST_NAMES: "1", JOIN_TOKEN: "", SERVER_OPERATORS: "", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...env }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
     procs.push(p);
     if (!(await tryUntil(`the ${tag} server answers /worlds`, async () => (await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) })).status > 0, { ms: 115_000, step: 150 }))) throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
     return port;

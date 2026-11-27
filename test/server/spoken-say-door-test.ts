@@ -6,7 +6,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort, saysIn } from "../harness/harness.ts";
+import { foundWorlds, freePort, saysIn, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { until } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -23,7 +23,7 @@ const check = (name: string, ok: unknown, extra?: unknown) => S.check(name, ok, 
 
 // Child diagnostics preserved: piped, tails printed on any fatal.
 const world = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },
+  env: { ...process.env, ...scratchState(), PORT: String(WPORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },
   stdout: "pipe", stderr: "pipe",
 });
 const mcpl = Bun.spawn(["bun", "mcpl/net-server.ts"], {

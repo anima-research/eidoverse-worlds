@@ -8,7 +8,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROOT, foundWorlds, freePort, saysIn } from "../harness/harness.ts";
+import { ROOT, foundWorlds, freePort, saysIn, scratchState } from "../harness/harness.ts";
 import { suite } from "../gate/suite.ts";
 import { tryUntil } from "../gate/wait.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -18,7 +18,7 @@ const W = mkdtempSync(join(tmpdir(), "ew-chatbridge-"));
 foundWorlds(W, ["commons"]);
 const PORT = freePort(9720);
 const srv = Bun.spawn([process.execPath, "server/server.ts"], { cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: W, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" }, stdout: "ignore", stderr: "ignore" });
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), WORLDS_DIR: W, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" }, stdout: "ignore", stderr: "ignore" });
 let bridge: Bun.Subprocess<"pipe", "pipe", "pipe"> | null = null;
 const cleanup = () => { try { bridge?.kill(); } catch {} try { srv.kill(); } catch {} rmSync(W, { recursive: true, force: true }); };
 // up = the door answers; with JOIN_TOKEN /worlds is 401 (public reads gated 10-14)

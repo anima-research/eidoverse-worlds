@@ -6,7 +6,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ROOT, foundWorlds, freePort } from "../harness/harness.ts";
+import { ROOT, foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { tryUntil, pause } from "../gate/wait.ts";
 import { suite } from "../gate/suite.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -17,7 +17,7 @@ foundWorlds(W, ["commons"]);
 const voices = join(W, "voices.json"); writeFileSync(voices, JSON.stringify({ nobody: "REPLACE-me" }));
 const PORT = freePort(9740);
 const srv = Bun.spawn([process.execPath, "server/server.ts"], { cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: W, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" }, stdout: "ignore", stderr: "ignore" });
+  env: { ...process.env, ...scratchState(), PORT: String(PORT), WORLDS_DIR: W, JOIN_TOKEN: "", SKIP_OPT_SWEEP: "1" }, stdout: "ignore", stderr: "ignore" });
 let bot: Bun.Subprocess | null = null;
 const done = (code: number) => { try { bot?.kill(); } catch {} try { srv.kill(); } catch {} rmSync(W, { recursive: true, force: true }); process.exit(code); };
 // up = the door answers; with JOIN_TOKEN /worlds is 401 (public reads gated 10-14)

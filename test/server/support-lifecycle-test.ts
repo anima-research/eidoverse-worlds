@@ -24,7 +24,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, freePort } from "../harness/harness.ts";
+import { foundWorlds, freePort, scratchState } from "../harness/harness.ts";
 import { qFromYaw } from "../../shared/rot.js";
 import { idAliases } from "../harness/idalias.ts";
 import { helloOf } from "../../shared/protocol/hello.js";
@@ -81,7 +81,7 @@ async function startServer() {
   // run
   server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
     // TRUST_NAMES: a typed name is its own local account, so the stagehand who founds a world joins it as its owner
-    env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1",
+    env: { ...process.env, ...scratchState(), PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1", SKIP_OPT_SWEEP: "1",
            MSG_RATE: "5000" },
     stdio: "ignore",
   });

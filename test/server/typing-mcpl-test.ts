@@ -5,7 +5,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, saysIn } from "../harness/harness.ts";
+import { foundWorlds, saysIn, scratchState } from "../harness/harness.ts";
 import { createServer } from "node:net";
 import { helloOf } from "../../shared/protocol/hello.js";
 
@@ -49,7 +49,7 @@ const check = (name: string, ok: boolean, extra = "") => {
 // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd shim whose pid dies at once, orphaning both of
 // these on their ports, where they poison the next run
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
+  env: { ...process.env, ...scratchState(), PORT: String(WPORT), WORLDS_DIR: worldsDir, SKIP_OPT_SWEEP: "1", AGENT_TOKENS_PATH: tokensPath },   // the world honours the same enrolments the MCPL door does
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {

@@ -30,7 +30,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, existsSync, statSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { foundWorlds, kernelPort } from "../harness/harness.ts";
+import { foundWorlds, kernelPort, scratchState } from "../harness/harness.ts";
 import { createServer as createHttpServer } from "node:http";
 import { suite } from "../gate/suite.ts";
 import { until, tryUntil, pause } from "../gate/wait.ts";
@@ -198,7 +198,7 @@ console.log(`sequencer :${SEQ_PORT}, door :${DOOR_PORT}, scratch ${scratch}`);
 // cannot pass vacuously, because the tmp is ALWAYS there at boot).
 writeFileSync(`${statePath}.tmp`, "");
 const seq = child(["server/server.ts"],
-  { PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
+  { ...scratchState(), PORT: String(SEQ_PORT), JOIN_TOKEN: JOIN, WORLDS_DIR: scratch, WORLD_INSTANCE_NONCE: NONCE, SKIP_OPT_SWEEP: "1",
     AGENT_TOKENS_PATH: tokensPath });   // the world honours the same enrolments the MCPL door does
 const door = child(["mcpl/net-server.ts"], {
   MCPL_PORT: String(DOOR_PORT), WORLD_URL: `ws://127.0.0.1:${SEQ_PORT}/ws`, WORLD_TOKEN: JOIN,

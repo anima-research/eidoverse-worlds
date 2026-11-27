@@ -14,7 +14,8 @@
  *     the ground floats by the documented lie.
  *
  * The blanket is the commons' actual store/9a9d0239eca609b3.glb, copied to
- * the LOCAL store dir — no production networking (review amendment 4).
+ * the scratch sequencer's store (a scratch OPT_DIR, never the checkout's
+ * assets/opt) — no production networking (review amendment 4).
  *
  * Run:
  *   BLANKET_GLB=/path/to/blanket-9a9d0239.glb EIDOVERSE_DIR=/path/to/eidoverse-video \
@@ -28,7 +29,7 @@ import { join } from "node:path";
 import { WorldAgent } from "../../mcpl/agent.ts";
 import { supportHolders } from "../../mcpl/physics.ts";
 import { summarizeGlb } from "../../server/geometry.ts";
-import { foundWorlds, requester } from "../harness/harness.ts";
+import { foundWorlds, requester, scratchState } from "../harness/harness.ts";
 import { qFromYaw } from "../../shared/rot.js";
 import { helloOf } from "../../shared/protocol/hello.js";
 
@@ -56,8 +57,9 @@ if (!process.env.EIDOVERSE_DIR || !process.env.BLANKET_GLB) {
   process.exit(1);
 }
 
-// ---- host the blanket in the LOCAL store, where an upload would land -------
-const storeDir = join(import.meta.dir, "..", "..", "assets", "opt", "store");
+// ---- host the blanket in the scratch store, where an upload would land -----
+const STATE = scratchState();   // the child's OPT_DIR and relay state: never the checkout's assets/opt (#381 review 19)
+const storeDir = join(STATE.OPT_DIR, "store");
 mkdirSync(storeDir, { recursive: true });
 const blanketDst = join(storeDir, "9a9d0239eca609b3.glb");
 if (!existsSync(blanketDst)) copyFileSync(process.env.BLANKET_GLB, blanketDst);
@@ -75,7 +77,7 @@ const rubbleSum = (await summarizeGlb(join(process.env.EIDOVERSE_DIR, RUBBLE_LIB
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-uneven-"));
 foundWorlds(worldsDir, [WORLD], "warden");   // joining never founds a world
 const server = spawn(process.execPath, [join(import.meta.dir, "..", "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1" },
+  env: { ...process.env, ...STATE, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", TRUST_NAMES: "1" },
   stdio: ["ignore", "pipe", "inherit"],
 });
 const stop = () => { try { server.kill(); } catch {} };

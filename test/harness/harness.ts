@@ -48,6 +48,21 @@ export async function startServer(env: Record<string, string | undefined>, logDi
   return { port, proc, log, dead: !up || proc.exitCode != null };
 }
 
+/** Where a test's server children keep their writable state, as env: OPT_DIR (the asset store, its variants and markers,
+ *  thumbs, the relay incarnation) and RELAY_STATE_DIR, never the checkout's assets/opt, the server's default. An OPT_DIR the
+ *  caller set is kept (the gate gives each suite its own, seeded with the prop fixtures); otherwise one temp dir per process,
+ *  shared by every child it starts (a restarted server finds its store) and removed at exit. RELAY_STATE_DIR always follows
+ *  OPT_DIR: an inherited one may be a live server's. */
+let stateDir: string | undefined;
+export function scratchState(): { OPT_DIR: string; RELAY_STATE_DIR: string } {
+  if (!process.env.OPT_DIR && !stateDir) {
+    const d = stateDir = mkdtempSync(join(tmpdir(), "eido-opt-"));
+    process.on("exit", () => { if (!process.env.PROTOCOL_KEEP) try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } });
+  }
+  const OPT_DIR = process.env.OPT_DIR || stateDir!;
+  return { OPT_DIR, RELAY_STATE_DIR: OPT_DIR };
+}
+
 /** Found worlds in a scratch WORLDS_DIR before a server serves it. The server never founds a world on join (RFC-005
  *  §3.2.7, security review 10-06 H3: a name with no world behind it is refused), so a test that joins one founds it
  *  first, the way an operator does: `bun tools/world.ts found <name> --owner <who>`. `owner` is the name the owner
@@ -184,7 +199,7 @@ export async function scratchSequencer(name: string, opts: ScratchOptions = {}) 
     }
     seq = track(Bun.spawn([process.execPath, ...(opts.preload ? ["--preload", opts.preload] : []), join(ROOT, "server", "server.ts")], {
       cwd: ROOT,
-      env: { ...process.env, JOIN_TOKEN: "", EIDOVERSE_DIR, ...opts.serverEnv,
+      env: { ...process.env, JOIN_TOKEN: "", EIDOVERSE_DIR, OPT_DIR: process.env.OPT_DIR || join(SCRATCH, "opt"), ...opts.serverEnv,   // never the checkout's assets/opt (scratchState)
         PORT: String(PORT), WORLDS_DIR: join(SCRATCH, "worlds"), RELAY_STATE_DIR: SCRATCH, BENCH_NONCE: NONCE },
       stdout: opts.onLine ? "pipe" : Bun.file(join(SCRATCH, "sequencer.log")), stderr: Bun.file(join(SCRATCH, "sequencer.stderr.log")),
     }));
