@@ -7,6 +7,7 @@
 import { scratchBench, mkCheck, sleep } from '../harness/harness.ts';
 import { pagedEval } from '../harness/idalias.ts';
 import { pageWaiter } from '../gate/wait.ts';
+import { beyondGpuNoise } from '../harness/gpu-noise.ts';
 
 const { cdp, evalJson: evalRaw, cleanup, die, BASE } = await scratchBench('colourpick', { worlds: ['pickbench'], owner: 'pickbot', serverEnv: { TRUST_NAMES: '1', ACT_RATE: '1000' } });
 // R 10-17: the page names its lamp with a placeholder (test/harness/idalias.ts pageIds); 'picklamp' in page code is its id
@@ -66,9 +67,10 @@ if (process.env.EDIT_SHOT) {
 }
 await evalJson(`${row}.querySelector('.sp-color-sw').click(), true`);
 check('the swatch closes it again', await evalJson(`${row}.querySelector('.sp-picker').hidden`));
-// headless Chrome has no working GPU: the sky's finish and WebGPU's error scopes complain on every boot, picker or not
-const errs = ((await evalJson(`window.__errs ?? []`)) ?? []).filter((e: string) => !/popErrorScope|sky finish/.test(e));
-check('no page errors (beyond headless GPU noise)', errs.length === 0, JSON.stringify(errs));
+// headless Chrome takes the WebGPU device away: the sky's finish and its error scopes then complain (gpu-noise.ts: dropped
+// only once it's gone)
+const { real: errs, gpuGone } = await beyondGpuNoise((await evalJson(`window.__errs ?? []`)) ?? [], evalJson);
+check('no page errors (beyond headless GPU noise)', errs.length === 0, JSON.stringify({ gpuGone, errs }));
 
 console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
 if (tally.failed) await die(1, 'colour-picker-bench: FAILED');

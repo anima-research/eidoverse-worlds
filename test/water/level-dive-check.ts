@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { scratchBench, mkCheck } from "../harness/harness.ts";
 import { until, pause } from "../gate/wait.ts";
+import { beyondGpuNoise } from "../harness/gpu-noise.ts";
 
 const WORLD = "level-dive";
 const engine = process.env.ENGINE_LIB;
@@ -107,9 +108,9 @@ try {
   check("LD10 …and Q throws it (the throw/punt key; the direct throw API never had to)", afterC.held === true && afterQ.held === false && afterQ.direct === null, JSON.stringify({ afterC, afterQ }));
   check("LD11 a world with no bounds has no edge: walking 84 m from the origin stays out there (no 78 m stage island)", unboundOk && far.bounds === null && far.r > 80, JSON.stringify({ unbound: unboundOk || unbound, far }));
   check("LD8 afloat on a lake, before any dive, the swim keys are said (look down to dive) (R 10-28)", hintAfloat === true, "");
-  // headless Chrome has no working GPU: WebGPU's error scopes complain on every boot (colour-picker-bench, same filter)
-  const real = errors.filter((e) => !/popErrorScope|sky finish/.test(e));
-  check("LD7 no page errors (beyond headless GPU noise)", real.length === 0, JSON.stringify(real.slice(0, 4)));
+  // headless Chrome takes the WebGPU device away: its error scopes then complain (gpu-noise.ts: dropped only once it's gone)
+  const { real, gpuGone } = await beyondGpuNoise(errors, evalJson);
+  check("LD7 no page errors (beyond headless GPU noise)", real.length === 0, JSON.stringify({ gpuGone, real: real.slice(0, 4) }));
 } catch (e) { check("the run threw", false, String((e as any)?.stack ?? e)); }
 console.log(`[level-dive-check] ${tally.passed} passed, ${tally.failed} failed${tally.note()}`);
 await bench.cleanup(tally.failed ? 1 : 0);

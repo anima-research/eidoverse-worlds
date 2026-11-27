@@ -61,5 +61,12 @@ const says = (r: ReturnType<typeof merge>, re: RegExp) => r.problems.length > 0 
   for (const x of g) Object.assign(x.receipt, { prHead: pr, mergeOf: of });
   const r = m(g) as any; ok(r.merged.prHead === pr && JSON.stringify(r.merged.mergeOf) === JSON.stringify(of) && r.merged.shards.every((s: any) => s.prHead === pr),
     "M14 a pull_request run's merged receipt names the PR's head and the merge's parents (the workflow header's promise), as each shard does", { prHead: r.merged.prHead, mergeOf: r.merged.mergeOf }); }
+{ const g = good(); const arm = "not run (set PROTOCOL_LAB=<protocol lab checkout> to run the pre-fix control arm)";
+  for (const x of g) (x.receipt as any).optional = { "control-arm": arm };
+  (g[1].receipt as any).optional["clone-discard-counts"] = "CD1-CD4 not observable on win32";   // one shard's own
+  const r = m(g) as any;
+  ok(r.problems.length === 0 && r.merged.optional?.["control-arm"] === arm && r.merged.optional?.["clone-discard-counts"] === "CD1-CD4 not observable on win32"
+    && r.merged.shards[1].optional?.["clone-discard-counts"] === "CD1-CD4 not observable on win32" && r.merged.shards[0].optional?.["clone-discard-counts"] === undefined,
+    "M15 every shard's OPTIONAL lines reach the merged receipt (one per name, as run.ts keeps them) and each shard's own stay under shards[]: an N/A row's evidence is not dropped at the merge", { optional: r.merged.optional, perShard: r.merged.shards?.map((s: any) => s.optional) }); }
 
 done(`: ${names.length} suites`);

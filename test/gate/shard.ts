@@ -39,7 +39,9 @@ export type SuiteResult = { name: string; lane: string; status: string; why?: st
 export type Receipt = { v: number; verdict: string; head: string; dirty: boolean; os: { platform: string; release: string; arch: string };
   runtimes: unknown; library: unknown; scratch: { dir: string | null; kept: boolean } | null; seconds: number;
   tally: Record<string, { pass: number; fail: number; skip: number }>; notSelected: number; suites: SuiteResult[]; logSha256: string;
-  shard?: { index: number; of: number; hash: string; assigned: string[] }; prHead?: string | null; mergeOf?: string[] | null };
+  shard?: { index: number; of: number; hash: string; assigned: string[] }; prHead?: string | null; mergeOf?: string[] | null;
+  /** run.ts's OPTIONAL lines, one per name: an extension that did not run, or a row that can't be observed on this host */
+  optional?: Record<string, string> };
 
 /** Whether `got` (shard receipts, any order, unparseable ones as null) is the whole gate at `head`, split `of` ways as this
  *  checkout's SUITES and timings split it; and the merged receipt (run.ts's shape, plus `shards`). Any problem fails. */
@@ -82,13 +84,17 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
   const tally: Receipt["tally"] = {};
   for (const r of shards) for (const [l, t] of Object.entries(r.tally)) { const m = (tally[l] ??= { pass: 0, fail: 0, skip: 0 }); m.pass += t.pass; m.fail += t.fail; m.skip += t.skip; }
   const first = shards[0];
+  // every shard's OPTIONAL lines, one per name as run.ts keeps them (the lowest shard's text wins; each shard's own stay
+  // under shards[]): a suite's N/A evidence on one shard must not vanish at the merge
+  const optional: Record<string, string> = {};
+  for (const r of shards) for (const [k, v] of Object.entries(r.optional ?? {})) if (!Object.hasOwn(optional, k)) optional[k] = v;
   const merged = {
     v: 1, verdict: problems.length ? "FAILED" : "PASS", head: first?.head ?? null, prHead: first?.prHead ?? null, mergeOf: first?.mergeOf ?? null, dirty: shards.some((r) => r.dirty),
     os: first?.os ?? null, runtimes: first?.runtimes ?? null, library: first?.library ?? null,
     scratch: { dir: null, kept: shards.every((r) => r.scratch?.kept) },   // per shard: shards[].scratch
-    seconds: Math.max(0, ...shards.map((r) => r.seconds)), tally, notSelected: names.length - suites.length, suites,
+    seconds: Math.max(0, ...shards.map((r) => r.seconds)), tally, notSelected: names.length - suites.length, suites, optional,
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
-    shards: shards.map((r) => ({ index: r.shard!.index, of: o.of, hash: r.shard!.hash, verdict: r.verdict, head: r.head, prHead: r.prHead ?? null, seconds: r.seconds, suites: r.suites.length, scratch: r.scratch, logSha256: r.logSha256 })),
+    shards: shards.map((r) => ({ index: r.shard!.index, of: o.of, hash: r.shard!.hash, verdict: r.verdict, head: r.head, prHead: r.prHead ?? null, seconds: r.seconds, suites: r.suites.length, scratch: r.scratch, logSha256: r.logSha256, optional: r.optional ?? {} })),
     partition: { of: o.of, hash }, problems,
   };
   return { problems, merged };

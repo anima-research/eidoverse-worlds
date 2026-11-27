@@ -20,5 +20,7 @@ const { problems, merged } = merge(files.map((file) => ({ file, receipt: read(fi
 fs.writeFileSync(out, JSON.stringify(merged, null, 1) + "\n");
 console.log(`merge-receipts: ${files.length} receipt(s), ${of} shard(s), ${merged.suites.length} suite(s) at ${head?.slice(0, 12) ?? "(no head)"}`);
 for (const p of problems) console.log(`  FAIL ${p}`);
+const opt = Object.entries(merged.optional);   // as run.ts prints them: an N/A row's evidence is read here on CI
+console.log(`  optional, not run: ${opt.length}${opt.length ? "" : " (none)"}`); for (const [k, v] of opt) console.log(`          ${k}: ${v}`);
 console.log(`protocol gate (${of} shards merged): ${problems.length ? `FAILED (${problems.length} problem(s))` : "PASS"}; receipt: ${out}`);
 process.exit(problems.length ? 1 : 0);
