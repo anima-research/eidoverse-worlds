@@ -184,7 +184,7 @@ export const TOOLS = TOOL_ROWS.map((t) => {
 for (const n of Object.keys(ANNOTATIONS)) if (!TOOL_ROWS.some((t) => t.name === n)) throw new Error(`[tools] annotations for "${n}", which isn't a tool`);
 
 import { recordComponents } from "../shared/protocol/view.js";
-import { solidOffRecord } from "./agent-result.ts";
+import { noOwnCollider } from "./agent-result.ts";
 import { modelWord } from "../shared/eido.js";
 import { WINGS_FOLDED } from "../shared/wingpresence.js";
 import { PoseClips } from "./pose-clips.ts";
@@ -455,11 +455,11 @@ const CHECK_MODEL = async (ag: WorldAgent, a: Record<string, any>, ms = 3 * HTTP
     : `the check could not be reached: ${String((err as Error)?.message ?? err)}; calling again may work`); }
   if (r.error) return fail(`couldn't check ${lib}: ${r.error}`);
   const what = `${e ? `[${ag.refName(e.id)}] ` : ""}${lib}${r.scale && r.scale !== 1 ? ` at scale ${r.scale}` : ""}`;
-  // collision owned elsewhere (agent-result.ts collisionElsewhere): the browser fits this model no collider, so its
-  // collide override says nothing about who can go inside
-  const none = !e ? null : solidOffRecord(e) ? "its collision is off for bodies: walk-through"
-    : recordComponents(e).structure ? "it is a structure's anchor, hidden: bodies meet the structure's own walls and floors" : null;
-  return text(describeCheck(what, r, e ? ag.placesOn(e).length : 0, e?.id, none ? undefined : e?.collide, none));
+  // no collider of its own (agent-result.ts noOwnCollider: off, switched off, an anchor, mounted): the browser fits this
+  // model no collider, so its collide override says nothing about who can go inside
+  const none = !e ? null : noOwnCollider(e, ag);
+  // a structure's anchor model is hidden under the structure: its rooms are not the structure's
+  return text(describeCheck(what, r, e ? ag.placesOn(e).length : 0, e?.id, none ? undefined : e?.collide, none, !!e && !!recordComponents(e).structure));
 };
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
@@ -1606,7 +1606,7 @@ HANDLERS.anim = async (ag, a, ctx, name) => {
 }
 
 /** A build check (server/buildcheck.ts) as text a reader can act on. */
-function describeCheck(what: string, r: any, named: number, id?: string, collide?: string, none?: string | null): string {
+function describeCheck(what: string, r: any, named: number, id?: string, collide?: string, none?: string | null, hiddenModel = false): string {
   const L: string[] = [];
   // no collider of its own (none says why): nothing is solid, so neither the solid headline nor the server's "solid"
   // warning (its collider.shape advice does nothing while collision is off) applies
@@ -1619,7 +1619,9 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
   const floors = (r.levels ?? []).map((l: any) => `${l.y}m (${l.reachable}m² of ${l.area}m² reachable)`).join(", ");
   L.push(`${what}: ${none ? `no collider of its own (${none}); as a model, ${r.walkIn?.roomScale ? "walk-in" : "under the walk-in size"}` : r.walkIn?.roomScale ? "walk-in" : collide === "box" ? "SOLID — spawned as a box" : "SOLID — under the walk-in size"}; ${(r.levels ?? []).length} floor${(r.levels ?? []).length === 1 ? "" : "s"}${floors ? `: ${floors}` : ""}`
     + `${r.perf ? `; rendering ${r.perf.rank} (${r.perf.tris} triangles, ${r.perf.draws} draw calls)` : ""}.`);
-  if (r.warnings?.length) { L.push("Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
+  // no collider of its own: what the check finds is the model's, and no body meets it (neither a wall nor a floor)
+  if (r.warnings?.length) { L.push(none ? "Problems in the model alone (bodies meet none of them: it has no collider of its own):" : "Problems:"); for (const w of r.warnings) L.push(`  - ${w.message}`); }
+  else if (none) L.push((r.levels ?? []).length ? "No problems found in the model alone; bodies meet none of its floors or walls (it has no collider of its own)." : "No problems found, and no floor for the check to walk.");
   else L.push((r.levels ?? []).length ? "No problems found: every floor under its roof can be reached from outside." : "No problems found, and no floor for the check to walk.");
   const s = r.suggested ?? {};
   const parts = [
@@ -1627,7 +1629,8 @@ function describeCheck(what: string, r: any, named: number, id?: string, collide
     ...(s.doors ?? []).map((x: any) => `${x.id} (${x.between.join(" ↔ ")}, ~${x.width}m wide, at ${x.at.join(", ")})`),
     ...(s.stairs ?? []).map((x: any) => `${x.id} (a stair, ${x.between.join(" ↔ ")})`),
   ];
-  if (parts.length) {
+  if (parts.length && hiddenModel) L.push(`Rooms in its hidden model: ${parts.join("; ")} — the model's, not the structure's: the structure's own rooms are where bodies walk (look names them), so name places there.`);
+  else if (parts.length) {
     L.push(`Suggested places, read from the geometry${named ? ` (it already has ${named} named)` : ""}: ${parts.join("; ")}.`);
     L.push(`To name them, rename the keys and send: act {verb: "set", args: {id: "${id ?? "<thing>"}", component: "places", value: ${JSON.stringify(s.places)}, merge: true}}`
       + ` — merge: true keeps the places it already has — or stand in each and use name_place.`);

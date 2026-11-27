@@ -1216,5 +1216,29 @@ for (const [what, collider, off] of [["collider.enabled false", { enabled: false
   check(off ? `${what}: look tells of no room in it (no "sealed" room the routes walk out of)` : `${what}: look tells of the room the body stands in`,
     inside === !off, String(out.look()).split("\n").find((l: string) => l.includes("inside [")) ?? "(no room line)");
 }
+// #347 bot 1 on 0c28db5e9: a building switched off (componentspec disabled), itself or a carrier it hangs under, is not
+// drawn and has no box in the browser (client/lib/realize/structure.js realize: offIn): no upper floor, no wall, no room
+console.log("\na building switched off, itself or up its chain\n");
+for (const [what, off, carried, carrierOff] of [["disabled itself", true, false, false], ["its carrier disabled", true, true, true],
+  ["(control) under a carrier that is on", false, true, false]] as const) {
+  const up = agentIn(upperY), out = agentIn(0);
+  for (const ag of [up, out]) {
+    const house = ag.entities.get("house");
+    if (!carried) house.disabled = true;
+    else {
+      ag.entities.set("carrier", { id: "carrier", model: "", pos: [0, 0, 0], yaw: 0, actor: "test", ...(carrierOff ? { disabled: true } : {}) });
+      house.parent = { to: "carrier", offset: [0, 0, 0] }; ag.mounts.set("house", { to: "carrier", offset: [0, 0, 0] });
+    }
+  }
+  const under = up.ground.storeyUnder(0.5, 0.5, upperY), floors = up.ground.floorsAt(0.5, 0.5, { entity: "house", level: 1 });
+  const walk = await tryWalk(out, 0.5, -3);
+  const inside = String(out.look()).split("\n").some((l: string) => l.includes("(inside [house]"));
+  if (off) check(`${what}: no upper floor to stand on, and a walk out through its wall sets off`,
+    under === null && floors.length === 1 && floors[0].entity === null && walk.setOff, JSON.stringify({ under, floors, walk }));
+  else check(`${what}: its upper floor holds the feet, and its wall refuses the walk`,
+    under?.entity === "house" && floors.length === 2 && !walk.setOff && /no route/.test(walk.refusal), JSON.stringify({ under, floors, walk }));
+  check(off ? `${what}: look tells of no room in it` : `${what}: look tells of the room the body stands in`, inside === !off,
+    String(out.look()).split("\n").find((l: string) => l.includes("inside [")) ?? "(no room line)");
+}
 console.log(failures ? `\n${failures} failed` : "\nall passed");
 process.exit(failures ? 1 : 0);

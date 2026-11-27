@@ -27,6 +27,21 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const hut = ag.look(0).split("\n").find((l: string) => l.includes("[hut]")) ?? "";
   ok(hut !== "" && !/collides as/.test(hut), "347/4 look: a structure's anchor doesn't claim its box collides", hut); }
 
+// #347 bot 13 on 0c28db5e9: mounted cargo collides as its carrier, and a switched-off thing has no collider at all (the
+// browser's collisionOwnedElsewhere mount clause; models_field offIn): look doesn't say either collides as a box
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  ag.entities.set("cart", { id: "cart", model: "zz/cart.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1 });
+  ag.entities.set("cargo", { id: "cargo", model: "zz/crate.glb", kind: "thing", pos: [1, 1, 1], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, parent: { to: "cart", offset: [0, 1, 0] } });
+  ag.mounts.set("cargo", { to: "cart", offset: [0, 1, 0] });
+  ag.entities.set("dark", { id: "dark", model: "zz/crate.glb", kind: "thing", pos: [2, 0, 2], yaw: 0, actor: "x", scale: 1, collider: { shape: "box" }, disabled: true });
+  const L = ag.look(0).split("\n"), cargo = L.find((l: string) => l.includes("[cargo]")) ?? "", dark = L.find((l: string) => l.includes("[dark]")) ?? "";
+  ok(cargo !== "" && !/collides as/.test(cargo), "347/13 look: mounted cargo doesn't claim its box collides", cargo);
+  ok(dark !== "" && !/collides as/.test(dark) && /switched off/.test(dark) && !/switched off with/.test(dark) && /edit \{id: "dark", set: \{"flags.disabled": false\}\}/.test(dark), "347/13 look: a switched-off thing doesn't claim its box collides, says it is switched off by its own switch, and names its own id in the edit", dark);
+  // switched off through what it hangs under: look names that thing, and the edit that switches it back on
+  ag.entities.get("cart").disabled = true;
+  const under = ag.look(0).split("\n").find((l: string) => l.includes("[cargo]")) ?? "";
+  ok(/switched off with \[cart\]/.test(under) && /edit \{id: "cart", set: \{"flags.disabled": false\}\}/.test(under), "347 look: a thing switched off through its carrier names the carrier and how to switch it on", under); }
+
 // #347 bot 3: measure {check: true} on a thing whose collision is owned elsewhere (a structure's anchor) or off for bodies
 // doesn't say its collider.shape "box" makes it one solid box: the browser fits that model no collider
 { const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
@@ -40,10 +55,14 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   const small = { walkIn: { roomScale: false }, levels: [], warnings: [{ kind: "solid", message: "1.0×1.0m and 1.0m tall is under the walk-in size: the world fits it as one solid box, so nobody can go inside. If it is meant to be entered, give it collider {shape: \"mesh\"}" }] };
   ag.entities.set("smallghost", { id: "smallghost", ...base, model: "zz/crate.glb", collider: { ...box, enabled: false } });
   ag.entities.set("smallsolid", { id: "smallsolid", ...base, model: "zz/crate.glb", collide: undefined, collider: undefined });
+  // #347 bot 14 on 0c28db5e9: mounted cargo and a switched-off thing have no collider of their own either
+  ag.entities.set("cart", { id: "cart", ...base, collider: undefined, collide: undefined });
+  ag.entities.set("cargo", { id: "cargo", ...base, collider: box, parent: { to: "cart", offset: [0, 1, 0] } }); ag.mounts.set("cargo", { to: "cart", offset: [0, 1, 0] });
+  ag.entities.set("dark", { id: "dark", ...base, collider: box, disabled: true });
   const realFetch = globalThis.fetch;
   globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(String(u).includes("crate") ? small : report)) : realFetch(u))) as typeof fetch;
   let said: Record<string, string> = {};
-  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
+  try { for (const id of ["solid", "hut", "ghost", "smallghost", "smallsolid", "cargo", "dark"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id })); }
   finally { globalThis.fetch = realFetch; }
   ok(/SOLID — under the walk-in size/.test(said.smallsolid) && /collider \{shape/.test(said.smallsolid), "347/3 (control) measure check: a small thing is solid, with the server's advice", said.smallsolid);
   ok(!/SOLID|nobody can go inside|shape: \\?"mesh/.test(said.smallghost) && /no collider of its own/.test(said.smallghost) && /collision is off/.test(said.smallghost),
@@ -51,9 +70,31 @@ const ctxOf = (agent: any): any => ({ agent, canPush: () => false, heldActivity:
   // its report has no floors (and, the solid warning dropped, no problems): "every floor ... can be reached" would be vacuous
   ok(!/every floor/.test(said.smallghost) && /no floor/.test(said.smallghost), "347 measure check: a report with no floors doesn't say every floor can be reached", said.smallghost);
   ok(/SOLID — spawned as a box/.test(said.solid), "347/3 (control) measure check: a thing spawned collider.shape box reads as one solid box", said.solid);
-  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/]] as const)
+  for (const [id, why] of [["hut", /structure/], ["ghost", /collision is off/], ["cargo", /rides \[?cart/], ["dark", /switched off/]] as const)
     ok(!/SOLID|nobody can go inside/.test(said[id]) && /no collider of its own/.test(said[id]) && why.test(said[id]) && /walk-in/.test(said[id]),
-      `347/3 measure check: ${id === "hut" ? "a structure's anchor" : "a thing with its collision off"} isn't one solid box, and says why`, said[id]); }
+      `347/3 measure check: ${({ hut: "a structure's anchor", ghost: "a thing with its collision off", cargo: "mounted cargo (347/14)", dark: "a switched-off thing (347/14)" } as any)[id]} isn't one solid box, and says why`, said[id]); }
+
+// #347 bot 16 and 17 on 0c28db5e9: with no collider of its own, the check's findings are the model's alone (bodies meet
+// none of them), and a structure's hidden anchor model's rooms aren't offered to be saved as the structure's places
+{ const ag: any = new WorldAgent({ name: "me", world: "w", url: noWorldUrl() });
+  const base = { model: "zz/hall.glb", kind: "thing", pos: [1, 0, 1], yaw: 0, actor: "x", scale: 1 };
+  ag.entities.set("open", { id: "open", ...base });
+  ag.entities.set("hut", { id: "hut", ...base, structure: { levels: [{ y: 0, tiles: [[0, 0]] }] } });
+  ag.entities.set("ghost", { id: "ghost", ...base, collider: { enabled: false } });
+  const report = { walkIn: { roomScale: true }, levels: [{ y: 0, area: 20, reachable: 12 }], warnings: [{ kind: "unreachable", message: "8m² of the floor at 0m can't be reached from outside" }],
+    suggested: { rooms: [{ id: "back", min: [0, 0, 0], area: 8 }], doors: [], stairs: [], places: { back: { at: [0, 0, 2] } } } };
+  const clear = { ...report, levels: [{ y: 0, area: 20, reachable: 20 }], warnings: [] };
+  const realFetch = globalThis.fetch; let serve: any = report;
+  globalThis.fetch = (async (u: any) => (String(u).includes("/check?") ? new Response(JSON.stringify(serve)) : realFetch(u))) as typeof fetch;
+  const said: Record<string, string> = {};
+  try { for (const id of ["open", "hut", "ghost"]) said[id] = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id }));
+    serve = clear; said.hutClear = textOf(await handleTool(ctxOf(ag), "measure", { check: true, id: "hut" })); }
+  finally { globalThis.fetch = realFetch; }
+  ok(/^Problems:/m.test(said.open) && /component: "places"/.test(said.open), "347/16 (control) measure check: a solid model's problems are its own, and its rooms can be named", said.open);
+  for (const id of ["hut", "ghost"]) ok(/Problems in the model alone/.test(said[id]) && !/^Problems:/m.test(said[id]), `347/16 measure check: ${id === "hut" ? "an anchor's" : "a collision-off thing's"} problems are said to be the model's alone`, said[id]);
+  ok(!/every floor under its roof can be reached/.test(said.hutClear) && /model alone/.test(said.hutClear), "347/16 measure check: a clear hidden model isn't said to make the structure's floors reachable", said.hutClear);
+  ok(!/component: "places"/.test(said.hut) && /not the structure's/.test(said.hut), "347/17 measure check: an anchor's hidden model's rooms aren't offered as the structure's places", said.hut);
+  ok(/component: "places"/.test(said.ghost), "347/17 (control) measure check: a collision-off thing's own visible rooms can still be named", said.ghost); }
 
 // #41 (tool side): ban {global: true, days} sends the days with the server ban
 { const sent: any[] = []; const ag: any = { sendMod: (type: string, args: any) => sent.push({ type, ...args }), modOutcome: async () => "u-x is banned from all worlds" };

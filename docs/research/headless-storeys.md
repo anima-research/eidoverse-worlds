@@ -9,6 +9,7 @@ know such a floor is there. `floorsAt`, `floorMeant`, `placedNear` and `groundAt
 
 A storey counts when all of these hold:
 
+- its building is solid for bodies and switched on (see **Collision off** and **Switched off** below);
 - it rests above its building's base;
 - its floor is more than the walk grid's step (`NAV_STEP`, 0.8 m) above the terrain under the point;
 - `yHint` (the feet's height) is no more than a route step (`ROUTE_STEP_METRES`, 0.5 m) below the floor, and less than
@@ -37,4 +38,11 @@ What follows from that:
 - **Collision off.** A building whose collision is off for bodies (`collider.enabled` false, `blocks` without
   `bodies`, or a collider on a layer the default mask doesn't scan: `solidOff` in shared/protocol/simlayer.js) has no
   floor here and no wall for `walkStructures`, as the browser fits it no box (`client/lib/realize/structure.js`
-  `solid`). Every reader takes its structures from `bodyStructure` (`mcpl/agent-result.ts`).
+  `solid`).
+- **Switched off.** A building switched off (componentspec `disabled`), itself or anything it hangs under, has no floor
+  here and no wall either: the browser draws it no group and fits it no box (`client/lib/realize/structure.js` `realize`,
+  `offIn` in `client/lib/realize/models_field.js`). The agent's `switchedOff` walks the same chain.
+- **One helper.** `storeyUnder`, `floorsAt`, `walkStructures` and `look`'s "where you are" take their structures from
+  `bodyStructure` (`mcpl/agent-result.ts`), which applies both rules above. A floor walk's ground (`walkProbeGround`)
+  reads the floor `walkSupport` picked through `storeyUnder`. `look`'s line about a nearby thing describes a structure's
+  rooms from its own record: that tells what the building is, not where a body can stand.

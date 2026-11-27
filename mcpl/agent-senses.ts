@@ -5,7 +5,7 @@ import type { WorldAgent, Person } from "./agent.ts";
 import { bodyOf } from "../shared/components.js";
 import { describeBody, resolveSeat } from "../shared/sockbody.js";
 import { grabOf, describeGrab } from "../shared/grab.js";
-import { type Entity, type Pose, bodyStructure, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
+import { type Entity, type Pose, bodyStructure, noOwnCollider, offRoot, solidOffRecord, isSocketRec, posePosition, PLACE_SIGHT_M } from "./agent-result.ts";
 import { briefingLines } from "../shared/briefing.js";
 import { compass } from "../shared/waterkind.js";
 import { groundChange, groundLine } from "./ground-words.ts";
@@ -606,7 +606,7 @@ export class AgentSenses {
       // RAGDOLL_ROOT_DROP under them (feetY), below its own floor.
       const feet = selfEff?.ok ? me.y : this.a.feetY(this.a.isSlumped());
       for (const e of this.a.entities.values()) {
-        const data = bodyStructure(e);   // as the routes read it: one with collision off has no room to be sealed in
+        const data = bodyStructure(e, this.a.entities);   // as the routes read it: one with collision off, or switched off, has no room to be sealed in
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, feet, me.z);
@@ -698,9 +698,14 @@ export class AgentSenses {
       if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.important ? ", important (always casts)" : ""}${lit.daytime === "full" ? ", burns at noon" : ""}`);
       // a declared collider (the collider component)
       const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
+      // switched off (disabled, itself or up its chain): not drawn and no collider, as in the browser (models_field offIn)
+      // (offRoot: itself, or the thing it hangs under whose switch it is)
+      const dark = offRoot(this.a.entities, e.id);
+      if (dark) aff.push(`switched off${dark === e.id ? "" : ` with [${this.a.handle(dark)}]`} (not drawn, no collider: edit {id: "${this.a.handle(dark)}", set: {"flags.disabled": false}} switches it on)`);
       if ((col === "mesh" || col === "exact" || col === "box") && solidOffRecord(c)) aff.push("collider off: walk-through");   // enabled/blocks, as the walker reads it
-      // a structure's model is only its anchor: no collider of its own (agent-result.ts collisionElsewhere)
-      else if (!c.structure && (col === "mesh" || col === "exact" || col === "box")) aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
+      // no collider of its own (agent-result.ts noOwnCollider): a structure's model is only its anchor, and mounted cargo
+      // collides as its carrier
+      else if ((col === "mesh" || col === "exact" || col === "box") && !noOwnCollider(e, this.a)) aff.push(col === "box" ? "collides as a box" : "collides as its mesh (its triangles)");
       const socks = this.a.socketsOf(e.id);
       if (socks.length) {
         // each socket a person can use says what the body does there (shared/sockbody.js describeBody), and who's on it;
@@ -741,7 +746,7 @@ export class AgentSenses {
       // drawn only, so a walk can pass through them, and saying so saves planning round one that isn't there.
       const many = describeInstances(c[INSTANCES]);
       if (many) aff.push(`${many} (the copies are drawn only: not solid)`);
-      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "description", "openable", "story", "text", "look-at"];
+      const spoken = ["model", "parent", "sockets", "socket", "reactions", "motion", "particles", "picture", "material", "captions", "sound", "lock", "structure", "label", "hidden", "disabled", "description", "openable", "story", "text", "look-at"];
       if (copy) spoken.push("copy-of");
       if (many) spoken.push(INSTANCES);
       if (lit) spoken.push("light");   // described above; a malformed one stays listed

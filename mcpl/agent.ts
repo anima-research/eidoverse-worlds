@@ -1183,8 +1183,10 @@ export class WorldAgent {
           if (fx.ok) this.senses.noteEmitter(actor, id, was?.particles ?? null, now?.particles ?? null, fx.pos, ts);
           else this.noteEffGap(id, fx.why);
         }
-        // a motion moves its support, a collider override changes its policy, and a structure set or removed decides whether it is only an anchor
-        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider" || comp === "structure") this.ground.trackSupport(this.ground.syncSupport(id));
+        // a motion moves its support, a collider override changes its policy, a structure set or removed decides whether it is
+        // only an anchor, and a switch (disabled) takes its collider away or gives it back. Only the thing itself re-syncs:
+        // what hangs under it rides it and supports nothing here (the structures under it are read live, bodyStructure)
+        if (comp === "motion" || comp?.startsWith("motion:") || comp === "collider" || comp === "structure" || comp === "disabled") this.ground.trackSupport(this.ground.syncSupport(id));
         break;
     }
   }
@@ -1787,7 +1789,7 @@ export class WorldAgent {
   private walkStructures(support: WalkSupport): WalkStructure[] {
     const nowMs = this.serverNow(), out: WalkStructure[] = [];
     for (const e of this.entities.values()) {
-      const data = bodyStructure(e);   // one whose collision is off for bodies has no wall to route around (storeyUnder's rule)
+      const data = bodyStructure(e, this.entities);   // one whose collision is off for bodies, or switched off, has no wall to route around (storeyUnder's rule)
       if (!data) continue;
       const skip = (why: string) => {
         if (typeof data !== "object") return;
