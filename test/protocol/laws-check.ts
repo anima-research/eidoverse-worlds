@@ -71,8 +71,8 @@ if (want) {
 check("LWC the rows are labelled (columns: each row's arity is its header's) and the contract says how terrain args are normalised before the height law (defaults, clamps), as the code states them now",
   JSON.stringify(want?.columns) === JSON.stringify(COLUMNS) && want?.contract === CONTRACT && now.terrain.every((t) => t.heights.every((h) => h.length === COLUMNS["terrain[].heights[]"].length)) && now.sky.every((g) => (g.segments as any[]).every((r) => r.length === COLUMNS["sky[].segments[]"].length)),
   { columns: JSON.stringify(want?.columns) === JSON.stringify(COLUMNS), contract: want?.contract === CONTRACT || want?.contract });
-check(`LWV each law names its version (ground ${LAWS.ground.version}, sky ${LAWS.sky.version}), and an earlier laws.json under the same version (the base's, the previous) pinned the same output: a change in pinned output is a new version`, (() => {
-  const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/laws.json";
-  const r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), Object.entries(LAWS).map(([k, L]) => ({ law: k, versionOf: (x: any) => x?.laws?.[k], data: [L.data] })));
-  if (r.out.length) console.log("     ", JSON.stringify(r).slice(0, 400)); return want?.laws?.ground === LAWS.ground.version && want?.laws?.sky === LAWS.sky.version && !r.out.length; })(), want?.laws);
+{ const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/laws.json";
+  let r: any; try { r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), Object.entries(LAWS).map(([k, L]) => ({ law: k, versionOf: (x: any) => x?.laws?.[k], data: [L.data] }))); } catch (err: any) { r = { threw: PH.reason(err) }; }   // a throw is a red row, as N10's; a bug keeps its stack
+  if (r.out?.length) console.log("     ", JSON.stringify(r).slice(0, 400)); const threw = "threw" in r;
+  check(`LWV each law names its version (ground ${LAWS.ground.version}, sky ${LAWS.sky.version}), and an earlier laws.json under the same version (the base's, the previous) pinned the same output: a change in pinned output is a new version`, !threw && want?.laws?.ground === LAWS.ground.version && want?.laws?.sky === LAWS.sky.version && !r.out.length, threw ? { threw: r.threw } : want?.laws); }
 done();
