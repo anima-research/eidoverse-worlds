@@ -93,7 +93,8 @@ const of = { exact: exactDigestOf, rounded: digestOf, replay: (t: string) => rep
 // the old side is always the acknowledgement's receipt, never a log read from git (a merge parent may hold another dialect)
 const covers = (a: any, ver: string, d: Record<string, string>, nowV: Record<string, string>, R = FR.receiptOf(a, DIR)) => [...R.bad, ...FR.uncovered(a, ver, scenarios, d, nowV, R.log, cur, of)];
 for (const [F, now] of [[`${REL}digests.json`, pinned], [`${REL}digests-exact.json`, exact]] as const) {
-  const e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null));
+  let e: any; try { e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null)); }
+  catch (err: any) { check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: nothing, the rule threw)`, false, { threw: PH.reason(err) }); continue; }   // one red row, as N10's
   const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => { const m = Object.entries<any>(d).filter(([s, x]) => now?.[ver]?.[s] !== x);
     const a = F.endsWith("exact.json") && m.length ? repins.find((r) => r.exactOld === FR.sha(PH.showAt(ROOT, rev, F) ?? "") && r.exactNew === FR.sha(fs.readFileSync(ROOT + F, "utf8"))) : null;
     const why = a ? covers(a, ver, d, now?.[ver] ?? {}) : [];

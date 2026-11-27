@@ -9,10 +9,16 @@
 //   the previous version: the file as it was before its newest change (the working tree's, if uncommitted; else the commit
 //     before the newest commit that changed it, along first parents), which is how kernel-check finds its base. This holds
 //     a branch that brought the file new: its latest change is judged even though the base never had it.
+// The version rules (sameVersionChanged, engine-check EN4) judge both, reading them as main's code does (readAsMain). The changelog rule (unacknowledged) judges both on
+// main itself (the base is HEAD), with no base, or with a base that isn't an ancestor of HEAD; on a branch whose base is
+// an ancestor of HEAD it judges only the base (see unacknowledged).
 // @ts-nocheck
 import { spawnSync } from "node:child_process";
 
-const git = (root: string, args: string[]) => { const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 1 << 28 }); return r.status === 0 ? r.stdout : null; };
+/** git's answer with its exit status and its own words on stderr, for the callers that report a failure. */
+const gitR = (root: string, args: string[]) => { const r = spawnSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
+  return { ok: r.status === 0, status: r.status, out: r.stdout ?? "", err: (r.stderr ?? "").trim() || r.error?.message || `exit ${r.status}` }; };
+const git = (root: string, args: string[]) => { const r = gitR(root, args); return r.ok ? r.out : null; };
 /** A file at a commit, or null where it didn't exist (or there's no git). */
 export const showAt = (root: string, rev: string, file: string) => git(root, ["show", `${rev}:${file}`]);
 
@@ -54,29 +60,98 @@ export function addedSince(root: string, rev: string, file: string) {
   return d.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++")).map((l) => l.slice(1));
 }
 
-/** The earlier versions to judge: [{rev, why, was: {file: parsed|null}}], the base's and the previous one (deduplicated;
- *  an earlier version where none of the files existed is left out, since a file's first version changes nothing). */
-export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
+/** The earlier versions that could be judged, chosen before any of them is read: [{rev, why}], the base's and the previous
+ *  one (deduplicated). A rule picks among them first and loads only those it judges, so a version it doesn't judge (a
+ *  branch's discarded pin, under the changelog rule) is never parsed. */
+export function revisions(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
   const base = baseOf(root, argv); const prev = previousOf(root, files, readNow, argv);
-  const out: { rev: string; why: string; was: Record<string, any> }[] = [];
-  for (const [rev, why] of [[base, "the base"], [prev, "the previous version"]] as const) {
-    if (!rev || out.some((o) => o.rev === rev)) continue;
-    const was = Object.fromEntries(files.map((f) => { const t = showAt(root, rev, f); return [f, t == null ? null : JSON.parse(t)]; }));
-    if (files.some((f) => was[f] != null)) out.push({ rev, why, was });
-  }
-  return { base, prev, out };
+  const revs: { rev: string; why: string }[] = [];
+  for (const [rev, why] of [[base, "the base"], [prev, "the previous version"]] as const) if (rev && !revs.some((o) => o.rev === rev)) revs.push({ rev, why });
+  return { base, prev, revs };
 }
 
-/** The breaks no changelog line acknowledges: for each earlier version, `breaksOf(was, now)` (texts), each of which must be a
- *  `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]}; out [] = held. */
+/** The files at one earlier version, parsed: {file: pin | null}, null where that revision's tree hasn't the path. A path in
+ *  the tree must read as a pin: a blob git can't read (a partial clone lacks it), text that isn't JSON, or JSON null
+ *  throws, naming the file and the revision (and git's own words), and is never counted as "no file then". */
+export function load(root: string, rev: string, why: string, files: string[]) {
+  const at = `${rev.slice(0, 8)} (${why})`;
+  return Object.fromEntries(files.map((f) => {
+    const ls = gitR(root, ["ls-tree", "--name-only", rev, "--", f]); if (!ls.ok) throw new Error(`pinhistory: can't list ${f} at ${at}: git: ${ls.err}`);
+    if (!ls.out.trim()) return [f, null];
+    const t = gitR(root, ["show", `${rev}:${f}`]);
+    if (!t.ok) throw new Error(`pinhistory: ${f} at ${at} is in its tree but can't be read: git: ${t.err}. A partial clone may lack the blob: fetch it (a full clone, or git fetch --refetch) and run again`);
+    let v: any; try { v = JSON.parse(t.out); } catch (err: any) { throw new Error(`pinhistory: ${f} at ${at} is not valid JSON (${err?.message ?? err}), so nothing can be judged from it`); }
+    if (v == null) throw new Error(`pinhistory: ${f} at ${at} is JSON null, not a pin`);
+    return [f, v];
+  }));
+}
+
+/** Load the chosen versions; a version where none of the files existed is left out, since a file's first version changes nothing. */
+const loaded = (root: string, revs: { rev: string; why: string }[], files: string[]) =>
+  revs.map(({ rev, why }) => ({ rev, why, was: load(root, rev, why, files) })).filter((o) => files.some((f) => o.was[f] != null));
+
+/** The version rules' read of one earlier version, as main's code reads it: a file git can't show (absent, or a blob a
+ *  partial clone lacks) is no file, and JSON null is no version, so a version where every file is either is left out.
+ *  Text that isn't JSON throws (main's code threw too), now naming the file and the revision. The changelog rule reads
+ *  strictly instead (load). */
+function readAsMain(root: string, rev: string, why: string, files: string[]) {
+  return Object.fromEntries(files.map((f) => { const t = showAt(root, rev, f); if (t == null) return [f, null];
+    try { return [f, JSON.parse(t)]; } catch (err: any) { throw new Error(`pinhistory: ${f} at ${rev.slice(0, 8)} (${why}) is not valid JSON (${err?.message ?? err}), so nothing can be judged from it`); } }));
+}
+
+/** The earlier versions to judge, both of them read as main's code reads them (readAsMain): [{rev, why, was: {file:
+ *  parsed|null}}] (the version rules'). */
+export function earlier(root: string, files: string[], readNow: (f: string) => string | null, argv?: string[]) {
+  const { base, prev, revs } = revisions(root, files, readNow, argv);
+  return { base, prev, out: revs.map(({ rev, why }) => ({ rev, why, was: readAsMain(root, rev, why, files) })).filter((o) => files.some((f) => o.was[f] != null)) };
+}
+
+/** A caught throw's words for a red row: pinhistory's own message as it is; anything else (a bug in a suite) with its
+ *  stack; never empty, so `"threw" in r` and the message agree. TRV, LWV, EN4 and N10 catch with it. */
+export const reason = (err: any) => { const m = String(err?.message ?? err ?? ""); return (m.startsWith("pinhistory:") ? m : String(err?.stack || m)) || "a throw with no message"; };
+
+/** On a branch: the base is an ancestor of HEAD and not HEAD itself. A git failure is a throw, never read as an answer. */
+function onBranchOf(root: string, base: string) {
+  const head = gitR(root, ["rev-parse", "HEAD"]); if (!head.ok) throw new Error(`pinhistory: can't read HEAD: git: ${head.err}`);
+  if (head.out.trim() === base) return false;
+  const a = gitR(root, ["merge-base", "--is-ancestor", base, "HEAD"]); if (a.status === 0) return true; if (a.status === 1) return false;
+  throw new Error(`pinhistory: can't tell whether the base ${base.slice(0, 8)} is an ancestor of HEAD: git: ${a.err}`);
+}
+
+/** The breaks no changelog line acknowledges: for each earlier version judged, `breaksOf(was, now)` (texts), each of which
+ *  must be a `  - <text>` line `changelog` gained since that version's commit. {judged: [rev why], out: [{rev, text}]}.
+ *  Held is out [] AND judged non-empty: callers (D13, N10) refuse an empty judged as "judged nothing". The versions to
+ *  judge are chosen first and only those are read (load), so a branch's discarded pin, even one that isn't JSON, plays no
+ *  part; a version that is judged and holds a file that can't be read as a pin (a blob missing from a partial clone, text
+ *  that isn't JSON, JSON null) throws, naming the file and the revision.
+ *  On a branch (the base an ancestor of HEAD and not HEAD itself, as under CI's pull_request ref, where it is HEAD^1) only
+ *  the base is judged: main only ever receives a branch's net change, and the base judges all of it. The previous version
+ *  would judge states main never holds, and where main has the path it composes main's own steps since into breaks no
+ *  line names (#363: main's light.decay A → B → C, a line each, judged from the branch's pre-merge pin as A → C).
+ *  ASSUMPTIONS: a branch's intermediate steps are not judged, only what reaches main, so a stacked PR, or a staging server
+ *  that keeps data across a branch's commits, is not protected by this rule. The base is the newest of the local
+ *  origin/anima/upstream main refs, so a stale local main ref can make a local run wrong either way: lenient (a path main
+ *  added since the stale ref is new to it, so a break of it goes unjudged) or falsely red (main's own acknowledged steps
+ *  since the stale ref compose into a break no line names, as #363's did). CI's fresh fetch is authoritative.
+ *  A base whose tree has none of the paths (the branch brings them new, #260) still counts as judged: nothing in main can
+ *  break.
+ *  On main itself (the base is HEAD), with no base, or with a --base / PIN_BASE that isn't an ancestor of HEAD, the
+ *  previous version is judged too; on main that is main's newest pin-changing commit (a rebase-merge, or several commits
+ *  pushed together, gets only its last one judged, as before). The version rules (sameVersionChanged, engine-check EN4)
+ *  compare for equality under a version's name, where an older version can't compose into a false break; they judge
+ *  both, as before. */
 export function unacknowledged(root: string, files: string[], changelog: string, readNow: (f: string) => string | null, breaksOf: (was: Record<string, any>, now: Record<string, any>) => string[], argv?: string[]) {
   const now = Object.fromEntries(files.map((f) => { const t = readNow(f); return [f, t == null ? null : JSON.parse(t)]; }));
-  const e = earlier(root, files, readNow, argv); const out: { rev: string; text: string }[] = [];
-  for (const { rev, was } of e.out) {
+  const e = revisions(root, files, readNow, argv); const out: { rev: string; text: string }[] = [];
+  const onBranch = !!e.base && onBranchOf(root, e.base);
+  const judging = loaded(root, onBranch ? e.revs.filter((o) => o.why === "the base") : e.revs, files);   // chosen first, then read
+  for (const { rev, was } of judging) {
     const said = new Set(addedSince(root, rev, changelog).map((l) => l.trim()));
     for (const t of breaksOf(was, now)) if (!said.has(`- ${t}`)) out.push({ rev: rev.slice(0, 8), text: t });
   }
-  return { judged: e.out.map((o) => `${o.rev.slice(0, 8)} (${o.why})`), base: e.base?.slice(0, 8) ?? null, out };
+  const judged = judging.map((o) => `${o.rev.slice(0, 8)} (${o.why})`);
+  if (onBranch && !judging.length) judged.push(`${e.base!.slice(0, 8)} (the base, whose tree has none of these files: they are new)`);
+  return { judged, base: e.base?.slice(0, 8) ?? null, out };
 }
 
 /** "A change meant to alter results is a new version" (the conformance files): for each law {law, versionOf, data} of a vector
