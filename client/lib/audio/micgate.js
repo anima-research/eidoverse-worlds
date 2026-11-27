@@ -178,7 +178,7 @@ export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running
 // A push-to-talk release's tail is the other way about: its hold is scheduled on the audio clock, so a suspend inside it
 // leaves the rest of the hold to run on resume, by when the tail is over on the wall clock: the held word would go out
 // with no gold. driveGate cuts at once when a tick finds the context suspended, but only if a tick runs in time (timers
-// are throttled exactly when contexts are suspended). So the moment the context leaves 'running', a pending tail is cut
+// are often throttled when contexts are suspended). So the moment the context leaves 'running', a pending tail is cut
 // from the gain's own value, and on resume only the cut's 5 ms ramp is left, as after any cut.
 // One listener per context (_anchored), reading the module's live _ctx, _gain and _env: a rebuilt lane on the same
 // context adds none, and a listener on a context the gate has left does nothing.
@@ -188,7 +188,7 @@ function anchorOnResume(ctx) {
   _anchored.add(ctx);
   ctx.addEventListener('statechange', () => {
     if (ctx !== _ctx || !_gain) return;
-    if (ctx.state !== 'running') { cutPendingTail(); return; }
+    if (!gateRunning()) { cutPendingTail(); return; }
     if (_env.cutEnd !== undefined) return;
     let g = NaN;
     try { g = Number(_gain.gain.value); } catch { /* unreadable: keep the envelope */ }

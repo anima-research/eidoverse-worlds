@@ -158,9 +158,9 @@ function releaseKey(release) {
     seen ??= { ms: performance.now() - t0, late: refFired, gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState(),
       xrAsked: xrPaints.at(-1) || '', title: tipNow() };
   });
-  // armed before the release, so it falls due after an on-time close (~56 ms) however late the process runs them both
-  const ref = setTimeout(() => { refFired = true; }, TAIL_LATE_MS);
   release();
+  // armed after the release, so it falls due after an on-time close (~56 ms) however late the process runs them both
+  const ref = setTimeout(() => { refFired = true; }, TAIL_LATE_MS);
   const atOnce = { gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState() };
   return { atOnce, closed: async () => { const r = await tryUntil('the delayed cut closes', () => seen, { ms: 1000 }); off(); clearTimeout(ref); return r || null; } };
 }
