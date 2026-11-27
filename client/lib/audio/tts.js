@@ -8,6 +8,7 @@ import { report, bus } from '../base.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
 import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
+import { SYNTH_AUDIBLE } from './micgate.js';
 
 // The registered synthesizer, (text) => Promise<{pcm: Int16Array, sampleRate}>; null = microphone only.
 let ttsFn = null;
@@ -56,8 +57,8 @@ const CHUNK_MS = 20;
 
 const canSynthesize = () => typeof MediaStreamTrackGenerator !== 'undefined';
 
-/** The live generator track, rebuilt if it ended; a rebuild notifies voicesource's hooks so
- *  voicesfubridge re-binds the senders (replaceTrack, no renegotiation). */
+/** The live generator track, rebuilt if it ended; a rebuild notifies voicesource's hooks, and voicesfubridge's hook says
+ *  when it re-publishes. A new synth track reaches a sender only through micstate.js gateFor, which applies mute to it. */
 export function ensureGenerator() {
   if (genTrack && genTrack.readyState === 'live') return genTrack;
   const replacing = !!genTrack;
@@ -302,12 +303,19 @@ export function startPacer() {
     for (let n = 0; n + FRAME <= owed; n += FRAME) {
       const data = new Float32Array(FRAME);
       fillSpeech(data);
+      // what was written is what the senders carry: the HUD's "your voice is going out" reads it (micstate.js micGateInfo),
+      // because the analyser that could measure the track runs on the AudioContext clock this pacer exists to avoid
+      let sq = 0;
+      for (let k = 0; k < FRAME; k++) sq += data[k] * data[k];
+      const rms = Math.sqrt(sq / FRAME);
+      _lastRms = rms;
       try {
-        // a stream closed between the liveness check and write() rejects async; the next tick rebuilds
+        // a stream closed between the liveness check and write() rejects async; the next tick rebuilds. The frame
+        // counts as sent once the generator has taken it, never before: a rejected write stamps nothing
         void writer.write(new AudioData({
           format: 'f32', sampleRate: OUT_RATE, numberOfFrames: FRAME,
           numberOfChannels: 1, timestamp: Math.round((playhead / OUT_RATE) * 1e6), data,
-        })).catch(() => {});
+        })).then(() => { if (rms > SYNTH_AUDIBLE) _audibleAt = performance.now(); }, () => {});
       } catch (e) { report('tts write', e); }
       playhead += FRAME;
     }
@@ -324,6 +332,8 @@ export function stopPacer() {
   for (const s of _monSources) { try { s.stop(); } catch { /* already ended */ } }
   _monSources.clear();
 }
+
+let _lastRms = 0, _audibleAt = 0;   // the last frame the pacer wrote, and when (performance.now) the generator last took one over SYNTH_AUDIBLE
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */
 export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhead });
@@ -422,4 +432,7 @@ setSynthProvider({
   available: () => isTtsEnabled() && canSynthesize(),
   start: () => { const t = ensureGenerator(); startPacer(); return t; },
   stop: () => stopPacer(),
+  // what the pacer wrote, not what an analyser hears (voicesource.js passes these on with the synthetic stream)
+  audibleAt: () => _audibleAt,
+  level: () => (pacer ? _lastRms : 0),
 });

@@ -119,7 +119,10 @@ wireSettledPose(settledPose);
 // …and whoever may no longer be here (a closed door, an ended grant, a demotion in a world that admits only people
 // listed) is removed (server/access.ts settleAccess, 4010).
 wireRights(
-  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } }
+  // the sanctions sweep first: rights computed by the clock must not tell someone a timed voice mute has ended while
+  // the SFU, which only the sweep releases, still drops them (their mic glyph gold, nothing heard; #349)
+  (w) => { try { sanctionSweep(w); } catch (err) { console.error(`[world:${w.name}] sanction sweep (rights)`, err); }
+    for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: rightsFor(w, c) })); } catch { /* gone */ } }
     settleAccess(w, expel as Expel); },
 );
 

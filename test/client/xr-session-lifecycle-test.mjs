@@ -275,4 +275,36 @@ console.log('\n— the PRODUCT runs this sequence (the wiring the reviewer broke
     (xr.match(/nativeRAF/g) ?? []).length <= 4, `${(xr.match(/nativeRAF/g) ?? []).length} references`);
 }
 
+console.log('\n— a frame still waiting on the session when it ends is handed to the window clock —');
+{
+  // The session never calls what is waiting on it once it has ended, so a rAF loop (the audio panel's level bar)
+  // died mid-state on every VR exit. The restore hands each waiting callback on, once.
+  const w = fakeWindow(), s = fakeSession();
+  w.__xrClockGen = 0;
+  installFrameClock({ win: w, session: s, saved: null });
+  const ran = [];
+  w.requestAnimationFrame((t) => ran.push(['loop', t]));
+  const cancelId = w.requestAnimationFrame(() => ran.push(['cancelled']));
+  w.cancelAnimationFrame(cancelId);
+  const lateCalls = s.calls.slice();   // what the session holds, as a runtime that calls late would
+  check('setup: both callbacks went to the session clock', s.calls.length === 2 && w.calls.length === 0, `${s.calls.length}/${w.calls.length}`);
+  s.end();
+  check('at the end, the waiting callback is handed to the window clock (and only that one: a cancelled one is not)',
+    w.calls.length === 1, `${w.calls.length} on the window`);
+  w.calls.splice(0).forEach((cb) => cb(42));
+  check('…and it runs there', ran.length === 1 && ran[0][0] === 'loop' && ran[0][1] === 42, JSON.stringify(ran));
+  lateCalls.forEach((cb) => cb(43));   // a session that calls back after its end anyway
+  check('…once: a late call from the ended session does not run it again', ran.length === 1, JSON.stringify(ran));
+  // superseded: a newer session owns the clock, so the old one's waiting callbacks go onto the newer shim
+  const w2 = fakeWindow(), a = fakeSession(), b = fakeSession();
+  w2.__xrClockGen = 0;
+  const fcA = installFrameClock({ win: w2, session: a, saved: null });
+  const sawA = [];
+  w2.requestAnimationFrame(() => sawA.push('a-frame'));
+  installFrameClock({ win: w2, session: b, saved: fcA.native });   // save-once, as xr.js passes it
+  a.end();
+  check('superseded: the old session\'s waiting callback goes to the clock the window has now (the newer session)',
+    b.calls.length === 1 && w2.calls.length === 0, `newer=${b.calls.length} window=${w2.calls.length}`);
+}
+
 S.done();

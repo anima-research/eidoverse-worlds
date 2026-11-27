@@ -28,7 +28,15 @@ export const micLive = () => _mic;
 export const earOn = () => _ear;
 export const glyphPinned = (k) => !!_pinned[k];
 export const setGlyphPinned = (k, v) => { _pinned[k] = !!v; };
-export const micGlyph = G('mic');
+// the mic's indicator key: on/off by default; __setMicIndicator sets it (gold, a mute) as mictoggle.js would announce
+// it, and 'flip' makes every read answer the other of hot/on (two reads in a row disagree)
+let _ind = null, _flip = false;
+export const __setMicIndicator = (k) => { _flip = k === 'flip'; _ind = _flip ? 'on' : k; };
+const indRead = () => { if (_flip) _ind = _ind === 'hot' ? 'on' : 'hot'; return _ind ?? (_mic ? 'on' : 'off'); };
+const GK = (key, size = 16) => `<svg data-glyph="mic" data-key="${key}" width="${size}" height="${size}" viewBox="0 0 26 26"><circle cx="13" cy="13" r="6"/></svg>`;
+export const micGlyph = (size = 16) => GK(indRead(), size);
+export const micIndicatorState = () => indRead();   // ui-menu.js re-stamps the mic row when this changes
+export const micIndicator = () => { const state = indRead(); return { state, svg: (size = 64) => GK(state, size) }; };
 export const earGlyph = G('ear');
 export const xrGlyph = G('xr');
 export const xrGlyphAvailable = () => false;

@@ -86,6 +86,7 @@ const EXPECT: Record<string, number> = {
   "join-rfc005": 20,
   "denoise": 6,
   "micstate": 0.6,
+  "micgate-onset": 0.1, "mictoggle-glyph": 6.4, "mic-meter-gate": 1.6,
 };
 // PROTOCOL_TIMEOUT_SCALE=<factor> stretches (or, to test the kill, shrinks) every timeout; the manifest shows factor 1
 const TIMEOUT_SCALE = Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) > 0 ? Number(process.env.PROTOCOL_TIMEOUT_SCALE ?? 1) : 1;

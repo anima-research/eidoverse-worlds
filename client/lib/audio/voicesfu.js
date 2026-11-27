@@ -9,7 +9,8 @@ import { audioContext } from './audioctx.js';
 import { logChat } from '../ui/chat.js';   // a dead media path must be visible to the person, not only the console
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from '../debuglog.js';
-import { rawMicStream, setMicLive, dropDevice, gateFor, gateIsUnavailable, ungatedAllowed } from './micstate.js';
+import { rawMicStream, setMicLive, dropDevice, gateFor, gateIsUnavailable, ungatedAllowed,
+  setLaneEnabled, setLaneCarrier } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 let _myAn = null, _myBuf = null, _myStream = null;   // my outbound analyser (sfuMyLevel); cleared by sfuConnect
@@ -20,6 +21,16 @@ const speakers = new Map();           // id → { audio, stream, wantVolume, an,
 
 export const sfuActive = () => !!pc && pc.connectionState === 'connected';
 export const sfuMicOn = () => !!micStream && wantMic;
+/** Is this lane reaching the server right now? The connection is up (ICE and DTLS: a stalled or failed ICE is not), the
+ *  lane is what we published, and one of its tracks is on a sender whose negotiated direction sends. A track placed on
+ *  a sender that is not yet negotiated (replaceTrack before the answer, a bare pre-offer addTrack) is not carried. */
+export function sfuCarries(lane) {
+  if (!sfuActive() || !lane || lane !== micStream) return false;
+  const tracks = lane.getTracks?.() ?? [];
+  return pc.getTransceivers().some((t) => !!t.sender?.track && tracks.includes(t.sender.track)
+    && (t.currentDirection === 'sendonly' || t.currentDirection === 'sendrecv'));
+}
+setLaneCarrier(sfuCarries);   // micstate.js roomHears(): the transport's leg of "your voice is going out"
 /** Intent, as distinct from sfuMicOn(): a press before `pc` exists sets only this, and the bridge
  *  replays it once the credential lands. */
 export const sfuMicWanted = () => wantMic;
@@ -196,13 +207,14 @@ export async function sfuMic(on = true) {
       why('publish', 'swapping to synth');
       return void sfuPublish();
     }
-    micStream?.getTracks().forEach((t) => (t.enabled = false));
+    // through micstate, which holds the lane's on/off: an unmute must not turn back on what this turned off
+    if (micStream) setLaneEnabled(false, micStream);
     try { (await import('./micstate.js')).setMicLive(false); } catch { /* module may be absent in probes */ }
     return;
   }
   // a real device is re-enabled in place; a synthetic stream is dropped and a device re-acquired
   if (micStream && !micStream.synthetic) {
-    micStream.getTracks().forEach((t) => (t.enabled = true));
+    setLaneEnabled(true, micStream);
     setMicLive(true);
     return;
   }

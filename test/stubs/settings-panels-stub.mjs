@@ -84,6 +84,8 @@ export const earOn = () => false;
 export const glyphPinned = () => false;
 export const setGlyphPinned = rec('setGlyphPinned');
 export const micGlyph = () => '';
+export const micIndicatorState = () => 'off';   // ui-menu.js keys the mic row's repaint on it
+export const micIndicator = () => ({ state: 'off', svg: () => '' });   // ui-menu.js takes the mic row's key and glyph from one read
 export const earGlyph = () => '';
 export const xrGlyph = () => '';
 export const xrGlyphAvailable = () => false;

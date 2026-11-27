@@ -4,7 +4,7 @@ import { confirmCenter } from '../edit/confirmcenter.js';
 import { bus, CONFIG, forgetRememberedWorlds } from '../base.js';
 import { versionReady } from '../version.js';
 import { resizeZoneAt, getFrame, isLocked, setLocked } from './windows.js';
-import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
+import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, micIndicator, earGlyph, xrGlyph, xrGlyphAvailable, flipXr } from '../audio/mictoggle.js';
 import { fsvg } from './icons.js';
 import { paint, escapeHtml } from './markup.js';
 import { register as registerAction } from './actions.js';
@@ -75,6 +75,8 @@ function initEMenu() {
   document.body.appendChild(layoutBar);
   addEventListener('resize', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
   bus.on('dock-moved', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
+  // the mic row follows the HUD glyph as it changes (gold, a mute), not only at the dock's 2 s sweep
+  bus.on('mic:indicator', () => paintEMenu());
 
   // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (windows.js's Tab toggle stands
   // aside for all three: escapeIsClaimed sees the open menu and body.arranging)
@@ -320,10 +322,13 @@ function paintEMenu() {
     const on = id === 'glyph:mic' ? micLive() : id === 'glyph:ear' ? earOn() : id === 'lantern' ? isLanternOpen()
       : entry?.action ? !!entry.active?.() : !!getFrame(id)?.visible;
     row.classList.toggle('open', on);
-    // the glyph bakes its ink at build; re-stamp it when the state flips
-    const glyph = id === 'glyph:mic' ? micGlyph : id === 'glyph:ear' ? earGlyph : id === 'glyph:xr' ? xrGlyph : null;
-    if (glyph && row.dataset.on !== String(on)) {
-      row.dataset.on = String(on);
+    // the glyph bakes its ink at build; re-stamp it when what it draws changes (the mic: on/off, mute, gold, synth)
+    // the mic's key and glyph come from one read (micIndicator), so a change between two reads can't set them apart
+    const ind = id === 'glyph:mic' ? micIndicator() : null;
+    const glyph = ind ? ind.svg : id === 'glyph:ear' ? earGlyph : id === 'glyph:xr' ? xrGlyph : null;
+    const drawn = ind ? ind.state : String(on);
+    if (glyph && row.dataset.on !== drawn) {
+      row.dataset.on = drawn;
       const g = row.querySelector('svg');
       if (g) g.outerHTML = glyph(16);
     }
