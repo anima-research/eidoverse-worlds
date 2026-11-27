@@ -14,8 +14,9 @@ import { PICTURE_LIT, PICTURE_DESCRIPTION_MAX } from './picture.js';
 export const MATERIAL_NODE_MAX = 64;
 const KNOWN_KEYS = new Set(['node', 'texture', 'description', 'lit']);
 
-/** Validate an authored bag: {ok: false, why} or {ok: true, material, tier, notes}. */
-export function normalizeMaterial(data) {
+/** Validate an authored bag: {ok: false, why} or {ok: true, material, tier, notes}.
+ *  `clip`: a stored bag being read, so an over-long description is clipped with a note; a write refuses it (as picture.js). */
+export function normalizeMaterial(data, { clip = false } = {}) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) return { ok: false, why: 'material data must be an object {node, texture, description?, lit?}' };
   if (typeof data.node !== 'string' || !data.node.trim() || data.node.length > MATERIAL_NODE_MAX) {
     return { ok: false, why: `node must name a node of its model (a non-empty string, ≤${MATERIAL_NODE_MAX} characters): measure lists them` };
@@ -27,7 +28,11 @@ export function normalizeMaterial(data) {
   if (unknown.length) notes.push(`ignored by the evaluator: ${unknown.join(', ')} (accepted: ${[...KNOWN_KEYS].join(', ')})`);
   const material = { node: data.node.trim(), texture: data.texture, lit: 'scene' };
   if (data.description != null) {
+    // measured as it is kept, collapsed, as picture.js and sound.js measure it (their write paths commit that value, so the
+    // door's ranges.maxLen measures the same string: #377 review 2). Nothing writes through this helper yet: the realizer
+    // reads with clip, and a write goes to the door as written
     const d = String(data.description).replace(/\s+/g, ' ').trim();
+    if (graphemes(d) > PICTURE_DESCRIPTION_MAX && !clip) return { ok: false, why: `description is ${graphemes(d).toLocaleString('en')} characters (at most ${PICTURE_DESCRIPTION_MAX})` };
     if (graphemes(d) > PICTURE_DESCRIPTION_MAX) { notes.push(`description clipped to ${PICTURE_DESCRIPTION_MAX} characters`); material.description = graphemeList(d).slice(0, PICTURE_DESCRIPTION_MAX).join(''); }
     else if (d) material.description = d;
   }

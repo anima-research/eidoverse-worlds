@@ -26,6 +26,13 @@ const W = scratchWorld("help-words").seed({ cup: { model: "cup.glb", pos: [0, 0,
 { const r = W.call("set", { id: "cup", component: "door", value: { open: false } }); const said = `${r.refused?.reason ?? ""}`;
   check("HW4 set door is refused pointing at openable, with no review tag in the words", r.refused?.code === "schema" && /openable/.test(said) && !TAG.test(said), said); }
 
+// HW8 physics-volume's modes say only walk and swim change speed (shared/mover.js asks for those two; the authority's track reads all four), and say it is a list
+{ const pv = COMPONENTS["physics-volume"]; const docs = pv.docs.modes, help = pv.help;
+  const honest = (s) => /only walk and swim change a body's speed yet/.test(s) && /fly and climb are accepted/.test(s) && /nothing slows or boosts them/.test(s);
+  // each says it is a list where it names the modes (the help's modes? entry opens with it), so neither reads as alternatives
+  const listed = /^a list of the movement modes/.test(docs) && /modes\? \(a list of walk \| swim \| fly \| climb, e\.g\. \['swim'\]/.test(help);
+  check("HW8 physics-volume docs.modes and help say a list, and that fly and climb are accepted but change no one's speed yet", honest(docs) && honest(help) && listed, { docs, help }); }
+
 // HW5 the Light record's note names the light component's real wire keys (componentspec light.fields)
 { const note = RECORDS.Light?.note ?? ""; const keys = (note.match(/comp\.light \{([^}]*)\}/)?.[1] ?? "").split(/,\s*/).filter(Boolean);
   const fields = Object.keys(COMPONENTS.light.fields), stray = keys.filter((k) => !fields.includes(k));

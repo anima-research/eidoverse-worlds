@@ -63,7 +63,7 @@ async function wear(id, m, rev) {
 function applyFrom(id, data) {
   const rev = bump(id);
   if (data == null) { pending.delete(id); takeOff(id); return; }
-  const n = normalizeMaterial(data);
+  const n = normalizeMaterial(data, { clip: true });   // stored: an over-long description is clipped, not torn down
   if (!n.ok) { console.warn(`[material] ${id}: ${n.why}`); pending.delete(id); takeOff(id); return; }
   void wear(id, n.material, rev);
 }

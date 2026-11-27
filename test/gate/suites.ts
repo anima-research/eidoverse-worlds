@@ -75,6 +75,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["fp-view", "client/fp-view-test.ts", 1], // the first-person eye and exclusion contract (#75)
   ["reachwire", "shared/reachwire-test.ts", 1], // the reach descriptor grammar and its event edges
   ["reach", "shared/reach-test.ts", 1], // two-bone IK geometry: no rig, no renderer, no server
+  ["text", "shared/text-test.ts", 1], // shared/text.js directionOf: a paragraph's direction is its first strong character's, R/AL exactly (digits, neutrals and marks are skipped: G2-082, #377)
   ["posture-tiles", "client/posture-tiles-test.ts", 1], // the action bar's posture tiles drive controller.js sitHere/standUp/getPosture
   ["poseclip-parity", "mcpl/poseclip-parity-test.ts", 1], // headless pose-clip joints equal the browser mixer's on the committed fixture
   ["pose-handler", "server/pose-handler-test.ts", 1], // the pose fence is the real "pose" handler's: non-finite and oversized poses dropped; #274: a lying body's `floor` only if finite
@@ -254,6 +255,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["batch2", "protocol/batch2-check.ts", 1], // build mode v1 batch 2: story, text, picture, sound (+ where media may come from), look-at, Credits in History
   ["describe-particles", "protocol/describe-particles-check.ts", 1], // R 10-07: description (the accessibility reading) and particles as effect documents (Godot's CPUParticles3D ported)
   ["client-b2", "protocol/batch2-probe.ts", 1],  // batch 2 in headless Chromium: a stage per component, and an untrusted link never fetched without the viewer's opt-in
+  ["material-realizer", "client/material-realizer-test.ts", 1], // the material host wears a stored bag, clipping an over-long description rather than taking it off (#377)
   ["picture-note", "client/picture-note-test.ts", 1], // the picture block's status line: survives a repaint and a demote/promote, not a remove; an agreeing echo keeps it, a disagreeing one retires it
   ["access-panel", "protocol/access-panel-probe.ts", 1], // World Settings › Who may come in › Listed here in headless Chromium: listed rows, add by a name seen here or an exact identity, the authority's refusal in words
   ["lock-strength", "client/lock-strength-test.ts", 1], // review of PR #260 (edit/panels.js:479): the Hierarchy row's padlock word is the lock the thing holds now: a builder's re-lock after an owner's reads as a builder's, and a refused ask is asked again

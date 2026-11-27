@@ -235,7 +235,29 @@ await tryRow('DS', async () => {
     const wp = Pi.normalizePicture(lp), ws = So.normalizeSound(ls), rp = Pi.normalizePicture(lp, { clip: true }), rs = So.normalizeSound(ls, { clip: true });
     check('DS7 an over-long description: a write refuses it, a read clips it to the cap with a note', !wp.ok && !ws.ok && rp.ok && rp.picture.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rs.ok && rs.sound.description === 'é'.repeat(So.SOUND_DESCRIPTION_MAX) && rp.notes.some((n) => /clipped/.test(n)) && rs.notes.some((n) => /clipped/.test(n)), [wp, rp.ok && rp.notes, rs.ok && rs.notes]);
     const src = (f) => read(`client/lib/realize/${f}`);
-    check('DS7 …the realizers read a stored bag that way, so it isn\'t torn down', /function applyFrom[\s\S]{0,200}normalizePicture\(data, \{ clip: true \}\)/.test(src('pictures.js')) && /function applyFrom[\s\S]{0,200}normalizeSound\(data, \{ clip: true \}\)/.test(src('sounds.js'))); }
+    check('DS7 …the realizers read a stored bag that way, so it isn\'t torn down', /function applyFrom[\s\S]{0,200}normalizePicture\(data, \{ clip: true \}\)/.test(src('pictures.js')) && /function applyFrom[\s\S]{0,200}normalizeSound\(data, \{ clip: true \}\)/.test(src('sounds.js')));
+    // material's description is the same field with the same cap (G3-095): one rule for all three
+    const Ma = await import('../../shared/material.js'), lm = { node: 'screen', texture: 'store/images/0123456789abcdef.png', description: long };
+    const wm = Ma.normalizeMaterial(lm), rm = Ma.normalizeMaterial(lm, { clip: true });
+    check('DS7 …material too: a write refuses an over-long description, a read clips it with a note', !wm.ok && /at most 200/.test(wm.why ?? '') && rm.ok && rm.material.description === 'é'.repeat(Pi.PICTURE_DESCRIPTION_MAX) && rm.notes.some((n) => /clipped/.test(n)), [wm, rm.ok && rm.notes]);
+    // its realizer reads a stored bag that way: test/client/material-realizer-test.ts MR1 runs applyFrom's own call
+  }
+  { // every write path commits the helper's value (pictures.js hang, sounds.js play/pause, editschema's picture/sound
+    // drafts), so the door measures the COLLAPSED text: the helper measures that too, and the two agree on what is sent
+    const Ma = await import('../../shared/material.js');
+    const W = scratchWorld('ds-count').seed({ frame: { pos: [0, 0, 0] }, radio: { pos: [1, 0, 0] }, telly: { pos: [2, 0, 0] } });
+    const bag = { picture: (d) => ({ src: 'store/images/0123456789abcdef.png', description: d }), sound: (d) => ({ src: 'store/audio/0123456789abcdef.ogg', description: d, t0: 1 }),
+      material: (d) => ({ node: 'screen', texture: 'store/images/0123456789abcdef.png', description: d }) };
+    const helper = { picture: (v) => Pi.normalizePicture(v), sound: (v) => So.normalizeSound(v), material: (v) => Ma.normalizeMaterial(v) };
+    const sent = (c, h) => h[c === 'picture' ? 'picture' : c === 'sound' ? 'sound' : 'material'];
+    const on = { picture: 'frame', sound: 'radio', material: 'telly' };
+    // 201 as typed, 200 once its blank line collapses: taken; 201 even collapsed: refused by the helper, and by the door
+    for (const [d, want] of [['a'.repeat(150) + '\n\n' + 'b'.repeat(49), true], ['a'.repeat(198) + '  b', true], ['a'.repeat(199) + ' b', false]] as const) for (const c of ['picture', 'sound', 'material']) {
+      const h = helper[c](bag[c](d)), collapsed = d.replace(/\s+/g, ' ').trim();
+      const door = W.call('set', { id: on[c], component: c, value: h.ok ? sent(c, h) : bag[c](collapsed) });
+      const how = d.includes('\n\n') ? 'with a blank line' : d.includes('  ') ? 'with a double space' : 'with one space';
+      check(`DS7b ${c}: ${d.length} characters as typed (${how}), ${collapsed.length} collapsed: ${want ? 'the helper takes it and the door takes what it sends' : 'the helper refuses it, and so would the door'}`,
+        !!h.ok === want && !!door.ok === want, [h.ok ? sent(c, h).description.length : h.why, door.refused]); } }
   const { renameFields } = await import('../../tools/import-v1/shapes.js');
   const rp = renameFields('picture', { src: 'store/images/a.png', alt: 'a print' }), rs = renameFields('sound', { src: 'store/audio/a.ogg', alt: 'rain', description: 'kept' }), rl = renameFields('picture', { src: 'store/images/a.png', look: 'older' });
   check('DS5 repair: a stored alt (or the look before it) is description (one time); description already there wins', rp.value.description === 'a print' && !('alt' in rp.value) && rs.value.description === 'kept' && !('alt' in rs.value) && rl.value.description === 'older' && !('look' in rl.value), [rp, rs, rl]);

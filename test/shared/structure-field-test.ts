@@ -765,6 +765,53 @@ const HOUSE = {
   check("...but it still divides the rooms",
     planStructure({ levels: [{ tiles: [[0, 0], [1, 0]],
       walls: [[2, 0, 0]], apertures: [[2, 0, 0, "door"]] }] }).levels[0].rooms.length === 2);
+  // perception across a cut cell (G3-104): openingsOf matches a room's NODES (a half is "x,z:A"), as derivePortals does
+  // (walled all round, so the half the door doesn't touch really is sealed)
+  { const nook = planStructure({ labels: { "0,0:A": "nook", "0,0:B": "closet", "1,0": "hall" },
+      levels: [{ tiles: [[0, 0], [1, 0]], walls: [[2, 0, 0], [1, 1, 0], [0, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 1], [1, 0, 0], [1, 2, 0]],
+        apertures: [[1, 1, 0, "door"]] }] });
+    const inNook = describeHere(nook, 0.8, 0.2)!, inHall = describeHere(nook, 1.5, 0.5)!;
+    check("a door between a half-cell and a whole one shows from the half's side too", /a door on its east to hall/.test(inNook), inNook);
+    check("...and from the whole cell's, as before", /a door on its west to nook/.test(inHall), inHall);
+    check("...and the half the door doesn't touch is sealed", /sealed/.test(describeHere(nook, 0.2, 0.8)!), describeHere(nook, 0.2, 0.8)); }
+  for (const [axis, west, east] of [[2, "northeast", "southwest"], [3, "southeast", "northwest"]] as const) {
+    const P = planStructure({ labels: { "-1,0": "study", "1,0": "hall" },
+      levels: [{ tiles: [[-1, 0], [0, 0], [1, 0]], walls: [[axis, 0, 0]], apertures: [[axis, 0, 0, "door"]] }] });
+    const inStudy = describeHere(P, -0.5, 0.5)!, inHall = describeHere(P, 1.5, 0.5)!;
+    check(`a doored ${axis === 2 ? "↘" : "↗"} diagonal shows from the west room, on its ${west}, to the room beyond it`, new RegExp(`a door on its ${west} to hall`).test(inStudy) && !/to study/.test(inStudy), inStudy);
+    check(`...and from the east room, on its ${east}`, new RegExp(`a door on its ${east} to study`).test(inHall) && !/to hall/.test(inHall), inHall); }
+  // a lone floored half: its doored diagonal is a door to outside (derivePortals' null side), named by where the diagonal
+  // lies from that half
+  for (const [axis, half, side] of [[2, "A", "southwest"], [2, "B", "northeast"], [3, "A", "southeast"], [3, "B", "northwest"]] as const) {
+    const P = planStructure({ labels: { [`0,0:${half}`]: "bay" }, levels: [{ tiles: [[0, 0, "floor", half]], walls: [[axis, 0, 0]], apertures: [[axis, 0, 0, "door"]] }] });
+    const pt = P.levels[0].portals[0], here = describeHere(P, half === "A" ? (axis === 2 ? 0.8 : 0.2) : (axis === 2 ? 0.2 : 0.8), half === "A" ? 0.2 : 0.8)!;
+    check(`a lone ${axis === 2 ? "↘" : "↗"} half ${half}'s doored diagonal is a door on its ${side} to outside`,
+      P.levels[0].rooms.length === 1 && pt?.between.includes(null) && new RegExp(`a door on its ${side} to outside`).test(here) && !/to bay/.test(here), [pt?.between, here]); }
+  // a room is sealed only when every side of it is walled: a side with no wall is open to the outside (the router walks
+  // out across it), and says so
+  { const at = (data: any, x: number, z: number) => describeHere(planStructure(data), x, z)!;
+    const bare = at({ levels: [{ tiles: [[0, 0], [1, 0]] }] }, 0.5, 0.5);
+    check("a room with no walls at all is open to the outside on every side, never sealed", /Ways out: open to the outside on its north, east, south and west/.test(bare) && !/sealed/.test(bare), bare);
+    const noEast = at({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0], [0, 0, 1], [1, 0, 0]] }] }, 0.5, 0.5);
+    check("...a room missing only its east wall is open on its east and nowhere else", /Ways out: open to the outside on its east \(no wall\)\.$/.test(noEast), noEast);
+    const half = at({ levels: [{ tiles: [[0, 0, "floor", "A"]], walls: [[2, 0, 0]] }] }, 0.8, 0.2);
+    check("...a lone half is open on the two sides it touches, not on its solid diagonal", /Ways out: open to the outside on its north and east \(no wall\)\.$/.test(half), half);
+    // a tiled neighbour is not enough: the half of it this side meets is unfloored (↗, floored on B only), so it is outside
+    const ledge = at({ levels: [{ tiles: [[0, 0], [1, 0, "floor", "B"]], walls: [[0, 0, 0], [0, 0, 1], [1, 0, 0], [3, 1, 0]] }] }, 0.5, 0.5);
+    check("...a side facing a tiled cell's unfloored half is open to the outside", /Ways out: open to the outside on its east \(no wall\)\.$/.test(ledge), ledge); }
+  // a freestanding doored diagonal inside one room joins the room to itself: it is no way out of it, and the room's
+  // real way out (an exterior door, listed AFTER the diagonal, so a skip that ends the walk early drops it) is kept
+  const ring3 = [0, 1, 2].flatMap((i) => [[0, i, 0], [0, i, 3], [1, 0, i], [1, 3, i]]);
+  for (const axis of [2, 3]) {
+    const tiles = [0, 1, 2].flatMap((x) => [0, 1, 2].map((z) => [x, z]));
+    const P = planStructure({ labels: { "0,0": "hall" },
+      levels: [{ tiles, walls: [[axis, 1, 1], ...ring3], apertures: [[axis, 1, 1, "door"], [0, 1, 0, "door"]] }] });
+    const L = P.levels[0], id = L.rooms[0]?.id, here = describeHere(P, 0.5, 0.5)!;
+    check(`a freestanding doored ${axis === 2 ? "↘" : "↗"} diagonal in one room: its portal joins the room to itself`,
+      L.rooms.length === 1 && L.portals.length === 2 && L.portals[0].axis === axis && L.portals[0].between.every((r: any) => r === id), L.portals);
+    check(`...and is not a way out of it, while the room's exterior door still is`, here.endsWith("Ways out: a door on its north to outside.") && !/to hall/.test(here), here);
+    const open = describeHere(planStructure({ labels: { "0,0": "hall" }, levels: [{ tiles, walls: [[axis, 1, 1]], apertures: [[axis, 1, 1, "door"]] }] }), 0.5, 0.5)!;
+    check(`...unwalled, the same room is open to the outside all round, never sealed`, /open to the outside on its north, east, south and west/.test(open) && !/sealed|to hall/.test(open), open); }
   // an opening at or above wallH leaves no lintel, as an axis wall's (wallBoxes): never an inverted box
   for (const [wallH, kind] of [[2.0, "door"], [2.4, "arch"], [2.2, "door"]] as const) {
     const bx = planStructure({ wallH, levels: [{ tiles: [[0, 0]], walls: [[2, 0, 0]], apertures: [[2, 0, 0, kind]] }] }).boxes.filter((b: any) => b.kind === "wall");

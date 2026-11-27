@@ -649,25 +649,51 @@ export function localizePoint(ent, wx, wy, wz) {
   return [(dx * c - dz * n) / s, (wy - py) / s, (dx * n + dz * c) / s];
 }
 
+// where a diagonal lies from each half (halfTriangle): ↘'s A is the north-east triangle, ↗'s A the north-west one
+const DIAG_SIDE = { 2: { A: 'southwest', B: 'northeast' }, 3: { A: 'southeast', B: 'northwest' } };
+
 /** A room's openings, each named by the side of THIS room it sits on and what lies beyond (null: outdoors). */
 export function openingsOf(level, room) {
   const mine = new Set(room.cells);
   const byId = new Map(level.rooms.map((r) => [r.id, r]));
   const out = [];
   for (const p of level.portals) {
-    const [[ax, az], [bx, bz]] = edgeCells(p.axis, p.x, p.z);
-    const aK = cellKey(ax, az), bK = cellKey(bx, bz);
-    const near = mine.has(aK) ? [ax, az] : mine.has(bK) ? [bx, bz] : null;
-    if (!near) continue;
-    const other = mine.has(aK) ? p.between[1] : p.between[0];
-    out.push({
-      kind: p.kind,
-      side: SIDES[sideOfCell(p.axis, p.x, p.z, near[0], near[1])],
-      to: other ? (byId.get(other)?.label ?? other) : null,
-    });
+    // a room's cells are graph nodes ("x,z:A" for a half), and a diagonal's two sides are its own cell's halves (derivePortals)
+    let side, other;
+    if (p.axis >= 2) {
+      const k = cellKey(p.x, p.z), h = mine.has(`${k}:A`) ? 'A' : mine.has(`${k}:B`) ? 'B' : null;
+      if (!h) continue;
+      side = DIAG_SIDE[p.axis][h]; other = h === 'A' ? p.between[1] : p.between[0];
+    } else {
+      const [[ax, az], [bx, bz]] = edgeCells(p.axis, p.x, p.z);
+      const sA = sideOfCell(p.axis, p.x, p.z, ax, az), sB = sideOfCell(p.axis, p.x, p.z, bx, bz);
+      const inA = mine.has(nodeOnSide(level.level, ax, az, sA));   // the plan level's grid level holds the walls
+      if (!inA && !mine.has(nodeOnSide(level.level, bx, bz, sB))) continue;
+      side = SIDES[inA ? sA : sB]; other = inA ? p.between[1] : p.between[0];
+    }
+    if (other === room.id) continue;   // both sides are this room (a freestanding wall in it): no way out
+    out.push({ kind: p.kind, side, to: other ? (byId.get(other)?.label ?? other) : null });
   }
   return out;
 }
+
+/** The sides of a room with no wall on them, where it is open to the outside, in N, E, S, W order. A room's nodes meet
+ *  other rooms only across walls (deriveRooms), so an unwalled side of one of its nodes that isn't another of its own
+ *  leads out: off the floor, or onto a cut cell's unfloored half. A diagonal is always a wall, never an open side. */
+export function openSidesOf(level, room) {
+  const lv = level.level, mine = new Set(room.cells), open = new Set();
+  for (const node of room.cells) {
+    const [x, z] = node.split(':')[0].split(',').map(Number);
+    for (let i = 0; i < 4; i++) {
+      const [side, back] = SIDE_OF[i], [dx, dz] = STEP[i];
+      if (nodeOnSide(lv, x, z, side) !== node) continue;   // that side of a cut cell is its other half's
+      const [axis, ex, ez] = edgeBetween(x, z, x + dx, z + dz);
+      if (!lv.walls.has(edgeKey(axis, ex, ez)) && !mine.has(nodeOnSide(lv, x + dx, z + dz, back))) open.add(side);
+    }
+  }
+  return ['N', 'E', 'S', 'W'].filter((s) => open.has(s)).map((s) => SIDES[s]);
+}
+const listed = (xs) => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`;
 
 /** One sentence for the room a point stands in, or null. Sides are the grid's own compass, and the phrasing says so. */
 export function describeHere(plan, lx, lz, ly = 0) {
@@ -681,9 +707,11 @@ export function describeHere(plan, lx, lz, ly = 0) {
   const doors = ways.filter((o) => o.kind !== 'window');
   const wins = ways.filter((o) => o.kind === 'window');
   const phrase = (o) => `a ${o.kind} on its ${o.side} to ${o.to ?? 'outside'}`;
+  const open = openSidesOf(level, room);   // sealed means walled all round, not only doorless
+  const exits = [...doors.map(phrase), ...(open.length ? [`open to the outside on its ${listed(open)} (no wall)`] : [])];
   const parts = [`You are in ${name} — ${w}×${d}m, ${room.area}m².`];
-  parts.push(doors.length
-    ? `Ways out: ${doors.map(phrase).join('; ')}.`
+  parts.push(exits.length
+    ? `Ways out: ${exits.join('; ')}.`
     : `No doors — this room is sealed.`);
   if (wins.length) parts.push(`Also ${wins.map(phrase).join('; ')}.`);
   return parts.join(' ');
