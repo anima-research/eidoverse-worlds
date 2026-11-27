@@ -460,7 +460,7 @@ async function startServer(extra: Record<string, string | undefined>, root = ROO
   const PORT = freePort(20000 + Math.floor(Math.random() * 18000));   // a bind-and-close probe (G4-191: a fetch probe called a silent listener free)
   const worlds = mkdtempSync(join(tmpdir(), "ew-store-serve-")); scratch.push(worlds);
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
-    WORLDS_DIR: worlds, OPT_DIR: OPT,
+    WORLDS_DIR: worlds, OPT_DIR: OPT, RELAY_STATE_DIR: OPT,   // the incarnation too: an inherited RELAY_STATE_DIR may be a live server's
     SKIP_OPT_SWEEP: "",   // the boot sweeps are under test here: the gate sets SKIP_OPT_SWEEP=1 for every suite (run.ts)
     EIDOVERSE_DIR: EMPTY_LIB, ...extra };
   const proc = spawn(process.execPath, [join(root, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });

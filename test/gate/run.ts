@@ -325,6 +325,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   // hermetic: nothing the suite reads by default lies outside this checkout and this dir (no ~, no ../eidoverse-video)
   const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
+    RELAY_STATE_DIR: path.join(dir, "opt"),   // never the host's: an exported one may be a live server's restart state
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (process.platform === "win32") env.EIDO_SANDBOX ??= "inprocess";   // Windows runs scripts only on this opt-in (shared/protocol/sandbox.js winRefuses)
   if (PY) env.PYTHON = PY;
