@@ -1,4 +1,4 @@
-// Physics checks (design 20). Every scenario is built through the authority's ordinary tools, at pinned clock times.
+// Physics checks. Every scenario is built through the authority's ordinary tools, at pinned clock times.
 // usage: bun test/protocol/phys-check.ts
 // @ts-nocheck — lab code, kept as written
 import "../harness/fixture-ids.ts";   // fixtures seed the ids they read (R 10-17: writers never choose ids)
@@ -401,7 +401,7 @@ function playground(name) {
   ok(JSON.stringify(seen) === "[9,9,9]" && JSON.stringify(folded) === "[9,9,9]", "N P4 is gone: the rest view and the fold read the same one value (so a forgery shows in both, and carriers flag it)", { seen, folded });
 }
 
-// R — a deploy changes the engine's version (REVIEW-design-2026-10-15 "Deploying switches physics off"; a build is no
+// R — a deploy changes the engine's version (design review 10-15: "Deploying switches physics off"; a build is no
 // longer a field, EV4). A world the old server stamped names the old version, so the new server holds it foreign and nothing
 // flies. The authority restamps it itself, as system, once: when the engine is one it carries, the version was stamped by an authority (not named by the
 // owner); bodies at rest are restamped free (P6), a launch with no rest on record is ended by the cut (R2), and a thing held holds it off (R2b). A "deploy"

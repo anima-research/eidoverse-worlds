@@ -1,5 +1,5 @@
-// component-needs-test — Add Component with needs, and Remove with dependants
-// (design §3, step 3): shared/editschema.js addOps / removeOps / editOps
+// component-needs-test — Add Component with needs, and Remove with dependants:
+// shared/editschema.js addOps / removeOps / editOps
 // and the Add Component list, through the real door (a scratch world,
 // test/harness/scratchworld.ts).
 //

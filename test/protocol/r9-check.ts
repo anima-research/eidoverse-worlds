@@ -1,4 +1,4 @@
-// test/protocol/r9-check.ts — review round 9 (REVIEW-holes-r9, REVIEW-scars-r9, REVIEW-claims-r9 O1–O3, 2026-10-17): the
+// test/protocol/r9-check.ts — review round 9 (2026-10-17): the
 // fixes, each row red first (against bf9bd080) and held by a mutation below.
 //   bun test/protocol/r9-check.ts                 every row
 //   bun test/protocol/r9-check.ts --only H1,M1    just those

@@ -1,4 +1,4 @@
-// test/protocol/build-check.ts — ship-list group B (AUDIT-shiplist-blockers-2026-10-07): what a builder makes, through the authority.
+// test/protocol/build-check.ts — ship-list group B (audit 10-07): what a builder makes, through the authority.
 //   bun test/protocol/build-check.ts                 every case
 //   bun test/protocol/build-check.ts --only W1,N1    just those
 //   bun test/protocol/build-check.ts --tree <dir>    the cases against another checkout (the base, a mutant)

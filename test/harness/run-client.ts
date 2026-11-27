@@ -4,7 +4,7 @@
 //                                                                                 "Export named … not found", no missing module
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/harness/run-client.ts                  every file run to the end, sorted pass / red /
 //                                                                                 dead at import / timed out / env / skipped
-//                                                                                 (a bun:test file, test()/describe, runs only under `bun test`, not here)
+//                                                                                 (a bun:test file, test()/describe, runs under `bun test`, as the gate's harness/bun-test.ts)
 //   … --jobs 4  --timeout 90  --slow (run the SLOW table too)  --unreached (list only)  <name-fragment> … (only those)
 //
 // A test whose stub or import graph broke dies before its first check and says nothing a person reads (six "stub missing
@@ -19,7 +19,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, relative, basename } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { SUITES, browserLauncher, suitePath } from "../gate/suites.ts";
+import { SUITES, browserLauncher, bunTestCall, suitePath } from "../gate/suites.ts";
 import { killSuiteAsync, killSuiteAtExit } from "../gate/procgroup.ts";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -47,6 +47,9 @@ const SLOW: Record<string, string> = {
   "contact-mutation-test.ts": "six mutations, each a full run of a reach suite (~minutes)",
 };
 
+// a bun:test file: an import at a line's start that takes test, it or describe from bun:test (any alias), or the namespace
+const isBunTestFile = (src: string) => /^\s*import\s+\*\s+as\s+\w+\s+from\s*["']bun:test["']/m.test(src)
+  || [...src.matchAll(/^\s*import\s*\{([^}]*)\}\s*from\s*["']bun:test["']/gm)].some((m) => m[1].split(",").some((n) => /^\s*(?:test|it|describe)\b/.test(n)));
 const isTest = (n: string) => /-(test|check)\.(ts|mjs|js)$/.test(n);
 const NOT_TESTS = new Set(["harness", "stubs", "fixtures", "labs", "water", "node_modules"]);
 const under = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) =>
@@ -57,14 +60,16 @@ const launchesBrowser = (f: string) => browserLauncher(f) !== null;
 
 // what the other runners reach
 const reached = new Set<string>();
-for (const [, file] of SUITES) reached.add(rel(suitePath(file)));
+// a row's runner and each file argument it takes (bun-test.ts plus a test file), as hygiene-check's ungatedTests reads them
+const rowFiles = (file: string) => [rel(suitePath(file)), ...file.split(" ").slice(1).filter((a) => /\.(?:ts|mjs|js)$/.test(a)).map((a) => rel(join(ROOT, a)))];
+for (const [, file] of SUITES) for (const f of rowFiles(file)) reached.add(f);
 const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
 for (const s of Object.values(pkg.scripts ?? {}) as string[]) for (const m of s.matchAll(/(?:tools|test)\/[\w./-]+/g)) reached.add(m[0]);
 const unreached = files.map(rel).filter((p) => !reached.has(p));
 // --skip-suites: the gate runs each of its own suites in full (a load error fails that suite), so loading them here
 // again is the same check twice; on windows-latest those 26 files, each run to the 15 s cap, were what pushed the lane
 // past its budget (358 s, 478 s, then >1010 s on three runs, 10-23)
-const gateSuite = new Map<string, string>(); for (const [n, file] of SUITES) gateSuite.set(rel(suitePath(file)), n);
+const gateSuite = new Map<string, string>(); for (const [n, file] of SUITES) for (const f of rowFiles(file)) gateSuite.set(f, n);
 
 if (flag("--unreached")) {
   console.log(`${unreached.length} of ${files.length} test files are reached by no other runner (test/gate/run.ts, package.json):`);
@@ -90,7 +95,10 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
   if (!importOnly && SLOW[name] && !flag("--slow")) return done({ file, kind: "skip", why: `slow: ${SLOW[name]} (--slow runs it)`, ms: 0 });
   if (importOnly && flag("--skip-suites") && gateSuite.has(rel(file))) return done({ file, kind: "skip", why: `the gate runs it in full as ${gateSuite.get(rel(file))}`, ms: 0 });
   if (needsMcpl(src) && !mcplDeps) return done({ file, kind: strictEnv ? "red" : "env", why: "mcpl/node_modules missing: ln -s <a checkout with deps>/mcpl/node_modules mcpl/", ms: 0 });
-  const ch = spawn(process.execPath, [file], { cwd: ROOT, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+  // `bun <file>` refuses test() outside the runner: a bun:test file (one importing test, it or describe from it, under any
+  // name: test.skip, test.each and `test as check` too) runs under `bun test`, pointed at it as suites.ts bunTestCall says
+  const bunTest = isBunTestFile(src), call = bunTest ? bunTestCall(ROOT, file) : { cwd: ROOT, arg: file };
+  const ch = spawn(process.execPath, bunTest ? ["test", call.arg] : [file], { cwd: call.cwd, detached: true, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
   live.add(ch.pid!); inFlight.set(ch.pid!, [rel(file), t0]); let out = ""; let timedOut = false;
   ch.stdout.on("data", (d) => { out += d; }); ch.stderr.on("data", (d) => { out += d; });
   // killSuiteAsync, not process.kill(-pid): a negative pid throws on Windows, so a child past its budget was never killed,
@@ -119,6 +127,13 @@ const run = (file: string): Promise<Res> => new Promise((done) => {
     // a stub that never applied loaded the wrong module (stub.ts verifyStubs prints FAIL and exits 1): dead, not loaded
     const stub = /^FAIL stub (?:never applied|applied to a path that isn't there)[^\n]*/m.exec(out)?.[0];
     if (importOnly && stub) return done({ file, kind: "dead", why: stub.slice(5), ms, tail });
+    // an uncaught TypeError/ReferenceError (an incomplete stub's missing function; a test's own thrown Error is its red, not a
+    // load) with the runner's crash mark (a script's "Bun v…" trailer; `bun test`'s "Unhandled error between tests") and no
+    // check line or test result anywhere in the output: it died loading, not loaded. Anywhere, not "before the crash":
+    // stdout and stderr are two pipes, and their chunks reach `out` in either order (review #375 2, 7)
+    const crash = code ? /^(?:TypeError|ReferenceError): .+$/m.exec(out) : null;
+    const mark = bunTest ? /^# Unhandled error between tests$/m : /^Bun v\d/m, ran = bunTest ? /^\s*[1-9]\d* pass$|^\((?:pass|fail)\) /m : /^\s*(?:✓|✗|ok\s|FAIL\s)/m;
+    if (importOnly && crash && mark.test(out) && !ran.test(out)) return done({ file, kind: "dead", why: `${crash[0]} (uncaught, at ${(ms / 1000).toFixed(1)} s)`, ms, tail });
     if (importOnly) return done({ file, kind: "loaded", ms });
     if (code === 0) return done({ file, kind: "pass", ms });
     if (code === 2 && /no browser|no chrome|chromium|no gpu|webgpu/i.test(out)) return done({ file, kind: "env", why: tail.split("\n").pop(), ms, tail });

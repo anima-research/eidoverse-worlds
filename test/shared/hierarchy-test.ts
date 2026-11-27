@@ -1,5 +1,5 @@
-// hierarchy-test — the scene tree as a pure function of the world view (design §3
-// "Children", §5 "Hierarchy"; shared/hierarchy.js), checked against the REAL
+// hierarchy-test — the scene tree as a pure function of the world view
+// (shared/hierarchy.js), checked against the REAL
 // door (a scratch world, test/harness/scratchworld.ts, read back through
 // shared/protocol/view.js viewState) and against three.js composing Object3Ds the
 // way the renderer does.

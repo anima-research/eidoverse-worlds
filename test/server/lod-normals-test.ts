@@ -73,8 +73,8 @@ async function glb(faceted: boolean) {
   doc.createScene().addChild(doc.createNode("sphere").setMesh(doc.createMesh("sphere").addPrimitive(prim)));
   return new NodeIO().writeBinary(doc);
 }
-/** Share of triangle area whose vertex normals point more than 60° away from the triangle's own facing (either side). */
 const reader = new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({ "draco3d.decoder": await draco3d.createDecoderModule() });
+/** Share of triangle area whose vertex normals point more than 60° away from the triangle's own facing (either side). */
 async function offShading(bytes: Uint8Array) {
   const doc = await reader.readBinary(bytes);   // LODs ship Draco-compressed
   let area = 0, off = 0;

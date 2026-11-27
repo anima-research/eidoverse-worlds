@@ -39,7 +39,7 @@
 //   CL4  --claim on a world that has an owner changes nothing: no claim, its owner stays the only owner
 //   CL7  the splash's words for each claim (client/lib/ui/upgradeview.js claimWords): ownerless, owner by account, owner by name
 //   CL5  claimed: an ownerless world's locks (a v1 lock and a guard) are lifted by a regular, who is builder (no lockout)
-//   CL8-10 (row 22) …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
+//   CL8-10 …a who: builder gate admits a regular, a regular's lock is lifted by another, moderation stays refused
 //   CL11 the translation writes no imported:ownerless: a builder granted after the claim, once the owner leaves, reads member
 //   CL6  …and operator-repair set of another owner keeps builder's generate (the translation's role-defs), in one write
 //   UW1  the splash says "nothing was changed" only for the CLI's own refusal; any other failure's outcome is unknown
@@ -155,7 +155,7 @@ const commonsShape: [string, string, any][] = [["world", "grant", { id: "antra",
     "UN1 no owner bound to any account: the dry run, the approved report and the upgrade's result warn, naming the owners (not the builder) and the bind; the upgrade still runs", { w: a.report?.ownerWarning, r: a.result?.ownerWarning, code: a.up.code }));
   const no = (o: string) => /"shed" has no owner, and every translation ends with one: translate it with --claim and EIDO_UPGRADER_ACCOUNT=/.test(o);
   row("UN3", () => ok(s.dry.code !== 0 && no(s.dry.out) && s.up.code !== 0 && no(s.up.out) && !fs.existsSync(path.join(W, "shed", "world.jsonl")) && fs.existsSync(path.join(W, "shed", "log.jsonl")),
-    "UN3 a world with no owner and no --claim: the dry run and the upgrade refuse, naming --claim and EIDO_UPGRADER_ACCOUNT; nothing is written (LEGACY-PINS item 9)", { dry: s.dry.out.slice(-300), up: s.up.out.slice(-300), code: s.up.code }));
+    "UN3 a world with no owner and no --claim: the dry run and the upgrade refuse, naming --claim and EIDO_UPGRADER_ACCOUNT; nothing is written", { dry: s.dry.out.slice(-300), up: s.up.out.slice(-300), code: s.up.code }));
 }
 
 // ================= OU: who may upgrade as the world's owner (R 10-28: "owners or operators can update worlds") =================

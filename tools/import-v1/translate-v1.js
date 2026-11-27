@@ -35,7 +35,7 @@ import { ENGINES, DEFAULT_ENGINE } from "../../shared/protocol/simlayer.js";
 // "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
 // (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
 // it when the caller knows it (translate(…, {foldBuild}); build.ts beside this file computes it from the files).
-// @2 (slice 3a): a mounted thing comes out in the authority's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
+// @2: a mounted thing comes out in the authority's shape (transform LOCAL to its parent, parent {to, order, slot?}; socket? since @7),
 // and v1 `guard` merges into `lock` (PROTOCOL-v4 §5). Output differs from @1 on any log with a mount or a guard.
 // v1's only kindless handler, {impulse: x}, added x straight to a pendulum's turn rate (rad/s): that's an angular
 // impulse, v4's {kind: "impulse", angular: x} exactly.
@@ -152,7 +152,7 @@ export const TRANSLATOR = "eidoverse/translate-v1@51";   // @51: main's water sp
 // @33 (decision table row 9): a seat with no pos sits at main's [0, 0.5, 0] (newSockets), where @32 wrote none (y 0). Output differs there.
 // @32 (owner 10-30, Basil 1.1; Godot's collision layers): a banded vehicle's two walls are in its own collision layer (collider {layer:
 // [band-<hash of its id>]}) and its host scans it (collider {mask: [1, that layer]}), so only it meets them; @29-@31's walls stopped every hull. Output differs there.
-// @31 (LEGACY-PINS 10-29, items 2, 6, 8, 9): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
+// @31 (10-29; docs/operator/TRANSLATING-OLD-WORLDS.md): a main world with neither bounds nor terrain gets @world.bounds around main's 78 m stage
 // (stageBoundsOf); main's inferred lamps are light children (lampPartsOf); water.speed is the water's own drag (waterOfOld), not a
 // physics-area; an ownerless world no longer carries imported:ownerless (the upgrader's claim is its owner). Output differs there.
 // @30 (fixF 10-29, item 22): an ownerless world is builder for everyone (default-role, guests, every grant below it) with builder's
@@ -245,7 +245,7 @@ export const translatorVersion = (name) => { const m = /@(\d+)$/.exec(String(nam
 // @10 (2026-10-08): a dialect-3 log (one with a physics `epoch`, PROTOCOL_v2 §3) is translated with her sim run beside the
 // v1 fold (what translate-d3 did on its own, now on this one path with its identities, model hashes, founder key and
 // namespace): a punt is a logged launch with its exact stamped state, every rest a logged result the authority's sim layer
-// re-checks (design 20, P5/L3), the epoch is @world physics-engine and each collider's stamped box its physics.shape.
+// re-checks, the epoch is @world physics-engine and each collider's stamped box its physics.shape.
 // Before this, @9 kept a punt only as an imported act and left the thing where it was punted FROM. A log with no epoch
 // that her sim enters translates byte-for-byte as @9 did, so it keeps @9's name: the name says which output you got.
 // @11 (2026-10-09, R 04:18: "stomp the existing eidosim engine"): the runtime no longer carries her engine, so her
@@ -744,7 +744,7 @@ const hashOf = (a) => { if (typeof a !== "string") return null; const m = /^(?:s
 // same from every translation of the same world, never a person's id
 const EMITTER_NAME = /^[A-Za-z0-9_-]{1,32}$/;
 /** main's inferred lamps (import-v1/lamps.ts: up to two per glowing model, measured from its GLB) as light children at their spots,
- *  main's numbers through light parity (decay 2, × (range/2)^0.3), dimmed by day as main's were (@31, LEGACY-PINS item 6). */
+ *  main's numbers through light parity (decay 2, × (range/2)^0.3), dimmed by day as main's were (@31). */
 export const lampChildId = (host, i) => `lamp-${i}-${sha256(`eido-lamp\0${host}\0${i}`).slice(0, 26)}`;
 export function lampPartsOf(host, lamps) {
   return (Array.isArray(lamps) ? lamps.slice(0, 2) : []).map((L, i) => [lampChildId(host, i), { transform: { pos: [...L.at], q: [0, 0, 0, 1], scale: [1, 1, 1] }, parent: { to: host }, label: "lamp",

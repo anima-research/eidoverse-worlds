@@ -28,6 +28,7 @@ Other forms, none of which is the gate:
 | `bun test/gate/run.ts --lane core` | runs one lane (`core`, `main` or `browser`), also reported as partial |
 | `bun test/gate/run.ts --manifest` | prints the suite table below |
 | `bun test/gate/run.ts --check-manifest` | exits 1 when this file's table isn't what `--manifest` prints |
+| `bun test/gate/run.ts --write-manifest` | rewrites the table below with what `--manifest` prints |
 
 ## Runtimes
 

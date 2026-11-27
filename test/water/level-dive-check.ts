@@ -72,7 +72,7 @@ try {
   await until("a metre under, W held looking down", async () => (await y()) < floating.y - 1, { ms: 10000 }).catch(() => {});   // the depth, as LD3 (macOS CI 44116652297: -2.07 vs -2.13 at a fixed 1.5 s); a miss is LD5's evidence
   const lookDive = { y: await y(), diving: await diving() };
   await key("delete", "KeyW"); await js(`${C}.setCamPitch(0.32); return true;`);
-  // a thing held afloat: C sinks the swimmer and never throws it; Q throws it (LEGACY-PINS item 1: C was throw/punt too)
+  // a thing held afloat: C sinks the swimmer and never throws it; Q throws it (C used to throw/punt while swimming too)
   await put(-1.1); await pause("the float settles", 1200);
   const TP = "(await import('/lib/thingphysics.js'))";
   const made = await js(`const m = await import('/lib/net.js'), p = ${C}.myState.pos; return await m.sendRequest('create', { model: 'eidoverse/assets/models/crate_large_blue.glb', components: { label: 'Float crate', grabbable: { enabled: true }, transform: { pos: [p.x + 0.7, p.y + 0.6, p.z], scale: 0.2 } } });`);
@@ -91,7 +91,7 @@ try {
   await press("KeyQ", "q", 81, 80); await until("Q let go of it", async () => !(await holding()), { ms: 15000 }).catch(() => {});
   const direct = (await holding()) ? await js(`const r = await ${TP}.physicsApi.throw(); return r === undefined ? 'undefined' : JSON.parse(JSON.stringify(r));`) : null;   // still held: what the throw itself answers (macOS 40995242977 sent it, no line came back)
   const afterQ = { direct, held: await holding(), y: await y(), keys: await js("return window.__seenKeys;"), pending: await js(`return ${TP}.physicsApi.pending?.() ?? null;`), tracking: await js(`return ${TP}.physicsApi.tracking();`), sent: await js("return window.__sent;"), said: await js("return (await import('/lib/ui/chat.js')).recentChat().filter((l) => l.who === '*').slice(-3).map((l) => l.text);") };   // a still-held crate says why (macOS 40976310724)
-  // no @world.bounds: walking 84 m out is not pulled back to main's 78 m stage island (LEGACY-PINS item 2)
+  // no @world.bounds: walking 84 m out is not pulled back to main's 78 m stage island (docs/operator/TRANSLATING-OLD-WORLDS.md, the stage edge)
   const unbound = await js("return await (await import('/lib/net.js')).sendRequest('delete', { id: '@world', component: 'bounds' });");   // founding wrote ±20 m
   await until("the bounds are gone", () => js(`return ${C}.worldBounds() === null;`), { ms: 8000 }).catch(() => {});
   await js(`${C}.myState.pos.set(0, 0.5, 84); return true;`); await key("add", "KeyW"); await pause("W held, 84 m out", 800); await key("delete", "KeyW");

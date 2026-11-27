@@ -3,10 +3,11 @@
 // The one row loopback werift peers can never prove: real getUserMedia, real
 // Opus, real Chrome SDP against our answer. The assertions are those of the
 // retired relay-browser-smoke.mjs (deliberately — a row proved by a different
-// yardstick proves nothing comparable), plus two the SFU makes newly checkable.
+// yardstick proves nothing comparable), plus two the SFU makes newly checkable: the transport the page reports,
+// and the server's own forwarded count (/relay-diag).
 //
-//   BASE=http://127.0.0.1:8946 bun test/server/sfu-browser-probe.mjs
-//   (server must be running with VOICE_TRANSPORT=sfu and no JOIN_TOKEN: the /relay-diag fetch sends no Bearer)
+//   bun test/server/sfu-browser-probe.mjs                          owns a scratch server (VOICE_TRANSPORT=sfu)
+//   BASE=<url> KEY=<join token> bun test/server/sfu-browser-probe.mjs   a running VOICE_TRANSPORT=sfu server (KEY: 'dev' if unset; /relay-diag is behind the door)
 import { chromium } from 'playwright';
 
 // 🔴 THIS TEST IS ONLY MEANINGFUL OVER A REAL NETWORK (R, 2026-08-15).
@@ -83,11 +84,9 @@ try {
   const B = await mk('smoke-b');
   ok(`both connected: ${await A.evaluate(() => relayDiag().identity)} + ${await B.evaluate(() => relayDiag().identity)}`);
 
-  // The transport must be OURS, not a LiveKit leg that happened to be up. This
-  // assertion exists because "the smoke passed" is worthless if it passed
-  // against the wrong server.
+  // The page must be on the SFU client: server/transport.ts is sfu or off, and only voicesfu's diag answers relayDiag.
   const t = await A.evaluate(() => relayDiag().transport);
-  t === 'sfu' ? ok('transport is the in-process SFU (no LiveKit)') : bad(`transport reported "${t}", expected "sfu"`);
+  t === 'sfu' ? ok('transport is the in-process SFU') : bad(`transport reported "${t}", expected "sfu"`);
 
   await A.evaluate(() => window.relayMic());
   await A.waitForFunction(() => relayDiag().micPublished === true, null, { timeout: 30000 });

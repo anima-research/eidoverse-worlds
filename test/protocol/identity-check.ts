@@ -759,7 +759,7 @@ const postAuth = (port, token) => fetch(`http://127.0.0.1:${port}/auth`, { metho
   const get = (h) => fetch(`http://127.0.0.1:${SN.port}/worlds`, { headers: { cookie: `ew_sess=${sid}`, ...h }, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);
   const got = { native: await get({}), own: await get({ "sec-fetch-site": "same-origin" }), cross: await get({ "sec-fetch-site": "cross-site" }), none: await fetch(`http://127.0.0.1:${SN.port}/worlds`, { signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1) };
   ok(got.native === 200 && got.own === 200 && got.cross === 401 && got.none === 401,
-    "NC a signed-in native client (a cookie, no fetch metadata) reads gated /worlds on a door-keyed server; the same cookie from another site's page, or no cookie, is 401 (Unreal bridge design §7.1)", got);
+    "NC a signed-in native client (a cookie, no fetch metadata) reads gated /worlds on a door-keyed server; the same cookie from another site's page, or no cookie, is 401 (docs/operator/NATIVE-LOGIN.md)", got);
   SN.proc.kill(); }
 { const S4 = await start({ JOIN_TOKEN: "door-key" });
   const get = (p, key) => fetch(`http://127.0.0.1:${S4.port}${p}`, { headers: key ? { authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(3000) }).then((r) => r.status).catch(() => -1);

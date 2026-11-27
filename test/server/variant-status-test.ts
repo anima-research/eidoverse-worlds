@@ -196,5 +196,4 @@ for (const [name, files, state, reason] of cases) {
   const plain = variantStatus(O, "/opt/min", { exists, read, simplifyOf: () => null });
   check("…an ordinary LOD reads built with no reason", plain.lod.state === "built" && plain.lod.reason === null, plain.lod);
 }
-console.log(`${T.pass} passed, ${T.fail} failed`);
-if (T.fail) process.exit(1);
+T.done();   // the [variant-status] summary, and exit 1 when no row ran (G4-199)

@@ -641,7 +641,7 @@ try {
   await evalJson(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
   check("AC3 the menu names the thing bare (no quotes), in its own accent span", mi?.name === "Aimed" && !/[“”"]/.test(mi.text), mi);
   });
-  // ---- PR: my own throw, predicted (DESIGN-physics-responsiveness §3; R 10-10: "balls teleport right out of my hands").
+  // ---- PR: my own throw, predicted (R 10-10: "balls teleport right out of my hands").
   // The lab knob physicsApi.lag(300) delays the request, as a slow round trip would; the control arm turns prediction off
   // and shows the old shape (the thing waits in the hand for the whole lag), the real arm shows it leave at once. ----
   await stage("PR", async () => {

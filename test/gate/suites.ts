@@ -42,7 +42,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["image-lie", "server/image-lie-test.ts", 1], // the optimizer's output check (findImageLies) catches an image that is not what its mimeType says
   ["glbperf-file", "server/glbperf-file-test.ts", 1], // glbPerfOfFile ranks a GLB on disk from its header, JSON chunk and image heads
   ["gaps", "protocol/gaps-check.ts", 2],         // research 34: creator rights, presence track, rate, two hands
-  ["phys", "protocol/phys-check.ts", 1],         // design 20: launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
+  ["phys", "protocol/phys-check.ts", 1],         // launches, rests by cause, carriers; as the running server holds it (shapes, punt, release pose, one clock) and as a client folds it
   ["physlive", "protocol/physlive-check.ts", 1],
   ["siminputs", "protocol/siminputs-check.ts", 1], // #144: the sim reads outside the log only through SIM_INPUTS; a client that lacks one refolds once it lands
   ["phystick", "protocol/phystick-check.ts", 1], // the engine's heartbeat: rests log on the server beat, requests stay cheap, passes are bounded
@@ -196,7 +196,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["parity", "protocol/parity-check.ts", 1],     // one kind of participant — a status is declared at the door, never inferred from the credential or logged; move {client} gone; the spoken trio is anyone's; §6a, §8 by shape
   ["directory", "protocol/directory-check.ts", 1],
   ["keyhints", "client/keyhints-check.ts", 1], // R 10-04: no hidden keys in build mode (every modifier tagged and shown)
-  ["client", "protocol/client-check.ts", 1],     // slice 3b: build mode in headless Chromium against a scratch server (one browser, guarded)
+  ["client", "protocol/client-check.ts", 1],     // build mode in headless Chromium against a scratch server (one browser, guarded)
   ["upgrade", "protocol/upgrade-check.ts", 1], // an old-format world: the verified backup (CLI and server), the structured join refusal, the operator-only upgrade through the CLI
   ["hello-refused", "protocol/hello-refused-check.ts", 1], // §F F-3: a hello the server refuses (update-required, unsupported-feature) is said in words by every client, never a join timeout
   ["refusedjoin", "protocol/refusedjoin-check.ts", 1], // a refused join (old-format world, no such world) stays on the splash in the server's words — the early socket's refusal is honoured, no redial, no empty world
@@ -216,7 +216,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["reset-race", "protocol/reset-race-check.ts", 1], // review 10-14 C1: a request awaiting warm() across a reset refuses instead of writing the old log's line into the new file // world fork (a new world naming its source) and reset (archived, re-founded by its owners)
   ["txn", "protocol/txn-check.ts", 1],           // reviewer items 1–2 (10-18): every request ends committed | rolled-back | ambiguous (persist before publish, publish in a finally, ambiguous never ok); one immutable request capability rechecked at both await→commit seams (liveness, identity, operator, the door, role)
   ["txn-mutants", "protocol/txn-check.ts --mutants", 1], // …and each of its rows turns red under the mutation it exists to catch (a scratch copy of the tree per mutant; the control stays green)
-  ["blockers-mutants-a", "protocol/blockers-mutants.ts --group a", 1], // the RED side of every blocker's row: one mutation of each fix (B1–B10, M1–M9, r14) in a scratch tree turns its named row red; the control stays green; one of four pieces (GROUPS there)
+  ["blockers-mutants-a", "protocol/blockers-mutants.ts --group a", 1], // the RED side of every blocker's row: one mutation of each fix (B1–B10, M1–M8, r14) in a scratch tree turns its named row red; the control stays green; one of four pieces (GROUPS there)
   ["blockers-mutants-b", "protocol/blockers-mutants.ts --group b", 1], // blockers-mutants' piece b
   ["blockers-mutants-c", "protocol/blockers-mutants.ts --group c", 1], // blockers-mutants' piece c
   ["blockers-mutants-d", "protocol/blockers-mutants.ts --group d", 1], // blockers-mutants' piece d
@@ -490,7 +490,23 @@ export function localImports(f: string, seen = new Set<string>()): Set<string> {
   return seen;
 }
 
+/** The shell's environment as a suite inherits it: a live server's address or credential exported there is dropped, so a
+ *  suite that starts its own server unless WORLD_URL names one (knockdown) never reaches a live door from the gate (G4-103).
+ *  These are the names a gated suite reads for one; JOIN_KEY too, the door key an owned world otherwise takes from the
+ *  shell (probe-harness ownedWorld, boot-check: review #375 27). */
+export const LIVE_TARGET = ["WORLD_URL", "JOIN_TOKEN", "WORLD_TOKEN", "WORLD", "PORT", "JOIN_KEY"];
+export const inheritedEnv = (env: Record<string, string | undefined>): Record<string, string> =>
+  Object.fromEntries(Object.entries(env).filter(([k, v]) => v !== undefined && !LIVE_TARGET.includes(k.toUpperCase()))) as Record<string, string>;
+
 export function suitePath(file: string) { return path.resolve(ENGINE, "test", file.split(" ")[0]); }
+
+/** How `bun test` is pointed at one file: a `./` path with `/` separators (bun reads anything else as a name filter), from
+ *  `root`, or from the file's own folder when no relative path reaches it (another Windows drive: windows-latest's
+ *  checkout is on D:, its temp dir on C:, and `./C:/…` matched nothing; review #375 1). `p` is path, or path.win32 in a test. */
+export function bunTestCall(root: string, file: string, p: typeof path = path): { cwd: string; arg: string } {
+  const r = p.relative(root, file);
+  return p.isAbsolute(r) ? { cwd: p.dirname(file), arg: "./" + p.basename(file) } : { cwd: root, arg: "./" + r.split(p.sep).join("/") };
+}
 
 /** A file that launches a Chromium, directly or through the bench helpers (a helper counts where it is CALLED; a runner
  *  that starts other files says so with the marker comment `gate: launches a browser`). run.ts keeps every such suite in
@@ -529,7 +545,22 @@ export function outputKeeper(limit = 4e6, keep = 2e6) {
       out = out.slice(cut); },
     get out() { return out; }, get dropped() { return dropped; },
     lines() { return [...dropped, ...out.trimEnd().split("\n")]; },
+    /** what the gate keeps, as one text: the dropped verdict lines, then the tail (the receipt's outSha256; G4-105) */
+    record() { return dropped.map((l) => l + "\n").join("") + out; },
   };
+}
+/** Where `doc`'s one generated block lies (just past `begin`, and at `end`), or null when it has none, or more than one
+ *  marker of either kind: a pasted second block, or one inside another, and which to rewrite or check would be a guess
+ *  (review #375 15). run.ts --check-manifest and --write-manifest both read it from here. */
+export function generatedBlock(doc: string, begin: string, end: string): { a: number; b: number } | null {
+  const a = doc.indexOf(begin), b = doc.indexOf(end);
+  return a < 0 || b < a || doc.includes(begin, a + 1) || doc.includes(end, b + 1) ? null : { a: a + begin.length, b };
+}
+/** `doc` with the lines between `begin` and `end` replaced by `body`, or null when it has no one such block (run.ts
+ *  --write-manifest). A CRLF doc (a Windows checkout under core.autocrlf) gets CRLF lines, so the file keeps one ending (review #375 14). */
+export function spliceGenerated(doc: string, begin: string, end: string, body: string): string | null {
+  const at = generatedBlock(doc, begin, end), nl = doc.includes("\r\n") ? "\r\n" : "\n";
+  return at ? doc.slice(0, at.a) + nl + body.trim().replace(/\r?\n/g, nl) + nl + doc.slice(at.b) : null;
 }
 /** The lines the gate keeps from a failed suite's output: every FAIL / ✗ line, plus the indented lines right under it
  *  (where checks print what they saw), at most `per` each, so a FAIL says WHAT it saw as well as which row failed. */

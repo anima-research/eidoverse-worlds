@@ -1,6 +1,6 @@
 // test/protocol/agenttools-check.ts — the agent's tools (mcpl/tools.ts HANDLERS on a real mcpl/agent.ts WorldAgent) against a
 // real sequencer: scratch port, scratch WORLDS_DIR/OPT_DIR, TRUST_NAMES, never 8968/8970. Build mode v1's worst tool bugs
-// (AUDIT-tools-vs-protocol 2026-10-07, AUDIT-human-agent-parity 2026-10-07). usage: bun test/protocol/agenttools-check.ts
+// (audits of 2026-10-07). usage: bun test/protocol/agenttools-check.ts
 //   AT1  E1 "two bodies": the agent's move walks the AUTHORITY's body (move steps, as a person's client streams them), so
 //        a wall the authority calls solid stops it, and the hand verbs find it where it stands (grab/put after a walk)
 //   AT2  create {from: <a thing's id>} duplicates from the tool (at as a point; with no at, beside its source), and its

@@ -1,4 +1,4 @@
-// test/protocol/phystick-check.ts — the engine's heartbeat (DESIGN-physics-responsiveness §1; STRIKES PH-S1-2).
+// test/protocol/phystick-check.ts — the engine's heartbeat.
 // Before: the sim advanced and rests were logged INSIDE whoever's request came next (503 ms for the first `wait` after a
 // 40-crate knock, then 145–341 ms each), and rests never logged without a request. Now server.ts calls settle(w) on its
 // own beat. usage: bun test/protocol/phystick-check.ts   (NO_TICK=1 runs the old shape: the rows that need the beat go red; T3's catch-up row stays green, its two beats being no-ops)
@@ -67,7 +67,7 @@ function world(name, N) {
   for (let k = 0; k < 20; k++) B.beat(0, 3);
   const pb = B.w.simPeek(); ok(pb.sim.tick === ta && digestOf(pb.sim) === da, "T3 catching up by bounded passes is bit-identical to advancing straight", { ta, tb: pb.sim.tick, da, db: digestOf(pb.sim) });
 }
-// T4: log growth. One digest per settle pass and one change per launch per pass (STRIKES PH-S2-5: it was one of each per body,
+// T4: log growth. One digest per settle pass and one change per launch per pass (it was one of each per body,
 // 42 digests for a 40-crate knock).
 {
   const { w, call, beat } = world("t4", 40);

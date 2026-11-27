@@ -105,7 +105,7 @@ function heldBy(c: any) {
   }
   return k;
 }
-const REPLICA = { replica: true };   // every client in a world folds the log (slice 3c)
+const REPLICA = { replica: true };   // every client in a world folds the log
 
 // ================= the protocol =================
 const W4 = path.join(root, "w4"), OPT = path.join(root, "opt");
@@ -251,7 +251,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   await HANDLERS.act(ag, { verb: "set", args: { id: IDS.of("agentcup"), component: "label", value: "mine", throughLock: true } }, {} as any, "act");
   const un = await HANDLERS.act(ag, { verb: "undo", args: { throughLock: true } }, {} as any, "act");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));
-  // slice 3c: the agent folds the log stream itself (joined replica), never the v1 projection
+  // the agent folds the log stream itself (joined replica), never the v1 projection
   ok(ag.replica?.active === true && ag.entities.has(IDS.of("agentcup")), "S5b the agent folds the authority's own stream, and sees what it made there", [ag.replica?.active, [...ag.entities.keys()]]);
   // R 10-17: the agent names its plank with a placeholder and a label; the set reaches it by that label
   const mk = await HANDLERS.act(ag, { verb: "create", args: { id: "$plank", model: "test/table.glb", components: { label: "plank" }, place: { at: [6, 6] } } }, {} as any, "act");
@@ -346,7 +346,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
     ok(mk?.ok && got.length === 2 && got[0].by === "Dana" && !got[0].end && got[1].by === "Dana" && got[1].end === true, "DR1 a drag reaches the others with by (the dragger's name) and its last sample carries end", { mk: mk?.ok, got });
     await ann.req("delete", { id: "@world", component: "default-role" });   // the later rows expect no default-role: a newcomer is a member (CM4's whois)
     await bye(da, db); }
-  // ---- RN: the rename cooldown is judged on the name a person will actually wear (STRIKES P-S2-5) ----
+  // ---- RN: the rename cooldown is judged on the name a person will actually wear ----
   { const z1 = await client(srv.port, "garden", "zeph", { ...REPLICA, account: "acct-zp" }); const n1 = z1.snapshot?.you; await bye(z1);
     const z2 = await client(srv.port, "garden", "zeph-two", { ...REPLICA, account: "acct-zp" }); const n2 = z2.snapshot?.you, r2 = z2.snapshot?.renameRefused; await bye(z2);
     const z3 = await client(srv.port, "garden", "zeph-three", { ...REPLICA, account: "acct-zp" }); const n3 = z3.snapshot?.you, r3 = z3.snapshot?.renameRefused;
@@ -525,7 +525,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(ed.ok, "S6 the translated world takes edits from its owner", ed);
   void old; neu.close(); }
 
-// ---- S8: clients that fold the log themselves (slice 3b): the cut at join, the log stream, no projection ----
+// ---- S8: clients that fold the log themselves: the cut at join, the log stream, no projection ----
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second world");
   const a = await client(srv.port, "meadow", "Ann", { replica: true });
   ok(a.snapshot?.state?.["@world"] && Number.isInteger(a.snapshot.seq) && Array.isArray(a.snapshot.mine), "S8 a log-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.cut ?? {}));
@@ -553,7 +553,7 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(r2.ok && a.of("log").every((m: any) => Array.isArray(m.entries) && m.entries.every((e: any) => typeof e.kind === "string" && typeof (e.verb ?? e.op) === "string" && !("args" in e))), "S8 …and the world carries on, still sending only entries", a.of("log").length);
   ok(a.snapshot.mine.length === 0 && (await client(srv.port, "meadow", "Ann", { replica: true })).snapshot.mine.includes(r2.act), "S8 a rejoin's undo stack holds my acts (Ctrl+Z survives a reload)");
   a.close(); }
-// ---- SP: physics at the server (design 20): who holds what is sent to everyone; a joiner's cut carries it and the sim;
+// ---- SP: physics at the server: who holds what is sent to everyone; a joiner's cut carries it and the sim;
 // a person who leaves while holding something drops it into the world ----
 { ok(tool(["found", "pitch", "--owner", "Ann"]).code === 0, "SP found a physics world");
   const a = await client(srv.port, "pitch", "Ann", REPLICA);

@@ -6,6 +6,7 @@
 //   bun test/gate/run.ts --shard 2/4     shard 2 of 4 (1-based; shard.ts packs SUITES); the gate is all 4 merged by merge-receipts.ts
 //   bun test/gate/run.ts --manifest      print the suite table docs/contributing/GATE-MANIFEST.md carries (generated from here)
 //   bun test/gate/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
+//   bun test/gate/run.ts --write-manifest   rewrite the doc's generated block with what --manifest prints
 //   bun test/gate/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in .siblings/, and install the packages that take them
 //   bun test/gate/run.ts --library <dir>    clone (or move) the asset library to its pin at <dir>, for EIDOVERSE_DIR
 //   bun test/gate/run.ts --receipt <file>   also write a JSON receipt of this run (head, OS, runtimes, library, scratch dir, per-suite results and output hashes)
@@ -34,7 +35,7 @@ import fs from "node:fs"; import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
-import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
+import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, generatedBlock, inheritedEnv, laneOf, localImports, spliceGenerated, suitePath } from "./suites.ts";
 import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
 
 
@@ -110,10 +111,10 @@ function manifest() {
 const DOC = ENGINE + "docs/contributing/GATE-MANIFEST.md", BEGIN = "<!-- BEGIN GENERATED: bun test/gate/run.ts --manifest -->", END = "<!-- END GENERATED -->";
 function manifestDrift(): string | null {
   if (!fs.existsSync(DOC)) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} is missing`;
-  const t = fs.readFileSync(DOC, "utf8"), a = t.indexOf(BEGIN), b = t.indexOf(END);
-  if (a < 0 || b < a) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block (${BEGIN} … ${END})`;
-  return t.slice(a + BEGIN.length, b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
-     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --manifest prints the table: paste it between the BEGIN/END GENERATED lines)`;
+  const t = fs.readFileSync(DOC, "utf8"), at = generatedBlock(t, BEGIN, END);
+  if (!at) return `${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block, or more than one (${BEGIN} … ${END})`;
+  return t.slice(at.a, at.b).replace(/\r\n/g, "\n").trim() === manifest().trim() ? null   // a Windows checkout may carry CRLF
+     : `${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table is not what --manifest prints (bun test/gate/run.ts --write-manifest rewrites it)`;
 }
 
 const argv = process.argv.slice(2);
@@ -189,6 +190,9 @@ if (argv.includes("--library")) {
   process.exit(0);
 }
 if (argv.includes("--manifest")) { console.log(manifest()); process.exit(0); }
+if (argv.includes("--write-manifest")) { const t = fs.existsSync(DOC) ? fs.readFileSync(DOC, "utf8") : "", next = spliceGenerated(t, BEGIN, END, manifest());
+  if (next === null) { console.error(`--write-manifest: ${path.relative(ENGINE, DOC).split(path.sep).join("/")} has no generated block, or more than one (${BEGIN} … ${END})`); process.exit(1); }
+  fs.writeFileSync(DOC, next); console.log(`wrote ${path.relative(ENGINE, DOC).split(path.sep).join("/")}'s suite table`); process.exit(0); }
 if (argv.includes("--check-manifest")) { const d = manifestDrift(); console.log(d ?? "manifest: docs/contributing/GATE-MANIFEST.md matches run.ts"); process.exit(d ? 1 : 0); }
 const laneArg = valueOf("--lane");
 const only = argv.filter((a, i) => !a.startsWith("--") && !VALUED.includes(argv[i - 1]));
@@ -321,7 +325,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   // hermetic means no host cache, not hiding this checkout's own files
   for (const rel of OPT_TRACKED) { const to = path.join(dir, "opt", rel); fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(path.join(ENGINE, "test/fixtures", rel), to); }
   // hermetic: nothing the suite reads by default lies outside this checkout and this dir (no ~, no ../eidoverse-video)
-  const env: Record<string, string> = { ...process.env as Record<string, string>, PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+  const env: Record<string, string> = { ...inheritedEnv(process.env), PATH, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
     HOME: path.join(dir, "home"), TMPDIR: dir, PROTOCOL_SCRATCH: dir, EIDOVERSE_DIR: path.join(dir, "library"), OPT_DIR: path.join(dir, "opt"),
     WORLDS_DIR: path.join(dir, "worlds"), PATCH_DIR: path.join(dir, "patched"), SKIP_OPT_SWEEP: "1" };
   if (process.platform === "win32") env.EIDO_SANDBOX ??= "inprocess";   // Windows runs scripts only on this opt-in (shared/protocol/sandbox.js winRefuses)
@@ -350,7 +354,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
-  return { code, signal, out: kept.out, lines: kept.lines(), timedOut, leftovers, stuck };
+  return { code, signal, out: kept.record(), lines: kept.lines(), timedOut, leftovers, stuck };
 }
 
 // ---- the gate ----
@@ -420,7 +424,7 @@ if (receiptAt) {
     library: LIBRARY ? { head: LIBRARY_HEAD, pinned: LIBRARY_PIN } : null, scratch: { dir: SCRATCH_ROOT, kept: !!process.env.PROTOCOL_KEEP }, seconds: Math.round((performance.now() - t0) / 1000),
     tally: Object.fromEntries((["core", "main", "browser"] as Lane[]).map((l) => [l, { pass: count(l, "pass"), fail: count(l, "fail"), skip: count(l, "skip") }])),
     notSelected: notRun, suites, optional: Object.fromEntries(optional),
-    // one hash over every suite's kept tail (outputKeeper's out; the verdict lines its cut dropped aren't hashed), in run order
+    // one hash over every suite's outSha256 (outputKeeper's record: the verdict lines its cut dropped, then the tail), in run order
     logSha256: createHash("sha256").update(suites.map((x) => `${x.name}\t${x.outSha256 ?? ""}`).join("\n")).digest("hex"),
     ...(shard ? { shard: { index: shard.index, of: shard.of, hash: partitionHash(bins), assigned } } : {}),
   };

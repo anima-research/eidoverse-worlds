@@ -95,7 +95,7 @@ const noAccounts = (v: any): any => Array.isArray(v) ? v.map(noAccounts)
   : v && typeof v === "object" ? Object.fromEntries(Object.entries<any>(v).filter(([k, x]) => !/^(human|agent|aid1):/.test(k) && !((k === "sub" || k.endsWith("Sub")) && typeof x === "string" && /^(human|agent|aid1|local):/.test(x))).map(([k, x]) => [k, noAccounts(x)]))
   : v;
 const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED: mounts, recentChat / chatTotal
-// translate-v1@2 (slice 3a): a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
+// translate-v1@2: a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
 // localOf (the client's own reading, not the translator's rideOf): offset, else its socket's pos; parent.q, else yaw,
 // else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
 // parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").
@@ -186,7 +186,7 @@ function oldNorm(st: any, phys: any = null) {
     if (!R["*"] || !owned) world.roles = { ...R, "*": { role: "builder" } };
     if (!owned) { for (const [k, r] of Object.entries<any>(world.roles)) if (k !== "*" && r && typeof r === "object" && (r.role === undefined || r.role === "visitor")) world.roles[k] = { ...r, role: "builder" };
       world["??role-defs"] = { builder: { can: { generate: true } } }; } }
-  // declared (translate-v1@31, LEGACY-PINS item 2): main kept walkers within 78 m and fliers under 60 m where it had no bounds; with
+  // declared (translate-v1@31): main kept walkers within 78 m and fliers under 60 m where it had no bounds; with
   // neither bounds nor terrain the world's box says so, 2 m under the stage floor, grown 2 m past every thing, volume and vehicle band
   if (st.terrain == null && !Object.values<any>(st.entities ?? {}).some((e) => e?.comp?.environment)) {
     const lo = [-78, -2, -78], hi = [78, 60, 78], take = (p: any) => { if (Array.isArray(p) && p.length === 3 && p.every(Number.isFinite)) for (let i = 0; i < 3; i++) { lo[i] = Math.min(lo[i], p[i] - 2); hi[i] = Math.max(hi[i], p[i] + 2); } };

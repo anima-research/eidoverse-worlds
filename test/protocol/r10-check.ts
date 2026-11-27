@@ -1,4 +1,4 @@
-// test/protocol/r10-check.ts — review round 10 (REVIEW-holes-r10, REVIEW-scars-r10, REVIEW-claims-r10, 2026-10-17): the
+// test/protocol/r10-check.ts — review round 10 (2026-10-17): the
 // fixes, each row red first (against caab0868) and most held by a mutation below (F4 and the X rows have none).
 //   bun test/protocol/r10-check.ts                 every row
 //   bun test/protocol/r10-check.ts --only S1,A1    just those

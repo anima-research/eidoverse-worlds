@@ -7,7 +7,7 @@
 // here the control arm runs only when PROTOCOL_LAB points at a lab checkout; without it the suites check today's code
 // alone and say the control was skipped. Today's side is the gate either way.
 //
-// Locks (slice 3a, PROTOCOL §5): the engine's door calls the edit lock `lock` and refuses with code `locked`; the
+// Locks (PROTOCOL §4, `lock`): the engine's door calls the edit lock `lock` and refuses with code `locked`; the
 // lab's doors called it `pinned` and refused with `pinned`. The control arm stays meaningful WITHOUT a name map,
 // because both lab doors the control extracts (4f62913 and c9b4a67) already read `lock` as their legacy alias of
 // `pinned` (`pinnedC = c?.pinned === true || c?.lock === true`). So every suite sends the same `lock` request to both

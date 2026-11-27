@@ -3,6 +3,7 @@
  "mcpl/net-server.ts ./state.json": "runtime file, written beside the server",
  "mcpl/net-server.ts ./tokens.json": "runtime file, written beside the server",
  "services/voicebot/index.ts ./voices.json": "runtime file (VOICES_FILE's default)",
+ "test/client/harness-test.ts ./crlf-target.js": "fixture source text",
  "test/client/reexport-binding-test.mjs ./x.js": "fixture source text",
  "test/client/reexport-binding-test.mjs ./y.js": "fixture source text",
  "test/gate/hygiene-check.ts ../f/": "a rule's sample text",

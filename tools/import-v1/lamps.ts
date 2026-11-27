@@ -1,5 +1,5 @@
 // tools/import-v1/lamps.ts — the lamps main's client inferred for a glowing model (main client/lib/render/lightrig.js
-// attachLamps at ccd5c53f), measured from the GLB here so the translator writes them as light things (@31, LEGACY-PINS item 6).
+// attachLamps at ccd5c53f), measured from the GLB here so the translator writes them as light things (@31).
 // Importer-only: this protocol infers nothing at runtime (an emissive material glows; a light is a light component).
 // @ts-nocheck
 import { resolveLibFile } from "../../server/libfile.ts";

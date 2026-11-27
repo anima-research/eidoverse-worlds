@@ -214,4 +214,38 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   }
 }
 
+{ // PG24 (G4-103): a live server's address or credential exported in the shell never reaches a suite; everything else does
+  const { inheritedEnv, LIVE_TARGET } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const got = typeof inheritedEnv === "function" ? inheritedEnv({ WORLD_URL: "ws://live/ws", JOIN_TOKEN: "j", WORLD_TOKEN: "w", WORLD: "real", PORT: "8940", JOIN_KEY: "door", world_url: "ws://win/ws", KEEP: "yes", GONE: undefined }) : null;
+  // …and the suite's spawn takes that env, not process.env (review #375 25: the env built is the env used)
+  check("PG24 the gate hands a suite the shell's environment without WORLD_URL, JOIN_TOKEN, WORLD_TOKEN, WORLD, PORT or JOIN_KEY (any case), and run.ts builds every suite's env from that and spawns the suite with it",
+    !!got && JSON.stringify(got) === '{"KEEP":"yes"}' && LIVE_TARGET.includes("WORLD_URL") && /const env: Record<string, string> = \{ \.\.\.inheritedEnv\(process\.env\),/.test(rs) && !/\.\.\.process\.env as Record/.test(rs)
+      && /const child = spawn\(cmd\[0\], cmd\.slice\(1\), \{ cwd: ENGINE, env, /.test(rs) && !/env: process\.env/.test(rs), got); }
+{ // PG25 (G4-105): a suite's outSha256 covers the verdict lines the output cut dropped, not only the kept tail
+  const { outputKeeper } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const feed = (early: string) => { const k = outputKeeper(4000, 2000); k.add(`ok   A1 fine\n${early}\n`); for (let i = 0; i < 400; i++) k.add("ok   filler row ".padEnd(40, "x") + "\n"); return k; };
+  const red = feed("FAIL B2 early red"), other = feed("FAIL B2 another red");
+  const rec = (k: any) => typeof k.record === "function" ? k.record() : k.out;
+  check("PG25 the record a receipt hashes holds every verdict line the cut dropped, then the tail (two runs that differ only in a dropped FAIL hash apart), and run.ts hashes that record",
+    red.out === other.out && rec(red) !== rec(other) && rec(red).startsWith("FAIL B2 early red\n") && rec(red).endsWith(red.out) && /out: kept\.record\(\)/.test(rs) && /createHash\("sha256"\)\.update\(r\.out\)/.test(rs),
+    { dropped: red.dropped, recorded: typeof red.record === "function" }); }
+{ // PG26 (G4-224): --write-manifest rewrites only GATE-MANIFEST's generated block; a doc without one is refused
+  const { spliceGenerated } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const B = "<!-- BEGIN -->", E = "<!-- END -->", doc = `# head\n\n${B}\n| old |\n${E}\ntail\n`;
+  const got = typeof spliceGenerated === "function" ? { fresh: spliceGenerated(doc, B, E, "| new |\n| row |\n"), none: spliceGenerated("# no block\n", B, E, "| new |") } : null;
+  check("PG26 --write-manifest puts --manifest's table between the GENERATED markers and leaves every other byte; a doc with no block is refused, not appended to",
+    !!got && got.fresh === `# head\n\n${B}\n| new |\n| row |\n${E}\ntail\n` && got.none === null && /argv\.includes\("--write-manifest"\)/.test(rs) && /spliceGenerated\(t, BEGIN, END, manifest\(\)\)/.test(rs)
+      && /fs\.writeFileSync\(DOC, next\)/.test(rs), got); }   // …and writes what it spliced (review #375 25)
+{ // PG27 (review #375 14): a CRLF doc (a Windows checkout) gets its generated block in CRLF too: one line ending throughout
+  const { spliceGenerated } = (await import("../gate/suites.ts")) as any;
+  const B = "<!-- BEGIN -->", E = "<!-- END -->", doc = `# head\r\n${B}\r\n| old |\r\n${E}\r\ntail\r\n`, got = spliceGenerated(doc, B, E, "| new |\n| row |\n");
+  check("PG27 --write-manifest on a CRLF doc writes the table in CRLF: no LF-only line in the result",
+    got === `# head\r\n${B}\r\n| new |\r\n| row |\r\n${E}\r\ntail\r\n` && !/(?<!\r)\n/.test(got), JSON.stringify(got)); }
+{ // PG28 (review #375 15): two blocks, or one nested in another, are refused by the writer and the checker alike, not half-handled
+  const { spliceGenerated, generatedBlock } = (await import("../gate/suites.ts")) as any, rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  const B = "<!-- BEGIN -->", E = "<!-- END -->", nested = `${B}\nprose\n${B}\n| a |\n${E}\n`, twice = `${B}\n| a |\n${E}\nprose\n${B}\n| b |\n${E}\n`;
+  const got = { nested: spliceGenerated(nested, B, E, "| x |"), twice: spliceGenerated(twice, B, E, "| x |"), one: typeof generatedBlock === "function" ? generatedBlock(`${B}\n| a |\n${E}\n`, B, E) : "none" };
+  check("PG28 a doc with a second or nested generated block is refused by --write-manifest, and --check-manifest reads the block from the same helper",
+    got.nested === null && got.twice === null && JSON.stringify(got.one) === JSON.stringify({ a: B.length, b: B.length + 7 }) && /at = generatedBlock\(t, BEGIN, END\)/.test(rs), got); }
+
 done();

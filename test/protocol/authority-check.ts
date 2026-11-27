@@ -543,7 +543,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
 
 // ---- K: the client's own fold (shared/protocol/replica.js): adopt a cut, ingest the authority's entries; the state equals the
-// server's after every request, and the VIEW the renderer draws is recomputed from it (slice 3c: no v1 verbs) ----
+// server's after every request, and the VIEW the renderer draws is recomputed from it (no v1 verbs) ----
 // review of #260: the view diff compares a timestamp exactly, and tells an absent world key from an empty one
 { const { diffView } = await import("../../shared/viewdiff.js");
   const t0 = 1800000000000, thing = (ts) => ({ entities: { s1: { model: "crate", pos: [0, 0, 0], sound: { clip: "bell", at: ts } } } });
@@ -669,7 +669,7 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(s0.ok && m1.ok && m2.ok && half === 18 && afterHours === 9 && later === 15 && afterRate === 15 && stood === 15,
     "SKY1 a merged sky hour holds from the merge (9 then, 15 a quarter hour on at 24×), and a merged rate keeps the hour it shows (15, standing still at rate 0)", { half, afterHours, later, afterRate, stood, sky: sky() }); }
 
-// ---- V: what changed, said in the protocol's terms (slice 3c: the renderer reacts to these, not to v1 verbs) ----
+// ---- V: what changed, said in the protocol's terms (the renderer reacts to these, not to v1 verbs) ----
 { const { viewState } = await import("../../shared/protocol/view.js"); const { diffView } = await import("../../shared/viewdiff.js");
   let now = clock.t + 9500; const w = openLive(root + "vdiff/", "vdiff", { kindOf: LABKIND, now: () => now });
   let held = viewState(w.state());

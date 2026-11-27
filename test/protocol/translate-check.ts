@@ -47,7 +47,7 @@ const log = (L: [string, string, any][]) => [{ seq: 0, ts: T0, actor: "world", v
 const tr = (L: [string, string, any][]) => { const r = TV1.translate(log(L)); return { r, W: r.final.translated["@world"] ?? {}, E: r.final.translated }; };
 const eff = (W: any, id: string, anon = false) => R.effectiveOf(W, id, { anon, owners: Object.keys(W).some((k) => k.startsWith("roles:") && W[k]?.role === "owner") });
 const OWNER: [string, string, any] = ["world", "grant", { id: "olga", role: "owner" }];
-/** An ownerless translation as the upgrade leaves it: its upgrader claims it (world.ts translate --claim), so it has an owner (LEGACY-PINS item 9). */
+/** An ownerless translation as the upgrade leaves it: its upgrader claims it (world.ts translate --claim), so it has an owner. */
 const claimed = (W: any) => ({ ...W, "roles:u-upgrader0000000000000": { role: "owner" } });
 
 // ================= R22: main's effective rights, written out =================
@@ -224,7 +224,7 @@ row("F50c", () => { const { E } = tr([OWNER, ["olga", "spawn", { id: "boat", lib
   ok(walls.length === 2 && walls.every(([, c]) => c.lock === true) && /locked \(builder strength/.test(TV1.CARRIED.vehicle.to),
     "F50c the vehicle walls are locked (no builder moves or deletes one by accident; lifting it is a builder's deliberate act, said in the report: review delta-260 L-B)", { walls: walls.map(([k, c]) => [k, c.lock]) }); });
 
-// ================= @31: main's results in today's shapes (LEGACY-PINS 10-29) =================
+// ================= @31: main's results in today's shapes (docs/operator/TRANSLATING-OLD-WORLDS.md) =================
 row("F51", () => { const pond = (speed: number) => tr([OWNER, ["olga", "spawn", { id: "pool", lib: "p.glb" }], ["olga", "comp", { id: "pool", type: "water", data: { center: [0, 0, 0], size: [4, 2, 4], speed } }]]);
   const slow = pond(1.2), near = pond(2.45), kid = (o: any) => Object.values<any>(o.E).find((c) => c.water && c.zone), M = (o: any) => o.r.stats.mapped?.find((m) => m.component === "water");
   const json = JSON.stringify([slow.r.out, near.r.out]);

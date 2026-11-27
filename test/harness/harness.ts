@@ -101,7 +101,7 @@ function foreignHeadless(): number {
   } catch { return -1; }
 }
 export function mkCheck() {
-  const t = { passed: 0, failed: 0, load0: loadavg()[0], foreign0: foreignHeadless(), note: () => "" };
+  const t = { passed: 0, failed: 0, nas: 0, load0: loadavg()[0], foreign0: foreignHeadless(), note: () => "" };
   const check = (name: string, ok: boolean, detail = "") => {
     console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${detail ? dim(`  ${detail}`) : ""}`);
     if (ok) t.passed++; else { t.failed++; failedChecks++; }
@@ -109,7 +109,9 @@ export function mkCheck() {
   // "· load 1.2→9.4 (16 cores) · 2 foreign headless chromes" — the box's state at start→end, so a red can be read as load without a re-run
   t.note = () => { const l1 = loadavg()[0], f1 = foreignHeadless(), cores = cpus().length, hot = Math.max(t.load0, l1) > cores || Math.max(t.foreign0, f1) > 0;
     return ` · load ${t.load0.toFixed(1)}→${l1.toFixed(1)} (${cores} cores) · ${Math.max(t.foreign0, f1)} foreign headless chrome${Math.max(t.foreign0, f1) === 1 ? "" : "s"}${hot ? " · UNDER LOAD: a red here may be timing" : ""}`; };
-  return { check, tally: t };
+  // a check that can't apply on this host: printed and counted as not applicable, never as a pass (as suite.ts's na)
+  const na = (name: string, why: string) => { t.nas++; console.log(`  n/a ${name}${dim(`  ${why}`)}`); };
+  return { check, na, tally: t };
 }
 
 type ScratchOptions = {

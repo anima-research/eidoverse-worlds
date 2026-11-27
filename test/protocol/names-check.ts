@@ -1,5 +1,5 @@
-// test/protocol/names-check.ts — names carry no body plan and set no kind against another (R 10-17 14:34–14:41, protocol
-// minor 0, unreleased). Each row red first (against BASE: `--control` extracts it and runs every row there) and most held
+// test/protocol/names-check.ts — names carry no body plan and set no kind against another (R 10-17 14:34–14:41, before
+// release). Each row red first (against BASE: `--control` extracts it and runs every row there) and most held
 // by a mutation below (P1 has none); G rows are guards (green at base by design: what must NOT change).
 //   bun test/protocol/names-check.ts                 every row
 //   bun test/protocol/names-check.ts --only P1,C1    just those
