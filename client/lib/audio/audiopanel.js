@@ -80,7 +80,8 @@ function micFloorRow() {
   // the marker opens the gate; it does not filter what is sent: the hang keeps quieter sound going out after speech, and a
   // consented ungated lane sends everything
   const hint = 'voice-activation threshold: sound over the white marker opens your mic, and it stays open ' +
-    'for a moment after you drop below it, so quieter sound right after speech is sent too — raise it if typing ' +
+    'for a moment after you drop below it, so quieter sound right after speech is sent too; sound under it the rest ' +
+    'of the time is not sent as voice (speech-to-text, when on, still hears it) — raise it if typing ' +
     'opens the mic; the bar shows your live mic level, gold while your voice is going out to the room';
   const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =

@@ -339,6 +339,9 @@ const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => 
 t('the push-to-talk hint says the end of the last word still goes out and the mic cuts off 50 ms after the release, in 5 ms, and that a synth voice is not keyed by V',
   /Release V and the end of your last word still goes out: your mic cuts off 50 ms later \(your voice is sent 50 ms behind you\), within 5 ms, and the gold goes with it\./.test(pttHint)
   && !/at once|after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by V/.test(pttHint), pttHint);
+const floorHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /voice-activation threshold/.test(x)) || '';
+t('the sensitivity hint says speech-to-text, when on, still hears what the marker keeps from the room (as main\'s did)',
+  /sound under it the rest of the time is not sent as voice \(speech-to-text, when on, still hears it\)/.test(floorHint), floorHint);
 await sfu.sfuMic(true);
 negotiated(pc);
 ms.setPttHeld(true);
