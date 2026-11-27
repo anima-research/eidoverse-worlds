@@ -141,6 +141,10 @@ const POLLS = 'three glyph polls and many bar frames';
 // the indicators itself (micstate.js 'audio:ptt-tail-end'), so the gold does not wait for a poll. `release` is the
 // gesture; atOnce is what shows in its own turn, closed() what shows as the cut closes.
 const LOOK_S = 0.05, CUT_S = 0.005, TAIL_MS = (LOOK_S + CUT_S) * 1000;
+// ...and no later than this: the close's own timer fires ~1 ms after the cut, where the glyph's 8 Hz poll could land up
+// to 125 ms after it; a timer that ran late, or a poll standing in for it, reads past this bound
+const TAIL_LATE_MS = 100;
+const closedOnTime = (c) => !!c && c.ms >= TAIL_MS && c.ms < TAIL_LATE_MS;
 const near = (a, b) => typeof a === 'number' && Math.abs(a - b) < 1e-9;
 const tipNow = () => document.querySelector('#micbtn')?.title || '';
 function releaseKey(release) {
@@ -326,8 +330,8 @@ const keyUp = releaseKey(() => window.dispatchEvent(new KeyboardEvent('keyup', {
 t('PTT keyup: still gold in the same turn, because the last 50 ms said under the key is still going out',
   keyUp.atOnce.hears === true && keyUp.atOnce.gold === true, `${JSON.stringify(keyUp.atOnce)} ${state()}`);
 const keyUpClosed = await keyUp.closed();
-t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup), painted by the close itself, not the last poll`,
-  !!keyUpClosed && keyUpClosed.ms >= TAIL_MS && keyUpClosed.hears === false && keyUpClosed.gold === false
+t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup, before ${TAIL_LATE_MS}), painted by the close itself, not the last poll`,
+  closedOnTime(keyUpClosed) && keyUpClosed.hears === false && keyUpClosed.gold === false
   && /push-to-talk armed/.test(keyUpClosed.title), `${JSON.stringify(keyUpClosed)} ${state()}`);
 ms.setPttHeld(true);
 await tryUntil('gold again under the key, in VR too', () => gold() && xrShows() && xrGold());
@@ -336,8 +340,8 @@ const vrRel = releaseKey(() => ms.setPttHeld(false));
 t('VR controller release: the HUD and the indicator stay gold while the last 50 ms goes out',
   vrRel.atOnce.gold === true && vrRel.atOnce.xrKey === 'hot', `${JSON.stringify(vrRel.atOnce)} ${xrState()}`);
 const vrClosed = await vrRel.closed();
-t(`...and as the cut closes (${TAIL_MS} ms on) the indicator asks for the plain glyph and the HUD drops gold, with no tick`,
-  !!vrClosed && vrClosed.ms >= TAIL_MS && !vrClosed.xrAsked.includes('drop-shadow') && vrClosed.xrKey === 'on' && vrClosed.gold === false,
+t(`...and as the cut closes (${TAIL_MS} ms on, before ${TAIL_LATE_MS}) the indicator asks for the plain glyph and the HUD drops gold, with no tick`,
+  closedOnTime(vrClosed) && !vrClosed.xrAsked.includes('drop-shadow') && vrClosed.xrKey === 'on' && vrClosed.gold === false,
   `${JSON.stringify(vrClosed && { ...vrClosed, xrAsked: vrClosed.xrAsked.includes('drop-shadow') ? 'gold' : 'plain' })} ${xrState()}`);
 t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
 ms.setPttHeld(true);
@@ -453,8 +457,8 @@ t('PTT release cuts the gain one lookahead later: held at its level until +50 ms
 t('...and gold holds in the same turn: the room is still getting the end of the word', gainRel.atOnce.hears === true && gainRel.atOnce.gold === true,
   `${JSON.stringify(gainRel.atOnce)} ${state()}`);
 const gainClosed = await gainRel.closed();
-t(`...and gold ends as the cut closes (${TAIL_MS} ms on), not before and not at a later poll`,
-  !!gainClosed && gainClosed.ms >= TAIL_MS && gainClosed.hears === false && gainClosed.gold === false, `${JSON.stringify(gainClosed)} ${state()}`);
+t(`...and gold ends as the cut closes (${TAIL_MS} ms on), not before and not at a later poll (before ${TAIL_LATE_MS})`,
+  closedOnTime(gainClosed) && gainClosed.hears === false && gainClosed.gold === false, `${JSON.stringify(gainClosed)} ${state()}`);
 t('...and the 20 ms ticks over the tail do not reschedule the cut (each would push it later): one hold, one ramp',
   gainLog.filter((g) => g[0] === 'ramp').length === 1 && gainLog.filter((g) => g[0] === 'set').length === 1, JSON.stringify(gainLog));
 // a mute and the mic off under push-to-talk mean "stop now": the cut starts at once, with no lookahead tail
@@ -526,6 +530,30 @@ t('voice activation: as the release fade begins (the hang over), the lane still 
 const closedAt = await tryUntil('the fade closes', () => !gold() && ms.roomHears() === false && performance.now(), { ms: 4000 });
 t('...and gold ends only once the gain has closed (-60 dB, ~0.83 s into the fade: at least 0.6 s after it began)',
   !!closedAt && !!fadeBegan && closedAt - fadeBegan >= 600, `closed ${closedAt && fadeBegan ? Math.round(closedAt - fadeBegan) : '?'} ms into the fade`);
+// arming push-to-talk is a deliberate close (a cut), and under push-to-talk a cut carries a release's tail; but arming while
+// silent has no word in the lookahead to let out: the gain is already shut, so the cut is not a tail and nothing is gold
+await pause('well past the fade: the gain is shut', 300);
+{ vc.setPttMode(true);
+  const hearsAtOnce = ms.roomHears(), goldAtOnce = gold();
+  let goldSeen = goldAtOnce;
+  const t0 = performance.now();
+  while (performance.now() - t0 < 150) { if (gold() || ms.roomHears()) goldSeen = true; await pause('watch for a phantom tail', 5); }
+  t('arming push-to-talk while silent: not gold, in its own turn or after (no tail of a word that was never said)',
+    hearsAtOnce === false && goldAtOnce === false && !goldSeen, `roomHears=${hearsAtOnce} gold=${goldAtOnce} seen=${goldSeen} ${state()}`);
+  vc.setPttMode(false); }
+// arming push-to-talk mid-speech: the end of the word goes out through the tail, and gold goes dark as its cut closes,
+// told by the close itself (audio:ptt-tail-end), not at the glyph's next poll
+room = 0.3;
+t('setup: voice activation, speaking again: gold', !!(await tryUntil('gold by level', () => gold())), state());
+{ const arm = releaseKey(() => vc.setPttMode(true));
+  t('arming push-to-talk mid-speech: still gold in the same turn (the word in the lookahead is still going out)',
+    arm.atOnce.hears === true && arm.atOnce.gold === true, `${JSON.stringify(arm.atOnce)} ${state()}`);
+  const armClosed = await arm.closed();
+  t(`...and audio:ptt-tail-end fires and gold ends as the cut closes (${TAIL_MS} ms on, before ${TAIL_LATE_MS}), not at a later poll`,
+    closedOnTime(armClosed) && armClosed.hears === false && armClosed.gold === false, `${JSON.stringify(armClosed)} ${state()}`);
+  vc.setPttMode(false); }
+room = 1e-4;
+await tryUntil('the gate closes by level', () => !gold() && ms.roomHears() === false, { ms: 4000 });
 room = 0;
 // a moderator's mute with the mic off: the tooltip names it (V can't make the voice reach the room)
 await sfu.sfuMic(false);
@@ -659,6 +687,23 @@ t('...and an open after it cancels that cut first (still scheduled on the stoppe
 ctxState = 'running';
 for (const fn of ctxListeners) fn();
 await tryUntil('gold back', () => gold());
+// a release while the context is suspended: the audio clock is stopped, so a hold of one lookahead on it would run only
+// after resume, holding the word near full for 50 ms while gold (the context not running) is dark. With the clock stopped
+// the cut starts at once instead: set at +0, ramp to 0 by +5 ms
+ctxState = 'suspended';
+if (gateGain) gateGain._v = 0.98;   // where the audio clock left the gain under the key
+gainLog.length = 0; ms.setPttHeld(false);
+const susRel = gainLog.slice(), susSet = susRel.find((g) => g[0] === 'set');
+t('a release while the context is suspended: the cut starts at once (set at +0 from the gain, 0.98; ramp ends at +5 ms), no lookahead hold on the stopped clock',
+  atOnceCut(susRel) && !!susSet && Math.abs(susSet[1] - 0.98) < 1e-9, JSON.stringify(susRel));
+const susHears = ms.roomHears();
+ctxState = 'running';
+for (const fn of ctxListeners) fn();
+const resHears = ms.roomHears();
+t('...and no tail is reported going out, suspended or on resume: the stopped clock holds no word to send after it',
+  susHears === false && resHears === false, `suspended=${susHears} resumed=${resHears} ${state()}`);
+ms.setPttHeld(true);
+await tryUntil('gold back under the key', () => gold());
 ms.setPttHeld(false); vc.setPttMode(false);
 // a suspend during the voice-activation release fade: the audio clock stops with the gain part-way down, the wall clock
 // runs on; on resume the gain carries on from where it stopped, and sound goes out

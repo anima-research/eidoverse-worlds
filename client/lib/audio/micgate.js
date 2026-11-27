@@ -129,8 +129,10 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
     return envAt(t);
   };
   if (!open && cut) {
-    // with no delay line there is nothing held back to let out: the tail is the lookahead itself
-    const lag = tail && _look ? LOOKAHEAD : 0;
+    // with no delay line there is nothing held back to let out: the tail is the lookahead itself. A suspended context's
+    // clock has stopped, so a hold scheduled on it would run only after resume, sending the held word with the tail long
+    // over on the wall clock (and no gold): cut at once instead
+    const lag = tail && _look && gateRunning() ? LOOKAHEAD : 0;
     const at = now + lag * 1000, cutEnd = at + CUT_S * 1000;
     // A cut already scheduled stands: the 20 ms tick asks again on every pass, and rescheduling would push it later
     // each time. Only a cut that closes sooner replaces it (a mute inside a release's tail: stop now).
@@ -142,8 +144,9 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
         const t = _ctx.currentTime;
         p.cancelScheduledValues(t); p.setValueAtTime(from, t + lag); p.linearRampToValueAtTime(0, t + lag + CUT_S);
       } catch { p.value = 0; stepped = true; }
-      // a gain that took a step is shut now: no tail is going out
-      _env = stepped ? { at: now, from: 0, cutEnd: now } : { at, from, cutEnd, tail: lag > 0 };
+      // a gain that took a step is shut now: no tail is going out; nor is one from a gain already shut (push-to-talk armed
+      // while silent: the cut has nothing in the lookahead to let out)
+      _env = stepped ? { at: now, from: 0, cutEnd: now } : { at, from, cutEnd, tail: lag > 0 && from > GAIN_CLOSED };
     }
   } else {
     const from = level(now);

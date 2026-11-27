@@ -100,8 +100,11 @@ bus.on('audio:ptt', (on) => {
   const now = Date.now();
   if (on) {
     // Arming closes the gate now, not on the next tick: on an ungated lane that
-    // tick would be a window of raw transmission.
+    // tick would be a window of raw transmission. On the gated lane the close is a
+    // cut whose start waits one lookahead if a word is in it (micgate.js: the tail),
+    // so watch that tail as a release's is watched, and the gold ends with it.
     gateAudio(now);
+    watchTail();
     return;
   }
   // Leaving PTT with the key down: drop it, so the next regime starts closed.
