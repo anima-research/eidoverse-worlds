@@ -157,6 +157,9 @@ async function dropOver(h: any, ag: any, name: string, at: number[], overY: numb
   h.send({ type: "puppet", target: name, ragdoll: { lean: [1, 0, 0] } });
   await sleep(2200);
   h.send({ type: "bodydrag", target: name, grab: { joint: "hips" } });
+  // the grab was taken: a grab the server refused (consent, range) or the body declined never makes it held, and the
+  // drop below would then measure an untouched body, a negative row passing for the wrong reason (#381 round 2)
+  await landed(`${name} is held by the dragger`, () => ag.draggedBy != null);
   await sleep(250);
   h.send({ type: "bodydrag", target: name, pose: { hips: [0, 0, 0, 1] },
            p: [at[0], overY + 0.4, at[1]], yaw: 0 });
