@@ -106,16 +106,20 @@ console.log('— A. segmentation —');
 
 console.log('— B. revision doctrine —');
 {
+  // ordered by the captioner's own state, not by timers racing its settle (#381 review 11): the revision lands while the
+  // final's settle timer is pending (at commit, after it), the late one once the caption is out
+  let late: ((t: SttTranscript) => void) | null = null;
   const { out, cap } = await run((n, emit) => {
     emit({ utteranceId: `u${n}`, text: 'partial tex', final: false });
     emit({ utteranceId: `u${n}`, text: 'partial text, revis', final: false });
     emit({ utteranceId: `u${n}`, text: 'partial text, revised final', final: true });
-    setTimeout(() => emit({ utteranceId: `u${n}`, text: 'partial text, revised final, settled', final: true }), 5);   // before settle: replaces
-    setTimeout(() => emit({ utteranceId: `u${n}`, text: 'too late', final: true }), 120);                              // after emission: dropped
+    emit({ utteranceId: `u${n}`, text: 'partial text, revised final, settled', final: true });   // before settle: replaces
+    late = (t) => emit(t);
   }, [tone(400), silence(600)], { settleMs: 30 });
-  await tryUntil('the late revision (120 ms after commit) is counted', () => cap.lateRevisions >= 1, { ms: 5_000, step: 5 });
   check('a partial never becomes a caption; the settled final does', out.length === 1 && out[0].text === 'partial text, revised final, settled', JSON.stringify(out));
-  check('a revision after emission is counted and dropped', cap.lateRevisions === 1 && out.length === 1, String(cap.lateRevisions));
+  late!({ utteranceId: 'u1', text: 'too late', final: true });                                   // after emission: dropped
+  await pause('a revision taken for a new final would emit within one settle (30 ms): two settles show it did not', 60);
+  check('a revision after emission is counted and dropped', cap.lateRevisions === 1 && out.length === 1, `${cap.lateRevisions} late, ${out.length} caption(s)`);
 }
 
 {
