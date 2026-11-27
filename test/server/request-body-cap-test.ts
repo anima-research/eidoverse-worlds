@@ -3,6 +3,9 @@
 //   /seat-profile  MAX_PROPOSAL_BYTES (server/seats.ts): over is 413 in the cap's words, with a length or chunked
 //   /thumb         400 000 bytes: over is 413 "thumb too large", nothing written; at the cap the PNG is stored
 //   /perflog       100 000 bytes: over is answered "ok" (a beacon never learns why) and nothing is appended
+// Not every readCapped caller. Elsewhere: /setup's 1024/1025 boundary (setup-check SU11); /clientlog and /native/start
+// refuse an oversize body (clientlog-test S2 at 300 KB, native-login-test at 2048 bytes), not one byte over their caps;
+// /auth's 64 KiB read (routes.ts) has no over-cap row anywhere yet.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/server/request-body-cap-test.ts
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
