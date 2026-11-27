@@ -6,6 +6,7 @@
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
 // PG24–PG26: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
+// PG27, PG28: a process still leaving as its suite ends is not a leftover (the snapshot is quick enough to see it).
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -82,7 +83,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const run = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
   const sync = run.split("\n").map((l, i) => [i + 1, l] as const).filter(([, l]) => /\b(killSuite|suiteMembers)\(/.test(l) && !/^\s*\/\//.test(l)).map(([n, l]) => `${n}: ${l.trim().slice(0, 90)}`);
   check("PG8 run.ts's kill path never blocks: no synchronous killSuite/suiteMembers call, and a suite that won't die is left behind after a bound (a watchdog), not waited on forever",
-    sync.length === 0 && /killSuiteAsync/.test(run) && /suiteMembersAsync/.test(run) && /wouldn't die/.test(run), { sync });
+    sync.length === 0 && /killSuiteAsync/.test(run) && /leftoverMembers\(/.test(run) && /wouldn't die/.test(run), { sync });
 }
 
 // PG9–PG12, PG14: the gate sweeps every suite's tree AFTER the suite
@@ -232,20 +233,47 @@ if (win) { // PG25: the in-process snapshot is what answers on Windows, and it s
   const child = spawn(process.execPath, ["-e", script], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
   let said = ""; child.stdout!.on("data", (b) => { said += b.toString(); });
   await tryUntil("the suite's process has started its own", () => /grandchild \d+/.test(said), { ms: 10_000 });
-  const grand = Number(said.match(/grandchild (\d+)/)![1]);
-  const members = async () => PG.suiteMembers(child.pid!, await PG.processTableAsync("win32"), "win32").sort((a, b) => a - b);
-  await tryUntil("the snapshot sees the process the suite started", async () => (await members()).includes(grand), { ms: 5000 });
-  const t0 = performance.now(); const snap = await PG.processTableAsync("win32"); const ms = performance.now() - t0, source = (PG as any).winTable?.source;
-  const viaSnap = suiteMembers(child.pid!, snap, "win32").sort((a, b) => a - b);
+  const grand = Number(said.match(/grandchild (\d+)/)?.[1] ?? NaN);   // NaN when it never said: the row then fails below, after the kill
+  // the snapshot itself, never [] standing in for a table that didn't answer: a read that fails is no evidence of anything
+  const table = () => { const t = PG.toolhelpTable(); if (!t?.some((r) => r.pid === process.pid)) throw new Error("the snapshot gave no table with this process in it"); return t; };
+  const tree = (t: PG.Row[]) => suiteMembers(child.pid!, t, "win32").sort((a, b) => a - b);
+  await tryUntil("the snapshot sees the process the suite started", () => tree(table()).includes(grand), { ms: 5000 });
+  const t0 = performance.now(); const snap = await PG.processTableAsync("win32"); const ms = performance.now() - t0, source = PG.winTable.source;
+  const viaSnap = tree(snap);
   const ps = spawnSync("powershell.exe", ["-NoProfile", "-Command", "Get-CimInstance Win32_Process | ForEach-Object { \"$($_.ProcessId) $($_.ParentProcessId)\" }"], { encoding: "utf8", timeout: 60_000 });
-  const viaWmi = suiteMembers(child.pid!, parseWinTable(ps.stdout ?? ""), "win32").sort((a, b) => a - b);
-  const later = await members();   // read after WMI's: between the two the tree only grows (nothing here kills any of it)
+  const viaWmi = tree(parseWinTable(ps.stdout ?? ""));
+  // read after WMI's. Nothing here kills any of the tree, so it only grows (a console host may join between any two reads):
+  // snapshot ⊆ WMI ⊆ the next snapshot holds exactly when neither reader misses a process the other sees
+  let later: number[] = []; try { later = tree(table()); } catch { /* later stays [], and the row fails */ }
   const me = snap.find((r) => r.pid === process.pid), within = (x: number[], y: number[]) => x.every((p) => y.includes(p));
   await PG.killSuiteAsync(child.pid!, "SIGKILL", "win32");
-  let after: number[] = []; await tryUntil("none of the suite's processes is left", async () => !(after = await PG.suiteMembersAsync(child.pid!)).length, { ms: 5000, step: 200 });
-  check("PG25 (win32) the process table is the kernel's snapshot, read in process (not PowerShell); it finds a suite's whole tree as Win32_Process does (snapshot ⊆ WMI = the next snapshot), and the kill it drives leaves none of it",
-    source === "toolhelp32" && viaSnap.includes(child.pid!) && viaSnap.includes(grand) && within(viaSnap, viaWmi) && JSON.stringify(viaWmi) === JSON.stringify(later) && me?.ppid === process.ppid && after.length === 0,
+  let after: number[] | null = null; await tryUntil("none of the suite's processes is left", () => !(after = tree(table())).length, { ms: 5000, step: 200 });
+  check("PG25 (win32) the process table is the kernel's snapshot, read in process (not PowerShell); it finds a suite's whole tree as Win32_Process does (snapshot ⊆ WMI ⊆ the next snapshot), and the kill it drives leaves none of it in a snapshot that answered",
+    source === "toolhelp32" && viaSnap.includes(child.pid!) && viaSnap.includes(grand) && within(viaSnap, viaWmi) && within(viaWmi, later) && me?.ppid === process.ppid && after !== null && (after as number[]).length === 0,
     { source, ms: Math.round(ms), grand, viaSnap, viaWmi, later, after, me, ppid: process.ppid });
 } else na("PG25 the Windows process table read in process", "Windows only; PG24 checks the entry's layout here");
+
+{ // PG27: what a suite left running is asked again on Windows until it is gone or `ms` is up; POSIX asks once
+  const L = (PG as any).leftoverMembers as typeof PG.leftoverMembers | undefined;
+  const reads = (seq: number[][]) => { let n = 0; return { read: async () => seq[Math.min(n++, seq.length - 1)], n: () => n }; };
+  const going = reads([[7, 8], [8], []]), staying = reads([[9]]), posix = reads([[7, 8], []]), clean = reads([[]]);
+  const t0 = performance.now(), a = await L?.(1, "win32", { ms: 2000, step: 5, read: going.read }), aMs = performance.now() - t0;
+  const t1 = performance.now(), b = await L?.(1, "win32", { ms: 150, step: 5, read: staying.read }), bMs = performance.now() - t1;
+  const c = await L?.(1, "linux", { ms: 2000, step: 5, read: posix.read }), d = await L?.(1, "win32", { ms: 2000, step: 5, read: clean.read });
+  check("PG27 a suite's leftovers: on Windows a process on its way out as the suite ends is not one (asked again until none is left), a process that stays is (named once the wait is up); a suite that left nothing is asked once, and so is POSIX",
+    a?.length === 0 && going.n() === 3 && aMs < 1000 && JSON.stringify(b) === "[9]" && bMs >= 150 && JSON.stringify(c) === "[7,8]" && posix.n() === 1 && d?.length === 0 && clean.n() === 1,
+    { a, asked: going.n(), aMs: Math.round(aMs), b, bMs: Math.round(bMs), c, posixAsked: posix.n(), cleanAsked: clean.n() }); }
+if (win) { // PG28: the same on real processes: the snapshot is quick enough to catch a process that is already leaving
+  const L = (PG as any).leftoverMembers as typeof PG.leftoverMembers | undefined;
+  // detached: a child that isn't goes with its parent (the job libuv keeps its children in), which is the leaving this row times by hand
+  const start = async (grandchild: string) => { const c = spawn(process.execPath, ["-e", `const {spawn}=require('node:child_process'); const g=spawn(process.execPath,['-e',${JSON.stringify(grandchild)}],{stdio:'ignore',detached:true,windowsHide:true}); console.log('grandchild '+g.pid); setTimeout(()=>process.exit(0),300);`], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let said = ""; c.stdout!.on("data", (b) => { said += b.toString(); }); await new Promise((r) => c.on("exit", r)); return { root: c.pid!, grand: Number(said.match(/grandchild (\d+)/)?.[1] ?? NaN) }; };
+  const leaving = await start("setTimeout(()=>{},700)"), atOnce = await PG.suiteMembersAsync(leaving.root), settled = await L?.(leaving.root);
+  const staying = await start("setInterval(()=>{},1000)"), left = await L?.(staying.root, "win32", { ms: 400 });
+  await PG.killSuiteAsync(staying.root, "SIGKILL", "win32", { exited: true });
+  const gone = await tryUntil("the process that stayed is killed", async () => !(await PG.suiteMembersAsync(staying.root)).length && PG.winTable.source === "toolhelp32", { ms: 5000, step: 100 });
+  check("PG28 (win32) a process still leaving as its suite exits (gone 0.4 s later) is seen at once by the snapshot and is not a leftover; one that stays is, and is killed",
+    atOnce.includes(leaving.grand) && settled?.length === 0 && !!left?.includes(staying.grand) && !!gone, { leaving, atOnce, settled, staying, left, gone });
+} else na("PG28 a leaving process is not a leftover, on real Windows processes", "Windows only; PG27 checks the rule here");
 
 done();

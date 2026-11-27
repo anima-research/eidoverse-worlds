@@ -4,6 +4,7 @@
 //   bun test/gate/run.ts hostile phys    only the named suites (a PARTIAL run: it says so, and it is not the gate)
 //   bun test/gate/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
 //   bun test/gate/run.ts --shard 2/6     shard 2 of 6 (1-based; shard.ts packs SUITES by this OS's times); the gate is all 6 merged by merge-receipts.ts
+//   bun test/gate/run.ts --shard 2/6 --plan   say what shard 2 of 6 would run (its suites, the partition's hash) and stop: nothing runs
 //   bun test/gate/run.ts --manifest      print the suite table docs/contributing/GATE-MANIFEST.md carries (generated from here)
 //   bun test/gate/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
 //   bun test/gate/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in .siblings/, and install the packages that take them
@@ -27,7 +28,7 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuiteAsync, killSuiteAtExit, suiteMembersAsync } from "./procgroup.ts";
+import { killSuiteAsync, killSuiteAtExit, leftoverMembers } from "./procgroup.ts";
 import { findChrome } from "./chrome.ts";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
@@ -35,7 +36,7 @@ import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
 import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
-import { DEFAULT_SECONDS, loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
+import { DEFAULT_SECONDS, loadTimes, parseShard, partition, partitionHash, untimed as untimedIn } from "./shard.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -198,7 +199,7 @@ const shardArg = valueOf("--shard"), shard = argv.includes("--shard") ? parseSha
 if (typeof shard === "string") { console.log(`protocol gate: ${shard}`); process.exit(2); }
 if (shard && (only.length || laneArg)) { console.log("protocol gate: --shard takes no suite names or --lane (a shard is its whole bin)"); process.exit(2); }
 // packed by THIS OS's times (suite-times.json has one table per OS); the merge recomputes the split with the receipts' OS
-const times = shard ? loadTimes(process.platform) : {}, untimed = SUITES.filter(([n]) => !Object.hasOwn(times, n)).length;
+const times = shard ? loadTimes(process.platform) : {}, untimed = shard ? untimedIn(SUITES.map(([n]) => n), times).length : 0;
 const bins = shard ? partition(SUITES.map(([n]) => n), times, shard.of) : [], assigned = shard ? bins[shard.index - 1] : [];
 const selected = (name: string) => shard ? assigned.includes(name) : (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
 const partial = only.length > 0 || !!laneArg;   // a shard is not partial: it checks the manifest, and the merge checks coverage
@@ -226,7 +227,8 @@ for (const c of CONSUMERS) if (SUITES.some(([n, file]) => selected(n) && reaches
 for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
-if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}, packed by ${process.platform}'s times${untimed ? ` (${untimed} untimed suite(s) weigh ${DEFAULT_SECONDS} s: bun test/gate/shard.ts --fetch-times)` : ""}`);
+if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}, packed by ${process.platform}'s times${untimed ? ` (${untimed} untimed suite(s) weigh ${DEFAULT_SECONDS} s; bun test/gate/shard.ts --fetch-times times the ones that have run green upstream)` : ""}`);
+if (shard && argv.includes("--plan")) { console.log(`  suites    ${assigned.join(" ")}`); process.exit(0); }   // the split, said and nothing run (shard-check P7 reads it)
 const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
 const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
   RUNTIMES[label] = { found, declared: want, where: extra || undefined };
@@ -304,7 +306,6 @@ let current: { pid: number; exitCode: number | null; signalCode: string | null }
 // Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
-const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
 const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
@@ -347,7 +348,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { kept.add(`\nspawn failed: ${e.message}`); res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
-  const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
+  const leftovers = child.pid ? (await leftoverMembers(child.pid)).length : 0;   // anything the suite started and left running
   if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;

@@ -4,7 +4,8 @@
 //   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
 //            parent links (they survive the parent's exit, so orphans still count); killed with taskkill. The links come
 //            from the kernel's own snapshot (CreateToolhelp32Snapshot through bun:ffi, in process, ~5 ms), and from
-//            Win32_Process through PowerShell (~0.5 s a read: the gate's per-suite floor on Windows) only when that can't load.
+//            Win32_Process through PowerShell (~0.5 s a read: the gate's per-suite floor on Windows) when bun:ffi or kernel32
+//            can't load, when the snapshot call fails, or when its walk stops on anything but ERROR_NO_MORE_FILES.
 import fs from "node:fs"; import { spawn, spawnSync } from "node:child_process";
 
 export type Row = { pid: number; pgid: number; ppid: number; zombie: boolean };
@@ -135,6 +136,15 @@ async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { 
 }
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
+}
+/** What a suite started as `root` left running, read once it has ended. On Windows a suite's own teardown is still landing
+ *  as it exits (its kill of a server is a taskkill, a process of its own, and a console host goes after its program): the
+ *  PowerShell read took ~0.5 s to look, the snapshot looks ~5 ms on, so there a process counts only if it is still running
+ *  `ms` later. POSIX reads once, as it always has. `read` is for tests. */
+export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { ms = 1000, step = 50, read = () => suiteMembersAsync(root, platform) }: { ms?: number; step?: number; read?: () => Promise<number[]> } = {}): Promise<number[]> {
+  let m = await read();
+  if (platform === "win32") for (const end = performance.now() + ms; m.length && performance.now() < end; m = await read()) await new Promise((r) => setTimeout(r, step));
+  return m;
 }
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
  *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if

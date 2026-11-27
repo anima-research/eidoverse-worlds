@@ -2,7 +2,7 @@
 // N shard receipts add up to the gate (merge-receipts.ts). Suites are LPT bin-packed by suite-times.json, by the times of the
 // OS the shard runs on (party-probe is ~11 min on Linux and ~50 s on Windows); a time only moves a suite between shards,
 // never in or out of the gate. shard-check.ts holds the rows.
-//   bun test/gate/shard.ts --times <receipt.json | dir>…   rewrite suite-times.json from shard receipts: each OS's median of each suite that passed
+//   bun test/gate/shard.ts --times <receipt.json | dir>…   rewrite suite-times.json from shard receipts (a dir is walked for *.json): each OS's median of each suite that passed
 //   bun test/gate/shard.ts --fetch-times [runs]           the same from the shard receipts of the last [8] green protocol-gate runs upstream (gh)
 import fs from "node:fs";
 import os from "node:os";
@@ -31,9 +31,13 @@ export function parseShard(s: string | null): { index: number; of: number } | st
   return of >= 1 && of <= 64 && index >= 1 && index <= of ? { index, of } : `--shard ${s}: need 1 ≤ I ≤ N ≤ 64`;
 }
 
+/** A suite's seconds in `times`, or null when it has none to be packed by (no entry, not a number, negative). */
+export const timed = (times: Record<string, number>, k: string): number | null => { const t = Object.hasOwn(times, k) ? Number(times[k]) : NaN; return Number.isFinite(t) && t >= 0 ? t : null; };
+/** The suites `times` doesn't time: the ones partition weighs at DEFAULT_SECONDS. */
+export const untimed = (names: string[], times: Record<string, number>) => names.filter((k) => timed(times, k) === null);
 /** LPT: heaviest first (ties by name) onto the lightest bin (ties to the lowest index). Every name lands in exactly one bin. */
 export function partition(names: string[], times: Record<string, number>, n: number): string[][] {
-  const w = (k: string) => { const t = Object.hasOwn(times, k) ? Number(times[k]) : NaN; return Number.isFinite(t) && t >= 0 ? t : DEFAULT_SECONDS; };
+  const w = (k: string) => timed(times, k) ?? DEFAULT_SECONDS;
   const bins = Array.from({ length: n }, () => ({ load: 0, names: [] as string[] }));
   for (const k of [...names].sort((a, b) => w(b) - w(a) || (a < b ? -1 : a > b ? 1 : 0))) {
     let b = bins[0]; for (const c of bins) if (c.load < b.load) b = c;
@@ -51,11 +55,8 @@ export type Receipt = { v: number; verdict: string; head: string; dirty: boolean
 
 /** Whether `got` (shard receipts, any order, unparseable ones as null) is the whole gate at `head`, split `of` ways as this
  *  checkout's SUITES and timings split it; and the merged receipt (run.ts's shape, plus `shards`). Any problem fails. */
-export function merge(got: { file: string; receipt: Receipt | null }[], o: { of: number; head: string | null; names?: string[]; times?: Record<string, number>; bins?: string[][] }) {
-  // the split is recomputed with the times of the OS the shards ran on (they must all agree on it: checked below)
-  const platform = got.find((g) => g.receipt?.os?.platform)?.receipt!.os.platform ?? process.platform;
-  const names = o.names ?? NAMES(), bins = o.bins ?? partition(names, o.times ?? loadTimes(platform), o.of), hash = partitionHash(bins);   // bins: a test's stand-in partition
-  const problems: string[] = [];
+export function merge(got: { file: string; receipt: Receipt | null }[], o: { of: number; head: string | null; names?: string[]; times?: (platform: string) => Record<string, number>; bins?: string[][] }) {
+  const names = o.names ?? NAMES(), problems: string[] = [];
   for (const g of got) if (!g.receipt) problems.push(`${g.file}: not a receipt`);
   const rs = got.filter((g) => g.receipt?.shard).map((g) => ({ file: g.file, r: g.receipt! }));
   for (const g of got) if (g.receipt && !g.receipt.shard) problems.push(`${g.file}: not a shard receipt (no shard field)`);
@@ -64,8 +65,13 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
     const s = x.r.shard!;
     if (s.of !== o.of) { problems.push(`${x.file}: shard ${s.index}/${s.of}, but this gate is ${o.of} shards`); continue; }
     if (byIndex.has(s.index)) { problems.push(`shard ${s.index}/${o.of} reported twice (${byIndex.get(s.index)!.file}, ${x.file})`); continue; }
+    if (!x.r.os?.platform) problems.push(`${x.file}: shard ${s.index}/${s.of} doesn't say which OS it ran on (os.platform), so whose times packed it isn't known`);
     byIndex.set(s.index, x);
   }
+  // the split is recomputed with the times of the OS these shards ran on (they must all agree on it: checked below). Only the
+  // shards counted above choose it: a stray receipt from another OS is refused by name, and doesn't re-pack the rest
+  const platform = [...byIndex.values()].map((x) => x.r.os?.platform).find(Boolean) ?? process.platform;
+  const bins = o.bins ?? partition(names, (o.times ?? loadTimes)(platform), o.of), hash = partitionHash(bins);   // bins, times: a test's stand-ins
   for (let i = 1; i <= o.of; i++) {
     const x = byIndex.get(i);
     if (!x) { problems.push(`shard ${i}/${o.of} left no receipt (refused at preflight, crashed, timed out or never ran)`); continue; }
@@ -83,7 +89,7 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
   const heads = new Set([...byIndex.values()].map((x) => x.r.head));
   if (heads.size > 1) problems.push(`the shards ran different heads: ${[...heads].map((h) => h.slice(0, 12)).join(", ")}`);
   if (o.head && heads.size && !heads.has(o.head)) problems.push(`the shards ran ${[...heads][0].slice(0, 12)}, not this checkout's ${o.head.slice(0, 12)}`);
-  const plats = new Set([...byIndex.values()].map((x) => x.r.os.platform));
+  const plats = new Set([...byIndex.values()].map((x) => x.r.os?.platform).filter(Boolean));
   if (plats.size > 1) problems.push(`the shards ran on different OSes: ${[...plats].join(", ")}`);
 
   const shards = [...byIndex.entries()].sort(([a], [b]) => a - b).map(([, x]) => x.r);
@@ -105,47 +111,58 @@ export function merge(got: { file: string; receipt: Receipt | null }[], o: { of:
 }
 
 // ---- --times: suite-times.json from shard receipts (suites[].ms, os.platform) ----
-/** Each OS's median seconds per suite over the receipts given (files, or dirs walked for *.json). Only suites that passed
- *  count (a timeout's time is its cap, not the suite's), and a merged receipt (it has `shards`) is skipped: its suites are
- *  its shards' again. A gate log can't be used: it doesn't name its OS. */
+/** Each OS's median seconds per suite over the receipts given (files, or dirs walked for *.json: a README or a log beside
+ *  them is passed over). Only suites that passed count (a timeout's time is its cap, not the suite's), so an OS whose
+ *  receipts passed nothing has an empty table; a merged receipt (it has `shards`) is skipped: its suites are its shards'
+ *  again. Any other file is refused by name: a gate log given by name (it doesn't say which OS it ran on), JSON that isn't a receipt. */
 export function timesFrom(inputs: string[], names = NAMES()): Record<string, Record<string, number>> {
-  const files: string[] = [], walk = (p: string) => { if (fs.statSync(p).isDirectory()) for (const e of fs.readdirSync(p).sort()) walk(path.join(p, e)); else files.push(p); };
-  for (const p of inputs) walk(p);
+  const files: string[] = [], walk = (p: string, named: boolean) => { if (fs.statSync(p).isDirectory()) for (const e of fs.readdirSync(p).sort()) walk(path.join(p, e), false); else if (named || p.endsWith(".json")) files.push(p); };
+  for (const p of inputs) walk(p, true);
   const seen: Record<string, Record<string, number[]>> = {};
   for (const f of files) {
     if (!f.endsWith(".json")) throw new Error(`${f}: not a receipt (.json); a gate log doesn't say which OS it ran on`);
     let r: Receipt & { shards?: unknown }; try { r = JSON.parse(fs.readFileSync(f, "utf8")); } catch { throw new Error(`${f}: not JSON`); }
-    if (!Array.isArray(r?.suites) || !r.os?.platform || r.shards) continue;
-    for (const s of r.suites) if (s.status === "pass" && names.includes(s.name) && Number.isFinite(s.ms)) ((seen[r.os.platform] ??= {})[s.name] ??= []).push(s.ms / 1000);
+    if (!Array.isArray(r?.suites) || !r.os?.platform) throw new Error(`${f}: not a gate receipt (it needs suites and os.platform)`);
+    if (r.shards) continue;
+    const t = (seen[r.os.platform] ??= {});
+    for (const s of r.suites) if (s.status === "pass" && names.includes(s.name) && Number.isFinite(s.ms)) (t[s.name] ??= []).push(s.ms / 1000);
   }
   const median = (v: number[]) => { const s = [...v].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
   return Object.fromEntries(Object.keys(seen).sort().map((p) => [p, Object.fromEntries(names.filter((n) => seen[p][n]).map((n) => [n, Math.round(median(seen[p][n]) * 10) / 10]))]));
 }
-/** Write suite-times.json from `inputs`; an OS none of them ran on keeps the table it had. Says what each OS's table covers. */
+/** Write suite-times.json from `inputs`, whole or not at all; an OS they give no passing time for keeps the table it had.
+ *  Says what each OS's table covers, and names any receipt OS the gate doesn't run on (its times go nowhere). */
 export function writeTimes(inputs: string[], file = TIMES_FILE): string[] {
   const t = timesFrom(inputs), old = (() => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return {}; } })();
-  const out = Object.fromEntries(PLATFORMS.map((p) => [p, t[p] ?? old?.[p] ?? {}]));
-  fs.writeFileSync(file, JSON.stringify(out, null, 1) + "\n");
-  return PLATFORMS.map((p) => { const missing = NAMES().filter((n) => !(n in out[p]));
-    return `${p.padEnd(6)} ${Object.keys(out[p]).length} suites${t[p] ? "" : " (kept: no receipt from this OS)"}${missing.length ? `; ${missing.length} weigh the default ${DEFAULT_SECONDS} s: ${missing.join(" ")}` : ""}`; });
+  const fresh = (p: string) => !!t[p] && Object.keys(t[p]).length > 0;
+  const out = Object.fromEntries(PLATFORMS.map((p) => [p, fresh(p) ? t[p] : old?.[p] ?? {}]));
+  const part = `${file}.${process.pid}.part`;   // written beside, then renamed over: a write cut short (a full disk) leaves the old file as it was
+  try { fs.writeFileSync(part, JSON.stringify(out, null, 1) + "\n"); fs.renameSync(part, file); } catch (e) { fs.rmSync(part, { force: true }); throw e; }
+  const lines = PLATFORMS.map((p) => { const missing = untimed(NAMES(), out[p]);
+    return `${p.padEnd(6)} ${Object.keys(out[p]).length} suites${fresh(p) ? "" : t[p] ? " (kept: no suite passed in this OS's receipts)" : " (kept: no receipt from this OS)"}${missing.length ? `; ${missing.length} weigh the default ${DEFAULT_SECONDS} s: ${missing.join(" ")}` : ""}`; });
+  const strangers = Object.keys(t).filter((p) => !(PLATFORMS as readonly string[]).includes(p));
+  return strangers.length ? [...lines, `ignored: receipts from ${strangers.join(", ")} (the gate's tables are ${PLATFORMS.join(", ")})`] : lines;
 }
 if (import.meta.main) {
   const argv = process.argv.slice(2);
-  let inputs: string[] = [], tmp = "";
+  let inputs: string[] = [];
   if (argv.includes("--fetch-times")) {
     // the upstream's green runs (a fork's main can be months stale); each run's shard receipts, every OS
-    const runs = Number(argv[argv.indexOf("--fetch-times") + 1] ?? 8) || 8, repo = "anima-research/eidoverse-worlds";
-    const list = spawnSync("gh", ["run", "list", "-R", repo, "-w", "protocol-gate", "-s", "success", "-L", String(runs), "--json", "databaseId", "-q", ".[].databaseId"], { encoding: "utf8" });
-    if (list.status !== 0) { console.log(`gh run list failed: ${list.stderr.trim()}`); process.exit(1); }
-    tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suite-times-"));
+    const a = argv[argv.indexOf("--fetch-times") + 1], runs = a === undefined ? 8 : /^[1-9]\d*$/.test(a) ? Number(a) : NaN, repo = "anima-research/eidoverse-worlds";
+    if (!Number.isFinite(runs)) { console.log(`--fetch-times takes how many runs to read (1 or more; 8 when left out), not "${a}"`); process.exit(2); }
+    const gh = (args: string[]) => spawnSync("gh", args, { encoding: "utf8" });
+    const said = (r: ReturnType<typeof gh>) => r.error ? `gh could not be started (${r.error.message}): install the GitHub CLI (https://cli.github.com) and run \`gh auth login\`` : (r.stderr ?? "").trim().split("\n").at(-1) ?? "";
+    const list = gh(["run", "list", "-R", repo, "-w", "protocol-gate", "-s", "success", "-L", String(runs), "--json", "databaseId", "-q", ".[].databaseId"]);
+    if (list.error || list.status !== 0) { console.log(`gh run list failed: ${said(list)}`); process.exit(1); }
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "suite-times-"));
+    process.on("exit", () => fs.rmSync(tmp, { recursive: true, force: true }));   // on every way out: process.exit skips a finally
     for (const id of list.stdout.split("\n").filter(Boolean)) {
-      const d = spawnSync("gh", ["run", "download", id, "-R", repo, "-p", "gate-shard-receipt-*", "-D", path.join(tmp, id)], { encoding: "utf8" });
-      console.log(`  run ${id}: ${d.status === 0 ? "receipts downloaded" : `no receipts (${d.stderr.trim().split("\n").at(-1)})`}`);
+      const d = gh(["run", "download", id, "-R", repo, "-p", "gate-shard-receipt-*", "-D", path.join(tmp, id)]);
+      console.log(`  run ${id}: ${d.status === 0 ? "receipts downloaded" : `no receipts (${said(d)})`}`);
       if (d.status === 0) inputs.push(path.join(tmp, id));
     }
   } else if (argv.includes("--times")) inputs = argv.slice(argv.indexOf("--times") + 1);
   if (!inputs.length) { console.log("bun test/gate/shard.ts --times <receipt.json | dir>…  |  --fetch-times [runs]"); process.exit(2); }
   try { for (const l of writeTimes(inputs)) console.log(`suite-times.json: ${l}`); }
   catch (e) { console.log(`suite-times.json: not written: ${(e as Error).message}`); process.exit(1); }
-  finally { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); }
 }
