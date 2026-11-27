@@ -44,8 +44,9 @@ ok(sanePose({ ...good, xr: { ...xr, h: [NaN, 0, 0, 1] } }) === null, "NaN head q
 ok(sanePose({ ...good, xr: { ...xr, r: [0, 1, 2] } }) === null, "short grip dropped");
 ok(sanePose({ ...good, xr: { h: [0, 0, 0, 1] } }) !== null, "xr with head only passes");
 ok(sanePose({ ...good, xr: null }) === null, "null xr dropped");
-// orientation and locomotion (moved from underwater-presence-test, #333 backlog G4-230): a unit q and any locomotion
-// object of finite values pass untouched, deep underwater included; anything else drops the pose
+// orientation and locomotion (moved from underwater-presence-test, #333 backlog G4-230): a unit q, and a locomotion
+// object whose values are finite and whose mode, body and medium (when present) are strings of at most 32 characters
+// (server/posecheck.ts), pass untouched, deep underwater included; anything else drops the pose
 {
   const swim = { p: [12, -30, 8], yaw: 0, speed: 1.4, clip: "walk", q: [0, 0, 0, 1], locomotion: { mode: "swim", medium: "water", body: "diver" } };
   ok(sanePose(swim) === swim, "a swimming pose (unit q, locomotion) passes untouched");
