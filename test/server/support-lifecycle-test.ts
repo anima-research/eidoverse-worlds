@@ -52,6 +52,7 @@ if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
 
 const { WorldAgent } = await import("../../mcpl/agent.ts");
 const { tryUntil } = await import("../gate/wait.ts");
+const { supportShape } = await import("../../mcpl/physics.ts");
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : freePort(9480);   // a free port, never a fixed default
 const URL_ = `ws://127.0.0.1:${PORT}/ws`;
@@ -185,6 +186,10 @@ const onTerrain = (rootY: number) => restsOn(rootY, 0);
 // a write the scene made has reached the agent's replica: waited on, and said as a (setup) row when it never does (G6-143)
 const landed = async (what: string, probe: () => unknown) => { check(`(setup) ${what}`, !!(await tryUntil(what, probe, { ms: 8000, step: 25 }))); };
 const deckOf = (ag: any, name = "deck") => ag.entities.get(IDS.of(name));
+// the agent has registered `name`'s support (physics.ts holds it under its world-scoped id), as a (setup) row: a row that
+// then takes the floor away (place, remove, motion, mount) is about a registered floor, not one whose geometry hadn't come
+const registered = async (W: string, name = "deck") => { check(`(setup) the agent registered ${name}'s support`,
+  !!(await tryUntil(`${name}'s support is registered`, () => supportShape(`${W}/${IDS.of(name)}`) != null, { ms: 8000 }))); };
 // a scene write the door took (answered ok, so it is in the log), as a (setup) row: a refusal or no answer fails it
 const took = async (h: any, v: string, a: any) => { check(`(setup) the door took ${v} ${a.id}`, (await h.verb(v, a)) === true); };
 
@@ -245,7 +250,7 @@ try {
     await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "plc-bot", world: W });
     await ag.connect();
-    await sleep(1200);
+    await registered(W);
     await took(h, "place", { id: "deck", pos: [-4, 0, 0], yaw: 0 });   // moved away
     await landed("plc-bot's replica has the deck at its new place", () => deckOf(ag)?.pos?.[0] === -4);
 
@@ -266,7 +271,7 @@ try {
     await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "rm-bot", world: W });
     await ag.connect();
-    await sleep(1200);
+    await registered(W);
     await took(h, "remove", { id: "deck" });
     await landed("rm-bot's replica has the deck gone", () => !ag.entities.has(IDS.of("deck")));
     await ag.walkTo(3, 0, false, 8000);
@@ -286,7 +291,7 @@ try {
     await took(h, "spawn", { id: "deck", lib: LIB, pos: [3, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "mot-bot", world: W });
     await ag.connect();
-    await sleep(1200);
+    await registered(W);
     await ag.walkTo(3, 0, false, 8000);
 
     // a motion (requestsOf writes an oscillate along z): the crate does not stay put
@@ -318,7 +323,6 @@ try {
     const a1 = new WorldAgent({ url: URL_, name: "leak-a", world: W1 });
     await a1.connect();
     // its support is registered (else the no-leak row below passes on nothing; G6-144)
-    const { supportShape } = await import("../../mcpl/physics.ts");
     const held = await tryUntil("leak-a has registered the deck", () => supportShape(`${W1}/${IDS.of("deck")}`) != null, { ms: 8000 });
     check("(setup) the first world's agent registered the deck", !!held, JSON.stringify((a1 as any).ground.supportIds.get(IDS.of("deck"))));
     h1.close(); a1.close?.();                           // ...and it leaves
@@ -399,7 +403,7 @@ try {
     await took(h, "spawn", { id: "cart", lib: LIB, pos: [8, 0, 0], yaw: 0 });
     const ag = new WorldAgent({ url: URL_, name: "mnt-bot", world: W });
     await ag.connect();
-    await sleep(1500);
+    await registered(W, "cart");
     await ag.walkTo(8, 0, false, 10_000);
 
     await took(h, "mount", { id: "cart", to: "deck" });     // the cart is cargo now
