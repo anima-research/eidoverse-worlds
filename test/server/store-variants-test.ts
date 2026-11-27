@@ -14,7 +14,7 @@
 //   · the texel budget (1024², capTexels → toktx --resize); a size verdict carries its recipe (verdictStands)
 //   · a flagged fetch answered by the webp shadow is PROVISIONAL: no-cache, never immutable
 // A FAKE toktx (FAKE_TOKTX_MODE) covers the seams; the real encoder runs if present (a small source, then the 2048² budget). Sections 4-8 spawn the real
-// sequencer (a port a bind-and-close probe found free; fixture-as-nonce ownership) on a scratch OPT_DIR.
+// sequencer (a port a bind-and-close probe found free; up means OUR child: it echoes this run's WORLD_INSTANCE_NONCE) on a scratch OPT_DIR.
 
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync, chmodSync, cpSync, statSync, unlinkSync, rmdirSync, lstatSync, realpathSync } from "node:fs";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -459,7 +459,8 @@ process.on("exit", cleanup);
 async function startServer(extra: Record<string, string | undefined>, root = ROOT) {
   const PORT = freePort(20000 + Math.floor(Math.random() * 18000));   // a bind-and-close probe (G4-191: a fetch probe called a silent listener free)
   const worlds = mkdtempSync(join(tmpdir(), "ew-store-serve-")); scratch.push(worlds);
-  const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
+  const nonce = crypto.randomUUID();   // only our child is handed it: a squatter on the port can't echo it (#381 review 20)
+  const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR, WORLD_INSTANCE_NONCE: nonce,
     WORLDS_DIR: worlds, OPT_DIR: OPT, RELAY_STATE_DIR: OPT,   // the incarnation too: an inherited RELAY_STATE_DIR may be a live server's
     SKIP_OPT_SWEEP: "",   // the boot sweeps are under test here: the gate sets SKIP_OPT_SWEEP=1 for every suite (run.ts)
     EIDOVERSE_DIR: EMPTY_LIB, ...extra };
@@ -469,7 +470,14 @@ async function startServer(extra: Record<string, string | undefined>, root = ROO
   proc.stdout!.on("data", (d) => { log += d; });
   proc.stderr!.on("data", (d) => { log += d; });
   const base = `http://127.0.0.1:${PORT}`;
-  const up = await settled(() => fetch(`${base}/`, { signal: AbortSignal.timeout(1000) }).then(() => true), 15_000);
+  // readiness IS identity: up only when /version carries this run's nonce, so nothing below reaches a foreign listener
+  let version: any = null;
+  await settled(async () => {
+    if (proc.exitCode != null) return true;   // died at boot: the log tail says why
+    try { version = await fetch(`${base}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json()); } catch { return false; }
+    return true;
+  }, 15_000);
+  const up = proc.exitCode == null && version?.instance === nonce;
   const get = async (rel: string, headers: Record<string, string> = {}) => {
     const res = await fetch(`${base}/library/${rel}`, { headers });
     return { status: res.status, cc: res.headers.get("cache-control") ?? "", etag: res.headers.get("etag") ?? "",
@@ -492,7 +500,7 @@ async function startServer(extra: Record<string, string | undefined>, root = ROO
   const drained = () => settled(() => fetch(`${base}/version`, { signal: AbortSignal.timeout(1000) }).then((r) => r.json())
     .then((v) => v?.opt?.queued === 0 && v?.opt?.running === false), 40_000);
   // the key THIS child publishes — what a browser would use (assets.js)
-  const key = up ? keyFromVersion(await fetch(`${base}/version`).then((r) => r.json()).catch(() => null)) : null;
+  const key = up ? keyFromVersion(version) : null;
   return { up, PORT, base, get, upload, stop, drained, log: () => log, key };
 }
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -502,7 +510,7 @@ const whichFile = (b: Uint8Array) => { try { return String(glbJson(b).nodes?.[0]
 console.log("\n  the real sequencer — an upload becomes a served variant:");
 {
   const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
-  check("child server came up on its probed port", S.up, `:${S.PORT}`);
+  check("child server came up OWNED on its probed port (it echoes this run's nonce)", S.up, `:${S.PORT}`);
   if (S.up) {
     const glb = await fixtureGlb("uploaded", 2);
     const hash = hashOf(glb);
