@@ -196,7 +196,7 @@ await tryUntil('the glyph repaints for the mute', () => !gold() && slashed());
 t('muted: the glyph is not the ordinary on icon (it carries the slash), and not gold',
   !gold() && slashed() && glyph() !== mt.micGlyphFor(true, false), state());
 t('muted: its tooltip says none of your voice goes out', /muted — none of your voice goes out/.test(document.querySelector('#micbtn').title), state());
-t('muted carries no synth waves (only a synth voice going out with the mic off does)', !waves(), state());
+t('muted carries no synth waves (only a synth voice that is going out does, mic on or off)', !waves(), state());
 ms.toggleMute(false);
 await tryUntil('unmuted, gold again', () => gold() && !slashed());
 bus.emit('your-rights', { role: 'member', muted: { channels: ['voice'], until: null } });
@@ -220,12 +220,12 @@ t('muted, speech-to-text on: the tooltip says captions still post, not that none
   !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
 vc.setPttMode(true);
 // stt.js keyAllows(): the held key (V, or A/X on a VR controller: both are setPttHeld) or the drain of a release
-t('muted, speech-to-text on, push-to-talk: captions post only while the key is held and as a release drains, and the tooltip says so',
+t('muted, speech-to-text on, push-to-talk: the tooltip says captions post while the key is held and as a release drains (stt.js keyAllows; captions themselves are stt-ptt\'s)',
   !!(await tryUntil('the tooltip names the key and the drain', () => /captions still post while you hold the push-to-talk key, and just after/.test(tip()))), tip());
 
 vc.setPttMode(false);
 net.myRights = { role: 'member', muted: { channels: ['voice', 'chat'], until: null } }; bus.emit('your-rights', net.myRights);
-t('muted by a moderator in voice and chat, speech-to-text on: no captions post (say is refused), so none of your voice goes out',
+t('muted by a moderator in voice and chat, speech-to-text on: the tooltip says none of your voice goes out (say is refused; the refusal itself is the server\'s, not run here)',
   !!(await tryUntil('the tooltip drops the captions clause', () => /none of your voice goes out/.test(tip()) && !/caption/.test(tip()))), tip());
 // the mic off and muted: turning it on starts consented speech-to-text (stt.js syncSTT), so the tooltip can't promise
 // that nothing reaches the room
