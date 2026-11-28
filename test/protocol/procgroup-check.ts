@@ -8,6 +8,7 @@
 // PG24–PG26: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
 // PG27, PG28: a process still leaving as its suite ends is not a leftover (the snapshot is quick enough to see it).
 // PG29, PG30: what ran before a suite started is never its leftover and never killed for it (a reused id as a stale parent).
+// PG31: with no before-table only a live root is killed; with one, a hung suite is killed whatever its id once was.
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -280,7 +281,8 @@ if (win) { // PG28: the same on real processes: the snapshot is quick enough to 
   const was = PG.toolhelpTable() ?? [], staying = await start("setInterval(()=>{},1000)"), left = await (L as any)?.(staying.root, "win32", { ms: 400, before: was }) as number[] | undefined;
   for (const p of left ?? []) await (PG as any).killSuiteAsync(p, "SIGKILL", "win32", { before: was });
   const gone = await tryUntil("the process that stayed is killed", () => { const t = PG.toolhelpTable(); return !!t && !t.some((r) => r.pid === staying.grand); }, { ms: 5000, step: 100 });
-  if (Number.isFinite(staying.grand)) await PG.killSuiteAsync(staying.grand, "SIGKILL", "win32");   // whatever the row found: nothing of it outlives the suite
+  // whatever the row found, nothing of it outlives the suite; never aimed at an id that is already free (its "orphans" would be someone else's)
+  if (!gone && Number.isFinite(staying.grand)) await (PG as any).killSuiteAsync(staying.grand, "SIGKILL", "win32", { before: was });
   check("PG28 (win32) a process still leaving as its suite exits is seen at once by the snapshot and is not a leftover once it has gone; one that stays is, and is killed by its own id",
     atOnce.includes(leaving.grand) && settled?.length === 0 && was.some((r) => r.pid === process.pid) && !!left?.includes(staying.grand) && !!gone, { leaving, atOnce, settled, staying, left, gone, was: was.length });
 } else na("PG28 a leaving process is not a leftover, on real Windows processes", "Windows only; PG27 checks the rule here");
@@ -305,8 +307,22 @@ if (win) { // PG28: the same on real processes: the snapshot is quick enough to 
   const rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
   check("PG30 a Windows kill plan never holds a process that was running before the suite started, nor this process or one above it even when that is the root it was asked for; run.ts reads the table before each suite starts and gives it to the leftover read and to every kill after the suite",
     JSON.stringify(swept) === "[220,210]" && ancestor?.length === 0 && self?.length === 0 && JSON.stringify(calls) === JSON.stringify([["/PID", "220", "/F"], ["/PID", "210", "/F"]])
-      && /const was = await tableBefore\(\);[^\n]*\n\s*const child = spawn\(/.test(rs) && /leftoverMembers\(child\.pid, process\.platform, \{ before: was \}\)/.test(rs) && !/killGroup\(p, "SIGKILL"\)/.test(rs),
+      && /const was = await tableBefore\(\);[^\n]*\n\s*const child = spawn\(/.test(rs) && /leftoverMembers\(child\.pid, process\.platform, \{ before: was \}\)/.test(rs)
+      && /if \(process\.platform === "win32" && was\.length\) for \(const p of left\) if \(p !== child\.pid\) await killGroup\(p, "SIGKILL", \{ before: was \}\);/.test(rs) && (rs.match(/killGroup\(p, /g) ?? []).length === 1,
     { swept, ancestor, self, calls });
+}
+
+{ // PG31: the two ends of the before-table. With none to go by (the gate asked and the table didn't answer: []), nothing can
+  // be told from what was already running, so only a live root is planned and no orphan is looked for. With one, the gate's
+  // ancestors are the rows it holds: a suite whose id is a stale link in that chain is still the suite, and is killed when it hangs.
+  const plan = (PG as any).winKillPlan as (root: number, t: PG.Row[], exited: boolean, self?: number, before?: PG.Row[]) => number[];
+  const before = parseWinTable("4 0\r\n600 100\r\n650 600\r\n700 600\r\n900 700\r\n"), now = [...before, ...parseWinTable("640 600\r\n210 100\r\n220 210\r\n")];
+  const hung = [...before, ...parseWinTable("100 900\r\n210 100\r\n")];   // the suite (100, started by the gate, 900) hangs; 600's parent id is a stale 100
+  const blindExited = plan?.(100, now, true, 900, []), blindLive = plan?.(100, parseWinTable("4 0\r\n50 4\r\n100 50\r\n200 100\r\n300 200\r\n"), false, 900, []);
+  const hungPlan = plan?.(100, hung, false, 900, before), above = plan?.(700, hung, false, 900, before), unasked = plan?.(100, parseWinTable("4 0\r\n50 4\r\n100 50\r\n200 100\r\n300 200\r\n"), false, 900);
+  check("PG31 a Windows kill plan with an empty before-table holds the live root alone (no orphans of an exited root, no walk); with a before-table a hung suite is planned with what it started even when its id is a stale parent id above the gate, and a real ancestor still never is; a caller that passes no before-table at all plans the tree as it always has",
+    JSON.stringify(blindExited) === "[]" && JSON.stringify(blindLive) === "[100]" && JSON.stringify(hungPlan) === "[210,100]" && above?.length === 0 && JSON.stringify(unasked) === "[300,200,100]",
+    { blindExited, blindLive, hungPlan, above, unasked });
 }
 
 done();

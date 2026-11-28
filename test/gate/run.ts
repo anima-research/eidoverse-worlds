@@ -307,7 +307,8 @@ let current: { pid: number; exitCode: number | null; signalCode: string | null }
 // Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean); before?: Row[] }) => killSuiteAsync(pid, sig, process.platform, o);
-// Windows: what is running before a suite starts is never that suite's to count or kill (procgroup.ts startedSince); [] when the table didn't answer
+// Windows: what is running before a suite starts is never that suite's to count or kill (procgroup.ts startedSince). [] when the
+// table didn't answer: the sweeps then kill a still-running suite's own process and nothing else (winKillPlan)
 const tableBefore = async (): Promise<Row[]> => process.platform === "win32" ? processTableAsync() : [];
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };

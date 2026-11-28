@@ -164,19 +164,27 @@ export async function leftoverMembers(root: number, platform: NodeJS.Platform = 
 }
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
  *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
- *  the id is free, only its orphans are. Never a process that was running in `before` (the table read before the suite
- *  started; see startedSince), and never this process or one above it, even as the `root` asked for. */
-export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid, before: Row[] = []): number[] {
-  if (exited && table.some((r) => r.pid === root)) return [];
+ *  the id is free, only its orphans are. Never this process or one above it, even as the `root` asked for.
+ *  `before` is the table read before the suite started (see startedSince), and there are three cases:
+ *    rows:    nothing that was running then is planned or walked through, and this process's ancestors are found among those
+ *             rows only (each of them predates the suite), so a suite whose id is a stale parent id up that chain is still killed;
+ *    []:      the caller asked and the table didn't answer. Nothing can be told from what was already running: the live
+ *             root alone, and no orphan is looked for;
+ *    omitted: a caller that keeps no such table (killChild, server/oneshot.ts): the tree by parent links, as it always was. */
+export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid, before?: Row[]): number[] {
+  const live = table.some((r) => r.pid === root);
+  if (exited && live) return [];
+  const fresh = new Set(startedSince(before ?? [], table));
   // never ourselves or an ancestor: once the dead root's id is reused, a stale ParentProcessId can make the gate itself look like its orphan
-  const byPid = new Map(table.map((r) => [r.pid, r])), mine = new Set<number>();
+  const byPid = new Map((before?.length ? table.filter((r) => !fresh.has(r)) : table).map((r) => [r.pid, r])), mine = new Set<number>();
   for (let p: number | undefined = self; p !== undefined && !mine.has(p); p = byPid.get(p)?.ppid) mine.add(p);
-  if (byPid.has(root) && mine.has(root)) return [];   // a live root that is this process or above it (a dead root's id can be a stale link in that chain: PG14)
-  const kids = new Map<number, number[]>(); for (const r of startedSince(before, table)) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
+  if (byPid.has(root) && mine.has(root)) return [];   // a root that is this process or above it (an id with no row can be a stale link in that chain: PG14, PG31)
+  if (before && !before.length) return live && !exited ? [root] : [];
+  const kids = new Map<number, number[]>(); for (const r of fresh) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
   const depth = new Map<number, number>(), todo: [number, number][] = [[root, 0]];
   while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root && !mine.has(c)) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
-  return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
+  return exited || !live ? out : [...out, root];
 }
 /** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
  *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
