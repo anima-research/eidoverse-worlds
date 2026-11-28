@@ -356,7 +356,7 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   clearTimeout(timer); clearTimeout(watchdog);
   // anything the suite started and left running: on Windows what is in its job (whoever's parent has exited since), elsewhere its process group
   const left = !child.pid ? [] : job ? await stillRunning(() => job.members()) : await stillRunning(() => suiteMembersAsync(child.pid!), { ms: process.platform === "win32" ? 1000 : 0 }), leftovers = left.length;
-  if (job) { job.kill(); job.close(); currentJob = current = null; }   // closed: nothing may reach for this handle again (a signal during the wait below would have)
+  if (job) { job.kill(); job.close(); currentJob = current = null; }   // closed: nothing may reach for this handle again (a signal during the wait below, a stuck suite's up to 3 s, would have)
   else if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;

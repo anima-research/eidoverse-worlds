@@ -317,7 +317,7 @@ if (win) { // PG30: a bystander whose parent id is a dead process's. A suite tha
   // (the job may also hold a console host the suite's process was given: the suite's two are in it, the bystander is not)
   job?.kill(); const suiteGone = await tryUntil("the job's kill takes the suite and what it started", () => !running(s.c.pid!) && !running(s.kid()), { ms: 5000, step: 100 }); job?.close();
   const bystanderAlive = running(bystander);
-  for (const p of [bystander, ...(suiteGone ? [] : [s.c.pid!, s.kid()])]) if (Number.isFinite(p)) spawnSync("taskkill", ["/PID", String(p), "/F"], { stdio: "ignore" });   // by its own id: this row started each of them
+  for (const p of [...(bystanderAlive ? [bystander] : []), ...(suiteGone ? [] : [s.c.pid!, s.kid()])]) if (Number.isFinite(p)) spawnSync("taskkill", ["/PID", String(p), "/F"], { stdio: "ignore" });   // by its own id: this row started each of them
   check("PG30 (win32) a process that was running before the suite, whose parent id is a dead process's, is what a walk from that id calls its own; it is not in the suite's job and the job's kill leaves it running",
     claimedByWalk.includes(bystander) && want.every((p) => inJob.includes(p)) && !inJob.includes(bystander) && !!suiteGone && bystanderAlive, { deadId, bystander, claimedByWalk, inJob, want, suiteGone, bystanderAlive });
 } else na("PG30 a bystander under a dead parent id is not the suite's", "Windows only");
@@ -347,7 +347,7 @@ if (win) { // PG33: the real run.ts on a stand-in suite (top of this file) whose
     return { code, left, gone, line, counted: Number(line.match(/killed (\d+) leftover/)?.[1] ?? 0), noJob: /no job object could be made/.test(said) };
   };
   const ended = await gate("exit"), hung = await gate("hang"), bystanderAlive = running(bystander);
-  if (Number.isFinite(bystander)) spawnSync("taskkill", ["/PID", String(bystander), "/F"], { stdio: "ignore" });
+  if (Number.isFinite(bystander) && bystanderAlive) spawnSync("taskkill", ["/PID", String(bystander), "/F"], { stdio: "ignore" });   // only while it lives: a dead id may already be someone else's
   check("PG33 (win32) under the real run.ts, a suite that exits leaving a process whose parent has gone has it counted as a leftover and killed; one that hangs has it killed with it at the timeout, so none is left to count; neither run says it had no job, and a process that ran before both is still running",
     ended.gone && ended.counted >= 1 && / FAIL \(exit 3\)/.test(ended.line) && hung.gone && hung.counted === 0 && /timed out after/.test(hung.line) && !ended.noJob && !hung.noJob && bystanderAlive, { ended, hung, bystander, bystanderAlive });
 } else na("PG33 the real run.ts counts and kills a leftover through the suite's job", "Windows only; PG32 checks run.ts's text here");
