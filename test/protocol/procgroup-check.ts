@@ -6,7 +6,7 @@
 // table and kill, and the Windows sweep after a root exited. PG13, PG15 and PG18–PG22 are the gate's own habits: a FAIL's
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
 // PG24–PG26: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
-// PG27–PG32: on Windows the gate keeps each suite in a job object (winJob): what the suite left is what the kernel says is
+// PG27–PG33: on Windows the gate keeps each suite in a job object (winJob): what the suite left is what the kernel says is
 // in the job, and the kill is the job's. A process id and a parent id are not proof of ancestry there (ids are reused, a
 // parent id is never updated): CI run 46055310133 read 127 processes as one suite's leftovers.
 //   bun test/protocol/procgroup-check.ts
@@ -18,6 +18,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// PG33's stand-in suite, under the real run.ts: it leaves a process no walk by parent ids reaches, then exits or hangs. Never a pass (exit 3)
+if (process.env.PG33_STANDIN) {
+  const mid = "const {spawn}=require('node:child_process'); const g=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',detached:true,windowsHide:true}); require('node:fs').writeFileSync(process.env.PG33_OUT,String(g.pid)); setTimeout(()=>process.exit(0),300);";
+  const m = spawn(process.execPath, ["-e", mid], { stdio: "ignore", detached: true, windowsHide: true });
+  await new Promise((r) => m.on("exit", r));
+  if (process.env.PG33_STANDIN === "hang") { setInterval(() => {}, 1000); await new Promise(() => {}); }
+  process.exit(3);
+}
 const { check, na, done } = suite("procgroup-check", { cap: Infinity });
 import { suite } from "../gate/suite.ts";
 const win = process.platform === "win32";
@@ -325,12 +333,39 @@ if (win) { // PG31: a gate that dies takes its suite with it: the job is killed 
     withLimit.made && withLimit.gone && without.made && !without.gone, { withLimit, without });
 } else na("PG31 a dying gate's job is killed with it", "Windows only");
 
-{ // PG32: run.ts keeps each suite in a job on Windows, and with no job does what main does
+if (win) { // PG33: the real run.ts on a stand-in suite (top of this file) whose leftover's parent has exited: the count and both kills are the job's
+  const RUN = fileURLToPath(new URL("../gate/run.ts", import.meta.url)), root = fileURLToPath(new URL("../../", import.meta.url));
+  const launcher = startSuite(suiteScript(IDLE, 200)); await launcher.closed; const bystander = launcher.kid();   // running before either gate, under a dead parent id
+  const gate = async (mode: "exit" | "hang") => {
+    const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "pg33-")), "pid");
+    const c = spawn(process.execPath, [RUN, "procgroup"], { cwd: root, env: { ...process.env, PG33_STANDIN: mode, PG33_OUT: out, PROTOCOL_TIMEOUT_SCALE: "0.04" }, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    let said = ""; c.stdout!.on("data", (b) => { said += b.toString(); }); c.stderr!.on("data", (b) => { said += b.toString(); });
+    const code = await new Promise((r) => c.on("close", r));
+    const left = Number(fs.existsSync(out) ? fs.readFileSync(out, "utf8") : NaN), line = said.split("\n").find((l) => /^== procgroup /.test(l))?.trim() ?? said.slice(-300);
+    const gone = Number.isFinite(left) && !!(await tryUntil("what the stand-in left is gone once its gate has ended", () => !running(left), { ms: 5000, step: 100 }));
+    if (Number.isFinite(left) && !gone) spawnSync("taskkill", ["/PID", String(left), "/F"], { stdio: "ignore" });   // the row has failed; nothing of it outlives the suite
+    return { code, left, gone, line, counted: Number(line.match(/killed (\d+) leftover/)?.[1] ?? 0), noJob: /no job object could be made/.test(said) };
+  };
+  const ended = await gate("exit"), hung = await gate("hang"), bystanderAlive = running(bystander);
+  if (Number.isFinite(bystander)) spawnSync("taskkill", ["/PID", String(bystander), "/F"], { stdio: "ignore" });
+  check("PG33 (win32) under the real run.ts, a suite that exits leaving a process whose parent has gone has it counted as a leftover and killed; one that hangs has it killed with it at the timeout, so none is left to count; neither run says it had no job, and a process that ran before both is still running",
+    ended.gone && ended.counted >= 1 && / FAIL \(exit 3\)/.test(ended.line) && hung.gone && hung.counted === 0 && /timed out after/.test(hung.line) && !ended.noJob && !hung.noJob && bystanderAlive, { ended, hung, bystander, bystanderAlive });
+} else na("PG33 the real run.ts counts and kills a leftover through the suite's job", "Windows only; PG32 checks run.ts's text here");
+
+{ // PG32: run.ts keeps each suite in a job on Windows, and with no job does what main does. Each pin is a whole statement, so one left in a dead branch doesn't pass
   const rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8"), pg = fs.readFileSync(new URL("../../server/procgroup.ts", import.meta.url), "utf8"), os1 = fs.readFileSync(new URL("../../server/oneshot.ts", import.meta.url), "utf8");
-  check("PG32 run.ts makes the job right after the spawn (Windows, killOnClose), reads the suite's leftovers from it and kills through it; with no job it counts and sweeps from the suite's id as main does, and nothing kills a leftover by an id of its own; the server's one-shots use the same winJob",
-    /const child = spawn\([^\n]*\n\s*const job = process\.platform === "win32" && child\.pid \? winJob\(child\.pid, \{ killOnClose: true \}\) : null;/.test(rs)
-      && /stillRunning\(\(\) => job\.members\(\)\)/.test(rs) && /job\.kill\(\); job\.close\(\);/.test(rs) && /else if \(child\.pid\) await killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs)
-      && !/killGroup\(p,/.test(rs) && !/startedSince|before: was/.test(rs + pg) && /export function winJob\(/.test(pg) && /import \{[^}]*\bwinJob\b[^}]*\} from "\.\/procgroup\.ts"/.test(os1) && !/function winJob/.test(os1), {});
+  const pins: [string, boolean][] = [
+    ["the job is made right after the spawn (Windows, killOnClose)", /const child = spawn\([^\n]*\n\s*const job = process\.platform === "win32" && child\.pid \? winJob\(child\.pid, \{ killOnClose: true \}\) : null;/.test(rs)],
+    ["a suite with no job says so", rs.split("no job object could be made").length === 2 && /\n  currentJob = job;\n  if \(!job && process\.platform === "win32" && child\.pid\) console\.log\(`\[gate\] \$\{name\}: no job object could be made/.test(rs)],
+    ["the timeout's kill is the job's, and only with no job the walk's", /setTimeout\(\(\) => \{ timedOut = true; if \(job\) return job\.kill\(\); void killGroup\(child\.pid!, "SIGTERM", \{ exited: gone \}\);/.test(rs)],
+    ["the gate's own exit kills the job, and only with no job starts a kill by the suite's id", /if \(current && current\.exitCode == null && current\.signalCode == null\) \{ if \(currentJob\) currentJob\.kill\(\); else killSuiteAtExit\(current\.pid\); \}/.test(rs)],
+    ["the leftovers are the job's members, and only with no job the walk's", /const left = !child\.pid \? \[\] : job \? await stillRunning\(\(\) => job\.members\(\)\) : await stillRunning\(\(\) => suiteMembersAsync\(child\.pid!\), /.test(rs)],
+    ["the job is killed, closed and forgotten in one step; with no job the sweep is main's", /\n  if \(job\) \{ job\.kill\(\); job\.close\(\); currentJob = current = null; \}[^\n]*\n  else if \(child\.pid\) await killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\);/.test(rs)],
+    ["nothing kills a leftover by an id of its own", !/killGroup\(p,/.test(rs) && !/startedSince|before: was/.test(rs + pg)],
+    ["the server's one-shots use the same winJob", /export function winJob\(/.test(pg) && /import \{[^}]*\bwinJob\b[^}]*\} from "\.\/procgroup\.ts"/.test(os1) && !/function winJob/.test(os1)],
+  ];
+  check("PG32 run.ts makes the job right after the spawn (Windows, killOnClose) and says so when it can't; the timeout's kill, the gate's own exit, the leftover count and the last kill are the job's, which is forgotten as it is closed; with no job each is main's, from the suite's id, and nothing kills a leftover by an id of its own; the server's one-shots use the same winJob",
+    pins.every(([, ok]) => ok), { missing: pins.filter(([, ok]) => !ok).map(([what]) => what) });
 }
 
 done();

@@ -15,7 +15,7 @@
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
 // Each suite runs in its own process GROUP with its own timeout, HOME, TMPDIR and scratch (the gate's temp dir, removed
-// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (a fixture that detaches kills its own).
+// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (POSIX: a fixture that detaches kills its own; a Windows job holds those too).
 // Runtimes are pinned in package.json "engines" and checked before anything runs. The end prints passed / failed /
 // skipped (with reasons) / optional-not-run, and exits nonzero on any failure or any skip.
 // Suites mark: a failed check `FAIL …` or `✗ …`; a skipped check `SKIP <name>: <why>` (fails the gate: every lane is
@@ -304,7 +304,7 @@ console.log(`  scratch   ${SCRATCH_ROOT}${process.env.PROTOCOL_KEEP ? " (kept: P
 const scratchOut = valueOf("--scratch-out");
 if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path.sep).join("/")}\n`);
 let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
-// Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
+// server/procgroup.ts: a POSIX process group; on Windows the suite's job object (currentJob, below), and with no job the walk by parent ids
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
 // Windows: the running suite's job object (procgroup.ts winJob), when one could be made: its kill is the job's, never a walk by process ids
@@ -339,10 +339,11 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
   // detached: a process group to kill on POSIX. Not on Windows: there it means no console, and every process the suite starts
-  // then pays for one of its own (inplace 66 s attached, 131 s detached on one laptop, 11-05); the kill walks parent links there
+  // then pays for one of its own (inplace 66 s attached, 131 s detached on one laptop, 11-05); its group there is the job made next (procgroup.ts winJob)
   const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: process.platform !== "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   const job = process.platform === "win32" && child.pid ? winJob(child.pid, { killOnClose: true }) : null;   // null: the walk by parent ids from the suite's id, as before
   currentJob = job;
+  if (!job && process.platform === "win32" && child.pid) console.log(`[gate] ${name}: no job object could be made for it (procgroup.ts winJob says when): its processes are found and killed by parent ids from ${child.pid}, as on main`);
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let timedOut = false; const kept = outputKeeper(); const keep = (b: Buffer) => kept.add(b.toString());   // the tail, and every verdict line the cut dropped (suites.ts outputKeeper)
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
@@ -355,10 +356,10 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   clearTimeout(timer); clearTimeout(watchdog);
   // anything the suite started and left running: on Windows what is in its job (whoever's parent has exited since), elsewhere its process group
   const left = !child.pid ? [] : job ? await stillRunning(() => job.members()) : await stillRunning(() => suiteMembersAsync(child.pid!), { ms: process.platform === "win32" ? 1000 : 0 }), leftovers = left.length;
-  if (job) { job.kill(); job.close(); }
+  if (job) { job.kill(); job.close(); currentJob = current = null; }   // closed: nothing may reach for this handle again (a signal during the wait below would have)
   else if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
-  current = null; currentJob = null;
+  current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
   return { code, signal, out: kept.out, lines: kept.lines(), timedOut, leftovers, stuck };
 }
