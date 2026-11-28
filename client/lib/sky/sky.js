@@ -1039,8 +1039,11 @@ async function renderSkyMesh(a) {
   const { SkyMesh } = await import('three/addons/objects/SkyMesh.js');
   if (!skyMesh) {
     skyMesh = new SkyMesh();
-    skyMesh.scale.setScalar(280);
-    skyMesh.material.fog = false;   // fogged, a 280-unit dome would render as pure fog colour
+    // a 280 m cube ended at the edge of a small town, and a landscape poked through it: 10 km, centred on the eye
+    // (updateSky), keeps it beyond a landscape's silhouette, its corners (~8.7 km) inside the camera's 20 km far plane
+    skyMesh.scale.setScalar(10000);
+    skyMesh.position.copy(camera.getWorldPosition(_skyEye));
+    skyMesh.material.fog = false;   // the sky is not in the weather: fogged, the dome would render as pure fog colour
     skyMesh.userData.noCamCollide = true;
     scene.add(skyMesh);
   }
@@ -1112,7 +1115,11 @@ function applyTuning(a, day, warmth = Math.pow(1 - day, 1.5), sunPos = null, sky
 
 let lastClockTick = 0;
 let updateFailures = 0;
+// the eye's world position: in XR the camera is a child of the rig, so camera.position is only the head's offset in it
+// (the baked dome reads it the same way, sky_baked.js updateBakedDome)
+const _skyEye = new THREE.Vector3();
 export function updateSky(nowMs, t) {
+  if (skyMesh) skyMesh.position.copy(camera.getWorldPosition(_skyEye));   // the sky rides the eye, so walking never reaches its edge
   // a sky that throws from its per-frame update is invisible to the try/catch around construction: count failures
   if (impl === 'eidoverse' && skyApi?.update) {
     try {
