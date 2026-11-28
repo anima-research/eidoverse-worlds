@@ -96,9 +96,11 @@ function readAt(root: string, rev: string, why: string, files: string[], lenient
 
 /** The version before the one a revision holds, along first parents: the parent of the newest commit (at or before rev)
  *  that changed the files, or null where there is none (the files' first version, a root commit, or a shallow clone's
- *  edge: a shallow clone judges only the history it has). */
+ *  edge: a shallow clone judges only the history it has). A git log that fails (a commit it needs is gone) throws: it is
+ *  never the end of history. */
 function olderOf(root: string, rev: string, files: string[]) {
-  const c = git(root, ["log", "--first-parent", "-n", "1", "--format=%H", rev, "--", ...files])?.trim(); if (!c) return null;
+  const l = gitR(root, ["log", "--first-parent", "-n", "1", "--format=%H", rev, "--", ...files]); if (!l.ok) throw new Error(`pinhistory: can't walk ${files.join(", ")} back from ${rev.slice(0, 8)}: git: ${l.err}`);
+  const c = l.out.trim(); if (!c) return null;
   return git(root, ["rev-parse", "--verify", "-q", `${c}^1`])?.trim() || null;
 }
 

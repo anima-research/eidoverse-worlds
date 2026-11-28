@@ -956,11 +956,11 @@ await C("D13g", "the walk in the real suites: trig-check, laws-check and engine-
   return [want.every(([suite, rows]) => seen[suite].behindFailed === rows.length && seen[suite].behindRed.every(Boolean) && seen[suite].cleanFailed === 0 && seen[suite].placeholderFailed === 0), seen]; });
 await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file of {engine version: {scenario: digest}}): for each version and scenario, back to the newest version that holds that digest, so a version left out for a commit, an empty version entry, or a scenario left out for a commit hides nothing (each history ends with that digest changed under its version: caught); {} and a deleted file too; with nothing changed, nothing is. A digest gone now behind a version that names none ({}, JSON null, conflict markers, a deleted file, a version entry with no digest; a whole engine version too) is still found and reported gone, and a scenario retired and then re-added with other data is caught; a version that holds valid digests is never listed as naming none just because it lacks a new scenario", () => {
   const J = (o: any) => JSON.stringify(o, null, 1) + "\n";
-  const hist = (tag: string, steps: (string | null)[], last: string) => { const R = scratch(`d13h-${tag}`) + "repo"; fs.mkdirSync(R);
+  const hist = (tag: string, steps: (string | null)[], last: string, mangle?: (g: (...a: string[]) => string, R: string) => void) => { const R = scratch(`d13h-${tag}`) + "repo"; fs.mkdirSync(R);
     const g = (...a: string[]) => { const r = require("node:child_process").spawnSync("git", ["-C", R, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
     g("init", "-q", "-b", "main"); g("config", "core.autocrlf", "false"); g("config", "core.eol", "lf");
     steps.forEach((t, k) => { if (t == null) fs.rmSync(path.join(R, "f.json"), { force: true }); else fs.writeFileSync(path.join(R, "f.json"), t); g("add", "-A"); g("commit", "-q", "--allow-empty", "-m", `step ${k}`); });
-    fs.writeFileSync(path.join(R, "f.json"), last);   // the working tree: the change being judged
+    fs.writeFileSync(path.join(R, "f.json"), last); mangle?.(g, R);   // the working tree: the change being judged
     const pb = process.env.PIN_BASE; delete process.env.PIN_BASE;
     try { const r = PH.versionsChanged(R, "f.json", (f: string) => (fs.existsSync(path.join(R, f)) ? fs.readFileSync(path.join(R, f), "utf8") : null), []);
       const got = r.changed.flatMap((c: any) => c.keys.map(([s, x]: any) => `${c.version}.${s}=${x}`)); return tag === "added" ? { got, unnamed: r.unnamed } : got; }
@@ -979,10 +979,12 @@ await C("D13h", "EN4's rule walks per digest (pinhistory versionsChanged, a file
     versionGoneBehindEmpty: hist("gver", [J({ v1: { a: "1" }, v2: { b: "1" } }), "{}\n"], J({ v1: { a: "1" } })),
     added: hist("added", [J({ v1: { a: "1" } })], J({ v1: { a: "1", n: "1" } })),   // a PR adding a scenario: the version before holds valid digests, so it is judged and never listed as naming none
     retiredReadded: hist("rere", [J({ v1: { a: "1", x: "1" } }), J({ v1: { a: "1" } }), J({ v1: { a: "1" }, v9: { q: "1" } })], J({ v1: { a: "1", x: "2" }, v9: { q: "1" } })),
-    goneBehindEmptyEntry: hist("gentry", [J({ v1: { a: "1", x: "1" } }), J({ v1: {} })], J({ v1: { a: "1" } })) };   // {v1:{}} holds no digest, as {} doesn't (bot review #384 1)
+    goneBehindEmptyEntry: hist("gentry", [J({ v1: { a: "1", x: "1" } }), J({ v1: {} })], J({ v1: { a: "1" } })),   // {v1:{}} holds no digest, as {} doesn't (bot review #384 1)
+    lostCommit: hist("lost", [J({ v1: { a: "1" } }), "{}\n", "{}\n", "{}\n"], J({ v1: { a: "2" } }), (g, R) => { const c = g("rev-parse", "HEAD~1"); fs.rmSync(path.join(R, ".git", "objects", c.slice(0, 2), c.slice(2))); }) };   // a commit the walk needs is gone: a throw, never the end of history (#384 5)
   const want: Record<string, string[]> = { versionLeftOut: ["v2.b=1"], emptyEntry: ["v1.a=1"], scenarioLeftOut: ["v1.b=1"], emptyFile: ["v1.a=1"], deleted: ["v1.a=1"], unchanged: [],
-    goneBehindEmpty: ["v1.x=1"], goneBehindDeleted: ["v1.x=1"], goneBehindNull: ["v1.x=1"], goneBehindMarkers: ["v1.x=1"], versionGoneBehindEmpty: ["v2.b=1"], retiredReadded: ["v1.x=1"], goneBehindEmptyEntry: ["v1.x=1"], added: { got: [], unnamed: [] } as any };
-  return [Object.entries(want).every(([k, w]) => JSON.stringify(res[k]) === JSON.stringify(w)), res]; });
+    goneBehindEmpty: ["v1.x=1"], goneBehindDeleted: ["v1.x=1"], goneBehindNull: ["v1.x=1"], goneBehindMarkers: ["v1.x=1"], versionGoneBehindEmpty: ["v2.b=1"], retiredReadded: ["v1.x=1"], goneBehindEmptyEntry: ["v1.x=1"], lostCommit: "threw", added: { got: [], unnamed: [] } as any };
+  const same = (k: string, w: any) => w === "threw" ? /^threw: pinhistory: can't walk f\.json back from [0-9a-f]{8}: git: /.test(res[k]) : JSON.stringify(res[k]) === JSON.stringify(w);
+  return [Object.entries(want).every(([k, w]) => same(k, w)), res]; });
 await C("D11", "a field added after its name's first registration states its meaning of absence (absentMeans), and that meaning is pinned (PROTOCOL §4)", () => {
   const pin = JSON.parse(read("spec/registry-pin.json")); const L = CAT.COMPONENTS.light;
   L.fields.extra = "number"; const bare = CAT.pinBreaks?.(pin, CAT.pinOf()) ?? [];
