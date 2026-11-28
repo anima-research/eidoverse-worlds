@@ -88,12 +88,13 @@ export const xrGlyphAvailable = () => !!xrHook;
 export const xrLive = () => { try { return !!xrHook?.live?.(); } catch { return false; } };
 export function flipXr() { xrHook?.onclick?.(); }
 
-// What the HUD glyph last drew: the poll's change key only, never an input to a paint.
-let micHot = false, micMuted = null, micPaintedOn = null;
+// What the HUD glyph last drew, tooltip included: the poll's change key only, never an input to a paint.
+let micKey = null;
 // The glyph's inputs, ONE derivation for the HUD and the in-VR indicator, read LIVE: an event-driven paint (a PTT
 // release, V turning the mic off) draws the state as it is now, not as the last 8 Hz poll saw it. A mute shows only on
 // a mic that is on and silent (gold outranks it, and an off mic is slashed already). Never throws: a throw would
 // freeze the glyph.
+const keyOf = ({ on, hot, reason, synth }, tip) => `${on}|${hot}|${reason}|${synth}|${tip}`;
 const glyphArgs = (on = micIsOn()) => {
   let hot = false, reason = null, synth = false;
   try { hot = roomHears(); reason = muteReason(); synth = laneSynthetic(); } catch { /* drawn as not hot, not muted */ }
@@ -123,16 +124,10 @@ function announceIndicator() {
   try { k = micIndicator().state; } catch { return; }   // unreadable (or before the module has finished loading): say nothing
   if (k !== _indKey) { _indKey = k; bus.emit('mic:indicator', k); }
 }
-function paint() {
-  announceIndicator();
-  if (!micBtn) return;
-  const on = micIsOn();
-  micPaintedOn = on;
-  const deaf = on && !receivingVoice();
-  const { hot, reason, synth, muted } = glyphArgs(on);
-  micHot = hot; micMuted = reason;   // the poll repaints when the live state leaves what was drawn
-  micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
-  micBtn.style.opacity = deaf ? '0.55' : '1';
+// The mic tooltip, from one read of the glyph's inputs; the poll compares it too, so a change in any input to these words repaints.
+function micTip({ on, hot, reason, synth, muted }) {
+  // not hearing is either way of not hearing: voices not received at all, or received and hushed (the headphones glyph reads off for both)
+  const deaf = on && (!receivingVoice() || isHushed());
   // speech-to-text doesn't read a voice mute yet, so while it is on a muted mic still posts captions (as say, which a
   // moderator's chat mute refuses), and under push-to-talk only while the key is held (V, or A/X on a VR controller)
   // and as a release drains what was heard (stt.js keyAllows): say exactly that. With the mic off it would start on the
@@ -143,22 +138,36 @@ function paint() {
     : ' — the room doesn\'t hear your voice, but your speech-to-text captions still post' + whileKey;
   const offTail = (voice) => !captionsPost ? 'turning the mic on won\'t reach the room'
     : `turning the mic on won't let the room hear ${voice}, but your speech-to-text captions would post${whileKey}`;
-  micBtn.title = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here' + muteTail
+  const tip = muted === 'moderator' ? 'mic on, but a moderator has muted your voice here' + muteTail
     : muted ? 'mic on, but muted' + muteTail
     : !on ? (hot ? 'mic off — your synthesized voice is going out to the room'
       // a mute holds whatever V does: say so rather than offer V
       : reason === 'moderator' ? 'mic off — and a moderator has muted your voice here: ' + offTail('it')
       : reason ? 'mic off, and muted — ' + offTail('your voice')
       : pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
-    // a synth voice standing in for a mic that couldn't be opened: V keys nothing, so it is not offered, silent or not
+    // a synth voice standing in for a mic that couldn't be opened: V keys nothing, so it is not offered, silent or not;
+    // whether it reaches the room is the gold's to say, not these words' (the transport may not be carrying it)
     : synth ? (hot ? 'mic on, but no microphone is open: your synthesized voice is going out to the room'
-      : 'mic on, but no microphone is open: your synthesized voice goes out to the room when it speaks, and V does not key it')
+      : 'mic on, but no microphone is open: a synthesized voice stands in for it, and V does not key it' + GOLD_NOTE)
     // the key is V, or A/X on a VR controller (both hold setPttHeld): name the key, not V alone
     : pttMode() ? (pttHeld() ? 'push-to-talk: key held (release it to stop)' + GOLD_NOTE
-                             : 'push-to-talk armed — hold V to speak')
-    : deaf ? 'mic on — but you are not hearing the room (click the headphones to listen)'
+      // the key up and still gold: the release's tail (micgate.js), so "hold V to speak" would deny what is going out
+      : hot ? 'push-to-talk: the key is up — the end of your last word is still going out'
+      : 'push-to-talk armed — hold V to speak (A/X on a VR controller)')
     : 'mic on (V to turn off)' + GOLD_NOTE;
-  micBtn.title += SHARED;
+  // not hearing the room is true beside every mic-on state (a synth stand-in and push-to-talk too), so it is added, not a branch
+  return tip + (deaf ? '\nyou are not hearing the room (click the headphones to listen)' : '') + SHARED;
+}
+function paint() {
+  announceIndicator();
+  if (!micBtn) return;
+  const on = micIsOn();
+  const args = glyphArgs(on), { hot, synth, muted } = args;
+  const tip = micTip(args);
+  micKey = keyOf(args, tip);   // the poll repaints when the live state leaves what was drawn
+  micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
+  micBtn.style.opacity = on && (!receivingVoice() || isHushed()) ? '0.55' : '1';   // dimmed whenever the tooltip says you are not hearing the room
+  micBtn.title = tip;
   if (xrBtn) {
     const live = xrLive();
     xrBtn.innerHTML = xrAbsent && !live ? XR_SVG(false).replace(new RegExp(INK.off.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), INK.absent) : XR_SVG(live);
@@ -183,15 +192,15 @@ function paint() {
 setInterval(() => {
   // gold = micstate.js roomHears(): the gate's decision (threshold, hang, PTT, mute, a raw lane, a synth voice), the
   // lane's track, the transport carrying it and the moderator mute; never a level or a mic state of our own
-  // the mic's on/off is in the key too: the transport can turn it off with no 'audio:mic' event (a swap, a replay).
-  // It is read outside the try (micIsOn never throws): inside, a throwing roomHears() would leave it false against a
-  // painted true, and the glyph would repaint on every poll. A throw reads as what paint() draws for one.
-  const on = micIsOn();
-  let hot = false, muted = null;
-  try { hot = roomHears(); muted = muteReason(); } catch { /* as glyphArgs: not hot, not muted */ }
-  if (hot !== micHot || muted !== micMuted || on !== micPaintedOn) paint();
+  // the key is every input to the glyph and its words (keyOf): the transport can change one with no event (a swap, a replay).
+  // One derivation with paint() (glyphArgs never throws), so a throwing roomHears() does not repaint the glyph on every poll.
+  let key = micKey;
+  try { const args = glyphArgs(); key = keyOf(args, micTip(args)); } catch { /* the words could not be read: keep the glyph */ }
+  if (key !== micKey) paint();
   else announceIndicator();
 }, 125);
+// the sensitivity bar reads roomHears() on every frame while it shows: what it sees first, every indicator shows with it
+bus.on('mic:hears', paint);
 
 // ---- pair API for the ∃ menu: rows toggle these; per-glyph pins decide whether each hangs off the ∃
 const PIN_LS = { mic: 'ew-mic-pinned', ear: 'ew-ear-pinned', xr: 'ew-xr-pinned' };

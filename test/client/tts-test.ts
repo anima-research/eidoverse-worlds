@@ -30,9 +30,13 @@ class FakeAudioData {
   close() {}
 }
 let rejectWrites = false;   // a generator whose writable refuses frames (a closed stream rejects write() async)
+let holdWrites = false;     // a generator that has not yet taken its frames: each write() stays pending until settleHeld()
+const heldWrites: (() => void)[] = [];
+const settleHeld = () => { for (const go of heldWrites.splice(0)) go(); };
 class FakeWriter {
   closed = false;
   write(d: FakeAudioData) { written.push({ frames: d.numberOfFrames, ts: d.timestamp, loud: d.loud, sum: d.sum });
+    if (holdWrites) return new Promise<void>((res) => heldWrites.push(res));
     return rejectWrites ? Promise.reject(new Error("the stream is closed")) : Promise.resolve(); }
   close() { this.closed = true; return Promise.resolve(); }
 }
@@ -166,6 +170,20 @@ console.log("\n— the pacer's own record of what it sent (micstate.js reads it:
   check("a loud line the generator refused (write() rejected): audibleAt does not move",
     !!refusedPlayed && sp.audibleAt() === stampBefore, `played=${!!refusedPlayed} ${sp.audibleAt()} vs ${stampBefore}`);
   rejectWrites = false;
+  // a frame the generator has been handed but has not taken yet is not sent yet: it stamps nothing until the write settles
+  holdWrites = true; written.length = 0;
+  await tts.speak("pending");
+  const handed = await tryUntil("loud frames handed to the generator, none taken", () => speechFrames() > 0 && heldWrites.length > 0);
+  await pause("time for a stamp made at submission to show", 30);
+  const stampPending = sp.audibleAt();
+  holdWrites = false;
+  const settledAt = performance.now();
+  settleHeld();
+  await tryUntil("the pending line played out", drained);
+  await pause("the settled writes' continuations run", 10);
+  check("a loud line whose writes are still pending: audibleAt does not move until the generator takes a frame, and then it does",
+    !!handed && stampPending === stampBefore && sp.audibleAt() >= settledAt, `handed=${!!handed} pending=${stampPending} before=${stampBefore} after=${sp.audibleAt()} settledAt=${settledAt}`);
+  await pause("past the pending line's last stamp", 50);
   before = performance.now();
   await pause("a millisecond, so a frame written now is after `before`", 2);
   written.length = 0;

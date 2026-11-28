@@ -29,6 +29,18 @@ const ROWS: Row[] = [
   { name: "the panel asks the predicate, not the raw bit", file: "client/lib/ui/videopanel.js", must: [/headsetSeenRecently\(\)/], not: [[/PREF_HEADSET_SEEN\) === '1'/, "getItem(PREF_HEADSET_SEEN) === '1'"]] },
   { name: "a granted session stamps the TIME at exactly two writers, never a flag", file: "client/lib/xr/xr.js", count: [/setItem\(PREF_HEADSET_SEEN, String\(Date\.now\(\)\)\)/g, 2],
     not: [[/setItem\(PREF_HEADSET_SEEN, '1'\)/, "setItem(PREF_HEADSET_SEEN, '1')"], [/setItem\('ew-headset-seen', '1'\)/, "setItem('ew-headset-seen', '1')"]] },
+  // the ring's repaint on a mic change is xrringpaint.js's (xr-ring-repaint-test runs it): xr.js hands it the open ring and keeps no subscription of its own
+  { name: "xr.js follows the mic glyph through xrringpaint.js, with the ring only while it is open", file: "client/lib/xr/xr.js",
+    must: [/import\s*\{[^}]*\bfollowMicIndicator\b[^}]*\}\s*from\s*'\.\/xrringpaint\.js'/, /^followMicIndicator\(bus, \(\) => \(radialOpen \? radial : null\), ringIconTexture\);/m,
+      /^function repaintRing\(\) \{ repaintSlots\(radial, ringIconTexture\); \}/m],
+    not: [[/bus\.on\(\s*['"`]mic:indicator/, "bus.on('mic:indicator', () => repaintRing())"]] },
+  // an SVG is drawn through svgimage.js, which keeps each loaded Image: one drawn before is on the canvas in the turn it is asked for
+  { name: "the ring's slots draw their SVG through svgimage.js, and xr.js makes no Image of its own", file: "client/lib/xr/xr.js",
+    must: [/import\s*\{\s*svgImage\s*\}\s*from\s*'\.\/svgimage\.js'/, /^    svgImage\(svg, \(img\) => \{ g\.save\(\); g\.setTransform\(1, 0, 0, 1, 64, 64\); g\.drawImage\(img, -30, -30, 60, 60\); g\.restore\(\); tex\.needsUpdate = true; \}\);/m],
+    not: [[/new Image\(/, "const img = new Image();"]] },
+  { name: "the VR mic icon draws its glyph through svgimage.js, keeping its stale-paint guard", file: "client/lib/xr/xrmicicon.js",
+    must: [/import\s*\{\s*svgImage\s*\}\s*from\s*'\.\/svgimage\.js'/, /^  svgImage\(svg\(84\), \(img\) => \{ if \(mine !== painted\) return; g\.drawImage\(img, 22, 22, 84, 84\); tex\.needsUpdate = true; \}\);/m],
+    not: [[/new Image\(/, "const img = new Image();"]] },
   // locomotion-clip: an extracted policy someone calls
   { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/player/controller.js",
     must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },

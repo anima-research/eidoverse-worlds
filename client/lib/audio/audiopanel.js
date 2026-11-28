@@ -10,7 +10,7 @@ import { makeSection } from '../ui/ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
-import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
+import { gateUnavailable, ungatedConsent, allowUngated, gateLookahead } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
 import { why } from '../debuglog.js';
 /** Is a mic actually publishing, whichever transport is live? Guarded: window.relayDiag (voicesfubridge.js) can
@@ -18,7 +18,7 @@ import { why } from '../debuglog.js';
 const micLive = () => {
   try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
 };
-import { bus } from '../base.js';
+import { bus, warnRarely } from '../base.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic, roomHears, micDeviceLevel, muteReason } from './micstate.js';
 // CONFIG: the mic row passes CONFIG.name, which toggleMic (micstate.js) ignores: it takes no argument.
@@ -74,15 +74,39 @@ const LVL_LIVE = '#ffd66b';
 const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';
 
-function micFloorRow() {
-  const row = document.createElement('div');
-  row.className = 'sp-row row wide';
-  // the marker opens the gate; it does not filter what is sent: the hang keeps quieter sound going out after speech, and a
-  // consented ungated lane sends everything
-  const hint = 'voice-activation threshold: sound over the white marker opens your mic, and it stays open ' +
+// The hints say what this lane does: with no gate the marker holds nothing back and a release has no tail (mic-room-hears-test.mjs §11).
+const BAR_NOTE = 'the bar shows your live mic level, gold while your voice is going out to the room';
+const floorHint = () => !gateUnavailable()
+  ? 'voice-activation threshold: sound over the white marker opens your mic, and it stays open ' +
     'for a moment after you drop below it, so quieter sound right after speech is sent too; sound under it the rest ' +
     'of the time is not sent as voice (speech-to-text, when on, still hears it) — raise it if typing ' +
-    'opens the mic; the bar shows your live mic level, gold while your voice is going out to the room';
+    'opens the mic; ' + BAR_NOTE
+  : ungatedConsent()
+    ? 'the voice gate could not be built on this device and you chose to transmit ungated: the white marker holds ' +
+      'nothing back, so everything your microphone picks up is sent while the mic is on, typing and room noise ' +
+      'included, wherever the marker is set (push-to-talk, or turning the mic off, still stops it); ' + BAR_NOTE
+    // the refused attempt turned the mic off (voicesfu.js): the tick alone sends nothing, so the hint says the second step
+    : 'the voice gate could not be built on this device, so the white marker is not in use and your microphone sends ' +
+      'nothing unless you tick ‘transmit UNGATED’ below' + (micLive() ? '' : ', and then turn the microphone on again ' +
+      '(the attempt that could not build the gate left it off)') + '; ' + BAR_NOTE;
+const PTT_KEY = 'transmit only while the push-to-talk key is held down (V, or A/X on a VR controller) — replaces voice ' +
+  'activation, so the sensitivity floor below is not used while this is on. ';
+const pttHint = () => PTT_KEY + (gateUnavailable() || gateLookahead() === false
+  // a raw lane's track is switched off, and a gate without a delay line has nothing held back: no tail either way
+  ? 'Release the key and your mic cuts off at once (this device has no lookahead, so nothing is sent behind you), ' +
+    'and the gold goes with it.'
+  // no gate built yet (the mic has not been on): which of the two this device gets is not known, so both are said
+  : gateLookahead() === null ? 'Release the key and your mic cuts off, and the gold goes with it: 50 ms later where ' +
+    'this device can send your voice 50 ms behind you (the end of your last word still goes out), at once where it can\'t.'
+  : 'Release the key and the end of your last word still goes ' +
+    'out: your mic cuts off 50 ms later (your voice is sent 50 ms behind you), within 5 ms, and the gold goes with ' +
+    'it.') + ' A synthesized voice is not keyed by it.';
+const setHint = (row, hint) => { for (const el of row.querySelectorAll('[title]')) if (el.title !== hint) el.title = hint; };
+
+function micFloorRow(onLook = () => {}) {
+  const row = document.createElement('div');
+  row.className = 'sp-row row wide';
+  const hint = floorHint();
   const FS = 0.2;  // full-scale micFloor = right edge of the meter (0 dB)
   row.innerHTML =
     `<span class="nm" title="${hint}">mic sensitivity</span>` +
@@ -100,16 +124,27 @@ function micFloorRow() {
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
   // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree on what goes out
-  let hot = false, lookAt = 0, bgNow = null;
+  let hot = roomHears(), lookAt = 0, bgNow = null;   // read at the build: a row built hidden is told only of the glyph's changes
   const micIsLive = micLive;
   const paintLive = () => {
     const bg = hot ? LVL_LIVE : (!micIsLive() || muteReason()) ? LVL_DARK : LVL_WARM;
     if (bg !== bgNow) { bgNow = bg; lvl.style.background = bg; }
+    setHint(row, floorHint()); onLook();   // the lane can change under the words with no event (a gate that fails to build)
   };
   paintLive();
+  // the gold alone, with no level read: all the bar does while nobody samples it (hidden), so it is the glyph's colour
+  // in the frame it is shown again. Not told on 'mic:hears': it is the glyph that has just said so.
+  const look = () => { const next = roomHears(); if (next !== hot) { hot = next; paintLive(); } };
   // the row's listeners go with the row (the panel can be rebuilt): beat() drops them once it is detached
   row._unsubs = [bus.on('audio:mic', paintLive), bus.on('audio:mute', paintLive),
-    bus.on('audio:micfloor', () => paintLive())];   // dragging the threshold repaints at once, not on the next sample
+    bus.on('audio:micfloor', () => paintLive()),   // dragging the threshold repaints at once, not on the next sample
+    // each change of the glyph (only mictoggle.js announces it, in the turn it draws it; main.js loads both) is the bar's too, shown or hidden:
+    // talking on with Settings closed, the bar is gold beside the gold glyph in the frame Settings opens again
+    bus.on('mic:indicator', look)];
+  // built before the glyph's poll has seen the voice start or stop: tell the glyph now, either way (as sample() does on a
+  // change), since `hot` already matches and the first sample would announce nothing, leaving the bar gold beside a dark
+  // glyph, or dark beside a gold one, until the poll. The glyph reads roomHears() itself; at most this repaints it once.
+  bus.emit('mic:hears', hot);
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
@@ -122,30 +157,33 @@ function micFloorRow() {
   };
   meter.onpointerdown = (ev) => { meter.setPointerCapture(ev.pointerId); setFromX(ev); };
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
-  let beatWarnAt = -Infinity;
   const beat = () => {
     if (!row.isConnected) { for (const off of row._unsubs.splice(0)) off(); return; }
     // hidden (Settings closed, another tab): no sampling for a meter nobody sees; look again 4× a second
+    // its gold is not left as it was when it was hidden, nor put out: it follows the glyph ('mic:indicator' above), so
+    // shown again it is gold if the voice is still going out and dark if it stopped, in that frame
     if (row.checkVisibility && !row.checkVisibility()) { setTimeout(() => requestAnimationFrame(beat), 250); return; }
     // the next frame first, so a throw below can't end the loop (and with it the detach cleanup above)
     requestAnimationFrame(beat);
     try { sample(); } catch (e) {
-      const t = performance.now();
-      if (t - beatWarnAt >= 60000) { beatWarnAt = t; console.warn('[audio panel] the mic meter threw; it reads not gold', e); }
+      warnRarely('mic-meter', '[audio panel] the mic meter threw; it reads not gold', e);
       if (hot) { hot = false; paintLive(); }
     }
   };
   const sample = () => {
     // the bar rides the marker's dB track (-60..0 dB, voiceconsent.js gateThresholdDb) at the RMS the gate reads (the
     // transport's peak crossed the marker with the gate shut), muted or not
-    const level = micDeviceLevel();
+    // read on its own: an unreadable level empties the bar, and must not skip the gold read below (the voice may be going out)
+    let level = 0;
+    try { level = micDeviceLevel(); } catch (e) { warnRarely('mic-meter-level', '[audio panel] the mic level could not be read; the bar is empty', e); }
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
     // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates
     // roomHears() never throws (micstate.js): a broken read is not gold, and is told to the console
     const next = roomHears();
     const now = performance.now();
-    if (next !== hot) { hot = next; paintLive(); }
+    // a change seen here first is told (mictoggle.js repaints the glyph, and through it the menus and the VR indicator)
+    if (next !== hot) { hot = next; paintLive(); bus.emit('mic:hears', next); }
     else if (now - lookAt >= 125) { lookAt = now; paintLive(); }
   };
   requestAnimationFrame(beat);
@@ -187,13 +225,9 @@ function paint(body) {
   _sync.mic = micRow.querySelector('input');
   body_.append(micRow);
   // PTT sits between the mic switch and the sensitivity floor because it decides whether the floor is in use
-  body_.append(checkRow('push-to-talk',
-    'transmit only while V is held down — replaces voice activation, so the ' +
-    'sensitivity floor below is not used while this is on. Release V and the end of your last word still goes ' +
-    'out: your mic cuts off 50 ms later (your voice is sent 50 ms behind you), within 5 ms, and the gold goes with ' +
-    'it. A synthesized voice is not keyed by V.',
-    pttMode(), (on) => setPttMode(on)));
-  const floorRow = micFloorRow();
+  const pttRow = checkRow('push-to-talk', pttHint(), pttMode(), (on) => setPttMode(on));
+  body_.append(pttRow);
+  const floorRow = micFloorRow(() => setHint(pttRow, pttHint()));
   body_.append(floorRow);
   // under PTT the floor drives nothing: dimmed and inert, not hidden, so the row stays findable
   const dimFloor = () => {
@@ -240,7 +274,7 @@ function paint(body) {
   {
     const row = checkRow('transmit UNGATED (voice gate unavailable)',
       'the noise gate could not be built on this device — checking this transmits your raw microphone, room noise and all',
-      ungatedConsent(), (on) => allowUngated(on));
+      ungatedConsent(), (on) => { allowUngated(on); setHint(floorRow, floorHint()); });
     row.style.display = gateUnavailable() ? '' : 'none';
     row.style.color = '#fa5';
     bus.on('voice-gate-unavailable', () => { row.style.display = ''; });

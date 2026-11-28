@@ -23,6 +23,13 @@ let room = 0;   // the RMS the analyser hears: 0 is also what a stalled headless
 let analyserThrows = false, gumFails = false;
 let ctxState = 'running';   // the AudioContext's state: 'suspended' sends silence through the gate's graph
 let gainThrows = false;     // a gain whose automation throws: the gate falls back to a step (`value =`)
+let noGate = false;         // a context without createMediaStreamDestination: the gate cannot be built (the raw lane, if consented)
+// what the console is told, counted from the first line of the run (base.js warnRarely speaks once a minute per kind)
+let levelWarns = 0;
+{ const w = console.warn; console.warn = (...a) => { if (/the level could not be read/.test(String(a[0]))) levelWarns++; else w(...a); }; }
+// what each indicator shows once a turn that painted one of them is over (section 11 turns the watch on)
+let watchTurns = false;
+const turns = [];
 const ctxListeners = [];    // 'statechange' listeners on the contexts the gate built (a resume is told through them)
 const ctxOwn = new Map();   // a context's own state, where one context must differ from the rest (a listener → its override)
 let gateGain = null;        // the gate's own gain (the last one automated), to stand for the audio clock across a suspend
@@ -46,7 +53,7 @@ mock.module(lib('audio/audioctx.js'), () => ({
       cancelScheduledValues(t) { gainLog.push(['cancel', t]); }, setValueAtTime(v, t) { this.value = v; gainLog.push(['set', v, t]); },
       linearRampToValueAtTime(v, t) { this.value = v; gainLog.push(['ramp', v, t - this._t0]); }, _t0: 0 } }),
     createDelay: () => ({ ...node(), delayTime: { value: 0, setTargetAtTime() {} } }),
-    createMediaStreamDestination: () => ({ ...node(), stream: new FakeStream([mkTrack('gated')]) }),
+    ...(noGate ? {} : { createMediaStreamDestination: () => ({ ...node(), stream: new FakeStream([mkTrack('gated')]) }) }),
   }),
 }));
 const netSrc = readFileSync(lib('net.js'), 'utf8');
@@ -68,17 +75,20 @@ class Obj { constructor() { this.position = { set() {} }; this.scale = { setScal
 mock.module(lib('core.js'), () => ({
   THREE: { CanvasTexture: class {}, SRGBColorSpace: 'srgb', PlaneGeometry: class {},
     MeshBasicMaterial: class { constructor(o) { Object.assign(this, o); }
-      set opacity(v) { this._o = v; xrPairs.push({ gold: (xrPaints.at(-1) || '').includes('drop-shadow'), opacity: v }); }
+      set opacity(v) { this._o = v; xrPairs.push({ gold: (xrPaints.at(-1) || '').includes('drop-shadow'), opacity: v }); afterTurn('vr'); }
       get opacity() { return this._o; } },
     Mesh: class extends Obj { constructor(g, m) { super(); this.material = m; } } },
   camera: new Obj(), renderer: {},
 }));
 mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial() {} }));
-// the indicator's canvas: drawImage records the glyph actually drawn; Image loads (fires onload) as a browser's would
+// the indicator's canvas: drawImage records the glyph actually drawn; an Image loads (fires onload) after the code that set
+// its src, never inside it, as a browser's does. A paint asks for its glyph once: by setting a src, or (a glyph loaded
+// before, svgimage.js) by drawing the kept Image at once; xrPaints has one entry per paint either way.
 const xrDrawn = [];
-HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {}, drawImage(img) { xrDrawn.push(img._svg); } });
+HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {},
+  drawImage(img) { if (!img._loading) xrPaints.push(img._svg); xrDrawn.push(img._svg); } });
 globalThis.Image = class { set src(v) { this._svg = decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, '')); xrPaints.push(this._svg);
-  queueMicrotask(() => this.onload?.()); } };
+  queueMicrotask(() => { this._loading = true; try { this.onload?.(); } finally { this._loading = false; } }); } };
 mock.module(lib('ui/ui.js'), () => ({
   flashHint: () => {},
   makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); (globalThis.__builds ??= {})[opts.id] = build; return el; },
@@ -115,6 +125,8 @@ initVoiceSfu('p');
 const mt = await import(lib('audio/mictoggle.js'));
 const { initAudioPanel } = await import(lib('audio/audiopanel.js'));
 initAudioPanel();
+// before the mic has ever been on there is no gate, so the panel can't know yet whether a release will have a tail
+const pttHintBeforeGate = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while the push-to-talk key/.test(x)) || '';
 await import(lib('xr/xrmicicon.js'));
 bus.emit('xr:state', true);   // in VR: the indicator ticks at the HUD's cadence
 
@@ -137,14 +149,17 @@ const xmlAttrsOk = (svg) => [...svg.matchAll(/<([^>]+)>/g)].every(([, tag]) =>
   /^\/?[\w:-]+\/?$/.test(tag.replace(/\s+[\w:-]+="[^"]*"/g, '').replace(/\s*\/$/, '/').trim()));
 const xrState = () => `xr key=${mt.micIndicatorState()} paints=${xrPaints.length} lastSlash=${xrLast().includes('x1="7" y1="4"')} current=${xrShows()}`;
 const POLLS = 'three glyph polls and many bar frames';
+function afterTurn(who) {
+  if (watchTurns) queueMicrotask(() => turns.push({ who, hud: gold(), vr: (xrPaints.at(-1) || '').includes('drop-shadow') }));
+}
 // A push-to-talk release keeps what was said while the key was down: it is still in the 50 ms lookahead, so the cut's
 // 5 ms ramp starts one lookahead after the release, and the gold holds until that cut has closed. The close repaints
 // the indicators itself (micstate.js 'audio:ptt-tail-end'), so the gold does not wait for a poll. `release` is the
 // gesture; atOnce is what shows in its own turn, closed() what shows as the cut closes.
 const LOOK_S = 0.05, CUT_S = 0.005, TAIL_MS = (LOOK_S + CUT_S) * 1000;
 // ...and not late: the close's own timer fires ~1 ms after the cut, where the glyph's 8 Hz poll could land up to 125 ms
-// after it. "Late" is an order, not a reading of the clock: releaseKey arms a reference timer this long just before the
-// release, and the close must come before it fires. A stalled process (the gate at peak load: 114.9, 186.9 and 100.6 ms
+// after it. "Late" is an order, not a reading of the clock: releaseKey arms a reference timer this long just after the
+// release (see it there), and the close must come before it fires. A stalled process (the gate at peak load: 114.9, 186.9 and 100.6 ms
 // were read against a 100 ms wall-clock bound) delays both timers alike, and they still fire in the order they fall due;
 // a tail-end timer set late, or a poll standing in for it, falls due after the reference and is told apart on any machine.
 const TAIL_LATE_MS = 100;
@@ -161,7 +176,7 @@ function releaseKey(release) {
   release();
   // armed after the release, so it falls due after an on-time close (~56 ms) however late the process runs them both
   const ref = setTimeout(() => { refFired = true; }, TAIL_LATE_MS);
-  const atOnce = { gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState() };
+  const atOnce = { gold: gold(), hears: ms.roomHears(), xrKey: mt.micIndicatorState(), title: tipNow() };
   return { atOnce, closed: async () => { const r = await tryUntil('the delayed cut closes', () => seen, { ms: 1000 }); off(); clearTimeout(ref); return r || null; } };
 }
 
@@ -226,6 +241,10 @@ t('in VR, muted while silent: the indicator repaints with the slash (key "muted"
 const tip = () => document.querySelector('#micbtn').title;
 t('muted, speech-to-text off: the tooltip says none of your voice goes out', /none of your voice goes out/.test(tip()) && !/caption/.test(tip()), tip());
 sttAv = true; vc.setSttConsent(true);
+sttAv = false;   // speech-to-text stops being available, with no event: only the words change, and the poll still repaints them
+t('muted, speech-to-text gone with no event: the tooltip is repainted to say none of your voice goes out',
+  !!(await tryUntil('the words follow', () => /none of your voice goes out/.test(tip()) && !/caption/.test(tip()), { ms: 2000 })), tip());
+sttAv = true;
 t('muted, speech-to-text on: the tooltip says captions still post, not that none of it goes out',
   !!(await tryUntil('the tooltip names captions', () => /captions still post/.test(tip()) && !/none of your voice/.test(tip()))), tip());
 vc.setPttMode(true);
@@ -335,10 +354,12 @@ t('setup: the device lane is gold under the held key, on the HUD and in VR',
 const keyUp = releaseKey(() => window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyV' })));
 t('PTT keyup: still gold in the same turn, because the last 50 ms said under the key is still going out',
   keyUp.atOnce.hears === true && keyUp.atOnce.gold === true, `${JSON.stringify(keyUp.atOnce)} ${state()}`);
+t('...and the tooltip says so: the key is up and the end of the word is going out, not "hold V to speak" beside a gold glyph',
+  /^push-to-talk: the key is up — the end of your last word is still going out/.test(keyUp.atOnce.title) && !/hold V/.test(keyUp.atOnce.title), keyUp.atOnce.title);
 const keyUpClosed = await keyUp.closed();
 t(`...and dark as the cut closes (${TAIL_MS} ms after the keyup, before a ${TAIL_LATE_MS} ms timer armed at the release), painted by the close itself, not the last poll`,
   closedOnTime(keyUpClosed) && keyUpClosed.hears === false && keyUpClosed.gold === false
-  && /push-to-talk armed/.test(keyUpClosed.title), `${JSON.stringify(keyUpClosed)} ${state()}`);
+  && /^push-to-talk armed — hold V to speak \(A\/X on a VR controller\)/.test(keyUpClosed.title), `${JSON.stringify(keyUpClosed)} ${state()}`);
 ms.setPttHeld(true);
 await tryUntil('gold again under the key, in VR too', () => gold() && xrShows() && xrGold());
 // the XR controller's A/X release (xr.js): setPttHeld alone, no key event
@@ -351,6 +372,9 @@ t(`...and as the cut closes (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer
   `${JSON.stringify(vrClosed && { ...vrClosed, xrAsked: vrClosed.xrAsked.includes('drop-shadow') ? 'gold' : 'plain' })} ${xrState()}`);
 t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
 ms.setPttHeld(true);
+// both glyphs have been drawn before: a press is in the headset in its own turn, with no frame of the disc and no glyph (finding 1 of #383's review)
+t('a press, its gold glyph loaded before: the headset has DRAWN it before the press returns, not only asked for it',
+  gold() && xrGold() && xrShows(), `${state()} ${xrState()}`);
 await tryUntil('gold again before turning the mic off', () => gold());
 await ms.toggleMic();   // V or a click: the mic off, and no synth provider to take over
 t('toggleMic off with no synth provider: no waves, not gold, and the VR key is not hot-off, in the same turn',
@@ -367,10 +391,15 @@ t('the transport turns the mic off with no event: the bar goes dark',
   !!(await tryUntil('dark bar', () => /107, 95, 66|#6b5f42/i.test(lvl.style.background))), state());
 
 // ── 8. airtight: one read per VR paint, a throwing answer, the bar's loop across a VR exit, the panel rebuilt ────────
-const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while V/.test(x)) || '';
-t('the push-to-talk hint says the end of the last word still goes out and the mic cuts off 50 ms after the release, in 5 ms, and that a synth voice is not keyed by V',
-  /Release V and the end of your last word still goes out: your mic cuts off 50 ms later \(your voice is sent 50 ms behind you\), within 5 ms, and the gold goes with it\./.test(pttHint)
-  && !/at once|after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by V/.test(pttHint), pttHint);
+const pttHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /transmit only while the push-to-talk key/.test(x)) || '';
+t('the push-to-talk hint says the end of the last word still goes out and the mic cuts off 50 ms after the release, in 5 ms, and that a synth voice is not keyed by it',
+  /Release the key and the end of your last word still goes out: your mic cuts off 50 ms later \(your voice is sent 50 ms behind you\), within 5 ms, and the gold goes with it\./.test(pttHint)
+  && !/at once|after a short fade|fades out/.test(pttHint) && /synthesized voice is not keyed by it/.test(pttHint), pttHint);
+t('...and before any gate was built it promised neither: 50 ms later where the device can hold the voice back, at once where it can\'t',
+  /cuts off, and the gold goes with it: 50 ms later where this device can send your voice 50 ms behind you .* at once where it can't\./.test(pttHintBeforeGate)
+  && !/still goes out: your mic cuts off 50 ms later/.test(pttHintBeforeGate), pttHintBeforeGate);
+t('...and names the key as it is held: V, or A/X on a VR controller (not V alone)',
+  /^transmit only while the push-to-talk key is held down \(V, or A\/X on a VR controller\)/.test(pttHint), pttHint);
 const floorHint = [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => /voice-activation threshold/.test(x)) || '';
 t('the sensitivity hint says speech-to-text, when on, still hears what the marker keeps from the room (as main\'s did)',
   /sound under it the rest of the time is not sent as voice \(speech-to-text, when on, still hears it\)/.test(floorHint), floorHint);
@@ -443,6 +472,16 @@ t('the panel rebuilt: the detached row no longer listens (both sentinels stand)'
 t('...and the new row does (mute repaints its bar, push-to-talk dims it)',
   !!newLvl && newLvl !== oldLvl && newLvl.style.background !== 'rgb(1, 2, 3)' && newRow.style.opacity === '0.45',
   `new bar=${newLvl?.style.background} new row=${newRow?.style.opacity}`);
+// ...nor to the glyph: each change of it ('mic:indicator'), to gold and back, reaches the new bar and not the old one
+{ oldLvl.style.background = 'rgb(1, 2, 3)';
+  let told = 0; const offTold = bus.on('mic:indicator', () => told++);
+  ms.setPttHeld(true);
+  const wentGold = !!(await tryUntil('gold on the glyph and the new bar', () => gold() && GOLD.test(newLvl.style.background)));
+  ms.setPttHeld(false);
+  const wentDark = !!(await tryUntil('dark on the glyph and the new bar', () => !gold() && !GOLD.test(newLvl.style.background)));
+  offTold();
+  t('...and the glyph going gold and dark is the new bar\'s alone: the detached row no longer hears \'mic:indicator\' (its sentinel stands)',
+    wentGold && wentDark && told >= 2 && oldLvl.style.background === 'rgb(1, 2, 3)', `gold=${wentGold} dark=${wentDark} told=${told} old bar=${oldLvl.style.background}`); }
 const lvlNow = newLvl;   // the rows below read the rebuilt panel's bar
 const barGoldNow = () => GOLD.test(lvlNow.style.background);
 
@@ -492,6 +531,7 @@ await pause('past the tail', 100);
 // a re-press inside the tail: the pending cut is cancelled, or it would cut the new word 50 ms in
 ms.setPttHeld(true);
 await tryUntil('gold under the key again', () => gold());
+await pause('the key held past the 8 ms attack, so the gain is open when it comes up', 60);
 ms.setPttHeld(false); gainLog.length = 0; ms.setPttHeld(true);
 const rePress = gainLog.slice();
 const cancelAt = rePress.findIndex((g) => g[0] === 'cancel'), openAt = rePress.findIndex((g) => g[0] === 'target' && g[1] === 1);
@@ -585,7 +625,31 @@ const fallback = await tryUntil('the synth fallback is on the sender', () => pc.
 negotiated(pc);
 t('synth fallback under PTT, key up, silent: the tooltip says no microphone is open and V does not key the synth voice (not "hold V to speak")',
   !!fallback && !!(await tryUntil('the quiet fallback tooltip', () => !gold()
-    && /^mic on, but no microphone is open: your synthesized voice goes out to the room when it speaks, and V does not key it\n/.test(tip()))), `${state()}`);
+    && /^mic on, but no microphone is open: a synthesized voice stands in for it, and V does not key it — gold while your voice is going out to the room\n/.test(tip()))), `${state()}`);
+// what reaches the room is the gold's to say: with the transport down the words still hold
+pc.connectionState = 'disconnected';
+await pause('the transport down under the quiet fallback: a glyph poll', 200);
+t('...and with the transport not carrying the lane, the tooltip promises nothing it can\'t keep (no "goes out to the room when it speaks")',
+  ms.laneCarried() === false && !/goes out to the room when it speaks/.test(tip()) && /gold while your voice is going out to the room/.test(tip()), tip());
+pc.connectionState = 'connected';
+// not hearing the room is said beside the fallback (and push-to-talk) too, not only beside the plain mic-on words
+const recv0 = vc.receivingVoice();
+vc.setReceiveVoice(false);
+t('the synth fallback while not hearing the room: the tooltip says that too',
+  !!(await tryUntil('the tooltip names the deafness', () => /no microphone is open/.test(tip())
+    && /\nyou are not hearing the room \(click the headphones to listen\)\n/.test(tip()), { ms: 2000 })), tip());
+vc.setReceiveVoice(true);
+t('...and not once you are', /no microphone is open/.test(tip()) && !/not hearing the room/.test(tip()), tip());
+// hushed is not hearing either: the voices arrive and none is played (finding 2 of #383's review)
+vc.setHush(true);
+t('the headphones hushed (voices still received): the tooltip says you are not hearing the room, as it does with none received',
+  vc.receivingVoice() === true && !!(await tryUntil('the tooltip names the hush', () => /no microphone is open/.test(tip())
+    && /\nyou are not hearing the room \(click the headphones to listen\)\n/.test(tip()), { ms: 2000 })), tip());
+t('...and the glyph is dimmed with those words, hushed as with none received', document.querySelector('#micbtn').style.opacity === '0.55', document.querySelector('#micbtn').style.opacity);
+vc.setHush(false);
+t('...undimmed once unhushed', document.querySelector('#micbtn').style.opacity === '1', document.querySelector('#micbtn').style.opacity);
+t('...and not once unhushed', !!(await tryUntil('the tooltip drops it', () => /no microphone is open/.test(tip()) && !/not hearing the room/.test(tip()), { ms: 2000 })), tip());
+vc.setReceiveVoice(recv0);
 playing = true;
 t('synth fallback under PTT, key up, speaking: gold, with the waves, and the tooltip says it is going out (not "hold V")',
   !!fallback && !!(await tryUntil('the fallback goes gold', () => gold() && waves()
@@ -594,6 +658,7 @@ t('...and the VR key is its own (hot-synth)', mt.micIndicatorState() === 'hot-sy
 analyserThrows = true;   // a synth lane sends whatever the provider writes: an unreadable level must not hide it
 await pause('the analyser throws while the synth voice speaks: three glyph polls', 400);
 t('synth voice speaking, the level unreadable: still gold (micGateInfo does not throw)', ms.roomHears() === true && gold(), state());
+t('...and the unreadable level is told to the console, once (it is read at tick and frame rate)', levelWarns === 1, `${levelWarns} warnings in 0.4 s`);
 analyserThrows = false;
 // a synth frame stamped in the same millisecond as an unmute is the old side's
 const realPerf = performance.now.bind(performance), realDate = Date.now;
@@ -622,10 +687,113 @@ await tryUntil('the bar moves', () => parseFloat(lvlNow.style.width) > 0);
 fresh.style.display = 'none';
 await pause('the hidden row sees itself hidden', 300);
 const hiddenW = lvlNow.style.width; room = 0.2;
-await pause(`hidden: the level changes for ${POLLS}`, 400);
-t('the audio panel hidden: its meter stops sampling (the bar does not move)', lvlNow.style.width === hiddenW, `${hiddenW} → ${lvlNow.style.width}`);
+// the loop is still alive while hidden (it looks 4× a second): count the frames that ran, so "did not move" is not "did not run"
+let hiddenFrames = 0;
+const realRaf = globalThis.requestAnimationFrame;
+globalThis.requestAnimationFrame = (cb) => realRaf((ts) => { hiddenFrames++; cb(ts); });
+await tryUntil('two frames of the hidden meter\'s loop', () => hiddenFrames >= 2, { ms: 3000 });
+globalThis.requestAnimationFrame = realRaf;
+t('the audio panel hidden: its meter stops sampling (the bar does not move), over frames that ran with the level changed',
+  lvlNow.style.width === hiddenW && hiddenFrames >= 2, `${hiddenW} → ${lvlNow.style.width}, ${hiddenFrames} frames`);
 fresh.style.display = '';
 t('...and shown again, it resumes', !!(await tryUntil('the bar moves again', () => lvlNow.style.width !== hiddenW)), lvlNow.style.width);
+// a bar hidden while gold does not come back gold: the voice may have stopped while nobody sampled (finding 14 of #383's review)
+room = 0.3;
+await tryUntil('gold on the glyph and the bar', () => gold() && barGoldNow());
+fresh.style.display = 'none';
+await pause('the hidden row sees itself hidden', 300);
+room = 0;
+await tryUntil('the glyph dark, the panel still hidden', () => !gold(), { ms: 4000 });
+fresh.style.display = '';
+t('gold, the panel hidden, silence, the panel shown: the bar is not gold in the turn it shows, beside a dark glyph',
+  !gold() && !barGoldNow(), `${state()} bar=${lvlNow.style.background}`);
+room = 0.3;
+t('...and it goes gold with the voice again', !!(await tryUntil('gold on both again', () => gold() && barGoldNow())), `${state()} bar=${lvlNow.style.background}`);
+// ...nor dark while the voice goes on: talking with Settings closed, the bar is gold beside the gold glyph in the turn it
+// is shown, not one hidden-loop look (up to ~266 ms) later
+fresh.style.display = 'none';
+await pause('the hidden row sees itself hidden, over more than one of its looks, the voice still going out', 600);
+const hiddenGlyphGold = gold();
+fresh.style.display = '';
+t('gold, the panel hidden, still talking, the panel shown: the bar is gold in the turn it shows, beside a gold glyph',
+  hiddenGlyphGold && gold() && barGoldNow(), `glyph while hidden=${hiddenGlyphGold} ${state()} bar=${lvlNow.style.background}`);
+// ...and a panel first built while hidden, the voice already going out (no change of the glyph will come to tell it)
+// (each panel built from here on repoints audiopanel.js's `_sync` to its own checkboxes: a later row reading `fresh`'s mic, hear or connect checkbox would see stale values)
+{ const late = document.createElement('div'); late.style.display = 'none'; document.body.appendChild(late);
+  globalThis.__builds.audio(late);
+  const lateLvl = late.querySelector('[data-lvl]');
+  await pause('the row built hidden sees itself hidden, over more than one of its looks, the voice still going out', 600);
+  const builtGlyphGold = gold();
+  late.style.display = '';
+  t('talking, a panel built hidden, then shown: its bar is gold in the turn it shows, beside a gold glyph',
+    builtGlyphGold && gold() && GOLD.test(lateLvl.style.background), `glyph while hidden=${builtGlyphGold} ${state()} late bar=${lateLvl.style.background}`);
+  late.remove();
+  await pause('the late row\'s frame loop sees it detached', 300); }
+// ...because the hidden bar takes each change of the glyph in the glyph's own turn ('mic:indicator'), both ways
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const seen = [];   // (the key announced, the glyph gold?, the bar gold?) inside each announcement, after the bar's own listener
+  const offSeen = bus.on('mic:indicator', (k) => seen.push({ k, glyph: mt.micIndicatorState().startsWith('hot'), bar: barGoldNow() }));
+  room = 0;
+  await tryUntil('the glyph dark, the panel hidden', () => !gold(), { ms: 4000 });
+  room = 0.3;
+  await tryUntil('the glyph gold again, the panel hidden', () => gold(), { ms: 4000 });
+  offSeen();
+  const hots = seen.filter((x) => x.glyph), darks = seen.filter((x) => !x.glyph);
+  t('the panel hidden, the voice stops and starts: the bar is the glyph\'s colour inside each announcement of the glyph, dark and gold',
+    darks.length > 0 && hots.length > 0 && seen.every((x) => x.bar === x.glyph), JSON.stringify(seen));
+  fresh.style.display = ''; }
+// ...and a panel built in the turn the voice starts going out, before the glyph's poll has seen it: its bar starts gold
+// (it reads roomHears() at the build), so the build tells the glyph, or the bar would be gold beside a dark glyph until
+// the next poll. Voice activation, the level raised with no bus event; `fresh` is hidden, so no shown bar tells the glyph first.
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const builds = [];
+  for (const hiddenBuild of [false, true]) {
+    let got = null;
+    for (let i = 0; i < 5 && !got?.caught; i++) {
+      room = 0;
+      await tryUntil('the voice stopped and the glyph dark', () => !ms.roomHears() && !gold(), { ms: 4000 });
+      room = 0.3;
+      await tryUntil('the gate opens', () => ms.roomHears(), { ms: 4000, step: 1 });
+      const caught = ms.roomHears() && !gold();   // the turn roomHears() first reads true, the glyph not yet told
+      const at = document.createElement('div'); if (hiddenBuild) at.style.display = 'none'; document.body.appendChild(at);
+      globalThis.__builds.audio(at);
+      got = { hiddenBuild, caught, bar: GOLD.test(at.querySelector('[data-lvl]').style.background), glyph: gold() };   // in the build's own turn
+      at.remove();
+      await pause('the built row\'s frame loop sees it detached', 300);
+    }
+    builds.push(got);
+  }
+  t('the voice just starting, the glyph not yet told, a panel built (shown, and hidden): the glyph is gold with the new bar in the build\'s own turn',
+    builds.every((x) => x.caught && x.bar && x.glyph), JSON.stringify(builds));
+  fresh.style.display = ''; }
+// ...and its twin: a panel built in the turn the voice stops going out, before the glyph's poll has seen it: its bar starts
+// dark, so the build tells the glyph that too, or the bar would be dark beside a gold glyph until the next poll
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const builds = [];
+  for (const hiddenBuild of [false, true]) {
+    let got = null;
+    for (let i = 0; i < 5 && !got?.caught; i++) {
+      room = 0.3;
+      await tryUntil('the voice going out and the glyph gold', () => ms.roomHears() && gold(), { ms: 4000 });
+      room = 0;
+      await tryUntil('the gate closes', () => !ms.roomHears(), { ms: 4000, step: 1 });
+      const caught = !ms.roomHears() && gold();   // the turn roomHears() first reads false, the glyph not yet told
+      const at = document.createElement('div'); if (hiddenBuild) at.style.display = 'none'; document.body.appendChild(at);
+      globalThis.__builds.audio(at);
+      got = { hiddenBuild, caught, bar: GOLD.test(at.querySelector('[data-lvl]').style.background), glyph: gold() };   // in the build's own turn
+      at.remove();
+      await pause('the built row\'s frame loop sees it detached', 300);
+    }
+    builds.push(got);
+  }
+  t('the voice just stopped, the glyph not yet told, a panel built (shown, and hidden): the glyph is dark with the new dark bar in the build\'s own turn',
+    builds.every((x) => x.caught && !x.bar && !x.glyph), JSON.stringify(builds));
+  fresh.style.display = ''; }
+room = 0.05;
+await tryUntil('dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
 room = 0.3;
 await tryUntil('the gate open by level', () => gold());
 gainLog.length = 0;
@@ -637,6 +805,22 @@ analyserThrows = false; room = 0.02;
 const wAfter = lvlNow.style.width;
 t('the meter outlives a throwing analyser (its loop keeps going)', !!(await tryUntil('the bar moves after the throw', () => lvlNow.style.width !== wAfter)), lvlNow.style.width);
 room = 0;
+// the bar's two warnings each have their own once-a-minute: an unreadable level, just told, does not silence a meter that throws (finding 8 of #383's review)
+await tryUntil('the bar dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
+{ const seen = [], w = console.warn;
+  console.warn = (...a) => { const s = String(a[0]); if (/^\[audio panel\]/.test(s)) seen.push(s); else w(...a); };
+  analyserThrows = true;
+  await pause('frames with the level unreadable: told here, or in the last minute by the rows above', 100);
+  analyserThrows = false;
+  Object.defineProperty(lvlNow, 'style', { configurable: true, get() { throw new Error('no style'); } });   // sample() throws outside the level read
+  await pause('frames with the meter throwing', 100);
+  delete lvlNow.style;
+  console.warn = w;
+  t('a meter that throws within a minute of an unreadable level: the console is told of the throw too, once',
+    seen.filter((s) => /the mic meter threw/.test(s)).length === 1, JSON.stringify(seen));
+  const wBack = lvlNow.style.width; room = 0.02;
+  t('...and the bar carries on after it', !!(await tryUntil('the bar moves after the meter threw', () => lvlNow.style.width !== wBack)), lvlNow.style.width);
+  room = 0; }
 
 // ── 10. round six: an unreadable level under the held key, a mute or mic-off is a cut, a stepped gain, a suspended context
 await sfu.sfuMic(false); await sfu.sfuMic(true); negotiated(pc);
@@ -648,6 +832,7 @@ const heldGain = gainLog.filter((g) => g[0] === 'target' || g[0] === 'ramp').at(
 let heldInfo = null; try { heldInfo = ms.micGateInfo(); } catch { heldInfo = 'threw'; }
 t('PTT held, the level unreadable: the gate stays open (the key decides) and the glyph says so: gold, micGateInfo does not throw',
   !!heldGain && heldGain[1] === 1 && heldInfo !== 'threw' && ms.roomHears() === true && gold(), `${JSON.stringify(gainLog.slice(-2))} ${state()}`);
+t('...and the bar says so too: gold (an unreadable level empties the bar; it does not skip the gold read)', barGoldNow(), state());
 analyserThrows = false; ms.setPttHeld(false); vc.setPttMode(false);
 // a mute and the mic off are deliberate closes: cuts, not the voice-activation fade
 room = 0.3;
@@ -715,6 +900,8 @@ await tryUntil('gold back under the key', () => gold());
 // rest of the lookahead with the tail long over on the wall clock (no gold). The gate's own statechange listener cuts
 // the pending tail the moment the context leaves 'running', from the gain's own value
 await pause('the key held past the attack, so the release has an open gain to hold', 60);
+// the rows from here to the resume are one turn inside the 55 ms tail: hold the clock, so a preempted process can't run the tail out under them
+{ const heldAt = realPerf(); performance.now = () => heldAt; }
 const tailRel = releaseKey(() => ms.setPttHeld(false));
 const tailHeld = tailRel.atOnce.hears;   // the tail is going out: the context still runs
 if (gateGain) gateGain._v = 0.97;        // where the audio clock holds the gain through the lookahead
@@ -737,6 +924,7 @@ ctxState = 'running';
 gainLog.length = 0;
 for (const fn of ctxListeners) fn();
 const tailRes = ms.roomHears(), tailResLog = gainLog.slice();
+performance.now = realPerf;
 t('...and on resume, still inside the 55 ms on the wall clock, no tail is reported going out and nothing reopens the gain: only the cut\'s 5 ms ramp is left',
   tailRes === false && tailResLog.length === 0, `resumed=${tailRes} ${JSON.stringify(tailResLog)} ${state()}`);
 const tailEnd = await tailRel.closed();
@@ -744,7 +932,18 @@ t('...and the watch on that tail still ends (audio:ptt-tail-end, not late), so t
   !!tailEnd && !tailEnd.late && tailEnd.hears === false && tailEnd.gold === false, `${JSON.stringify(tailEnd)} ${state()}`);
 ms.setPttHeld(true);
 await tryUntil('gold back under the key', () => gold());
-ms.setPttHeld(false); vc.setPttMode(false);
+// push-to-talk turned off inside a release's tail: the cut stays a cut (driven again as a plain close it became voice
+// activation's fade, ~830 ms of whatever the room said next)
+await pause('the key held past the attack', 60);
+room = 1e-4;   // under the line: voice activation, once it decides, says closed
+gainLog.length = 0;
+const offInTail = releaseKey(() => { ms.setPttHeld(false); vc.setPttMode(false); });
+const offTailEnd = await offInTail.closed();
+await pause('three of voice activation\'s ticks, each a plain close', 70);
+t('push-to-talk turned off inside the release tail: the cut is not rescheduled as a fade (one hold, one ramp, no setTargetAtTime to 0), and the room stops hearing with the tail',
+  closedOnTime(offTailEnd) && offTailEnd.hears === false && ms.roomHears() === false
+  && gainLog.filter((g) => g[0] === 'ramp').length === 1 && gainLog.length === 3 && !gainLog.some((g) => g[0] === 'target'),
+  `${JSON.stringify(offTailEnd)} ${JSON.stringify(gainLog)}`);
 // a suspend during the voice-activation release fade: the audio clock stops with the gain part-way down, the wall clock
 // runs on; on resume the gain carries on from where it stopped, and sound goes out
 room = 0.3;
@@ -785,6 +984,118 @@ gainLog.length = 0; ms.releaseMicrophone();
 const relGain = gainLog.at(-1) || [];
 t('releaseMicrophone: the gain is cut, not faded', relGain[0] === 'ramp' && relGain[1] === 0 && relGain[2] <= 0.01, JSON.stringify(gainLog));
 room = 0;
+
+// ── 11. the follow-up to #349's automatic review (of 659ed6343): each row was red before its fix ─────────────────────
+// (8) a lane the transport turned off, then its microphone released: a new device gated into it comes back on
+{ const laneTr = pc.tx[0].sender.track;
+  ms.setLaneEnabled(false);
+  const wasOff = laneTr.enabled === false;
+  const again = ms.gateFor(new FakeStream([mkTrack('device-2')])); ms.setMicLive(true);
+  t('a lane the transport turned off, its microphone released: a new device gated into it is the same track, on again',
+    wasOff && again?.getTracks?.()[0] === laneTr && laneTr.enabled === true, `wasOff=${wasOff} same=${again?.getTracks?.()[0] === laneTr} enabled=${laneTr.enabled}`); }
+// (23) voice activation's hang runs on a monotonic clock: the wall clock stepping back does not hold the mic open
+room = 0.3;
+t('setup: the gate open by level', !!(await tryUntil('the gate open by level', () => gold())), state());
+{ const wall = Date.now; Date.now = () => wall() - 30000;   // the wall clock steps back 30 s, and runs on from there
+  room = 1e-4;
+  const shut = await tryUntil('the hang and the fade end', () => ms.roomHears() === false, { ms: 4000 });
+  Date.now = wall;
+  t('a wall-clock step back of 30 s inside the hang: the gate still closes on time (it does not send quiet sound for 30 s more)', !!shut, state()); }
+// (9) one announcement, every indicator: while the bar shows, what its frame sees first is told, and the glyph, the menus
+// and the VR indicator all show it by the end of that turn; the VR indicator keeps no clock of its own
+{ const told = [];
+  const offHears = bus.on('mic:hears', (hot) => told.push({ hot, hud: gold(), bar: barGoldNow() }));
+  const offInd = bus.on('mic:indicator', () => afterTurn('announce'));
+  watchTurns = true; turns.length = 0;
+  room = 0.3;
+  await tryUntil('gold by level, in VR too', () => gold() && xrGold() && xrShows());
+  room = 1e-4;
+  await tryUntil('dark again, in VR too', () => !gold() && !xrGold() && xrShows(), { ms: 4000 });
+  watchTurns = false; offHears(); offInd();
+  t('the bar tells what its frame sees (mic:hears), and the glyph is painted with it in that turn: an open and a close, the two agreeing each time',
+    told.some((x) => x.hot) && told.some((x) => !x.hot) && told.every((x) => x.hud === x.hot && x.bar === x.hot), JSON.stringify(told));
+  t('the HUD glyph and the VR indicator change in one turn: after every turn that painted either, both show the same gold',
+    turns.some((x) => x.who === 'vr') && turns.some((x) => x.who === 'announce') && turns.every((x) => x.hud === x.vr), JSON.stringify(turns)); }
+room = 0;
+// (3) a suspend and a resume the main thread hears of together, late: the statechange reads 'running', and the tail is cut all the same
+vc.setPttMode(true); ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+await pause('the key held past the attack', 60);
+{ const heldAt = realPerf(); performance.now = () => heldAt;   // one turn inside the tail, on a held clock
+  const rel = releaseKey(() => ms.setPttHeld(false));
+  if (gateGain) gateGain._v = 0.96;   // where the audio clock holds the gain through the lookahead
+  gainLog.length = 0;
+  for (const fn of ctxListeners) fn();   // the context says its state changed, and it reads 'running'
+  const log = gainLog.slice(), set = log.find((g) => g[0] === 'set'), hears = ms.roomHears();
+  performance.now = realPerf;
+  t('a statechange inside a release\'s tail that reads "running": the pending hold is cut at once from the gain\'s own value (0.96), and no tail is reported',
+    rel.atOnce.hears === true && atOnceCut(log) && !!set && Math.abs(set[1] - 0.96) < 1e-9 && hears === false, `${JSON.stringify(log)} hears=${hears}`);
+  await rel.closed(); }
+// (the measurement on #349) the close of a tail is seen by a frame as well as by its timer: with the timer running late
+// (a loaded main thread: 5 to 24 ms in Chrome), the indicators are still told as the tail ends
+ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+{ const realST = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms_, ...a) => realST(fn, ms_ >= 50 && ms_ <= 58 ? ms_ + 400 : ms_, ...a);   // the tail's own timer (56 ms), 400 ms late
+  const rel = releaseKey(() => ms.setPttHeld(false));
+  const end = await rel.closed();
+  globalThis.setTimeout = realST;
+  t(`the tail's timer 400 ms late: a frame still tells its end on time (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer armed at the release), and the gold goes then`,
+    closedOnTime(end) && end.ms < 400 && end.gold === false && end.hears === false, `${JSON.stringify(end)} ${state()}`); }
+// ...and a timer tells it where no frame comes (a hidden tab)
+ms.setPttHeld(true);
+await tryUntil('gold under the key', () => gold());
+{ const realRaf = globalThis.requestAnimationFrame, waiting = [];
+  globalThis.requestAnimationFrame = (cb) => (waiting.push(cb), 0);   // no frame is called until the tab shows again
+  const rel = releaseKey(() => ms.setPttHeld(false));
+  const end = await rel.closed();
+  globalThis.requestAnimationFrame = realRaf;
+  for (const cb of waiting) realRaf(cb);   // shown again: the loops that were waiting carry on (the bar's among them)
+  t('no frames at all (a hidden tab): the tail\'s timer still tells its end on time, and the gold goes then',
+    closedOnTime(end) && end.gold === false && end.hears === false, `${JSON.stringify(end)} ${state()}`); }
+vc.setPttMode(false);
+// (1, 5) a device that cannot build the gate: the sensitivity and push-to-talk hints say what the raw lane does
+const hintOf = (re) => [...document.querySelectorAll('#sec-audio [title]')].map((e) => e.title).find((x) => re.test(x)) || '';
+const floorTip = () => document.querySelector('#sec-audio [data-meter]')?.title || '';
+const pttTip = () => hintOf(/^transmit only while the push-to-talk key/);
+const ungatedBox = [...document.querySelectorAll('#sec-audio .sp-row')].find((r) => /transmit UNGATED/.test(r.textContent))?.querySelector('input');
+synthOn = true; await sfu.sfuMic(false);   // onto the synth lane, so the next mic-on builds a lane afresh
+noGate = true; synthOn = false;
+await sfu.sfuMic(true);                    // the gate cannot be built, and nothing was consented: refused
+t('the gate cannot be built, nothing consented: the sensitivity hint says the marker is not in use and the mic sends nothing until "transmit UNGATED" is ticked',
+  !!(await tryUntil('the refused-gate hint', () => ms.gateIsUnavailable() && /could not be built on this device, so the white marker is not in use and your microphone sends nothing unless you tick/.test(floorTip()), { ms: 3000 }))
+  && !/opens your mic/.test(floorTip()), floorTip());
+// the refused attempt turned the mic off, so the tick alone would send nothing (finding 6 of #383's review)
+t('...and that the tick is not all: the refused attempt left the mic off, and the hint says to turn it on again after ticking',
+  mt.micLive() === false && /unless you tick ‘transmit UNGATED’ below, and then turn the microphone on again \(the attempt that could not build the gate left it off\); /.test(floorTip()), `micLive=${mt.micLive()} ${floorTip()}`);
+ungatedBox.checked = true; ungatedBox.dispatchEvent(new Event('change'));   // the person's own tick
+t('"transmit UNGATED" ticked: the hint changes in that turn, and no longer says sound under the marker is not sent',
+  ms.ungatedAllowed() === true && /you chose to transmit ungated: the white marker holds nothing back, so everything your microphone picks up is sent while the mic is on/.test(floorTip())
+  && !/is not sent as voice|opens your mic/.test(floorTip()), floorTip());
+await sfu.sfuMic(true); negotiated(pc);
+room = 1e-4;   // far under the marker
+t('...and it is true: on the consented raw lane, sound far under the marker is going out (gold), which is what the hint now says',
+  !!(await tryUntil('the raw lane goes gold under the line', () => gold() && barGoldNow())) && /holds nothing back/.test(floorTip()), `${state()} ${floorTip()}`);
+t('...and the push-to-talk hint promises no 50 ms tail there: the raw track is switched off at once',
+  !!(await tryUntil('the raw lane\'s push-to-talk hint', () => /Release the key and your mic cuts off at once \(this device has no lookahead/.test(pttTip()), { ms: 2000 }))
+  && !/50 ms/.test(pttTip()), pttTip());
+// back to a device that can build the gate: the words follow the lane, with no event of their own
+ungatedBox.checked = false; ungatedBox.dispatchEvent(new Event('change'));
+t('the tick taken back with the mic still on: the hint asks for the tick alone (the mic is on already)',
+  mt.micLive() === true && /sends nothing unless you tick ‘transmit UNGATED’ below; /.test(floorTip()), `micLive=${mt.micLive()} ${floorTip()}`);
+synthOn = true; await sfu.sfuMic(false); noGate = false; synthOn = false;
+await sfu.sfuMic(true); negotiated(pc);
+t('the gate built again: both hints are the gated lane\'s again (the marker keeps quiet sound in; a release has its 50 ms tail)',
+  !!(await tryUntil('the gated hints', () => /sound under it the rest of the time is not sent as voice/.test(floorTip()) && /cuts off 50 ms later/.test(pttTip()), { ms: 3000 })),
+  `${floorTip()} | ${pttTip()}`);
+room = 0;
+// (10) the lane swapped for a quiet synth one with nothing else changing (no event, mic intent still on, not gold before or
+// after): the glyph's poll still repaints the words. Last, because it goes under the transport.
+await tryUntil('quiet, mic on: the plain words', () => /^mic on \(V to turn off\)/.test(tip()));
+{ const quiet = new FakeStream([mkTrack('quiet-synth')]); quiet.synthetic = true; quiet.audibleAt = () => 0;
+  ms.gateFor(quiet);
+  t('a quiet device lane replaced by a quiet synth lane, no event: the tooltip is repainted to say no microphone is open',
+    !!(await tryUntil('the swapped lane\'s tooltip', () => /^mic on, but no microphone is open/.test(tip()), { ms: 2000 })), tip()); }
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);

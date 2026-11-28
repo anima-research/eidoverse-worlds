@@ -30,6 +30,8 @@ import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, ea
 import { setPttHeld } from '../audio/micstate.js';
 import { pttMode } from '../audio/voiceconsent.js';
 import './xrmicicon.js';   // the mic icon in view while presenting
+import { repaintSlots, followMicIndicator } from './xrringpaint.js';
+import { svgImage } from './svgimage.js';
 import { markActive } from '../ui/presence.js';
 import { platePick, aimPlate, platePress } from '../avatar/platecard.js';   // a laser resting on a nameplate opens its card
 import { makeDwell } from '../ui/dwell.js';
@@ -385,14 +387,14 @@ function ringIconTexture(s, focused) {
   const on = !!s.on?.();
   const ink = s.has === false ? INK.dim : (focused || on ? INK.brand : INK.fg);
   g.save(); g.translate(64, 64); g.fillStyle = ink; g.strokeStyle = ink;
-  // drawn glyphs, never fillText(emoji) (icons.js); SVGs load via an Image, so the texture updates async
+  // drawn glyphs, never fillText(emoji) (icons.js); an SVG loads via an Image: one drawn before is drawn in this turn,
+  // a first one updates the texture when it has loaded (svgimage.js)
   if (s.svg) {
-    const img = new Image();
-    img.onload = () => { g.save(); g.translate(64, 64); g.drawImage(img, -30, -30, 60, 60); g.restore(); tex.needsUpdate = true; };
     // an <svg> without xmlns paints nothing as an <img> data-URI
     let svg = (typeof s.svg === 'function' ? s.svg() : s.svg).replace(/stroke="#f2f7f5"/g, `stroke="${ink}"`).replace(/fill="#f2f7f5"/g, `fill="${ink}"`);
     if (!/xmlns=/.test(svg)) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
-    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    // its own transform, whichever turn it runs in (this one, inside the translate above, or a later one, after its restore)
+    svgImage(svg, (img) => { g.save(); g.setTransform(1, 0, 0, 1, 64, 64); g.drawImage(img, -30, -30, 60, 60); g.restore(); tex.needsUpdate = true; });
   } else if (!fillPath(g, s.icon, 60, (focused || on) ? 'fill' : 'line')) stroke(g, s.icon, 60);
   g.restore();
   return tex;
@@ -463,12 +465,9 @@ function activateRing(cause) {
   if (e.close) { closeRing('act'); return; }
   repaintRing();                                    // a toggle: show its new state, stay open
 }
-function repaintRing() {
-  if (!radial) return;
-  radial.slots.forEach((m, i) => { m.material.map?.dispose(); m.material.map = ringIconTexture(radial.entries[i], i === radial.sel); m.material.needsUpdate = true; });
-}
-// the ring's mic slot draws the HUD glyph (gold, a mute): repaint it as that changes, not only on a selection or an act
-bus.on('mic:indicator', () => { if (radialOpen && radial) repaintRing(); });
+function repaintRing() { repaintSlots(radial, ringIconTexture); }
+// the ring's mic slot draws the HUD glyph (gold, a mute): its live-glyph slots are redrawn as that changes (xrringpaint.js)
+followMicIndicator(bus, () => (radialOpen ? radial : null), ringIconTexture);
 function closeRadial(commit) {
   ringLevel = 'root';
   if (!radial) { radialOpen = false; return; }

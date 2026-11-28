@@ -1,5 +1,5 @@
-// micstate.js + micgate.js EXECUTED, one process: the transport seam, every micstate.js export (micgate's own setMonitorDelay
-// isn't called), the ungated lane, release. Stubs stop at
+// micstate.js + micgate.js EXECUTED, one process: the transport seam, every micstate.js export (row E20 holds that; micgate's
+// own setMonitorDelay isn't called), the ungated lane, release. Stubs stop at
 // the browser boundary (AudioContext, net); `ctx` picks which AudioContext the next gateFor meets. PTT: mic-ptt-test.mjs.
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
@@ -16,11 +16,11 @@ const mkStream = (label, synthetic = false) => { const t = mkTrack(label); retur
 const node = () => ({ connect() {}, disconnect() {}, gain: { value: 0, setTargetAtTime() {} }, delayTime: { value: 0, setTargetAtTime() {} } });
 // "none": no createMediaStreamDestination, so the gate graph cannot build; "full": the graph builds and each destination
 // is a DISTINCT lane stream (else the release rows are vacuous)
-let ctx = "none";
+let ctx = "none", analyserFails = false;
 mock.module(lib("audio/audioctx.js"), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: "running", destination: node(),
-    createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),
+    createAnalyser: () => { if (analyserFails) throw new Error("no analyser"); return { fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }; },
     createMediaStreamSource: () => node(),
     ...(ctx === "full" ? { createGain: node, createDelay: node, createMediaStreamDestination: () => ({ ...node(), stream: mkStream("lane") }) } : {}),
   }),
@@ -199,5 +199,44 @@ r = ran(() => { m.releaseMicrophone(); m.releaseMicrophone(); });
 check("R13 repeated synthetic release does not throw", !r, r);
 const synth2 = mkStream("synth-2", true);
 check("R14 a new synthetic source acquires cleanly after release", m.gateFor(synth2) === synth2);
+
+// ── the room's side (roomHears and what it reads), called here too; mic-room-hears-test.mjs runs them through the transport ──
+m.toggleMute(false); m.setModeratorMute(false); m.setLaneEnabled(true);
+r = ran(() => { m.setLaneCarrier(() => true); m.muteReason(); m.laneSynthetic(); });
+check("E13 setLaneCarrier / muteReason / laneSynthetic run, and a carrier that says yes is believed", !r && m.laneCarried() === true && m.laneSynthetic() === true && m.muteReason() === null, r);
+let heard;
+r = ran(() => { heard = m.roomHears(); });
+check("E14 roomHears() runs: a carried synth lane that has said nothing is not heard", !r && heard === false, r || String(heard));
+r = ran(() => { m.setModeratorMute(true); });
+check("E15 setModeratorMute(true) runs and is the mute's reason", !r && m.muteReason() === "moderator", r || String(m.muteReason()));
+m.setModeratorMute(false);
+r = ran(() => { m.setLaneEnabled(false); });
+check("E16 setLaneEnabled(false) runs: the synth lane's track is off, and on again with (true)", !r && synth2._t.enabled === false && (m.setLaneEnabled(true), synth2._t.enabled === true), r);
+// a transport whose check throws: not heard, and told to the console once (laneCarried used to swallow it, so roomHears's
+// warning never saw it)
+{ const warns = [], realWarn = console.warn;
+  console.warn = (...a) => { if (/roomHears\(\) threw/.test(String(a[0]))) warns.push(a[1]?.message); else realWarn(...a); };
+  m.setLaneCarrier(() => { throw new Error("transceivers gone"); });
+  const answers = [m.roomHears(), m.roomHears(), m.roomHears()];
+  console.warn = realWarn;
+  check("E17 a carrier that throws: roomHears() is false each time and the throw is told to the console once", answers.every((a) => a === false) && warns.length === 1 && warns[0] === "transceivers gone", JSON.stringify({ answers, warns }));
+  r = ran(() => m.laneCarried());
+  check("E18 …and laneCarried() itself still does not throw", !r && m.laneCarried() === false, r);
+  m.setLaneCarrier(null); }
+r = ran(() => m.dropDevice());
+check("E19 dropDevice() runs: the device is stopped and the mic is not on", !r && synth2._t.stopped === false && m.micOn() === false && m.rawMicStream() === null, r);
+// the header's claim, kept true by a row: every export of the module is called somewhere in this file
+{ const self = readFileSync(new URL(import.meta.url), "utf8");
+  const uncalled = Object.keys(m).filter((k) => !new RegExp(`\\bm\\.${k}\\s*\\(`).test(self));
+  check("E20 every micstate.js export is called in this file", uncalled.length === 0, uncalled.join(", ")); }
+// a level meter that cannot be built reads silence, and says so (finding 12 of #383's review): the gate stays shut on it
+{ const warns = [], realWarn = console.warn;
+  console.warn = (...a) => { if (/the level meter could not be built/.test(String(a[0]))) warns.push(a[1]?.message); else realWarn(...a); };
+  analyserFails = true;
+  const meter = mg.makeLevelMeter(() => mkStream("unmeasurable"));
+  let levels = [];
+  r = ran(() => { levels = [meter(), meter(), meter()]; });
+  analyserFails = false; console.warn = realWarn;
+  check("E21 a level meter whose analyser cannot be built: it reads 0 each time, does not throw, and the console is told once", !r && levels.length === 3 && levels.every((l) => l === 0) && warns.length === 1 && warns[0] === "no analyser", JSON.stringify({ r, levels, warns })); }
 
 done();

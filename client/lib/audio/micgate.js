@@ -13,7 +13,7 @@
 // machine + level meter (makeOnsetGate / makeLevelMeter).
 
 import { audioContext } from './audioctx.js';
-import { report } from '../base.js';
+import { report, warnRarely } from '../base.js';
 
 // Envelope time constants (s) for setTargetAtTime: ~95% of target in 3·tau, so attack is ~95% open in 24 ms;
 // worst-case onset is the 20 ms tick + envelope ≈ 44 ms. Attack stays faster than release (a late open loses a
@@ -104,13 +104,20 @@ export function gateStream(stream, levelFn) {
 
 // The envelope as scheduled, on the wall clock (performance.now, ms): what the gain is doing now, worked out from what
 // was asked of it, so it reads true when the audio clock is not being sampled. { at, from, to, tau } is setTargetAtTime;
-// { at, from, cutEnd, tail } is a cut whose ramp runs from `at` to `cutEnd` (the gain holds `from` until `at`); `tail`
-// marks a push-to-talk release's, whose sound is still going out until cutEnd.
+// { at, from, cutEnd, tail, pre } is a cut whose ramp runs from `at` to `cutEnd`; until `at` (a tail's hold) the gain
+// carries on as `pre`, the envelope before it; `tail` marks a push-to-talk release's, whose sound goes out until cutEnd.
 let _env = { at: 0, from: 0, to: 0, tau: RELEASE_TAU * 1000 };
-const envAt = (t) => {
-  const e = _env, dt = Math.max(0, t - e.at);
-  if (e.cutEnd !== undefined) return t >= e.cutEnd ? 0 : e.from * (1 - dt / (e.cutEnd - e.at));
-  return e.to + (e.from - e.to) * Math.exp(-dt / e.tau);
+const envAt = (t, e = _env) => {
+  if (e.cutEnd !== undefined) {
+    if (t < e.at) return e.pre ? envAt(t, e.pre) : e.from;   // the hold: the attack under way runs on through it
+    return t >= e.cutEnd ? 0 : e.from * (1 - (t - e.at) / (e.cutEnd - e.at));
+  }
+  return e.to + (e.from - e.to) * Math.exp(-Math.max(0, t - e.at) / e.tau);
+};
+// A gain that refuses automation takes a step; what it had accepted is cancelled first (mic-gate-envelope-test.mjs §5).
+const stepTo = (p, v) => {
+  try { p.cancelScheduledValues(0); } catch { /* refused as well */ }
+  try { p.value = v; } catch { /* the graph is gone: nothing is going out */ }
 };
 
 /** Drive the gain from the gate decision. `open` is the gate's boolean; the smoothing lives here. `cut` closes in CUT_S
@@ -141,14 +148,18 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
       const from = level(at);   // the gain where the ramp starts (a held key's attack runs on through the tail)
       let stepped = false;
       try {
+        // cancel from the ramp's start, not from now: a press in this render quantum has its attack at `t` (mic-gate-envelope-test.mjs §2)
         const t = _ctx.currentTime;
-        p.cancelScheduledValues(t); p.setValueAtTime(from, t + lag); p.linearRampToValueAtTime(0, t + lag + CUT_S);
-      } catch { p.value = 0; stepped = true; }
+        p.cancelScheduledValues(t + lag); p.setValueAtTime(from, t + lag); p.linearRampToValueAtTime(0, t + lag + CUT_S);
+      } catch { stepTo(p, 0); stepped = true; }
       // a gain that took a step is shut now: no tail is going out; nor is one from a gain already shut (push-to-talk armed
       // while silent: the cut has nothing in the lookahead to let out)
-      _env = stepped ? { at: now, from: 0, cutEnd: now } : { at, from, cutEnd, tail: lag > 0 && from > GAIN_CLOSED };
+      _env = stepped ? { at: now, from: 0, cutEnd: now }
+        : { at, from, cutEnd, tail: lag > 0 && from > GAIN_CLOSED, pre: lag > 0 && !scheduled ? _env : undefined };
     }
   } else {
+    // a close while a cut is scheduled (or has run) leaves the cut: driven again it would become this fade (mic-gate-envelope-test.mjs §3)
+    if (!open && _env.cutEnd !== undefined) return;
     const from = level(now);
     // one smoothing stage: setTargetAtTime is the envelope, so target the true endpoint (pre-lerping the step
     // double-smooths and the gate never fully closes)
@@ -160,7 +171,7 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
       // close the new word. A cut that has already run is past, so the cancel leaves it be.
       if (_env.cutEnd !== undefined) { const t = _ctx.currentTime; p.cancelScheduledValues(t); p.setValueAtTime(from, t); }
       p.setTargetAtTime(target, _ctx.currentTime, tau);
-    } catch { p.value = target; stepped = true; }
+    } catch { stepTo(p, target); stepped = true; }
     // a gain that took a step is already at its target: no fade to report as sending
     _env = { at: now, from: stepped ? target : from, to: target, tau: tau * 1000 };
   }
@@ -170,7 +181,9 @@ export function driveGate(open, { cut = false, tail = false } = {}) {
 /** Is the gate's audio graph running? A suspended (or closed) AudioContext sends nothing through the gated lane (no
  *  packets: measured in headless Chrome, while a raw device track keeps sending), whatever the gain says. True with no
  *  graph (a raw or synth lane doesn't pass through it). */
-export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running';
+export const gateRunning = () => !_gain || !_ctx?.state || _ctx.state === 'running';
+/** Does a release have a lookahead tail to let out? null with no graph yet (a raw or synth lane has none). */
+export const gateLookahead = () => (_gain ? !!_look : null);
 
 // The envelope runs on performance.now, the gain on the audio clock, and a suspended context stops only the latter: a
 // suspend during the release fade leaves the gain where it was (measured: 0.37 on resume). So when the context runs
@@ -179,7 +192,8 @@ export const gateRunning = () => !_ctx || !_ctx.state || _ctx.state === 'running
 // leaves the rest of the hold to run on resume, by when the tail is over on the wall clock: the held word would go out
 // with no gold. driveGate cuts at once when a tick finds the context suspended, but only if a tick runs in time (timers
 // are often throttled when contexts are suspended). So the moment the context leaves 'running', a pending tail is cut
-// from the gain's own value, and on resume only the cut's 5 ms ramp is left, as after any cut.
+// from the gain's own value, and on resume only the cut's 5 ms ramp is left, as after any cut. Any statechange inside a
+// tail cuts it: a suspend and a resume told together, late, both read 'running' (mic-gate-envelope-test.mjs §4).
 // One listener per context (_anchored), reading the module's live _ctx, _gain and _env: a rebuilt lane on the same
 // context adds none, and a listener on a context the gate has left does nothing.
 const _anchored = new WeakSet();
@@ -188,8 +202,8 @@ function anchorOnResume(ctx) {
   _anchored.add(ctx);
   ctx.addEventListener('statechange', () => {
     if (ctx !== _ctx || !_gain) return;
-    if (!gateRunning()) { cutPendingTail(); return; }
-    if (_env.cutEnd !== undefined) return;
+    cutPendingTail();
+    if (!gateRunning() || _env.cutEnd !== undefined) return;
     let g = NaN;
     try { g = Number(_gain.gain.value); } catch { /* unreadable: keep the envelope */ }
     if (!Number.isFinite(g)) return;
@@ -209,7 +223,7 @@ function cutPendingTail() {
     const g = Number(p.value), t = _ctx.currentTime;
     from = Number.isFinite(g) ? g : envAt(now);
     p.cancelScheduledValues(t); p.setValueAtTime(from, t); p.linearRampToValueAtTime(0, t + CUT_S);
-  } catch { try { p.value = 0; } catch { /* the graph is gone: nothing is going out */ } stepped = true; }
+  } catch { stepTo(p, 0); stepped = true; }
   // a cut from now, and no tail: gateSending() and gateTailLeft() stop reporting one (micstate's watch on the old tail
   // still fires at its time, finds none left, and tells the indicators)
   _env = stepped ? { at: now, from: 0, cutEnd: now } : { at: now, from, cutEnd: now + CUT_S * 1000 };
@@ -354,7 +368,7 @@ export function makeLevelMeter(getMeasured) {
         _anSrc = src;
         _anStream = measured;
         _anBuf = new Float32Array(_an.fftSize);
-      } catch { return 0; }
+      } catch (e) { warnRarely('mic-level-build', '[mic] the level meter could not be built; the level reads as silence', e); return 0; }
     }
     _an.getFloatTimeDomainData(_anBuf);
     let s = 0;
@@ -365,9 +379,9 @@ export function makeLevelMeter(getMeasured) {
 
 /** The gate's hang-time: it holds open this long after the last tick over the line. */
 export const HANG_MS = 700;
-/** A synth frame is sound, not silence, above this RMS (-100 dBFS). A synth lane has no gate, so every frame that isn't
- *  silence is sent however quiet it is; micstate.js reports it speaking while it sends sound, held for HANG_MS, and tts.js's
- *  pacer records when the generator last took a frame over this (audibleAt). */
+/** A synth frame counts as sound above this RMS (-100 dBFS, under 16-bit audio's -96 dBFS floor; a quieter frame is
+ *  still sent, and not counted). A synth lane has no gate; micstate.js reports it speaking while it sends sound, held for
+ *  HANG_MS, and tts.js's pacer records when the generator last took a frame over this (audibleAt). */
 export const SYNTH_AUDIBLE = 1e-5;
 
 /** The speech-onset gate: a block-minima noise floor, a fixed threshold with ~3 dB hysteresis and 700 ms hang-time,
@@ -382,7 +396,7 @@ export const SYNTH_AUDIBLE = 1e-5;
  *  - `speaking` reports threshold plus hang-time, or the bar flickers through pauses;
  *  - 20 ms tick: the interval is the worst-case clip on a word's attack. */
 export function makeOnsetGate({ level, threshold, drive, announce, held = () => null }) {
-  let _timer = null, _above = false, _lastOnset = 0, _openUntil = 0;
+  let _timer = null, _above = false, _lastOnset = -Infinity, _openUntil = -Infinity;
   let _openedAt = 0, _announced = false;
   let _noise = 0.01, _settle = 0;
   let _blocks = new Array(6).fill(Infinity), _blockIdx = 0, _blocksFilled = 0,
@@ -392,25 +406,28 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
   // The level side keeps running (meter, noise floor), but under a held answer it never fires the 🎙; press()
   // announces instead, through the same rate limit.
   const decide = (now) => { const h = held(); return h === null ? (_above || now <= _openUntil) : h; };
-  const apply = (now) => drive(decide(now));
+  // every time here is performance.now(): a wall-clock step back would hold the hang, and the mic, open (micgate-onset-test.mjs)
+  const mono = () => performance.now();
+  const apply = () => drive(decide(mono()));
+  // an unreadable level is silence to the gate, and is told to the console (base.js warnRarely)
+  const read = () => { try { return level(); } catch (e) { warnRarely('mic-level', '[mic] the level could not be read; the gate treats it as silence', e); return 0; } };
 
   function tick() {
     // a level that can't be read closes the gate, as mute does (a throw here would leave it in its last state, open or not)
-    let lv = 0;
-    try { lv = level(); } catch { lv = 0; }
+    const lv = read();
     if (lv <= 0) {
       // muted: close, do not learn, and drop the speaking latch (or info().speaking reports true while forced shut)
-      _above = false; _openUntil = 0;
-      apply(Date.now()); return;
+      _above = false; _openUntil = -Infinity;
+      apply(); return;
     }
     if (_settle < 8) {
       _settle++;
       const a0 = lv < _noise ? 0.3 : 0.5;
       _noise += (lv - _noise) * a0;
-      apply(Date.now());               // measuring, but still CLOSED — not frozen
+      apply();               // measuring, but still CLOSED — not frozen
       return;
     }
-    const nowT = Date.now();
+    const nowT = mono();
     if (lv < _blockMin) _blockMin = lv;
     if (nowT - _blockStart >= 400) {
       _blockStart = nowT;
@@ -422,7 +439,7 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
     _noise = Math.max(1e-5, Math.min(_blockMin, ...(_blocks.slice(0, _blocksFilled))));
     const on = threshold();
     const off = on * 0.7;                    // ~3 dB of hysteresis
-    const now = Date.now();
+    const now = nowT;
     if (lv >= on) {
       _openUntil = now + HANG_MS;            // hang-time
       if (!_above) { _above = true; _openedAt = now; _announced = false; }
@@ -430,36 +447,36 @@ export function makeOnsetGate({ level, threshold, drive, announce, held = () => 
         _announced = true; _lastOnset = now; announce();
       }
     } else if (_above && lv < off && now > _openUntil) _above = false;
-    apply(now);
+    apply();
   }
 
   return {
     /** Re-measure the room on every start: a floor learned in a quiet session would gate you out of a loud one. */
     start() {
       if (_timer) return;   // already watching: nothing below runs, so the latch and the floor carry on as they are
-      _above = false; _openUntil = 0;   // a watch started from stopped starts closed, not inside the old hang
+      _above = false; _openUntil = -Infinity;   // a watch started from stopped starts closed, not inside the old hang
       _noise = 0.01; _settle = 0;
       _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
-      _blockMin = Infinity; _blockStart = Date.now();
+      _blockMin = Infinity; _blockStart = mono();
       _timer = setInterval(tick, 20);
     },
     stop() {
       if (_timer) { clearInterval(_timer); _timer = null; }
-      _above = false; _openUntil = 0;
+      _above = false; _openUntil = -Infinity;
     },
     /** Apply the current latch through the transport's authority (mute toggles call it directly). */
     apply,
     /** Drop the speaking latch without stopping the watch: unmute hands control back to the gate. */
-    dropLatch() { _above = false; _openUntil = 0; },
+    dropLatch() { _above = false; _openUntil = -Infinity; },
     /** A push-to-talk press: announce the 🎙, under the same once-per-1.5 s limit as a level onset. The caller
      *  applies the gate. */
-    press(now = Date.now()) {
+    press() {
+      const now = mono();
       if (now - _lastOnset > 1500) { _lastOnset = now; announce(); }
     },
     /** `speaking` is what the room is getting: the held answer when there is one, else threshold plus hang-time. */
     // the level read is guarded here as in tick(): a throw would make every reader (roomHears, the glyph) fail toward
     // not gold while the gate, the held key, a raw lane or a synth voice still sends
-    info: () => ({ level: (() => { try { return level(); } catch { return 0; } })(), noise: _noise, on: threshold(),
-      speaking: decide(Date.now()) }),
+    info: () => ({ level: read(), noise: _noise, on: threshold(), speaking: decide(mono()) }),
   };
 }
