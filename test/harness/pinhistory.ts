@@ -161,11 +161,12 @@ export const judgedText = (e: { out: { rev: string; why: string }[]; unnamed?: s
  *  stack; never empty, so `"threw" in r` and the message agree. */
 export const reason = (err: any) => { const m = String(err?.message ?? err ?? ""); return (m.startsWith("pinhistory:") ? m : String(err?.stack || m)) || "a throw with no message"; };
 
-/** A conformance file as it is now: {value, bad}: value null where it's missing (bad null) or isn't JSON (bad says why),
- *  so a suite can show a broken file as its red row rather than crash on it. */
+/** A conformance file as it is now: {value, bad}: value null where it's missing (bad null), can't be read, or isn't JSON
+ *  (bad says which, and why), so a suite can show a broken file as its red row rather than crash on it. */
 export function parsedNow(file: string) {
   if (!fs.existsSync(file)) return { value: null, bad: null };
-  try { return { value: JSON.parse(fs.readFileSync(file, "utf8")), bad: null }; } catch (err: any) { return { value: null, bad: `${file}: not valid JSON (${err?.message ?? err})` }; }
+  let t: string; try { t = fs.readFileSync(file, "utf8"); } catch (err: any) { return { value: null, bad: `${file}: can't be read (${err?.message ?? err})` }; }
+  try { return { value: JSON.parse(t), bad: null }; } catch (err: any) { return { value: null, bad: `${file}: not valid JSON (${err?.message ?? err})` }; }
 }
 
 /** On a branch: the base is an ancestor of HEAD and not HEAD itself. A git failure is a throw, never read as an answer. */

@@ -920,16 +920,21 @@ await C("D13e", "a version rule that can't read the record is one red row, not a
   const why = { own: PH.reason(new Error("pinhistory: x")), bug: PH.reason(new TypeError("not a pin")), empty: PH.reason("") };   // `throw ""`: no message and no stack   // the catches' words: a bug keeps its stack
   const words = why.own === "pinhistory: x" && /TypeError: not a pin\n\s+at /.test(why.bug) && why.empty.length > 0;
   return [want.every(([suite, rows]) => seen[suite].failed === rows.length && seen[suite].red.every(Boolean)) && words, { seen, why }]; });
-await C("D13f", "a conformance file that doesn't parse now (conflict markers in the working tree) is a red row in its own suite, never a crashed suite: a copy of the tree whose trig.json, laws.json and physics digests hold conflict markers runs trig-check, laws-check and engine-check to their tally, with TR0, LW0 and EN0 failing on \"not valid JSON\"", () => {
+await C("D13f", "a conformance file that doesn't parse now (conflict markers in the working tree) is a red row in its own suite, never a crashed suite: a copy of the tree whose trig.json, laws.json and physics digests.json hold conflict markers runs trig-check, laws-check and engine-check to their tally, with TR0, LW0 and EN0 failing on \"not valid JSON\"; engine-check again with only digests-exact.json broken (EN0 on it alone), and with it missing (EN0 red, the suite still reaches its tally); a file that exists but can't be read is \"can't be read\", not \"not valid JSON\"", () => {
   const X = scratch("d13f") + "tree"; for (const d of ["shared", "test/protocol", "test/harness", "test/gate", "spec/conformance"]) fs.cpSync(path.join(T, d), path.join(X, d), { recursive: true });
   fs.copyFileSync(path.join(T, "package.json"), path.join(X, "package.json")); linkInto(fs.realpathSync(path.join(T, "node_modules")), path.join(X, "node_modules"));
-  for (const f of ["trig.json", "laws.json", "physics/digests.json", "physics/digests-exact.json"]) fs.writeFileSync(path.join(X, "spec/conformance", f), "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> main\n");
+  const MK = "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> main\n", at = (f: string) => path.join(X, "spec/conformance", f), EX = "physics/digests-exact.json";
+  for (const f of ["trig.json", "laws.json", "physics/digests.json"]) fs.writeFileSync(at(f), MK);
   const run = (suite: string) => { const r = require("node:child_process").spawnSync(process.execPath, [path.join(X, "test/protocol", `${suite}.ts`)], { cwd: X, encoding: "utf8", timeout: 300000,
     env: { ...process.env, GIT_DIR: path.join(X, ".no-git"), BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" } }); return `${r.stdout ?? ""}${r.stderr ?? ""}`; };   // no history: only the file as it is now
-  const seen = Object.fromEntries([["trig-check", "TR0"], ["laws-check", "LW0"], ["engine-check", "EN0"]].map(([suite, id]) => { const o = run(suite);
-    const tally = o.match(new RegExp(`\\[${suite}\\] (\\d+) passed, (\\d+) failed`))?.[0] ?? null;
-    return [suite, { tally, red: o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && /not valid JSON/.test(l)), tail: tally ? undefined : o.trim().split("\n").slice(-4) }]; }));
-  return [Object.values(seen).every((v: any) => v.tally && v.red), seen]; });
+  const row = (suite: string, id: string, bad: RegExp) => { const o = run(suite); const tally = o.match(new RegExp(`\\[${suite}\\] (\\d+) passed, (\\d+) failed`))?.[0] ?? null;
+    return { tally, red: o.split("\n").some((l) => l.startsWith(`FAIL ${id}`) && bad.test(l)), tail: tally ? undefined : o.trim().split("\n").slice(-4) }; };
+  const seen: Record<string, any> = Object.fromEntries([["trig-check", "TR0"], ["laws-check", "LW0"], ["engine-check", "EN0"]].map(([suite, id]) => [suite, row(suite, id, /not valid JSON/)]));
+  fs.copyFileSync(path.join(T, "spec/conformance/physics/digests.json"), at("physics/digests.json")); fs.writeFileSync(at(EX), MK);   // one file at a time (#384 6)
+  seen.exactOnly = row("engine-check", "EN0", /digests-exact\.json: not valid JSON/);
+  fs.rmSync(at(EX)); seen.exactMissing = row("engine-check", "EN0", /"exact":false/);   // (#384 4)
+  const dir = PH.parsedNow(path.join(X, "spec/conformance")); seen.unreadable = dir.bad;   // exists, can't be read as a file (#384 8)
+  return [["trig-check", "laws-check", "engine-check", "exactOnly", "exactMissing"].every((k) => seen[k].tally && seen[k].red) && /: can't be read \(/.test(dir.bad ?? ""), seen]; });
 await C("D13g", "the walk in the real suites: trig-check, laws-check and engine-check, run against a history (no base) whose conformance files went from a version with other data under the same version names, to {} in every file, to today's files, walk past the {} and fail TRV, LWV and both EN4 rows, each on the older record it found (not a throw), printed in its detail (main's code read the {} as the previous version and passed); with today's files before the {} they walk past it and are green; and a history whose first commit is placeholder {} files is green (a real start, nothing to hold). A shallow clone judges only the history it has, so no row here is shallow", () => {
   const cp = require("node:child_process");
   const git = (dir: string, ...a: string[]) => { const r = cp.spawnSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { encoding: "utf8" }); if (r.status !== 0) throw new Error(`git ${a.join(" ")}: ${r.stderr}${r.stdout}`); return r.stdout.trim(); };
