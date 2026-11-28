@@ -3,7 +3,8 @@
 //   bun test/gate/run.ts                 the declared gate (= bun run test:protocol): core, then main, then browser
 //   bun test/gate/run.ts hostile phys    only the named suites (a PARTIAL run: it says so, and it is not the gate)
 //   bun test/gate/run.ts --lane core     only one lane (core | main | browser), also PARTIAL
-//   bun test/gate/run.ts --shard 2/4     shard 2 of 4 (1-based; shard.ts packs SUITES); the gate is all 4 merged by merge-receipts.ts
+//   bun test/gate/run.ts --shard 2/6     shard 2 of 6 (1-based; shard.ts packs SUITES by this OS's times); the gate is all 6 merged by merge-receipts.ts
+//   bun test/gate/run.ts --shard 2/6 --plan   say what shard 2 of 6 would run (its suites, the partition's hash) and stop: nothing runs
 //   bun test/gate/run.ts --manifest      print the suite table docs/contributing/GATE-MANIFEST.md carries (generated from here)
 //   bun test/gate/run.ts --check-manifest   exit 1 if the doc's table is not what --manifest prints
 //   bun test/gate/run.ts --siblings      fetch, pin and build the sibling repos (SIBLINGS, below) in .siblings/, and install the packages that take them
@@ -14,7 +15,7 @@
 // no-v1, one vocabulary) runs first and stops the gate on any failure; MAIN is every other non-browser suite; BROWSER is
 // every suite that drives a headless Chromium (no Chromium = the gate FAILS and names CHROME; it never skips).
 // Each suite runs in its own process GROUP with its own timeout, HOME, TMPDIR and scratch (the gate's temp dir, removed
-// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (a fixture that detaches kills its own).
+// after each suite); on exit, timeout or Ctrl-C the gate kills the whole group, so nothing a suite leaves in its group outlives it (POSIX: a fixture that detaches kills its own; a Windows job holds those too).
 // Runtimes are pinned in package.json "engines" and checked before anything runs. The end prints passed / failed /
 // skipped (with reasons) / optional-not-run, and exits nonzero on any failure or any skip.
 // Suites mark: a failed check `FAIL …` or `✗ …`; a skipped check `SKIP <name>: <why>` (fails the gate: every lane is
@@ -27,7 +28,7 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuiteAsync, killSuiteAtExit, suiteMembersAsync } from "./procgroup.ts";
+import { killSuiteAsync, killSuiteAtExit, stillRunning, suiteMembersAsync, winJob, type WinJob } from "./procgroup.ts";
 import { findChrome } from "./chrome.ts";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
@@ -35,7 +36,7 @@ import os from "node:os";
 import path from "node:path";
 import { ENGINE, controlNote, siblingBuiltAt } from "./common.ts";
 import { failLines, outputKeeper, setAside, type Lane, SUITES, CORE, BROWSER, ORDER, browserLauncher, laneOf, localImports, suitePath } from "./suites.ts";
-import { loadTimes, parseShard, partition, partitionHash } from "./shard.ts";
+import { DEFAULT_SECONDS, loadTimes, parseShard, partition, partitionHash, untimed as untimedIn } from "./shard.ts";
 
 
 // what a suite needs beyond bun and this checkout (a scratch dir, loopback ports: every suite may use those)
@@ -198,7 +199,9 @@ if (laneArg && !["core", "main", "browser"].includes(laneArg)) { console.log(`pr
 const shardArg = valueOf("--shard"), shard = argv.includes("--shard") ? parseShard(shardArg) : null;
 if (typeof shard === "string") { console.log(`protocol gate: ${shard}`); process.exit(2); }
 if (shard && (only.length || laneArg)) { console.log("protocol gate: --shard takes no suite names or --lane (a shard is its whole bin)"); process.exit(2); }
-const bins = shard ? partition(SUITES.map(([n]) => n), loadTimes(), shard.of) : [], assigned = shard ? bins[shard.index - 1] : [];
+// packed by THIS OS's times (suite-times.json has one table per OS); the merge recomputes the split with the receipts' OS
+const times = shard ? loadTimes(process.platform) : {}, untimed = shard ? untimedIn(SUITES.map(([n]) => n), times).length : 0;
+const bins = shard ? partition(SUITES.map(([n]) => n), times, shard.of) : [], assigned = shard ? bins[shard.index - 1] : [];
 const selected = (name: string) => shard ? assigned.includes(name) : (!only.length || only.includes(name)) && (!laneArg || laneOf(name) === laneArg);
 const partial = only.length > 0 || !!laneArg;   // a shard is not partial: it checks the manifest, and the merge checks coverage
 
@@ -225,7 +228,9 @@ for (const c of CONSUMERS) if (SUITES.some(([n, file]) => selected(n) && reaches
 for (const dir of ["", "client/", ...(needSiblings ? ["mcpl/"] : [])]) if (!fs.existsSync(ENGINE + dir + "node_modules")) problems.push(`${dir || "./"}node_modules is missing: run \`bun install --frozen-lockfile\` in ${dir || "the checkout root"}`);
 
 console.log(`protocol gate @ ${ENGINE}`);
-if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}`);
+if (shard) console.log(`  shard     ${shard.index}/${shard.of}: ${assigned.length} of ${SUITES.length} suites, partition ${partitionHash(bins).slice(0, 12)}, packed by ${process.platform}'s times${untimed ? ` (${untimed} untimed suite(s) weigh ${DEFAULT_SECONDS} s; bun test/gate/shard.ts --fetch-times times the ones that have run green upstream)` : ""}`);
+if (argv.includes("--plan") && !shard) { console.log("protocol gate: --plan goes with --shard I/N (it says what that shard would run)"); process.exit(2); }
+if (shard && argv.includes("--plan")) { console.log(`  suites    ${assigned.join(" ")}`); process.exit(0); }   // the split, said and nothing run (shard-check P7 reads it)
 const RUNTIMES: Record<string, { found: string | null; declared?: string; where?: string }> = {};   // for --receipt
 const runtime = (label: string, found: string | null, want: string | undefined, rule: "major" | "min-major", extra = "") => {
   RUNTIMES[label] = { found, declared: want, where: extra || undefined };
@@ -300,13 +305,14 @@ console.log(`  scratch   ${SCRATCH_ROOT}${process.env.PROTOCOL_KEEP ? " (kept: P
 const scratchOut = valueOf("--scratch-out");
 if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path.sep).join("/")}\n`);
 let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
-// Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
+// server/procgroup.ts: a POSIX process group; on Windows the suite's job object (currentJob, below), and with no job the walk by parent ids
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
 const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
-const groupMembers = async (pgid: number) => (await suiteMembersAsync(pgid)).length;
+// Windows: the running suite's job object (procgroup.ts winJob), when one could be made: its kill is the job's, never a walk by process ids
+let currentJob: WinJob | null = null;
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
-const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
+const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) { if (currentJob) currentJob.kill(); else killSuiteAtExit(current.pid); } if (process.env.PROTOCOL_KEEP) return;
   try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
@@ -334,20 +340,25 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   const lock = process.env.PROTOCOL_HEADLESS_LOCK, guard = process.env.PROTOCOL_PERF_GUARD;
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
   // detached: a process group to kill on POSIX. Not on Windows: there it means no console, and every process the suite starts
-  // then pays for one of its own (inplace 66 s attached, 131 s detached on one laptop, 11-05); the kill walks parent links there
+  // then pays for one of its own (inplace 66 s attached, 131 s detached on one laptop, 11-05); its group there is the job made next (procgroup.ts winJob)
   const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: process.platform !== "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const job = process.platform === "win32" && child.pid ? winJob(child.pid, { killOnClose: true }) : null;   // null: the walk by parent ids from the suite's id, as before
+  currentJob = job;
+  if (!job && process.platform === "win32" && child.pid) console.log(`[gate] ${name}: no job object could be made for it (procgroup.ts winJob says when): its processes are found and killed by parent ids from ${child.pid}, as on main`);
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let timedOut = false; const kept = outputKeeper(); const keep = (b: Buffer) => kept.add(b.toString());   // the tail, and every verdict line the cut dropped (suites.ts outputKeeper)
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
   const gone = () => child.exitCode != null || child.signalCode != null;
-  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM", { exited: gone }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone }), 5000).unref(); }, timeoutOf(name) * 1000);
+  const timer = setTimeout(() => { timedOut = true; if (job) return job.kill(); void killGroup(child.pid!, "SIGTERM", { exited: gone }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone }), 5000).unref(); }, timeoutOf(name) * 1000);
   // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
   let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
   const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { kept.add(`\nspawn failed: ${e.message}`); res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
-  const leftovers = child.pid ? await groupMembers(child.pid) : 0;   // anything the suite started and left running
-  if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
+  // anything the suite started and left running: on Windows what is in its job (whoever's parent has exited since), elsewhere its process group
+  const left = !child.pid ? [] : job ? await stillRunning(() => job.members()) : await stillRunning(() => suiteMembersAsync(child.pid!), { ms: process.platform === "win32" ? 1000 : 0 }), leftovers = left.length;
+  if (job) { job.kill(); job.close(); currentJob = current = null; }   // closed: nothing may reach for this handle again (a signal during the wait below, a stuck suite's up to 3 s, would have)
+  else if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
   current = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });

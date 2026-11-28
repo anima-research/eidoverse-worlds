@@ -9,7 +9,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { heapStats } from "bun:jsc";
-import { processTableAsync, suiteMembers, suiteMembersAsync, killSuiteAsync } from "./procgroup.ts";
+import { processTableAsync, suiteMembers, suiteMembersAsync, killSuiteAsync, winJob } from "./procgroup.ts";
 
 // ---- the child's side --------------------------------------------------------------------------------------------------
 // The event-loop handles this process holds, as Bun's heap sees them (process.getActiveResourcesInfo is a stub in Bun). Not seen: fs.watch and Worker.
@@ -108,37 +108,4 @@ function groupOf(pid: number): Group {
   if (job) return { kind: "job", members: async () => job.members(), kill: async () => job.kill(), close: () => job.close() };
   // no job object (FFI unavailable): its process tree by parent links, as the gate walks a suite's
   return { kind: "tree", members: () => suiteMembersAsync(pid), kill: () => killSuiteAsync(pid, "SIGKILL"), close: () => {} };
-}
-
-let k32: any = undefined;
-function kernel32() {
-  if (k32 !== undefined) return k32;
-  try {
-    const { dlopen, FFIType: T } = require("bun:ffi");
-    k32 = dlopen("kernel32.dll", {
-      CreateJobObjectW: { args: [T.ptr, T.ptr], returns: T.u64 },
-      OpenProcess: { args: [T.u32, T.i32, T.u32], returns: T.u64 },
-      AssignProcessToJobObject: { args: [T.u64, T.u64], returns: T.i32 },
-      QueryInformationJobObject: { args: [T.u64, T.i32, T.ptr, T.u32, T.ptr], returns: T.i32 },
-      TerminateJobObject: { args: [T.u64, T.u32], returns: T.i32 },
-      CloseHandle: { args: [T.u64], returns: T.i32 },
-    }).symbols;
-  } catch { k32 = null; }
-  return k32;
-}
-function winJob(pid: number) {
-  const k = kernel32(); if (!k) return null;
-  const { ptr } = require("bun:ffi");
-  const job: bigint = k.CreateJobObjectW(null, null); if (!job) return null;
-  const h: bigint = k.OpenProcess(0x0101 /* TERMINATE | SET_QUOTA */, 0, pid);
-  if (!h || !k.AssignProcessToJobObject(job, h)) { if (h) k.CloseHandle(h); k.CloseHandle(job); return null; }
-  return {
-    members(): number[] | null {   // JOBOBJECT_BASIC_PROCESS_ID_LIST: two DWORD counts, then ULONG_PTR ids
-      const b = new Uint8Array(8 + 8 * 1024), v = new DataView(b.buffer);
-      if (!k.QueryInformationJobObject(job, 3, ptr(b), b.length, null)) return null;
-      return Array.from({ length: v.getUint32(4, true) }, (_, i) => Number(v.getBigUint64(8 + 8 * i, true)));
-    },
-    kill() { k.TerminateJobObject(job, 9); },
-    close() { k.CloseHandle(h); k.CloseHandle(job); },
-  };
 }
