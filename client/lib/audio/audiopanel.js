@@ -85,8 +85,10 @@ const floorHint = () => !gateUnavailable()
     ? 'the voice gate could not be built on this device and you chose to transmit ungated: the white marker holds ' +
       'nothing back, so everything your microphone picks up is sent while the mic is on, typing and room noise ' +
       'included, wherever the marker is set (push-to-talk, or turning the mic off, still stops it); ' + BAR_NOTE
+    // the refused attempt turned the mic off (voicesfu.js): the tick alone sends nothing, so the hint says the second step
     : 'the voice gate could not be built on this device, so the white marker is not in use and your microphone sends ' +
-      'nothing unless you tick ‘transmit UNGATED’ below; ' + BAR_NOTE;
+      'nothing unless you tick ‘transmit UNGATED’ below' + (micLive() ? '' : ', and then turn the microphone on again ' +
+      '(the attempt that could not build the gate left it off)') + '; ' + BAR_NOTE;
 const PTT_KEY = 'transmit only while the push-to-talk key is held down (V, or A/X on a VR controller) — replaces voice ' +
   'activation, so the sensitivity floor below is not used while this is on. ';
 const pttHint = () => PTT_KEY + (gateUnavailable() || gateLookahead() === false
@@ -161,7 +163,7 @@ function micFloorRow(onLook = () => {}) {
     // transport's peak crossed the marker with the gate shut), muted or not
     // read on its own: an unreadable level empties the bar, and must not skip the gold read below (the voice may be going out)
     let level = 0;
-    try { level = micDeviceLevel(); } catch (e) { warnRarely('mic-meter', '[audio panel] the mic level could not be read; the bar is empty', e); }
+    try { level = micDeviceLevel(); } catch (e) { warnRarely('mic-meter-level', '[audio panel] the mic level could not be read; the bar is empty', e); }
     lvl.style.width = `${Math.min(100, Math.max(0, (20 * Math.log10(Math.max(level, 1e-6)) + 60) / 60 * 100))}%`;
     // repaint only on a state change (this runs at frame rate). Gold is checked every frame; warm/dark (mic on/off, mute)
     // at the HUD poll's 8 Hz, because the transport can turn the mic off with no event and micLive() allocates

@@ -624,6 +624,13 @@ t('the synth fallback while not hearing the room: the tooltip says that too',
     && /\nyou are not hearing the room \(click the headphones to listen\)\n/.test(tip()), { ms: 2000 })), tip());
 vc.setReceiveVoice(true);
 t('...and not once you are', /no microphone is open/.test(tip()) && !/not hearing the room/.test(tip()), tip());
+// hushed is not hearing either: the voices arrive and none is played (finding 2 of #383's review)
+vc.setHush(true);
+t('the headphones hushed (voices still received): the tooltip says you are not hearing the room, as it does with none received',
+  vc.receivingVoice() === true && !!(await tryUntil('the tooltip names the hush', () => /no microphone is open/.test(tip())
+    && /\nyou are not hearing the room \(click the headphones to listen\)\n/.test(tip()), { ms: 2000 })), tip());
+vc.setHush(false);
+t('...and not once unhushed', !!(await tryUntil('the tooltip drops it', () => /no microphone is open/.test(tip()) && !/not hearing the room/.test(tip()), { ms: 2000 })), tip());
 vc.setReceiveVoice(recv0);
 playing = true;
 t('synth fallback under PTT, key up, speaking: gold, with the waves, and the tooltip says it is going out (not "hold V")',
@@ -683,6 +690,22 @@ analyserThrows = false; room = 0.02;
 const wAfter = lvlNow.style.width;
 t('the meter outlives a throwing analyser (its loop keeps going)', !!(await tryUntil('the bar moves after the throw', () => lvlNow.style.width !== wAfter)), lvlNow.style.width);
 room = 0;
+// the bar's two warnings each have their own once-a-minute: an unreadable level, just told, does not silence a meter that throws (finding 8 of #383's review)
+await tryUntil('the bar dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
+{ const seen = [], w = console.warn;
+  console.warn = (...a) => { const s = String(a[0]); if (/^\[audio panel\]/.test(s)) seen.push(s); else w(...a); };
+  analyserThrows = true;
+  await pause('frames with the level unreadable: told here, or in the last minute by the rows above', 100);
+  analyserThrows = false;
+  Object.defineProperty(lvlNow, 'style', { configurable: true, get() { throw new Error('no style'); } });   // sample() throws outside the level read
+  await pause('frames with the meter throwing', 100);
+  delete lvlNow.style;
+  console.warn = w;
+  t('a meter that throws within a minute of an unreadable level: the console is told of the throw too, once',
+    seen.filter((s) => /the mic meter threw/.test(s)).length === 1, JSON.stringify(seen));
+  const wBack = lvlNow.style.width; room = 0.02;
+  t('...and the bar carries on after it', !!(await tryUntil('the bar moves after the meter threw', () => lvlNow.style.width !== wBack)), lvlNow.style.width);
+  room = 0; }
 
 // ── 10. round six: an unreadable level under the held key, a mute or mic-off is a cut, a stepped gain, a suspended context
 await sfu.sfuMic(false); await sfu.sfuMic(true); negotiated(pc);
@@ -927,6 +950,9 @@ await sfu.sfuMic(true);                    // the gate cannot be built, and noth
 t('the gate cannot be built, nothing consented: the sensitivity hint says the marker is not in use and the mic sends nothing until "transmit UNGATED" is ticked',
   !!(await tryUntil('the refused-gate hint', () => ms.gateIsUnavailable() && /could not be built on this device, so the white marker is not in use and your microphone sends nothing unless you tick/.test(floorTip()), { ms: 3000 }))
   && !/opens your mic/.test(floorTip()), floorTip());
+// the refused attempt turned the mic off, so the tick alone would send nothing (finding 6 of #383's review)
+t('...and that the tick is not all: the refused attempt left the mic off, and the hint says to turn it on again after ticking',
+  mt.micLive() === false && /unless you tick ‘transmit UNGATED’ below, and then turn the microphone on again \(the attempt that could not build the gate left it off\); /.test(floorTip()), `micLive=${mt.micLive()} ${floorTip()}`);
 ungatedBox.checked = true; ungatedBox.dispatchEvent(new Event('change'));   // the person's own tick
 t('"transmit UNGATED" ticked: the hint changes in that turn, and no longer says sound under the marker is not sent',
   ms.ungatedAllowed() === true && /you chose to transmit ungated: the white marker holds nothing back, so everything your microphone picks up is sent while the mic is on/.test(floorTip())
@@ -940,6 +966,8 @@ t('...and the push-to-talk hint promises no 50 ms tail there: the raw track is s
   && !/50 ms/.test(pttTip()), pttTip());
 // back to a device that can build the gate: the words follow the lane, with no event of their own
 ungatedBox.checked = false; ungatedBox.dispatchEvent(new Event('change'));
+t('the tick taken back with the mic still on: the hint asks for the tick alone (the mic is on already)',
+  mt.micLive() === true && /sends nothing unless you tick ‘transmit UNGATED’ below; /.test(floorTip()), `micLive=${mt.micLive()} ${floorTip()}`);
 synthOn = true; await sfu.sfuMic(false); noGate = false; synthOn = false;
 await sfu.sfuMic(true); negotiated(pc);
 t('the gate built again: both hints are the gated lane\'s again (the marker keeps quiet sound in; a release has its 50 ms tail)',

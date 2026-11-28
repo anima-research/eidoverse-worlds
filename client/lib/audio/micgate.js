@@ -368,7 +368,7 @@ export function makeLevelMeter(getMeasured) {
         _anSrc = src;
         _anStream = measured;
         _anBuf = new Float32Array(_an.fftSize);
-      } catch { return 0; }
+      } catch (e) { warnRarely('mic-level-build', '[mic] the level meter could not be built; the level reads as silence', e); return 0; }
     }
     _an.getFloatTimeDomainData(_anBuf);
     let s = 0;

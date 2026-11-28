@@ -16,11 +16,11 @@ const mkStream = (label, synthetic = false) => { const t = mkTrack(label); retur
 const node = () => ({ connect() {}, disconnect() {}, gain: { value: 0, setTargetAtTime() {} }, delayTime: { value: 0, setTargetAtTime() {} } });
 // "none": no createMediaStreamDestination, so the gate graph cannot build; "full": the graph builds and each destination
 // is a DISTINCT lane stream (else the release rows are vacuous)
-let ctx = "none";
+let ctx = "none", analyserFails = false;
 mock.module(lib("audio/audioctx.js"), () => ({
   audioContext: () => ({
     currentTime: 0, sampleRate: 48000, state: "running", destination: node(),
-    createAnalyser: () => ({ fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }),
+    createAnalyser: () => { if (analyserFails) throw new Error("no analyser"); return { fftSize: 0, getFloatTimeDomainData() {}, connect() {}, disconnect() {} }; },
     createMediaStreamSource: () => node(),
     ...(ctx === "full" ? { createGain: node, createDelay: node, createMediaStreamDestination: () => ({ ...node(), stream: mkStream("lane") }) } : {}),
   }),
@@ -229,5 +229,14 @@ check("E19 dropDevice() runs: the device is stopped and the mic is not on", !r &
 { const self = readFileSync(new URL(import.meta.url), "utf8");
   const uncalled = Object.keys(m).filter((k) => !new RegExp(`\\bm\\.${k}\\b`).test(self));
   check("E20 every micstate.js export is called in this file", uncalled.length === 0, uncalled.join(", ")); }
+// a level meter that cannot be built reads silence, and says so (finding 12 of #383's review): the gate stays shut on it
+{ const warns = [], realWarn = console.warn;
+  console.warn = (...a) => { if (/the level meter could not be built/.test(String(a[0]))) warns.push(a[1]?.message); else realWarn(...a); };
+  analyserFails = true;
+  const meter = mg.makeLevelMeter(() => mkStream("unmeasurable"));
+  let levels = [];
+  r = ran(() => { levels = [meter(), meter(), meter()]; });
+  analyserFails = false; console.warn = realWarn;
+  check("E21 a level meter whose analyser cannot be built: it reads 0 each time, does not throw, and the console is told once", !r && levels.length === 3 && levels.every((l) => l === 0) && warns.length === 1 && warns[0] === "no analyser", JSON.stringify({ r, levels, warns })); }
 
 done();

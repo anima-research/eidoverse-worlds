@@ -126,7 +126,8 @@ function announceIndicator() {
 }
 // The mic tooltip, from one read of the glyph's inputs; the poll compares it too, so a change in any input to these words repaints.
 function micTip({ on, hot, reason, synth, muted }) {
-  const deaf = on && !receivingVoice();
+  // not hearing is either way of not hearing: voices not received at all, or received and hushed (the headphones glyph reads off for both)
+  const deaf = on && (!receivingVoice() || isHushed());
   // speech-to-text doesn't read a voice mute yet, so while it is on a muted mic still posts captions (as say, which a
   // moderator's chat mute refuses), and under push-to-talk only while the key is held (V, or A/X on a VR controller)
   // and as a release drains what was heard (stt.js keyAllows): say exactly that. With the mic off it would start on the
