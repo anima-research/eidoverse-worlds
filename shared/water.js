@@ -1,4 +1,5 @@
-// Renderer-independent water queries. Metres, Y-up; parameters come from comp data.
+// water — renderer-independent water-volume queries (metres, Y-up) over component data: where a point is wet, how
+// much of a sight line is under water, and the swim step for a volume.
 import { MOVER, stepSwim } from './mover.js';
 export const MAX_WATER = 4, MAX_AIR = 16, MAX_WAVES = 8;
 const finite = (x, d) => Number.isFinite(x) ? x : d;
@@ -44,8 +45,7 @@ export function mediumAt(p, waters, airs, time = 0) {
   }
   return null;
 }
-// Slab intersection on the finite camera-to-fragment segment. Parallel rays and
-// zero length rays need no epsilon displacement, including on box boundaries.
+// the [lo, hi] fraction of segment a→b inside the box (slab test), or null
 export function boxInterval(a, b, box) {
   const local = p => box.toLocal ? box.toLocal(p) : p.map((v, i) => v - box.center[i]);
   a = local(a); b = local(b);

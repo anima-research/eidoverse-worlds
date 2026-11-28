@@ -1,0 +1,22 @@
+# TEMPLATE, not installed by deploy-vps.sh: written from deploy-vps.sh and README.md, never compared with the VPS.
+# Diff it against the box's /etc/systemd/system/eidoverse.service; once they agree, rename it eidoverse.service
+# and deploy-vps.sh keeps the box's copy equal to it (docs/operator/RUNNING-A-SERVER.md).
+
+[Unit]
+Description=eidoverse world server (the sequencer)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/eidoverse-worlds
+ExecStart=/home/ubuntu/.bun/bin/bun server/server.ts
+Restart=always
+RestartSec=5
+Environment=PORT=8940
+# EIDOVERSE_DIR defaults to ../eidoverse-video beside the checkout (server/config.ts).
+# JOIN_TOKEN, HN_NATIVE_ORIGIN and the like (README.md): one per line, never in git
+EnvironmentFile=/etc/eidoverse/eidoverse.env
+
+[Install]
+WantedBy=multi-user.target

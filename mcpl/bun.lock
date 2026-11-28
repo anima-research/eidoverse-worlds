@@ -12,13 +12,13 @@
         "zod": "^4.4.3",
       },
       "optionalDependencies": {
-        "@animalabs/agent-framework": "file:../tools/protocol/.siblings/agent-framework",
-        "@animalabs/mcpl-core": "file:../tools/protocol/.siblings/mcpl-core-ts",
+        "@animalabs/agent-framework": "file:../.siblings/agent-framework",
+        "@animalabs/mcpl-core": "file:../.siblings/mcpl-core-ts",
       },
     },
   },
   "packages": {
-    "@animalabs/mcpl-core": ["@animalabs/mcpl-core@file:../tools/protocol/.siblings/mcpl-core-ts", { "devDependencies": { "@types/node": "^20.0.0", "tsx": "^4.7.0", "typescript": "^5.5.0" } }],
+    "@animalabs/mcpl-core": ["@animalabs/mcpl-core@file:../.siblings/mcpl-core-ts", { "devDependencies": { "@types/node": "^20.0.0", "tsx": "^4.7.0", "typescript": "^5.5.0" } }],
 
     "@emnapi/runtime": ["@emnapi/runtime@1.11.3", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA=="],
 

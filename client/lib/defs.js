@@ -1,13 +1,7 @@
-// defs — the client's view of the instance def registry (charter §3).
-// One fetch of GET /defs, shared by every client-side consumer (the sky
-// panel's preset row; whoever comes next), invalidated when the sequencer
-// pushes `defs-updated` so a def edited on disk reaches the next reader.
-//
-// The flora engine (client/lib/vegetation/vegetation.js) keeps its OWN
-// fetch of the same route — a standalone engine that imports only its own
-// files and shared/, never a client lib module. Two fetch sites, one per layer, both cheap
-// and both invalidated by the same push (world.js handles the engine's
-// refresh + regrow).
+// defs — the client's view of the instance def registry: one fetch of GET /defs shared by every client-side consumer,
+// invalidated when the sequencer pushes `defs-updated`.
+// The flora engine (client/lib/vegetation/vegetation.js ensureFloraDefs) keeps its OWN fetch of the route: it imports
+// only its own files and shared/, never a client lib module. world.js handles its refresh on the same push.
 import { bus } from './base.js';
 
 let reg = null;

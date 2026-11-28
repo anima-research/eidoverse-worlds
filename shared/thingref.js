@@ -1,13 +1,11 @@
-// shared/thingref.js — how a reader names a thing without its id (R 10-17 00:46, STAGING-TODO "ID HARDENING" (5)).
-// An id is opaque (26 base32: shared/protocol/ids.js) and never changes; what a thing is CALLED is its label, which anyone
-// may change and which two things may share (duplicate labels stay allowed: ambiguity is surfaced, never forbidden). So:
-//   handleOf   a short handle for reading: the shortest prefix of the id (at least 4 characters) no other id here starts
-//              with, derived fresh from what is here now (git's abbreviated hash). An id of 12 characters or fewer (an
-//              older readable id: "tower", "lamp-light") is its own handle.
-//   resolveThing  what someone typed → one thing: its exact id; else its label (case and outer spaces ignored); else a
-//              unique id prefix of 4 or more characters. Several things matching is refused with the candidates, never
-//              resolved by picking one. Pure: the agent's tools (mcpl) and the editor's Hierarchy read the same rules.
-// Scripts never look things up by label: they reference by id (docs/SCRIPTS.md).
+// thingref — how a reader names a thing without its id. An id is opaque (26 base32: shared/protocol/ids.js); a label
+// is what it's called, changeable and shareable (ambiguity is surfaced, never forbidden). Pure: mcpl's tools and the
+// editor's Hierarchy read the same rules.
+//   handleOf      the shortest id prefix (≥ 4 chars) no other id here starts with, like git's abbreviated hash; an id
+//                 of ≤ 12 chars (an older readable id: "tower") is its own handle.
+//   resolveThing  typed text → one thing: exact id, else label (case/outer spaces ignored), else a unique id prefix of
+//                 4+ chars. Several matches are returned as `ambiguous`, never picked from.
+// Scripts reference by id, never by label (docs/guide/SCRIPTS.md).
 export const HANDLE_MIN = 4;
 export const WHOLE_UP_TO = 12;
 

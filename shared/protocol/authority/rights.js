@@ -1,5 +1,4 @@
-// shared/protocol/authority/rights.js — rights, and the views over the log that say who did what and who is sanctioned
-// (refactor C11, 2026-10-12; moved from authority.js's "rights", "views over the log" and "sanctions" sections unchanged).
+// shared/protocol/authority/rights.js — rights, and the views over the log that say who did what and who is sanctioned.
 // A leaf over storage (isE, opsQuiet) and the ladder in roles.js.
 import * as R from "../roles.js";
 import { CTX } from "./ctx.js";
@@ -10,11 +9,11 @@ import { cascadeOf, isE, opsQuiet, readback } from "./storage.js";
 const RANK = R.RANK;
 const wcOf = (st) => st.entities?.["@world"]?.c;
 const ownersOf = (st) => { const c = st.entities?.["@world"]?.c ?? {}; return Object.keys(c).filter((k) => k.startsWith("roles:") && R.isOwner(c[k])); };
-// §2.3: an empty owner list means NOBODY above member. A world may declare a default role for strangers
-// (`default-role`, what an imported world's `roles['*']` becomes); absence means member (a world founded since R 10-21 writes builder at founding).
+// §7: an empty owner list means NOBODY above member. A world may declare a default role for strangers
+// (`default-role`, what an imported world's `roles['*']` becomes); absence means member (a new world writes builder at founding).
 // a guest (no account) is never given the world's default role: it's for people who proved who they are. An owner
-// may still grant a guest a role by its id (H4: an anonymous connection was a builder wherever default-role was)
-// …unless the world opts guests in (`default-role.guests`, R 10-06): explicit, default member, never above the default role
+// may still grant a guest a role by its id
+// …unless the world opts guests in (`default-role.guests`): explicit, default member, never above the default role
 function roleOf(st, actor, anon = CTX.isAnon(actor)) {
   const c = wcOf(st); if (!c) return "member";
   return R.roleIdOf(c, actor, { anon, owners: ownersOf(st).length > 0 });
@@ -24,7 +23,7 @@ const rankOf = (st, actor, anon) => R.rankOfRole(wcOf(st), roleOf(st, actor, ano
 /** The rank a `who` field names (physics.who, grabbable.who, a handler's or a seat's who): a role the world doesn't
  *  define (a custom role since deleted) reads as owner, so a who never opens to more people than it said. */
 const whoRank = (st, name) => R.roleDef(wcOf(st), name)?.rank ?? RANK.owner;
-/** Does `who` admit `actor` (recut item 8)? Absent: yes. A role id: that rank or above. {permission}: holds it (an owner
+/** Does `who` admit `actor`? Absent: yes. A role id: that rank or above. {permission}: holds it (an owner
  *  holds every permission). {roles}: holds one of them, or is an owner. Anything else admits only owners. */
 const admits = (st, actor, who, anon) => {
   if (who === undefined || who === null) return true;
@@ -42,16 +41,15 @@ const modHolder = (st, who) => R.MOD_POWERS.some((k) => may(st, who, k));
 export const effectiveIn = (st, actor, { anon = false } = {}) => R.effectiveOf(wcOf(st) ?? {}, actor, { anon, owners: ownersOf(st).length > 0 });
 /** The role the authority gives `actor` in a folded state (a view: what a client should be told it may do here). */
 export const roleIn = (st, actor, { anon = false } = {}) => roleOf(st, actor, anon);
-// ---------- views over the log: who did what (L2: derived, never stored) ----------
 const isScriptActor = (a) => typeof a === "string" && a.startsWith("script:");
-// ---------- sanctions: views over the moderator log (research §5) ----------
+// ---------- sanctions: views over the moderator log ----------
 // Every sanction is a record with an optional `until` (the authority's clock, ms). Expiry is computed, never written: a view
-// reads the latest record of its pair and asks whether it's still in force NOW (w.now(): the authority's clock). Records
+// asks which records are still in force NOW (w.now(): the authority's clock). Records
 // name identities, never display names. A record without `until` (an imported world's ban, an owner's ban "until lifted")
-// is permanent. A kick is never in force: it removes someone now, and they may come back at once (R 10-28).
+// is permanent. A kick is never in force: it removes someone now, and they may come back at once.
 // Every record since the last LIFT of its kind (unban, unmute) that is still in force counts, and the STRONGEST
-// wins: a weaker record never cancels a stronger one (independent review 10-07: a moderator's 0.0001-day ban under an
-// owner's permanent one used to replace it, the newest record alone being read). Lifting goes through personLift.
+// wins: a weaker record never cancels a stronger one (a short ban never replaces a permanent one). Lifting goes
+// through personLift.
 const latestOf = (w, who, verbs) => { let r = null; for (const m of w.mod) if (m.who === who && verbs.includes(m.verb)) r = m; return r; };
 const inForce = (w, m) => !!m && (m.until === undefined || m.until > w.now());
 const sinceLift = (recs, verb, lifts) => { let out = []; for (const m of recs) { if (lifts.includes(m.verb)) out = []; else if (m.verb === verb) out.push(m); } return out; };
@@ -82,6 +80,7 @@ export function sanctionsNow(w) {
     if (b || m) out[x] = { ...(b ? { ban: b } : {}), ...(m ? { mute: m } : {}) }; }
   return out;
 }
+// ---------- views over the log: who did what (L2: derived, never stored) ----------
 // Who a change entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those
 // differ for a `use`: the visitor pulled the lever, but the handler's author's rights made the change, and the act
 // records that author (capability.author). Entries with no act for a cause (rests, genesis-era) are their own actor's.
@@ -91,21 +90,21 @@ function entryBy(w, e) {
   // a behaviour's results were admitted with its SPONSOR's rights (L4), which its act names (checkable from sponsorAt)
   // READBACK: a purged cause act no longer says whose rights admitted it (a handler's author? a script's sponsor?), so the
   // rights are unknown: null, which matches nobody. Never `by`: that would hand the visitor who pulled the lever the
-  // handler author's thing (engine-scars 4, consent gaps G1 d)
+  // handler author's thing
   if (isE(c) && c.kind === "request") { const b = readback(w, e.cause);
     if (b === null) return { seq: e.seq, by, rights: null };
     return { seq: e.seq, by, rights: b.capability?.author || (isScriptActor(c.actor) && b.sponsor) || by }; }
   return { seq: e.seq, by, rights: by };
 }
-// The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
-// present after it was last absent. null if it isn't present now. { seq, by, rights }.
 // The change entries that may touch `id`, newest first. A live world (server) keeps an index id → seqs so these
 // views cost the thing's own history, not the whole log's; without one (the suites) every entry is a candidate.
 function* backward(w, id) {
   if (w.touching) { const a = w.touching(id); for (let k = a.length - 1; k >= 0; k--) yield a[k]; return; }
   for (let i = w.entries.length - 1; i >= 0; i--) yield i;
 }
-// A follow-up set that put a value back (an undo's restore) also steps over the follow-up delete it reverses (review r10 M2),
+// The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
+// present after it was last absent. null if it isn't present now. { seq, by, rights }.
+// A follow-up set that put a value back (an undo's restore) also steps over the follow-up delete it reverses,
 // so the restored value keeps its author and its life; any write of the asker's own in between ends that (a key re-created
 // by someone else after a clear is a new life, never merged with the old one).
 // A whole thing's creator in a live world is the entry its fold marks it born at: the newest create op on it, unless a no-op
@@ -139,14 +138,14 @@ export function lastSetterOf(w, id, comp) {
       return { ...entryBy(w, e), deleted: o.op === "delete" }; } }
   return null;
 }
-/** A lock's strength (recut B2): the rank its setter holds NOW; a lock nobody set by hand (translated, or its setter
- *  unknown) is builder-strength. A world with no owner caps it at member, the rank everyone holds there (§2.3: no lockout). */
+/** A lock's strength: the rank its setter holds NOW, at least builder; a lock nobody set by hand (translated, or its setter
+ *  unknown) is builder-strength. A world with no owner caps it at member, the rank everyone holds there (§7: no lockout). */
 export function lockStrength(w, st, id) { const by = lastSetterOf(w, id, "lock"); const s = by && !by.deleted && by.rights ? Math.max(R.RANK.builder, rankOf(st, by.rights)) : R.RANK.builder;
   return ownersOf(st).length ? s : R.RANK.member; }
 // Who made a thing: the view inspect shows (no stored `placer`).
 const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 
-// (refactor split, 2026-10-17: moved here from authority.js's "the authority" section; request, undo and the hands' returns read it)
+// read by request, undo and the hands' returns
 const RESERVED = new Set(["system", "sim", "world"]); // the authority's own identities: a request can never be stamped as one
 
 export { RANK, RESERVED, admits, backward, banFrom, effective, entryBy, inForce, isScriptActor, latestOf, madeBy, may, modHolder, muteFrom, ownersOf, rankOf, recsOf, roleOf, sinceLift, strongest, wcOf, whoRank };
