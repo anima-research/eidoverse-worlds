@@ -718,6 +718,7 @@ fresh.style.display = '';
 t('gold, the panel hidden, still talking, the panel shown: the bar is gold in the turn it shows, beside a gold glyph',
   hiddenGlyphGold && gold() && barGoldNow(), `glyph while hidden=${hiddenGlyphGold} ${state()} bar=${lvlNow.style.background}`);
 // ...and a panel first built while hidden, the voice already going out (no change of the glyph will come to tell it)
+// (each panel built from here on repoints audiopanel.js's `_sync` to its own checkboxes: a later row reading `fresh`'s mic, hear or connect checkbox would see stale values)
 { const late = document.createElement('div'); late.style.display = 'none'; document.body.appendChild(late);
   globalThis.__builds.audio(late);
   const lateLvl = late.querySelector('[data-lvl]');
@@ -741,6 +742,31 @@ t('gold, the panel hidden, still talking, the panel shown: the bar is gold in th
   const hots = seen.filter((x) => x.glyph), darks = seen.filter((x) => !x.glyph);
   t('the panel hidden, the voice stops and starts: the bar is the glyph\'s colour inside each announcement of the glyph, dark and gold',
     darks.length > 0 && hots.length > 0 && seen.every((x) => x.bar === x.glyph), JSON.stringify(seen));
+  fresh.style.display = ''; }
+// ...and a panel built in the turn the voice starts going out, before the glyph's poll has seen it: its bar starts gold
+// (it reads roomHears() at the build), so the build tells the glyph, or the bar would be gold beside a dark glyph until
+// the next poll. Voice activation, the level raised with no bus event; `fresh` is hidden, so no shown bar tells the glyph first.
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const builds = [];
+  for (const hiddenBuild of [false, true]) {
+    let got = null;
+    for (let i = 0; i < 5 && !got?.caught; i++) {
+      room = 0;
+      await tryUntil('the voice stopped and the glyph dark', () => !ms.roomHears() && !gold(), { ms: 4000 });
+      room = 0.3;
+      await tryUntil('the gate opens', () => ms.roomHears(), { ms: 4000, step: 1 });
+      const caught = ms.roomHears() && !gold();   // the turn roomHears() first reads true, the glyph not yet told
+      const at = document.createElement('div'); if (hiddenBuild) at.style.display = 'none'; document.body.appendChild(at);
+      globalThis.__builds.audio(at);
+      got = { hiddenBuild, caught, bar: GOLD.test(at.querySelector('[data-lvl]').style.background), glyph: gold() };   // in the build's own turn
+      at.remove();
+      await pause('the built row\'s frame loop sees it detached', 300);
+    }
+    builds.push(got);
+  }
+  t('the voice just starting, the glyph not yet told, a panel built (shown, and hidden): the glyph is gold with the new bar in the build\'s own turn',
+    builds.every((x) => x.caught && x.bar && x.glyph), JSON.stringify(builds));
   fresh.style.display = ''; }
 room = 0.05;
 await tryUntil('dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
