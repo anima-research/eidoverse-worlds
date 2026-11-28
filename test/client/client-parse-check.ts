@@ -13,15 +13,12 @@
 // usage: bun test/client/client-parse-check.ts
 import fs from "node:fs";
 import path from "node:path";
+import { suite } from "../gate/suite.ts";
 
 const ROOT = path.resolve(import.meta.dir, "../..");
 const DIRS = ["client", "shared"];
 const SKIP_DIR = new Set(["node_modules", ".git"]);
-let pass = 0, fail = 0;
-const check = (name: string, ok: boolean, detail = "") => {
-  if (ok) pass++; else fail++;
-  console.log(`  ${ok ? "ok  " : "FAIL"} ${name}${!ok && detail ? `\n         ${detail}` : ""}`);
-};
+const { check, done } = suite("client-parse");
 
 const transpiler = new Bun.Transpiler({ loader: "js" });
 const parseError = (src: string): string | null => {
@@ -51,7 +48,4 @@ for (let i = 0; i < files.length; i++) {
   if (err) { bad++; check(`C3 ${rel[i]} parses`, false, err); }
 }
 if (!bad) check(`C3 all ${files.length} client and shared modules parse`, true);
-else console.log(`  ${bad} of ${files.length} modules don't parse`);
-
-console.log(`\n${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+done(bad ? ` (${bad} of ${files.length} modules don't parse)` : "");

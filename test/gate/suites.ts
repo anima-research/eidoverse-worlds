@@ -144,7 +144,7 @@ export const SUITES: [string, string, number][] = [ // name, file, tail lines to
   ["role-grammar", "shared/role-grammar-test.ts", 1], // D7: one role-id grammar (grab, sockbody, rolespanels, commands)
   ["rot", "shared/rot-test.ts", 1], // shared/rot.js: quaternion orientation, and no host transcendental (R1: lyingFrame had three)
   ["one-binding", "client/one-binding-test.ts", 1], // a shared constant, grammar or table has one binding: importers carry no copy (reaches, rounding, roles, rot numerics, names key)
-  ["client-parse", "client/client-parse-check.ts", 2], // every module under client/ and shared/ parses (a merge that imports a name twice blanks the page, and no unit suite imports main.js)
+  ["client-parse", "client/client-parse-check.ts", 1], // every module under client/ and shared/ parses (a merge that imports a name twice blanks the page, and no unit suite imports main.js)
   ["reexport-binding", "client/reexport-binding-test.mjs", 1], // no client module uses a name it only re-exports (export { X } from … binds nothing locally)
   ["wiring", "client/wiring-check.ts", 1], // "this product file still says X / no longer says Y" as one table, every row with its controls
   ["onepose", "protocol/onepose-check.ts", 1], // audit 10-22 #7: one worldPose (simlayer's and hierarchy's agree bit for bit) and one set of quaternion functions (shared/rot.js)
