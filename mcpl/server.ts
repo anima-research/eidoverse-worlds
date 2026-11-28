@@ -1,30 +1,18 @@
-// eidoverse-worlds agent MCPL — MCP stdio server giving an agent embodied
-// presence: a body (WorldAgent), verbs, text-tier perception, and a retina
-// (first-person snapshots via a spectator browser session on a GPU host).
+// eidoverse-worlds agent MCPL — MCP stdio server giving an agent embodied presence: a body (WorldAgent), verbs,
+// text-tier perception, and screenshots through the world's /snap (tools.ts).
 //
 // Env: WORLD_URL (ws://127.0.0.1:8940/ws), AGENT_NAME (claude),
 //      WORLD_NAME (commons), AGENT_AVATAR (vrm library path).
 //
-// UNIFIED ONTO THE SHARED TABLE (survey §C, ruled §24r). This file used to
-// carry its own hand-copied 16-tool subset of net-server's table — drifted
-// descriptions, and a stale searchLibrary keeping the hardcoded-Mac-path bug
-// R0 had fixed on only one side. Now it is a TRANSPORT: the tool list is
-// tools.ts's TOOLS (so this door gains pose/reach/animate/measure/
-// world_history/world_debug/the library sheets and every future tool for
-// free), dispatch is tools.ts's handleTool, and the only local vocabulary is
-// pending_pings — the polling analog of the ping notification below, which a
-// channel host doesn't need (its pings arrive as channel messages) but a
-// plain-MCP host must be able to ask for.
-//
-// travel is NOT listed: it is session machinery (channel epochs, join
-// gates) that only the WS door carries — this door fronts one WORLD_URL.
+// A transport over tools.ts's shared table (TOOLS + handleTool). The only local tool is pending_pings, the polling
+// analog of the ping notification below. travel is not listed: this door fronts one WORLD_URL.
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { WorldAgent } from "./agent.ts";
 import { pingLine } from "./ping-wire.ts";
-import { toolList, handleTool, type ToolCtx } from "./tools.ts";
+import { toolList, handleTool, TOOL_MESSAGE_BYTES, type ToolCtx } from "./tools.ts";
 
 const agent = new WorldAgent();
 await agent.connect();
@@ -63,17 +51,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (name === "pending_pings") {
     const pings = agent.takePings();
     if (!pings.length) return { content: [{ type: "text", text: "no pending pings" }] };
-    // Every kind renders as ITSELF — see ping-wire.ts, where the wording is
-    // testable alongside the channel mapping the MCPL door uses.
+    // wording lives in ping-wire.ts
     return { content: [{ type: "text", text: pings.map(pingLine).join("\n") }] };
   }
   return await handleTool(ctx, name, args) as { content: { type: string; text?: string }[] };
 });
 
-// Pushes: every ping (mention / approach) also goes out as an MCP notification
-// so runtimes that route notifications into agent wakes (connectome
-// network-mcpl, same pattern as discord-mcpl pings) get real-time embodiment;
-// plain MCP clients poll pending_pings instead.
+// Every ping also goes out as an MCP notification, for runtimes that wake agents on notifications; plain MCP
+// clients poll pending_pings instead.
 agent.onPing = (p) => {
   server.notification({
     method: "notifications/eidoverse/ping",
@@ -81,5 +66,7 @@ agent.onPing = (p) => {
   }).catch(() => {});
 };
 
-await server.connect(new StdioServerTransport());
+// One line of stdin is one message. The sdk closes the transport for good on a line longer than its cap (10 MiB unless
+// told), so the cap here is the websocket door's: a tool call that fits one door fits the other (upload {data}'s ceiling).
+await server.connect(new StdioServerTransport(process.stdin, process.stdout, { maxBufferSize: TOOL_MESSAGE_BYTES }));
 console.error(`[mcpl] ${agent.name} embodied in "${agent.world}" via ${agent.url} — ${toolList({ travel: false }).length + 1} tools (shared table)`);

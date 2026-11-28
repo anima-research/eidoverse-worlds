@@ -1,4 +1,4 @@
-// shared/protocol/provenance.js — writer provenance (docs/DESIGN-log-vocabulary.md §F F-2): the object genesis.body.provenance and a
+// shared/protocol/provenance.js — writer provenance (docs/decisions/LOG-VOCABULARY.md §F F-2): the object genesis.body.provenance and a
 // repair request's body carry; its builder and readback. Pure: the writer side (tree hash, revision) is server/provenance.ts.
 
 export const WRITER_NAME = /^[a-z][a-z0-9-]{0,47}$/;

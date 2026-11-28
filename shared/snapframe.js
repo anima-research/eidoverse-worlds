@@ -1,25 +1,17 @@
-// Optional framing for a world snapshot (GET /snap's query, the `snap` wire
-// message's nested `frame`, the agent `snapshot` tool's arguments). One
-// normaliser, three readers: the sequencer cleans what arrives over HTTP, the
-// renderer cleans what arrives over the wire, the agent tool cleans what the
-// model asked for — and an absent field always means "today's fixed framing",
-// so old callers see no change.
-//
-//   dist   — third/selfie: metres between the camera and the body, measured
-//            flat (third sits behind, selfie in front).        [0.5, 30]
-//   height — third/selfie: camera height above the body's feet. [0, 30]
-//   pitch  — first: gaze tilt in degrees, + looks up, − looks down. [-85, 85]
-//            (the default first-person gaze is about −4.3°: dropped 0.6m over 8m)
+// Optional framing for a world snapshot, one normaliser for its three readers: GET /snap's query (server/routes.ts),
+// the `snap` wire message's `frame` (client/lib/render/net_capture.js) and the agent `snapshot` tool (mcpl/tools.ts).
+// An absent field means the default framing.
+//   dist   — third/selfie: metres from camera to body, measured flat (third behind, selfie in front)  [0.5, 30]
+//   height — third/selfie: camera height above the body's feet                                       [0, 30]
+//   pitch  — first: gaze tilt in degrees, + up, − down (default about −4.3°)                         [-85, 85]
 
 export const SNAP_DIST = [0.5, 30];
 export const SNAP_HEIGHT = [0, 30];
 export const SNAP_PITCH = [-85, 85];
 
 const clamp = (v, [lo, hi]) => Math.min(hi, Math.max(lo, v));
-// Only finite numbers and non-blank numeric strings (HTTP query values) count.
-// Booleans, arrays and objects are dropped BEFORE conversion: Number(false) is 0,
-// which would silently move a camera to foot height, and an object without a
-// usable toString would throw and lose the whole snapshot.
+// Only finite numbers and non-blank numeric strings (query values) count; booleans/arrays/objects are dropped before
+// conversion (Number(false) is 0, which would put the camera at foot height).
 const num = (v) => {
   if (typeof v !== 'number' && typeof v !== 'string') return undefined;
   if (typeof v === 'string' && v.trim() === '') return undefined;

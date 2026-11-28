@@ -36,7 +36,7 @@ export function localAt(route, progress) {
   return [0, 1, 2].map((j) => P[i - 1][j] + (P[i][j] - P[i - 1][j]) * k);
 }
 
-/** A point in the host's frame → world, through its pose {pos, q, scale} (simlayer worldPose's, or a renderer's live one). */
+/** A point in the host's frame → world, through its pose {pos, q, scale} (shared/protocol/simlayer.js worldPose, or a renderer's live one). */
 export function toWorld(pose, p) {
   const s = v3(pose?.scale) ? pose.scale : [1, 1, 1], r = qRotate(pose?.q ?? [0, 0, 0, 1], [p[0] * s[0], p[1] * s[1], p[2] * s[2]]);
   return [r[0] + pose.pos[0], r[1] + pose.pos[1], r[2] + pose.pos[2]];
@@ -60,7 +60,7 @@ export function boardAt(pose, route, at) {
   return best;
 }
 
-/** One step along the route: {progress, done} (done at the far end). dt is capped at 0.1 s, as upstream's stepTraversal. */
+/** One step along the route: {progress, done} (done at the far end). dt is capped at 0.1 s. */
 export function stepClimb(route, progress, dir, dt) {
   const p = progress + dir * route.speed * Math.max(0, Math.min(0.1, dt));
   const done = dir > 0 ? p >= route.length : p <= 0;

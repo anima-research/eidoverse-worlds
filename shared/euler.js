@@ -4,7 +4,7 @@
 // ORDER NAMES ARE MAYA'S (and Blender's): "XYZ" means X is applied first, then
 // Y, then Z, all about the parent's fixed axes — R = Rz · Ry · Rx, so Z is the
 // outermost gimbal ring and X the innermost. three.js spells the same rotation
-// with the letters reversed (its Euler order "ZYX"); tools/euler-test.ts pins
+// with the letters reversed (its Euler order "ZYX"); test/client/euler-test.ts pins
 // the correspondence against three for all six orders.
 //
 // `q` is what the log stores, so Euler angles here are a READING of it, never
@@ -28,7 +28,7 @@
 export const ROT_ORDERS = ['XYZ', 'XZY', 'YXZ', 'YZX', 'ZXY', 'ZYX'];
 export const QUAT_MODE = 'quat';
 export const ROT_MODES = [...ROT_ORDERS, QUAT_MODE];
-/** The order a viewer's channels read in: its rotOrder (an editor's live settings; PROTOCOL §9.1: Euler channels are a view,
+/** The order a viewer's channels read in: its rotOrder (an editor's live settings; spec/PROTOCOL.md §9.1: Euler channels are a view,
  *  never world state) when valid, else XYZ. */
 export const rotOrderOf = (ent) => (ROT_MODES.includes(ent?.rotOrder) ? ent.rotOrder : 'XYZ');
 

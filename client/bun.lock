@@ -5,19 +5,17 @@
     "": {
       "name": "client",
       "dependencies": {
-        "@dimforge/rapier3d-compat": "^0.19.3",
-        "@mintplex-labs/piper-tts-web": "^1.0.4",
+        "@mintplex-labs/piper-tts-web": "1.0.4",
         "@pixiv/three-vrm": "^3.5.2",
         "@pixiv/three-vrm-animation": "^3.5.2",
         "@pixiv/three-vrm-materials-mtoon": "^3.5.2",
+        "onnxruntime-web": "^1.27.0",
         "three": "^0.186.0",
         "three-mesh-bvh": "^0.9.14",
       },
     },
   },
   "packages": {
-    "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.19.3", "", {}, "sha512-mMVdSj1PRTT108s9Swbu2GQOmHbn8kbJANRV5xfczL3s0T4vkgZAuoMRgvBzQcHanpKusbC0ZJj6z3mC3aj3vg=="],
-
     "@mintplex-labs/piper-tts-web": ["@mintplex-labs/piper-tts-web@1.0.4", "", { "peerDependencies": { "onnxruntime-web": "^1.18.0" } }, "sha512-Y24X+CJaGXoY5HFPSstHvJI6408OAtw3Pmq2OIYwpRpcwLLbgadWg8l1ODHNkgpB0Ps5fS9PAAQB60fHA3Bdag=="],
 
     "@pixiv/three-vrm": ["@pixiv/three-vrm@3.5.2", "", { "dependencies": { "@pixiv/three-vrm-core": "3.5.2", "@pixiv/three-vrm-materials-hdr-emissive-multiplier": "3.5.2", "@pixiv/three-vrm-materials-mtoon": "3.5.2", "@pixiv/three-vrm-materials-v0compat": "3.5.2", "@pixiv/three-vrm-node-constraint": "3.5.2", "@pixiv/three-vrm-springbone": "3.5.2" }, "peerDependencies": { "three": ">=0.137" } }, "sha512-YC3T8WZvb18n1uzYS60I9WCc2kOJxWZ/Q0RfklFAg0nD3Dz/kvvEoCYfZj5idnJqOtbLUXZGXZF1KCXKUB2qHg=="],

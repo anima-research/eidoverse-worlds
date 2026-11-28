@@ -2,9 +2,8 @@
 // replaces component values, deletes components and entities. It reads only the entry: never a blob, never the authority.
 // It is total: a malformed entry shapes nothing and is named in diagnostics, never in the world. A version it
 // doesn't implement gives "unknown version" and no world.
-// Ported from the protocol lab (the protocol lab's fold.js @ 11db981). Engine changes: sha256 comes from ./hash.js (sync, no
-// node: imports) so the browser imports this file as-is. Nothing else differs; the conformance suite (Python
-// reference reader vs this file) is tools/protocol/compare.ts.
+// sha256 comes from ./hash.js (sync, no node: imports) so the browser imports this file as-is. The conformance suite
+// (Python reference reader vs this file) is test/protocol/compare.ts.
 import { sha256 } from "./hash.js";
 import { checkRequires, featureDecision, KNOWN_FEATURES } from "./features.js";
 import { checkProvenance } from "./provenance.js";
@@ -15,13 +14,13 @@ import { checkProvenance } from "./provenance.js";
 export const DIALECT = "eidoverse-log";
 export const VERSION = 4;
 const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
-// §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
+// §2.1 + §2.4: `ts` is the authority's admission time; `head`/`sig` mark chain points
 // The KERNEL (trial-kernel, PROTOCOL §4; shared/protocol/kernelspec.js pins these): the envelope, the kinds, the identity
 // grammar, the ops, genesis. A change to any of them is refused by the gate unless the same commit carries a translator,
-// a changelog line and old-reader/new-reader vectors (tools/protocol/kernel-check.ts)
+// a changelog line and old-reader/new-reader vectors (test/protocol/kernel-check.ts)
 export const ENVELOPE = new Set(["world", "kind", "ts", "actor", "cause", "op", "verb", "body", "head", "sig"]);
 export const KINDS = new Set(["genesis", "change", "request", "physics", "say", "redaction", "governance"]);
-// `op` on a change (the storage operation), `verb` on a request or physics entry (what was asked / the engine event), neither elsewhere (D3)
+// `op` on a change (the storage operation), `verb` on a request or physics entry (what was asked / the engine event), neither elsewhere
 export const WORD_OF = Object.freeze({ change: "op", request: "verb", physics: "verb" });
 /** The kinds whose whole body is purgeable (hashed as {commitment} in the chain skeleton, §12). */
 export const BODY_KINDS = Object.freeze(["request", "say", "physics"]);
@@ -195,8 +194,8 @@ export function checkEntry(e, seq) {
   if (e.kind === "change" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
   if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
 }
-export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commitment"] };
-export const BATCH_FIELDS = ["ops", "cascade"]; // `commitment` replaces value+salt once redacted
+export const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commitment"] };   // `commitment` replaces value+salt once redacted
+export const BATCH_FIELDS = ["ops", "cascade"];
 // A change entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
 export function opsOf(e) {
   const { op: verb, body } = e;
@@ -212,7 +211,11 @@ export function opsOf(e) {
   }
   return [shapeOne(verb, body, false, "")];
 }
-// `cascade` (review r9 H1 / scars M3): the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
+/** A line that read as an entry (not a Malformed stand-in). */
+export const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
+/** An entry's ops, or [] when it has none to give (not a change, or malformed). */
+export const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
+// `cascade`: the indices of the ops in this batch that the AUTHORITY wrote as a consequence of the
 // asker's own ops (clearing the references to a thing the batch deleted; an undo putting such a reference back). The fold
 // applies them like any op; readers that derive authorship from the log (who set up a handler, who created a key) skip
 // them, so a follow-up never makes the asker the author of someone else's value. Strictly ascending, in range, non-empty.
@@ -226,7 +229,7 @@ export function cascadeOf(e) {
   return new Set(Array.isArray(f) ? f.filter(Number.isInteger) : []);
 }
 export function shapeOne(verb, b, inner, where) {
-  const allowed = Object.hasOwn(OP_FIELDS, verb) ? OP_FIELDS[verb] : null; if (!allowed) bad("op", `${where} ${JSON.stringify(verb)}`);   // never an inherited name (`constructor`): review of #260, I118
+  const allowed = Object.hasOwn(OP_FIELDS, verb) ? OP_FIELDS[verb] : null; if (!allowed) bad("op", `${where} ${JSON.stringify(verb)}`);   // never an inherited name (`constructor`)
   const extra = Object.keys(b).filter((k) => !(inner && k === "op") && !allowed.includes(k));
   if (extra.length) bad("op-field", `${where} ${extra.sort().join(",")}`);
   if (!isEntityId(b.id)) bad("entity-id", `${where} ${JSON.stringify(b.id)}`);
@@ -345,7 +348,7 @@ function settledEntries(ok, worldId, d) {
 // §12: a set written as {commitment} with no value is a redaction's work. One no redaction names (none does, or the one naming it
 // is one the fold refuses, as any aimed at a roles: value) was changed outside the one rule that changes the record. It folds
 // as absent(redacted), unknown as every reader takes a redacted value (§1), never as the value before it, and the diagnostic
-// says so (commitment-unredacted: the line still shapes, so not malformed:). Said, not enforced: writes go on (house markup, #260 10-20).
+// says so (commitment-unredacted: the line still shapes, so not malformed:). Said, not enforced: writes go on.
 function unnamedStubs(ok, redacted, d) {
   ok.forEach((e, seq) => { if (!e || e.kind !== "change") return;
     let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) return; throw x; }
@@ -372,7 +375,7 @@ function redactionsOf(ok, d) {
   });
   return out;
 }
-// REDACTED is kept as itself: wireState and the digest tell a redacted value from a value by identity (review of #260, I117)
+// REDACTED is kept as itself: wireState and the digest tell a redacted value from a value by identity
 const clone = (v) => (v === null || typeof v !== "object" || v === REDACTED ? v : JSON.parse(JSON.stringify(v)));
 function applyOp(st, seq, op, redactedBy, d) {
   const w = st.entities, { op: verb, id, comp } = op;
@@ -425,7 +428,7 @@ export function applyInPlace(s, ops, seq = Infinity, redacted = null, batch = fa
   return s;
 }
 /** every redaction in a log, as the strict fold reads them: `${seq}:${op index, or - for a whole entry}` → the redaction's seq.
- *  The one parser of redaction targets: every other reader derives from this (hygiene-check redaction-parse).
+ *  The one parser of redaction targets: every other reader derives from this (test/gate/hygiene-check.ts).
  *  `stubs: false` leaves out the values stripped with no redaction naming them (keyed → 0 otherwise). */
 export function redactionsIn(entries, { stubs = true } = {}) {
   const none = () => {}, settled = acceptedEntries(entries), named = redactionsOf(settled, none);
@@ -438,7 +441,7 @@ export function redactedBodies(entries, red = redactionsIn(entries, { stubs: fal
     if (i === "-" && ["request", "say", "physics"].includes(e?.kind)) out.add(+s); }
   return out;
 }
-/** the entries the strict fold accepts, by seq (null where it rejects one); none where it reads no world (#260 Stella 10-30).
+/** the entries the strict fold accepts, by seq (null where it rejects one); none where it reads no world.
  *  `ops`: also null a change whose ops the fold skips as malformed (a bind's authors; redactionsIn keeps the fold's own input). */
 export function acceptedEntries(entries, { ops = false } = {}) {
   const none = () => {}; const ok = checkedEntries(entries, none); const g = ok[0];

@@ -1,5 +1,5 @@
-// avatardefs — the avatar def contract, as one pure module (charter §3;
-// sibling of floradefs.js, same constraints: pure, dependency-free).
+// avatardefs — the avatar def contract, as one pure module (docs/design/OVERHAUL-CHARTER.md §3;
+// sibling of floradefs.js, same constraints: pure).
 //
 // Avatars keep their prized discovery behavior — drop a .vrm into the
 // library or the overlay and it IS an avatar, live, no manifest. A def in
@@ -11,14 +11,15 @@
 //     would not find — a store upload, a subdirectory, a repointed name.
 //     Declared beats discovered: a def's `vrm` wins over a same-named scan.
 // Unknown keys are preserved (`doc` is the notes field), same rule as flora.
+import { isNum, isStr } from "./protocol/is.js";
 
-/** Avatar names come from .vrm filenames, which predate any naming rule —
- *  so the def rule is permissive where flora's is strict: printable, no
- *  path separators or control characters, ≤64 chars. */
+/** The body anyone wears who names none (or whose choice is not in the roster): one path for client, server and agent. */
+export const DEFAULT_BODY = "eidoverse/assets/vrms/claude.vrm";
+
+/** Avatar names come from .vrm filenames, which predate any naming rule — so the def rule is permissive where
+ *  flora's is strict: printable, no path separators or control characters, ≤64 chars. */
 export const AVATAR_NAME_RE = /^[^/\\\x00-\x1f]{1,64}$/;
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v) => typeof v === 'string' && v.length > 0;
 
 /** Validate one avatar def. Empty list = servable.
  *  @param {string} name @param {unknown} def @returns {string[]} */
@@ -42,7 +43,7 @@ export function validateAvatarDef(name, def) {
   return errs;
 }
 
-/** The kinds of body runtime the client knows how to drive (client/lib/bodyruntime_core.js). */
+/** The kinds of body runtime the client knows how to drive (client/lib/avatar/bodyruntime_core.js). */
 export const BODY_RUNTIME_KINDS = ['claude-robot-dof'];
 
 /** A body may select one reviewed runtime BUILT INTO this Worlds client.

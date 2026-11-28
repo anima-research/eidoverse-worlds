@@ -1,0 +1,73 @@
+// test/protocol/run-client-settle-check.ts — run-client settles a file on its own exit (plus a grace for output), never
+// WAITING on its pipes closing (a normal close settles it at once): a test whose grandchild keeps stdout open is reported promptly, as a pass when it passed and as a
+// timeout when it hung (never wedged until the gate's kill).
+import fs from "node:fs";
+import path from "node:path";
+import { spawn } from "node:child_process";
+import { ENGINE, scratch } from "../gate/common.ts";
+import { suite } from "../gate/suite.ts";
+
+const { ok, done } = suite("run-client-settle");
+const root = scratch("rcsettle"), dir = path.join(root, "tests"); fs.mkdirSync(dir);
+const pids = path.join(root, "grandchildren.txt"); fs.writeFileSync(pids, "");
+// a grandchild in its own process group (beyond the runner's group kill) that inherits the test's stdout and stderr
+const fixture = (tail: string) => `import { spawn } from "node:child_process"; import fs from "node:fs";
+const g = spawn(process.execPath, ["-e", "setTimeout(() => {}, 90000)"], { detached: true, stdio: ["ignore", "inherit", "inherit"] }); g.unref();
+fs.appendFileSync(${JSON.stringify(pids)}, g.pid + "\\n");
+console.log("fixture ran");
+${tail}
+`;
+fs.writeFileSync(path.join(dir, "a-holds-pipes-passes-test.ts"), fixture("process.exit(0);"));
+fs.writeFileSync(path.join(dir, "b-holds-pipes-hangs-test.ts"), fixture("setInterval(() => {}, 1 << 30);"));
+fs.writeFileSync(path.join(dir, "c-browser-test.ts"), `// ${"pup" + "peteer"}: the mark suites.ts reads as "launches a browser" (bot #412: the report counts it after its lane drained the queue)\nconsole.log("fixture ran"); process.exit(0);\n`);
+
+const t0 = performance.now();
+const rc = spawn(process.execPath, [path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir, "--jobs", "1", "--timeout", "3"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, stdio: ["ignore", "pipe", "pipe"] });
+let out = ""; rc.stdout.on("data", (d) => { out += d; }); rc.stderr.on("data", (d) => { out += d; });
+const finished = await new Promise<boolean>((res) => { const t = setTimeout(() => res(false), 45_000); rc.on("exit", () => { clearTimeout(t); res(true); }); });
+const s = (performance.now() - t0) / 1000;
+if (!finished) rc.kill("SIGKILL");
+rc.stdout.destroy(); rc.stderr.destroy();
+const alive = fs.readFileSync(pids, "utf8").split("\n").filter(Boolean).filter((p) => { try { process.kill(Number(p), 0); return true; } catch { return false; } });
+for (const p of alive) try { process.kill(Number(p), "SIGKILL"); } catch { /* gone */ }
+// win32: the timeout's tree kill (taskkill /T) also reaches the hung fixture's detached grandchild; the passing fixture's survivor still holds the pipes
+const want = process.platform === "win32" ? 1 : 2;
+ok(alive.length >= want, `${want === 2 ? "both grandchildren were" : "the passing fixture's grandchild was"} still alive when run-client settled (the pipes really were held)`, alive);
+
+ok(finished, `run-client finished while both grandchildren still held the pipes (${s.toFixed(1)} s; they live 90 s)`, out.slice(-400));
+ok(/^ok\s+\S*a-holds-pipes-passes-test\.ts/m.test(out), "the file that exited 0 is a pass", out.slice(-400));
+ok(/^SLOW\s+\S*b-holds-pipes-hangs-test\.ts/m.test(out), "the file that hung is a timeout", out.slice(-400));
+ok(/^ok\s+\S*c-browser-test\.ts \[browser, alone\]/m.test(out) && /; 1 launch a browser/.test(out), "the browser-marked file is reported [browser, alone] and counted once the lanes have drained the queue (bot #412)", out.slice(-600));
+// --import-only: a file whose top-level await never resolves is a timeout, not loaded; a missing package is a red under
+// --strict-env (the gate's client-tools row) and fails the run; a timeout alone doesn't (rc3 below)
+const dir2 = path.join(root, "imports"); fs.mkdirSync(dir2);
+fs.writeFileSync(path.join(dir2, "c-hangs-at-import-test.ts"), `await new Promise(() => {});\n`);
+fs.writeFileSync(path.join(dir2, "d-missing-package-test.ts"), `import "no-such-package-zz-${Date.now()}";\n`);
+const rc2 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir2, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+const out2 = rc2.stdout.toString() + rc2.stderr.toString();
+ok(/^SLOW\s+\S*c-hangs-at-import-test\.ts/m.test(out2), "--import-only: a hung top-level await is a timeout, not loaded", out2.slice(-400));
+ok(/^RED\s+\S*d-missing-package-test\.ts/m.test(out2), "--strict-env: a missing package is a red, not an env note", out2.slice(-400));
+ok(rc2.exitCode === 1, "…and the import-only run exits 1 on the missing package", { code: rc2.exitCode });
+// the mcpl pre-check is the same missing dependency: under --strict-env a red too (#474); RUN_CLIENT_NO_MCPL stands in for its absence
+const dir4 = path.join(root, "mcpl"); fs.mkdirSync(dir4);
+fs.writeFileSync(path.join(dir4, "f-mcpl-test.ts"), `import "../../mcpl/agent.ts";\n`);
+const rc4 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir4, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", RUN_CLIENT_NO_MCPL: "1" }, timeout: 45_000 });
+const out4 = rc4.stdout.toString() + rc4.stderr.toString();
+ok(rc4.exitCode === 1 && /^RED\s+\S*f-mcpl-test\.ts/m.test(out4), "--strict-env: missing mcpl/node_modules is a red too, and fails the run", { code: rc4.exitCode, out: out4.slice(-400) });
+// --import-only: a file that loaded but whose stubs never applied (test/harness/stub.ts verifyStubs prints FAIL and exits 1)
+// is dead at import, not loaded (bot #333 r2 157)
+const dir5 = path.join(root, "deadstub"); fs.mkdirSync(dir5);
+fs.writeFileSync(path.join(dir5, "f-dead-stub-test.ts"), `console.log("FAIL stub never applied: /x\\.js$/ (registered at here); its module moved or the import is gone"); process.exitCode = 1;\n`);
+const rc5 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir5, "--jobs", "1", "--timeout", "10", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+const out5 = rc5.stdout.toString() + rc5.stderr.toString();
+ok(/^DEAD\s+\S*f-dead-stub-test\.ts/m.test(out5) && rc5.exitCode === 1, "--import-only: a stub that never applied is dead at import and fails the run, not loaded", { code: rc5.exitCode, out: out5.slice(-300) });
+const dir3 = path.join(root, "slowonly"); fs.mkdirSync(dir3);
+fs.writeFileSync(path.join(dir3, "e-slow-test.ts"), `await new Promise(() => {});\n`);
+const rc3 = Bun.spawnSync([process.execPath, path.join(ENGINE, "test/harness/run-client.ts"), "--dir", dir3, "--jobs", "1", "--timeout", "3", "--import-only", "--strict-env"],
+  { cwd: ENGINE, env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" }, timeout: 45_000 });
+ok(rc3.exitCode === 0 && /^SLOW\s+\S*e-slow-test\.ts/m.test(rc3.stdout.toString()), "--import-only: a file still running is reported SLOW but doesn't fail the run (it can't tell a long test from a hang)", { code: rc3.exitCode });
+done();

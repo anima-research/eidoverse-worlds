@@ -1,6 +1,5 @@
-// shared/protocol/authority/spatial.js — the spatial index and the work budget (refactor C11, 2026-10-12; moved from
-// authority.js's "the spatial index" section unchanged). A leaf over math, the catalogue and storage: the budget refuses
-// through refuse.js, and the gate's enter() reads WORK_BUDGET/clockMs from here.
+// shared/protocol/authority/spatial.js — the spatial index and the work budget. A leaf over math, the catalogue and
+// storage: the budget refuses through refuse.js, and authority.js's enter() reads WORK_BUDGET/clockMs from here.
 import { offChain, solidOff } from "../simlayer.js";
 import { CTX } from "./ctx.js";
 import { refuse } from "./refuse.js";
@@ -8,7 +7,7 @@ import { NO_CATALOGUE, geomE } from "./catalogue.js";
 import { aabb, boxToObb, inRect, obbs, overlap, rectMeets, satCost, satDepth, surfacesOf } from "./math.js";
 import { VOLATILE } from "./storage.js";
 import { terrainParams, makeHeightField } from "../../terrainmath.js";
-import { shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
+import { groundArgs, shapeParams, shapeReady, waterParams, worldWater } from "../../terrainshape.js";
 // The authority is synchronous and every world on a server shares its one thread, so no request may cost the world's size
 // squared. Every hot path (support under a point, overlap warnings, a body's track, place's search, delete's set-down,
 // what rests on a thing picked up) asks the index "what could touch this box?" instead of every entity.
@@ -19,13 +18,16 @@ import { shapeParams, shapeReady, waterParams, worldWater } from "../../terrains
 //   A state is never mutated once folded or previewed (admit's working copy is never queried), so neither is its index.
 // Every answer lists candidates in the state's key order, so a first-hit or best-so-far loop over them picks exactly what
 // the loop over Object.keys picked. The work budget (CTX.work, set per call by enter) bounds what one call may spend in these
-// searches, counted in units of about 0.1 µs of this laptop's time (measured: a candidate scanned ≈ 1, an axis-aligned
-// box test ≈ 1, a rotated one ≈ 80, a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
+// searches, counted in units of about 0.1 µs (measured: a candidate scanned ≈ 1, an axis-aligned
+// box test ≈ 1, a rotated one ≈ 10 (math.js satCost), a query ≈ 10): WORK_BUDGET.units ≈ 30 ms at rest, the same answer on any host. A
 // clock backstop (WORK_BUDGET.ms from the call's start, read every 64 units) bounds a host that is far slower. Past
 // either, a read or a solver is refused (too-costly) rather than holding every world's thread.
 export const WORK_BUDGET = { units: 350000, ms: 150 };
 const clockMs = () => globalThis.performance?.now?.() ?? Date.now();
+// every unit spent since start, on any world: tests bound a request by this count, which is the same on every machine
+export const WORK_METER = { units: 0 };
 const spend = (n, what = CTX.work.what ?? "this", fix = "ask about less at once: lint {id} checks one thing; place onto a smaller surface, or at a spot (at: [x, z])") => {
+  if (Number.isFinite(n)) WORK_METER.units += n;   // spend(Infinity) refuses outright: the meter stays a count
   if ((CTX.work.left -= n) < 0 || ((CTX.work.k += n) >= 64 && ((CTX.work.k = 0), clockMs() > CTX.work.until))) { CTX.work.left = -1; CTX.work.until = -Infinity;
     refuse("too-costly", `${what} would take more of the authority's time than one request may have (it's shared by every world on this server)`, fix); } };
 const GEO = new WeakMap(); const SPATIAL = new WeakMap(); const CELL = 4, BIG = 64;
@@ -167,28 +169,35 @@ function hitsIx(st, box, id, eps, B = boxToObb(box)) {   // B: the box as an ori
   return false;
 }
 // descendants() through the index's children map (a set: callers here only ask membership)
-function familyOf(st, id) { const kids = kidsMap(st); const out = new Set([id]); const todo = [id];
-  for (let n = 0; todo.length && n < 1e6; n++) { for (const k of kids.get(todo.pop()) ?? []) if (!out.has(k)) { out.add(k); todo.push(k); } } return out; }
+// depth: how many hops below id to follow (descendants' 32, for a caller that must match it); none = all
+function familyOf(st, id, depth = Infinity) { const kids = kidsMap(st); const out = new Set([id]); let level = [id];
+  for (let d = 0; level.length && d < depth; d++) { const next = []; for (const p of level) for (const k of kids.get(p) ?? []) if (!out.has(k)) { out.add(k); next.push(k); } level = next; } return out; }
 
-// THE GROUND (owner, 10-15 22:34): the authority stands things and bodies on the ground the walker walks on. @world's
-// terrain component through shared/terrainmath.js (terrainParams → makeHeightField: the sim's law, and the client's and the
-// agent's to ~1 ulp, features and heightmap included through terrainshape), and its water (terrainshape's waterParams, the
-// level the mover's water law reads). No terrain component: y 0 and no water, as every world stood before. The field is
-// built once per terrain VALUE (a write replaces the value, never changes it in place: the revision is the object), not
-// per call. A heightmap's grid comes through terrainshape's loader (the server's disk, server/heightmap.ts).
-// A heightmap whose grid isn't here yet (a world copied without its store/heightmaps file, a hash not uploaded, the loader's
-// miss window) is NOT READY (holes r3 F2/F3): the height law would fall back to the noise law, and nothing commits ground on
-// that (terrainshape's rule; the browser and the agent keep their last ground). Its ground is never cached, so it is built
-// the moment the grid lands, and any read of its height refuses with words: ground-seated placement, a walk, a put, a
-// set-down. Readers that only advise (warnings, the settle's rest-attach) ask groundReady first and skip.
-const GROUND = new WeakMap();
+// THE GROUND: the authority stands things and bodies on the ground the walker walks on: @world's terrain, with its named
+// features and sculpted tiles (terrainshape's groundArgs), through shared/terrainmath.js (terrainParams → makeHeightField,
+// the same law as the sim, client and agent) and its water (terrainshape's waterParams). No terrain component: y 0, and
+// @world.water's level if it has one. Built once per ground (groundArgs gives the same args until a piece of it changes;
+// values are replaced, never mutated), and found once per STATE: gathering the pieces reads every key of @world, and a
+// request reads the ground once per thing it weighs (a state is replaced by the next, never changed in place, but for a
+// batch's working copy: VOLATILE, as the index above treats it). A heightmap whose grid isn't here yet is NOT READY: nothing commits ground on the noise
+// fallback, it is never cached, and any read of its height refuses with words; readers that only advise (warnings,
+// the settle's rest-attach) ask groundReady first and skip.
+const GROUND = new WeakMap();      // the ground's args → the ground
+const GROUND_AT = new WeakMap();   // a state → its ground
 const FLAT = Object.freeze({ terrain: false, ready: true, height: () => 0, level: null });
 const loading = () => refuse("ground-loading", "this world's ground is still loading: its heightmap's grid isn't on this server yet, and the authority won't stand anything (or judge a step) on a guessed height",
   "try again in a moment; if it stays missing, an owner can upload the heightmap image again");
-// the water level is @world.water's (shape audit 10-16: its own component),
+// the water level is @world.water's (an older terrain.water is not read: the maintenance command moves it),
 // so a cached ground is rebuilt when either the terrain or the water changes
 function groundOf(st) {
-  const wc = st.entities["@world"]?.c; const t = wc?.terrain; const w = worldWater(wc);
+  const vol = VOLATILE.has(st.entities);
+  if (!vol) { const g = GROUND_AT.get(st); if (g) return g; }
+  const g = groundNow(st);
+  if (!vol && g.ready) GROUND_AT.set(st, g);   // a ground still loading is asked again: its grid may land under the same state
+  return g;
+}
+function groundNow(st) {
+  const wc = st.entities["@world"]?.c; const t = groundArgs(wc); const w = worldWater(wc);
   const level = waterParams({ water: w })?.level ?? null;
   if (!t || typeof t !== "object") return level === null ? FLAT : { ...FLAT, level };
   let g = GROUND.get(t);
@@ -215,7 +224,7 @@ function supportBelow(st, x, z, y, ignore = new Set()) {
 }
 
 // Supported anywhere under its footprint (the engine's rule: a box rests on a top its footprint overlaps), not just
-// under its centre — so a thing physics left resting is never called floating by the authority (playtest 22, F5). On
+// under its centre — so a thing physics left resting is never called floating by the authority. On
 // terrain, the highest ground under the footprint (its corners, edges' middles and centre): a box on a slope rests on it.
 function supportUnder(st, b, ignore) {
   const G = groundOf(st); let gy = 0;

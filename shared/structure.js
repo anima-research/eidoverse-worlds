@@ -1,42 +1,17 @@
 import { routeLevel, prepareWallCheck, routeGeometryFor, terrainCells, ROUTE_STEP_METRES, NON_FINITE_ENDPOINT } from './structure-route.js';
 export { ROUTE_STEP_METRES };
-// structure_field — the griddled-building model's pure half (§11.4 discipline,
-// sibling of models_field.js / flora_field.js / emitter_field.js).
+// structure — the griddled-building model's pure half. Design notes (the § references below): docs/research/griddled-structures.md.
 //
-// Given one `structure` component's data, decide EVERYTHING the world needs to
-// know about that building: the boxes to draw, the boxes to collide, the rooms
-// the walls enclose, and the doorways that join them. No THREE, no DOM, no
-// scheduler, no colliders import — the hosted half (realize/structure.js)
-// executes this plan; this half is the part a headless test can hold to the
-// light (tools/structure-field-test.ts).
+// Given one `structure` component's data, decide EVERYTHING the world needs to know about that building: the boxes to
+// draw, the boxes to collide, the rooms the walls enclose, the doorways that join them, and routes through them. No THREE,
+// no DOM: client/lib/realize/structure.js executes this plan (test/shared/structure-field-test.ts holds it).
+// Walls live on grid EDGES, not in cells (§2).
 //
-// WHY A GRID AT ALL. A conjured building is one opaque mesh: an agent can be
-// told its bounding box and nothing else. It cannot ask which room it is in,
-// what that room connects to, or where the door is, because none of that is
-// written down anywhere — it is an emergent property of triangles. A griddled
-// building writes the topology down, so "you are in the kitchen; the hallway is
-// through the south door" is a DERIVATION rather than a guess. Everything in
-// this file exists to make that derivation cheap and total.
-//
-// THE ONE LOAD-BEARING CHOICE: walls live on grid EDGES, not in cells. Sims got
-// this right and every alternative goes wrong the same way. An edge is shared
-// by exactly two cells, so a wall between the kitchen and the hall is ONE wall —
-// it cannot be double-counted, cannot disagree with itself about thickness, and
-// corners join because two edges meeting at a lattice point are exactly two
-// edges meeting at a point. Cell-owned walls ("this cell has a north wall")
-// need a rule for whose wall it is when both neighbours claim one, and every
-// such rule leaks.
-//
-// COORDINATES. Cell (x, z) covers grid-local [x, x+1) × [z, z+1) on the ground
-// plane. Edges are canonical by construction:
-//   axis 0 — runs along X, from (x, z) to (x+1, z): the boundary between cell
-//            (x, z-1) and cell (x, z).
-//   axis 1 — runs along Z, from (x, z) to (x, z+1): the boundary between cell
-//            (x-1, z) and cell (x, z).
-// There is exactly one way to name any given edge, so no canonicalization pass
-// is needed and no de-duplication can be forgotten. All coordinates here are
-// GRID-LOCAL: a grid is an entity with its own position and yaw, and multiple
-// grids at arbitrary angles to each other never need to agree about anything.
+// COORDINATES. Cell (x, z) covers grid-local [x, x+1) × [z, z+1) on the ground plane. Edges are canonical by construction:
+//   axis 0 — runs along X, from (x, z) to (x+1, z): the boundary between cell (x, z-1) and cell (x, z).
+//   axis 1 — runs along Z, from (x, z) to (x, z+1): the boundary between cell (x-1, z) and cell (x, z).
+//   axis 2/3 — diagonals across cell (x, z): ↘ and ↗ (§9).
+// All coordinates here are GRID-LOCAL: a grid is an entity with its own position and yaw.
 
 /** @typedef {{ x0:number, y0:number, z0:number, x1:number, y1:number, z1:number,
  *              mat:string, kind:'floor'|'wall'|'jamb'|'sill'|'lintel' }} Box */
@@ -48,49 +23,25 @@ export { ROUTE_STEP_METRES };
 /** @typedef {{ axis:0|1, x:number, z:number, kind:'door'|'window',
  *              between:[string|null, string|null] }} Portal */
 
-/** Defaults chosen once, deliberately, because they are a CONTRACT: every
- *  part ever generated against this grid assumes them, so changing them later
- *  invalidates content rather than just re-rendering it. 1m tiles read well at
- *  a 1.7m avatar height (the Sims metric, and the one the terrain heightfield
- *  is already comfortable with); 2.8m floor-to-floor is a generous domestic
- *  storey; 0.15m walls are thick enough to read as masonry at arm's length
- *  without eating a tile. */
+/** Defaults that are a CONTRACT: every part generated against the grid assumes them (§3). */
 export const GRID_DEFAULTS = Object.freeze({
   tile: 1.0,      // metres per cell
   wallH: 2.8,     // wall height / floor-to-floor
   wallT: 0.15,    // wall thickness
-  slabT: 0.10,    // floor slab thickness (top sits at the level's y)
+  slabT: 0.10,    // floor slab thickness (it sits ON the level's y: its top, the walk surface, is y + slabT)
 });
 
-/** Aperture profiles. An aperture is a HOLE IN A WALL SEGMENT, not an object:
- *  it owns a whole edge and is described by how much wall is left above and
- *  below it. Keeping them parametric (rather than a boolean subtract against a
- *  mesh) is what lets the same decomposition serve geometry AND collision — the
- *  hole is free on both sides because we never cut anything, we just decline to
- *  emit boxes there. This is why the movement solver needs no concept of a
- *  hole: a doorway is an absence of boxes, and absence is already walkable.
- *
- *  AN APERTURE SPANS ITS WHOLE SEGMENT — it is one tile wide, exactly as in
- *  Sims, and there are no side jambs. That is not a simplification, it is a
- *  correctness requirement, and it was found by test rather than reasoned out:
- *  a 0.9m door in a 1m tile leaves 5cm jambs, and a 5cm box is far thinner than
- *  a 32cm body radius. The movement solver ejects a body through the NEAREST
- *  face, so a sliver jamb pushes you sideways ALONG the wall instead of back
- *  out of it — you slide through the doorframe rather than being stopped by it.
- *  Any jamb narrow enough to leave a usable door in a 1m tile is too narrow to
- *  collide correctly, so the honest answer is not to have one. The neighbouring
- *  wall segments are the jambs; a decorative frame, if wanted later, is trim
- *  and must not collide. */
+/** Aperture profiles: the hole's lower edge (`bottom`) and upper edge (`top`), in metres above the level; the wall
+ *  below `bottom` and above `top` (the lintel) stays. An aperture spans its whole segment with no side jambs, and is
+ *  an absence of boxes, so collision needs no concept of a hole (§4); on a diagonal wall (axis 2–3) only a door or an
+ *  arch opens the collision, a window's stays (the stair-stepped boxes below). */
 export const APERTURES = Object.freeze({
   door:   { bottom: 0.00, top: 2.10 },
   window: { bottom: 0.90, top: 2.10 },
   arch:   { bottom: 0.00, top: 2.40 },
 });
 
-/** Where makeShader's contact terms stop biting. Named here because the wall
- *  profile must sample AT them — a kink that no vertex sits on shows up as a
- *  band across every wall, and two copies of these numbers would silently
- *  drift apart. */
+/** Where makeShader's contact terms stop biting: the wall profile must sample AT them, or a kink shows as a band (§12). */
 export const SHADE_KINKS = Object.freeze({
   floorContact: 0.55, ceilContact: 0.40,   // interior
   groundContact: 0.45, eave: 0.85,         // exterior — the outside face has
@@ -100,17 +51,14 @@ export const SHADE_KINKS = Object.freeze({
 export const cellKey = (x, z) => `${x},${z}`;
 export const edgeKey = (axis, x, z) => `${axis}:${x},${z}`;
 
-/** The two cells an edge separates, in grid-local coords. Order is stable:
- *  [negative side, positive side] along the edge's normal. */
+/** The two cells an edge separates, in grid-local coords: [negative side, positive side] along the edge's normal. */
 export function edgeCells(axis, x, z) {
   return axis === 0
     ? [[x, z - 1], [x, z]]     // an X-running edge separates north from south
     : [[x - 1, z], [x, z]];    // a Z-running edge separates west from east
 }
 
-/** The edge between two orthogonally adjacent cells, or null if they aren't
- *  neighbours. The inverse of edgeCells, and the reason flood fill can ask
- *  "is there a wall in my way" in O(1). */
+/** The edge between two orthogonally adjacent cells, or null if they aren't neighbours (edgeCells' inverse). */
 export function edgeBetween(ax, az, bx, bz) {
   if (ax === bx && az === bz - 1) return [0, ax, bz];       // b is south of a
   if (ax === bx && az === bz + 1) return [0, ax, az];       // b is north of a
@@ -119,11 +67,7 @@ export function edgeBetween(ax, az, bx, bz) {
   return null;
 }
 
-/** Grid-local compass. Names are LOCAL to the grid: a grid rotated 40° has its
- *  own north, and the describer that reports to a person is responsible for
- *  composing this with the grid's yaw. Reporting local names as if they were
- *  world names is the obvious bug here, so the vocabulary is deliberately
- *  distinct from the world compass used in look(). */
+/** Grid-local compass: a rotated grid has its own north, so a describer composes these with the grid's yaw (§13). */
 export const SIDES = Object.freeze({ N: 'north', E: 'east', S: 'south', W: 'west' });
 
 /** Which local side of `cell` this edge lies on. */
@@ -133,18 +77,7 @@ export function sideOfCell(axis, x, z, cx, cz) {
 }
 
 // ---- diagonals --------------------------------------------------------------
-// A diagonal runs corner to corner ACROSS a cell rather than along its edge:
-// axis 2 is ↘ (from the cell's own corner to the far one), axis 3 is ↗.
-//
-// Geometry needed nothing for this — a swept profile mitres at any angle, which
-// is exactly why the sweep had to come first. What diagonals break is the
-// assumption a CELL IS ATOMIC, which the flood fill and the router both lean
-// on: a diagonal cuts a cell in two, and the halves are different rooms.
-//
-// So a cell contributes one node when it is whole and two when it is cut, and
-// every graph walk runs on nodes. A half is named by the pair of sides it
-// touches — a ↘ diagonal separates the N/E half from the S/W half — which is
-// also how a half connects to its neighbours.
+// axis 2 is ↘, axis 3 is ↗. A cut cell contributes two nodes (halves A/B), named by the sides they touch (§9).
 
 /** The diagonal cutting a cell, or null. */
 export function diagOf(level, x, z) {
@@ -194,14 +127,8 @@ export function nodeAtPoint(level, g, lx, lz) {
 const SIDE_OF = [['N', 'S'], ['E', 'W'], ['S', 'N'], ['W', 'E']];
 const STEP = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
-/** Node-level adjacency.
- *
- *  TWO GRAPHS, ONE NODE SET. A ROOM is bounded by walls whatever holes they
- *  carry — a kitchen with a door to the hall is still a kitchen, which is the
- *  whole reason rooms are worth naming. A ROUTE passes through those holes.
- *  Sharing the node set but not the edges is what keeps both true; conflating
- *  them made every doored pair of rooms collapse into one. */
-export function nodeNeighbours(level, x, z, throughApertures = false) {
+/** Node-level adjacency for rooms: a room is bounded by walls whatever holes they carry (§8); routes are structure-route.js's. */
+export function nodeNeighbours(level, x, z) {
   const out = [];
   for (let i = 0; i < 4; i++) {
     const [side, back] = SIDE_OF[i], [dx, dz] = STEP[i];
@@ -209,28 +136,17 @@ export function nodeNeighbours(level, x, z, throughApertures = false) {
     if (!level.tiles.has(cellKey(nx, nz))) continue;
     const e = edgeBetween(x, z, nx, nz);
     const ek = e && edgeKey(e[0], e[1], e[2]);
-    if (ek && level.walls.has(ek)
-      && !(throughApertures && ['door', 'arch'].includes(level.apertures.get(ek)))) continue;
+    if (ek && level.walls.has(ek)) continue;
     const here = nodeOnSide(level, x, z, side), there = nodeOnSide(level, nx, nz, back);
     const ok = (n, cx, cz) => !n.includes(':') || halfFloored(level, cx, cz, n.split(':')[1]);
     if (!ok(here, x, z) || !ok(there, nx, nz)) continue;
     out.push([here, there]);
   }
-  // across the diagonal itself, if it is holed
-  const d = diagOf(level, x, z);
-  if (d && throughApertures) {
-    const dk = edgeKey(d, x, z);
-    if (['door', 'arch'].includes(level.apertures.get(dk))) {
-      if (halfFloored(level, x, z, 'A') && halfFloored(level, x, z, 'B')) {
-        out.push([`${cellKey(x, z)}:A`, `${cellKey(x, z)}:B`]);
-      }
-    }
-  }
   return out;
 }
 
 /** The whole node graph for a level. */
-export function nodeGraph(level, throughApertures = false) {
+export function nodeGraph(level) {
   const adj = new Map();
   const add = (a, b) => {
     if (!adj.has(a)) adj.set(a, new Set());
@@ -240,19 +156,15 @@ export function nodeGraph(level, throughApertures = false) {
   for (const k of level.tiles.keys()) {
     const [x, z] = k.split(',').map(Number);
     for (const n of cellNodes(level, x, z)) if (!adj.has(n)) adj.set(n, new Set());
-    for (const [a, b] of nodeNeighbours(level, x, z, throughApertures)) add(a, b);
+    for (const [a, b] of nodeNeighbours(level, x, z)) add(a, b);
   }
   return adj;
 }
 
 // ---- normalization ----------------------------------------------------------
 
-/** Coerce one component payload into a shape the planner can trust totally.
- *  Total by construction: a malformed structure yields an EMPTY plan, never a
- *  throw. This half runs inside a fold-driven realizer, and the sequencer's
- *  house rule 3 (one bad message may never become a shared outage) applies just
- *  as hard one layer down — a neighbour's broken house must not stop yours from
- *  drawing. Anything unparseable is simply not there. */
+/** Coerce one component payload into a shape the planner can trust totally: a malformed structure plans what is valid
+ *  in it (an empty plan when nothing is), never a throw (§14). */
 export function normalize(data) {
   const d = (data && typeof data === 'object') ? data : {};
   const num = (v, dflt) => (Number.isFinite(v) && v > 0 ? v : dflt);
@@ -276,9 +188,7 @@ export function normalize(data) {
       if (x == null || z == null) continue;
       const k0 = cellKey(x, z);
       tiles.set(k0, typeof t[2] === 'string' ? t[2] : 'floor');
-      // A cell cut by a diagonal may be floored on only ONE side — that is what
-      // makes a diagonal read as the CORNER OF A BUILDING rather than a wall
-      // standing on a floor that carries on past it.
+      // a cell cut by a diagonal may be floored on only ONE side (the corner of a building, §9)
       if (t[3] === 'A' || t[3] === 'B') halves.set(k0, t[3]);
     }
     for (const w of Array.isArray(lv.walls) ? lv.walls : []) {
@@ -292,9 +202,7 @@ export function normalize(data) {
       const x = int(a?.[1]), z = int(a?.[2]);
       const kind = APERTURES[a?.[3]] ? a[3] : null;
       if (axis == null || x == null || z == null || !kind) continue;
-      // An aperture with no wall to sit in is not a doorway, it is nothing.
-      // Dropping it here keeps every later stage able to assume the wall
-      // exists, rather than each of them re-checking.
+      // an aperture with no wall to sit in is nothing: dropped here, so later stages may assume the wall
       const k = edgeKey(axis, x, z);
       if (!walls.has(k)) continue;
       apertures.set(k, kind);
@@ -306,54 +214,8 @@ export function normalize(data) {
 
 // ---- geometry + collision ---------------------------------------------------
 
-/** Decompose one wall edge into boxes, in grid-local metres.
- *
- *  With no aperture that is one box. With an aperture it is at most two — a
- *  sill below and a lintel above, each spanning the full segment:
- *
- *      ┌──────────────────┐
- *      │      lintel      │
- *      ├──────────────────┤   ← the hole: no box, so it is walkable
- *      │       sill       │      by absence, with no solver change
- *      └──────────────────┘
- *
- *  A door has no sill (bottom 0); an arch reaching wallH has no lintel either,
- *  and is then simply an absent wall that still separates two rooms. Boxes that
- *  would be degenerate are never emitted, so no sliver can reach the solver. */
-/** How far a segment must run PAST each of its lattice points to close a corner.
- *
- *  A wall straddles its edge, so an X-edge covers z ∈ [-t/2, +t/2] and its
- *  perpendicular neighbour covers x ∈ [-t/2, +t/2]. Where they meet, the inner
- *  quadrant is covered twice and the OUTER quadrant — x ∈ [-t/2, 0] paired with
- *  z ∈ [-t/2, 0] — belongs to neither. That absence is a t/2 square notch
- *  running the full height of every external corner, and it reads in-world as a
- *  vertical groove down the outside of the building.
- *
- *  Extending each segment by half a thickness into any joint it actually
- *  participates in closes it. Free ends are left alone, so a wall that stops in
- *  open space still stops where it says it does. */
-/** Fill the missing quadrant at each corner with its OWN small box, rather than
- *  stretching a wall across it.
- *
- *  Stretching was wrong twice over, and both showed in-world:
- *
- *  - AT A T-JUNCTION there is no gap at all. The crossing wall already spans
- *    ±t/2, so it covers the quadrants by itself; extending the stem drove its
- *    end cap out to the crossing wall's OUTER face, flush and coplanar. That is
- *    an interior wall appearing on the outside of the building, and a z-fight
- *    along the seam where it lands.
- *  - AT AN L-CORNER extending does close the notch, but leaves both walls with
- *    a face on the same plane, facing the same way, OVERLAPPING — which is
- *    precisely what z-fights.
- *
- *  A quadrant box does neither. Its faces are coplanar with the walls' faces
- *  but ADJACENT rather than overlapping — they tile the plane instead of
- *  competing for it — and its end caps sit back-to-back with the walls', which
- *  backface culling resolves for free.
- *
- *  A quadrant is uncovered exactly when neither wall bounding it is present,
- *  and it is a CORNER (rather than open air past a free end) exactly when both
- *  opposite walls are. Free ends grow nothing. */
+/** Fill the missing quadrant at each external corner with its OWN small box, never by stretching a wall across it (§5).
+ *  A quadrant is uncovered when neither wall bounding it is present, and a CORNER when both opposite walls are. */
 export function cornerFills(level, g, y0, y1) {
   const h = g.wallT / 2;
   const pts = new Set();
@@ -388,25 +250,13 @@ export function cornerFills(level, g, y0, y1) {
   return out;
 }
 
-/** Group aperture-free wall segments into RUNS: maximal contiguous collinear
- *  chains sharing a material.
- *
- *  A five-tile wall was five independent boxes, which is the root the corner
- *  notch and the trim discontinuity both grew from — treating a wall as a pile
- *  of unrelated cubes means every join between them is something you have to
- *  remember to repair. A run is one box: no interior seams where collinear
- *  faces met, a fifth of the polygons, and a baseboard that is continuous
- *  because it is a single piece rather than several that happen to abut.
- *
- *  Apertured segments stay solitary — their vertical profile differs, so they
- *  are genuinely a different shape and break the run, exactly as a door breaks
- *  a wall in the world. */
+/** Group aperture-free wall segments into RUNS: maximal contiguous collinear chains sharing a material, one box each.
+ *  Apertured segments stay solitary (§6). */
 export function wallRuns(level, g) {
   const lines = new Map();   // "axis:cross" -> [{ along, mat }]
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
-    // runs are an AXIS-ALIGNED notion (they exist to merge collinear collision
-    // boxes); a diagonal read as one produced a phantom wall across the cell
+    // runs are axis-aligned only (a diagonal collides as levelBoxes' steps)
     if (e.axis >= 2) continue;
     const cross = e.axis === 0 ? e.z : e.x;
     const along = e.axis === 0 ? e.x : e.z;
@@ -431,7 +281,7 @@ export function wallRuns(level, g) {
   return runs;
 }
 
-/** A run's along-axis span in metres, extended into whatever joints it meets. */
+/** A run's along-axis span in metres: its own cells, not extended into the joints it meets. */
 export function runSpan(run, level, g) {
   const startEdge = run.axis === 0 ? [0, run.lo, run.cross] : [1, run.cross, run.lo];
   const endEdge = run.axis === 0 ? [0, run.hi, run.cross] : [1, run.cross, run.hi];
@@ -441,6 +291,9 @@ export function runSpan(run, level, g) {
   return [run.lo * g.tile, (run.hi + 1) * g.tile];
 }
 
+/** Decompose one wall edge into boxes, grid-local metres: one box, or with an aperture at most a sill below and a
+ *  lintel above, each spanning the full segment. A door has no sill; an arch reaching wallH has no lintel. Degenerate
+ *  boxes are never emitted, so no sliver reaches the solver. */
 export function wallBoxes(edge, aperture, g, y, ext = [0, 0]) {
   const { axis, x, z, mat } = edge;
   const t = g.wallT, h = g.wallH, half = t / 2;
@@ -449,9 +302,7 @@ export function wallBoxes(edge, aperture, g, y, ext = [0, 0]) {
   const a1 = (axis === 0 ? x * g.tile : z * g.tile) + g.tile + ext[1];
   const cross = (axis === 0 ? z : x) * g.tile;
   const c0 = cross - half, c1 = cross + half;
-  // Build in (along, low, high) terms, then project onto world axes once — the
-  // projection is the only place the axis distinction appears, so the aperture
-  // arithmetic below is written once rather than twice.
+  // build in (along, low, high) terms, then project onto world axes once
   const spans = [];
   const ap = aperture ? APERTURES[aperture] : null;
   if (!ap) {
@@ -466,19 +317,7 @@ export function wallBoxes(edge, aperture, g, y, ext = [0, 0]) {
     : { x0: c0, y0: y + lo, z0: s0, x1: c1, y1: y + hi, z1: s1, mat, kind }));
 }
 
-/** One floor cell's slab.
- *
- *  A LEVEL'S `y` IS WHERE ITS FOUNDATION RESTS, NOT WHERE YOU WALK. The slab
- *  sits ON that height and occupies [y, y + slabT]; the walk surface is its
- *  TOP, and walls rise from there (see `floorY` in planStructure).
- *
- *  This was the other way round first, with the slab hanging below y so that y
- *  itself was walkable — and it z-fought the ground across every floor in the
- *  building, because a level-0 floor at y=0 is exactly coplanar with a terrain
- *  whose height is 0. The tempting fix is a depth bias on the floor material.
- *  The real one is that a foundation is a thing with thickness that rests on
- *  the ground: give it its thickness in the right direction and the surfaces
- *  cannot be coplanar, at any level, on any terrain, with no bias anywhere. */
+/** One floor cell's slab: it sits ON the level's y and occupies [y, y + slabT]; the walk surface is its top (§7). */
 export function tileBox(x, z, mat, g, y) {
   return {
     x0: x * g.tile, y0: y, z0: z * g.tile,
@@ -489,19 +328,8 @@ export function tileBox(x, z, mat, g, y) {
 
 // ---- rooms ------------------------------------------------------------------
 
-/** Flood-fill the tiled cells into rooms, blocked by walls.
- *
- *  A DOOR DOES NOT MERGE TWO ROOMS. This is the Sims semantics and it is the
- *  useful one: a kitchen with a door to the hall is still a kitchen, and a
- *  person asked to go to the hall has somewhere to go. Rooms are separated by
- *  the presence of a WALL, whatever holes that wall has; an opening with no
- *  wall at all is what merges two areas into one room. Apertures therefore
- *  affect geometry, collision, and PORTALS — never room identity.
- *
- *  Determinism matters more than it looks: room ids are derived, and a set that
- *  reorders between two folds of the same log would make the same house
- *  describe itself differently to two agents standing in it. Scanning in sorted
- *  key order makes the labelling a pure function of the data. */
+/** Flood-fill the tiled cells into rooms, blocked by walls. A door does not merge two rooms (§8). Scanned in sorted key
+ *  order, so room ids are a pure function of the data. */
 export function deriveRooms(level, g) {
   const adj = nodeGraph(level);
   const seen = new Set();
@@ -544,11 +372,7 @@ export function deriveRooms(level, g) {
   return rooms;
 }
 
-/** Every aperture, resolved to the two rooms it joins. This is the payoff the
- *  whole grid exists for: "the door on the kitchen's south wall leads to the
- *  hall" is a lookup, not an inference. A null side means outdoors — an
- *  exterior door, which is exactly how you find the way out of a building
- *  without a special "exit" marker. */
+/** Every aperture, resolved to the two rooms it joins. A null side means outdoors: an exterior door. */
 export function derivePortals(level, rooms) {
   const roomOf = new Map();
   for (const r of rooms) for (const c of r.cells) roomOf.set(c, r.id);
@@ -581,7 +405,7 @@ export function derivePortals(level, rooms) {
 
 /** One level's COLLISION boxes, grid-local: the floor tiles, the solid wall
  *  runs, what's left of an apertured segment, the corner fills and a diagonal's
- *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority.js
+ *  stair steps. planStructure's `boxes`, and the door's solids (shared/protocol/authority/catalogue.js
  *  reads collisionBoxes) — one derivation, so the browser's colliders and the
  *  door's walls can't disagree about where a wall is. */
 function levelBoxes(level, g) {
@@ -605,19 +429,14 @@ function levelBoxes(level, g) {
     boxes.push(...wallBoxes(edge, ap, g, floorY));
   }
   boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
-  // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
-  // axis-aligned boxes along the line. The collider entry carries ONE yaw
-  // shared by every box of a building, so a genuinely rotated box would mean
-  // changing that contract; stepping keeps the existing machinery and the
-  // steps are at most 1.2 wallT apart and the boxes 1.6 wallT wide at any
-  // tile (review of #260, #287), so nothing can slip between them; past 64
-  // steps (a tiny wallT) the boxes widen to 1.4 steps instead, so the count
-  // stays bounded and the overlap holds. Visually the wall is a true
-  // mitred diagonal — this approximation is only what the body feels.
+  // diagonal collision is stair-stepped: one yaw per building's collider, steps under a body radius (§9) up to a
+  // diagonal of 64 steps; the count caps there, so a longer one (a big tile) steps coarser
   for (const [k, e] of level.walls) {
     if (e.axis < 2) continue;
     const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
     const open = ['door', 'arch'].includes(level.apertures.get(k));
+    const lo = open ? APERTURES[level.apertures.get(k)].top : 0;
+    if (lo >= g.wallH) continue;   // the opening reaches the top: no lintel (wallBoxes)
     const len = Math.hypot(ex - sx, ez - sz);
     const N = Math.min(64, Math.max(8, Math.ceil(len / (g.wallT * 1.2))));
     const r = Math.max(g.wallT * 0.8, (len / N) * 0.7);
@@ -626,7 +445,7 @@ function levelBoxes(level, g) {
       const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
       boxes.push({
         x0: cx - r, x1: cx + r,
-        y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
+        y0: floorY + lo,
         y1: floorY + g.wallH,
         z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
       });
@@ -643,15 +462,8 @@ export function collisionBoxes(data) {
   return g.levels.flatMap((level) => levelBoxes(level, g));
 }
 
-/** The whole derivation for one structure component: what to draw, what to
- *  collide, what the rooms are, what joins them.
- *
- *  Pure and total — same input, same output, no throw. The hosted half calls
- *  this on every reconcile and diffs nothing: rebuilding a building's geometry
- *  is cheap (hundreds of boxes), buildings are edited rarely and rendered
- *  constantly, and a full rebuild cannot drift from the state the way an
- *  incremental patch can. That trade is the same one `reconcile ∘ reconcile =
- *  reconcile` asks for one level up. */
+/** The whole derivation for one structure component: what to draw, what to collide, what the rooms are, what joins
+ *  them. Pure and total; the hosted half rebuilds it on every reconcile (§14). */
 export function planStructure(data) {
   const g = normalize(data);
   const boxes = [];
@@ -674,19 +486,7 @@ export function planStructure(data) {
 }
 
 // ---- visual parts -----------------------------------------------------------
-// A SECOND derivation from the same grid, for rendering only. Collision keeps
-// `boxes` — simple, exact, and the thing the movement solver walks. Rendering
-// wants baseboards and casings and a roof, which collision must never see.
-//
-// The invariant that matters is not "one list serves both" but "both come from
-// one source": every part below is derived from the same normalized grid, so a
-// doorway cannot be open to the eye and shut to the body.
-//
-// WHY TRIM AT ALL. Untrimmed box joins are the whole difference between
-// architecture and CAD. A baseboard at the wall-floor line, a casing around
-// every opening and a sill that stands proud of the wall face are what make a
-// wall read as built rather than extruded — and geometry is the one budget we
-// have to burn, since a whole house is presently 1,296 vertices.
+// A SECOND derivation from the same grid, for rendering only; collision never sees it (§10).
 
 export const TRIM = Object.freeze({
   base: { h: 0.11, proud: 0.020 },    // baseboard
@@ -704,75 +504,19 @@ function edgeSpan(axis, cross, a0, a1, c0, c1, y0, y1, mat, kind) {
     : { x0: cross + c0, y0, z0: a0, x1: cross + c1, y1, z1: a1, mat, kind };
 }
 
-/** Which adjacent cells of an edge are floored — i.e. which of its two faces
- *  look into a room and therefore deserve interior trim. Returns signed offsets
- *  (-1 toward the negative side, +1 toward the positive) so callers can place
- *  parts on the correct face without re-deriving the geometry. */
-function facesOf(level, axis, x, z) {
-  const [[ax, az], [bx, bz]] = edgeCells(axis, x, z);
-  const out = [];
-  if (level.tiles.has(cellKey(ax, az))) out.push(-1);
-  if (level.tiles.has(cellKey(bx, bz))) out.push(+1);
-  return out;
-}
-
 /** Every visual part for one level. */
 export function levelParts(level, g, floorY) {
   const parts = [];
-  const t = g.wallT, half = t / 2, h = g.wallH;
+  const h = g.wallH;
 
   for (const [k, mat] of level.tiles) {
     const [x, z] = k.split(',').map(Number);
     if (level.halves?.has(k)) continue;      // half-cells are prisms, see levelSweeps
     parts.push(tileBox(x, z, mat, g, floorY - g.slabT));
   }
+  // walls, apertured or not, and their trim are swept (levelSweeps): only box-shaped pieces are parts
 
-  // Solid stretches and their skirting are SWEPT (see levelSweeps) — geometry
-  // built from the wall's own direction rather than the world's axes, so it
-  // mitres at every turn and can run at any angle. Only the pieces that are
-  // genuinely box-shaped stay here.
-
-  for (const [k, edge] of level.walls) {
-    const ap = level.apertures.get(k) ?? null;
-    if (!ap) continue;                       // solid stretches ran above
-    // lintel/sill are SWEPT now (levelSweeps) — only the glass and the
-    // aperture's own trim remain box-shaped here
-
-    const { axis, x, z } = edge;
-    const a0 = (axis === 0 ? x : z) * g.tile, a1 = a0 + g.tile;
-    const cross = (axis === 0 ? z : x) * g.tile;
-    const faces = facesOf(level, axis, x, z);
-    const prof = APERTURES[ap];
-
-    // Casing frames the opening from the NEIGHBOURING segments' faces rather
-    // than intruding into it — an aperture spans its whole tile, so a jamb
-    // placed inside would narrow the hole the collider still says is open.
-    const oB = floorY + prof.bottom, oT = floorY + Math.min(prof.top, h);
-    // CASING MAY ONLY SIT ON WALL THAT EXISTS. It frames the opening from the
-    // neighbouring collinear segments, so where there is no neighbour there is
-    // nothing to sit on — and the trim does not merely hang in space, it punches
-    // out through the face of whatever wall the opening meets. That is what put
-    // an interior door's jambs on the OUTSIDE of the building: the door met the
-    // exterior wall at a T, had no neighbour on that side, and its casing ran
-    // 9cm along an axis whose outer face was 7.5cm away.
-    const prevK = axis === 0 ? edgeKey(0, x - 1, z) : edgeKey(1, x, z - 1);
-    const nextK = axis === 0 ? edgeKey(0, x + 1, z) : edgeKey(1, x, z + 1);
-    const cw0 = level.walls.has(prevK) ? TRIM.case.w : 0;
-    const cw1 = level.walls.has(nextK) ? TRIM.case.w : 0;
-    const cw = TRIM.case.w;
-    // Casing was a box standing proud of a wall that is now a swept profile;
-    // the two could not agree on a surface. The REVEAL does this job properly —
-    // the flat cut at the top of a clipped profile is the soffit over a door
-    // and the ledge under a window — so the trim boxes are gone rather than
-    // fighting geometry they can no longer match.
-    void faces; void oB; void oT; void cw; void cw0; void cw1;
-    // glass is swept in levelSweeps — edgeSpan cannot express a diagonal
-  }
-
-  // Flat roof with an overhang. From outside, an open-topped box is the single
-  // loudest "unfinished" signal; a slab with eaves and the shadow line they
-  // throw is most of what makes a silhouette read as a building. Pitched roofs
-  // are a straight-skeleton problem and remain deferred on purpose.
+  // flat roof with an overhang (§10)
   let lo = null, hi = null;
   for (const k of level.tiles.keys()) {
     const [x, z] = k.split(',').map(Number);
@@ -791,26 +535,9 @@ export function levelParts(level, g, floorY) {
 }
 
 // ---- analytic shading -------------------------------------------------------
-// The interior problem is a LIGHTING problem, not a texture problem. The scene
-// carries one hemisphere light and one sun and no ambient occlusion of any kind
-// (grepped: no SSAO, no aoMap, nothing) — so inside a sealed box every surface
-// lands on the same value and all form reads flat. Texture on flat lighting is
-// textured cardboard.
-//
-// It cannot be fixed with lights either: lightrig.js keeps 8 slots born at init
-// precisely because runtime light-topology changes measured 388–1523ms frames.
-// A point light per room is the thing this engine punishes hardest.
-//
-// So it is baked, analytically, at build time. Everything a screen-space AO
-// pass tries to RECOVER from a depth buffer, we already KNOW: where the walls
-// are, which joins are concave, which cells are deep interior and which are
-// beside a window. Free at runtime, no texture bytes, no extra pass.
+// Baked analytically at build time from what the plan knows: no AO pass, no extra lights (§12).
 
-/** Per-cell daylight, BFS'd out from the apertures. Light enters through
- *  openings and spreads through open edges and doorways, so a room with a
- *  window is bright at the glass and dimmer at its back wall, and an interior
- *  room reached only through a door is dimmer throughout — which is the whole
- *  reason an interior stops reading as grey gas. */
+/** Per-cell daylight, BFS'd out from the apertures through open edges and doorways. */
 export function opennessField(level, g) {
   const dist = new Map();
   const q = [];
@@ -838,8 +565,7 @@ export function opennessField(level, g) {
   const out = new Map();
   for (const k of level.tiles.keys()) {
     const d = dist.get(k);
-    // the floor is how dim a windowless corner gets; below about 0.38 an
-    // interior stops reading as "dim" and starts reading as "broken"
+    // the floor: below about 0.38 an interior reads as broken, not dim
     out.set(k, d == null ? 0.38 : Math.max(0.38, 1 / (1 + 0.38 * d)));
   }
   return out;
@@ -858,7 +584,7 @@ function distToEdge(px, pz, axis, x, z, tile) {
 }
 
 /** Build the vertex shader for one level: a pure function of position and
- *  normal returning a linear multiplier. Sampling at `p + n·ε` is what lets the
+ *  normal returning a linear [r, g, b] multiplier. Sampling at `p + n·ε` is what lets the
  *  two faces of one wall shade differently — the outside of an exterior wall
  *  sees daylight, the inside sees the room. */
 export function makeShader(level, g, floorY) {
@@ -872,10 +598,7 @@ export function makeShader(level, g, floorY) {
     let v = inside ? (open.get(ck) ?? 0.30) : 1.0;
 
     if (inside) {
-      // Concave joins, as a PRODUCT of per-wall falloffs rather than a min —
-      // so a corner where two walls meet compounds to roughly 0.3 instead of
-      // reading the same as a flat stretch of wall. Corners are most of what
-      // sells an interior as a room.
+      // concave joins, as a PRODUCT of per-wall falloffs: a corner compounds
       for (const [axis, ex, ez] of [[0, cx, cz], [0, cx, cz + 1], [1, cx, cz], [1, cx + 1, cz]]) {
         if (!level.walls.has(edgeKey(axis, ex, ez))) continue;
         const d = distToEdge(sx, sz, axis, ex, ez, g.tile);
@@ -887,22 +610,10 @@ export function makeShader(level, g, floorY) {
       // and down from the ceiling
       const below = floorY + g.wallH - py;
       if (below < SHADE_KINKS.ceilContact) v *= 0.82 + 0.18 * clamp01(below / SHADE_KINKS.ceilContact);
-      // FLOOR BOUNCE. A downward face indoors is not unlit — it is the surface
-      // a real room bounces the most light onto, which is why ceilings read
-      // bright rather than black. Treating it as pure sky-occlusion gave a
-      // ceiling that went to near-black in the corners and made every interior
-      // feel like a cellar.
+      // floor bounce: a downward face indoors is lit by the floor
       if (ny < -0.5) v *= 1.24;
     } else {
-      // OUTSIDE, the openness field is 1.0 everywhere, so exterior walls got
-      // none of the modelling the interior gets — a flat card with a roof on
-      // it. Two shapes carry a building from outside, and both are analytic
-      // here for the same reason the interior ones were: we know where the
-      // eaves and the grade are.
-      //
-      // The eave shadow is the one that matters. A roof overhang throws a band
-      // of shade down the top of the wall, and its absence is most of why an
-      // untextured box reads as a box rather than as a house.
+      // outside: the eave shadow down the top of the wall
       const underEave = floorY + g.wallH - py;
       if (underEave < SHADE_KINKS.eave) v *= 0.62 + 0.38 * clamp01((underEave + 0.35) / 1.2);
       // and the ground steals light back at the base
@@ -915,27 +626,20 @@ export function makeShader(level, g, floorY) {
         Math.abs(sz - Math.round(sz / g.tile) * g.tile));
       if (near < 0.10) v *= 1.0 + 0.05 * (1 - near / 0.10);
     }
-    // sky above, ground below — the hemisphere term the scene's single hemi
-    // light would give us if anything ever occluded it
+    // sky above, ground below: the hemisphere term
     v *= 0.84 + 0.16 * ny;
     v = clamp01(v * 1.06);
-    // daylight is warm and bounce is cool: a touch of hue separation does more
-    // for "lit" than another 10% of value ever does
+    // daylight warm, bounce cool
     const warm = inside ? 0.06 * (open.get(ck) ?? 0.3) : 0.05;
     return [clamp01(v + warm), clamp01(v + warm * 0.45), clamp01(v * 0.99)];
   };
 }
 
 // ---- perception -------------------------------------------------------------
-// The reason the grid exists. Everything below reads the plan and nothing else:
-// no scene, no triangles, no raycast. An agent process that has only folded
-// state can answer "which room am I in and how do I leave it" exactly as well as
-// a browser with the building on screen — which is the whole claim this slice
-// was built to test.
+// Reads the plan and nothing else (no scene, no raycast), so a headless agent answers as well as a browser (§13).
 
-/** World point → grid-local point, for a building entity. Mirrors the collider
- *  convention exactly (subtract position, un-rotate yaw, divide by scale) so
- *  perception and collision can never disagree about where a wall is. */
+/** World point → grid-local point, for a building entity: the collider's convention exactly (subtract position,
+ *  un-rotate yaw, divide by scale). */
 export function localizePoint(ent, wx, wy, wz) {
   const [px, py, pz] = Array.isArray(ent?.pos) ? ent.pos : [0, 0, 0];
   const yaw = Number.isFinite(ent?.yaw) ? ent.yaw : 0;
@@ -945,9 +649,7 @@ export function localizePoint(ent, wx, wy, wz) {
   return [(dx * c - dz * n) / s, (wy - py) / s, (dx * n + dz * c) / s];
 }
 
-/** A room's openings, each named by the side of THIS room it sits on and what
- *  lies beyond. `null` beyond means outdoors — which is how an agent finds its
- *  way out of a building without anyone marking an exit. */
+/** A room's openings, each named by the side of THIS room it sits on and what lies beyond (null: outdoors). */
 export function openingsOf(level, room) {
   const mine = new Set(room.cells);
   const byId = new Map(level.rooms.map((r) => [r.id, r]));
@@ -967,16 +669,9 @@ export function openingsOf(level, room) {
   return out;
 }
 
-/** One sentence for the room a point stands in, or null if it stands in none.
- *
- *  Sides are the GRID's own compass, not the world's — a building rotated 40°
- *  has its own north, and saying "north" about it while a person reads a world
- *  compass would be a quiet lie. The phrasing says whose north it is. */
+/** One sentence for the room a point stands in, or null. Sides are the grid's own compass, and the phrasing says so. */
 export function describeHere(plan, lx, lz, ly = 0) {
-  // One resolution for both: the level this room belongs to, never a level
-  // re-derived from the cell key alone (cell keys are x,z, so on a stacked
-  // building a key-only lookup always answers with the ground floor and its
-  // doors — ew#140).
+  // the room's own level, never one re-derived from the cell key (cell keys are x,z: §13)
   const here = levelAt(plan, lx, lz, ly);
   if (!here) return null;
   const { level, room } = here;
@@ -1012,20 +707,13 @@ export function describeStructure(data) {
   return `a ${storeys}building: ${bits.join(', ')}`;
 }
 
-/** The room containing a grid-local point, or null. The describer's entry
- *  point, and the thing that makes "which room am I in" O(1) instead of a
- *  geometric query against triangles. */
+/** The room containing a grid-local point, or null. */
 export function roomAt(plan, lx, lz, ly = 0) {
   return levelAt(plan, lx, lz, ly)?.room ?? null;
 }
 
-/** The storey a point stands on AND the room it stands in, resolved once:
- *  the highest level whose surface is at most half a metre above the point
- *  (so a first storey doesn't answer for someone standing on the second)
- *  that has a room at that cell. roomAt
- *  and the describer both go through here, so the doors described to someone
- *  upstairs are their own room's; with one level it can only ever return that
- *  level. Null when the point is in no room on any reachable storey. */
+/** The storey a point stands on AND the room it stands in, resolved once: the highest level whose floor (its y, not its slab's top) is at most
+ *  half a metre above the point that has a room at that cell. Null when there is none. */
 export function levelAt(plan, lx, lz, ly = 0) {
   let best = null;
   for (const lv of plan.levels) {
@@ -1039,55 +727,8 @@ export function levelAt(plan, lx, lz, ly = 0) {
 }
 
 // ---- routing ----------------------------------------------------------------
-// The grid IS the navigation graph. Cells are nodes, and an edge between two
-// neighbours is passable unless a wall stands on it — which is the same lookup
-// the flood fill already does, asked one question differently.
-//
-// WHY THIS EXISTS AT ALL. `walkTo` samples only the height field, so a headless
-// agent walks a straight line and passes through walls. With sparse free-placed
-// props that is invisible; inside a building it is the whole experience. It is
-// also what would have made the monolith-vs-griddled comparison worthless: an
-// agent told "go to the kitchen" arrives in BOTH houses by walking through the
-// dividing wall, so both arms pass and the experiment measures nothing — a
-// check that fails in the direction that flatters the design.
-
-/** Can a body pass from cell a to cell b? A door or an arch is a hole you can
- *  walk through; a window is not, and neither is a wall. */
-export function passable(level, ax, az, bx, bz) {
-  const e = edgeBetween(ax, az, bx, bz);
-  if (!e) return false;
-  const k = edgeKey(e[0], e[1], e[2]);
-  if (!level.walls.has(k)) return true;
-  const ap = level.apertures.get(k);
-  return ap === 'door' || ap === 'arch';
-}
-
-/** Breadth-first route between two cells, as a list of cell keys inclusive of
- *  both ends, or null if no way through exists. BFS rather than A* on purpose:
- *  a domestic floor plan is tens of cells, the heuristic would cost more than
- *  it saves, and BFS is exhaustive so "there is no route" is a real answer
- *  rather than a timeout. Neighbours are visited in a fixed order so two agents
- *  folding the same log walk the same path. */
-export function routeCells(level, fromKey, toKey) {
-  const adj = nodeGraph(level, true);      // routes go through doorways
-  if (!adj.has(fromKey) || !adj.has(toKey)) return null;
-  if (fromKey === toKey) return [fromKey];
-  const prev = new Map([[fromKey, null]]);
-  const q = [fromKey];
-  for (let i = 0; i < q.length; i++) {
-    for (const nk of [...(adj.get(q[i]) ?? [])].sort()) {
-      if (prev.has(nk)) continue;
-      prev.set(nk, q[i]);
-      if (nk === toKey) {
-        const path = [];
-        for (let c2 = nk; c2 != null; c2 = prev.get(c2)) path.push(c2);
-        return path.reverse();
-      }
-      q.push(nk);
-    }
-  }
-  return null;
-}
+// The grid IS the navigation graph: an edge between neighbours is passable unless a wall stands on it with no door or
+// arch in it (§1; the search is structure-route.js's, where a door's lintel still blocks a walker high enough to meet it).
 
 /** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
  * resolver, not floor ordering or x/z overlap, owns that basis:
@@ -1140,58 +781,10 @@ export function prepareRouteLocal(plan, basis) {
   };
 }
 
-/** A route over `plan` on a flat terrain basis, `y` being the terrain's height
- * everywhere (a walking plane, not evidence of floor support; elevated callers
- * use prepareRouteLocal explicitly). Walls of every level are checked against
- * that plane's feet-to-step band, and an outdoor endpoint is routed around the
- * structure rather than refused. The result is prepareRouteLocal's route():
- * kind 'clear' for a straight leg that clears every wall, 'routed' with the
- * waypoints, or 'blocked' with the reason. */
-export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).route(fromX,fromZ,toX,toZ);
-}
-/** Whether the straight leg clears every wall, on planRouteLocal's flat terrain basis. */
-export function routeSegmentClear(plan, fromX, fromZ, toX, toZ, y = 0) {
-  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).clear(fromX,fromZ,toX,toZ);
-}
-/** planRouteLocal's waypoints in grid-local metres, the true start and the
- * true destination included, or null when it refuses a route. A straight leg
- * that clears every wall is just the two endpoints; otherwise the points are
- * the search's cell centres and edge crossings, with collinear runs merged. */
-export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  const result = planRouteLocal(plan, fromX, fromZ, toX, toZ, y);
-  return result.kind === 'blocked' ? null : result.points;
-}
-
 // ---- swept wall geometry ----------------------------------------------------
-// Walls stop being boxes here.
-//
-// A box per run is axis-aligned by construction, so it can never mitre and can
-// never turn 45°. Both of those are the same limitation wearing different
-// clothes: the geometry is built from the world's axes instead of from the
-// wall's own direction. Sweeping a cross-section along a polyline builds it
-// from the wall's direction instead, which gives true mitres at ANY angle,
-// puts chamfers in the profile where they belong, and makes diagonal walls a
-// change of path rather than a change of pipeline.
+// Walls are a cross-section swept along a polyline: true mitres at any angle (§11).
 
-/** The wall cross-section, as [across, up] pairs. `across` runs −t/2..+t/2,
- *  `up` from the walk surface. The top arrises are chamfered: a bevel there
- *  catches a highlight line along the whole run, which is most of what stops a
- *  wall reading as an untextured slab. */
-/** Insert profile points wherever an edge crosses one of `vs`.
- *
- *  The vertex-colour bake is sampled PER VERTEX and interpolated across the
- *  face between them, but the shading is strongly non-linear in height (floor
- *  contact, ceiling contact, daylight falloff). A wall quad spanning the whole
- *  storey therefore shows lerp(shade(0), shade(H)) at every height in between,
- *  while a lintel starting at 2.1 samples shade(2.1) directly — the same point
- *  in space, two different colours, and a visible step right at the opening.
- *
- *  Refining the profile fixes it from both sides: the ladder makes
- *  interpolation track the real curve, and putting a cut at every aperture
- *  height guarantees an EXACT shared sample where a wall meets a lintel or a
- *  sill. This is why the panels read as stuck on even though they were already
- *  merged into one mesh — it was never a mesh-count problem. */
+/** Insert profile points wherever an edge crosses one of `vs`: an exact shared shading sample at every cut (§12). */
 export function refineProfile(profile, vs) {
   const cuts = [...new Set(vs)].sort((a, b) => a - b);
   const out = [];
@@ -1211,15 +804,13 @@ export function refineProfile(profile, vs) {
   return out;
 }
 
+/** The wall cross-section, as [across, up] pairs: `across` −t/2..+t/2, `up` from the walk surface, top arrises chamfered. */
 export function wallProfile(g, chamfer = 0.02, plinth = null, cuts = null) {
   const h = g.wallT / 2, H = g.wallH;
   const c = Math.max(0, Math.min(chamfer, h * 0.6, H * 0.1));
   const pr = plinth ?? { h: TRIM.base.h, out: TRIM.base.proud };
   const b = Math.min(pr.h, H * 0.25), o = Math.max(0, pr.out);
-  // THE SKIRTING IS PART OF THE WALL. As separate boxes it was several boards
-  // that happened to abut, and it needed its own corner reasoning; as a step in
-  // the swept profile it is one board, mitred at every turn by construction,
-  // and it cannot come apart from the wall it belongs to.
+  // the skirting is a step in the profile: one board, mitred by construction
   const base = [
     [-h - o, 0], [-h - o, b], [-h, b + o], [-h, H - c],
     [-h + c, H], [h - c, H],
@@ -1228,10 +819,7 @@ export function wallProfile(g, chamfer = 0.02, plinth = null, cuts = null) {
   // a ladder up the wall, plus an exact cut at every aperture height so a
   // lintel or sill shares its boundary sample with the wall it continues
   const apHeights = Object.values(APERTURES).flatMap((a) => [a.bottom, a.top]).filter((v) => v > 0 && v < H);
-  // The shading curve KINKS where its contact terms end (see makeShader), and
-  // no ladder spacing can track a kink — interpolation only follows a curve if
-  // a sample sits ON the corner. Sampling the breakpoints is the fix; the
-  // ladder just keeps the smooth stretches honest between them.
+  // a sample ON each shading kink (SHADE_KINKS); the ladder covers the smooth stretches between
   const kinks = [SHADE_KINKS.floorContact, H - SHADE_KINKS.ceilContact,
     SHADE_KINKS.groundContact, H - SHADE_KINKS.eave];
   const ladder = [];
@@ -1241,13 +829,8 @@ export function wallProfile(g, chamfer = 0.02, plinth = null, cuts = null) {
 
 const nodePt = (k) => k.split(',').map(Number);
 
-/** Chain wall segments into polylines.
- *
- *  A run continues through a node by taking the STRAIGHTEST onward segment,
- *  which is what makes a T-junction behave: the crossing wall runs through as
- *  one line and the stem ends against it, instead of three stubs meeting at a
- *  point. Degree-2 corners chain and mitre; anything apertured is excluded
- *  because a hole makes it a different shape, and it is emitted separately. */
+/** Chain wall segments into polylines, continuing through a node by the STRAIGHTEST onward segment (a T's crossing
+ *  wall runs through). Apertured segments are excluded and swept separately (§11). */
 export function wallPolylines(level, g) {
   const segs = [];
   for (const [k, e] of level.walls) {
@@ -1268,11 +851,7 @@ export function wallPolylines(level, g) {
   /** the straightest unused continuation at `node` arriving along `d` */
   const onward = (node, from, d) => {
     let best = -1, bestDot = -2;
-    // At a plain corner (two segments) a run turns and mitres. At a JUNCTION it
-    // may only continue if something actually carries straight on — otherwise
-    // the arriving run picks one of two equally-perpendicular branches at
-    // random and swallows half of it, which is how a room divider ended up
-    // chained into the wall it merely meets.
+    // at a plain corner a run turns; at a junction only if something carries straight on (§11)
     const degree = (inc.get(node) ?? []).length;
     const minDot = degree > 2 ? 0.7 : -2;
     for (const i of inc.get(node) ?? []) {
@@ -1302,8 +881,7 @@ export function wallPolylines(level, g) {
         segs[i].used = true;
         const nxt = segs[i].a === tip ? segs[i].b : segs[i].a;
         if (pts.includes(nxt)) {
-          // a closed ring: repeat the first point so the sweep knows to wrap,
-          // otherwise the last corner is left unmitred and the run has a seam
+          // a closed ring: repeat the first point so the sweep wraps (else the last corner is unmitred)
           if (nxt === pts[0]) { if (forward) pts.push(nxt); else pts.unshift(nxt); }
           break;
         }
@@ -1322,16 +900,8 @@ export function wallPolylines(level, g) {
   return lines;
 }
 
-/** Sweep a profile along a path, mitring at every turn.
- *
- *  The mitre is the classic one: at each interior vertex the offset direction
- *  is the bisector of the two segment normals, lengthened by 1/cos(θ/2) so the
- *  faces meet exactly. It is angle-agnostic, which is the whole point — a 90°
- *  corner and a 45° corner take the same code, and that is what lets diagonal
- *  walls exist at all.
- *
- *  Returns flat positions + indices; normals are left to the caller (the
- *  realizer computes them) so this half stays free of any renderer. */
+/** Sweep a profile along a path, mitring at every turn: each interior offset is the bisector of the two segment normals,
+ *  lengthened by 1/cos(θ/2). Returns flat positions + indices; the realizer computes normals. */
 export function sweepProfile(path, profile, y0, ends = null) {
   if (path.length < 2 || profile.length < 2) return { positions: [], indices: [] };
   const closed = path.length > 2
@@ -1350,11 +920,7 @@ export function sweepProfile(path, profile, y0, ends = null) {
   const nrm = (d) => [-d[1], d[0]];
   const offsets = [];
   for (let i = 0; i < n; i++) {
-    // `ends` lets a piece mitre against a neighbour it is not chained to. An
-    // apertured segment is swept on its own (a hole makes it a different
-    // shape), so without this its ends BUTT against the run they interrupt.
-    // At 90° a butt joint hides — the cap is perpendicular and buried — but at
-    // 45° it leaves a visible wedge where the two pieces fail to meet.
+    // `ends`: mitre an apertured piece against the run it interrupts (§11)
     let dIn = closed ? segDir[(i - 1 + n) % n] : segDir[Math.max(0, i - 1)];
     let dOut = closed ? segDir[i % n] : segDir[Math.min(segDir.length - 1, i)];
     if (!closed && i === 0 && ends?.inDir) dIn = ends.inDir;
@@ -1379,17 +945,11 @@ export function sweepProfile(path, profile, y0, ends = null) {
   for (let i = 0; i < rings; i++) {
     const a = i * P, b = ((i + 1) % n) * P;
     for (let j = 0; j < P - 1; j++) {
-      // WINDING. The lateral offset is the LEFT normal of travel, so profile
-      // point u = −t/2 lands on the right-hand side of the path. Ordering the
-      // quad the obvious way (a,b,b+1) puts that face's normal back INTO the
-      // wall — every surface inside-out, which reads in-world as a building
-      // turned inside out rather than as anything recognisable as a normals
-      // bug. Reversed here, and pinned by the outward-normal test.
+      // winding reversed: the offset is the LEFT normal of travel (§11; pinned by the outward-normal test)
       indices.push(a + j, b + j + 1, b + j, a + j, a + j + 1, b + j + 1);
     }
   }
-  // END CAPS on an open run. Without them the run is a hollow tube and a
-  // doorway shows the inside of the wall — which reads as a missing jamb.
+  // end caps on an open run (else a doorway shows the inside of the wall)
   if (!closed) {
     const cap = capProfile(profile);
     const last = (n - 1) * P;
@@ -1425,14 +985,7 @@ function neighbourDirs(level, g, key, e) {
     return [(q[0] - p[0]) / d, (q[1] - p[1]) / d];
   };
   const own = unit(a, b);
-  /** `leaving` picks which way the neighbour's direction must point.
-   *
-   *  At the START of a path the mitre wants the direction ARRIVING at the
-   *  node; at the END it wants the direction LEAVING it. Using "arriving" for
-   *  both reverses the outgoing normal, which flips the bisector and sends the
-   *  mitre scale from 1.08 to 2.6 — the diagonal shot a quarter of a metre past
-   *  its own corner. Measured, not spotted: the piece's bounding box ran to
-   *  z = 1.23 on a wall that ends at z = 1. */
+  /** `leaving`: the direction LEAVING the node (a path's end), else ARRIVING (its start). Mixing them flips the mitre (§11). */
   const at = (node, want, leaving) => {
     let best = null, bestDot = -2;
     for (const [k2, e2] of level.walls) {
@@ -1450,7 +1003,8 @@ function neighbourDirs(level, g, key, e) {
   return { inDir: at(a, own, false) ?? undefined, outDir: at(b, own, true) ?? undefined };
 }
 
-/** Swept geometry for one level: every solid wall run, mitred. */
+/** Swept geometry for one level: every solid wall run, mitred; each apertured segment's sill and lintel; window glass;
+ *  and the prism under a half-floored cell. */
 export function levelSweeps(level, g, floorY) {
   const prof = wallProfile(g);
   const out = [];
@@ -1458,9 +1012,7 @@ export function levelSweeps(level, g, floorY) {
     const sw = sweepProfile(line.pts, prof, floorY);
     if (sw.positions.length) out.push({ ...sw, mat: line.mat, kind: 'wall' });
   }
-  // A half-floored cell's slab is a TRIANGLE. Without this the floor runs on
-  // past the diagonal and out of the building, which is what made a cut corner
-  // look like a wall standing on a floor rather than the corner of a house.
+  // a half-floored cell's slab is a triangle (§9)
   for (const [k, mat] of level.tiles) {
     const half = level.halves?.get(k);
     if (!half) continue;
@@ -1471,10 +1023,7 @@ export function levelSweeps(level, g, floorY) {
     out.push({ ...pr, mat, kind: 'floor' });
   }
 
-  // An APERTURED segment is the same wall with a bite out of it, so it is the
-  // same swept profile clipped vertically — same thickness, same plinth, same
-  // chamfer. Emitting it as a box was what made the panels over doors and
-  // under windows refuse to line up with the wall they sit in.
+  // an apertured segment: the same swept profile, clipped vertically (§11)
   for (const [k, e] of level.walls) {
     const ap = level.apertures.get(k);
     if (!ap) continue;
@@ -1489,9 +1038,7 @@ export function levelSweeps(level, g, floorY) {
       const sw = sweepProfile([a, b], cp, floorY, nd);
       if (sw.positions.length) out.push({ ...sw, mat: e.mat, kind: 'wall' });
     }
-    // GLASS IS SWEPT TOO. As a box it went through edgeSpan, whose two-branch
-    // ternary treats "not axis 0" as "must be axis 1" — so a diagonal window
-    // came out axis-aligned. Sweeping it costs nothing and follows any angle.
+    // glass is swept too: edgeSpan can't express a diagonal
     if (prf.bottom > 0) {
       const gt = TRIM.glass.t / 2;
       const pane = [[-gt, prf.bottom], [-gt, top], [gt, top], [gt, prf.bottom], [-gt, prf.bottom]];
@@ -1502,17 +1049,8 @@ export function levelSweeps(level, g, floorY) {
   return out;
 }
 
-/** Clip a wall profile to a vertical band, closing it flat at the cuts.
- *
- *  This is how an aperture becomes part of the same wall rather than a box
- *  bolted next to one. A lintel is the wall profile clipped to [top, H] — so it
- *  keeps the chamfered top and the exact thickness of the wall it continues —
- *  and a sill is the same profile clipped to [0, bottom], keeping the plinth.
- *  The flat cut is the reveal: the soffit over a door, the ledge under a window.
- *
- *  Boxes could never line up here. A box has no plinth and no chamfer, so where
- *  it met a swept wall the surfaces simply disagreed, which is what made the
- *  squares over the openings read as stuck on. */
+/** Clip a wall profile to a vertical band, closing it flat at the cuts: a lintel is [top, H], a sill [0, bottom]; the flat
+ *  cut is the reveal (§11). */
 export function clipProfileV(profile, vMin, vMax) {
   const out = [];
   const lerp = (a, b, v) => {
@@ -1535,14 +1073,7 @@ export function clipProfileV(profile, vMin, vMax) {
     || Math.abs(p[0] - a[i - 1][0]) > 1e-9 || Math.abs(p[1] - a[i - 1][1]) > 1e-9);
 }
 
-/** Triangulate a profile as an END CAP.
- *
- *  Without caps an open run is a hollow tube: at a doorway you look straight
- *  into the inside of the wall, which reads as a missing jamb rather than as a
- *  missing face. The profile is v-monotone by construction — up the left side,
- *  across the top, down the right — so it triangulates by merge-walking the two
- *  chains, with no ear clipping and no trouble from the reflex vertex the
- *  plinth step introduces. */
+/** Triangulate a profile as an END CAP. The profile is v-monotone, so it merge-walks its two chains (no ear clipping). */
 export function capProfile(profile) {
   const n = profile.length;
   if (n < 3) return [];
@@ -1572,12 +1103,7 @@ export function halfTriangle(x, z, diag, half, g) {
   return half === 'A' ? [c.nw, c.ne, c.sw] : [c.ne, c.se, c.sw];   // ↗ from ne to sw
 }
 
-/** A closed triangular prism with outward normals — the slab under a half-cell.
- *
- *  Orientation is DERIVED, not assumed: the winding that makes a top face point
- *  up depends on which half of which diagonal you are looking at, and hand-
- *  reasoning it per case is how a floor ends up lit from underneath. The cross
- *  product decides, once. */
+/** A closed triangular prism with outward normals (the slab under a half-cell): its winding from the cross product. */
 export function triPrism(corners, y0, y1) {
   let [p0, p1, p2] = corners;
   const a = [p1[0] - p0[0], p1[1] - p0[1]], b = [p2[0] - p0[0], p2[1] - p0[1]];
@@ -1588,11 +1114,7 @@ export function triPrism(corners, y0, y1) {
   const indices = [0, 1, 2, 5, 4, 3];                 // top up, bottom down
   for (let i = 0; i < 3; i++) {
     const j = (i + 1) % 3;
-    // the caps' winding makes the sides run the OTHER way round: with the top
-    // face CCW from above, edge i→j is traversed such that the outward side
-    // needs the reversed order. Derived by splitting the signed volume into
-    // caps and sides — caps came out right and sides negative, which is a
-    // clearer signal than any amount of squinting at index arithmetic.
+    // the sides run the other way round from the caps (by signed volume)
     indices.push(i, j + 3, j, i, i + 3, j + 3);       // side quad, outward
   }
   return { positions, indices };

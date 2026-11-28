@@ -1,13 +1,7 @@
-// server/scripts.ts — a world's scripts inside this server (research 41; shared/protocol/authority.js "behaviours").
-//
-// Scripts are `script:<name>` components the AUTHORITY runs, each activation one act + one batch through admit. This class
-// is World.scripts: the calls server.ts makes (onPresence, tick, inspect, list), routed to the authority:
-//   tick        the authority's timers (sleep with nobody present unless `always`, one `wake` after) and their cascades,
-//               on the server's 1 s clock (server.ts system "behaviors");
-//   onPresence  enter / leave events, by the person's identity;
-//   inspect/list the authority's status view (suspended / paused / stopped / dormant + why / asleep / active), plus the
-//               old behaviours an imported world still names, which say plainly that they need re-installing as
-//               script:<name>.
+// server/scripts.ts — World.scripts: the server's calls into the authority's `script:<name>` components (shared/protocol/authority.js).
+//   tick         the authority's timers, on the server's 1 s clock (server.ts system "behaviors");
+//   onPresence   enter / leave events, by identity;
+//   inspect/list the authority's status view, plus an imported world's old behaviours, which report needing re-install as script:<name>.
 import type { WorldLog } from "./worldlog.ts";
 
 type Any = any;
@@ -33,7 +27,7 @@ export class WorldScripts implements ScriptHost {
     const v = this.log.scriptsView(ent, floor);
     const s = (v.scripts as Any[]).find((x) => !name || x.script === `script:${name}`);
     if (!s) { const b = (v.imported as Any[] ?? []).find((x) => x.behavior === `imported-behavior:${name ?? ent}` || x.behavior === `imported-behavior:${ent}`); return b ? { status: `${b.status}: ${b.why}`, ring: [] } : null; }
-    return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.hidden ? ` (${l.hidden})` : ""}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}${Array.isArray(l.logs) && l.logs.length ? `\n  ${l.logs.map((x: unknown) => typeof x === "string" ? x : JSON.stringify(x)).join("\n  ")}` : ""}` })) };   // an activation's console.log lines with it (review of #260, server I73)
+    return { status: `${s.status}${s.why ? `: ${s.why}` : ""}`, ring: (s.last ?? []).map((l: Any) => ({ ts: l.ts, line: `${l.on}: ${l.status}${l.hidden ? ` (${l.hidden})` : ""}${l.code ? ` ${l.code}` : ""}${l.why ? ` — ${l.why}` : ""}${Array.isArray(l.logs) && l.logs.length ? `\n  ${l.logs.map((x: unknown) => typeof x === "string" ? x : JSON.stringify(x)).join("\n  ")}` : ""}` })) };   // an activation's console.log lines ride along
   }
   list() {
     const v = this.log.scriptsView();

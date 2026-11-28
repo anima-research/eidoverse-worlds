@@ -1,0 +1,92 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { suite } from "../gate/suite.ts";
+/** audioctx: one AudioContext for the page, proven rather than asserted.
+ *
+ *  Mica's review of #86 asked for a focused executable receipt for the
+ *  foundational module — with a fake AudioContext constructor, prove that
+ *  repeated calls yield exactly one instance. That is the whole contract, and
+ *  it is the kind of claim that is easy to state and easy to quietly break: a
+ *  later refactor that reintroduces `new AudioContext()` anywhere failed no
+ *  test before this file, it just started silencing pages again after six
+ *  toggles (the source guard below now catches it).
+ *
+ *  Run: bun test/client/audioctx-test.ts
+ */
+
+let made = 0;
+let resumed = 0;
+
+class FakeAudioContext {
+  state = 'suspended';
+  sampleRate = 48000;
+  destination = { __fake: 'destination' };
+  constructor() { made++; }
+  resume() { resumed++; this.state = 'running'; return Promise.resolve(); }
+  close() { this.state = 'closed'; return Promise.resolve(); }
+  createGain() { return { gain: { value: 1, setTargetAtTime() {} }, connect() {}, disconnect() {} }; }
+  createAnalyser() { return { fftSize: 2048, connect() {}, disconnect() {}, getByteTimeDomainData() {} }; }
+  createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+  createMediaStreamDestination() { return { stream: { getTracks: () => [] } }; }
+}
+
+(globalThis as any).window = globalThis;
+(globalThis as any).AudioContext = FakeAudioContext;
+(globalThis as any).webkitAudioContext = FakeAudioContext;
+
+const S = suite("audioctx");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
+
+const mod = await import('../../client/lib/audio/audioctx.js');
+const audioCtx = mod.audioContext;   // the module's own name, checked against its exports
+
+// ── the contract ──────────────────────────────────────────────────────────────
+
+check('no context is constructed at import time', made === 0, `made=${made}`);
+
+const a = audioCtx();
+check('first call constructs exactly one', made === 1, `made=${made}`);
+
+const b = audioCtx();
+const c = audioCtx();
+check('repeated calls construct no more', made === 1, `made=${made} after 3 calls`);
+check('every call returns the SAME instance', a === b && b === c);
+
+// The leak this module exists to fix: micAnalyserLevel made a fresh context on
+// every mic-stream change. Simulate that shape — many calls, as from a toggle
+// loop — and prove the count does not track the calls.
+for (let i = 0; i < 40; i++) audioCtx();
+check('40 further calls (the mic-toggle loop) still one context', made === 1, `made=${made}`);
+
+// resumed opportunistically: a suspended context is resumed by the call that finds it so, a running one is left alone
+check('the first call resumed the suspended context, once; the running one was left alone', resumed === 1 && a.state === 'running', `resumed=${resumed}`);
+a.state = 'suspended';   // the browser suspended it (a tab in the background)
+audioCtx();
+check('a call that finds it suspended again resumes it', resumed === 2 && a.state === 'running', `resumed=${resumed}`);
+
+// audioContextState() reads the shared instance's state and builds nothing
+check('audioContextState() reports the shared instance', mod.audioContextState() === a.state,
+      `${mod.audioContextState()} vs ${a.state}`);
+
+// ── the regression guard ──────────────────────────────────────────────────────
+// The failure mode is not "audioctx.js breaks" — it is "somebody adds a direct
+// construction somewhere else and this module stops being the only door."
+// Reading the source is the only way to see that from here.
+const clientDir = fileURLToPath(new URL('../../client/', import.meta.url));
+const direct: string[] = [];
+// every spelling of a construction: bare, (window.…), and through window / globalThis / self, webkit-prefixed or not
+const NEW_CTX = /new\s+\(?\s*(?:(?:window|globalThis|self)\s*\.\s*)?(?:webkit)?AudioContext\b/g;
+{ const samples = ['new AudioContext()', 'new (window.AudioContext || window.webkitAudioContext)()', 'new window.AudioContext()', 'new globalThis.webkitAudioContext()', 'new self.AudioContext()'];
+  const missed = samples.filter((t) => !t.match(NEW_CTX));
+  check('(self-sample) the guard sees every spelling of a construction', missed.length === 0, missed.join(' | ')); }
+for (const f of new Bun.Glob('**/*.js').scanSync(clientDir)) {
+  const rel = f.replaceAll('\\', '/');
+  if (/^(vendor|node_modules)\//.test(rel) || rel === 'lib/audio/audioctx.js') continue;
+  const n = [...(await Bun.file(path.join(clientDir, f)).text()).matchAll(NEW_CTX)].length;
+  if (n) direct.push(`${rel} ×${n}`);
+}
+check('no client module but audioctx.js constructs an AudioContext directly', direct.length === 0,
+      `${direct.join(', ')}: they must go through audioctx.js`);
+
+console.log(`\n  ${S.pass} passed, ${S.fail} failed`);
+if (S.fail) process.exit(1);

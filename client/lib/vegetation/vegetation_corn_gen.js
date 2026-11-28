@@ -9,7 +9,7 @@
 // instanced by grass2 exactly like the shrubs.
 //
 // corn_ sheet regions (UV, v up — measured off the delivered 1024² sheet):
-//   COB    u 0–.5, v .701–1   — her highpoly's bake: shell island u .015–.46
+//   COB    u 0–.5, v .701–1   — the highpoly bake: shell island u .015–.46
 //          (length ALONG u), circumference along v .706–.994; flat cap discs
 //          at (.478,.93) r.017 (butt) and (.478,.97) r.010 (tip)
 //   PLUME  u .5–1, v .701–1   — alpha'd tassel/silk strand art
@@ -42,7 +42,7 @@ const COB_STA = [0, 1, 2, 3, 5, 7, 9, 11, 12, 13, 14, 16];   // lean in-plant su
 // triangle wave 0→1→0…, for seam-free mirrored UVs under ClampToEdge
 const tri = (s) => { const m = s % 2; return m <= 1 ? m : 2 - m; };
 
-export const CORN_GEN = {
+const CORN_GEN = {
     corn: {
         height: 2.15,        // cane height (m) before per-plant jitter
         leaves: 10,
@@ -154,9 +154,8 @@ export function buildCornGeometry(name, seed, over = {}) {
                 peel: (cfg.peel && k === 0) || R() < pc });
     }
     // world-space keep-out: a capsule down the ear body (+ husk margin) and,
-    // on peeled ears, a sphere over the curl zone. REAL geometry tests —
-    // base-azimuth heuristics let broad mid-blades sweep straight through
-    // the cob, and husk-curl tips punch through blades
+    // on peeled ears, a sphere over the curl zone. REAL geometry tests, not
+    // base-azimuth heuristics (which let blades sweep through the cob)
     const earCaps = earSpecs.map((e) => {
         const [sx, sy, sz] = P(e.f);
         const dirX = Math.cos(e.yaw), dirZ = Math.sin(e.yaw);
@@ -300,9 +299,8 @@ export function buildCornGeometry(name, seed, over = {}) {
         // azimuths (a symmetric ring of many read as a machine part)
         const nH = peel ? 3 : 5;
         // leaf azimuths drawn first, then each arc width computed from the
-        // ACTUAL gaps to its neighbours (+15% overlap) — coverage of the
-        // circumference is guaranteed by construction. Independent random
-        // widths left wedge gaps that bared the cob at the ear's base.
+        // ACTUAL gaps to its neighbours (+15% overlap): coverage of the
+        // circumference is guaranteed by construction.
         const th0s = [];
         if (peel) { let acc = R() * TAU; for (let k2 = 0; k2 < nH; k2++) { th0s.push(acc); acc += rng.range(1.6, 2.6); } }
         else for (let k2 = 0; k2 < nH; k2++) th0s.push((k2 / nH) * TAU + R() * 0.5);
@@ -336,9 +334,8 @@ export function buildCornGeometry(name, seed, over = {}) {
                 rows2++;
             };
             // rows dense enough that straight spans clear the cob's CONVEX
-            // butt flare, plus per-segment sagitta padding — 4 rows left the
-            // cone chord cutting inside the flare and kernels showed at the
-            // base (the column-chord bug's twin, along the length axis)
+            // butt flare, plus per-segment sagitta padding (too few rows and the
+            // cone chord cuts inside the flare, showing kernels at the base)
             const wrapSegs = 5;
             const rowTs = [];
             for (let sg = 0; sg <= wrapSegs; sg++) rowTs.push(-0.03 + (wrapTop + 0.03) * (sg / wrapSegs));
@@ -365,9 +362,8 @@ export function buildCornGeometry(name, seed, over = {}) {
                       py = by + ay * wrapTop * cobLen + oy * rimR,
                       pz = bz + az * wrapTop * cobLen + oz * rimR;
                 // CUBIC bend, tangent-continuous with the wrap: it keeps going
-                // UP off the rim, then turns out and over in one smooth arc —
-                // the quadratic version snapped direction at the rim (a 90°
-                // crink at one loop, not a bend)
+                // UP off the rim, then turns out and over in one smooth arc
+                // (a quadratic snaps direction at the rim)
                 const cL = len * rng.range(0.38, 0.55);
                 const c1 = [px + ax * cL * 0.38 + ox * cL * 0.06,
                             py + ay * cL * 0.38 + oy * cL * 0.06,
@@ -388,8 +384,7 @@ export function buildCornGeometry(name, seed, over = {}) {
                         s0b * s0b * s0b * px + 3 * s0b * s0b * t2 * c1[0] + 3 * s0b * t2 * t2 * c2[0] + t2 * t2 * t2 * ce[0],
                         s0b * s0b * s0b * py + 3 * s0b * s0b * t2 * c1[1] + 3 * s0b * t2 * t2 * c2[1] + t2 * t2 * t2 * ce[1],
                         s0b * s0b * s0b * pz + 3 * s0b * s0b * t2 * c1[2] + 3 * s0b * t2 * t2 * c2[2] + t2 * t2 * t2 * ce[2]];
-                    // gentle taper: 0.85 left thin straight straps that read
-                    // as bent paper ribbons; a husk leaf keeps its width
+                    // gentle taper: a husk leaf keeps its width (a hard taper reads as paper ribbon)
                     const w = w0 * (1 - t2 * 0.55) * (1 + 0.1 * Math.sin(t2 * 7.0 + k * 2.1)) * (1 - Math.pow(t2, 5) * 0.85);   // pinch to a point — the band has no alpha to carve tips
                     const cup = w * 0.55 * (0.3 + t2 * 0.7);      // curved sheet along the whole curl
                     const u = HUSK.u0 + (0.55 + 0.42 * t2) * (HUSK.u1 - HUSK.u0);
@@ -466,11 +461,10 @@ export function buildCornGeometry(name, seed, over = {}) {
         }
         for (let g = 0; g < 2; g++) for (let j = 0; j < RADS; j++)
             quad(s0 + g * (RADS + 1) + j, s0 + g * (RADS + 1) + j + 1, s0 + (g + 1) * (RADS + 1) + j + 1, s0 + (g + 1) * (RADS + 1) + j);
-        // sparse crown per the reference diagram: thin arcing branch strands
-        // around a central spike, mostly AIR — each branch is a narrow strip
-        // sampling a thin v-slice of the plume art (the silk trick: strands
-        // run along u, so a sliver reads as one seed-strand branch). Full-art
-        // cards made a dense plume mass no real tassel has.
+        // sparse crown: thin arcing branch strands around a central spike,
+        // mostly AIR. Each branch is a narrow strip sampling a thin v-slice of
+        // the plume art (strands run along u, so a sliver reads as one branch);
+        // full-art cards make a dense plume mass no real tassel has.
         const nB = 6;
         for (let k = 0; k < nB; k++) {
             const t01 = k / (nB - 1);
@@ -484,8 +478,8 @@ export function buildCornGeometry(name, seed, over = {}) {
             const by2 = ty + spikeH * hF;
             const aB = 0.82 + hF * 0.1;    // the spike's own weight here — attachments inherit it
             const vMid = 0.725 + R() * 0.22;
-            // X-cross pair, art-edge-to-art-edge u — flat strips vanished
-            // edge-on and mid-art windows cut painted strands with hard edges
+            // X-cross pair, art-edge-to-art-edge u: a flat strip vanishes edge-on,
+            // and a mid-art window cuts painted strands with hard edges
             for (const [wxx, wyy, wzz] of [[px2 * hw, 0, pz2 * hw],
                                            [dx * 0, hw * 0.9, dz * 0]]) {
                 const sA = vb;

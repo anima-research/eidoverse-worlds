@@ -1,12 +1,6 @@
-// eidoverse-worlds sequencer — the world itself.
-//
-// A World is one world as this server holds it: its log (server/worldlog.ts WorldLog: the authority over the world's
-// directory) and the embodied plane in flight (connected clients, the dirty-pose batch, stage-frame bookkeeping, never
-// persisted). Every world this server serves speaks the current protocol: a directory that holds only an old log (the first
-// protocol's log.jsonl) is refused at open, with the command that translates it (tools/protocol/import-v1/, run once by the
-// operator).
-// The registry (getWorld/worldExists/worlds) lives here too; the boot sweep that wakes scripted worlds stays in
-// server.ts — waking scripted worlds with the server is boot policy, not world mechanics.
+// The world itself: its log (server/worldlog.ts WorldLog, the authority over the world's directory) and the embodied plane in
+// flight (connected clients, the dirty-pose batch, stage-frame bookkeeping; never persisted). A directory holding only an old
+// log is refused at open with the command that translates it. The registry (getWorld/worldExists/worlds) lives here too.
 
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -15,12 +9,10 @@ import { WorldLog, isWorldSaved, resetWorld } from "./worldlog.ts";
 import { WorldScripts, type ScriptHost } from "./scripts.ts";
 import type { HnSession } from "./auth.ts";
 import { gateReach } from "./reachgate.ts";
+import { WORLD_NAME_RE } from "./limits.ts";
 import { accessTrace } from "./worldindex.ts";
 
-// The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
-// server.ts by source-text gates (§15.1: settled-pose-test regexes the file
-// itself). The log needs it for rememberPose, so it arrives by injection at
-// boot: one implementation, two planes.
+// The settle rule (what a pose looks like to someone else) lives in server.ts; the log needs it for rememberPose, so it is injected at boot.
 let settle: (pose: unknown) => Record<string, unknown> | null = () => {
   throw new Error("settledPose not wired — server.ts wires it at boot");
 };
@@ -38,34 +30,26 @@ export type Client = {
   id: string;          // participant's display name in this world (their identity is actorId, from the authority directory)
   ws: { send(data: string): void; close?(code?: number, reason?: string): void; getBufferedAmount?(): number; readyState?: number };
   world: World | null;
-  /** latest pose, forwarded to late joiners so they see everyone immediately.
-   *  Minimal structure over an open record: the presence checks (scripts'
-   *  world.near, the authority's held-thing reach) dereference `.p`, everything
-   *  else rides opaque. */
+  /** latest pose, forwarded to late joiners. `.p` (world.near, held-thing reach), and `.q`, scale and `.reach`
+   *  (reachgate.ts) are read; the rest rides opaque. */
   lastPose: ({ p?: [number, number, number] } & Record<string, unknown>) | null | undefined;
+  drags?: Map<number, { by: number; at: number }>;   // drags this leg holds, by the target leg's gen: when its last sample went (messages.ts dragOf)
   avatar: string;      // VRM library path chosen at join
   spectator: boolean;  // retina/observer connections: receive everything, appear as nothing
   declares?: string;   // a status the participant declared at join (PROTOCOL §6a: its own word, e.g. "agent" or "ai"); absent = undeclared. Never inferred
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
-  // roles S4: what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
+  // what the sanctions sweep (server.ts sanctionSweep) last applied to this connection
   sfuMuted?: boolean; sanctionKey?: string;
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   trustedRenderer?: boolean; // a renderer that presented RENDERER_TOKEN: may watch any world (access.ts)
-  auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
-  gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
+  auxBound?: boolean;  // this aux leg is bound to the primary's identity (token bearer or matching login sub)
+  gen?: number;        // this leg's transport epoch, monotonic, never reused; a superseded gen's rtc/attestation messages are refused
   legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries
-                       // Monotonic, never reused. Every rtc/attestation message is stamped with
-                       // it, and a superseded generation's messages are refused structurally —
-                       // takeover retires the GENERATION, not just the socket.
-                       // Deferred authored verbs capture it and recheck before committing.
   presenceSession?: string; // `session` on arrive and snapshot.present: the joining page's id, else a token for this leg (server.ts presenceSession)
-  surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
-                       // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
-                       // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
-                       // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
-                       // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
+  surface?: string;    // "world" = the embodied primary (default); anything else is an auxiliary media leg (voice, vr-hands, …):
+                       // invisible, poseless, log-mute, rtc-capable, reaped when its primary dies. Per-surface last-writer-wins.
   renderer?: boolean;  // an invisible browser renderer (legacy): donates rendering for its world
   roam?: boolean;      // a renderer the screenshot broker may send to any world that has none (screenshots.ts)
   capture?: import("./screenshots.ts").CaptureCapability; // opt-in embodied/native donor
@@ -82,7 +66,7 @@ export type Client = {
   /** how many of them are still waiting their turn (requestwire.ts QUEUE_MAX) */
   queued?: number;
   /** the log head when this connection arrived in its world (server.ts join, beside the snapshot's cut). Speech is
-   *  arrival-only (R 10-18): a say at or below it is never sent back to this connection unless it is an admin's. */
+   *  arrival-only: a say at or below it is never sent back to this connection unless it is an admin's. */
   arrivedSeq?: number;
 };
 
@@ -91,14 +75,8 @@ export type Client = {
 /** One world: its log and the embodied plane in flight. */
 export class World {
   name: string;
-  /** The runtime's flight recorder — the "why didn't it work" surface.
-   *
-   *  The world log holds what HAPPENED; this ring holds what DIDN'T and why:
-   *  requests the authority refused, rate limits, script events. In-memory only,
-   *  capped, never persisted — it is diagnosis, not history. Readable by
-   *  anyone in the world (ws `debug`, `/debug` in the client, `world_debug`
-   *  over MCPL): the log's acts are public (speech is arrival-only, and the recorder
-   *  holds no say text), so the reasons things bounced off it are public too. */
+  /** The flight recorder: the log holds what HAPPENED, this ring what DIDN'T and why (refusals, rate limits, script
+   *  events). In-memory, capped, never persisted; readable by anyone in the world (ws `debug`, `/debug`, `world_debug`). */
   debugLog: Record<string, unknown>[] = [];
   debug(kind: string, detail: Record<string, unknown>): void {
     this.debugLog.push({ ts: Date.now(), kind, ...detail });
@@ -116,13 +94,10 @@ export class World {
   recPath: string | null = null; // frames archive, created lazily on first recorded frame
   lastRoster = "";               // last written roster line — deltas only
 
-  /** The log position this sequencer opened the world at, and the legs admitted
-   *  since. A leg's GENERATION is `openSeq × 1e6 + count`: server-issued,
-   *  strictly increasing within an opening, and never lower than any
-   *  generation a previous opening issued (every say a leg made advanced the
-   *  log past the opening that issued it). A million admissions per opening is
-   *  the bound; past it the opening refuses further legs a generation rather
-   *  than issuing an ambiguous one. */
+  /** The log position this world was opened at, and the legs admitted since. A leg's GENERATION is
+   *  `openSeq × 1e6 + count`: strictly increasing within an opening, and above any a previous opening logged (a leg's
+   *  write advances the log); a leg that wrote nothing can see its number issued again.
+   *  Past a million admissions per opening, legs are refused a generation rather than issued an ambiguous one. */
   readonly openSeq: number;
   private legCount = 0;
   legGen(): number {
@@ -132,7 +107,7 @@ export class World {
 
   modStateKey?: string;   // the last mod-state (muted badges) the sweep sent
   sfuMutedIds?: Set<string>;   // display ids the sweep has muted at the SFU (released when that connection is gone)
-  /** Hold every standing pose that carries a reach to the tables as they are now (review of #260): after each
+  /** Hold every standing pose that carries a reach to the tables as they are now: after each
    *  request, and on the sanctions tick, since a timed allow can end with no request at all. Quiet: no attempt recorded,
    *  nothing said to a reacher for a packet they didn't send. */
   regateReaches(): void {
@@ -143,9 +118,8 @@ export class World {
       c.lastPose = p as Client["lastPose"]; this.dirty.set(c.id, p);   // the next frame carries the pose without the hand
     }
   }
-  /** Speech is arrival-only (R 10-18): the world's log keeps every say, people receive speech only for the time they were
-   *  present, and only an ADMIN reads the master log's speech back: the owner and anyone holding readChat (AGENTS.md catch_up); a server operator only by a role here. */
-  /** who reads speech back past their own arrival: whoever holds the readChat permission (owners hold every one) */
+  /** Speech is arrival-only (PROTOCOL §5): the log keeps every say, people receive speech only for the time they were
+   *  present, and only whoever holds the readChat permission (owners hold every one) reads it back past their arrival. */
   isAdmin(c: Client): boolean { return !!c.actorId && this.log.may(c.actorId, "readChat"); }
   /** The log seq at or below which this identity may not read a say back: null for an admin (no floor), else the
    *  earliest arrival among its connections here now; nobody here under it = Infinity (every say hidden). */
@@ -171,13 +145,13 @@ export class World {
         return n > 0; },
       sayFloor: (actor: string) => this.sayFloor(actor),
       regateReaches: () => this.regateReaches(),
-      resync: (why: string) => { for (const c of this.clients) try { c.ws.close?.(1012, why); } catch { /* gone */ } },   // 1012: they redial and rejoin (review L21)
+      resync: (why: string) => { for (const c of this.clients) try { c.ws.close?.(1012, why); } catch { /* gone */ } },   // 1012: they redial and rejoin
     };
   }
 
   constructor(name: string) {
     this.name = name;
-    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no log here (a world saved by the old protocol is translated once, in place: bun tools/protocol/world.ts translate <its name>)`);
+    if (!isWorldSaved(name)) throw new Error(`world "${name}" holds no log here (a world saved by the old protocol is translated once, in place: bun tools/world.ts translate <its name>)`);
     this.log = this.openLog();
     this.openSeq = this.log.snapSeq + 1;   // past every chat line this world has numbered (seq × 1000)
     // Runtime scripts wake with the world — a timer keeps running with nobody connected, which is the point of running
@@ -211,7 +185,7 @@ export class World {
    *  the fresh log replaces this one in place, so the people present rejoin the new world on their reload. Returns
    *  the archive directory. */
   resetWorld(): string {
-    // a failure after the old log was moved aside retires this log (house 6340433633): it would write a new world.jsonl
+    // a failure after the old log was moved aside retires this log: it would write a new world.jsonl
     // holding only what came after. A second reset is safe: it finishes the erase from the in-memory state, and the old
     // log stays in the first attempt's archive
     let arch: string;
@@ -234,29 +208,26 @@ export class World {
 
 export const worlds = new Map<string, World>();
 
-// A function DECLARATION on purpose (§15.1): hoisting is load-bearing for
-// module-scope callers — the unsplit boot sweep called it above its
-// definition, and keeping the declaration form keeps that shape legal.
-/** Does this world already exist — in memory or on disk — WITHOUT creating it?
- *  getWorld() founds on miss, which is right for a join by someone entitled to
- *  found and wrong for everyone else (RFC-005 §3.2.7: founding is not joining).
- *  Exact case (worldDirNamed); founding and forking refuse an occupied name in any case (worldlog.ts existsSync). */
+// a function declaration on purpose: module-scope callers rely on hoisting
+/** Does this world exist (in memory, or on disk in exact case: worldDirNamed)? getWorld() opens, and throws on a miss.
+ *  forkWorld refuses an occupied name by fs.existsSync, which folds case only where the filesystem does (macOS,
+ *  Windows): on Linux, Commons and commons are two names. */
 export function worldExists(name: string): boolean {
-  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return false;
+  if (!WORLD_NAME_RE.test(name)) return false;
   return worlds.has(name) || worldDirNamed(name);
 }
-/** Is there a world directory spelled exactly `name`? On a case-insensitive filesystem existsSync finds "commons" for
- *  "Commons", and a second World over one log is a second authority (#260 bot 17): a name is served in its own case only. */
+/** Is there a world directory spelled exactly `name`? A case-insensitive filesystem finds "commons" for "Commons", and a
+ *  second World over one log is a second authority: a name is served in its own case only. */
 export function worldDirNamed(name: string): boolean {
   if (!existsSync(join(WORLDS_DIR, name))) return false;
-  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once (was routes.ts knownWorld)
+  const now = Date.now();   // the listing is kept 5 s; a miss re-lists, so a new world is known at once
   if (now - dirsAt > 5000 || !dirs.has(name)) { try { dirs = new Set(readdirSync(WORLDS_DIR)); } catch { dirs = new Set(); } dirsAt = now; }
   return dirs.has(name);
 }
 let dirs = new Set<string>(), dirsAt = 0;
 
 export function getWorld(name: string): World {
-  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);
+  if (!WORLD_NAME_RE.test(name)) throw new Error(`bad world name: ${name}`);
   let w = worlds.get(name);
   if (!w) { accessTrace("load", name); w = new World(name); worlds.set(name, w); }
   return w;

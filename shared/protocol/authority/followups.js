@@ -2,8 +2,7 @@
 // occupants resettled when a host's shape changes, the stamps a write gets (physics shapes, media, model hashes), the
 // references a deletion clears (refComps, holdsRefs, withoutRefs, clearRefsTo), who last touched what (lastTouch, which
 // reads follow-ups as no author's), touchedOf, historyDiff, and the physical warnings and dangling references a write or
-// lint reports (refactor split, 2026-10-17; moved from authority.js's gate section unchanged). admit, changeEntry and
-// the world's bounds are above it, reached through UP.
+// lint reports. changeEntry, changeShape and the world's bounds are above it, reached through UP (admit is gate.js's, imported).
 import { REDACTED } from "../fold.js";
 import { baseOf, mapRefs, refsOf, refFields } from "../componentspec.js";
 import { mediaTier, tierWords } from "../../mediasrc.js";
@@ -15,42 +14,37 @@ import { CTX, UP } from "./ctx.js";
 import { Refusal, said } from "./refuse.js";
 import { geomOf, boxOfM, geomE, meshShape } from "./catalogue.js";
 import { delOp, followUp, cascadeOf, isE, lockedC, opsQuiet, qr3, scratch, setOp } from "./storage.js";
+import { tileSaid } from "../../terrainshape.js";
 import { aabb, ancestors, descendants, localFrom, qYaw, satCost, satDepth, worldT } from "./math.js";
 import { familyOf, groundOf, groundReady, near, spatial, spend, supportBelow, supportUnder } from "./spatial.js";
 import { backward, entryBy } from "./rights.js";
 import { admit } from "./gate.js";
-// the layers above this one (a leaf may not import them: authority-layers-check), reached through UP (ctx.js), which
-// authority.js binds at load
+// the layers above this one, reached through UP (ctx.js; a leaf may not import them: authority-layers-check)
 const boundsOf = (...a) => UP.boundsOf(...a);
 const changeEntry = (...a) => UP.changeEntry(...a);
 const outsideWorld = (...a) => UP.outsideWorld(...a);
 
-// review S2.4 (R 10-12): a geometry write moves a thing's top (a mesh resized, a model swapped, its scale changed), and what the
-// physics had stacked on it (its dynamic children, attached by their rest) kept their local pose: floating over a shrunk
-// plinth, or scaled with a model's new size. They are re-dropped: under a carried engine a zero-velocity launch from where
-// each stands (the engine logs where it lands, as a grab's fallen dependents are); with no engine, set straight down onto
-// what is under them. A held, locked or already flying child is left alone. A move or a turn is not a geometry write: the
-// stack rides along, as it always did.
-// The authority's consequence, not the asker's write (scars r10 M3): written by `system` under its own act, `resettle {hosts,
-// occupants}`, caused by the asker's act (as settle and return-lost are), so the entry never says the asker moved someone else's things.
-// Planned BEFORE the asker's write commits (review of PR #260, followups.js:58): every consequence is computed and admitted
-// against the state the write will leave (the asker's admitted preview), so a refusal refuses the whole request with nothing
-// written; after the commit, applyResettle only appends what was planned and can't refuse. A child the same write creates
-// has no pose before it: it is read from the new state (it was there before only if the old state has it).
+// A geometry write (a mesh resized, a model swapped, its scale changed) moves a thing's top, so what the physics had
+// stacked on it (its dynamic children, attached by their rest) is re-dropped: under a carried engine a zero-velocity
+// launch from where each stands; with no engine, set straight down. A held, locked or flying child is left alone; a move
+// or a turn is not a geometry write. Written by `system` under its own act, `resettle {hosts, occupants}`, caused by the
+// asker's act. Planned BEFORE the asker's write commits, against the state it will leave, so a refusal refuses the whole
+// request; after the commit, applyResettle only appends what was planned. A child the same write creates is read from
+// the new state.
 function planResettle(w, asker, ops, before, after0) { let after = after0; const actor = "system";
   // what a host's top depends on: its geometry (a mesh's size, a model's measured box, or none) and its scale. A write that
-  // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing (review r2 S2.1); a delete of the
-  // geometry is a change like any other (r2 S2.3)
+  // leaves these as they were (the same value re-asserted, a move, a turn) re-drops nothing; a delete of the
+  // geometry is a change like any other
   const geomKey = (st, id) => { const e = st.entities[id]; const m = e ? geomE(e) : null; return JSON.stringify([m ? boxOfM(m) : null, e?.c.transform?.scale ?? [1, 1, 1]]); };
   const hosts = new Set(ops.filter((o) => (o.op === "set" || o.op === "delete") && before.entities[o.id] && after.entities[o.id] && (o.comp === "mesh" || o.comp === "model" || o.comp === "transform") && geomKey(before, o.id) !== geomKey(after, o.id)).map((o) => o.id));
   if (!hosts.size) return null;
-  // a child on a SOCKET is the socket's child, which has no top: never an occupant (r2 S2.2: a cup on its perch was torn off and dropped)
+  // a child on a SOCKET is the socket's child, which has no top: never an occupant
   const occupants = Object.keys(after.entities).filter((k) => { const c = after.entities[k].c;
     return hosts.has(c.parent?.to) && c.physics?.kind === "dynamic" && !lockedC(c) && !w.presence.holds[k] && !w.presence.holds[c.parent.to] && !after.entities[k].c.disabled && aabb(after, k); });
   if (!occupants.length) return null;
   const spec = after.entities["@world"]?.c["physics-engine"];
-  // the ground still loading: a fall would rest on a guessed height (review r4 F2) — they are left as they are on the host
-  // (its local pose kept: a rescaled host carries them with it, r5 F6), said so
+  // the ground still loading: a fall would rest on a guessed height — they are left as they are on the host
+  // (its local pose kept: a rescaled host carries them with it), said so
   if (!groundReady(after)) return { actor, asker, hosts, occupants: [], admitted: null, launches: [], note: { kept: occupants, why: "they were resting on a thing whose shape changed, but this world's ground is still loading: they are left as they are on it (a rescaled host carries them with it) rather than fall onto a guessed height. Nothing sets them down once it has loaded: a later change to the host's shape does, or moving them" } };
   if (spec && carried(spec)) {
     const flying = new Set(Object.keys(w.sim?.()?.launched ?? {}));
@@ -67,11 +61,11 @@ function planResettle(w, asker, ops, before, after0) { let after = after0; const
     return { actor, asker, hosts, occupants: dropped, admitted, launches, note: { fell: dropped, why: "they were resting on a thing whose shape changed; they fall to its new top (physics will log where they land)" } };
   }
   // an engine this server doesn't carry (an owner named it): re-dropping them is that engine's to compute, so the reshape is
-  // refused, never answered by setting them down as if the world had no physics (the house's answer on #260, as for a delete
-  // or a grab of a support: writes.js, bodyverbs.js)
+  // refused, never answered by setting them down as if the world had no physics (as for a delete or a grab of a support:
+  // writes.js, bodyverbs.js)
   if (spec && !carried(spec)) refuseForeign(spec, `reshaping that would re-drop ${occupants.join(", ")} (resting on it)`);
   // no engine: set each occupant down from ABOVE the host's new top (a grown host would otherwise bury it: supportUnder only
-  // counts faces at or below where the occupant stands; r2 S1.1). A host that lost its body frees its occupants to the world
+  // counts faces at or below where the occupant stands). A host that lost its body frees its occupants to the world
   const setOps = occupants.flatMap((k) => { const host = after.entities[k].c.parent.to; const b = aabb(after, k); const hb = aabb(after, host); const wt = worldT(after, k);
     const lift = hb ? Math.max(0, hb.max[1] - b.min[1]) : 0; const probe = { min: [b.min[0], b.min[1] + lift, b.min[2]], max: [b.max[0], b.max[1] + lift, b.max[2]] };
     const below = supportUnder(after, probe, new Set([k, ...descendants(after, k)])); const wpos = [wt.pos[0], r3(wt.pos[1] - (b.min[1] - below.y)), wt.pos[2]];
@@ -104,12 +98,12 @@ function applyResettle(w, plan, cause, notes) {
 // P7 + Covenant III: a thing is in the sim by its `physics` component, and its geometry enters the sim only through the
 // log, as physics.shape: the AUTHORITY's measurement of its model (model-local box [[min], [max]]), never the asker's word.
 // The live server folds the sim with no catalogue of its own (livehost.ts: simModels {}), so a thing with no stamped shape
-// is no body at all: thrown, it never flew and never rested (found 10-06: every throw on a running server did nothing).
+// is no body at all.
 // Stamped on every write of the asker's own (a capability's writes are scoped to what they name and are left alone):
 //   - a physics value written (create or set): its shape is the authority's, whatever was sent;
 //   - a model changed on a thing with physics: re-measured;
 //   - a modelled thing made while the world runs physics, and every standing thing when physics is turned on (or its
-//     engine changed): physics {kind: 'static', shape} unless it has physics already (translate-d3 writes the same).
+//     engine changed): physics {kind: 'static', shape} unless it has physics already or its model isn't measured here (translate-d3 writes the same).
 const r4 = (n) => Math.round(n * 1e4) / 1e4;
 // the authority's measurement of a model as a collider. A sphere is asked for with collider.shape "sphere" (PHYSICS §3.1:
 // the request vocabulary; the stamp is the tagged shape): fitted to the measured box, centred on it, radius its largest
@@ -117,13 +111,16 @@ const r4 = (n) => Math.round(n * 1e4) / 1e4;
 const shapeFor = (model, req) => { const m = geomOf(model); if (!m) return null; const b = boxOfM(m);
   if (req === "sphere") return { type: "sphere", radius: r4(Math.max(...[0, 1, 2].map((k) => (b[1][k] - b[0][k]) / 2))), pos: [0, 1, 2].map((k) => r4((b[0][k] + b[1][k]) / 2)) };
   return b.map((c) => c.map(r4)); };
+const SHAPE_COMPS = new Set(["physics", "model", "collider", "mesh", "openable"]);
 function stampShapes(ctx, ops) {
   if (ctx.cap || !ops.length) return ops;
+  // only these ops can stamp a shape (the ids below): without one, no copy of the world is made to find none
+  if (!ops.some((o) => o.op === "create" || o.comp === undefined || SHAPE_COMPS.has(o.comp) || o.comp.startsWith("motion:") || o.comp === "motion" || o.comp === "physics-engine")) return ops;
   const after = scratch(ctx.st, ops); const simOn = !!after.entities["@world"]?.c["physics-engine"];
   const ids = new Set();
   for (const o of ops) if ((o.op === "set" || o.op === "delete") && o.comp && (o.comp === "physics" || o.comp === "model" || o.comp === "collider" || o.comp === "mesh")) ids.add(o.id);
-  // a thing that moves by its motion or opens is a KINEMATIC collider (PHYSICS §3.3; shape audit 10-16): the stamp says so
-  // (eidosim carries kinematic as static, so behaviour is unchanged; the record no longer says "never moves")
+  // a thing that moves by its motion or opens is a KINEMATIC collider (PHYSICS §3.3): the stamp says so (eidosim carries
+  // kinematic as static)
   for (const o of ops) if (o.op === "set" && o.comp && (o.comp === "motion" || o.comp.startsWith("motion:") || o.comp === "openable")) ids.add(o.id);
   const moves = (id) => { for (let k = id, n = 0; k && n < 33; k = after.entities[k]?.c.parent?.to, n++) { const c = after.entities[k]?.c; if (!c) break;
     if (c.openable !== undefined || Object.keys(c).some((x) => x === "motion" || x.startsWith("motion:"))) return true; } return false; };
@@ -161,7 +158,7 @@ function stampShapes(ctx, ops) {
   if (rounded.length) ctx.notes.push({ component: "physics", field: "shape", ids: rounded.length <= 12 ? rounded : rounded.length, why: "a cylinder or a capsule is stamped as its bounding BOX: no carried engine reads a cylinder, so it collides, stacks and measures as a box" });
   return out;
 }
-// batch 2: a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
+// a sound starts on the authority's clock. When a write leaves a sound playing and it wasn't before (no sound, paused,
 // another file) or the request named no t0, the authority sets t0 = now and says so: a reaction, a script, an agent and the
 // editor all start it in step, and no client invents its own clock (as motion.t0). A pause keeps t0; a resume restarts.
 // And a link's reach is said once, when it's written: who will hear or see it (shared/mediasrc.js).
@@ -180,16 +177,15 @@ function stampMedia(ctx, ops) {
     return { ...o, value: { ...v, t0 } };
   });
 }
-// R 10-17: a model is its library path; what its bytes were rides beside it as model-hash (sha256:<64 hex>), stamped by the
-// authority when its catalogue already knows the hash (server/modelcatalogue.ts measures it off the request path: warm, before
-// the authority sees the request) and never computed here. A model it can't hash carries none: the old one named other bytes,
-// so a change of model drops it. A capability (a handler, a script) never sets a server-written component, so under one the
-// stale hash is only dropped. A content address written as the model (one stored before 10-17) is its own hash.
+// a model is its library path; its bytes' identity rides beside it as model-hash (sha256:<64 hex>), stamped when the
+// catalogue already knows the hash (server/modelcatalogue.ts measures it off the request path), never computed here. A
+// change of model drops a stale hash; under a capability (a handler, a script) it is only dropped. A content address
+// written as the model (an older spelling) is its own hash.
 const hashOfModel = (m) => { if (typeof m !== "string") return null; const a = eidoHex(m); if (a) return `sha256:${a}`;
   let h = null; try { h = CTX.cat.get(m)?.sha256; } catch { h = null; } return typeof h === "string" && /^[0-9a-f]{64}$/.test(h) ? `sha256:${h}` : null; };
 function stampModelHash(ctx, ops) {
   const ids = new Set(); for (const o of ops) if ((o.op === "set" || o.op === "delete") && o.comp === "model") ids.add(o.id);
-  // a fork's copy carries what its parent holds (review r8 H2): a hash measured since, or none, is the parent's to stamp
+  // a fork's copy carries what its parent holds: a hash measured since, or none, is the parent's to stamp
   if (!ids.size || CTX.forking) return ops;
   const after = scratch(ctx.st, ops); const out = ops.slice();
   for (const id of ids) {
@@ -201,18 +197,20 @@ function stampModelHash(ctx, ops) {
   }
   return out;
 }
+// a sculpted tile is 1024 numbers: a reply says how far the tile stands from the ground under it (terrainshape's tileSaid), never every sample
+const opsSaid = (ops) => ops.map((o) => (o.op === "set" && tileSaid(o.comp, o.value) !== o.value ? { ...o, value: tileSaid(o.comp, o.value) } : o));
 function touched(ops, st) {
   const out = {};
   for (const o of ops) { const e = st.entities[o.id]; out[o.id] ??= {};
     if (!e) { out[o.id] = null; continue; }
     if (o.op === "create") Object.assign(out[o.id], e.c);
-    else if (o.comp !== undefined) out[o.id][o.comp] = e.c[o.comp] ?? null; else out[o.id] = null; }
+    else if (o.comp !== undefined) out[o.id][o.comp] = tileSaid(o.comp, e.c[o.comp]) ?? null; else out[o.id] = null; }
   return out;
 }
 const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
-// authored: who AUTHORED its current value (a handler's author, review r9 H1): the authority's follow-ups (a reference cleared
+// authored: who AUTHORED its current value (a handler's author): the authority's follow-ups (a reference cleared
 // because what it named was deleted, or put back by that delete's undo; the entry's own `cascade`) are skipped, so an owner's
 // cleanup never re-authors a demoted builder's handlers with the owner's rights, nor a visitor's delete an owner's. A follow-up
 // that removed the component leaves no author (null). Without it: the last write of any kind (a version, a conflict check).
@@ -223,15 +221,15 @@ function lastTouch(w, id, comp, { editsOnly = false, authored = false } = {}) {
     const ops = opsQuiet(e), fu = authored ? cascadeOf(e) : null;
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
       if (o.op === "create" || o.comp === comp || (o.op === "delete" && o.comp === undefined)) {
-        // a follow-up set put a value back (an undo's restore, review r10 M2): it also steps over the follow-up delete it reverses
+        // a follow-up set put a value back (an undo's restore): it also steps over the follow-up delete it reverses
         if (fu?.has(k)) { if (o.op === "set") { restored = true; continue; } if (o.op === "delete" && restored) { restored = false; continue; } return null; }
         // authored: whose rights wrote it (a handler's author, a script's sponsor), not who invoked it: a handler that writes
         // its own thing's reactions installs its author's handler, never the invoker's (null when a purge erased whose)
         return { seq: i, actor: authored ? entryBy(w, e).rights : e.actor }; } } }
   return null;
 }
-// who last changed each component, within a horizon of this thing's own recent entries (R 10-04: "only the most recent
-// x log steps… after that a deep search"). Past the horizon it says so ({beyond}) — never "default" or "never changed".
+// who last changed each component, within a horizon of this thing's own recent entries. Past the horizon it says so
+// ({beyond}) — never "default" or "never changed".
 export const TOUCH_HORIZON = 200;
 function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
   const out = {}; const want = new Set(comps); let seen = 0, oldest = null;
@@ -239,15 +237,14 @@ function touchedOf(w, id, comps, horizon = TOUCH_HORIZON) {
     seen++; oldest = i; const fu = cascadeOf(e);
     opsQuiet(e).forEach((o, k) => { if (o.id !== id) return;
       const hit = o.op === "create" ? [...want] : want.has(o.comp) ? [o.comp] : [];
-      // a follow-up (a reference cleared by a delete, review r9 H1) says so: `by` caused it, but didn't author the value
+      // a follow-up (a reference cleared by a delete) says so: `by` caused it, but didn't author the value
       for (const c of hit) { out[c] = { seq: i, by: e.actor, who: said(e.actor), ts: e.ts, ...(o.op === "create" ? { created: true } : {}), ...(fu.has(k) ? { followUp: true } : {}) }; want.delete(c); } }); }
   for (const c of want) out[c] = { beyond: oldest ?? 0 };   // not found in the window: "unchanged since before #N"
   return out;
 }
 const opsTouching = (e, id) => opsQuiet(e).filter((o) => o.id === id);
-// What one change did to a thing, in a few words a person can read (R 10-10 23:55: "Is there a reason the history isn't more
-// explicit? ... does the World log actually not know what I set at any of these logged spots?" It does: every entry
-// carries the whole new value). Per component: the fields that differ from its previous value, 'a → b'.
+// What one change did to a thing, in a few words a person can read: per component, the fields that differ from its
+// previous value, 'a → b' (every entry carries the whole new value).
 function historyDiff(w, id, at, ops) {
   const out = {};
   const prevOf = (comp) => { for (const j of backward(w, id)) { if (j >= at) continue; const e = w.entries[j]; if (!isE(e) || e.kind !== "change") continue;
@@ -265,7 +262,7 @@ function historyDiff(w, id, at, ops) {
   }
   return Object.keys(out).length ? out : null;
 }
-// R 10-17 (ID HARDENING (4)): a thing's deletion nulls the typed references to it (and to the children that go with it) in
+// a thing's deletion nulls the typed references to it (and to the children that go with it) in
 // the same act, as Unity, Unreal and Resonite do — a reference never outlives what it names (a script's scope excepted: a dead id there reaches nothing). A list loses the entry; a single
 // reference's field goes, and with it a value that can't stand without it (look-at's target: the look-at goes); a reset
 // left with no targets is dropped from the reactions (it can't send nothing home); a home's parent goes (home under the
@@ -285,7 +282,7 @@ function withoutRefs(id, k, v, gone, cleared = [], dropped = []) {
 function clearRefsTo(ctx, gone) {
   const ops = [], cleared = [], dropped = [];
   for (const [id, e] of Object.entries(ctx.st.entities)) { if (gone.has(id)) continue;
-    // a script's scope is left alone (review r8 H1): a scope id that names nothing reaches nothing (scopeIds), an id is never
+    // a script's scope is left alone: a scope id that names nothing reaches nothing (scopeIds), an id is never
     // reused (§3d H7), and a write to script:<name> would re-sponsor it to the deleter (sponsorOf: the latest non-pause write)
     for (const [k, v] of Object.entries(e.c)) { if (k === "parent" || baseOf(k) === "script" || baseOf(k) === "parent" || !holdsRefs(k) || v === REDACTED) continue;
       if (!refsOf(k, v).some((r) => gone.has(r.id))) continue;
@@ -296,12 +293,8 @@ function clearRefsTo(ctx, gone) {
   if (cleared.length) ctx.notes.push({ cleared, ...(dropped.length ? { removed: dropped } : {}), why: `references to what you deleted were cleared in the same act${dropped.length ? " (a value that can't stand without its reference, or a reset left with nothing to send home, went with it)" : ""}` });
   return ops;
 }
-// Physical checks on every write (A2).
-// The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
-// is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
-// after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
-// a stored reference that names nothing (R 10-17 ID HARDENING (4)): a write can't make one (every ref is checked) and a delete
-// clears them, but an old log, an import or a merge can hold one. lint says where it is and what it names.
+// a stored reference that names nothing: a write can't make one (every ref is checked) and a delete
+// clears them (script scopes excepted), but an old log, an import or a merge can hold one. lint says where it is and what it names.
 function danglingRefs(st, ids) {
   const out = [];
   for (const id of ids) { const e = st.entities[id]; if (!e) continue;
@@ -309,10 +302,14 @@ function danglingRefs(st, ids) {
       for (const r of refsOf(k, v)) if (!st.entities[r.id]) out.push({ id, kind: "dangling", at: `${id}.${r.path.replace(/^[^.[]*/, k)}`, names: r.id, fix: `nothing here is called '${r.id}': point it at something that is, or clear it` }); } }
   return out;
 }
+// Physical checks on every write (A2).
+// The pairs come from the spatial index (each thing against what its box meets, never against the world), and the work
+// is counted: `strict` (check, a put's claim) is refused past the budget; a write's own advisory warnings, computed
+// after it's written, end with an `unchecked` entry instead (a write is never refused after it lands).
 function warnings(st, ids, strict = false) {
   const out = []; const ix = spatial(st); const pairs = new Map();   // id → the things it was already said to overlap
-  // the ground still loading (r3 F3): no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and
-  // is refused ground-loading below, never waved through (r4 F3)
+  // the ground still loading: no sunk/floating advice; a strict check (a put's claim) has nothing to judge it on and
+  // is refused ground-loading below, never waved through
   const B = boundsOf(st), ground = groundReady(st); let k = 0; const was = CTX.work.what;
   CTX.work.what = ids.length === 1 ? `checking ${ids[0]}` : `checking ${ids.length} things`;
   try {
@@ -343,4 +340,4 @@ function warnings(st, ids, strict = false) {
   } finally { CTX.work.what = was; }
   return out;
 }
-export { applyResettle, clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsTouching, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };
+export { applyResettle, clearRefsTo, danglingRefs, historyDiff, holdsRefs, lastTouch, opsSaid, opsTouching, planResettle, resettleEntries, stampMedia, stampModelHash, stampShapes, stripDry, touched, touchedOf, warnOrNot, warnings, withoutRefs };

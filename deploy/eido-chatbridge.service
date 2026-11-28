@@ -1,7 +1,8 @@
 # Two-way chat mirror: commons say verbs ↔ one Discord text channel.
-# Template — install on the box:
+# deploy-vps.sh keeps the box's copy equal to this file once it is installed:
+#   sudo install -D -m 600 /dev/null /etc/eidoverse/eido-chatbridge.env
+#   sudoedit /etc/eidoverse/eido-chatbridge.env   # WORLD_TOKEN=…, DISCORD_TOKEN=…, CHANNEL_ID=…, one per line
 #   sudo cp deploy/eido-chatbridge.service /etc/systemd/system/
-#   sudoedit /etc/systemd/system/eido-chatbridge.service   # fill the secrets
 #   sudo systemctl daemon-reload && sudo systemctl enable --now eido-chatbridge
 #
 # The bot's Discord application needs the MESSAGE CONTENT privileged intent
@@ -14,17 +15,15 @@ Wants=network-online.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/eidoverse-worlds/tools/chatbridge
+WorkingDirectory=/home/ubuntu/eidoverse-worlds/services/chatbridge
 ExecStart=/home/ubuntu/.bun/bin/bun index.ts
 Restart=always
 RestartSec=5
 Environment=WORLD_URL=ws://127.0.0.1:8940/ws
 Environment=WORLD_NAME=commons
 Environment=BRIDGE_ID=discord
-# Secrets — fill these in the installed copy, never in git:
-Environment=WORLD_TOKEN=FILL_ME
-Environment=DISCORD_TOKEN=FILL_ME
-Environment=CHANNEL_ID=FILL_ME
+# WORLD_TOKEN, DISCORD_TOKEN, CHANNEL_ID: secrets, never in git
+EnvironmentFile=/etc/eidoverse/eido-chatbridge.env
 
 [Install]
 WantedBy=multi-user.target

@@ -1,13 +1,9 @@
-// grounddefs — the ground-palette contract (charter §3, defs round two).
+// grounddefs — the ground palette (defs/ground/_palette.json): validation, and the terrain/grass verb args a choice writes.
 //
-// Same law as the sky presets: everything here is an AUTHORING convenience.
-// The ground panel applies a choice as a concrete terrain/grass verb on a
-// deliberate click, so the log never stores one of these names — a mutable
-// def file can restyle the panel, never rewrite logged meaning.
+// Palette names are an authoring convenience only: a panel click writes concrete verb args, so the log never stores a
+// palette name and a restyled def can't rewrite logged meaning.
+import { isNum, isObj, isStr } from "./protocol/is.js";
 
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-const isStr = (v) => typeof v === 'string' && v.length > 0;
-const isObj = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // panel labels, not def files — spaces allowed ("mojave desert"), still bounded
 const LABEL_RE = /^[a-z][a-z0-9 _-]{0,32}$/;
 
@@ -47,10 +43,7 @@ export function validateGroundPalette(t) {
 }
 
 // ------------------------------------------------------------ the verb args a choice writes
-// One recipe for "this palette choice → these terrain/grass args", read by the
-// world panel's 🌿 section (client/lib/groundpanel.js) and the Build tab's World
-// section (client/lib/editpanels.js) alike, so the two can never write
-// different args for the same pick.
+// One recipe shared by client/lib/edit/groundpanel.js and client/lib/edit/panels.js, so the two never write different args for the same pick.
 
 /** The choice the panel starts from when nothing is dialled yet (the names
  *  groundpanel always preferred, else each table's first entry). */
@@ -72,7 +65,7 @@ export function terrainArgs(pal, choice = {}, base = null) {
   if (choice.seed != null) out.seed = choice.seed;
   if (choice.shape != null && pal?.shapes?.[choice.shape] != null) out.amplitude = pal.shapes[choice.shape];
   const color = choice.tint != null ? colorInt(pal?.tints?.[choice.tint]?.layer) : null;   // the palette says #rrggbb; a layer stores an int
-  if (color) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
+  if (color != null) out.layers = Array.isArray(out.layers) && out.layers.length ? out.layers.map((l, i) => (i ? l : { ...l, color })) : [{ color, repeat: 16 }];
   return out;
 }
 

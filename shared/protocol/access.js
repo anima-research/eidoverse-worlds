@@ -1,6 +1,6 @@
-// shared/protocol/access.js — who may come INTO a world (upstream #258 "world access", in this protocol's terms).
+// shared/protocol/access.js — who may come INTO a world.
 //
-// Pure: no state, no clock, no imports but roles.js. The server's door (server/access.ts) asks it at every join, after any
+// Pure: no state, no clock, no imports but roles.js and is.js. The server's door (server/access.ts) asks it at every join, after any
 // change to the world's roles or access, and for every HTTP read of a world; the client's /access, /members and the World
 // panel read the same function, so "may I be here" never has two answers.
 //
@@ -9,16 +9,16 @@
 //     join    who may come in with a body: anyone; people with an account; or only people LISTED here (a roles:<id> grant).
 //     watch   "anyone": whoever `join` turns away may still WATCH (a spectator: no body, no voice, nothing written). Absent,
 //             watching follows `join`: a listed-only world is then invisible to everyone it doesn't list.
-//   default-role {role}   the NEWCOMER role: what everyone without a grant holds once inside. Absent: member (every world
-//             founded before R 10-21 keeps that meaning); a world founded since starts with builder (starter config).
+//   default-role {role}   the NEWCOMER role: what everyone without a grant holds once inside. Absent: member (older
+//             worlds keep that meaning); a newly founded world starts with builder (starter config).
 //   roles:<id> {role, can?, note?, until?}   `until` (epoch ms): when the grant ends. The authority writes its end
 //             (`expire-roles`, a system act) within a second of it, and warns the holder five minutes before.
 //
-// Upstream spelled the same doors as rungs below visitor on one ladder (`grant * none` = invite-only, `grant * spectator` =
-// watch-only, `grant bob spectator`); here a rank is membership and entry is the world's `access` (roles.js: "a state is
-// never a rank"). The four doors upstream's panel offers map onto these components exactly (DOORS below).
+// A rank is membership and entry is the world's `access` (roles.js: "a state is never a rank"); upstream's
+// below-visitor rungs (none, spectator) map onto these components exactly (DOORS below).
 
 import * as R from "./roles.js";
+import { isObj } from "./is.js";
 /** The four doors an owner picks between (upstream's World › access buttons), in this protocol's components. */
 export const DOORS = Object.freeze({
   open:          "anyone may come in, and build (newcomers are builders)",
@@ -28,12 +28,11 @@ export const DOORS = Object.freeze({
 });
 export const ACCESS_WARN_MS = 5 * 60_000;   // a timed grant's holder is told this long before it ends
 
-const isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 const accessOf = (wc) => (isObj(wc?.access) ? wc.access : null);
 
 /** Is `actor` LISTED here: a live roles:<actor> grant whose `until`, if any,
- *  hasn't passed at `now` (security review 10-18 M6: an ended grant is absent on every READ — the door, the map, the HTTP reads
- *  of an unloaded world — before the authority's sweep writes its end). `now` null: no clock, until is not judged. */
+ *  hasn't passed at `now` (an ended grant is absent on every READ, before the authority's sweep writes its end).
+ *  `now` null: no clock, until is not judged. */
 export function listedIn(wc, actor, now = null) {
   const r = actor ? wc?.[`roles:${actor}`] : null;
   if (!(isObj(r) && typeof r.role === "string")) return false;
@@ -53,17 +52,17 @@ export function doorOf(wc) {
 /** What `who` may do at this world's door: "embody" (come in with a body), "watch" (no body), or "none", with the reason
  *  in words for a refusal. `who`: {actor?, anon? (no account), bypass? (an owner, a holder of a moderation power, an
  *  operator: they always get in), trustedRenderer? (the renderers' credential: may watch any world, never embody)}.
- *  Bans, kicks, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
+ *  Bans, account age and capacity are the server's (they need its moderator log, its clock and who is here). */
 export function entryOf(wc, who = {}, worldName = "this world", now = null) {
   if (who.bypass) return { may: "embody" };
-  if (who.trustedRenderer) return { may: "watch" };   // the renderers' credential never embodies, whatever the door (review of #260, #610)
+  if (who.trustedRenderer) return { may: "watch" };   // the renderers' credential never embodies, whatever the door
   const a = accessOf(wc);
   const join = a?.join ?? "anyone";
   const w = `"${worldName}"`;
   const why = join === "signed-in" && who.anon ? `${w} is for signed-in people`
     : join === "listed" && !listedIn(wc, who.actor, now) ? `${w} isn't open to you; its owners decide who may come in, and asking again won't change that` : null;
   if (!why) return { may: "embody" };
-  if (a?.watch === "anyone" || who.trustedRenderer) return { may: "watch", why: a?.watch === "anyone" ? `${why}; you may watch (spectate)` : why };
+  if (a?.watch === "anyone") return { may: "watch", why: `${why}; you may watch (spectate)` };
   return { may: "none", why };
 }
 
@@ -87,7 +86,7 @@ export function doorWords(door, wc = {}) {
   if (door === "public") return `anyone may come in and play: newcomers get the ${nm(newcomer("public"))} role; building is for ${nm(newcomer("open"))} and up`;
   return DOORS[door] ?? null;
 }
-/** What /access says to a word that isn't a door (R 10-28: it teaches the doors, it adds no aliases). */
+/** What /access says to a word that isn't a door (it teaches the doors, it adds no aliases). */
 export const notADoor = (word, wc = {}) => `'${word}' isn't one of the doors. /access takes ${Object.keys(DOORS).map((d) => `${d} (${doorWords(d, wc)})`).join("; ")}. /access alone shows who can come in now`;
 
 /** A duration as people type it ("30m", "2h", "1d", "1w", "90 min") → ms, or null. At most a year. */

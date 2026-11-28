@@ -367,7 +367,7 @@ check("20 redaction of roles: ignored (diagnosed), the note redacted",
       and [c for s_, c in codes(r)].count("redaction-target-governance") == 2, (r.view(), codes(r)))
 
 
-# ---- docs/DESIGN-log-vocabulary.md §5: the positive fixtures F1–F3, F8 and the negative set F14 ----
+# ---- docs/decisions/LOG-VOCABULARY.md §5: the positive fixtures F1–F3, F8 and the negative set F14 ----
 # F1 an admitted request: kind request, verb, body.args an object (the readback keys on args.*)
 r = run("23a-f1-request-admitted", [GEN_LINE,
     json.dumps({"world": WID, "kind": "request", "ts": 1, "actor": "alice", "verb": "set", "body": {"args": {"id": "@world", "component": "label", "value": "x"}, "salt": "UUPZ_XwQSbZtpmdmt87bSQ"}}),
@@ -380,7 +380,7 @@ check("F2 a refused request is a request entry (argNames, refused.code) the fold
 # F3 a say: no verb
 r = run("23c-f3-say", [GEN_LINE, json.dumps({"world": WID, "kind": "say", "ts": 1, "actor": "alice", "body": {"text": "hi", "salt": "Gz4fypccq-7GOARwIgA8Vw"}})])
 check("F3 a say carries no verb and folds nothing", r.status == "ok" and not r.diag and r.view() == {"@world": {}}, codes(r))
-# F8 cascade: the batch folds whole; the marked op is the authority's (readers of authorship skip it: tools/protocol/r9-check)
+# F8 cascade: the batch folds whole; the marked op is the authority's (readers of authorship skip it: test/protocol/r9-check)
 r = run("23d-f8-cascade", [GEN_LINE, ACT,
     st("batch", {"ops": [{"op": "delete", "id": "shelf"}, {"op": "create", "id": "vase"}, {"op": "set", "id": "vase", "comp": "transform", "value": {"pos": [0, 0.9, 0]}, "salt": "5hGJikDRuwCGCS7slx6mug"}], "cascade": [2]})])
 check("F8 a batch with a cascade folds like any batch", r.status == "ok" and r.view()["vase"] == {"transform": {"v": {"pos": [0, 0.9, 0]}}} and codes(r) == [(2, "noop:delete-missing-entity")], codes(r))

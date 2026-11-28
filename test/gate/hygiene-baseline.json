@@ -1,0 +1,305 @@
+{
+ "test/client/avatar-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/build-gate-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/capsule-recovery-test.mjs": {
+  "own-ok": 1
+ },
+ "test/client/collider-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/colour-picker-bench.ts": {
+  "bare-wait": 2
+ },
+ "test/client/confirmcenter-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/consent-client-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/csp-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/debug-tabs-test.ts": {
+  "bare-wait": 1,
+  "own-ok": 1
+ },
+ "test/client/dismount-height-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/editcommit-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/environment-realizer-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/first-name-account-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/frames-layout-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/governor-xr-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/grant-command-test.ts": {
+  "bare-wait": 1,
+  "own-ok": 1
+ },
+ "test/client/grant-until-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/hierarchy-commit-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/history-request-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/keyhints-check.ts": {
+  "own-ok": 1
+ },
+ "test/client/last-world-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/latestread-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/lite-graph-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/media-trust-tabs-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/models-field-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/originof-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/panels-test.ts": {
+  "bare-wait": 3,
+  "own-ok": 1
+ },
+ "test/client/particles-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/physics-off-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/predict-pending-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/retired-commands-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/scriptcard-expect-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/skypanel-state-test.ts": {
+  "bare-wait": 2,
+  "own-ok": 1
+ },
+ "test/client/sound-editor-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/surface-hold-test.ts": {
+  "own-ok": 1
+ },
+ "test/client/unknown-comp-test.ts": {
+  "bare-wait": 2,
+  "own-ok": 1
+ },
+ "test/client/windows-guard-test.ts": {
+  "own-ok": 1
+ },
+ "test/harness/inspectharness.ts": {
+  "bare-wait": 1
+ },
+ "test/mcpl/buildcheck-route-test.ts": {
+  "bare-wait": 1
+ },
+ "test/mcpl/consent-replay-test.ts": {
+  "bare-wait": 2,
+  "own-ok": 1
+ },
+ "test/mcpl/door-body-test.ts": {
+  "bare-wait": 2
+ },
+ "test/mcpl/door-is-error-test.ts": {
+  "bare-wait": 1,
+  "own-ok": 1
+ },
+ "test/mcpl/event-wire-test.ts": {
+  "own-ok": 1
+ },
+ "test/mcpl/support-swap-test.ts": {
+  "bare-wait": 2,
+  "own-ok": 1
+ },
+ "test/protocol/access-check.ts": {
+  "bare-wait": 6
+ },
+ "test/protocol/batch2-probe.ts": {
+  "bare-wait": 6
+ },
+ "test/protocol/build-probe.ts": {
+  "bare-wait": 5
+ },
+ "test/protocol/catalogue-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/client-check.ts": {
+  "bare-wait": 48
+ },
+ "test/protocol/climb-env-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/counter-check.ts": {
+  "bare-wait": 1
+ },
+ "test/protocol/drive-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/foldparity-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/force-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/freeze-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/gates-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/hello-refused-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/inplace-check.ts": {
+  "bare-wait": 3
+ },
+ "test/protocol/owners-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/parity-check.ts": {
+  "bare-wait": 5
+ },
+ "test/protocol/party-probe.ts": {
+  "bare-wait": 32
+ },
+ "test/protocol/physics-volume-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/reachgate-check.ts": {
+  "bare-wait": 1
+ },
+ "test/protocol/refusedjoin-check.ts": {
+  "bare-wait": 8
+ },
+ "test/protocol/reset-race-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/scripting-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/scripts-check.ts": {
+  "bare-wait": 15
+ },
+ "test/protocol/shiplist-probe.ts": {
+  "bare-wait": 103
+ },
+ "test/protocol/simckpt-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/siminputs-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/statecache-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/translate-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/upgrade-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/vocab-fixtures-check.ts": {
+  "own-ok": 1
+ },
+ "test/protocol/xss-probe.ts": {
+  "bare-wait": 8
+ },
+ "test/protocol/zone-water-check.ts": {
+  "own-ok": 1
+ },
+ "test/server/knockdown-test.ts": {
+  "bare-wait": 9,
+  "own-ok": 1
+ },
+ "test/server/msgrate-test.ts": {
+  "own-ok": 1
+ },
+ "test/server/navgrid-test.ts": {
+  "bare-wait": 1
+ },
+ "test/server/oldworlds-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/axes-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/channelbox-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/compose-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/descriptor-defaults-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/editor-range-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/editschema-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/physconst-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/role-grammar-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/rot-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/shape-attach-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/shape-import-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/shape-physics-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/shape-render-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/shove-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/skystamp-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/sockets-test.ts": {
+  "own-ok": 1
+ },
+ "test/shared/sound-test.ts": {
+  "own-ok": 1
+ },
+ "test/water/import-golden-check.ts": {
+  "own-ok": 1
+ }
+}

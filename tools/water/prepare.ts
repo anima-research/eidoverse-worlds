@@ -12,7 +12,7 @@ const [source,output]=process.argv.slice(2,4).map(p=>resolve(p));
 if(!source||!output)throw Error('usage: prepare.ts EXPORT_DIR OUTPUT_DIR');
 mkdirSync(join(output,'models'),{recursive:true});
 const meta=JSON.parse(readFileSync(join(source,'export.json'),'utf8'));
-const vessels=JSON.parse(readFileSync(new URL('../../world-data/water/vessels.json',import.meta.url),'utf8'));
+const vessels=JSON.parse(readFileSync(new URL('./data/vessels.json',import.meta.url),'utf8'));
 const ueLocal=(p:number[])=>convert([p[1]/100,p[2]/100,p[0]/100]);
 const corrected=process.argv.includes('--right-handed');
 const convert=(p:number[])=>corrected?[-p[0],p[1],p[2]]:p;
@@ -22,8 +22,7 @@ const io=new NodeIO().registerExtensions(ALL_EXTENSIONS);
 for(const name of Object.keys(meta.groups)){
  const file=name==='submarine'?'submarine-source.glb':name+'.glb';
  const doc=await io.read(join(source,file));
- // Visible pool water is not a solid floor. Preserve this semantic as glTF
- // extras so every exact-collision consumer gets the same open moonpool.
+ // pool water is not a floor: carried as glTF extras so exact-collision consumers keep the moonpool open
  for(const node of doc.getRoot().listNodes())if(['PoolSurface','HatchSurface'].includes(node.getName()))node.setExtras({...node.getExtras(),collision:false});
  await doc.transform(dedup(),instance({min:2}));
  const raw=Buffer.from(await io.writeBinary(doc)),length=raw.readUInt32LE(12);
@@ -32,8 +31,7 @@ for(const name of Object.keys(meta.groups)){
  const bin=raw.subarray(20+length);
  const pos=convert(origins[name]);
  const i=gltf.nodes.length;
- // Unreal glTF is (X,Z,Y), presence is (Y,Z,X). Reflect X/Z exactly once.
- // Blender source exports centimetres, while Unreal exports metres.
+ // Unreal glTF is (X,Z,Y), the wire is (Y,Z,X): reflect X/Z once. Blender exports centimetres, Unreal metres.
  const scale=name==='submarine'?.01:1;
  const translation=name==='submarine'?[0,0,0]:pos.map((v:number)=>-v);
  gltf.nodes.push({name:'wire-coordinate-frame',matrix:[0,0,scale,0,0,scale,0,0,(corrected?-scale:scale),0,0,0,...translation,1],children:gltf.scenes[gltf.scene??0].nodes});
