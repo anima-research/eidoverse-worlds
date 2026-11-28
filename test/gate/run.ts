@@ -28,7 +28,7 @@
 //   PROTOCOL_KEEP=1                         keep the gate's temp dir to read
 //   PROTOCOL_TIMEOUT_SCALE=<factor>         multiply every suite's timeout (a very slow host: 2)
 //   PROTOCOL_HEADLESS_LOCK=<file> PROTOCOL_PERF_GUARD=<script>   run browser suites under a host's flock + perf guard
-import { killSuiteAsync, killSuiteAtExit, leftoverMembers, processTableAsync, type Row } from "./procgroup.ts";
+import { killSuiteAsync, killSuiteAtExit, stillRunning, suiteMembersAsync, winJob, type WinJob } from "./procgroup.ts";
 import { findChrome } from "./chrome.ts";
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs"; import { createHash } from "node:crypto";
@@ -306,13 +306,12 @@ if (scratchOut) fs.appendFileSync(scratchOut, `scratch=${SCRATCH_ROOT.split(path
 let current: { pid: number; exitCode: number | null; signalCode: string | null } | null = null;
 // Linux, macOS and Windows alike (server/procgroup.ts): a POSIX process group, or the process tree on Windows
 // the kill path never blocks (CI 10-21: a synchronous WMI query froze the gate for two hours on Windows, past every timer)
-const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean); before?: Row[] }) => killSuiteAsync(pid, sig, process.platform, o);
-// Windows: what is running before a suite starts is never that suite's to count or kill (procgroup.ts startedSince). [] when the
-// table didn't answer: the sweeps then kill a still-running suite's own process and nothing else (winKillPlan)
-const tableBefore = async (): Promise<Row[]> => process.platform === "win32" ? processTableAsync() : [];
+const killGroup = (pid: number, sig: NodeJS.Signals, o?: { exited?: boolean | (() => boolean) }) => killSuiteAsync(pid, sig, process.platform, o);
+// Windows: the running suite's job object (procgroup.ts winJob), when one could be made: its kill is the job's, never a walk by process ids
+let currentJob: WinJob | null = null;
 // a suite that dies mid-test can leave a read-only dir behind (clientlog-test's unwritable case did): give every dir its write bit back, then remove
 const unlock = (d: string) => { try { fs.chmodSync(d, 0o700); for (const e of fs.readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) unlock(path.join(d, e.name)); } catch { /* gone */ } };
-const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) killSuiteAtExit(current.pid); if (process.env.PROTOCOL_KEEP) return;
+const cleanup = () => { if (current && current.exitCode == null && current.signalCode == null) { if (currentJob) currentJob.kill(); else killSuiteAtExit(current.pid); } if (process.env.PROTOCOL_KEEP) return;
   try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch { unlock(GATE_TMP); try { fs.rmSync(GATE_TMP, { recursive: true, force: true }); } catch (e) { console.error(`[gate] couldn't remove ${GATE_TMP}: ${(e as Error).message}`); } } };
 process.on("exit", cleanup);
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => { console.log(`\nprotocol gate: ${sig}: killing the running suite's process group`); cleanup(); process.exit(130); });
@@ -341,25 +340,25 @@ async function run(name: string, file: string): Promise<{ code: number | null; s
   if (laneOf(name) === "browser" && lock && guard) cmd = ["flock", lock, "bash", guard, "-t", String(timeoutOf(name)), "--", ...cmd];
   // detached: a process group to kill on POSIX. Not on Windows: there it means no console, and every process the suite starts
   // then pays for one of its own (inplace 66 s attached, 131 s detached on one laptop, 11-05); the kill walks parent links there
-  const was = await tableBefore();
   const child = spawn(cmd[0], cmd.slice(1), { cwd: ENGINE, env, detached: process.platform !== "win32", windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  const job = process.platform === "win32" && child.pid ? winJob(child.pid, { killOnClose: true }) : null;   // null: the walk by parent ids from the suite's id, as before
+  currentJob = job;
   current = child as unknown as { pid: number; exitCode: number | null; signalCode: string | null };
   let timedOut = false; const kept = outputKeeper(); const keep = (b: Buffer) => kept.add(b.toString());   // the tail, and every verdict line the cut dropped (suites.ts outputKeeper)
   child.stdout!.on("data", keep); child.stderr!.on("data", keep);
   const gone = () => child.exitCode != null || child.signalCode != null;
-  const timer = setTimeout(() => { timedOut = true; void killGroup(child.pid!, "SIGTERM", { exited: gone, before: was }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone, before: was }), 5000).unref(); }, timeoutOf(name) * 1000);
+  const timer = setTimeout(() => { timedOut = true; if (job) return job.kill(); void killGroup(child.pid!, "SIGTERM", { exited: gone }); setTimeout(() => void killGroup(child.pid!, "SIGKILL", { exited: gone }), 5000).unref(); }, timeoutOf(name) * 1000);
   // the watchdog: a suite still alive a minute past its timeout (its kill didn't land) is left behind and named, never waited on
   let stuck = false; let watchdog: ReturnType<typeof setTimeout> | undefined;
   const [code, signal] = await new Promise<[number | null, string | null]>((res) => { child.on("exit", (c, s) => res([c, s])); child.on("error", (e) => { kept.add(`\nspawn failed: ${e.message}`); res([null, null]); });
     watchdog = setTimeout(() => { stuck = true; timedOut = true; res([null, null]); }, (timeoutOf(name) + 60) * 1000); });
   clearTimeout(timer); clearTimeout(watchdog);
-  const left = child.pid ? await leftoverMembers(child.pid, process.platform, { before: was }) : [], leftovers = left.length;   // anything the suite started and left running
-  if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone(), before: was });
-  // Windows: also each leftover by its own id, with its tree (one whose parent has gone is out of reach of the walk from the suite's id).
-  // Only with the table from before the suite: without it a leftover can't be told from a process that was already running
-  if (process.platform === "win32" && was.length) for (const p of left) if (p !== child.pid) await killGroup(p, "SIGKILL", { before: was });
+  // anything the suite started and left running: on Windows what is in its job (whoever's parent has exited since), elsewhere its process group
+  const left = !child.pid ? [] : job ? await stillRunning(() => job.members()) : await stillRunning(() => suiteMembersAsync(child.pid!), { ms: process.platform === "win32" ? 1000 : 0 }), leftovers = left.length;
+  if (job) { job.kill(); job.close(); }
+  else if (child.pid) await killGroup(child.pid, "SIGKILL", { exited: () => !stuck || gone() });
   await new Promise((r) => { if (child.stdout!.readableEnded) return r(null); child.stdout!.once("end", r); setTimeout(r, 3000); });   // the last output, once the group is gone
-  current = null;
+  current = null; currentJob = null;
   if (!process.env.PROTOCOL_KEEP) fs.rmSync(dir, { recursive: true, force: true });
   return { code, signal, out: kept.out, lines: kept.lines(), timedOut, leftovers, stuck };
 }

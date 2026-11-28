@@ -11,6 +11,7 @@
 //       (ownersOf; the upgrade for partial and nonce only); OS4h a partial frame and then alive: never accepted at the grace, only refused at its guard
 //   OS5 a descendant still running at its end → refused (ownersOf and the review), and killed; OS5h at a forced cleanup → refused
 //   OS6 a clean exit → accepted with no forced-cleanup label (no receipt, nothing logged by oneshot)
+//   OS7 the group a one-shot is kept in is a job object on Windows (server/procgroup.ts winJob), a process group elsewhere
 // usage: BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/protocol/oneshot-check.ts
 // @ts-nocheck
 import fs from "node:fs";
@@ -127,6 +128,7 @@ const direct = async (mode: string, guardMs: number) => {
   ok(!r.accepted && r.end === "timed out" && r.ms >= 9_000 && !r.receipt && r.gone, "OS4h a partial frame and then alive: not accepted at the 5 s grace; refused at its guard (9 s here), its group killed", r); }
 { const r = await direct("descendant-hang", 30_000);
   ok(!r.accepted && r.end === "forced process cleanup" && /still running when it was killed/.test(r.why ?? "") && !r.receipt && r.gone && r.kid > 0 && await gone(r.kid),
-    "OS5h a descendant running when a framed, hung child is killed → refused (no receipt), the descendant killed with its group", r); }
+    "OS5h a descendant running when a framed, hung child is killed → refused (no receipt), the descendant killed with its group", r);
+  ok(r.group === (process.platform === "win32" ? "job" : "pgid"), "OS7 a one-shot's group is the kernel's own: a job object on Windows, a process group elsewhere, never the walk by parent ids", { group: r.group }); }
 
 done(` (bun ${Bun.version}, ${process.platform})`);

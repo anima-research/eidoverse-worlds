@@ -1,8 +1,10 @@
 // server/procgroup.ts — a suite's processes, found and killed the same way on Linux, macOS and Windows.
 //   Linux:   /proc/<pid>/stat (no subprocess per suite)
 //   macOS and other POSIX: `ps -A -o pid=,pgid=,ppid=,stat=`
-//   Windows: no process groups, so a suite's processes are the tree under the pid it was started as, walked from the
-//            parent links (they survive the parent's exit, so orphans still count); killed with taskkill. The links come
+//   Windows: a job object where the caller makes one (winJob: the gate's suites, the server's one-shots): the kernel's own
+//            record of what a process started. Without one there are no process groups, so a suite's processes are the tree
+//            under the pid it was started as, walked from the parent links (they survive the parent's exit, so orphans
+//            still count; an id is no proof of ancestry, see winJob); killed with taskkill. The links come
 //            from the kernel's own snapshot (CreateToolhelp32Snapshot through bun:ffi, in process, ~5 ms), and from
 //            Win32_Process through PowerShell (~0.5 s a read: the gate's per-suite floor on Windows) when bun:ffi or kernel32
 //            can't load, when the snapshot call fails, or when its walk stops on anything but ERROR_NO_MORE_FILES or lists nothing.
@@ -137,63 +139,84 @@ async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { 
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
-/** The rows of `table` that weren't running in `before` (a table read earlier). Windows never updates a parent id and
- *  reuses process ids, so a suite whose id once belonged to a long-dead process reads as the parent of that process's
- *  children (CI run 46055310133: 127 processes under lite-graph's id, the runner's own ancestors among them). Whatever was
- *  running before the suite started is not the suite's, and with those rows gone a walk can't pass through them either.
- *  Same id and same parent is the same process; an id that has changed parent is a new process holding a reused id. */
-export function startedSince(before: Row[], table: Row[]): Row[] {
-  const was = new Map(before.map((r) => [r.pid, r.ppid]));
-  return table.filter((r) => was.get(r.pid) !== r.ppid);
-}
-/** What a suite started as `root` left running, read once it has ended. On Windows a suite's own teardown is still landing
- *  as it exits (its kill of a server is a taskkill, a process of its own; a child goes with its parent's job a moment after
- *  it): the PowerShell read took ~0.5 s to look, the snapshot looks ~5 ms on. So there a process counts only if it is
- *  still running `ms` later; one seen under the suite stays the suite's after its own parent has gone (the walk from `root`
- *  can't reach it any more), and so does what it starts. The caller kills these by id. POSIX reads once, as it always has.
- *  `before` is the table read before the suite started: nothing in it is the suite's (startedSince). `table` is for tests. */
-export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { before = [], ms = 1000, step = 50, table = () => processTableAsync(platform) }: { before?: Row[]; ms?: number; step?: number; table?: () => Promise<Row[]> } = {}): Promise<number[]> {
-  if (platform !== "win32") return suiteMembers(root, await table(), platform);
-  const seen = new Set<number>();
-  const read = async () => { const t = startedSince(before, await table()), live = new Set(t.map((r) => r.pid));
-    for (const from of [root, ...seen]) for (const p of suiteMembers(from, t, "win32")) seen.add(p);
-    return [...seen].filter((p) => live.has(p)); };
-  let m = await read();
-  for (const end = performance.now() + ms; m.length && performance.now() < end; m = await read()) await new Promise((r) => setTimeout(r, step));
+/** What a suite left running, read once it has ended: `read` gives the live processes of its group (null: unreadable, which
+ *  counts none). On Windows a suite's own teardown is still landing as it exits (its kill of a server is a taskkill, a
+ *  process of its own; a child goes with its parent a moment after it), and a read that takes microseconds sees that. So a
+ *  process counts only if it is still running `ms` later. POSIX passes ms 0: the first reading stands, as it always has. */
+export async function stillRunning(read: () => number[] | null | Promise<number[] | null>, { ms = 1000, step = 50 }: { ms?: number; step?: number } = {}): Promise<number[]> {
+  let m = (await read()) ?? [];
+  for (const end = performance.now() + ms; m.length && performance.now() < end; m = (await read()) ?? []) await new Promise((r) => setTimeout(r, step));
   return m;
+}
+
+// ---- Windows: a job object. A process id and a parent id are not proof of ancestry there: ids are reused and a parent id is
+// never updated, so a walk from a suite's id can claim processes that ran long before it (CI run 46055310133: 127 of them,
+// the runner's own ancestors among them). A job is the kernel's own record of what a process started, whoever has exited since.
+type Job32 = { CreateJobObjectW(a: null, n: null): bigint; OpenProcess(access: number, inherit: number, pid: number): bigint; AssignProcessToJobObject(j: bigint, h: bigint): number;
+  QueryInformationJobObject(j: bigint, c: number, b: unknown, n: number, r: null): number; SetInformationJobObject(j: bigint, c: number, b: unknown, n: number): number; TerminateJobObject(j: bigint, code: number): number; CloseHandle(h: bigint): number };
+let job32: { sym: Job32; ptr: (b: Uint8Array) => unknown } | null | undefined;
+function jobCalls() {
+  if (job32 !== undefined) return job32;
+  try {
+    const { dlopen, FFIType: T, ptr } = require("bun:ffi");
+    job32 = { ptr, sym: dlopen("kernel32.dll", {
+      CreateJobObjectW: { args: [T.ptr, T.ptr], returns: T.u64 },
+      OpenProcess: { args: [T.u32, T.i32, T.u32], returns: T.u64 },
+      AssignProcessToJobObject: { args: [T.u64, T.u64], returns: T.i32 },
+      QueryInformationJobObject: { args: [T.u64, T.i32, T.ptr, T.u32, T.ptr], returns: T.i32 },
+      SetInformationJobObject: { args: [T.u64, T.i32, T.ptr, T.u32], returns: T.i32 },
+      TerminateJobObject: { args: [T.u64, T.u32], returns: T.i32 },
+      CloseHandle: { args: [T.u64], returns: T.i32 },
+    }).symbols as Job32 };
+  } catch { job32 = null; }
+  return job32;
+}
+export type WinJob = { members(): number[] | null; kill(): void; close(): void };
+/** A new job object holding the running process `pid` and everything it starts from now on, or null when one can't be made
+ *  (not Windows, no bun:ffi, the process already gone). Make it right after the spawn: what the process started before the
+ *  assign is not in it. `killOnClose`: the job is killed when its last handle closes, so a caller that dies takes the job
+ *  with it (64-bit Windows: JOBOBJECT_EXTENDED_LIMIT_INFORMATION is 144 bytes, LimitFlags at 16); a job that can't take the
+ *  limit is no job. Windows 8 and later nest jobs, so a process bun already keeps in a job of its own can join this one. */
+export function winJob(pid: number, { killOnClose = false }: { killOnClose?: boolean } = {}): WinJob | null {
+  if (process.platform !== "win32") return null;
+  const k = jobCalls(); if (!k) return null;
+  const job = k.sym.CreateJobObjectW(null, null); if (!job) return null;
+  if (killOnClose) { const b = new Uint8Array(144); new DataView(b.buffer).setUint32(16, 0x2000 /* JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE */, true);
+    if (!k.sym.SetInformationJobObject(job, 9 /* JobObjectExtendedLimitInformation */, k.ptr(b), b.length)) { k.sym.CloseHandle(job); return null; } }
+  const h = k.sym.OpenProcess(0x0101 /* TERMINATE | SET_QUOTA */, 0, pid);
+  if (!h || !k.sym.AssignProcessToJobObject(job, h)) { if (h) k.sym.CloseHandle(h); k.sym.CloseHandle(job); return null; }
+  return {
+    members(): number[] | null {   // JOBOBJECT_BASIC_PROCESS_ID_LIST: two DWORD counts, then ULONG_PTR ids
+      const b = new Uint8Array(8 + 8 * 1024), v = new DataView(b.buffer);
+      if (!k.sym.QueryInformationJobObject(job, 3, k.ptr(b), b.length, null)) return null;
+      return Array.from({ length: v.getUint32(4, true) }, (_, i) => Number(v.getBigUint64(8 + 8 * i, true)));
+    },
+    kill() { k.sym.TerminateJobObject(job, 9); },
+    close() { k.sym.CloseHandle(h); k.sym.CloseHandle(job); },
+  };
 }
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
  *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
- *  the id is free, only its orphans are. Never this process or one above it, even as the `root` asked for.
- *  `before` is the table read before the suite started (see startedSince), and there are three cases:
- *    rows:    nothing that was running then is planned or walked through, and this process's ancestors are found among those
- *             rows only (each of them predates the suite), so a suite whose id is a stale parent id up that chain is still killed;
- *    []:      the caller asked and the table didn't answer. Nothing can be told from what was already running: the live
- *             root alone, and no orphan is looked for;
- *    omitted: a caller that keeps no such table (killChild, server/oneshot.ts): the tree by parent links, as it always was. */
-export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid, before?: Row[]): number[] {
-  const live = table.some((r) => r.pid === root);
-  if (exited && live) return [];
-  const fresh = new Set(startedSince(before ?? [], table));
+ *  the id is free, only its orphans are. */
+export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid): number[] {
+  if (exited && table.some((r) => r.pid === root)) return [];
   // never ourselves or an ancestor: once the dead root's id is reused, a stale ParentProcessId can make the gate itself look like its orphan
-  const byPid = new Map((before?.length ? table.filter((r) => !fresh.has(r)) : table).map((r) => [r.pid, r])), mine = new Set<number>();
+  const byPid = new Map(table.map((r) => [r.pid, r])), mine = new Set<number>();
   for (let p: number | undefined = self; p !== undefined && !mine.has(p); p = byPid.get(p)?.ppid) mine.add(p);
-  if (byPid.has(root) && mine.has(root)) return [];   // a root that is this process or above it (an id with no row can be a stale link in that chain: PG14, PG31)
-  if (before && !before.length) return live && !exited ? [root] : [];
-  const kids = new Map<number, number[]>(); for (const r of fresh) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
+  const kids = new Map<number, number[]>(); for (const r of table) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
   const depth = new Map<number, number>(), todo: [number, number][] = [[root, 0]];
   while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root && !mine.has(c)) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
-  return exited || !live ? out : [...out, root];
+  return exited || !table.some((r) => r.pid === root) ? out : [...out, root];
 }
 /** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
  *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
-export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, before, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); before?: Row[]; query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
   const table = await tableOrNull("win32", { query, ms }), gone = () => (typeof exited === "function" ? exited() : exited);
   // no table: the root's own tree, while the root still runs (its id is still its own; an exited root's may be someone's now)
   if (table === null) { if (!gone()) await taskkill(["/PID", String(root), "/T", "/F"]); return; }
-  for (const pid of winKillPlan(root, table, gone(), process.pid, before)) await taskkill(["/PID", String(pid), "/F"]);
+  for (const pid of winKillPlan(root, table, gone())) await taskkill(["/PID", String(pid), "/F"]);
 }
 /** At exit, where nothing can be awaited: signal the group (POSIX), or start a kill of the still-running root and leave it
  *  running (Windows). The caller passes only a root it knows is still running; its children go with the next sweep. */
