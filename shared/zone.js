@@ -37,7 +37,8 @@ export function zonesOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
 }
 
 /** The physics volumes (componentspec physics-volume on a box or global zone; Godot Area3D's overrides) in world space, in the
- *  order they apply (cmp: the last one a point is in wins): [{id, global, priority, kind, factor, toLocal, size}]. */
+ *  order they apply (cmp: the last one a point is in wins): [{id, global, priority, kind, factor, modes, toLocal, size}]
+ *  (a global one has no toLocal or size; modes null = every mode). */
 export function physicsVolumesOf(st, { poseOf = (id) => worldPose(st, id) } = {}) {
   const out = [];
   for (const id of Object.keys(st?.entities ?? {})) {
@@ -89,14 +90,14 @@ export function waterBox(w) {
   return { min: w.center.map((v, i) => v - h[i]), max: w.center.map((v, i) => v + h[i]) };
 }
 
-/** A water's heading (rad about +Y): the surface mesh turns by it (client/lib/watervolumes.js), its waves stay in world space. */
+/** A water's heading (rad about +Y): the surface mesh turns by it (client/lib/realize/watervolumes.js), its waves stay in world space. */
 export const headingOf = (q) => { const x = qRotate(q ?? [0, 0, 0, 1], [1, 0, 0]); return Math.atan2(-x[2], x[0]); };
 
 const AT_WORLD = { id: "@world", priority: -Infinity };
 const worldFlow = (f, q) => (!Array.isArray(f) || !f.every(fin) ? null : f.length === 2 ? (q ? qRotate(q, [f[0], 0, f[1]]) : [f[0], 0, f[1]]) : f.length === 3 ? (q ? qRotate(q, f) : [...f]) : null);
 /** The one reader of the combine law (the highest-priority body containing p decides, @world's level lowest of all; a pocket
  *  beats every body at or below its priority, @world's included): {medium: "water" | "air", level, flow, body, priority} at p.
- *  level is the surface's world y there (its waves at `time`), flow world-frame m/s; in air, all three are null. */
+ *  level is the surface's world y there (its waves at `time`), flow world-frame m/s; in air, everything but medium is null. */
 export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } = {}) {
   const w = mediumAt(p, volumes.waters, volumes.airs, time);
   if (w) return { medium: "water", level: waveHeight(w, p[0], p[2], time), flow: worldFlow(w.flow, w.q), body: w.id, priority: w.priority };
@@ -105,15 +106,15 @@ export function mediumOf(p, zones, { time = 0, volumes = waterVolumes(zones) } =
   return { medium: "air", level: null, flow: null, body: null, priority: null };
 }
 
-/** @world's level at p as the client's walk and level dive read it: `level`, unless mediumOf says the point (at most the
- *  surface) is dry: a pocket that keeps @world's water out. No pockets, no change. */
+/** @world's level at p as the client's walk and level dive read it: `level`, or null where the point (lowered to the
+ *  surface if above it) is in a pocket that keeps @world's water out. No pockets, no change. */
 export function worldLevelAt(p, zones, level, { volumes = waterVolumes(zones) } = {}) {
   if (!fin(level)) return null;
   const q = [p[0], Math.min(p[1], level), p[2]];   // only a pocket keeping @world out decides: a thing's water there is its own reader's
   return volumes.airs.some((a) => inBox(q, a) && excludes(a, AT_WORLD)) ? null : level;
 }
 
-/** What the GPU fog reads (client/lib/watervolumes.js): the highest `maxWater` bodies (slots 1.., slot 0 @world's level), the
+/** What the GPU fog reads (client/lib/realize/watervolumes.js): the highest `maxWater` bodies (slots 1.., slot 0 @world's level), the
  *  last `maxAir` pockets, and each pocket's mask of the slots it clears (bit 0 the level, bit i+1 waters[i]): excludes(). */
 export function fogSlots({ waters = [], airs = [] } = {}, { maxWater = MAX_WATER, maxAir = MAX_AIR } = {}) {
   const ws = waters.slice(-maxWater), as = airs.slice(-maxAir);
@@ -121,7 +122,7 @@ export function fogSlots({ waters = [], airs = [] } = {}, { maxWater = MAX_WATER
   return { waters: ws, airs: as, masks };
 }
 
-// the components and change kinds a rebuild of the bodies reads (client/lib/watervolumes.js; state.js's events)
+// the components and change kinds a rebuild of the bodies reads (client/lib/realize/watervolumes.js; state.js's events)
 const READS = new Set(["zone", "water", "water-exclusion", "physics-volume", "disabled"]);
 /** Does a world change touch what zonesOf read? `entities`: the view's (state.st.entities); `owners`: the ids that held a body
  *  or an exclusion at the last build (a removed one still counts). */

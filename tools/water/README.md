@@ -2,10 +2,10 @@
 
 The Three.js client consumes ordinary component data. There are no world-name
 checks, scene coordinates, model paths, or submarine classes in the renderer.
-The reference scene is authored separately: `world-data/water/manifest.json` holds
+The reference scene is authored separately: `tools/water/data/manifest.json` holds
 upstream's records for it (main's `asset`/`spawn`/`comp`), and `requests.js` turns
 them into this protocol's `create`/`set` requests through the old-world translator's
-own mapping (`tools/protocol/import-v1/translate-v1.js`, `VOLUMES`).
+own mapping (`tools/import-v1/translate-v1.js`, `VOLUMES`).
 
 ## Components
 
@@ -15,7 +15,7 @@ is the one reader (`mediumOf` → `{medium, level, flow, body, priority}`).
 | Component | Parameters and behavior |
 | --- | --- |
 | `zone` | `{shape, size, priority?, blend?, weight?, global?}` on a thing, centred on its origin. Water reads a `box` zone for now (a sphere, capsule or cylinder under water or water-exclusion is refused). Where zones overlap the higher `priority` decides; a tie goes to the later id. |
-| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-volume {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body stays horizontal and axis-aligned; its thing's rotation turns only its centre. |
+| `water` | On a thing with a sibling zone: a body filling it (`level` absent = the zone's top; `waves`, `attenuationColor` + `attenuationDistance`, `scatterColor`, `flow` [x, y, z], and `density`, which is reserved: nothing reads it yet; how fast a body moves in it is a sibling `physics-volume {kind: speed}`). On `@world`: the world's level (lowest priority of all). A body's box turns with its thing's rotation (zone.js `toLocal`) while its surface stays level. |
 | `water-exclusion` | `{bodies?}` on a thing with a sibling zone: a dry pocket. It keeps out every body at or below its zone's priority (only `bodies` when named), `@world`'s level included. It follows its thing (and any carrier) through the parent chain, so a moving vessel carries its dry interior. |
 
 Upstream's components map as follows (translate-v1 `VOLUMES`): `water {center, size,
@@ -30,7 +30,7 @@ Each `traversal` route is a child with `climb {points, reach, speed}` and its na
 `label`; `collision {enabled: false}` is `collider {enabled: false}`; `environment` goes
 to `@world.spawn`, `@world.bounds`, `@world.sky.gradient`, `@world.terrain {kind: 'flat', height}` (the floor), a
 directional sun thing and a dust `particles` child, and what has no home (the sky's
-`ambient`, the particles' clamped count and range) rides `imported:environment`, listed
+`ambient`, and a particles count or range only where the effect had to clamp it) rides `imported:environment`, listed
 under `unmapped`. The `vehicle` is `drive` on the submarine and a helm child
 (`station {action: 'drive', input: {move: 'drive'}, exit}`); its `minY` (-230) and `maxY` (-4)
 are two hidden walls in the submarine's own collision layer, which only its collider's
@@ -38,10 +38,12 @@ are two hidden walls in the submarine's own collision layer, which only its coll
 `imported:vehicle`, listed under `unmapped`. Nothing is deferred.
 
 The renderer supports four water bodies, sixteen pockets, and eight waves per body.
-Excess bodies and pockets produce a diagnostic and are inactive (the highest-priority
-bodies are kept). The fog reads each pocket's mask of the bodies it clears
-(zone.js `fogSlots`), so the GPU keeps the same law as `mediumOf`; one corner differs:
-a pocket naming only a higher body also stops the fog of a lower one there.
+Excess bodies and pockets produce a diagnostic and aren't drawn: an excess body still
+swims, and an excess pocket still keeps water out but is fogged as wet (the highest-priority
+ones are drawn). The fog reads each pocket's mask of the bodies it clears
+(zone.js `fogSlots`), so the GPU keeps the same law as `mediumOf`, with two differences: a pocket naming only a higher
+body also stops the fog of a lower one there, and the fog bounds a turned body by its world box (zone.js `waterBox`), so
+outside a rotated body but inside that box can be fogged as wet.
 
 The optical pass measures the camera-to-fragment distance through water, subtracts
 dry intervals, and applies RGB Beer–Lambert extinction plus scattering. Looking
@@ -69,9 +71,9 @@ dive (watervolumes `levelAt`).
 
 Source: Unreal `/Game/Underwater/SpectralPrototype/L_SpectralOcean_Prototype` in
 `Test1`. Five content-addressed GLBs contain terrain, habitat, submarine, platform,
-and scenery. `world-data/water/manifest.json` (upstream's) has twenty records and
-fifteen dry volumes; they become twenty-nine `create`s (five models, one water body,
-fifteen pockets, three climb routes, the submarine's helm, its two vehicle-band walls, a
+and scenery. `tools/water/data/manifest.json` (upstream's) has twenty records and
+fifteen dry volumes; they become thirty `create`s (five models, one water body,
+fifteen pockets, three climb routes, the submarine's helm and passenger seat, its two vehicle-band walls, a
 sun and a dust effect) and nine `@world` sets (five asset entries, spawn, bounds, terrain,
 sky) — `import-golden-check.ts` counts them. `prepare.ts` writes a bundle whose
 manifest already carries those requests. Repeated ecology meshes use GPU instancing.
@@ -87,7 +89,7 @@ exec(open('/absolute/path/eidoverse-worlds/tools/water/export-unreal.py').read()
 
 The reference submarine's hidden pawn hierarchy did not export its geometry.
 Export its five replacement meshes from the original Blender source. The exporter
-also restores the four Blueprint floor slabs from `world-data/water/vessels.json`
+also restores the four Blueprint floor slabs from `tools/water/data/vessels.json`
 and substitutes transparent glass for Blender's opaque placeholder material:
 
 ```sh
@@ -160,44 +162,27 @@ presence; importing these entities does not add native fold/vehicle replication.
 Run from the repo root with Bun. In the gate: `zone-water-check`, `water-vectors`,
 `water-import` (this manifest through `import.ts --dry`, a real authority, and `mediumOf`
 against main's `mediumAt`). `fog-mask-check.ts` runs the fog in headless Chromium on
-WebGL. The rest require Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`); the
-regression check also needs the scene imported (`--apply`):
+WebGL. `gpu-test.ts` requires Chrome with WebGPU and a preview (`WATER_PREVIEW_URL`); the rest run headless:
 
 ```sh
-bun tools/protocol/zone-water-check.ts
-bun tools/water/import-golden-check.ts
-bun tools/water/fog-mask-check.ts
-bun tools/water/math-test.ts
-bun tools/models-field-test.ts
-bun tools/underwater-presence-test.ts
-UNDERWATER_TEST_PORT=19348 bun tools/underwater-wire-test.ts
-bun tools/water/gpu-test.ts
-bun tools/water/browser-check.ts
-bun tools/water/controller-check.ts
-bun tools/water/regression-check.ts
+bun test/protocol/zone-water-check.ts
+bun test/water/import-golden-check.ts
+bun test/water/fog-mask-check.ts
+bun test/client/models-field-test.ts
+bun test/server/underwater-presence-test.ts
+UNDERWATER_TEST_PORT=19348 bun test/server/underwater-wire-test.ts
+bun test/water/gpu-test.ts
 ```
 
-browser-check, controller-check and regression-check don't complete today: they look things up by main's chosen
-ids (`water-habitat`, `water-terrain`, …), but the import now sends each as a `$` placeholder and the authority mints
-the ids, so their waits spin to timeout. They need the import's `ids` reply kept beside the manifest and read back
-(bot review #260 98).
-
-Set `WATER_PREVIEW_URL` to an isolated preview when changing the port or world;
-set `WATER_SCREENSHOT` to select the browser-check PNG output. Controller checks
-use the legacy reference frame. GPU checks read back rendered pixels for wet,
-dry, overlapping, and duplicate boxes and verify reset cleanup. Controller checks
-exercise imported floor collision, moving dry volumes, ascent/descent, and vehicle
-lease claim/state/final release. Wire checks cover 3D orientation, late join, and
-movement staying off the persistent log. The regression check uses the corrected reference frame and the actual VRM:
-walks along the submarine aisle, verifies all four floor slabs and glass alpha,
-checks a ray through the moonpool, climbs each ladder both ways, moves a carrier
-mid-climb, and samples hand positions over full swim/sculling cycles. It writes
-`/tmp/water-fix-{inside,windshield,swim}.png` for visual review.
+Set `WATER_PREVIEW_URL` to an isolated preview when changing the port or world. GPU checks read back rendered pixels for
+wet, dry, overlapping, and duplicate boxes and verify reset cleanup. Wire checks cover 3D orientation, late join, and
+movement staying off the persistent log. Vehicle lease claim/state/release is the gated `drive` suite; swimming is
+`zone-water`; climb routes are `climb-env`.
 
 ## Coordinates
 
 Always prepare with `--right-handed`. Wire space is right-handed (`-UE.Y, UE.Z, UE.X`);
 the earlier legacy mapping (`UE.Y, UE.Z, UE.X`) mirrored the whole scene, visible as
-reversed lettering on the habitat, in every client. `world-data/water/manifest.json` is
+reversed lettering on the habitat, in every client. `tools/water/data/manifest.json` is
 the right-handed export. Renderers must honour mirrored glTF node transforms (the
 wire-coordinate frame is one when composed with the exporter's own basis).

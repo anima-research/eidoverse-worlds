@@ -1,6 +1,6 @@
 // server/foldviews.ts — the authority's log views, carried in the fold cache at its covered line so a boot never reads the prefix
-// (R 10-28 parity with main's seek). Only for a log with no purge and only no-op diagnostics; the re-derive rebuilds them from genesis.
-import { fold, opsOf, Malformed, cloneState } from "../shared/protocol/fold.js";
+// (parity with main's seek). Only for a log with no purge and only no-op diagnostics; the re-derive rebuilds them from genesis.
+import { fold, cloneState, isE, opsQuiet } from "../shared/protocol/fold.js";
 import { worldOf } from "../shared/protocol/authority.js";
 import { actIndexOf, seedActIndex } from "../shared/protocol/authority/undo.js";
 import { guestScan } from "../shared/protocol/authority/capacity.js";
@@ -9,15 +9,13 @@ import { seedPurgedSeqs } from "../shared/protocol/authority/storage.js";
 import { simFolder } from "../shared/protocol/simlayer.js";
 
 type Any = any;
-const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
-const opsQuiet = (e: Any) => { try { return opsOf(e); } catch { return []; } };
 /** Every file whose code shapes a view (statecache.ts foldKey hashes them: a change to any refuses every cache). */
 export const VIEW_FILES = ["./foldviews.ts", "./livehost.ts", "../shared/protocol/authority/undo.js", "../shared/protocol/authority/capacity.js",
   "../shared/protocol/authority/scriptrun.js", "../shared/protocol/authority/storage.js", "../shared/protocol/authority/rights.js",
   "../shared/protocol/simlayer.js"];
 
 /** The host's own views (livehost.ts): id → the change seqs touching it, actors in first-seen order, say seqs, sim checkpoint
- *  seqs, the last change seq, and how many purge / governance entries the log holds. */
+ *  seqs, the last change seq, and how many redaction entries the log holds. */
 export function logIndex() {
   const X = { touching: new Map<string, number[]>(), actors: new Set<string>(), says: [] as number[], ckpts: [] as number[], lastChange: -1, purges: 0, n: 0,
     add(seq: number, e: Any) { X.n = seq + 1; if (e && typeof e.actor === "string") X.actors.add(e.actor);

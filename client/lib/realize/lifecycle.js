@@ -1,17 +1,17 @@
-// lifecycle — what the realizer holds, and the one word every registry built on a realized object listens for.
+// lifecycle — what the realizer holds, and the word the registries built on a realized object let go on (most of them:
+// see below).
 //
-// Four registries used to decide "is this id real right now" each by its own presence test: world.js `entities`,
-// the realizer's `tracked`, colliders.js, lightrig.js casters (+ its lamp owners). They stayed aligned only because
-// retire/demote/tier-swap each remembered to call every release. Now the realizer says it ONCE — `release(id, phase)`
-// — and the modules that built something on the object let go on that word, synchronously, before anything else
-// runs: colliders.js drops the collider, lightrig.js the caster and the lamps owned by the entity. A registry that
-// forgets to subscribe is a registry that leaks; tools/realized-lifecycle-test.ts pins all four at every seam.
+// The realizer says it once, `release(id, phase)`, and the modules that subscribe let go on that word,
+// synchronously (colliders.js the collider, lightrig.js the caster and the entity's lamps; material.js and emitters.js go
+// on the 'entity' remove/demote events instead). A registry that
+// forgets to subscribe leaks; test/client/realized-lifecycle-test.ts pins the realizer's word at every seam (the
+// registries there are stubs, so a real module dropping its subscription is not caught by it).
 //
-// `tracked` is the realizer's own record of what it has handled ({kind, lib?, gen, …}); gen guards an async load
-// completion against acting for a reservation retired and re-created while its bytes flew.
+// `tracked` is the realizer's own record; gen guards an async load completion against acting for a reservation
+// retired and re-created while its bytes flew.
 import { bus } from '../base.js';
 
-/** id → {kind, lib?, gen, loading?, failedAt?, retierAt?} */
+/** id → {kind, model?, gen, loading?, failedAt?, retierAt?} */
 export const tracked = new Map();
 let nextGen = 1;
 

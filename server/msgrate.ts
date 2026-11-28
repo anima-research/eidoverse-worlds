@@ -1,14 +1,6 @@
-// server/msgrate.ts — every message a connection sends spends from a token bucket (security pass; 10-22).
-//
-// The cap was a one-second window counted when a message is HANDLED: when the authority's one thread was busy for a moment,
-// two seconds of a client's ordinary traffic were handled inside one window and the client was refused for the server's own
-// stall (client-check K7 / GR1: a person's Ctrl+Z refused 'rate'; the page itself never sent more than 16 poses a second).
-// A bucket keeps the same sustained rate and allows a burst (`burst`, two seconds' worth by default), which is what absorbs
-// a backlog the server caused; a sustained flood empties it and is refused exactly as before. The usual shape for this
-// (API gateways, nginx's limit_req burst, Linux's tbf).
-//
-// Over the limit, a REQUEST is still answered (refused 'rate') rather than dropped, because its client waits for a reply by
-// id; at most `rate` such answers a second, past which even a request is dropped, so a flood can't buy a stream of replies.
+// server/msgrate.ts — a per-connection token bucket for incoming messages (nginx limit_req shape).
+// Messages are counted when handled, so the burst (two seconds' worth by default) absorbs a clump the server's own stall caused.
+// Over the limit a request is still refused with a reply (its client waits by id), up to `rate` refusals a second; past that it is dropped.
 
 export type MsgBucket = { tokens: number; at: number; refusedWin: number; refused: number };
 

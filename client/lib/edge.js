@@ -1,12 +1,11 @@
-// edge — the world's bounds, drawn (R 10-11 00:07: "ball rolled out of world bounds and now I can't touch it"; 23:01: "the
-// actual world boundary should visually match the world construct"). @world.bounds is the box the authority refuses moves
-// past (controller keepInBounds stops the body there); this draws that box as a faint fence: a line ring at the floor and
-// at FENCE_H, corner posts, and a translucent wall. Presentation only; nothing reads it back. No bounds: nothing drawn.
+// edge — the world's bounds, drawn. @world.bounds is the box the authority refuses moves past (controller
+// keepInBounds stops the body there); this draws it as a faint fence: a line ring at the floor and at FENCE_H, corner
+// posts, and a translucent wall. Presentation only; nothing reads it back. No bounds: nothing drawn.
 import { THREE, scene } from './core.js';
 import { replica } from './net.js';
 import { bus } from './base.js';
 import { onWorldChange } from './state.js';
-import { pushHostHook } from './autohooks.js';
+import { pushHostHook } from './render/autohooks.js';
 
 const FENCE_H = 2.5, COLOR = 0x7fb8ff;
 let group = null, key = '', shown = null;
@@ -41,8 +40,8 @@ function refresh() {
   if (B && wanted) { group = build(B); scene.add(group); shown = [B.min.slice(), B.max.slice()]; }
   key = k;
 }
-// off unless asked (R 10-11 23:04: "not sure how I feel about the walls… looks a bit clunky"): the rules already keep things in
-// (placement past the edge is refused, what rests or flies out goes home), so the fence is for sizing a world, not for living in it
+// off unless asked: the rules already keep things in (placement past the edge is refused, what rests or flies out goes
+// home), so the fence is for sizing a world, not for living in it
 let wanted = (() => { try { return localStorage.getItem('ew-world-edge') === '1'; } catch { return false; } })();
 export const worldEdgeWanted = () => wanted;
 export function setWorldEdgeShown(on) { wanted = !!on; try { localStorage.setItem('ew-world-edge', on ? '1' : '0'); } catch { /* private mode */ } key = ''; refresh(); }

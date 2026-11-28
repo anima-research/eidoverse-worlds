@@ -1,4 +1,4 @@
-// drafts — the component ladder's first two rungs as the editor sees them (docs/COMPONENT-LADDER.md; R 10-12 10:09).
+// drafts — the component ladder's first two rungs as the editor sees them (docs/contributing/COMPONENT-LADDER.md).
 //
 // A DRAFT is a namespaced component (`hesperus/material`) the authority stores but doesn't read: it is only as real as
 // the readers that choose to read it. A reader registers the draft it reads here, and Add Component and the Inspector
@@ -22,7 +22,7 @@ export const readsDraft = (name) => READ.has(name);
 export const draftsRead = () => [...READ.values()];
 
 export const TRUSTED = 'trusted-components';
-/** Its spelling before 10-17 (R: the bare word read as trusted PEOPLE): still read, as written. */
+/** Its older spelling (the bare word read as trusted PEOPLE): still read, as written. */
 export const OLD_TRUSTED = 'trusted';
 export const TRUSTED_MAX = 64;
 export const UNPROVEN_HINT = "unproven: this client reads it; the engine doesn't";

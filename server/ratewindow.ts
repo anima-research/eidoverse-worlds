@@ -1,7 +1,5 @@
-// ratewindow — the per-address-and-global sliding-window gate the public work doors share (the heightmap
-// export, the build check). Granting is the only thing it does: the caller asks BEFORE any work, and a
-// refused ask costs nothing and is remembered nowhere. The address map is swept when it grows, so a stream
-// of one-off addresses cannot grow it without bound.
+// ratewindow — the per-address and global sliding-window limiter the public work doors share (heightmap export, build check).
+// Ask before any work; a refused ask costs nothing and is not remembered. The address map is swept when it grows.
 
 export type Grant = { ok: true } | { ok: false; which: "address" | "all"; retryAfter: number };
 

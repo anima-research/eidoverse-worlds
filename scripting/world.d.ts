@@ -1,5 +1,5 @@
-// scripting/world.d.ts — types for a world script's one global, `world` (docs/SCRIPTS.md "The API"). The sandbox's own
-// object is shared/protocol/sandbox.js (PRELUDE); tools/protocol/scripting-check.ts K1 keeps the member list equal to it.
+// scripting/world.d.ts — types for a world script's one global, `world` (docs/guide/SCRIPTS.md "The API"). The sandbox's own
+// object is shared/protocol/sandbox.js (PRELUDE); test/protocol/scripting-check.ts K1 keeps the member list equal to it.
 
 /** A thing's id (minted, opaque) or "self". A person's identity is an id too. */
 type Id = string;

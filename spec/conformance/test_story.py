@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The six-entry story of docs/DESIGN-log-vocabulary.md §3 as one chained, signed fixture: logs/25-story.jsonl (F1 + F2 + F6 + F8 + F9).
+"""The six-entry story of docs/decisions/LOG-VOCABULARY.md §3 as one chained, signed fixture: logs/25-story.jsonl (F1 + F2 + F6 + F8 + F9).
 Keys are seeded (the genesis sequencer's private key must be held to sign the chain and the handoff), so the world id is this
 fixture's own, not the design doc's example id. Writes the log, then checks it with reader.py, chain.py and gov.py."""
 import copy, hashlib, json, os, sys

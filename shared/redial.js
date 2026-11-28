@@ -1,6 +1,5 @@
-// redial — when a page or an agent dials a world again after its socket closed: exponential backoff with full jitter
-// (review r4 F5: every page waiting on a full world redialled every 5 s, in step, because the delay was reset when the
-// socket OPENED, before the join was answered). One rule for the browser (client/lib/net.js) and the agent
+// redial — when a page or an agent dials a world again after its socket closed: exponential backoff with full jitter,
+// so pages waiting on a full world don't redial in step. One rule for the browser (client/lib/net.js) and the agent
 // (mcpl/agent.ts), so a server sees the same schedule from both.
 //
 // The n-th redial (n from 0) waits a random time in [floor, window_n], window_n = min(ceiling, max(first, floor) × 2^n):

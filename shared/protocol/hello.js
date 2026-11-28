@@ -1,4 +1,4 @@
-// shared/protocol/hello.js — the join's global hello and its two refusals (docs/DESIGN-log-vocabulary.md §F F-3). Pure: the server
+// shared/protocol/hello.js — the join's global hello and its two refusals (docs/decisions/LOG-VOCABULARY.md §F F-3). Pure: the server
 // validates the hello before any world lookup, and compares features only after access is granted; neither refusal names a world.
 import { DIALECT, VERSION } from "./fold.js";
 import { checkRequires, KNOWN_FEATURES } from "./features.js";

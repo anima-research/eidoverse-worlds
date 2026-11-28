@@ -160,7 +160,7 @@ function makeStem(seg, level, windBase, flexGain) {
     };
 }
 
-export function generateShrubSkeleton(userParams, rng) {
+function generateShrubSkeleton(userParams, rng) {
     const p = { ...DEFAULTS, ...userParams };
     const stems = [];
     const terminalStems = [];
@@ -307,7 +307,7 @@ function ringVertices(center, tangent, refDir, radius, seg, uvY, uScale, out, pr
     return n; // carry for the next ring (parallel transport)
 }
 
-export function buildWoodMesh(stems, params) {
+function buildWoodMesh(stems, params) {
     const p = { ...DEFAULTS, ...params };
     p.radialSegs = Math.max(3, Math.round(Number.isFinite(p.radialSegs) ? p.radialSegs : 3));
     const seg = p.radialSegs;
@@ -465,7 +465,7 @@ function cardTemplate(quads, anchor) {
     return { pos, nrm, uv, idx };
 }
 
-export function bakeSprayCards(terminalStems, parentStems, cfgIn, rng, anchor) {
+function bakeSprayCards(terminalStems, parentStems, cfgIn, rng, anchor) {
     const cIn = { ...CARD_DEFAULTS, ...cfgIn };
     // Cluster sprays ride the same placement grammar as single leaves — same
     // branch-frame anchoring, down-angle, phyllotaxy, droop — fewer, bigger cards.
@@ -578,8 +578,8 @@ export function bakeSprayCards(terminalStems, parentStems, cfgIn, rng, anchor) {
     return g;
 }
 
-// ── species presets (tuned in the SeedThree shrub dive, 2026-07-29) ──────────
-export const SHRUB_GEN = {
+// ── species presets (tuned against SeedThree) ───────────────────────────────────
+const SHRUB_GEN = {
     // The wood is a LOWPOLY armature that stops where the card takes over —
     // each card is a WHOLE painted branch assembly (twig + leaves + blooms),
     // so the skeleton grows one generation less and the art carries the

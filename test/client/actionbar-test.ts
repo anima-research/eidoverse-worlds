@@ -1,0 +1,326 @@
+// action bar (client/lib/ui/actionbar.js) — nine tiles, whole-tile snapping, postures that act on the desktop
+// body AND announce themselves to the VR entry, and a fired tile that stays lit after net.js has already
+// cleared myState.anim. Drives the REAL module against test/stubs/actionbar-stub.mjs recorders; the RESTORE rows run
+// the bar against the REAL windows.js in a child sequence (`--restore`: one process can't both stub and load it).
+//
+//   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun test/client/actionbar-test.ts
+//
+// Each block names the product line that would silence it:
+//   posture('sit') no longer calling sitHere          → "sit tile runs the controller seat search" goes red
+//   lit tile following only myState.anim (old code)  → "fired tile stays lit after net.js clears" goes red
+import { fileURLToPath } from "node:url";
+import { plugin } from 'bun';
+import { stubResolve } from '../harness/stub.ts';
+const RESTORE = process.argv.includes('--restore');
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
+plugin({
+  name: 'actionbar-stubs',
+  setup(b) {
+    for (const m of ['(ui/)?windows', '(ui/)?animnames', '(player/)?controller', '(player/)?mybody', '(xr/)?xrpanels', 'base']) {
+      if (RESTORE && m === '(ui/)?windows') continue;
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), () => ({ path: here('../stubs/actionbar-stub.mjs') }));
+    }
+  },
+});
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+import { suite } from "../gate/suite.ts";
+import { tryUntil } from "../gate/wait.ts";
+GlobalRegistrator.register({ width: 1024, height: 768 });
+
+// emojiRenders paints on a scratch canvas and looks for chroma; this flat-grey stub has none, so every tile takes its word fallback
+HTMLCanvasElement.prototype.getContext = function () {
+  return { fillText() {}, getImageData: () => ({ data: new Uint8ClampedArray(24 * 24 * 4).fill(200) }) } as any;
+};
+
+const S = suite("actionbar");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
+const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;
+const widthFor = (c: number) => c * TILE + (c - 1) * GAP + PAD * 2 + 2;
+
+if (RESTORE) {
+  // a bar the viewport auto-restores (no show()) is laid out exactly as show() lays it out: without onShow's snapTo
+  // the restored bar was two columns wide and ONE row tall until the 180 ms onResize snap caught up
+  await import('../../client/lib/ui/windows.js');   // stamps the layout version first, so the save below is not purged
+  // last session the viewport auto-hid the bar (never placed by hand); it comes back when the window is wide enough
+  localStorage.setItem('ew-frame-actions', JSON.stringify({ x: 336, y: 10, w: widthFor(9), h: 32, hidden: true, autoHidden: true }));
+  const { initActionBar } = await import('../../client/lib/ui/actionbar.js');
+  const f: any = initActionBar();
+  // happy-dom measures nothing: the bar reports its real height, and the dock has laid out. A left-anchored glyph
+  // spans the bar's band, 900 px of it, leaving 1024 - 8 - 908 = 108.
+  Object.defineProperty(f.el, 'offsetHeight', { get: () => f._state.h + 14, configurable: true });
+  const dock = document.createElement('div'); dock.id = 'dock';
+  const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'x'; dock.append(dockBtn); document.body.append(dock);
+  const mic = document.createElement('div'); mic.id = 'micbtn'; document.body.append(mic);
+  mic.getBoundingClientRect = () => ({ left: 0, right: 900, top: 10, bottom: 40, width: 900, height: 30, x: 0, y: 10, toJSON() { return this; } }) as any;
+  check('restore setup: the bar comes up auto-hidden, nine across', !f.visible && f._state.w === widthFor(9), JSON.stringify(f._state));
+  window.dispatchEvent(new Event('resize'));
+  check('restore setup: the viewport restores it without show()', f.visible === true);
+  const restored = [f._state.x, f._state.w, f._state.h];
+  check('restored: an unplaced bar steps clear of the glyph, not 352 wide underneath it',
+    f._state.x >= 908 && f._state.x + f._state.w <= innerWidth - 8, `x=${f._state.x} w=${f._state.w}`);
+  f.hide(); f.show();
+  const shown = [f._state.x, f._state.w, f._state.h];
+  check('…exactly as show() lays it out, rows included (x, w, h)', restored.join() === shown.join(), `restore ${restored} vs show ${shown}`);
+  S.done();
+}
+
+// the bar repaints on a 500 ms interval — capture the painter so the test drives it directly
+const intervals: Function[] = [];
+const _setInterval = globalThis.setInterval;
+(globalThis as any).setInterval = (fn: Function, ms: number, ...a: any[]) => { intervals.push(fn); return _setInterval(() => {}, 1e9, ...a); };
+// a controllable clock for the 1.5 s lit window (null: the real one, which tryUntil needs for its deadline)
+const realNow = performance.now.bind(performance);
+let nowMs: number | null = null;
+performance.now = () => nowMs ?? realNow();
+
+const stub = await import('../stubs/actionbar-stub.mjs');
+const { initActionBar, ringActionEntries } = await import('../../client/lib/ui/actionbar.js');
+const { ANIM_ORDER, myState, postureCalls, busLog, played, xrPanels, bus } = stub;
+
+// the same column math the bar uses (a mirror, so the expectations are numbers not calls)
+const heightFor = (c: number, n = 9) => Math.ceil(n / c) * ROW_H + (Math.ceil(n / c) - 1) * GAP;
+
+const f = initActionBar();
+const paint = intervals.find((fn) => typeof fn === 'function')!;
+const tile = (sel: string) => f.body.querySelector(sel) as HTMLButtonElement;
+const tiles = () => [...f.body.querySelectorAll('.tile')] as HTMLButtonElement[];
+
+console.log('ACTIONBAR — nine tiles, one row');
+check('3 posture tiles + 6 action tiles = 9', tiles().length === 9, `${tiles().length}`);
+check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
+check('gestures follow in ANIM_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.anim === ANIM_ORDER[i] && t.title === `${ANIM_ORDER[i]} — key ${i + 1}`));
+// minW is widthFor(1), not widthFor(3): a real resize clamps at f.minW (windows.js), so a wider floor makes ONE
+// column unreachable by drag whatever snapTo computes. snapTo floors cols at 1 (actionbar.js `Math.max(1, …)`).
+check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
+check('an XR panel registers with 3 postures + 6 gestures', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + ANIM_ORDER.join());
+
+console.log('ACTIONBAR — B2: a clamp that cannot help stands down (antra-tess #185)');
+{
+  // The #185 B2 symptom is a HEIGHT flip, [464,10,352,46] -> [616,10,48,350]: snapTo derives columns from width and
+  // rows follow, so the rows are the discriminator (a width check passes either way behind snapTo's 1-column floor).
+  // roomFor() is a closure whose only consumer is f.show() -> snapTo(_placed ? w : roomFor()), so this drives that.
+  // happy-dom measures nothing, so the geometry is SUPPLIED: #dock [0..42], #micbtn [44..70], #earbtn [76..102] were
+  // measured in Chromium at 1280x720; `.capnotice [930..1270] top 8` and the 1141px #dock further down are synthetic.
+  const mk = (sel: string, l: number, r: number, t: number, b: number, ds?: Record<string, string>) => {
+    const el = document.createElement('div');
+    if (sel.startsWith('#')) el.id = sel.slice(1); else el.className = sel.slice(1);
+    // chromeCost() reads the DECLARED anchor off the element's dataset (windows.js CHROME_ANCHOR: `edge` for the rail,
+    // its glyphs and #hudstatus, default 'left'; `anchor` for .capnotice, default 'right'), so a fixture that is
+    // right-anchored or stretched has to say so
+    if (ds) Object.assign(el.dataset, ds);
+    (el as any).getBoundingClientRect = () => ({ left: l, right: r, top: t, bottom: b, width: r - l, height: b - t, x: l, y: t });
+    document.body.append(el); return el;
+  };
+  const vw0 = innerWidth;
+  (window as any).innerWidth = 1280;
+  const made = [mk('#dock', 0, 42, 10, 304), mk('#micbtn', 44, 70, 18, 44), mk('#earbtn', 76, 102, 18, 44)];
+
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('left-anchored chrome alone leaves the bar 9-across in ONE row',
+    f._state.w === 352 && f._state.h === ROW_H, `w=${f._state.w} h=${f._state.h}`);
+
+  // A card back inside the bar's y-band. It binds nothing now: `.capnotice` is not in roomFor()'s list (the row
+  // further down says why), so no row follows it; it stays in `made` as inert chrome for the rows after.
+  made.push(mk('.capnotice', 930, 1270, 8, 43));
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  // UNBOUND in roomFor(), said so its green is not read as coverage: the `Math.max(widthFor(1), room)` floor (snapTo
+  // floors cols at 1 anyway), the `Number.isFinite(room)` guard (no fixture yields NaN) and the `g.width` guard (no
+  // fixture supplies a zero-width rect). Over-clamping IS caught: the 640px rail row below asserts `=== 352`.
+
+  // A NARROW ROOM CLAMPS. Room 123 (1280 - 8 - 1149) is too small for the 352px default but enough for a real bar.
+  // Leaving the bar at 352 would paint 229px of it under the chrome, which sits above every frame in z (#dock 27,
+  // frames top out at Z_HI=25), so those tiles would be unpressable.
+  document.body.innerHTML = '';
+  const narrow = mk('#dock', 0, 1141, 10, 304);
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a narrow-but-usable room clamps the bar INTO it, never leaves it under chrome',
+    f._state.w <= 123, `w=${f._state.w} vs room=123 — a wider bar paints under the chrome`);
+  narrow.remove();
+  for (const el of made) document.body.append(el);
+
+  // THE BAND FILTER (`g.top < 60 && g.bottom > 8`): only chrome that shares the bar's row may constrain it; a rail at
+  // top:389 cannot cover a bar at y:10. The fixture is #dock because it is LEFT-anchored (a right-anchored obstacle
+  // costs the left nothing whether the filter keeps it or not), at a viewport where a real rail binds: the clamp
+  // needs vw - 16 - rail.right < 352, so a [0..304] rail binds only below vw = 672.
+  document.body.innerHTML = '';
+  (window as any).innerWidth = 640;
+  const rail = mk('#dock', 0, 304, 389, 424, { edge: 'left' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('chrome BELOW the bar row is ignored — a rail at top:389 takes no width',
+    f._state.w === 352, `w=${f._state.w} — a band filter that does not filter would clamp to 320`);
+  (rail as any).getBoundingClientRect = () => ({ left: 0, right: 304, top: 10, bottom: 42, width: 304, height: 32, x: 0, y: 10 });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  // Asserted as a CONTRACT, not a pinned pixel: the clamp yields room 640-16-304=320,
+  // and snapTo then quantises to whole tiles, so the bar lands on widthFor(8)=314 rather
+  // than 320. Pinning 314 would couple this check to TILE/GAP/PAD — the same brittleness
+  // that made the old fixture wrong. The exact width rides in the failure message.
+  check('...and the same rail INSIDE the row does consume it',
+    f._state.w < 352 && f._state.w >= 48, `w=${f._state.w} — expected a snapped width under 352 (room here is 320)`);
+  rail.remove();
+
+  // THE CARD DOES NOT CONSTRAIN THE BAR. The owner's ordering rule: "Compute action bar first relative to the dock.
+  // capnotice lands under the action bar (or just over it, tbh, because you can dismiss it)." So the bar sizes against
+  // the rail and its glyphs only. While each measured the other there was no fixed point, and a card in the band
+  // drove room negative: nine tiles in one 48px column down a phone's right edge.
+  // The guard: put `.capnotice` back in roomFor()'s list and this goes red.
+  document.body.innerHTML = '';
+  (window as any).innerWidth = 390;
+  const card = mk('.capnotice', 50, 382, 10, 45, { anchor: 'stretch' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a stretched .capnotice in the bar row leaves the bar alone — the card yields, not the bar',
+    f._state.w === 352, `w=${f._state.w} — the card is back in roomFor()'s obstacle list; the cycle is back with it`);
+  card.remove();
+
+  // ANCHOR-AWARENESS IN roomFor(), bound by a RIGHT-DOCKED RAIL. Every selector in the list reads `dataset.edge`
+  // (ui-dock.js applyDockEdge sets the rail's; the glyphs and the strip copy it), so any can be right-anchored at
+  // runtime. At 1280 with the rail at [1238..1280]:
+  //     anchor-aware  {left:0, right:42}    -> room 1222   bar keeps 352
+  //     bare g.right  {left:1280, right:0}  -> room  -16   bar floors to 48
+  document.body.innerHTML = '';
+  (window as any).innerWidth = 1280;
+  const rightRail = mk('#dock', 1238, 1280, 10, 42, { edge: 'right' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a RIGHT-docked rail does not eat the bar from the left',
+    f._state.w === 352, `w=${f._state.w} — charging its g.right to the left gives room -16 and floors the bar to one column`);
+  rightRail.remove();
+  (window as any).innerWidth = 1280;
+
+  // The same binding on #hudstatus: RIGHT-anchored chips IN the bar's row, the #185 B2 geometry (`.capnotice` is not
+  // in roomFor's list, so a card never binds):
+  //   bare g.right as left-consumption: clearRight=1270, room=-6       -> bar floors to 48
+  //   anchor-aware:                     costL=0, costR=330, room=934   -> bar keeps 352
+  document.body.innerHTML = '';
+  const rightChips = mk('#hudstatus', 950, 1270, 10, 45, { edge: 'right' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('RIGHT-anchored chips in the row do not eat the bar from the left',
+    f._state.w === 352, `w=${f._state.w} — charging its g.right to the left gives room -6 and floors the bar to 48`);
+  rightChips.remove();
+  // Remove only what this block added. The `el !== f.el` guard is inert here: f.el was already detached by the
+  // `document.body.innerHTML = ''` calls above, and the suite passes because the stub holds f.body by reference.
+  for (const el of [...document.body.children]) if (!made.includes(el as any) && el !== f.el) el.remove();
+  for (const el of made) if (!el.isConnected) document.body.append(el);
+
+  // NEVER-WIDEN APPLIES ONLY TO A BAR THE OWNER PLACED. A drag or resize marks the frame placed (windows.js: "a
+  // resize is deliberate too") and show() then skips the clamp (`f._placed ? null : roomFor()`). An UNPLACED bar's
+  // width is derived from the room, so it re-derives: under min(saved, room) a bad stored 48 could never recover
+  // (`Math.min(48, 272)` is 48; a phone opened nine tiles in one 48px column).
+  document.body.innerHTML = '';
+  mk('#dock', 0, 42, 10, 304);
+  f._state.w = widthFor(2); f._state.h = heightFor(2); (f as any)._placed = true; f.show();
+  check('a bar the owner PLACED is never widened to fill the room available',
+    f._state.w === widthFor(2), `w=${f._state.w} — a deliberate 2-across was inflated`);
+  f._state.w = widthFor(2); f._state.h = heightFor(2); (f as any)._placed = false; f.show();
+  check('...but an UNPLACED bar re-derives, so a width a bug wrote can recover',
+    f._state.w === widthFor(9), `w=${f._state.w} — min(saved, room) ratchets: the phone opened 9 tiles in a 48px column`);
+  for (const el of [...document.body.children]) if (el !== f.el) el.remove();
+  for (const el of made) if (!el.isConnected) document.body.append(el);
+
+  // a hand-placed bar is never measured against chrome at all
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = true; f.show();
+  check('a hand-placed bar is exempt from the clamp with the obstacle present',
+    f._state.w === 352 && f._state.h === ROW_H, `w=${f._state.w} h=${f._state.h}`);
+
+  for (const el of made) el.remove();
+  (window as any).innerWidth = vw0;
+}
+
+console.log('ACTIONBAR — snapTo / widthFor / heightFor');
+// a drag settles 180 ms later (onResize's debounce): wait for that snap's repaint, not the clock
+const drag = async (w: number) => { const p = f.paints; f.opts.onResize(w); await tryUntil(`the ${w}px drag's snap repaints`, () => f.paints > p, { ms: 3000 }); };
+await drag(200);
+check('a 200px drag snaps to 5 columns: w=200, h=2 rows', f._state.w === widthFor(5) && f._state.h === heightFor(5) && f.paints > 0, `w=${f._state.w} h=${f._state.h}`);
+await drag(10);
+check('a 10px drag floors at ONE column, wrapping to 9 rows', f._state.w === widthFor(1) && f._state.h === heightFor(1), `w=${f._state.w} h=${f._state.h}`);
+// VERTICAL, BY WRAPPING (R, 2026-09-11: "1 wide 9 tall"). Columns come from the dragged WIDTH and rows follow: height
+// is a consequence, never an input. windows.js hands onResize (state.w, state.h) and snapTo ignores the height on
+// purpose; taking rows from it pinned the bar at nine rows and it refused to wrap.
+await drag(48);
+check('a 1-column drag wraps to 9 rows (R: "1 wide 9 tall")',
+  f._state.w === widthFor(1) && f._state.h === heightFor(1), `w=${f._state.w} h=${f._state.h}`);
+await drag(86);
+check('2 columns wrap to 5 rows', f._state.w === widthFor(2) && f._state.h === heightFor(2), `w=${f._state.w} h=${f._state.h}`);
+await drag(162);
+check('4 columns wrap to 3 rows — a narrow drag is never floored at nine',
+  f._state.w === widthFor(4) && f._state.h === heightFor(4), `w=${f._state.w} h=${f._state.h}`);
+await drag(2000);
+check('never more columns than tiles: back to 9×1', f._state.w === 352 && f._state.h === 32, `w=${f._state.w} h=${f._state.h}`);
+f.show();
+check('show() refits the saved size (still 9×1)', f.visible && f._state.w === 352 && f._state.h === 32);
+{ // the vocabulary arrives async — an empty list must not shrink a saved 9×1 bar to 3×3
+  const saved = ANIM_ORDER.splice(0);
+  bus.emit('animnames-updated');
+  check('empty ANIM_ORDER rebuilds to the 3 posture tiles only', tiles().length === 3, `${tiles().length}`);
+  check('…and does NOT snap the frame down (352×32 stays)', f._state.w === 352 && f._state.h === 32, `w=${f._state.w} h=${f._state.h}`);
+  ANIM_ORDER.push(...saved); bus.emit('animnames-updated');
+  check('the hydrated list rebuilds nine tiles', tiles().length === 9); }
+
+console.log('ACTIONBAR — posture tiles act on the body AND announce to VR');
+postureCalls.length = 0; busLog.length = 0;
+tile('[data-posture=sit]').onclick!(new Event('click'));
+check('sit tile runs the controller seat search: sitHere()', postureCalls.length === 1 && postureCalls[0] === 'sitHere', JSON.stringify(postureCalls));
+check('sit tile emits xr:sit', busLog.includes('xr:sit'), JSON.stringify(busLog));
+postureCalls.length = 0; busLog.length = 0;
+tile('[data-posture=stand]').onclick!(new Event('click'));
+check('stand tile leaves seat and posture: standUp()', postureCalls.length === 1 && postureCalls[0] === 'standUp', JSON.stringify(postureCalls));
+check('stand tile emits xr:stand', busLog.includes('xr:stand'), JSON.stringify(busLog));
+postureCalls.length = 0; busLog.length = 0;
+tile('[data-posture=lie]').onclick!(new Event('click'));
+check('lie tile: setPosture("lie"), no xr event', postureCalls[0] === 'lie' && !busLog.some((t: string) => t.startsWith('xr:')), JSON.stringify({ postureCalls, busLog }));
+postureCalls.length = 0;
+xrPanels[0].dispatch('sit');
+check('the XR quad\'s sit button takes the same path', postureCalls[0] === 'sitHere');
+postureCalls.length = 0;
+ringActionEntries().find((e: any) => e.label === 'stand')!.act();
+check('the ring\'s stand entry takes the same path', postureCalls[0] === 'standUp');
+{ ANIM_ORDER.push('rock & roll'); const svg = ringActionEntries().find((e: any) => e.label === 'rock & roll')?.svg ?? ''; ANIM_ORDER.pop();
+  check('a ring entry\'s name is escaped in its SVG (a bare & would leave the image blank)', svg.includes('rock &amp; roll') && !/&(?!amp;|lt;|gt;|quot;|#39;)/.test(svg), svg); }
+myState.clip = 'sit'; paint();
+check('the sit tile is lit while the body\'s clip is sit', tile('[data-posture=sit]').classList.contains('on') && !tile('[data-posture=stand]').classList.contains('on'));
+myState.clip = null; paint();
+
+console.log('ACTIONBAR — the fired tile stays lit ~1.5 s');
+played.length = 0; nowMs = 10_000;
+tile('[data-anim=wave]').onclick!(new Event('click'));
+check('the tile plays the gesture on my body and sets myState.anim', played[0] === 'wave' && myState.anim === 'wave');
+check('the fired tile is lit', tile('[data-anim=wave]').classList.contains('on'));
+myState.anim = null;   // net.js clears it on the first pose send
+paint();
+const litCount = () => tiles().filter((t) => t.classList.contains('on')).length;
+check('fired tile stays lit after net.js clears myState.anim (t+0), and it is the only lit tile', tile('[data-anim=wave]').classList.contains('on') && litCount() === 1, `lit=${litCount()}`);
+nowMs += 1400; paint();
+check('still lit at t+1.4 s, still the only one', tile('[data-anim=wave]').classList.contains('on') && litCount() === 1, `lit=${litCount()}`);
+nowMs += 200; paint();
+check('dark at t+1.6 s', !tile('[data-anim=wave]').classList.contains('on'));
+check('no other tile was ever lit by it', litCount() === 0);
+myState.anim = 'clap'; paint();   // a number key set it elsewhere
+check('a number-key gesture (myState.anim) lights its tile', tile('[data-anim=clap]').classList.contains('on') && !tile('[data-anim=wave]').classList.contains('on'));
+myState.anim = null; paint(); nowMs = null;
+
+console.log('ACTIONBAR — a defs push rebuilds the lantern\'s gesture actions, not just the tiles');
+{
+  // register() MERGES and skips undefined fields, so re-registering on top of the old
+  // entries kept a moved gesture's old number and a removed gesture's row
+  const A = await import('../../client/lib/ui/actions.js');
+  const saved = ANIM_ORDER.splice(0);
+  ANIM_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
+  bus.emit('animnames-updated');
+  check('a moved gesture takes its new number key (clap → 1)', A.get('bar:clap')?.key === '1', `key=${A.get('bar:clap')?.key}`);
+  check('a gesture moved past nine loses its key (wave, 1st → 10th)', !!A.get('bar:wave') && A.get('bar:wave').key === undefined, `key=${A.get('bar:wave')?.key}`);
+  ANIM_ORDER.splice(0, ANIM_ORDER.length, 'wave', 'cheer');
+  bus.emit('animnames-updated');
+  check('a removed gesture leaves the lantern (clap gone)', A.get('bar:clap') === null);
+  check('the kept ones are still there with their keys', A.get('bar:wave')?.key === '1' && A.get('bar:cheer')?.key === '2');
+  check('posture:stand survives the rebuild', !!A.get('posture:stand'));
+  ANIM_ORDER.splice(0, ANIM_ORDER.length, ...saved); bus.emit('animnames-updated');
+}
+
+console.log('ACTIONBAR — a viewport restore clears the chrome, like show() does (real windows.js, child sequence)');
+{
+  const child = Bun.spawnSync([process.execPath, fileURLToPath(import.meta.url), '--restore'], { env: process.env, stdout: 'pipe', stderr: 'pipe' });
+  const lines = child.stdout.toString().split('\n');
+  const rows = lines.filter((l) => /^(ok   |FAIL )/.test(l));
+  for (const l of rows) { const [what, detail] = l.slice(5).split(' — '); check(what, l.startsWith('ok'), detail); }
+  check('the restore sequence ran its 4 rows and exited 0', rows.length === 4 && child.exitCode === 0, `exit ${child.exitCode}, ${rows.length} rows; ${child.stderr.toString().slice(-300)}`);
+}
+
+S.done();

@@ -1,5 +1,5 @@
 import { CLIP_FILES, CLIP_SLOTS, SEAT_CLIP_FILE } from '../shared/clipdefs.js';
-import { parsePoseAnimation, retargetPoseAnimation } from '../client/lib/poseclips.js';
+import { parsePoseAnimation, retargetPoseAnimation } from '../client/lib/avatar/poseclips.js';
 
 export class PoseClips {
   private roster: Promise<Map<string, string>> | null = null;
@@ -26,7 +26,6 @@ export class PoseClips {
   }
 
   // Evaluate the same retargeted Three tracks the browser mixer consumes.
-  // No raw rest-pose knee is substituted for an unavailable posture clip.
   apply(animation: any, body: any, time: number, rigKey: object = body.av.vrm) {
     let bound = this.retargeted.get(rigKey);
     if (!bound) { bound = new Map(); this.retargeted.set(rigKey, bound); }

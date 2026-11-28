@@ -1,4 +1,4 @@
-// scripting/run.ts — run a world script locally, in the real sandbox, before uploading it (docs/SCRIPTS.md "Developer kit").
+// scripting/run.ts — run a world script locally, in the real sandbox, before uploading it (docs/guide/SCRIPTS.md "Developer kit").
 //   bun scripting/run.ts scripting/examples/bellkeeper.js --self bell1 --knobs '{"period":2}' \
 //     --use '{"action":"ring","by":"you"}' --say '{"text":"hi","by":"you"}' --enter you --tick 2 --people '[{"id":"you","d":1.5}]'
 // Events run in the order given; each one's writes land before the next (state carries, as in a world). Prints writes,

@@ -1,13 +1,11 @@
 // bun server/buildcheck-run.ts <model.glb> [scale] — print a build check (server/buildcheck.ts) as JSON.
 //
-// Its own process on purpose: the check loads the client's collider module
-// headless (behind the same core.js stub the headless tests use) and can take
-// seconds — the sequencer spawns this rather than doing either itself
-// (server/buildcheck-queue.ts).
+// Its own process on purpose: the check loads the client's collider module headless (its core.js answered by
+// server/three.mjs) and can take seconds; the sequencer spawns it (server/buildcheck-queue.ts).
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
-const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
-plugin({ name: "core-stub", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
+const STUB = fileURLToPath(new URL("./three.mjs", import.meta.url));
+plugin({ name: "headless-core", setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import(STUB);
 const C = await import("../client/lib/colliders.js");
 const { checkModel } = await import("./buildcheck.ts");
