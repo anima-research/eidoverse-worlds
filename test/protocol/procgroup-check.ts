@@ -84,7 +84,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const before = await (PG as any).suiteMembersAsync?.(child.pid!) ?? [];
   await (PG as any).killSuiteAsync?.(child.pid!, "SIGKILL");
   let after = await (PG as any).suiteMembersAsync?.(child.pid!) ?? ["none"]; if (after.length) await tryUntil("none of the suite's processes is left", async () => !(after = await (PG as any).suiteMembersAsync(child.pid!)).length, { ms: 3000, step: 150 });
-  if (after.length) killSuite(child.pid!, "SIGKILL");
+  if (after.length && (process.platform !== "win32" || after.includes(child.pid!))) killSuite(child.pid!, "SIGKILL");   // on Windows only from a root that still lives: a walk from a dead id can reach a stranger (the row is red either way)
   check(`PG7 (${process.platform}) the async kill ends a suite's process and the one it started`, before.length >= 2 && after.length === 0, { before, after });
 }
 
@@ -317,7 +317,7 @@ if (win) { // PG30: a bystander whose parent id is a dead process's. A suite tha
   // (the job may also hold a console host the suite's process was given: the suite's two are in it, the bystander is not)
   job?.kill(); const suiteGone = await tryUntil("the job's kill takes the suite and what it started", () => !running(s.c.pid!) && !running(s.kid()), { ms: 5000, step: 100 }); job?.close();
   const bystanderAlive = running(bystander);
-  for (const p of [...(bystanderAlive ? [bystander] : []), ...(suiteGone ? [] : [s.c.pid!, s.kid()])]) if (Number.isFinite(p)) spawnSync("taskkill", ["/PID", String(p), "/F"], { stdio: "ignore" });   // by its own id: this row started each of them
+  for (const p of [...(bystanderAlive ? [bystander] : []), ...(suiteGone ? [] : [s.c.pid!, s.kid()].filter(running))]) if (Number.isFinite(p)) spawnSync("taskkill", ["/PID", String(p), "/F"], { stdio: "ignore" });   // by its own id: this row started each of them
   check("PG30 (win32) a process that was running before the suite, whose parent id is a dead process's, is what a walk from that id calls its own; it is not in the suite's job and the job's kill leaves it running",
     claimedByWalk.includes(bystander) && want.every((p) => inJob.includes(p)) && !inJob.includes(bystander) && !!suiteGone && bystanderAlive, { deadId, bystander, claimedByWalk, inJob, want, suiteGone, bystanderAlive });
 } else na("PG30 a bystander under a dead parent id is not the suite's", "Windows only");
