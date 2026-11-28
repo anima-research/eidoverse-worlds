@@ -53,8 +53,8 @@ if (process.argv.includes("--write")) {
   if (moved.length) { console.log(`refusing to write: ${moved.join(", ")} would change (a change meant to alter results is a new version: bump it in LAWS, laws-check.ts)`); process.exit(1); }
   fs.writeFileSync(FILE, JSON.stringify({ laws: { ground: LAWS.ground.version, sky: LAWS.sky.version }, columns: COLUMNS, contract: CONTRACT, note: "heights and intensities are IEEE-754 float64 bits, big-endian hex; times are epoch ms", ...now }, null, 1) + "\n"); console.log(`laws.json written (${LAWS.ground.version}, ${LAWS.sky.version})`); process.exit(0); }
 const { check, done } = suite("laws-check");
-const want = fs.existsSync(FILE) ? JSON.parse(fs.readFileSync(FILE, "utf8")) : null;
-check("LW0 the law vectors exist", !!want);
+const { value: want, bad } = PH.parsedNow(FILE);   // conflict markers in the file are LW0's red, not a crashed suite
+check("LW0 the law vectors exist and parse", !!want, bad ? { bad } : undefined);
 if (want) {
   check(`LW1 the ground: every pinned height, bit for bit (${TERRAINS.length + SHAPED.length} grounds × ${POINTS.length} points; ${SHAPED.length} shaped from beside the bag: named features, sculpted tiles)`, JSON.stringify(want.terrain) === JSON.stringify(now.terrain), now.terrain.map((t, i) => JSON.stringify(t) === JSON.stringify(want.terrain[i])));
   check(`LW2 the sky: every pinned forecast segment (start, end, state, intensity) (${POLICIES.length} policies × 12)`, JSON.stringify(want.sky) === JSON.stringify(now.sky), now.sky.map((s, i) => JSON.stringify(s) === JSON.stringify(want.sky[i])));
@@ -72,7 +72,7 @@ check("LWC the rows are labelled (columns: each row's arity is its header's) and
   JSON.stringify(want?.columns) === JSON.stringify(COLUMNS) && want?.contract === CONTRACT && now.terrain.every((t) => t.heights.every((h) => h.length === COLUMNS["terrain[].heights[]"].length)) && now.sky.every((g) => (g.segments as any[]).every((r) => r.length === COLUMNS["sky[].segments[]"].length)),
   { columns: JSON.stringify(want?.columns) === JSON.stringify(COLUMNS), contract: want?.contract === CONTRACT || want?.contract });
 { const ROOT = fileURLToPath(new URL("../../", import.meta.url)); const F = "spec/conformance/laws.json";
-  let r: any; try { r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), Object.entries(LAWS).map(([k, L]) => ({ law: k, versionOf: (x: any) => x?.laws?.[k], data: [L.data] }))); } catch (err: any) { r = { threw: PH.reason(err) }; }   // a throw is a red row, as N10's; a bug keeps its stack
+  let r: any; try { r = PH.sameVersionChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null), Object.entries(LAWS).map(([k, L]) => ({ law: k, versionOf: (x: any) => x?.laws?.[k], data: [L.data] }))); } catch (err: any) { r = { threw: PH.reason(err) }; }   // a throw (a record it can't read) is a red row, as N10's; a bug keeps its stack
   if (r.out?.length) console.log("     ", JSON.stringify(r).slice(0, 400)); const threw = "threw" in r;
-  check(`LWV each law names its version (ground ${LAWS.ground.version}, sky ${LAWS.sky.version}), and an earlier laws.json under the same version (the base's, the previous) pinned the same output: a change in pinned output is a new version`, !threw && want?.laws?.ground === LAWS.ground.version && want?.laws?.sky === LAWS.sky.version && !r.out.length, threw ? { threw: r.threw } : want?.laws); }
+  check(`LWV each law names its version (ground ${LAWS.ground.version}, sky ${LAWS.sky.version}), and an earlier laws.json under the same version (the base's, the previous) pinned the same output: a change in pinned output is a new version`, !threw && want?.laws?.ground === LAWS.ground.version && want?.laws?.sky === LAWS.sky.version && !r.out.length, threw ? { threw: r.threw } : { ...want?.laws, ...(r.unheld?.length ? { unheld: r.unheld } : {}) }); }   // a history that starts with no version: green, its reason kept
 done();

@@ -9,6 +9,10 @@
 //                                                 new scenario); never an existing digest: a changed one means the engine
 //                                                 changed its results under the same name, which --write refuses
 //   EN4 holds the same against git: a version's digests equal that version's at the base (and at the file's previous version)
+//   (each digest walked back past versions that don't hold it). A change from main, which compared only the base and the
+//   previous version: a scenario left out and later re-added under the same version is refused unless its digest matches,
+//   since the rule can't tell 'retired' from 'left out for a commit'. Restore the old log, or use a new scenario name or a
+//   new version
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { readLog } from "../../shared/protocol/fold.js";
@@ -56,8 +60,8 @@ if (process.argv.includes("--write")) {
   for (const [file, out] of outs) fs.writeFileSync(file, JSON.stringify(out, null, 2) + "\n");
   console.log(`[engine-check] wrote ${added.length} new digest(s)${added.length ? `: ${added.join(", ")}` : " (nothing new)"}`); process.exit(0);
 }
-const pinned = fs.existsSync(DIG) ? JSON.parse(fs.readFileSync(DIG, "utf8")) : null, exact = fs.existsSync(EXACT) ? JSON.parse(fs.readFileSync(EXACT, "utf8")) : null;
-check("EN0 the digests file exists, and there are scenarios to hold an engine to", !!pinned && scenarios.length >= 5, { pinned: !!pinned, scenarios });
+const P = PH.parsedNow(DIG), X = PH.parsedNow(EXACT), pinned = P.value, exact = X.value;   // conflict markers in either file are EN0's red, not a crashed suite
+check("EN0 both digests files exist and parse, and there are scenarios to hold an engine to", !!pinned && !!exact && scenarios.length >= 5, { pinned: !!pinned, exact: !!exact, scenarios, ...(P.bad || X.bad ? { bad: [P.bad, X.bad].filter(Boolean) } : {}) });
 for (const ver of carried) {
   const d = pinned?.[ver] ?? {};
   check(`EN1 ${ver}: every scenario has a digest (a carried version without its digests is carried by nothing)`, scenarios.every((s) => typeof d[s] === "string"), { have: Object.keys(d), scenarios });
@@ -93,17 +97,17 @@ const of = { exact: exactDigestOf, rounded: digestOf, replay: (t: string) => rep
 // the old side is always the acknowledgement's receipt, never a log read from git (a merge parent may hold another dialect)
 const covers = (a: any, ver: string, d: Record<string, string>, nowV: Record<string, string>, R = FR.receiptOf(a, DIR)) => [...R.bad, ...FR.uncovered(a, ver, scenarios, d, nowV, R.log, cur, of)];
 for (const [F, now] of [[`${REL}digests.json`, pinned], [`${REL}digests-exact.json`, exact]] as const) {
-  let e: any; try { e = PH.earlier(ROOT, [F], (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null)); }
+  let e: any; try { e = PH.versionsChanged(ROOT, F, (f) => (fs.existsSync(ROOT + f) ? fs.readFileSync(ROOT + f, "utf8") : null)); }   // per digest: a version or scenario left out for a commit hides nothing
   catch (err: any) { check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: nothing, the rule threw)`, false, { threw: PH.reason(err) }); continue; }   // one red row, as N10's
-  const moved = e.out.flatMap(({ rev, was }) => Object.entries<any>(was[F] ?? {}).flatMap(([ver, d]) => { const m = Object.entries<any>(d).filter(([s, x]) => now?.[ver]?.[s] !== x);
-    const a = F.endsWith("exact.json") && m.length ? repins.find((r) => r.exactOld === FR.sha(PH.showAt(ROOT, rev, F) ?? "") && r.exactNew === FR.sha(fs.readFileSync(ROOT + F, "utf8"))) : null;
+  const moved = e.changed.flatMap(({ rev, version: ver, entry: d, keys: m }: any) => {
+    const a = F.endsWith("exact.json") && m.length && fs.existsSync(ROOT + F) ? repins.find((r) => r.exactOld === FR.sha(PH.showAt(ROOT, rev, F) ?? "") && r.exactNew === FR.sha(fs.readFileSync(ROOT + F, "utf8"))) : null;
     const why = a ? covers(a, ver, d, now?.[ver] ?? {}) : [];
     if (a && !why.length) return [];
-    return [...why, ...m.map(([s, x]) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}${a ? "" : " (no acknowledgement binds these two files)"}`)]; }));
-  check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: ${e.out.map((o) => `${o.rev.slice(0, 8)} ${o.why}`).join(", ") || "no earlier version"})`, !moved.length, moved.slice(0, 6)); }
+    return [...why, ...m.map(([s, x]: any) => `${F.split("/").pop()} ${ver} ${s}: ${x} at ${rev.slice(0, 8)} → ${now?.[ver]?.[s] ?? "gone"}${a ? "" : " (no acknowledgement binds these two files)"}`)]; });
+  check(`EN4 ${F.split("/").pop()}: each version's digests equal that version's at the base (and at the file's previous version) where it had them, or move under a fixture-repins.json acknowledgement: a change meant to alter results is a new version (judged: ${PH.judgedText(e)})`, !moved.length, !e.out.length && e.unnamed.length ? { judged: PH.judgedText(e) } : moved.slice(0, 6)); }   // a history that starts with no version: green, its reason kept
 // EN9: each acknowledgement's receipt holds the bytes it hashes; the one in force (its exactNew is today's file) replays to it
 // from the receipt alone, so a squash with no PR ancestry still verifies it
-const exactNow = FR.sha(fs.readFileSync(EXACT, "utf8")), inForce = repins.find((r) => r.exactNew === exactNow);
+const exactNow = fs.existsSync(EXACT) ? FR.sha(fs.readFileSync(EXACT, "utf8")) : null, inForce = repins.find((r) => r.exactNew === exactNow);
 for (const a of repins) { const R = FR.receiptOf(a, DIR), why = [...R.bad, ...(a === inForce ? FR.uncovered(a, a.engine, scenarios, R.was, exact?.[a.engine] ?? {}, R.log, cur, of) : [])];
   check(`EN9 ${a.receipt}: the receipt holds the old bytes the acknowledgement hashes${a === inForce ? ", and they replay to it (it is in force)" : ""}`, !why.length, why.slice(0, 4)); }
 // EN7: each acknowledged scenario's build box is set before the physics epoch, and is the box its old log had there
