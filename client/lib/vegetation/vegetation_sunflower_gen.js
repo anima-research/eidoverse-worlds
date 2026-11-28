@@ -8,7 +8,7 @@
 // fitted ray-petal whorl, a 3D bract cup of wedge cards behind. One geometry
 // on the ONE sunflower_ trim sheet, field-instanced like corn.
 //
-// Craft laws baked in (memory + Skye's corrections):
+// Craft laws baked in:
 //   - MATERIALS FIRST: petal + leaf cards are planes whose loop widths AND
 //     per-band UV windows follow sunflower_fit.json — the measured alpha
 //     envelope of the art. Geometry AND texture narrow together; mapping a
@@ -16,7 +16,7 @@
 //   - STRUCTURE IS TUBES, and a tube run that continues (stalk → neck) is
 //     ONE swept tube with a parallel-transported frame and monotonic
 //     fibre-v — two independently framed tubes meet in a cracked seam.
-//   - FOLIAGE NORMALS (the 07-31 law): the head shades as one soft volume —
+//   - FOLIAGE NORMALS: the head shades as one soft volume —
 //     spherical bent normals from the head centre for every head part (the
 //     shrub-canopy treatment); leaf blades blend strongly toward up (turf
 //     treatment); tubes keep their geometric normals. The gen OWNS its
@@ -60,7 +60,7 @@ const FIT_FALLBACK = {
     bractR: 1.0,
 };
 
-export const SUNFLOWER_GEN = {
+const SUNFLOWER_GEN = {
     sunflower: {
         height: 1.9,
         leaves: 11,

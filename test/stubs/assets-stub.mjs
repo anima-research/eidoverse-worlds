@@ -1,0 +1,33 @@
+// Test stand-in for client/lib/assets.js — see test/client/avatar-test.ts. The real
+// one owns GLTF/VRMA loading and a renderer-bound texture cache; the limp and
+// clip lifecycle under test touches none of it.
+export const CLIP_SLOTS = ['idle', 'walk', 'run', 'jump', 'climb', 'sit', 'lie', 'sitchair'];
+export const CLIP_SPEED = { walk: 1.4, run: 3.6 };
+export const VRMUtils = { deepDispose() {}, rotateVRM0() {} };
+export const loadVRM = async () => { throw new Error('stub'); };
+export const clipFor = async () => null;
+export const vrmaBytes = async () => null;
+export const vrmaShaLoaded = () => null;   // #101: no clip bytes in the stub world — seats read declared-approximate
+export const loadTrack = async () => null;
+export const loadDone = () => true;
+// Added when avatar.js grew a VRM warm/release path; without them the suite
+// cannot import at all (see loadwork-stub for the same lesson).
+export const releaseVRM = () => {};
+export const vrmWarmed = () => true;
+export const markVrmWarmed = () => {};
+// boot.js (splash) reads the byte ledger — nothing to count in a stub world
+export const loadingItems = () => [];
+export const bootBytes = () => ({ done: 0, total: 0 });
+export async function primeFiles() {}   // assets.js: prefetches a list of files; headless, nothing to prime (emitters.js imports it, sockets merge 10-14)
+// assets.js exports clients import that this stub lacked (found 10-14 by bodyscale after the sockets merge; each is the
+// headless truth: nothing is being fetched, decoded, listed or loaded here)
+export const demandState = () => ({ active: false, last: 0 });
+export async function fetchBytes() { return null; }
+export const ktx2Capable = () => false;
+export const ktx2KeyReady = Promise.resolve(null);
+export const libLabels = new Map();
+export const modelName = (m) => String(m ?? "").split("/").pop().replace(/\.[a-z0-9]+$/i, "") || "thing";   // assets.js modelName (address fix 10-16)
+export async function listLibrary() { return []; }
+export function loadEidoModule() { return null; }
+export async function loadGLB() { return null; }
+export function noiseTexture() { return null; }

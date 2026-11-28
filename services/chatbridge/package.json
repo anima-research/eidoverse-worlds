@@ -1,0 +1,13 @@
+{
+  "name": "eido-chatbridge",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "description": "Two-way chat mirror: world say verbs ↔ one Discord text channel",
+  "scripts": {
+    "start": "bun index.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.0"
+  }
+}

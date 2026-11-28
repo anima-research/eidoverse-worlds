@@ -1,54 +1,33 @@
-// scenegraph — the world as a tree, and the scripts that animate it.
+// scenegraph — the world as a tree, and the scripts that animate it. Two sections in the world panel:
 //
-// Two sections in the world panel:
+//   🌳 scene    every realized entity as a row (a switched-off thing is retired from the scene: no row; mounted
+//               things indent under their parent, seated bodies as occupants). A selected row opens the inspector: a transform editor (pos / yaw / scale), the semantic editors
+//               evaluator modules register through edit/inspect.js, a meaning-free component editor (any comp type
+//               as raw JSON; a save replaces that type's data wholesale), and find / attach / detach / remove.
+//               Attach keeps the current world transform (shared/hierarchy.js).
+//   📜 scripts  every script:<name> with its status, what it's on, its timers, and, selected, its console, polled
+//               while open. Agents get the same data via world_debug. Retired once the replica is active (below).
 //
-//   🌳 scene    every entity as a row; mounted things indent under their
-//               parent, seated bodies show as occupants. Click a row → the
-//               INSPECTOR, which is layered the same way the fold is:
-//               · a generic transform editor (pos / yaw / scale → `place`);
-//               · SEMANTIC editors registered by evaluator modules via
-//                 inspect.js (lights register color/brightness/range/keep —
-//                 drag previews locally, release commits one partial verb);
-//               · a generic component editor — every comp type as a row,
-//                 editable as raw JSON, removable, addable. Meaning-free by
-//                 design: a comp type invented this morning is editable
-//                 today. A saved edit replaces that type's data WHOLESALE
-//                 (the comp verb's contract).
-//               · actions: find, attach (pick a new parent by clicking it),
-//                 detach, remove. Attach PRESERVES the current world
-//                 transform — the thing glues where it stands, never jumps
-//                 (the shared parenting edit: shared/hierarchy.js).
-//
-//   📜 scripts  the world's scripts made visible (the authority's status view):
-//               every script:<name> with its status (active / asleep /
-//               dormant / paused, and why), what it's on, its timers — and,
-//               selected, its last activations (what console.log() wrote),
-//               polled while you watch. This is the
-//               debug UI for the scripting tier; agents get the same data via
-//               world_debug, this is the human window onto it.
-//
-// Everything here READS client state and SENDS requests — no private
-// channel, no authority. The authority enforces rights; buttons just try.
+// Everything here reads client state and sends requests; the authority enforces rights, buttons just try.
 
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import * as Sel from './edit/selection.js';
 import { entities, metaOf, bagOf, avatarMounts } from './world.js';
 import { compEntries } from '../../shared/protocol/view.js';
-import { editorsFor, commitEdit } from './inspect.js';
-import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
+import { editorsFor, commitEdit } from './edit/inspect.js';
 import { requestDebug, replica } from './net.js';
-import { sendOps, del, revertPose } from './editwrites.js';
+import { sendOps, del, revertPose } from './edit/writes.js';
 import * as OP from '../../shared/requests.js';
 import { state } from './state.js';
 import { offIn } from './realize/models_field.js';
-import { makeSection, flashHint, html } from './ui.js';
-import { logChat } from './chat.js';
-import { myState } from './controller.js';
+import { makeSection, flashHint, html } from './ui/ui.js';
+import { logChat } from './ui/chat.js';
+import { myState } from './player/controller.js';
 import { kindHint } from '../../shared/hierarchy.js';
 import { modelWord } from '../../shared/eido.js';
-import { called } from './plainwords.js';
-import { escapeHtml as esc } from './markup.js';
+import { called } from './ui/plainwords.js';
+import { escapeHtml as esc } from './ui/markup.js';
 
 
 
@@ -95,11 +74,8 @@ let editingComp = null;    // comp type whose JSON is open, or true for a new on
 function paintScene(force = false) {
   if (!sceneBody) return;
   const selected = sceneSelected();
-  // don't yank an editor out from under the user: an open JSON textarea, or
-  // any focused editor control (a light slider mid-drag, a half-typed pos
-  // field), holds repaints — the echo of a committed verb queues one, and it
-  // must not rebuild the DOM under the pointer. Interior state changes
-  // (opening/closing an editor) repaint with force.
+  // don't rebuild the DOM under the pointer: an open JSON textarea or a focused control holds repaints;
+  // opening/closing an editor repaints with force
   if (!force) {
     if (editingComp != null) return;
     const ae = document.activeElement;
@@ -130,9 +106,7 @@ function paintScene(force = false) {
     const pos = obj ? obj.getWorldPosition(_wp) : null;
     const isLight = !!obj?.userData?.empty && !!bag?.light && bag.light.kind !== 'spot';   // a bare bulb; a spot shines along its -Z: its yaw is its aim
 
-    // generic transform editor — every entity has a pose; yaw/scale make no
-    // sense on a bulb. Values are the entity's LOCAL frame (labelled when
-    // mounted): exactly what a `place` verb takes.
+    // transform editor: values in the entity's local frame (labelled when mounted); yaw/scale make no sense on a bulb
     let transform = '';
     if (obj) {
       const n2 = (v) => Number(v.toFixed(2));
@@ -152,10 +126,7 @@ function paintScene(force = false) {
     eds = editorsFor({ id: selected, obj, meta, bag, esc,
       commit: (component, value) => sendOps([value == null ? OP.unset(target, component) : OP.set(target, component, value)], { what: `${component} on ${target}` }) });
 
-    // generic component editor — meaning-free by design, the UI twin of the
-    // blind fold: any comp type, known or invented this morning, shows as a
-    // row and edits as raw JSON. A saved edit replaces that type's data
-    // WHOLESALE (that is the comp verb's contract); ✕ removes (data: null).
+    // component editor: any comp type as a row, edited as raw JSON; a save replaces that type's data wholesale, ✕ unsets
     const compRows = compEntries(bag).map(([type, data]) => {
       if (editingComp === type) {
         return `<div style="margin:2px 0"><b>${esc(type)}</b>
@@ -212,9 +183,8 @@ function paintScene(force = false) {
   // semantic editors wire their own controls
   for (const e of eds) { try { e.wire(sceneBody); } catch { /* an editor must not break the panel */ } }
 
-  // transform: commit on change — one `place` per gesture, carrying only the field that changed (house review I18: the
-  // shown yaw is whole degrees and the shown scale one number, so resubmitting them on a pos edit flattened a tilt and a
-  // per-axis scale). transformOf keeps the rest as the fold has it. No local preview: the echo lands in a frame or two.
+  // transform: one setTransform per change, carrying only the field that changed (the shown yaw is whole degrees and
+  // the shown scale one number: resubmitting them would flatten a tilt or a per-axis scale). No local preview.
   for (const el of sceneBody.querySelectorAll('[data-tf]')) {
     el.addEventListener('change', () => {
       const f = el.dataset.tf, v = Number(el.value), id = selected;
@@ -263,14 +233,9 @@ function paintScene(force = false) {
   });
 }
 
-/** World-click → panel: select the entity's row, open the scene section
- *  (and the panel frame, if hidden), and scroll the row into view. Exported
- *  for build.js — clicking a thing in build mode and clicking its row are the
- *  same act, so the inspector (transform, semantic editors, comp bag) arrives
- *  with the selection instead of hiding behind a second gesture. */
+/** The selected thing's id, or null (edit/selection.js). */
 export const sceneSelected = () => { const s = Sel.selection(); return s.kind === 'things' ? s.ids[0] ?? null : null; };
-// while the build-mode frames are up they ARE the inspector: a selection must
-// not also yank the World panel open onto the section they retire
+// while the build-mode frames are up they are the inspector: a selection must not also open the World panel
 let editUI = false;
 bus.on('build-mode', (on) => { editUI = !!on; });
 /** Clear the inspector's selection (Esc, Edit ▸ deselect) — sceneSelect refuses a null id. */
@@ -279,8 +244,9 @@ export function sceneDeselect() {
   arming = null; editingComp = null;
   Sel.clear();
 }
+/** World-click → panel: select the entity's row, open the scene section and scroll the row into view (build.js). */
 export function sceneSelect(id) {
-  if (id == null || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: it isn't realized, it's still there
+  if (id == null || (!entities.has(id) && !offIn(state.st.entities, id))) return;   // a switched-off thing is selectable: not realized, still there
   arming = null;
   editingComp = null;
   if (!Sel.set([id])) followSelection(Sel.selection());   // already selected: still bring the row into view
@@ -295,30 +261,22 @@ function followSelection({ ids, kind }) {
     sceneBody?.querySelector(`.sg-row[data-id="${CSS.escape(id)}"]`)
       ?.scrollIntoView({ block: 'nearest' });
   };
-  // toggle(true) surfaces the panel frame (even when the section is already
-  // open) and — on first open — assigns sceneBody synchronously BEFORE its
-  // async roster fetch. So paint now: selection must never be hostage to a
-  // network round-trip. Repaint when the roster lands (📜 badges refine).
+  // toggle(true) assigns sceneBody synchronously before its roster fetch: paint now, and again when the roster lands
   const t = sceneApi.toggle(true);
   reveal();
   Promise.resolve(t).then(reveal).catch(() => {});
 }
 
-/** Attach preserving the CURRENT world transform: compute the child's pose in
- *  the parent's frame and send it as the mount offset — glue, don't teleport.
- *  Exported for /mount — command and panel are the same act. */
+/** Attach, keeping the current world transform (glue, don't teleport); a named socket seats there instead. Also /mount. */
 export function sceneAttach(childId, parentId, slot) {
-  if (slot) {   // a declared socket wins over glue-in-place
+  if (slot) {
     sendOps([OP.parent(state.st, childId, parentId, { socket: slot })], { what: `seat ${childId} on ${parentId}` });
     return;
   }
   doAttach(childId, parentId);
 }
-// One path for every attach and detach — this section, /mount, /dismount, the
-// build-mode Hierarchy and the inspector's Parent field: the shared parenting
-// edit (shared/hierarchy.js parentVerbs via inspect.js commitEdit). It keeps
-// the FULL world pose (q and scale, not just a yaw), refuses a loop / lock /
-// guard by name, and lands on the undo stack as one step.
+// one path for every attach and detach (panel, /mount, /dismount, Hierarchy, Inspector): edit/inspect.js commitEdit
+// over shared/hierarchy.js, which refuses a loop / lock / guard by name and lands as one undo step
 function doAttach(childId, parentId) {
   if (childId === parentId) return;
   const r = commitEdit(childId, 'parent.to', parentId);
@@ -339,14 +297,36 @@ let scriptsBody = null;
 let behaviorRows = [];     // last roster — also feeds the 📜 badges in the tree
 let watching = null;       // behavior id whose console is open
 let pollTimer = null;
+let rosterMiss = null;     // why the last roster read got no answer (the rows kept are the last answered ones), or null
+let rosterAsked = 0, rosterShown = 0;   // polls overlap: a read older than the one shown lands as nothing
 
 async function refreshRoster() {
-  const r = await requestDebug({ scripts: true });
-  behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
+  const n = ++rosterAsked;
+  let r = null, miss = null;
+  try { r = await requestDebug({ scripts: true }); } catch (e) { miss = e.message; }
+  if (n < rosterShown) return;
+  rosterShown = n; rosterMiss = miss;
+  if (r) behaviorRows = (r.events ?? []).filter((e) => e.kind === 'script');
 }
 
+let paintAsked = 0, paintShown = 0;   // paints overlap on their log read: an older one landing after a newer changes nothing
 async function paintScripts() {
   if (!scriptsBody) return;
+  const n = ++paintAsked, id = watching;
+  let consoleHtml = '';
+  if (id) {
+    const d = await requestDebug({ script: id, limit: 40 }).catch((e) => ({ status: `the log couldn't be read (${e.message})`, events: [], unread: true }));
+    const lines = (d.events ?? []).map((e) =>
+      `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
+    consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
+      <div><b>${esc(id)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
+      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || (d.unread ? '(the log wasn\'t read)' : '(console empty — console.log() writes here)')}</pre>
+      <div style="display:flex;gap:6px">
+        <button data-act="unbind">remove</button>
+      </div></div>`;
+  }
+  if (n < paintShown || id !== watching) return;   // older than what is shown, or painted for a script no longer watched
+  paintShown = n;
   const rows = behaviorRows.map((b) => {
     const ok = b.status === 'active' || b.status === 'asleep';
     return `<div class="who-row sg-script" data-id="${esc(b.id)}" style="cursor:pointer;${b.id === watching ? 'background:rgba(255,255,255,.06)' : ''}">
@@ -354,26 +334,15 @@ async function paintScripts() {
       <span class="d">${b.timers ? `${b.timers}⏲ ` : ''}${ok ? '' : esc(b.status ?? 'paused')}</span></div>`;
   });
 
-  let consoleHtml = '';
-  if (watching) {
-    const d = await requestDebug({ script: watching, limit: 40 });
-    const lines = (d.events ?? []).map((e) =>
-      `${new Date(e.ts).toTimeString().slice(0, 8)} ${esc(e.line)}`).join('\n');
-    consoleHtml = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
-      <div><b>${esc(watching)}</b> — <span style="color:${/^(active|asleep)/.test(String(d.status ?? '')) ? 'var(--ok, #7c9)' : 'var(--warn, #ea5)'}">${esc(d.status ?? '?')}</span></div>
-      <pre style="max-height:150px;overflow:auto;margin:4px 0;font-size:11px;white-space:pre-wrap">${lines || '(console empty — console.log() writes here)'}</pre>
-      <div style="display:flex;gap:6px">
-        <button data-act="unbind">remove</button>
-      </div></div>`;
-  }
-  scriptsBody.innerHTML = `<div class="stack">${rows.join('') || '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/SCRIPTS.md)</div>'}</div>${consoleHtml}
+  const miss = rosterMiss ? `<div style="color:var(--warn, #ea5)">the scripts couldn't be read (${esc(rosterMiss)})${rows.length ? ' — these are from the last answer' : ''}</div>` : '';
+  scriptsBody.innerHTML = `<div class="stack">${miss}${rows.join('') || (miss ? '' : '<div style="color:var(--dim)">no scripts here — a script is a script:&lt;name&gt; component on a thing (docs/guide/SCRIPTS.md)</div>')}</div>${consoleHtml}
     <div style="color:var(--dim);font-size:11px;margin-top:4px">/debug [n] = flight recorder · agents: world_debug</div>`;
 
   for (const el of scriptsBody.querySelectorAll('.sg-script')) {
     el.onclick = () => { watching = el.dataset.id === watching ? null : el.dataset.id; paintScripts(); };
   }
   scriptsBody.querySelector('[data-act="unbind"]')?.addEventListener('click', async () => {
-    const w = String(watching); const i = w.indexOf('/');
+    const w = String(id); const i = w.indexOf('/');   // the script this paint shows, whatever is watched since
     sendOps(w.startsWith('imported-behavior:') ? [OP.unset('@world', w)] : [OP.unset(w.slice(0, i), `script:${w.slice(i + 1)}`)], { what: `remove ${w}`, expect: false });
     watching = null;
     setTimeout(async () => { await refreshRoster(); paintScripts(); paintScene(); }, 400);
@@ -389,16 +358,15 @@ export function initSceneGraph() {
     paintScene();
   }, { id: 'scene' });
 
-  // research roles §7: this tab is retired. Scripts live in Moderation › Scripts (and on the
-  // Inspector's script card); an imported world's old bindings, which never run, live in World Settings › Old world. One place each.
+  // the scripts section is retired once the replica is active: scripts live in Moderation › Scripts and on the
+  // Inspector's script card; an imported world's old bindings in World Settings › Old world
   bus.on('hydrated', () => { if (replica.active && scriptsApi) { scriptsApi.remove(); scriptsApi = null; } });
   scriptsApi = makeSection('📜 scripts', async (body) => {
     scriptsBody = body;
     await refreshRoster();
     await paintScripts();
     clearInterval(pollTimer);
-    // live console: poll while the section is open — a script author sits
-    // here watching their console.log() arrive, which is the whole point
+    // live console: poll while the section is open
     pollTimer = setInterval(async () => {
       if (!scriptsApi?.isOpen) { clearInterval(pollTimer); pollTimer = null; return; }
       await refreshRoster();

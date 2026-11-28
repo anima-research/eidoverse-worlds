@@ -1,5 +1,5 @@
-// glbparse — the GLB container and raster-header readers, dependency-free (moved out of optimize.ts so the catalog
-// route can rank models without importing gltf-transform/sharp).
+// glbparse — the GLB container and raster-header readers, dependency-free, so the catalog route can rank
+// models without importing gltf-transform/sharp.
 export const GLB_MAGIC = 0x46546c67;
 export const CHUNK_JSON = 0x4e4f534a;
 export const CHUNK_BIN = 0x004e4942;
@@ -8,10 +8,8 @@ export const align4 = (n: number) => (n + 3) & ~3;
 
 export type GlbParts = { json: any; bin: Uint8Array; total: number };
 
-/** glTF 2.0 binary layout, validated: magic/version, chunk 0 = JSON
- *  (0x4E4F534A), BIN chunk = 0x004E4942. Chunk lengths INCLUDE the spec's
- *  4-byte padding (JSON pads with 0x20 — JSON.parse tolerates it; BIN pads
- *  with zeros — buffers[0].byteLength names the real end). */
+/** glTF 2.0 binary layout, validated: magic/version, chunk 0 = JSON (0x4E4F534A), BIN chunk = 0x004E4942. Chunk
+ *  lengths INCLUDE the 4-byte padding (JSON pads with 0x20, which JSON.parse tolerates; BIN with zeros). */
 export function parseGlb(bytes: Uint8Array): GlbParts {
   if (bytes.length < 20) throw new Error("truncated GLB header");
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -36,9 +34,8 @@ export function parseGlb(bytes: Uint8Array): GlbParts {
   return { json, bin: binChunks[0]?.data ?? new Uint8Array(0), total };
 }
 
-/** PNG IHDR / JPEG SOFn dimensions, without decoding — there is no
- *  gltf-transform Texture here to ask, and sharp stays best-effort-only
- *  (the two-libvips hazard documented at ktx2CompressTextures). */
+/** PNG IHDR / JPEG SOFn dimensions, without decoding: no gltf-transform Texture here to ask, and sharp stays
+ *  best-effort-only (docs/research/optimize-design-notes.md#one-libvips-per-process). */
 export function rasterDims(bytes: Uint8Array, mime: string): [number, number] | null {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (mime === "image/png") {

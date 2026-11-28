@@ -20,11 +20,9 @@ export function refusalText(what, reply) {
   return readable(`${what} refused by the authority (${r.code ?? "refused"}): ${r.reason ?? ""}${r.fix ? ` — ${r.fix}` : ""}`);
 }
 
-// ---- for the editor's reader (ship list 10-07: refusals in the editor showed tool syntax and hex ids) ----
-// Someone in the editor reads what they tried and why, in words: no refusal code, no tool syntax (the authority's fix is for
-// a tool caller and is kept only when it's already plain words), and things named by their labels. `nameOf(id)` → how
-// they know that thing (its label, or what it is), or null when the word isn't a thing's id. The tools keep refusalText, and the
-// client logs that too (the console), so nothing is lost for whoever wants the authority's whole answer.
+// ---- for the editor's reader ----
+// A refusal in plain words: no code, no tool syntax (a fix is kept only when it's already plain), things by their labels.
+// `nameOf(id)` → that thing's label, or null when the word isn't an id. The tools (and the console) keep refusalText.
 const TOOLISH = /[{}[\]`]|=>|\w\s*\(|\b\w+:\s*['"\d[{tf]|throughLock|merge: true/;
 /** Ids in a sentence → names a person knows (a dotted path "lamp.light.intensity" → "Lamp's light intensity"). */
 export function namedFor(text, nameOf = () => null) {
@@ -44,7 +42,7 @@ export function plainRefusal(what, reply, nameOf = () => null) {
   return namedFor(`Couldn't ${what}: ${reason}${fix ? `. ${fix.replace(/^./, (c) => c.toUpperCase())}` : ""}`, nameOf);
 }
 
-// ---- the lock question (PROTOCOL §5; R's dialog, research 44 #1) ----
+// ---- the lock question (PROTOCOL §7, Locks) ----
 // A lock refusal asks a person who may lift locks "This is locked. Move anyway?" with three answers. An agent gets the
 // same refusal text and the same two ways through in the authority's fix (throughLock, or unlock first).
 
@@ -65,11 +63,10 @@ export const lockQuestion = (verb) => `This is locked. ${verb} anyway?`;
 export function lockBody(r, id, nameOf = null) {
   const k = r?.refused?.lock; const by = r?.refused?.by;
   const who = by ? ` by ${readable(by)}` : "";
-  // the locked thing by what a person calls it (its label, or what it is: nameOf), not its id (R 10-17: ids are opaque);
-  // a caller that passes no nameOf gets readable(k), which is the id
+  // the locked thing by its label (nameOf), not its id; with no nameOf, readable(k) is the id
   return k && id && k !== id ? `It rides ${(nameOf && nameOf(k)) || readable(k)}, which is locked${who}.` : `Locked${who}.`;
 }
-/** The three answers, in R's order. `through` re-sends with throughLock (one act, the lock stays on); `cancel` writes
+/** The three answers, in order. `through` re-sends with throughLock (one act, the lock stays on); `cancel` writes
  *  nothing and puts the thing back; `unlock` removes the lock and then does it (two acts; Ctrl+Z undoes the edit first). */
 export const lockChoices = (verb) => [
   { v: "through", label: `✓ ${verb} anyway` },
@@ -77,8 +74,7 @@ export const lockChoices = (verb) => [
   { v: "unlock", label: `🔓 Unlock, then ${verb}` },
 ];
 
-/** An authority warning ({id, kind, …}) as one sentence for a person or an agent (agent lab: "the out-of-bounds warning doesn't
- *  say out of what"; "edit replies… warnings get lost"). */
+/** An authority warning ({id, kind, …}) as one sentence for a person or an agent. */
 export function warningText(w, nameOf = null) {
   if (!w || typeof w !== "object") return String(w);
   const readable = (x) => (nameOf ? namedFor(x, nameOf) : readable0(x));   // a person's surface names things by label
@@ -97,7 +93,7 @@ export function agoWords(ts, now = Date.now()) {
   const s = Math.max(0, (now - ts) / 1000);
   return s < 60 ? "just now" : s < 3600 ? `${Math.round(s / 60)} min ago` : s < 86400 ? `${Math.round(s / 3600)} h ago` : new Date(ts).toISOString().slice(0, 10);
 }
-/** One component's provenance from the authority's inspect `touched` (R 10-04, "where a value came from"), the same words in
+/** One component's provenance from the authority's inspect `touched`, the same words in
  *  the Inspector's card tooltip and an agent's inspect: "set by Rowan · 3 min ago", "as made by Ann · 2 h ago", or, past
  *  the recent window, "unchanged since before act #N — history for older". Never claims more than the window saw. */
 export function touchWords(t, now = Date.now()) {

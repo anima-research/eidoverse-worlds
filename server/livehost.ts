@@ -1,23 +1,18 @@
-// server/livehost.ts — a world as a running server holds it: the authority (shared/protocol/authority.js) over one directory, with
-// every view the authority reads kept INCREMENTALLY (research 35, slice-2 #5):
-//   state   the strict fold, advanced per appended entry (copy-on-write: only the entities an entry touches are
-//           copied, so a held state never changes under its holder, and a write costs the world's touched part, not
-//           the log). A purge refolds from the log (purge is retroactive by law, L1).
-//   sim     the sim layer as a running folder (simFolder), viewed at the authority's clock. The lab simFolded the whole
-//           log on EVERY request (settleSim calls it first).
-//   index   id → seqs of the change entries that touch it, so creatorOf / lastTouch cost a thing's own history.
-//   clock   monotonic: max(wall clock, every ts already written). §2.1 says ts never decreases; a monotonic authority
-//           clock also makes "advance the sim for a read, then fold a later entry" equal to folding it first.
-//   presence the authority's presence plane (bodies, holds): memory only, never a file (L6: never logged; the lab kept a
-//           file because its CLI ran one process per request). The one exception is consent (consentFileIn below).
-// The log file is <dir>/world.jsonl (UTF-8 JSONL, §2.4); blobs are <dir>/blobs/sha256-<hex>.json, named by the full
-// hash of their JCS bytes, written once, verified on read (§2.2). Each line is appended and fsynced (durable.ts) before
-// the request returns: the authority has already re-read it with the strict reader.
+// server/livehost.ts — a world as a running server holds it: the authority (shared/protocol/authority.js) over one directory,
+// with every view the authority reads kept incrementally:
+//   state    the strict fold, advanced per appended entry (copy-on-write, so a held state never changes under its holder);
+//            a purge refolds from the log (purge is retroactive)
+//   sim      the sim layer as a running folder (simFolder), viewed at the authority's clock
+//   index    id → seqs of the change entries that touch it
+//   clock    monotonic: max(wall clock, every ts already written)
+//   presence the authority's presence plane (bodies, holds): memory only, except consent (CONSENT_FILE below)
+// The log is <dir>/world.jsonl (spec/PROTOCOL.md §2.4); blobs are <dir>/blobs/sha256-<hex>.json, named by the hash of their JCS
+// bytes, verified on read. Each line is appended and fsynced (durable.ts) before the request returns.
 import fs from "node:fs";
 import path from "node:path";
 import { custodyFileIn } from "./keyfiles.ts";
 import { writePrivate } from "./fsutil.ts";
-import { readLog, fold, opsOf, applyInPlace, redactionsIn, jcs, sha256, Malformed, DIALECT, VERSION } from "../shared/protocol/fold.js";
+import { readLog, fold, opsOf, applyInPlace, redactionsIn, jcs, sha256, Malformed, DIALECT, VERSION, isE, opsQuiet } from "../shared/protocol/fold.js";
 import { worldOf, posAt } from "../shared/protocol/authority.js";
 import { simFolder, carried, digestOf } from "../shared/protocol/simlayer.js";
 import { readLogBytes, appendDurable, putBlobFile } from "./durable.ts";
@@ -34,8 +29,6 @@ import { seedPurgedSeqs } from "../shared/protocol/authority/storage.js";
 
 type Any = any; // the authority is JSDoc-typed JS; the server holds it structurally
 
-const isE = (e: Any) => e && !(e instanceof Malformed) && typeof e === "object";
-const opsQuiet = (e: Any) => { try { return opsOf(e); } catch { return []; } };
 
 /** Apply one change entry's ops to a COPY of st that shares every entity the entry doesn't touch. */
 export function applyShared(st: Any, ops: Any[], seq: number) {
@@ -53,18 +46,18 @@ export type LiveOpts = { /** the act rate (server/config.ts RATE_POLICY); defaul
   /** id → account|anon|imported (the directory; the authority reads only "anon"); default: that worlds dir's directory */ kindOf?: (id: string) => string | null;
   /** the script sandbox (default QuickJS, shared/protocol/sandbox.js; null = none) */ scripts?: Any;
   /** who is connected beyond the authority's own bodies: [{id, at}] (server/worldlog.ts, from the World's clients) */ present?: () => { id: string; at: number[] | null }[];
-  /** speech is arrival-only (R 10-18): the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null;
+  /** speech is arrival-only: the seq at or below which this asker may not read a say's body; null = no floor (storage.js worldOf) */ sayFloor?: (actor: string) => number | null;
   /** a sim checkpoint once `every` entries follow the last one (authority checkpointSim; server policy SIM_CHECKPOINT_EVERY); none: only after launches */ simCheckpoint?: { every: number };
   /** the derived fold cache (server/statecache.ts): written every `every` entries; onRefold after a re-derive disagreed */ stateCache?: { every: number; onRefold?: () => void };
   /** read the whole log even when the fold cache would let the boot read only its tail (the fallback; the suites' control) */ eager?: boolean;
   /** a reader's open (info, a dry run): the torn tail is left for the writer to cut, purged leftovers are left in place */ readOnly?: boolean };
 
-/** An in-place translation's in-progress marker, like git's index.lock (tools/protocol/world.ts translateInPlace; R 10-27). */
+/** An in-place translation's in-progress marker, like git's index.lock (tools/world.ts translateInPlace). */
 export const SWAP_MARKER = "translation.lock";
 /** Does `dir` hold an in-place swap that hasn't finished (its bans and identities may not be in yet)? Never served. */
 export const isSwapUnfinished = (dir: string): boolean => fs.existsSync(path.join(dir, SWAP_MARKER));
 /** What the operator does about an unfinished swap (boot notice, openLive's refusal). */
-export const swapRecovery = (name: string, tool = "bun tools/protocol/world.ts") => `its in-place translation was interrupted mid-swap (${SWAP_MARKER} is still in its directory), so its bans and identity mappings may not be in place yet. `
+export const swapRecovery = (name: string, tool = "bun tools/world.ts") => `its in-place translation was interrupted mid-swap (${SWAP_MARKER} is still in its directory), so its bans and identity mappings may not be in place yet. `
   + `Finish it: ${tool} translate ${name} --no-founder-key (renames and moves only; it says what it did). If the translated world landed and you want the old one back: ${tool} rollback ${name}.`;
 
 const RETRY = Symbol("the tail boot's whole-log retry: its refusal was said once");
@@ -80,14 +73,15 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   const V = lazy ? cfile.views : null, from0 = lazy ? cfile.coversIndex : 0;   // from0: the first line read at boot
   let logEnd = 0, lastStart = 0, genEnd = 0;   // where the head line sits in the file (the next cache's offsets)
   let entries: Any[];
+  let torn = false;   // a torn last line is cut only after the governance check below, so its refusal changes nothing
   if (lazy) { entries = lazy.entries; genEnd = cfile.at.g; logEnd = lazy.size; lastStart = lazy.lastStart; }
-  else { const buf = readLogBytes(logPath, { cut: !opts.readOnly }); entries = readLog(buf).map(posAt);
+  else { const buf = readLogBytes(logPath, { cut: false }); entries = readLog(buf).map(posAt); torn = fs.existsSync(logPath) && fs.statSync(logPath).size !== buf.length;
     logEnd = buf.length; genEnd = buf.indexOf(0x0a) + 1; lastStart = logEnd ? buf.lastIndexOf(0x0a, logEnd - 2) + 1 : 0; }
-  // governance is RESERVED (§13): this server neither writes nor validates `sequencer` entries, and one may have moved the
-  // writer role somewhere it can't check, so it refuses to serve the world rather than fold past the entry and write on
-  // (a cache with views is never written over one: openLive refused it, so a tail boot looks at the tail)
+  // governance is reserved (§13): this server neither writes nor validates governance entries, so it refuses to serve a world
+  // holding one rather than fold past it and write on (a cache with views is never written over one)
   { let g = -1; for (let s = from0; s < entries.length; s++) if (isE(entries[s]) && entries[s].kind === "governance") { g = s; break; }
     if (g >= 0) throw new Error(`"${name}" can't be served: its log holds a governance entry at seq ${g}, and governance is reserved in this server (PROTOCOL §13): it can't check who that entry made the writer, so it won't write after it. Nothing was changed.`); }
+  if (torn && !opts.readOnly) readLogBytes(logPath);   // cuts it (and says so); the bytes kept are the ones read above
   const blobPath = (h: string) => path.join(blobDir, `${String(h).replace(/[^a-z0-9]/g, "-")}.json`);
   const getBlob = (h: string) => {
     if (!/^sha256:[0-9a-f]{64}$/.test(String(h))) throw new Error(`not a blob name: ${h}`);
@@ -105,12 +99,11 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   for (let i = entries.length - 1; i >= 0; i--) if (isE(entries[i]) && Number.isInteger(entries[i].ts)) { lastNow = entries[i].ts; break; }
   const wall = opts.now ?? (() => Date.now());
   const now = () => (lastNow = Math.max(lastNow, Math.floor(wall())));
-  // the speed track's pace: elapsed time from the monotonic clock. The wall is stepped back by NTP or a VM's host sync (WSL2
-  // pulls Burrow's back ~1.4 s every ~30 s), and `now` then holds still until the wall catches up — right for ts, but a body's
-  // allowance would refill nothing meanwhile. A host that brings its own clock (a lab pinning time) is paced by it.
+  // the speed track's pace: elapsed time from the monotonic clock, since the wall can be stepped back (NTP, a VM's host sync)
+  // and `now` then holds still. A host that brings its own clock is paced by it.
   const pace = opts.pace ?? (opts.now ? now : () => performance.now());
 
-  // F-5 (docs/DESIGN-log-vocabulary.md §F): the live sequencer key is checked against the log before any write; a missing or
+  // the live sequencer key is checked against the log before any write (docs/decisions/LOG-VOCABULARY.md §F F-5); a missing or
   // other key serves the world read-only, and no replacement is ever minted
   const custodyFile = opts.custodyFile ?? custodyFileIn(path.dirname(dir));
   const cv = custodyVerdict(custodyFile, entries, from0);
@@ -129,13 +122,12 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   if (!lazy && !opts.readOnly) dropPurgedLeftovers(dir, entries, blobPath, cfile);
 
   // ---- the views, built once from the log (or seeded from the cache's, at its covered line), then advanced per entry ----
-  // a cache's views that don't fit (a hand edit, a bad disk) throw somewhere below: the boot reads the whole log instead (bot #30)
+  // a cache's views that don't fit (a hand edit, a bad disk) throw somewhere below: the boot reads the whole log instead
   try {
   let X = logIndex();
-  // the sim starts from the last VALID checkpoint (authority checkpointSim): its blob present and hashing to its name, written
-  // right after the entry it says (at = seq - 1), no purge after it (a purge is retroactive: its bytes may sit in the cut), an
-  // engine this host carries, and the cut's sim hashing to the digest the entry recorded. Anything else: from genesis, as before.
-  // (a tail boot: the prefix holds no purge, and its checkpoints are the views' list)
+  // the sim starts from the last valid checkpoint (authority checkpointSim): blob present and hashing to its name, written right
+  // after the entry it says, no purge after it, an engine this host carries, and the cut's sim hashing to the recorded digest.
+  // Anything else: from genesis.
   const ckpt = (() => {
     let lastPurge = -1; for (let s = entries.length - 1; s >= from0; s--) if (isE(entries[s]) && entries[s].kind === "redaction") { lastPurge = s; break; }
     const cands = function* () { for (let s = entries.length - 1; s > Math.max(lastPurge, from0 - 1); s--) yield s; if (V && lastPurge < 0) for (let k = V.ckpts.length - 1; k >= 0; k--) if (V.ckpts[k] < from0) yield V.ckpts[k]; };
@@ -158,9 +150,9 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   let st = resumed?.st ?? fold(entries);
   let cachedAt = resumed ? hit!.coversIndex : -1;   // the line the cache on disk covers (-1: none to trust)
   // the cut carries the engine and what's lifted/launched, not the fold: the layer's engine view needs the state AT the
-  // cut (second review 10-11 S1-1: without it the first edit after a reopen removed the thing from the engine)
+  // cut (else the first edit after a reopen removes the thing from the engine)
   const useCk = ckpt && !simCover ? ckpt : null;
-  // no fold at the checkpoint in hand: it and the sim's replay read the prefix, so a tail boot loads it in one read (review L19)
+  // no fold at the checkpoint in hand: it and the sim's replay read the prefix, so a tail boot loads it in one read
   const ckptSt = useCk ? (resumed?.snap ?? atCover ?? (lazy?.prefix.loadAll(), fold(entries, { until: useCk.seq }))) : null;
   const ckptAtBoot = ckptSt && cloneState(ckptSt);   // the sim folds onto ckptSt
   const simFrom = useCk ? { ...useCk.cut, st: ckptSt } : simCover ? simFromCut(V, atCover, entries[hit!.coversIndex].ts) : null;
@@ -212,7 +204,7 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
     if (x.kind === "redaction") atCk = null;
     else if (x.kind === "physics" && x.verb === "checkpoint") atCk = { seq, st };   // a held state never changes (applyShared)
     if (cache) { if (x.kind === "redaction") { dropCache(dir); cachedAt = -1; }   // the cache may hold the purged bytes (§12)
-      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }   // synchronous on purpose: ~17 ms per 1000 entries at 205k (review L22)
+      if (seq - cachedAt >= cache.every || seq === atCk?.seq) saveCache(); }   // synchronous on purpose: ~17 ms per 1000 entries
     opts.onAppend?.(seq, x);
     return seq;
   };
@@ -244,8 +236,8 @@ export function openLive(dir: string, name: string, opts: LiveOpts = {}) {
   } catch (x) { if (!lazy) throw x; refused(`its views don't fit the log: ${(x as Error)?.message ?? x}`); return openLive(dir, name, { ...opts, eager: true, [RETRY]: true } as LiveOpts); }
 }
 
-/** What a crash between a purge's line and its unlinks left (bot review of #260, #15): every checkpoint blob from before the last
- *  purge (unless a later checkpoint shares it) and a fold cache not read as covering it. Done at each whole-log boot. */
+/** What a crash between a purge's line and its unlinks left: every checkpoint blob from before the last purge (unless a later
+ *  checkpoint shares it) and a fold cache not read as covering it. Done at each whole-log boot. */
 function dropPurgedLeftovers(dir: string, entries: Any[], blobPath: (h: string) => string, cfile: Any) {
   let last = -1; for (let s = entries.length - 1; s >= 0; s--) if (isE(entries[s]) && entries[s].kind === "redaction") { last = s; break; }
   if (last < 0) return;
@@ -278,9 +270,7 @@ function genesisAt(p: string): any {
     return isE(g) && g.kind === "genesis" ? g : null;
   } catch { return null; }
 }
-/** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
- *  (§2.4: the protocol's number is stated there and nowhere else). */
-// consent outlives a restart, the rest of presence doesn't: a block is a safety tool (review 1.4; PROTOCOL §5 "Consent")
+// consent outlives a restart, the rest of presence doesn't: a block is a safety tool (spec/PROTOCOL.md §5 "Consent")
 export const CONSENT_FILE = "consent.json";
 const CONSENT_KEYS = ["consent", "consentShape"] as const;
 /** the world's saved consent tables ({consent, consentShape}); none yet: {}. An unreadable file stops the boot (a block is never dropped quietly). */
@@ -303,12 +293,14 @@ function saveConsent(dir: string) {
     if (s === last) return; writePrivate(path.join(dir, CONSENT_FILE), s); last = s; };
 }
 
+/** Is `dir` a world this server reads? Its log exists and line 0 is a genesis saying {dialect: "eidoverse-log", v: 4}
+ *  (§2.4: the protocol's number is stated there and nowhere else). */
 export function isWorldDir(dir: string): boolean {
   const g = genesisAt(path.join(dir, "world.jsonl"));
   return !!g && g.body?.dialect === DIALECT && g.body?.v === VERSION;
 }
-/** A log of this protocol's family (an entry-kind genesis) that this server can't read: saved before the 2026-10-07
- *  names pass (an older file name, or a genesis that stated its number in its own field). Refounded, or re-translated
+/** A log of this protocol's family (an entry-kind genesis) that this server can't read: saved before the names
+ *  pass (an older file name, or a genesis that stated its number in its own field). Refounded, or re-translated
  *  from its original log; never opened. */
 export function isPreNamesDir(dir: string): boolean {
   if (isWorldDir(dir) || !fs.existsSync(dir)) return false;

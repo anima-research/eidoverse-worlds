@@ -1,12 +1,5 @@
-// eidoverse-worlds sequencer — the def registry (overhaul charter §3,
-// phase 1 slice 2). Instance content as data: defs/<domain>/<name>.json,
-// validated against the shared contract at load, served whole at GET /defs.
-//
-// A def that fails validation is refused LOUDLY (boot/reload log) and the
-// rest keep serving — one bad file must not take the meadows down with it.
-// The registry rescans on a short TTL, so editing a def during dev shows up
-// on the next client boot without a server restart; clients fetch once per
-// boot, so the rescan costs nothing in steady state.
+// The def registry: defs/<domain>/<name>.json, validated against the shared contract at load, served whole at GET /defs.
+// A def that fails validation is refused loudly and the rest keep serving. Rescans on a short TTL, so an edit needs no restart.
 
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -102,9 +95,8 @@ export function animationDefs(): Record<string, { vrma?: string } & Record<strin
   return registry().reg.animations as ReturnType<typeof animationDefs>;
 }
 
-/** A cheap change fingerprint over every def file's (path, mtime, size) —
- *  the defs-watch tick system compares it once a second and broadcasts
- *  `defs-updated` when it moves, which is the whole hot-reload push. */
+/** A cheap change fingerprint over every def file's (path, mtime, size): the defs-watch tick broadcasts `defs-updated`
+ *  when it moves (the whole hot-reload push). */
 export function defsFingerprint(): string {
   const parts: string[] = [];
   if (!existsSync(DEFS_DIR)) return "";

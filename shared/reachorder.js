@@ -1,6 +1,7 @@
+// reachorder — the order reaches are solved in when one body's hand targets a point another reach is moving.
 import { CONTACT_POINTS } from './contact.js';
 
-// Which effector moves a named point downstream of its root joint?
+/** Which effector (hand or foot) moves a named contact point, or null for a point on the torso or head. */
 export function contactEffector(point) {
   const bone = CONTACT_POINTS[point]?.bone ?? '';
   const side = bone.startsWith('left') ? 'left' : bone.startsWith('right') ? 'right' : null;

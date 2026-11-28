@@ -1,0 +1,739 @@
+// ui-dock.js and ui-menu.js — the dock rail, the ∃ menu, pins, and the registerPanel mod seam, run headless against the REAL
+// module (windows.js, icons.js and dropdown.js real underneath it; see dock-stub.mjs for what is not).
+//
+//   bun test/client/dock-test.ts
+//
+// What the rail promises (ui-dock.js's own comment): an icon rides the rail while its window is OPEN or while it
+// is PINNED; otherwise it hides. Pinning lives in the ∃ menu, and so does the layout lock. A mod that calls
+// registerPanel() gets the same door as a built-in — a frame, a rail button, a menu row, a pin — and a
+// duplicate id is refused, not doubled. And rail chrome never rides emoji: the four upstream rail labels
+// (💬 🧱 👋 🐞) must resolve to Phosphor FILL glyphs (EMOJI_ICON, or the entry id's ID_ICON first, as world's 🧱 does) —
+// never the raw emoji, never the puzzle-piece fallback that means "unknown icon".
+
+import { fileURLToPath } from "node:url";
+import { plugin } from "bun";
+import { stubResolve } from "../harness/stub.ts";
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
+plugin({
+  name: "dock-stubs",
+  setup(b) {
+    const OLD_ROOT = /\/client\/lib\/((ui|render|player)\/)?[^/]+$/;   // the importers these stubs were written for: files of the lib root before tier two
+    for (const m of ["base", "(audio/)?mictoggle", "defs", "(ui/)?profile", "(ui/)?stylepanel", "(ui/)?videopanel", "(ui/)?capnotice"])
+      stubResolve(b, new RegExp(`^(\\.\\.?/)+${m}\\.js$`), (a) => (OLD_ROOT.test(a.importer.replace(/\\/g, "/")) ? { path: here("../stubs/dock-stub.mjs") } : undefined));
+  },
+});
+
+import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { pause } from "../gate/wait.ts";
+import { suite } from "../gate/suite.ts";
+GlobalRegistrator.register({ width: 1000, height: 700 });
+
+// the chrome ui.js reaches for at import (index.html's ids)
+document.body.innerHTML = `
+  <button id="hud" class="emark">∃</button>
+  <div id="dock" class="panel"></div>
+  <div id="emenu" class="panel" hidden></div>
+  <div id="loading" class="panel"></div><div id="toasts"></div><div id="hintbar" class="panel"></div>
+  <div id="touch"></div>
+  <div id="door" class="scrim"><div class="sheet panel"></div></div>
+  <div id="help" class="scrim"><div class="sheet panel"></div></div>`;
+
+// the build About shows: /version is asked once, as client/lib/version.js loads, so it is answered before any module does
+{ const realFetch = globalThis.fetch, v = { sha: "abc1234def", dirty: false, commitTime: "2026-10-01T01:00:00Z", startedAt: "2026-10-01T02:00:00Z" };
+  (globalThis as any).fetch = (u: any, o?: any) => (String(u).startsWith("/version") ? Promise.resolve(new Response(JSON.stringify(v))) : realFetch(u, o)); }
+const { bus } = await import("../stubs/dock-stub.mjs");
+const { fsvg } = await import("../../client/lib/ui/icons.js");
+const { makeFrame, getFrame, isLocked } = await import("../../client/lib/ui/windows.js");
+// a returning person's storage from before the action bar's rename (ad90009f, 10-17): pins and frame state under its old
+// id. The old id is ui-dock.js's ACTIONBAR_OLD_ID (the word lives on that one line, names-check E3); a literal copy here would
+// be a second spelling, so it is read the only way that does not import ui-dock.js first: from the source line.
+// Seeded after windows.js has stamped its layout version (so the frame key is not purged) and before ui-dock.js reads pins.
+const OLD = /export const ACTIONBAR_OLD_ID = '(\w+)';/.exec(await Bun.file(here("../../client/lib/ui/ui-dock.js")).text())![1];
+const RENAMED_FRAME = JSON.stringify({ x: 336, y: 10, w: 352, h: 32 });
+localStorage.setItem("ew-dock-pins", JSON.stringify(["search", "profile", "world", "chat", OLD, "debug", "settings", "edit"]));
+// the pin list a FRESH install gets (ui-dock.js), read from the source like OLD: the seed above is what a saved install reads instead
+const DEFAULT_PINS: string[] = JSON.parse(/const DEFAULT_PINS = (\[[^\]]*\]);/.exec(await Bun.file(here("../../client/lib/ui/ui-dock.js")).text())![1].replace(/'/g, '"'));
+localStorage.setItem(`ew-frame-${OLD}`, RENAMED_FRAME);
+// the rail, the ∃ menu and the frames are three modules; the menu binds itself to the dock as it loads
+const ui = { ...(await import("../../client/lib/ui/ui.js")), ...(await import("../../client/lib/ui/ui-dock.js")), ...(await import("../../client/lib/ui/ui-menu.js")) };
+const { initDock, registerPanel, dockPins, toggleEMenu, makeSection, settingsFrame, paintPresence } = ui;
+
+const S = suite("dock");
+const check = (name: string, ok: unknown, detail?: unknown) => S.check(name, ok, detail);
+const tick = () => new Promise((r) => setImmediate(r));
+{
+  // R, gym 10-17 20:00: the bar sat "closer to the dock than it used to" — its saved place was under the old id
+  const p = JSON.parse(localStorage.getItem("ew-dock-pins") ?? "null");
+  check("rename carry: a saved pin under the old id is the action bar's 'actions' pin after load", Array.isArray(p) && p.includes("actions") && !p.includes(OLD), JSON.stringify(p));
+  check("rename carry: the action bar's saved place/size moves to ew-frame-actions", localStorage.getItem("ew-frame-actions") === RENAMED_FRAME && localStorage.getItem(`ew-frame-${OLD}`) == null,
+    String(localStorage.getItem("ew-frame-actions")));
+  // a state saved under the new id is newer and wins; the stale old key still goes
+  localStorage.setItem(`ew-frame-${OLD}`, "{\"x\":1}"); localStorage.setItem("ew-frame-actions", "{\"x\":2}");
+  ui.carryRenamedPanel(OLD, "actions");
+  check("rename carry: an existing 'actions' state is not overwritten by the old one", localStorage.getItem("ew-frame-actions") === "{\"x\":2}" && localStorage.getItem(`ew-frame-${OLD}`) == null);
+  localStorage.setItem("ew-frame-actions", RENAMED_FRAME);
+}
+const dock = () => document.getElementById("dock")!;
+const menu = () => document.getElementById("emenu")!;
+const btn = (id: string) => dock().querySelector(`button[data-toggles="${id}"]`) as HTMLButtonElement | null;
+// the ∃ menu is a dropdown now (owner, 10-01): what used to be the whole menu lives in its Panels ▸ flyout
+const sub = () => document.getElementById("emenu-sub")!;
+const top = (id: string) => menu().querySelector(`.mrow[data-item="${id}"]`) as HTMLButtonElement | null;
+const row = (id: string) => sub().querySelector(`.mrow[data-row="${id}"]`) as HTMLButtonElement | null;
+const pin = (id: string) => sub().querySelector(`.mpin[data-pin="${id}"]`) as HTMLButtonElement | null;
+const openPanels = () => { toggleEMenu(true); top("panels")!.click(); };
+const order = () => [...dock().querySelectorAll("button[data-toggles]")].map((b) => (b as HTMLElement).dataset.toggles);
+const savedPins = () => JSON.parse(localStorage.getItem("ew-dock-pins") ?? "null");
+// compare glyphs by their path data: happy-dom re-serializes attribute whitespace, so markup equality lies
+const paths = (name: string) => [...fsvg(name, 15).matchAll(/ d="([^"]+)"/g)].map((m) => m[1]);
+const wears = (html: string, name: string) => paths(name).every((d) => html.includes(d));
+const PUZZLE = "puzzle-piece";
+
+// the built-in frames the rail lists (main.js makes these before initDock)
+for (const id of ["chat", "world", "actions", "debug"]) makeFrame(id, { title: id });
+let editOn = false, editGate = false, editFired = 0;
+
+console.log("DOCK — initDock");
+initDock([
+  { id: "chat", label: "💬" },
+  { id: "world", label: "🧱" },
+  { id: "nofrx", label: "👥" },        // synthetic: a declared entry with NO frame and NO pin
+  { id: "actions", label: "👋" },
+  { id: "debug", label: "🐞" },
+  { id: "edit", label: "🔧", icon: "wrench", last: true, action: () => { editFired++; editOn = !editOn; }, active: () => editOn, gate: () => editGate },
+]);
+await tick();   // initPanels' dynamic imports land and repaint
+// DEFAULT_LAYOUT opens chat and the action bar (world starts closed; windows.js); every rail assertion below starts from CLOSED
+for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();
+bus.emit("frames");
+check("∃ leads the rail", dock().firstElementChild?.id === "hud");
+check("profile leads the buttons (right under the ∃); the wrench closes the list; the grip is last",
+  order()[0] === "profile" && order()[order().length - 1] === "edit" && dock().lastElementChild?.classList.contains("dock-grip"), order().join());
+// search sits between gestures and debug (owner, 10-01: "Search almost feels like a less-standard feature, so maybe
+// should be docked by default between gestures and debug"), pinned by default
+check("dock order follows the entry list, search between actions and debug", order().join() === "profile,chat,world,nofrx,actions,search,debug,edit", order().join());
+check("…and search is pinned (seeded here; in DEFAULT_PINS for a fresh install), shown while the lantern is closed", btn("search")!.hidden === false && savedPins().includes("search") && DEFAULT_PINS.includes("search"));
+{ // the search entry: the lantern prompt's way in, wearing the magnifying glass, its chord in the tooltip
+  const { get: getAction, register: registerAction } = await import("../../client/lib/ui/actions.js");
+  const s = btn("search")!;
+  check("the search entry wears the magnifying glass (line at rest + fill)", wears(s.innerHTML, "magnifying-glass") && s.querySelectorAll("svg").length === 2, s.innerHTML.slice(0, 80));
+  check("…its tooltip is 'Search & commands · Ctrl K' (⌘K on a Mac)", /^Search & commands · (Ctrl K|⌘K)$/.test(s.title), s.title);
+  check("…and it adds no lantern row (a row that opens the prompt you are typing in)", getAction("panel:search") === null);
+  // EVERY rail tooltip names its key where the registry knows one — merged in later, as main.js's key table does
+  registerAction({ id: "panel:debug", key: "F3" });
+  registerAction({ id: "panel:chat", key: "Enter" });
+  registerAction({ id: "panel:edit", key: "B" });
+  bus.emit("frames");
+  const titles = Object.fromEntries(["chat", "world", "debug", "actions", "edit"].map((id) => [id, btn(id)?.title]));
+  check("rail tooltips read the key from the action registry: 'Chat · Enter', 'Debug · F3', 'World', 'Actions'",
+    titles.chat === "Chat · Enter" && titles.debug === "Debug · F3" && titles.world === "World" && titles.actions === "Actions", JSON.stringify(titles));
+  check("…the gated wrench: 'Builder mode · B — needs build rights in this world'", titles.edit === "Builder mode · B — needs build rights in this world", String(titles.edit));
+}
+check("built-ins are pinned (seeded here; chat is in DEFAULT_PINS for a fresh install): chat's button shows while its frame is closed",
+  !getFrame("chat")!.visible && btn("chat")!.hidden === false && DEFAULT_PINS.includes("chat"));
+check("an entry with no frame and no pin is hidden", btn("nofrx")!.hidden === true);
+// GREY, NOT GONE (R, 2026-09-11). A hidden affordance teaches nobody it
+// exists — which is how the wrench went missing from the rail for days.
+check("a gated action entry is PRESENT but dead while its gate is closed",
+  btn("edit")!.hidden === false && btn("edit")!.classList.contains("dead") && btn("edit")!.disabled === true,
+  `hidden=${btn("edit")!.hidden} dead=${btn("edit")!.classList.contains("dead")} disabled=${btn("edit")!.disabled}`);
+check("...and its title says why it is dead",
+  /build rights/.test(btn("edit")!.title), btn("edit")!.title);
+editGate = true; bus.emit("frames");
+check("...and comes alive once the gate opens (pinned by default)",
+  btn("edit")!.hidden === false && !btn("edit")!.classList.contains("dead") && btn("edit")!.disabled === false);
+btn("edit")!.click();
+check("clicking the wrench fires its action and lights it", editFired === 1 && btn("edit")!.classList.contains("on"));
+btn("edit")!.click();
+check("...and again to unlight", editFired === 2 && !btn("edit")!.classList.contains("on"));
+check("window.eido.ui.registerPanel is the exported seam", (window as any).eido?.ui?.registerPanel === registerPanel);
+
+console.log("DOCK — EMOJI_ICON: rail chrome never rides emoji");
+// world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — catalog.js's
+// build section wears the hammer correctly. The world PANEL is a planet, so the
+// entry id overrides the emoji (ui-dock.js ID_ICON). Live report, #185.
+const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["actions", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
+for (const [id, emoji, icon] of RAIL) {
+  const b = btn(id)!;
+  check(`rail button '${id}' (${emoji}) wears the ${icon} FILL glyph — not the emoji, not puzzle-piece`,
+    wears(b.innerHTML, icon) && !b.textContent!.includes(emoji) && !wears(b.innerHTML, PUZZLE), `innerHTML=${b.innerHTML.slice(0, 60)}`);
+}
+openPanels();
+for (const [id, , icon] of RAIL) {
+  const r = row(id)!;
+  check(`∃ row '${id}' wears ${icon}, never puzzle-piece`,
+    !!r && wears(r.innerHTML, icon) && !wears(r.innerHTML, PUZZLE), wears(r?.innerHTML ?? "", PUZZLE) ? "puzzle-piece" : r?.innerHTML.slice(0, 60));
+}
+toggleEMenu(false);
+{
+  const s = makeSection("💬 chat", null, { id: "sec-chat" });
+  check("makeSection('💬 …') head wears the chat-circle fill glyph + the bare name",
+    wears(s.head.innerHTML, "chat-circle") && !wears(s.head.innerHTML, PUZZLE) && s.head.querySelector("span")?.textContent === "chat" && !s.head.textContent!.includes("💬"), s.head.innerHTML.slice(0, 80));
+  const s2 = makeSection("🐞 debug", null, { id: "sec-debug" });
+  check("makeSection('🐞 …') head wears the bug fill glyph", wears(s2.head.innerHTML, "bug") && !s2.head.textContent!.includes("🐞"));
+  const s4 = makeSection("🧱 build", null, { id: "sec-build" });
+  const s5 = makeSection("👋 gestures", null, { id: "sec-gestures" });
+  check("makeSection: 🧱 → hammer, 👋 → hand-waving", wears(s4.head.innerHTML, "hammer") && wears(s5.head.innerHTML, "hand-waving"));
+  const s3 = makeSection("🦄 unmapped", null, { id: "sec-unk" });
+  check("an UNMAPPED emoji keeps its text (no silent puzzle-piece)", s3.head.textContent === "🦄 unmapped" && !s3.head.querySelector("svg"));
+}
+
+console.log("DOCK — the rail clears the joystick (mobile landscape)");
+{
+  // R, 2026-09-11: "it doesn't currently take into account the space needed for
+  // the mobile joystick". #stick is left:18 bottom:18, 116px square -> it owns
+  // the bottom 134px of the left column. The rail is taller than what is left
+  // above it at 844x390, so a LEFT edge runs through the thumb.
+  const { dockEdgeFitsLeft } = ui as any;
+  const vw0 = innerWidth, vh0 = innerHeight;
+  const setVp = (w: number, h: number) => { (window as any).innerWidth = w; (window as any).innerHeight = h; };
+
+  document.body.classList.remove("touch");
+  setVp(844, 390);
+  check("no touch controls: the left rail is never displaced", dockEdgeFitsLeft() === true);
+
+  document.body.classList.add("touch");
+  setVp(390, 844);
+  check("touch, portrait: the rail still clears the stick, so it stays left", dockEdgeFitsLeft() === true);
+
+  setVp(844, 390);
+  check("touch, landscape: the rail cannot clear the stick -> not left", dockEdgeFitsLeft() === false);
+
+  // Drive the real path (initDock's resize listener -> loadDockEdge -> applyDockEdge)
+  // and read the edge off the DOM: reading localStorage back would pass with the module deleted.
+  localStorage.setItem("ew-dock-pos", JSON.stringify({ edge: "right", along: 40 }));
+  window.dispatchEvent(new Event("resize"));          // initDock's own listener re-applies the edge
+  check("a DELIBERATE drag still wins: a stored ew-dock-pos beats the joystick rule",
+    dock().dataset.edge === "right", `dataset.edge=${dock().dataset.edge}`);
+  localStorage.removeItem("ew-dock-pos");
+  window.dispatchEvent(new Event("resize"));
+  check("...and with no stored edge, the rule applies again: landscape -> top",
+    dock().dataset.edge === "top", `dataset.edge=${dock().dataset.edge}`);
+
+  document.body.classList.remove("touch");
+  setVp(vw0, vh0);
+}
+
+console.log("DOCK — registerPanel (the mod seam)");
+let mounted: any = null;
+const modF = registerPanel({ id: "modx", title: "mod x", mount: (body: HTMLElement, f: any) => { mounted = { body, f }; } });
+check("returns the frame; mount ran with its body", !!modF && mounted?.f === modF && mounted.body === modF.body);
+check("the frame is born hidden", modF.visible === false);
+check("a rail button exists for it", !!btn("modx"));
+check("...inserted BEFORE the wrench, which keeps the end", order().indexOf("modx") < order().indexOf("edit"), order().join());
+check("unpinned + closed: its button is hidden", btn("modx")!.hidden === true);
+check("the default icon is puzzle-piece (a mod that names none)", wears(btn("modx")!.innerHTML, PUZZLE));
+const dup = registerPanel({ id: "modx", title: "again" });
+check("a duplicate id is refused (null)", dup === null, String(dup));
+check("...and the rail holds ONE button for it", dock().querySelectorAll('button[data-toggles="modx"]').length === 1);
+check("registerPanel without an id is refused", registerPanel({} as any) === null);
+check("a mounting mod that throws does not take the seam down",
+  (() => { const errs = console.error; console.error = () => {}; try { return !!registerPanel({ id: "mody", mount: () => { throw new Error("boom"); } }); } finally { console.error = errs; } })());
+
+console.log("DOCK — open ∪ pinned");
+btn("modx")!.click();
+check("clicking its (hidden) button opens the frame and shows the button lit", modF.visible && btn("modx")!.hidden === false && btn("modx")!.classList.contains("on"));
+check("dockPins() lists it now that it is open", dockPins().some((p: any) => p.id === "modx" && p.open === true));
+check("dockPins() never lists action entries", !dockPins().some((p: any) => p.id === "edit"));
+btn("modx")!.click();
+check("closing it hides the button again (not pinned)", !modF.visible && btn("modx")!.hidden === true && !btn("modx")!.classList.contains("on"));
+check("...and dockPins() drops it", !dockPins().some((p: any) => p.id === "modx"));
+btn("chat")!.click();
+check("a pinned panel's button stays through open", getFrame("chat")!.visible && btn("chat")!.hidden === false && btn("chat")!.classList.contains("on"));
+btn("chat")!.click();
+check("...and through close", !getFrame("chat")!.visible && btn("chat")!.hidden === false && !btn("chat")!.classList.contains("on"));
+
+console.log("DOCK — the ∃ menu");
+check("closed at rest", menu().hidden === true && !document.body.classList.contains("arranging"));
+document.getElementById("hud")!.click();
+check("∃ click opens it — a dropdown now, NOT arranging (HUD layout mode is its own switch)", menu().hidden === false && !document.body.classList.contains("arranging"));
+top("panels")!.click();
+check("Panels ▸ opens its flyout", sub().hidden === false && top("panels")!.classList.contains("subopen"));
+check("voice rows lead: mic, ears, VR", ["glyph:mic", "glyph:ear", "glyph:xr"].every((k) => !!row(k)));
+{ // the mic row follows the HUD glyph as it changes (mictoggle.js announces 'mic:indicator'), not at the 2 s sweep
+  const { __setMicIndicator } = await import("../stubs/dock-stub.mjs") as any;
+  const drawnKey = () => row("glyph:mic")!.querySelector("svg")?.getAttribute("data-key");
+  __setMicIndicator("hot"); bus.emit("mic:indicator", "hot");
+  check("the open menu's mic row re-stamps gold the moment the indicator changes, not at the next 2 s sweep", drawnKey() === "hot", String(drawnKey()));
+  __setMicIndicator("on"); bus.emit("mic:indicator", "on");
+  check("...and back to plain as it ends", drawnKey() === "on", String(drawnKey()));
+  // one read gives the row its key and its glyph: a state that changes between two reads can't leave them apart
+  __setMicIndicator("off"); bus.emit("mic:indicator", "off");   // stamped off first, so the next change re-stamps
+  __setMicIndicator("flip"); bus.emit("mic:indicator", "flip");
+  const r = row("glyph:mic")!;
+  check("the row's recorded key and its drawn glyph come from one read", r.dataset.on === drawnKey(), `${r.dataset.on} vs ${drawnKey()}`);
+  __setMicIndicator(null); bus.emit("mic:indicator", null);
+}
+check("VR row is dead when no headset is sensed (disabled row + disabled pin)", row("glyph:xr")!.disabled && pin("glyph:xr")!.disabled);
+check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "actions", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
+check("the wrench has a row while gated open", !!row("edit"));
+{ // THE LANTERN'S RESTING LINE pins from here too (owner, 10-01: "add it as a pin feature for the reverse-E menu (might
+  // need its own logo to differentiate), and have it obey the 'esc to hide' feature")
+  const L = await import("../../client/lib/ui/commandbar.js");
+  const r = row("lantern"), p = pin("lantern");
+  const rows = [...sub().querySelectorAll(".mrow[data-row]")].map((x) => (x as HTMLElement).dataset.row);
+  // its own area (owner, 10-01: "It's not *quite* a conventional panel so it can't get docked"): a group of one, after
+  // the voice group, separated from it and from the windows the way the voice group is
+  check("the lantern has a row in a group of its own: a separator either side, after the voice rows",
+    !!r && r.previousElementSibling?.className === "msep" && r.nextElementSibling?.className === "msep"
+      && r.previousElementSibling?.previousElementSibling === row("glyph:xr"), rows.join());
+  check("…not under the rail's search entry any more", rows.indexOf("lantern") !== rows.indexOf("search") + 1, rows.join());
+  check("…wearing its own glyph (a lantern, R 10-08), not the search glass", !!r && paths("lantern").length > 0 && wears(r.innerHTML, "lantern") && !wears(r.innerHTML, "magnifying-glass"));
+  check("…and named the lantern in the row and its tooltip, not the lighthouse", !!r && /\blantern\b/.test(r.textContent ?? "") && !/lighthouse/.test((r.textContent ?? "") + (r.title ?? "")), (r?.textContent ?? "") + " | " + r?.title);
+  check("…pinned by default (the pill rests; nothing changes for anyone who leaves it)", !!p && p.classList.contains("on") && L.pillPinned());
+  check("…its pin says unpinning keeps the chord", !!p && /Ctrl K|⌘K/.test(p.title) && /still open/.test(p.title), p?.title);
+  p?.click();
+  check("clicking the pin unpins the resting line, remembered", !L.pillPinned() && !pin("lantern")!.classList.contains("on") && localStorage.getItem("ew-lantern-pinned") === "0",
+    `${L.pillPinned()} ${localStorage.getItem("ew-lantern-pinned")}`);
+  check("…and the rail's search entry is untouched by it", btn("search")!.hidden === false);
+  pin("lantern")!.click();
+  check("clicking again pins it back", L.pillPinned() && pin("lantern")!.classList.contains("on"));
+  // every way in that also closes it is a TOGGLE to the lantern's blur (commandbar.js): a held click on one of these used to
+  // close the lantern on blur and reopen it on release (measured in the browser, 10-01)
+  check("the rail's search entry and the menu's lantern and search rows are lantern toggles",
+    ["search"].every((id) => btn(id)!.hasAttribute("data-lantern-toggle")) && row("lantern")!.hasAttribute("data-lantern-toggle") && row("search")!.hasAttribute("data-lantern-toggle"));
+  L.initLantern({});   // main.js boots it; nothing above needed it
+  { // PINNING IS BOOKKEEPING (owner, 10-01: "wouldn't expect *pinning* a menu to close a menu that's open"): a pin
+    // never takes focus, so an open lantern's line keeps it and stays open — a pin's mousedown used to blur the line
+    const pins = [...sub().querySelectorAll(".mpin:not([disabled])")] as HTMLElement[];
+    const kept = pins.filter((p) => { const ev = new MouseEvent("mousedown", { bubbles: true, cancelable: true }); p.dispatchEvent(ev); return ev.defaultPrevented; });
+    check("no pin takes focus on mousedown (an open lantern keeps its line)", pins.length > 5 && kept.length === pins.length,
+      `${kept.length}/${pins.length}: ${pins.filter((p) => !kept.includes(p)).map((p) => p.dataset.pin).join()}`);
+  }
+  row("lantern")!.click();
+  check("the row itself opens the lantern (like a window row opens its window)", L.isLanternOpen());
+  L.closeLantern();
+  bus.emit("esc-quiet", "closed");
+  check("Tab put the panels away (windows.js says so on the bus): the resting line goes with them", L.pillQuiet());
+  bus.emit("esc-quiet", "restored");
+  check("…and comes back with them", !L.pillQuiet());
+  // the real key, with NO panel open (owner, 10-01: "Basically only the dock should be visible"): Tab still takes the
+  // resting line away, and says so; the next Tab brings it back (Esc did, until R 10-15: Esc is full screen's way out)
+  for (const id of ["chat", "world", "actions", "debug", "settings", "profile"]) getFrame(id)?.hide();
+  const menuWas = !menu().hidden;
+  if (menuWas) toggleEMenu(false);
+  const key = () => document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true }));
+  key();
+  const hint = document.getElementById("hintbar")!;
+  check("no panel open: Tab puts the resting line away", L.pillQuiet(), String(L.pillQuiet()));
+  check("…and the hint says 'hidden · Tab to bring back' (no panels were)", /^hidden · Tab to bring back$/.test(hint.textContent!.trim()), hint.textContent!);
+  key();
+  check("…the next Tab brings it back", !L.pillQuiet());
+  if (menuWas) openPanels();
+}
+{ // ...and a row while gated CLOSED too — dead, not absent (R: "It SHOULD be
+  // in the reverse-E menu regardless"). paintEMenu used to `continue` past a
+  // closed gate, so the only way to learn build mode existed was to already
+  // have build rights.
+  const was = editGate;
+  editGate = false; bus.emit("frames");
+  const r = row("edit");
+  check("the wrench keeps its ∃ row while gated CLOSED, rendered dead",
+    !!r && r.classList.contains("dead") && r.disabled === true,
+    r ? `dead=${r.classList.contains("dead")} disabled=${r.disabled}` : "NO ROW");
+  editGate = was; bus.emit("frames");
+}
+{ // AUTO-PIN ON THE GRANT, edge-triggered. R asked for the wrench to pin
+  // itself when build rights arrive, with a manual unpin still winning — so it
+  // must fire on closed->open, never on every repaint.
+  const wasGate = editGate;
+  // OBSERVE WHAT THE PRODUCT OBSERVES: the rail, not storage (storage lags `pins`,
+  // which hydrates from DEFAULT_PINS while the key is absent). paintDock hides an
+  // action button iff `!active && !pins.has(id)` (ui-dock.js), so with the gate
+  // open and the mode off, visible == pinned.
+  const isPinned = () => { editGate = true; bus.emit("frames"); return btn("edit")!.hidden === false; };
+  // Re-QUERY the pin button every time: emenuKey() omits a gated-closed action
+  // entry, so flipping editGate changes the key and paintEMenu rebuilds every
+  // row (buildPanels) — a captured element goes stale across exactly the emits driven here.
+  const pinNow = () => sub().querySelector(`.mpin[data-pin="edit"]`) as HTMLButtonElement | null;
+
+  editGate = true; bus.emit("your-rights");            // settle: granted, remembered
+  if (isPinned()) { pinNow()!.click(); }               // start from UNPINNED, whatever the default was
+  check("...starting unpinned", !isPinned(), JSON.stringify(savedPins()));
+
+  editGate = false; bus.emit("your-rights");           // REVOKE
+  editGate = true; bus.emit("your-rights");            // THE GRANT
+  check("a rights grant auto-pins the wrench", isPinned(), JSON.stringify(savedPins()));
+
+  // a FIRST grant with nothing saved (pins hydrate from DEFAULT_PINS, which has 'edit') is bound below, in DOCK BOOT
+
+  // R asked for BOTH verbs: "gray out AND UNPIN ... and it activates and pins
+  // automatically when you do get it". Shipping only the pin left a demoted
+  // user with a dead wrench welded to a GLOBAL pin list. (round 5)
+  editGate = false; bus.emit("your-rights");
+  check("...and losing the rights unpins it again", !isPinned(), JSON.stringify(savedPins()));
+
+  // the override: re-grant, unpin by hand, repaint at the SAME level
+  editGate = true; bus.emit("your-rights");
+  pinNow()!.click();
+  check("...and a manual unpin actually unpins it", !isPinned(), JSON.stringify(savedPins()));
+  bus.emit("your-rights");
+  check("...and the next repaint does NOT undo the manual unpin (edge, not level)",
+    !isPinned(), JSON.stringify(savedPins()));
+
+  // and a dead row's pin must be dead too — the VR row's own treatment
+  editGate = false; bus.emit("your-rights");
+  check("a gated-closed row's pin is disabled, not merely un-hoverable",
+    pinNow()?.disabled === true, `disabled=${pinNow()?.disabled}`);
+
+  // NEVER `on` AND `dead`. .on's brand ink and 2px edge-bar come later in the
+  // sheet at equal specificity, so a dead+on button rendered as "active but
+  // broken": 42% opacity in full brand colour. Reachable in the product —
+  // a builder enters build mode and then loses rights mid-session (build.js
+  // setBuildMode gates only the `on` direction). (round 5)
+  editOn = true; bus.emit("frames");
+  check("a dead action button never also paints as active",
+    btn("edit")!.classList.contains("dead") && !btn("edit")!.classList.contains("on"),
+    `dead=${btn("edit")!.classList.contains("dead")} on=${btn("edit")!.classList.contains("on")}`);
+  editOn = false; bus.emit("frames");
+
+  editGate = wasGate; bus.emit("frames");
+}
+
+// ORDER AT PAINT TIME. initDock sorts `last` to the end once, and mods register
+// after that sort; the rail keeps the wrench last by where addDockButton inserts
+// (before the first [data-last]), and the menu must keep it last too.
+// R: "it should always be at the bottom of both until further notice."
+{ const rows = [...sub().querySelectorAll(".mrow[data-row]")].map((r: any) => r.dataset.row);
+  const btns = [...dock().querySelectorAll("button[data-toggles]")].map((b: any) => b.dataset.toggles);
+  const named = rows.filter((r: string) => !r.startsWith("glyph:"));
+  check("the wrench is LAST in the ∃ menu, even after a late registerPanel",
+    named[named.length - 1] === "edit", JSON.stringify(named));
+  check("...and last on the rail too", btns[btns.length - 1] === "edit", JSON.stringify(btns)); }
+
+{ // EVERY PIN, on → off → on with the menu open (owner, 10-01: "make sure they pin/unpin and highlight/unhighlight
+  // correctly"): the highlight follows at once, the menu stays open, and the choice is where the next boot reads it
+  const { glyphPinned } = await import("../stubs/dock-stub.mjs");
+  const L = await import("../../client/lib/ui/commandbar.js");
+  const stored = (id: string) => id === "lantern" ? L.pillPinned() && localStorage.getItem("ew-lantern-pinned") !== "0"
+    : id.startsWith("glyph:") ? glyphPinned(id.slice(6)) : (savedPins() ?? []).includes(id);
+  const ids = [...sub().querySelectorAll(".mpin[data-pin]:not([disabled])")].map((p) => (p as HTMLElement).dataset.pin!);
+  check("the sweep covers the voice glyphs, the lantern, every window and the wrench", ["glyph:mic", "glyph:ear", "lantern", "chat", "world", "search", "edit"].every((id) => ids.includes(id)), ids.join());
+  for (const id of ids) {
+    const seen: string[] = [];
+    const start = pin(id)!.classList.contains("on");
+    for (let i = 0; i < 3; i++) {
+      pin(id)!.click();
+      const on = pin(id)!.classList.contains("on");
+      seen.push(`${on}/${stored(id)}/${menu().hidden ? "CLOSED" : "open"}`);
+    }
+    const want = [!start, start, !start].map((v) => `${v}/${v}/open`);
+    check(`pin ${id}: ${start ? "on→off→on→off" : "off→on→off→on"}, lit and stored alike, the menu open throughout`, seen.join() === want.join(), seen.join(" "));
+    pin(id)!.click();   // back where it started
+  }
+}
+{ // RESET LAYOUT puts the lantern's resting line back too (it moves in HUD layout mode, commandbar.js)
+  localStorage.setItem("ew-lantern-pos", JSON.stringify({ x: 0.2, b: 300 }));
+  const reset = [...sub().querySelectorAll(".mrow")].find((r) => /reset layout/.test(r.textContent!)) as HTMLButtonElement;
+  reset.click();
+  check("the menu's reset layout forgets the resting line's moved spot", localStorage.getItem("ew-lantern-pos") === null, String(localStorage.getItem("ew-lantern-pos")));
+  for (const id of ["chat", "world", "actions", "debug"]) getFrame(id)!.hide();   // the reset reopened the default layout; the checks below start closed
+  bus.emit("frames");
+}
+check("the lock row and reset row close the Panels flyout", !!sub().querySelector(".mrow[data-lock]") && /reset layout/.test(sub().lastElementChild!.textContent!));
+row("chat")!.click();
+check("a row click opens that window and lights the row", getFrame("chat")!.visible && row("chat")!.classList.contains("open"));
+row("chat")!.click();
+check("...and again closes it", !getFrame("chat")!.visible && !row("chat")!.classList.contains("open"));
+check("modx's pin is off", !!pin("modx") && !pin("modx")!.classList.contains("on") && pin("modx")!.title === "pin to rail");
+pin("modx")?.click();
+check("pinning modx: pin lights, its closed button now shows on the rail", pin("modx")!.classList.contains("on") && btn("modx")!.hidden === false);
+check("...and the pin set is persisted", Array.isArray(savedPins()) && savedPins().includes("modx"), JSON.stringify(savedPins()));
+check("...and dockPins() lists it closed", dockPins().some((p: any) => p.id === "modx" && p.open === false));
+pin("modx")!.click();
+check("unpinning hides the closed button again and persists", btn("modx")!.hidden === true && !savedPins().includes("modx"));
+pin("chat")!.click();
+check("unpinning a built-in hides its closed button", btn("chat")!.hidden === true && !savedPins().includes("chat"));
+pin("chat")!.click();
+check("...pin it back", btn("chat")!.hidden === false && savedPins().includes("chat"));
+{
+  const lock = sub().querySelector(".mrow[data-lock]") as HTMLButtonElement;
+  lock.click();
+  check("the lock row locks the layout and says so", isLocked() && /layout locked/.test(lock.textContent!) && lock.classList.contains("open"));
+  lock.click();
+  check("...and unlocks", !isLocked() && /layout unlocked/.test(lock.textContent!));
+}
+{
+  const micRow = row("glyph:mic")!;
+  check("mic row starts unlit", !micRow.classList.contains("open"));
+  micRow.click(); await tick();
+  check("mic row click flips the mic and relights", micRow.classList.contains("open"));
+  micRow.click(); await tick();
+}
+
+console.log("DOCK — the waterfall: its top level (owner, 10-01)");
+{ toggleEMenu(false); toggleEMenu(true);
+  const items = [...menu().children].map((c) => (c as HTMLElement).dataset.item ?? (c.className === "msep" ? "|" : "?")).join(" ");
+  check("top level: Save world · Load world | Panels ▸ · Lite client | Log in · Help · Keys · About ▸ (Settings and Profile stay on the rail)",
+    items === "save load | panels lite | login help keys about", items);
+  check("…Panels and About carry a caret and open a flyout; the rest are plain items", top("panels")!.getAttribute("aria-haspopup") === "menu" && top("about")!.getAttribute("aria-haspopup") === "menu" && !top("help")!.hasAttribute("aria-haspopup"));
+  check("…the menu is a menu to assistive tech", menu().getAttribute("role") === "menu" && top("help")!.getAttribute("role") === "menuitem");
+  // SAVE / LOAD: honest stubs — listed, greyed, and a press says why (no server save points exist; grep, 10-01)
+  const toasts = () => [...document.querySelectorAll("#toasts .toast")].map((t) => t.textContent!.trim());
+  check("without build rights Save and Load are listed but greyed, and say who they are for",
+    top("save")!.getAttribute("aria-disabled") === "true" && top("load")!.getAttribute("aria-disabled") === "true" && /builders/.test(top("save")!.textContent!) && /build rights/.test(top("save")!.title), top("save")!.title);
+  top("save")!.click();
+  check("…pressing a greyed item SAYS why (a finger or a laser has no hover) and keeps the menu open", toasts().some((t) => /^Save world — needs build rights/.test(t)) && !menu().hidden, toasts().join(" / "));
+  ui.setMenuSources({ buildRights: () => true });
+  check("with build rights they are still greyed — the server cannot save or load a world yet — and say so", top("save")!.getAttribute("aria-disabled") === "true" && /not yet/.test(top("save")!.textContent!) && /server support/.test(top("save")!.title) && /\/fork/.test(top("save")!.title), top("save")!.title);
+  top("load")!.click();
+  check("…Load's press says it too", toasts().some((t) => /^Load world — not yet/.test(t)));
+  // LOG IN: wired to what exists
+  check("no sign-in on this server: Log in is greyed with the reason", top("login")!.getAttribute("aria-disabled") === "true" && /door key/.test(top("login")!.title), top("login")!.title);
+  ui.setMenuSources({ loginUrl: () => "https://id.example/login" });
+  check("a deployment with a login: Log in (with Discord) is live", top("login")!.getAttribute("aria-disabled") !== "true" && /Log in/.test(top("login")!.textContent!) && /Discord/.test(top("login")!.textContent!));
+  const { CONFIG } = await import("../stubs/dock-stub.mjs");
+  CONFIG.authed = true; ui.setMenuSources({});
+  check("signed in: the item is Log out, naming who", /Log out/.test(top("login")!.textContent!) && top("login")!.textContent!.includes(CONFIG.name), top("login")!.textContent!);
+  CONFIG.authed = false; ui.setMenuSources({ loginUrl: () => null, buildRights: () => false });
+  // HELP / KEYS: another window, so the menu goes
+  top("help")!.click();
+  check("Help opens the help sheet and the menu goes (it took you to another window)", document.getElementById("help")!.classList.contains("open") && menu().hidden);
+  document.getElementById("help")!.classList.remove("open");
+  toggleEMenu(true); top("keys")!.click();
+  check("Keys opens the help sheet (at its key table) and the menu goes", document.getElementById("help")!.classList.contains("open") && menu().hidden);
+  document.getElementById("help")!.classList.remove("open");
+  // ABOUT: the build, from the page's /version answer (stubbed at the top)
+  toggleEMenu(true); top("about")!.click();
+  await tick(); await tick(); await tick();
+  check("About ▸ shows the build's version from /version", sub().hidden === false && /build abc1234/.test(sub().textContent!) && /code from/.test(sub().textContent!), sub().textContent!);
+  top("panels")!.click();
+  check("…and Panels ▸ takes the flyout's place (one at a time)", sub().querySelector(".mrow[data-layout]") !== null && !/abc1234/.test(sub().textContent!));
+}
+
+console.log("DOCK — the waterfall: what dismisses it, and what does not");
+{ const pd = (t: EventTarget, o: PointerEventInit = {}) => t.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ...o }));
+  const pm = (t: EventTarget, type = "mouse") => t.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, pointerType: type }));
+  const wait = (ms: number) => pause("the waterfall's dismiss windows are what is tested", ms);
+  openPanels();
+  row("chat")!.click(); row("chat")!.click();
+  pin("world")!.click(); pin("world")!.click();
+  check("toggling windows and pins never dismisses it", !menu().hidden && !sub().hidden);
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("Esc closes the deepest level first: the flyout, the menu stays", sub().hidden && !menu().hidden);
+  getFrame("chat")!.show();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("…then the menu", menu().hidden === true);
+  check("…and the open frames stay (the menu owned Esc)", getFrame("chat")!.visible);
+  openPanels();
+  pd(document.getElementById("hud")!);
+  check("a press on the ∃ itself does not dismiss it (the ∃'s click toggles)", !menu().hidden);
+  pd(getFrame("chat")!.el);
+  check("a press anywhere outside it dismisses it — a frame too (tap-outside; touch and VR have no hover)", menu().hidden && sub().hidden);
+  openPanels();
+  pd(sub().querySelector(".mrow")!);
+  check("a press inside the flyout does not", !menu().hidden);
+  // MOUSE-AWAY (desktop)
+  pm(document.body, "touch"); await wait(520);
+  check("a touch moving outside does not dismiss it (no hover to leave with)", !menu().hidden);
+  pm(document.body); await wait(150); pm(sub());
+  await wait(450);
+  check("the mouse wandering off and back within the grace keeps it", !menu().hidden);
+  pm(document.body); await wait(520);
+  check("the mouse leaving it dismisses it (after a ~450 ms grace)", menu().hidden);
+}
+
+console.log("DOCK — HUD layout mode: the old click-∃ arranging, a switch of its own");
+{ const pd = (t: EventTarget, o: PointerEventInit = {}) => t.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, ...o }));
+  const arranging = () => document.body.classList.contains("arranging");
+  const bar = () => document.getElementById("layoutbar")!;
+  openPanels();
+  const lay = sub().querySelector(".mrow[data-layout]") as HTMLButtonElement;
+  check("Panels ▸ leads with HUD layout mode, then the voice rows", lay === sub().firstElementChild && /HUD layout mode/.test(lay.textContent!) && lay.nextElementSibling?.nextElementSibling === row("glyph:mic"));
+  lay.click();
+  check("its row turns arranging on, lights, and the menu stays", arranging() && lay.classList.contains("open") && lay.getAttribute("aria-checked") === "true" && !menu().hidden);
+  check("…and the layout marker shows beside the ∃", bar().hidden === false && /HUD layout/.test(bar().textContent!));
+  toggleEMenu(false);
+  check("closing the menu does not end the mode", arranging());
+  pd(getFrame("chat")!.el);
+  check("a press on a frame keeps it", arranging());
+  pd(dock());
+  check("a press on the rail keeps it", arranging());
+  pd(document.getElementById("lantern-pill") ?? dock());
+  check("a press on the resting line keeps it (it is draggable in this mode)", arranging());
+  const { escapeIsClaimed } = await import("../../client/lib/ui/windows.js");
+  check("Esc belongs to the mode (windows.js yields: escapeIsClaimed says 'layout')", escapeIsClaimed() === "layout", String(escapeIsClaimed()));
+  getFrame("chat")!.show();
+  window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  check("Esc ends it, and the panels stay", !arranging() && bar().hidden && getFrame("chat")!.visible);
+  openPanels(); (sub().querySelector(".mrow[data-layout]") as HTMLButtonElement).click(); toggleEMenu(false);
+  pd(document.body, { clientX: 500, clientY: 500 });
+  check("a press out in the world ends it", !arranging());
+  openPanels(); (sub().querySelector(".mrow[data-layout]") as HTMLButtonElement).click();
+  (sub().querySelector(".mrow[data-layout]") as HTMLButtonElement).click();
+  check("its row turns it off again", !arranging() && !(sub().querySelector(".mrow[data-layout]") as HTMLElement).classList.contains("open"));
+  toggleEMenu(false);
+  const A = await import("../../client/lib/ui/actions.js");
+  A.run("menu:layout");
+  check("the lantern can run it too (action menu:layout)", arranging());
+  bar().querySelector("button")!.click();
+  check("…and the marker's 'done' ends it", !arranging());
+  check("the menu's acts are in the action registry: save, load, layout, reset, lock, keys, about, login",
+    ["menu:save", "menu:load", "menu:layout", "menu:reset-layout", "menu:lock", "menu:keys", "menu:about", "menu:login"].every((id) => !!A.get(id)));
+}
+
+console.log("DOCK — late tenants");
+settingsFrame();
+check("settingsFrame() registers its own rail entry wearing gear-six", !!btn("settings") && wears(btn("settings")!.innerHTML, "gear-six"));
+paintPresence("away");
+check("paintPresence stamps the profile button", btn("profile")!.dataset.presence === "away" && btn("profile")!.title === "Profile · away");
+bus.emit("presence:me", "here");
+check("...and presence:me on the bus drives it", btn("profile")!.dataset.presence === "here");
+
+
+console.log("DOCK — the badge the dock button carries (the title bar is hidden at rest)");
+{ const f = getFrame("chat")!;
+  f.badge("3");
+  const db = document.querySelector('#dock button[data-toggles="chat"] .dk-badge');
+  check("badge() mirrors onto the DOCK button, not only the title bar", !!db && db!.innerHTML === "3", db?.innerHTML ?? "(no .dk-badge)");
+  check("...and the title bar carries it too", f.el.querySelector(".fr-badge")?.innerHTML === "3");
+  f.badge("7");
+  check("a re-badge updates in place (one node, new text)", document.querySelectorAll('#dock button[data-toggles="chat"] .dk-badge').length === 1 && document.querySelector('#dock button[data-toggles="chat"] .dk-badge')!.innerHTML === "7");
+  f.badge("");
+  check("clearing the badge removes BOTH", !document.querySelector('#dock button[data-toggles="chat"] .dk-badge') && !f.el.querySelector(".fr-badge")); }
+
+console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeopleHere)");
+{ // togglePeopleHere reads the chat frame's side pane (chat.js initChat: a
+  // .chat-cols that carries side-closed, and the .chat-side-tog that flips it).
+  // Here we mirror just those two nodes onto the frame this suite already made,
+  // so the REAL togglePeopleHere runs against the real class contract instead of
+  // a recorder.
+  const f = getFrame("chat")!;
+  // Both classes are public contract, and a local mod is an in-page module with
+  // the whole document, so its markup can carry them anywhere, this body
+  // included. Five decoys, each binding one wrong lookup:
+  //   outer   — elsewhere in the document (a document-wide lookup)
+  //   nested  — a toggler INSIDE the real cols, before the real one (an
+  //             unbounded cols.querySelector('.chat-side-tog'))
+  //   late, pre — direct-child .chat-cols twins after and before the real one
+  //             (a `:scope >` re-query from the body: `pre` wins it)
+  //   modWrap — deeper in the body (an unbounded-depth lookup from the body)
+  // Only the nodes chat.js captured (frame.sidePane) address the real pane.
+  const outer = document.createElement("div");
+  outer.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  document.body.prepend(outer);
+  let decoyClicks = 0;
+  (outer.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+
+  f.body.innerHTML = `<div class="chat-cols side-closed">`
+    +   `<div class="mod-inside"><button class="chat-side-tog"></button></div>`
+    +   `<button class="chat-side-tog"></button>`
+    + `</div>`;
+  const late = document.createElement("div");   // a LATER direct-child sibling, as a mod would mount
+  late.className = "chat-cols side-closed";
+  late.innerHTML = `<button class="chat-side-tog"></button>`;
+  f.body.append(late);
+  (late.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  // Capture the real cols BEFORE `pre` is prepended: a later re-query would find
+  // that decoy (also a direct child, and first), the fixture would measure the
+  // same wrong node a mutant picks, and the mutation would survive.
+  const real = f.body.querySelector(":scope > .chat-cols") as HTMLElement;
+  // Mirror initChat's MECHANISM, not just its markup: chat.js captures the
+  // nodes as it writes them and hangs the accessor on the frame (frame.sidePane),
+  // which togglePeopleHere reads. This suite never imports chat.js, so the
+  // stand-in binds WHICH node togglePeopleHere addresses, not chat.js's own
+  // isConnected guard: that lifetime is bound in test/client/chat-log-test.ts
+  // (real initChat / sideEl / paintSide).
+  (f as any).sidePane = (k: string) => (k === "cols" ? real
+    : k === "tog" ? real.querySelector(":scope > .chat-side-tog") : null);
+  const pre = document.createElement("div");   // a mod PREPENDING via makeFrame('chat')
+  pre.className = "chat-cols side-closed";
+  pre.innerHTML = `<button class="chat-side-tog"></button>`;
+  f.body.prepend(pre);
+  (pre.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const modWrap = document.createElement("div"); modWrap.className = "mod-panel";
+  modWrap.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  f.body.append(modWrap);
+  const inner = modWrap;
+  (inner.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const nested = f.body.querySelector(".mod-inside")!;
+  (nested.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const cols = () => real;                     // the node initChat built, not a re-query
+  const tog = real.querySelector(":scope > .chat-side-tog") as HTMLElement;
+  let clicks = 0;
+  tog.onclick = () => { clicks++; cols().classList.toggle("side-closed"); };
+
+  f.show(); clicks = 0;
+  ui.togglePeopleHere();
+  check("pane closed, chat open: Tab opens the pane", !cols().classList.contains("side-closed") && clicks === 1, `${cols().className} clicks=${clicks}`);
+
+  clicks = 0;
+  ui.togglePeopleHere();
+  check("pane already open: Tab leaves it open and does NOT toggle", !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
+
+  // review #5's case: pane saved OPEN while the chat frame is hidden —
+  // showing the chat IS the open, so the toggler must not fire.
+  f.hide(); clicks = 0;
+  ui.togglePeopleHere();
+  check("chat hidden + pane saved open: Tab shows chat, pane stays open", f.visible && !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
+
+  // and the inverse still works from hidden+closed
+  cols().classList.add("side-closed"); f.hide(); clicks = 0;
+  ui.togglePeopleHere();
+  check("chat hidden + pane closed: Tab shows chat AND opens the pane", f.visible && !cols().classList.contains("side-closed"), `${cols().className} clicks=${clicks}`);
+
+  // the decoy must never have been touched: Tab addresses the CHAT frame's pane
+  check("Tab never reaches a mod panel carrying the same public classes — outside the body OR nested inside it", decoyClicks === 0
+    && outer.querySelector(".chat-cols")!.classList.contains("side-closed")
+    && inner.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
+  check("...including a mod toggler nested INSIDE the real cols (chat.js nests it there)", decoyClicks === 0, `decoyClicks=${decoyClicks}`);
+
+  outer.remove(); }
+
+// ============================================================ the wrench's auto-pin across a RELOAD (from dock-boot-test)
+// the session above cannot see a boot: the edit gate's first rights report is where you START, not a grant/revoke edge
+{
+bus.emit("your-rights");   // settle the session's ui-dock.js instance on its current gate, so its own edge never writes the shared pins key below
+const saved = () => JSON.parse(localStorage.getItem("ew-dock-pins") ?? "null");
+const CHROME = `<button id="hud" class="emark">∃</button><div id="dock" class="panel"></div><div id="emenu" class="panel" hidden></div>
+  <div id="loading" class="panel"></div><div id="toasts"></div><div id="hintbar" class="panel"></div><div id="touch"></div>
+  <div id="door" class="scrim"><div class="sheet panel"></div></div><div id="help" class="scrim"><div class="sheet panel"></div></div>`;
+
+// one "page load": a fresh ui-dock.js instance (the query string makes Bun evaluate it again) over the same localStorage
+let boots = 0;
+async function boot(gate: { open: boolean }) {
+  document.body.innerHTML = CHROME;
+  const fresh = await import(`../../client/lib/ui/ui-dock.js?boot=${++boots}`);
+  fresh.initDock([{ id: "edit", label: "🔧", icon: "wrench", last: true, action: () => {}, active: () => false, gate: () => gate.open }]);
+  await tick();
+  const btn = () => document.querySelector('#dock button[data-toggles="edit"]') as HTMLButtonElement;
+  return { btn };
+}
+
+console.log("DOCK BOOT — a builder's unpinned wrench stays unpinned across a reload");
+{
+  localStorage.setItem("ew-dock-pins", JSON.stringify(["chat"]));   // the builder unpinned the wrench last session
+  const gate = { open: false };                                     // rights not in yet
+  const { btn } = await boot(gate);
+  gate.open = true; bus.emit("your-rights");                        // the snapshot's rights: builder, as before
+  check("the snapshot's rights are where you start, not a grant: the wrench stays unpinned", !saved().includes("edit") && btn().hidden === true,
+    `saved=${JSON.stringify(saved())} hidden=${btn().hidden}`);
+  gate.open = false; bus.emit("your-rights");
+  gate.open = true; bus.emit("your-rights");
+  check("…a real grant later in the session still pins it", saved().includes("edit") && btn().hidden === false, JSON.stringify(saved()));
+}
+console.log("DOCK BOOT — a visitor's first report is a level too");
+{
+  localStorage.setItem("ew-dock-pins", JSON.stringify(["chat", "edit"]));   // pinned (a builder somewhere, once)
+  const gate = { open: false };
+  const { btn } = await boot(gate);
+  bus.emit("your-rights");                                          // arrives: still no rights here
+  check("arriving without rights leaves the pin set alone (the wrench shows dead, as before)", saved().includes("edit") && btn().hidden === false && btn().disabled,
+    `saved=${JSON.stringify(saved())} hidden=${btn().hidden} disabled=${btn().disabled}`);
+  gate.open = true; bus.emit("your-rights");
+  gate.open = false; bus.emit("your-rights");
+  check("…a real revoke later still unpins it", !saved().includes("edit") && btn().hidden === true, JSON.stringify(saved()));
+}
+console.log("DOCK BOOT — a first grant with nothing saved is written");
+{
+  localStorage.removeItem("ew-dock-pins");   // pins hydrate from DEFAULT_PINS, which already holds 'edit'
+  const gate = { open: false };
+  await boot(gate);
+  bus.emit("your-rights");                   // the arrival: a level, no save
+  gate.open = true; bus.emit("your-rights"); // the first grant
+  check("a first grant saves the pins though the set already held the wrench", saved()?.includes("edit") === true, JSON.stringify(saved()));
+}
+
+}
+
+S.done();

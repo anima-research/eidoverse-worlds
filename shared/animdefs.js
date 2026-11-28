@@ -1,4 +1,4 @@
-// animdefs — the animation-clip def contract (charter §3; sibling of
+// animdefs — the animation-clip def contract (docs/design/OVERHAUL-CHARTER.md §3; sibling of
 // avatardefs.js, same doctrine: an OVERLAY on the discovered roster, never
 // a gate). Dropping a .vrma into the library/overlay/patch dirs stays a
 // live clip with no def. A def in defs/animations/<name>.json:
@@ -9,17 +9,16 @@
 // Unknown keys are preserved. Same constraints as everything in shared/.
 
 import { AVATAR_NAME_RE } from './avatardefs.js';
+import { isStr } from './protocol/is.js';
 
 /** Clip names come from .vrma filenames — same permissive rule as avatars. */
 export const ANIM_NAME_RE = AVATAR_NAME_RE;
 
-/** Names no anim may carry (R 10-17 16:27): `live` names every ad-libbed anim (one started with joints or tracks, not a
- *  name), so `anim {stop: "live"}` stops those and only those. A clip, a def, an action-bar entry, an object's hold anim
- *  or a world's / an avatar's anim called it would be stopped as an ad-lib and could never be played by name. */
+/** Names no anim may carry: `live` names every ad-libbed anim (one started with joints or tracks, not a name), so
+ *  `anim {stop: "live"}` stops those and only those; a clip or def called `live` could never be played by name. */
 export const RESERVED_ANIM_NAMES = Object.freeze(['live']);
 export const isReservedAnimName = (n) => typeof n === 'string' && RESERVED_ANIM_NAMES.includes(n);
 
-const isStr = (v) => typeof v === 'string' && v.length > 0;
 
 /** Validate the action bar's sidecar (defs/animations/_actionbar.json): each entry
  *  {clip (required), icon?, listed?}. Key order is bar order — normative.

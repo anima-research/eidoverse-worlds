@@ -14,7 +14,7 @@ const G = 9.8;
 export const FLOAT_ZETA = 0.6;      // damping ratio: settles in about one bob, without a long ring
 export const FOOTPRINT = 0.35;      // metres: the surface is averaged over the body's own width
 
-/** Mean surface height over a body's footprint at (x, z): `surfaceAt(x, z)` is the surface there. */
+/** Surface height averaged over a body's footprint at (x, z), the centre counted twice: `surfaceAt(x, z)` is the surface there. */
 export function footprintSurface(surfaceAt, x, z, r = FOOTPRINT) {
   return (surfaceAt(x, z) * 2 + surfaceAt(x + r, z) + surfaceAt(x - r, z) + surfaceAt(x, z + r) + surfaceAt(x, z - r)) / 6;
 }
@@ -38,7 +38,7 @@ export function floatStep(s, surfaceY, H, dt, floor = -Infinity) {
 }
 
 // ---- floating bodies, part by part ------------------------------------------------
-// A ragdoll floats by the same law, applied to each of its parts (client/lib/ammodoll.js): every part
+// A ragdoll floats by the same law, applied to each of its parts (client/lib/ragdoll/ammodoll.js): every part
 // is buoyed in proportion to how much of it is under the surface, floating at rest with PART_FLOAT of
 // itself submerged (people float face near the surface), and dragged toward the WATER's own motion —
 // so a body drifts down a river with its current and is pushed in toward the shore by the surf.

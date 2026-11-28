@@ -1,4 +1,4 @@
-// shared/protocol/authority/drive.js — the hull's lease (DESIGN.md env-components "Drive"; Roblox network ownership): the helm's
+// shared/protocol/authority/drive.js — the hull's lease (spec/PROTOCOL.md §4 "Drive"; Roblox network ownership): the helm's
 // occupant streams the hull's pose (presence), the authority checks plausibility and the hull's own collision, and commits only
 // the last accepted pose, as the system's act, on exit, every LEASE.commitMs and when the stream stops (shared/drive.js).
 import { driveOf, helmOf, implausible, LEASE, slackAfter, slackNow, turnBetween } from "../../drive.js";
@@ -28,9 +28,9 @@ function edited(w, st, host, L) {
 }
 
 /** What the hull runs into sweeping `from` → `pose` (sub-steps ≤ its smallest half-extent): an id, "ground", or null; an
- *  overlap it starts in blocks only a sub-step that deepens it (drive-check D10, D11). */
+ *  overlap it starts in blocks only a sub-step that deepens it. */
 export function hullHit(st, id, pose, from) {
-  const e = st.entities[id]; if (!e || solidOff(e.c)) return null;   // only enabled: false passes through; its own blocks says what IT stops (review 1.8)
+  const e = st.entities[id]; if (!e || solidOff(e.c)) return null;   // only enabled: false passes through; its own blocks says what IT stops
   const fam = familyOf(st, id), G = groundOf(st), mask = maskOf(e.c);   // what this hull scans (collider.mask; simlayer.js scans)
   const at = (p) => obbs(scratch(st, [setOp(id, "transform", { ...(e.c.transform ?? {}), pos: p.pos, q: p.q })]), id);
   const ext = (o) => { const h = [0, 1, 2].map((i) => o.ax.reduce((a, axv, j) => a + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - h[i]), max: o.c.map((v, i) => v + h[i]) }; };
@@ -76,11 +76,11 @@ function commitLease(w, st, host, why, free = true) {
   L.committed = paceOf(w);
   if (edited(w, st, host, L)) { L.fails = 0; return false; }
   const t = { ...(e.c.transform ?? {}), pos: L.pose.pos.map(r3), q: qr3(L.pose.q) };
-  if (JSON.stringify(t.pos) === JSON.stringify(e.c.transform?.pos) && JSON.stringify(t.q) === JSON.stringify(e.c.transform?.q)) { L.fails = 0; return false; }   // nothing to write is not a failure (review delta2 L2-B)
+  if (JSON.stringify(t.pos) === JSON.stringify(e.c.transform?.pos) && JSON.stringify(t.q) === JSON.stringify(e.c.transform?.q)) { L.fails = 0; return false; }   // nothing to write is not a failure
   try { const plan = admit(w, st, { actor: "system", cap: { kind: "system", ids: [host], comps: ["transform"] } }, [setOp(host, "transform", t)]);
     changeEntry(w, plan, w.append(actEntry(w, "system", "drive-commit", { id: host, driver: L.by, carried: carriedBy(w, st, host, L.by), why })));
     L.logged = loggedKey(w.state(), host); }
-  catch (x) { L.fails = (L.fails ?? 0) + 1;   // bounded: a refusal never lands, a failing disk is tried COMMIT_TRIES times (review delta-260 L-A)
+  catch (x) { L.fails = (L.fails ?? 0) + 1;   // bounded: a refusal never lands, a failing disk is tried COMMIT_TRIES times
     if (!(x instanceof Refusal) && L.fails < COMMIT_TRIES) throw x;
     console.warn(`[authority] ${host}'s drive-commit failed ${L.fails}× (${String(x?.message ?? x).slice(0, 160)}): its lease is dropped and the helm freed; the hull stays at its logged pose`);
     dropLease(w, st, host, free); return false; }
@@ -95,16 +95,16 @@ function dropLease(w, st, host, free = true) {
 /** End the lease: commit, then free the helm (its driver let go); passengers keep their seats. */
 function endLease(w, st, host, why, free = true) {
   const L = leases(w)[host]; if (!L) return;
-  commitLease(w, st, host, why, free);   // a throw keeps the lease and the helm: the pose is retried up to COMMIT_TRIES times, then the lease is dropped with a console warning (review L27)
+  commitLease(w, st, host, why, free);   // a throw keeps the lease and the helm and the pose is retried; after COMMIT_TRIES failures commitLease drops the lease itself (the hull stays at its logged pose)
   dropLease(w, st, host, free);
 }
 /** `who` stood up or left: a driver's lease ends and commits; a passenger's hull commits (why alight), so their step off is
- *  measured from the seat where it is now (drive-check D12). The caller lets them off the seat (bodyverbs' stand-up, leave). */
+ *  measured from the seat where it is now. The caller lets them off the seat (bodyverbs' stand-up, leave). */
 export function endDrivesBy(w, st, who) {
   const seat = occupantOf(w, st, who)?.to;
   for (const [host, L] of Object.entries(leases(w))) {
     if (L.by === who) endLease(w, st, host, "exit", false);
-    else if (seat && familyOf(st, host).has(seat)) { commitLease(w, st, host, "alight", false); st = w.state(); } }   // a passenger stepping off never unseats the driver (delta2 L2-A)
+    else if (seat && familyOf(st, host).has(seat)) { commitLease(w, st, host, "alight", false); st = w.state(); } }   // a passenger stepping off never unseats the driver
 }
 
 /** The beat (server: the physics heartbeat): a lease whose stream stopped ends; a held one commits every LEASE.commitMs. */
@@ -137,7 +137,7 @@ const DRIVE_VERBS = {
     const hit = hullHit(st, a.id, next, L.pose);
     if (hit) refuse("solid", `${a.id} would run into ${hit === "ground" ? "the ground" : hit}`, "steer around it", { ...stands, blocker: hit });
     L.slack = slackAfter(slack, L.pose, next, dt, spec); L.pose = { pos: next.pos.slice(), q: next.q.slice() }; L.at = now; w.presenceDirty = true;
-    const recorded = now - L.committed >= LEASE.commitMs && commitLease(w, st, a.id, "periodic", false);   // the driver keeps the helm; the reply says the lease went (delta2 L2-A)
+    const recorded = now - L.committed >= LEASE.commitMs && commitLease(w, st, a.id, "periodic", false);   // the driver keeps the helm; the reply says the lease went
     return { ok: true, recorded, pose: L.pose, driver: said(actor), ...(leases(w)[a.id] ? {} : { dropped: true }) };
   },
 };

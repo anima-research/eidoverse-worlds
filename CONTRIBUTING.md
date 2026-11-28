@@ -1,0 +1,106 @@
+# Contributing
+
+How to change this repo. Building *in* a world is [AGENTS.md](AGENTS.md); the docs are mapped in
+[docs/README.md](docs/README.md).
+
+## The loop
+
+- Run a scratch server, never one someone lives on: AGENTS.md "Dev loop".
+- The test gate is `bun run test` (`bun test/gate/run.ts`); name suites after `run.ts` to run only those. What it needs
+  and how it reports: [docs/contributing/GATE-MANIFEST.md](docs/contributing/GATE-MANIFEST.md). A change ships with the suite that would catch
+  it breaking; a new suite goes in `test/gate/suites.ts`, then paste `run.ts --manifest`'s output into GATE-MANIFEST's generated block (`--check-manifest` refuses drift).
+- Run suites with `BUN_RUNTIME_TRANSPILER_CACHE_PATH=0` (`bun run test` sets it): a cached transpile once hid a
+  stale module.
+- `hygiene` refuses patterns that broke the test gate before; its baseline (`test/gate/hygiene-baseline.json`) only
+  goes down (`--write` lowers it and refuses to raise it).
+- Suites run in lanes (`test/gate/suites.ts`): `CORE` runs first and stops the test gate on a failure, `BROWSER` lists every
+  suite that launches a Chromium, and everything else is main. A browser suite missing from `BROWSER` fails preflight.
+- Every test-named file in `test/` (outside `harness/`, `stubs/`, `fixtures/`, `labs/`) or directly in `tools/`,
+  `tools/water/`, `bench/` or `mcpl/` is in the test gate or in `test/gate/ungated.json` with one line why it isn't yet
+  (hygiene's `ungated` rows). Reviewers hold that list to only shrinking (hygiene checks each row, not the count): gate or delete a
+  file to take it off; don't add one to dodge a red.
+- Names: `-test` is a deterministic unit contract; `-check` is a conformance or invariant check (it may boot a server);
+  `-probe` drives a real browser or environment and reports evidence; `-mutants` breaks code in a scratch tree and
+  expects named rows to go red; `-bench` is an older name for a browser run (`scratchBench`). Older files don't all follow
+  it. A suite's lane comes from the hand-kept `CORE` and `BROWSER` lists, not its name; preflight only refuses a
+  non-`BROWSER` suite that launches a Chromium.
+- A test lives under the subject it exercises: `test/protocol/` for a claim in `spec/` checked through a real
+  world server, `test/client/` for the browser client's own code, and likewise `server/`, `shared/`, `mcpl/`. The six
+  `test/protocol/*-probe.ts` are client probes that predate this rule.
+- New vocabulary (a component, an MCPL tool) climbs a ladder: [COMPONENT-LADDER](docs/contributing/COMPONENT-LADDER.md),
+  [TOOL-LADDER](docs/contributing/TOOL-LADDER.md).
+
+## Where a file goes
+
+A file's directory says who runs it.
+
+| directory | run by |
+|---|---|
+| `client/` `server/` `shared/` `mcpl/` `scripting/` | the product: the browser client, the world server, the shared fold, the MCPL server, the script kit |
+| `defs/` | the server, as content an operator edits (data, not code) |
+| `test/` | the test gate: `gate/` (the runner), `protocol/`, `client/`, `server/`, `shared/`, `mcpl/`, `services/`, `water/` (tests by subject), `harness/`, `stubs/`, `fixtures/` (what suites use), `labs/` (run by hand) |
+| `tools/` | someone or the server, by hand: CLIs (`world.ts`, the translator), `assets/` (converters), `operator/` (a server's operator), `import-v1/` (the v1 importer), `vectors/` (conformance vector generators), `water/` (water data and previews), `mv-module.ts` (moves a file and fixes its importers) |
+| `services/` | a server, always on: the show bots (`captionbot/`, `voicebot/`, `chatbridge/`), each with its own `package.json` |
+| `bench/` | someone measuring: benches and one-off measurements, never the test gate |
+| `deploy/` | the VPS: install and ops scripts |
+| `spec/` | an implementer somewhere else: the CC0 contract, and only what they need |
+| `docs/` | a reader |
+
+Body code that both the browser and a headless runtime run (ragdoll, colliders, terrain, reach, pose clips) lives in
+`client/lib/`; `mcpl/` and `server/` import it from there, and `client/` never imports them. `shared/` takes no package dependencies (`node:` builtins only; the one exception is the script sandbox's quickjs-emscripten, without which no script runs: shared/protocol/sandbox.js), so a module that imports only `shared/` and is used outside `client/` goes in `shared/`.
+
+Conformance vectors follow one rule: a vector that binds other implementations lives under `spec/` (CC0, listed in
+`spec/NORMATIVE.md`); a vector that pins one package's output lives beside that package (AGPL). Today
+(`spec/kernel-vectors/` sits under `spec/` but has no NORMATIVE row: it is the kernel pin's evidence):
+- `spec/conformance/`: the log, physics, ed25519, laws and trig vectors, beside the reference reader;
+- `spec/kernel-vectors/<dir>/`: the author writes `vectors.json`; `test/protocol/kernel-check.ts --pin --ack "<why>"
+  --vectors <dir>` runs it, copies the old reader in beside it and writes the pin;
+- `shared/conformance/{motion,water}.json`: generated by `tools/vectors/motion.ts` and `tools/vectors/water.ts`
+  (each takes `--check`; the test gate runs both). **Unreal reads both** (its plugin's `Resources/Conformance`), so a
+  change to either changes what the native port must reproduce;
+- `mcpl/vectors/manifest-digest-vectors.json`: read by `test/mcpl/manifest-test.ts`.
+
+A doc's directory says who it is for and whether it binds: `spec/` binds; `docs/reference/` describes what is
+built; `docs/guide/` (using a world), `docs/operator/` (running a server) and `docs/contributing/` (changing this repo)
+get something done; `docs/design/` holds direction and the arguments for it (some of it since built); `docs/research/` holds the why behind built code; `docs/decisions/` and `docs/history/` are dated and
+frozen: supersede them, don't edit them.
+
+## Inside a directory
+
+Refused in review:
+- a new `index.js` barrel (a folder's main module carries the folder's name: `xr/xr.js`);
+- a `-utils`, `-helpers` or `-common` name (say what the file is);
+- a test not named for its subject (`<source basename>[-aspect]`) and its kind: `-test`, `-check` or `-probe`, as
+  "The loop" says;
+- a move not made with `tools/mv-module.ts`, or a move commit that doesn't record the command (open branches re-run
+  it). A move updates imports, dynamic imports, docs and served URLs under `/lib/` and `/shared/`, and a `mock.module`
+  path only where it spells the full repo path; what it can't rewrite it prints as READ rows. `stub-guard` catches a
+  `stubResolve` stub left stale; nothing checks a `mock.module` path. `--check` lists the specifiers it knows resolve
+  nothing in `tools/mv-module-unresolved.json`. Its receipt is a grep for
+  every old path that finds nothing, and what became of each old URL (broken on purpose, redirected, or shown unused).
+
+Questions to ask in review, never thresholds:
+- subject first, qualifier after (`sky-baked`), unless a known term reads better (`consent`, not `thing-policy`);
+- a suffix that says what changes together (`-policy` for pure rules, `-effects`, `-panel`, `-wire`, `-codec`, ...);
+- the import path names the folder (`xr/keyboard.js`); repeat its word only where a name is ambiguous;
+- split on a seam (pure vs DOM, a part most importers don't need, parts that change for different reasons), not a
+  size; a long file you touch gets a section map;
+- in `client/`, a tiny file with one importer usually folds back, since every file is a request without a build step;
+- a folder is a family of files that import each other, not a shared prefix.
+
+## Style
+
+- A new source file (.ts, .js, .mjs) is named in lowercase words joined by hyphens (`relay-decision.ts`), not run together or with underscores.
+  The underscore names already in the tree are listed in `test/gate/underscore-names.json` (hygiene refuses a new
+  one); reviewers hold that list to only shrinking.
+- Comments: short by default, one line plus a pointer (a doc section, a suite, an issue) when there is more. A file
+  header, or a comment on a complex class or function, may run longer when it explains what the thing is and how
+  it fits. Anything else over about three lines is a candidate to cut. The story (what broke, what was tried)
+  goes in the commit message.
+- When you change a file, read its comments too and make them match the code; a comment that drifts is worse than none
+  (most of #333's second review was comments that had drifted on main).
+- New docs are UPPER-CASE.md and live in `docs/` (a binding protocol doc in `spec/`), except the root five (README, AGENTS, CONTRIBUTING, DESIGN,
+  THIRD-PARTY), a directory's own README, and docs/research/ notes (lower-case, named by subject).
+- Every relative link and every repo path in a doc outside docs/history and docs/design, or in a comment, resolves
+  (`test/gate/paths-check.ts`, which also keeps a short ALLOW list). A moved file
+  updates its references in the same commit.

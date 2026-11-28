@@ -1,4 +1,4 @@
-// A scale is one number (uniform) or [x, y, z] (a transform's per-axis scale, R 10-04). Kept a number while the three
+// A scale is one number (uniform) or [x, y, z] (a transform's per-axis scale). Kept a number while the three
 // agree, so a uniform thing reads exactly as it always has.
 export const scale3 = (s) => (Array.isArray(s) && s.length === 3 ? s : [s ?? 1, s ?? 1, s ?? 1]);
 export const scaleWire = (v) => { const [x, y, z] = scale3(v); return x === y && y === z ? x : [x, y, z]; };
