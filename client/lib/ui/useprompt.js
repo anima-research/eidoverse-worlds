@@ -13,6 +13,7 @@ import { nameOf, plain } from './plainwords.js';
 import { sendRequest } from '../net.js';
 import { requestWithBody } from '../thingphysics.js';
 import { flashHint } from './ui.js';
+import { usePrompt } from '../player/input.js';
 import { html } from './markup.js';
 import * as OP from '../../../shared/requests.js';
 
@@ -75,7 +76,7 @@ export async function useThing(id, action, verb = action) {
 /** The hint bar's line for it, or null. */
 export function usePromptHint() {
   const u = usable(); if (!u) return null;
-  return html`<kbd>E</kbd> ${u.verb} ${nameOf(u.id) ?? 'it'}${u.barred ? html` <span>(${u.barred})</span>` : ''}`;   // html``: every value escaped (markup.js)
+  return html`<kbd>${usePrompt()}</kbd> ${u.verb} ${nameOf(u.id) ?? 'it'}${u.barred ? html` <span>(${u.barred})</span>` : ''}`;   // html``: every value escaped (markup.js)
 }
 /** Use what E points at. Returns the door's reply (or null when there's nothing in reach). */
 async function useNearest() {
@@ -86,5 +87,10 @@ async function useNearest() {
 registerAction({ id: 'body:use', key: 'E', title: 'use what\'s in front of you (open a door, ring a bell)', keywords: ['use', 'open', 'interact', 'press'], icon: 'hand', group: 'body', run: () => { void useNearest(); } });
 bus.on('key', (e) => {
   if (e.code !== 'KeyE' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.worldHandled || hooks?.editing?.() || hooks?.busy?.()) return;   // worldHandled: a climb took the E (controller.js)
+  void useNearest();
+});
+// The pad's X / □ (and anything else that asks for `use` through input.js) is the same act as E
+bus.on('input-action', (action) => {
+  if (action !== 'use') return;   // usable() already stands aside while building, limp or in a headset
   void useNearest();
 });

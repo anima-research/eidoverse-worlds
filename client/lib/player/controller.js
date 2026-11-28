@@ -24,6 +24,11 @@ import { bodyModeOf } from '../../../shared/bodymode.js';
 // the 3D swim: under a water level, and in authored water volumes
 import { waterAt as volumeAt, waterTime, levelAt, speedAt } from '../realize/watervolumes.js';
 import { swimStep, waveHeight } from '../../../shared/water.js';
+// keys, touch and pad are one input surface (input.js): this file reads movement and actions from it
+import { keys, touchState, inputBlocked, movementInput, pollInput, noteInput, requestAction } from './input.js';
+import { moving as isMoving } from '../../../shared/input.js';
+import { escapeDismisses } from '../ui/windows.js';
+export { keys } from './input.js';
 import { register as registerAction } from '../ui/actions.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
@@ -194,7 +199,6 @@ export const myState = {
   floor: undefined,  // while lying settled: { y, root } — the floor the body lies on and where its root was (getup.js) — presence, so a rejoin stands there
 };
 
-export const keys = new Set();
 // XR intent: xr.js fills this per frame while presenting (a thumbstick is a keyboard that reports fractions); the
 // same movement code below does the moving
 export const xrIntent = { fwd: 0, strafe: 0, yawDelta: 0, jump: false, active: false, pitchDown: 0 };   // pitchDown: the head's, radians (+ looking down)
@@ -262,19 +266,75 @@ export function setPointerClaim(fn) { pointerClaimed = fn; }
 
 // ---------------------------------------------------------------- keyboard
 
-const typing = () => document.activeElement?.tagName === 'INPUT'
-  || document.activeElement?.tagName === 'TEXTAREA';
+// An Escape that closes a menu, a popover or an overlay is THAT closer's press
+// (PR #171 review). Those closers are window/document keydown listeners of
+// their own (ui.js, chat.js, dropdown.js, statuschips.js, panels.js), some of
+// which run before this one and none of which decline the default; once they
+// have run there is nothing left to see. So the question is asked here, in the
+// capture phase, before any of them, and the press is marked `menuClosed`:
+// it doesn't deselect, leave build mode or stand you up. A gesture still in
+// flight (a drag, the grip editor) is more transient than any menu, so
+// build.js lets those rungs take the press anyway (client-check X1/X2: a
+// status chip that opened itself must not leave a cancelled drag writing).
+addEventListener('keydown', (e) => { if (e.code === 'Escape' && escapeDismisses()) e.menuClosed = true; }, true);
 
 addEventListener('keydown', (e) => {
-  if (typing() || isOverlayOpen()) return;
+  if (inputBlocked()) return;
+  noteInput('keyboard');
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
   // keys: toolKeys — a chord (Ctrl+D duplicates, Ctrl+Z undoes) never walks the body; Ctrl itself is held (dive: I97)
   if (!(e.ctrlKey || e.metaKey) || e.code === 'ControlLeft' || e.code === 'ControlRight') keys.add(e.code);   // keys: toolKeys
   bus.emit('key', e);
+  // E is shared, and not decided here: a climb route claims the press on the bus
+  // (below) and marks it `worldHandled`; useprompt.js listens on the same bus
+  // and uses the nearest thing only for a press nobody claimed.
+  // Escape LAST, and only for a press nobody else wanted. build.js runs its
+  // own Escape chain on this same event (armed placement → ghost → seat →
+  // selection → edit mode) and declines the default for the one it consumes;
+  // dispatched before the emit, a single press both deselected AND stood you
+  // up. The pad's B/○ is untouched by any of this — it emits `input-action`
+  // straight out of pollInput and never visits the keyboard surface — so
+  // cancel-while-editing still works on a controller.
+  if (e.code === 'Escape' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey   // keys: none — a bare Escape; build's own chain consumed its presses above
+      && !e.defaultPrevented && !e.menuClosed) requestAction('cancel');
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
-addEventListener('blur', () => keys.clear());   // a key held across a focus loss would stay down forever
+// a held key with the window unfocused would stay down forever: input.js clears keys on blur, and a canvas look-drag
+// isn't among what it tracks, so the drag is dropped here
+bus.on('input-clear', () => { dragging = false; });
+addEventListener('blur', () => { dragging = false; });
+// The pad legend is a teaching aid, learned once: `input-device` fires on every switch, so it shows the first time a
+// pad takes over this session, not on every swap between mouse and stick.
+let padHintShown = false;
+bus.on('input-device', kind => {
+  if (kind !== 'gamepad' || padHintShown) return;
+  padHintShown = true;
+  flashHint('controller — left stick move · right stick look · A / × jump · X / □ use · B / ○ cancel · left stick click run', 6000);
+});
+// `cancel` is a chain, most transient state first, one rung per press (PR #171 review): photo mode is left before the
+// body moves, so on a seat one Escape (or B / ○) leaves photo mode and the next stands you up. Dropping pointer lock
+// is not a rung (it is the mouse being handed back). The last rung is standing: a ground posture here, and a mounted
+// seat in localbody.js, which hears `cancel-stand`.
+bus.on('input-action', action => {
+  if (action !== 'cancel') return;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  if (photoMode) { togglePhotoMode(); return; }
+  posture = null; myState.seat = null;
+  bus.emit('cancel-stand');
+});
+
+// Polled before every embodiment path, including mounted and downed bodies.
+export function updateInput(dt) {
+  const pad = pollInput();
+  // a blocked frame already zeroes the stick, so an idle pad costs no second inputBlocked() (two DOM queries)
+  if (pad.lookX || pad.lookY) look(pad.lookX * Math.min(dt, 0.1) * 2.4, pad.lookY * Math.min(dt, 0.1) * 1.9);
+}
+function look(yaw, pitch) {
+  if (inputBlocked()) return;
+  camYaw -= yaw;
+  camPitch = THREE.MathUtils.clamp(camPitch + pitch, buildingNow() ? -1.45 : -0.9, buildingNow() ? 1.45 : 1.2);   // the editor's camera looks further up and down
+}
 
 bus.on('key', (e) => {
   // every binding here is a toggle, so autorepeat is not a press (a held F would take off and land at the OS repeat
@@ -325,7 +385,8 @@ function toggleSit() {
 // Everything here is gated on the event actually being on the canvas (a sky-slider drag must not spin the camera).
 
 canvas.addEventListener('mousedown', (e) => {
-  if (pointerClaimed()) return;
+  if (pointerClaimed() || inputBlocked()) return;
+  noteInput('keyboard');
   // Outside edit mode either button orbits. In edit mode a left-drag belongs to the object under it, so the camera
   // has an editor's controls:
   //   Alt+left  orbit (over anything)      middle, or Alt+middle  pan      Alt+right  dolly      right  orbit
@@ -378,7 +439,7 @@ export function frameOn(point, radius = 1) {
 addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat) return;
   if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;   // keys: none — bare M, outside build mode (modified presses are the browser's)
-  if (buildingNow() || isOverlayOpen() || chat.isOpen) return;
+  if (buildingNow() || inputBlocked()) return;
   if (locked) document.exitPointerLock();
   else relock();
 });
@@ -400,13 +461,14 @@ addEventListener('mousemove', (e) => {
   } else if (dragging && dragMode === 'dolly') {
     camDist = THREE.MathUtils.clamp(camDist * Math.exp((e.movementY - e.movementX) * 0.006), 0.8, EDIT_DIST);
   } else if (locked || dragging) {
-    camYaw -= e.movementX * 0.005;
-    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, buildingNow() ? -1.45 : -0.9, buildingNow() ? 1.45 : 1.2);
+    if (e.movementX || e.movementY) noteInput('keyboard');
+    look(e.movementX * 0.005, e.movementY * 0.004);
   }
   if (!locked) mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // right-drag orbit
 canvas.addEventListener('wheel', (e) => {
+  if (inputBlocked()) return;
   e.preventDefault();
   // in build mode the wheel is proportional (a step far out covers more ground) and reaches further
   camDist = buildingNow() ? THREE.MathUtils.clamp(camDist * Math.exp(e.deltaY * 0.0012), 0.8, EDIT_DIST) : THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, PLAY_DIST);
@@ -419,20 +481,22 @@ canvas.addEventListener('wheel', (e) => {
 // ---------------------------------------------------------------- touch
 // a left thumbstick plus look-drag on the rest of the screen: the minimum that makes a body usable on a phone
 
-const touchState = { moveX: 0, moveZ: 0, lookId: null, lastX: 0, lastY: 0 };
-function enableTouch() {
+export function enableTouch() {
   document.body.classList.add('touch');
   const stick = document.getElementById('stick');
   const nub = stick.querySelector('.nub');
   let stickId = null, cx = 0, cy = 0;
   const R = 46;
   stick.addEventListener('pointerdown', (e) => {
+    if (inputBlocked()) return;
+    noteInput('touch');
     stickId = e.pointerId;
     const r = stick.getBoundingClientRect();
     cx = r.left + r.width / 2; cy = r.top + r.height / 2;
     stick.setPointerCapture(e.pointerId);
   });
   stick.addEventListener('pointermove', (e) => {
+    if (inputBlocked()) return;
     if (e.pointerId !== stickId) return;
     let dx = e.clientX - cx, dy = e.clientY - cy;
     const d = Math.hypot(dx, dy);
@@ -447,16 +511,19 @@ function enableTouch() {
   };
   stick.addEventListener('pointerup', end);
   stick.addEventListener('pointercancel', end);
+  stick.addEventListener('lostpointercapture', end);
+  bus.on('input-clear', () => { stickId = null; nub.style.transform = ''; });
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (inputBlocked()) return;
     if (e.pointerType !== 'touch' || touchState.lookId !== null) return;
+    noteInput('touch');
     touchState.lookId = e.pointerId;
     touchState.lastX = e.clientX; touchState.lastY = e.clientY;
   });
   canvas.addEventListener('pointermove', (e) => {
     if (e.pointerId !== touchState.lookId) return;
-    camYaw -= (e.clientX - touchState.lastX) * 0.006;
-    camPitch = THREE.MathUtils.clamp(camPitch + (e.clientY - touchState.lastY) * 0.005, -0.9, 1.2);
+    look((e.clientX - touchState.lastX) * 0.006, (e.clientY - touchState.lastY) * 0.005);
     touchState.lastX = e.clientX; touchState.lastY = e.clientY;
   });
   const lookEnd = (e) => { if (e.pointerId === touchState.lookId) touchState.lookId = null; };
@@ -469,7 +536,10 @@ function enableTouch() {
     const b = document.createElement('button');
     b.className = 'panel';
     b.textContent = label;
-    b.addEventListener('pointerdown', e => { b.setPointerCapture(e.pointerId); keys.add(code); });
+    b.addEventListener('pointerdown', e => {
+      if (inputBlocked()) return;
+      noteInput('touch'); b.setPointerCapture(e.pointerId); keys.add(code);
+    });
     b.addEventListener('pointercancel', () => keys.delete(code));
     b.addEventListener('lostpointercapture', () => keys.delete(code));
     b.addEventListener('pointerup', () => keys.delete(code));
@@ -481,6 +551,9 @@ if (matchMedia('(pointer: coarse)').matches) enableTouch();
 // ---------------------------------------------------------------- movement
 
 const _dir = new THREE.Vector3();
+// The frame's movement read, in the same scratch idiom as the vectors beside
+// it — updateMe runs every frame and never keeps the object past this call.
+const _moveScratch = {};
 const _wp = new THREE.Vector3();   // a probe point for the mover's floorAt in water
 const _eye = new THREE.Vector3();
 const _facing = new THREE.Vector3();
@@ -579,13 +652,12 @@ export function updateMe(dt, me) {
   if (!me) return;
   if (photoMode) { updatePhotoCamera(dt); bumpTick(null, dt); return; }   // no body moving: a mark already up still fades
 
-  let fwd = Number(held(MOVE_KEYS.fwd)) - Number(held(MOVE_KEYS.back));
-  let strafe = Number(held(MOVE_KEYS.right)) - Number(held(MOVE_KEYS.left));
-  if (touchState.moveX || touchState.moveZ) { strafe = touchState.moveX; fwd = -touchState.moveZ; }
+  const input = movementInput(_moveScratch);
   if (xrIntent.active) {
-    fwd = xrIntent.fwd; strafe = xrIntent.strafe;
+    input.moveX = xrIntent.strafe; input.moveZ = -xrIntent.fwd;
     if (xrIntent.yawDelta) { camYaw += xrIntent.yawDelta; xrIntent.yawDelta = 0; }
   }
+  let fwd = -input.moveZ, strafe = input.moveX;   // let: an auto-walk below steers through them
 
   // a NaN in the accumulators (a VR stick axis on wake) would black out the view for the session: nothing below clears it
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
@@ -632,7 +704,9 @@ export function updateMe(dt, me) {
   myState.locomotion = undefined;
   me.locomotion = null;
   me.root.rotation.set(0, myState.yaw, 0);
-  const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
+  // the one threshold, shared with seats and getUp, read after the auto-walk and free cam have steered fwd/strafe
+  // (they never write `input`)
+  const moving = isMoving({ moveX: strafe, moveZ: -fwd });
   wantMove = moving;   // intent, for the clip choice: the walk→idle blend starts on key release, not when the coast ends
   // walking brings the edit camera home: the pan eases out and a far pull-back comes in
   if (moving && buildingNow() && (editPan.lengthSq() > 0 || camDist > PLAY_DIST)) {
@@ -640,8 +714,8 @@ export function updateMe(dt, me) {
     editPan.multiplyScalar(k); if (editPan.lengthSq() < 1e-4) editPan.set(0, 0, 0);
     if (camDist > PLAY_DIST) camDist = Math.max(PLAY_DIST, PLAY_DIST + (camDist - PLAY_DIST) * k - 0.01);
   }
-  const running = keys.has('ShiftLeft') || keys.has('ShiftRight') || !!autoWalk?.run;   // a long auto-walk runs
-  const creeping = keys.has('AltLeft') || keys.has('AltRight');   // a slow walk for precise placing
+  const running = input.run || !!autoWalk?.run;   // a long auto-walk runs
+  const creeping = input.creep;   // a slow walk for precise placing
   const mag = Math.min(1, Math.hypot(fwd, strafe));
   // VR stick: half deflection walks, full sprints (stickSpeed); desktop keeps shift/alt (walkSpeed). The body's size
   // scales the stride.
@@ -746,7 +820,7 @@ export function updateMe(dt, me) {
     myState.pos.lerpVectors(mantle.from, mantle.to, e);
     if (k >= 1) { mantle = null; grounded = true; vy = 0; }
   } else {
-    if (grounded && !swimming && (keys.has('Space') || (xrIntent.active && xrIntent.jump))) {   // nothing to push off from, swimming
+    if (grounded && !swimming && (input.jump || (xrIntent.active && xrIntent.jump))) {   // nothing to push off from, swimming
       posture = null; myState.seat = null;
       const reach = blockedTop !== null ? blockedTop - myState.pos.y : 0;
       if (blockedTop !== null && canMantle(reach, me.userScale)) {

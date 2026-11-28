@@ -7,6 +7,7 @@
 import { updateWater, updateWaterView, setWaterObjects, setWaterClock, setSkyHider, waterDebug, applyEnvLight } from './lib/realize/watervolumes.js';
 
 import { say } from './lib/net.js';
+import { setInputAvailable } from './lib/player/input.js';
 import { updateHelm, helmHull } from './lib/player/vehicles.js';
 import { chooseClient } from './lib/ui/litechoice.js';
 import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
@@ -36,7 +37,7 @@ import { tickLookAt } from './lib/realize/lookats.js';
 import { tickTexts } from './lib/realize/texts.js';      // signs (the text component)
 import { tickOpenables } from './lib/realize/openable.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  myState, updateMe, updateInput, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded, photoMode, setBoundsHook, setRespawnHooks, respawnMe, flying as flyingNow, capSpeed,
 } from './lib/player/controller.js';
 import { initUsePrompt } from './lib/ui/useprompt.js';
@@ -117,7 +118,7 @@ import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
   rosterLazy, chooseAvatar, announceWorn } from './lib/player/mybody.js';
 import {
-  initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
+  initLocalBody, isDowned, activeRagdoll, goLimp, getUp, updateGetUp,
   stepRagdoll, updateMountedMe, updateSeatHint, seatLeaving,
 } from './lib/player/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/player/consent.js';
@@ -392,6 +393,7 @@ setBoundsHook(() => replica.st?.entities?.['@world']?.c?.bounds ?? null);
 setRespawnHooks({ fold: () => replica.st ?? null, send: (args) => thingPhysicsRequest('move', args) });   // KillZ (controller.js respawnMe)
 initThingPhysics({ aim: () => clickUseApi.aimPoint(), myPos: () => myState.pos, me: () => getMe(), camera, editing: () => isBuilding(), photo: () => photoMode, seated: () => !!myState.seat || !!avatarMounts.get(CONFIG.name)?.to, myState: () => myState, flying: () => flyingNow(), capSpeed: (v, ms) => capSpeed(v, ms), mounts: () => avatarMounts });
 initUsePrompt({ myPos: () => myState.pos, camera, editing: () => isBuilding(), busy: () => photoMode || isDowned() });   // E: use what's in front of you
+setInputAvailable(() => net.joined && !CONFIG.renderer);   // input.js: no keys or pad while not in the world (or on a render-only client)
 initClickUse({ editing: () => isBuilding(), busy: () => photoMode || isDowned(), myPos: () => myState.pos });   // the mouse: left-click a thing's primary use, right-click its menu
 // reach descriptors resolve against the same bodies everyone renders
 initReachNet({
@@ -430,8 +432,8 @@ bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
   const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.plain || !(e.ctrlKey || e.altKey || e.metaKey)) && (!m.guard || m.guard()));
   if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
-  // any movement stands you back up
-  if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
+  // (getting up on movement lives in updateGetUp: it sees keys, stick and touch alike, and unlike an autorepeating
+  //  keydown it can require a neutral frame first: a shove must outlive the key you were holding)
   // gestures on the number row, in the action bar's order (_actionbar.json): a ninth listed gesture gets a key for free
   const n = /^Digit([1-9])$/.exec(e.code);
   const me = getMe();
@@ -516,6 +518,8 @@ setWaterClock(serverNow);
 setSkyHider(hideSkyForWater);
 registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
+  updateInput(dt);
+  updateGetUp();                            // movement stands a limp body up, once it starts fresh
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) { myState.q = undefined; myState.locomotion = undefined; const me = getMe(); if (me) me.locomotion = null; stepRagdoll(dt); }     // the controller yields while limp
