@@ -23,7 +23,7 @@ const modules: any = {
   'player/controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } }, setPosture: noop, flightReport: () => '' },
   'thingphysics.js': { punt: noop, grab: noop, put: noop, drop: noop, throwHeld: noop }, 'ui/chat.js': { logChat: (_w: string, t: string) => messages.push(t) },
   'ui/ui.js': { toggleHelp: noop, flashHint: noop, toast: noop }, 'scenegraph.js': { sceneAttach: noop, sceneDetach: noop },
-  'player/consent.js': { setPushable: noop, pushable: () => false }, 'player/localbody.js': { trySitOn: noop }, 'player/mybody.js': { getMe: () => null },
+  'player/consent.js': { setPushable: noop, pushable: () => false }, 'player/localbody.js': { trySitOn: noop, sitOnGround: noop }, 'player/mybody.js': { getMe: () => null },
   'edit/writes.js': { send: async () => ({ ok: true }) }, 'ui/stylepanel.js': { panelAlpha: () => 1, setPanelAlpha: noop },
 };
 const at = (name: string) => fileURLToPath(new URL('../../client/lib/' + name, import.meta.url));
