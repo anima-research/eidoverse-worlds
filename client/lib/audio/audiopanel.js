@@ -138,7 +138,7 @@ function micFloorRow(onLook = () => {}) {
   // the row's listeners go with the row (the panel can be rebuilt): beat() drops them once it is detached
   row._unsubs = [bus.on('audio:mic', paintLive), bus.on('audio:mute', paintLive),
     bus.on('audio:micfloor', () => paintLive()),   // dragging the threshold repaints at once, not on the next sample
-    // each change of the glyph (mictoggle.js announces it in the turn it draws it) is the bar's too, shown or hidden:
+    // each change of the glyph (only mictoggle.js announces it, in the turn it draws it; main.js loads both) is the bar's too, shown or hidden:
     // talking on with Settings closed, the bar is gold beside the gold glyph in the frame Settings opens again
     bus.on('mic:indicator', look)];
   const paintThr = () => {
