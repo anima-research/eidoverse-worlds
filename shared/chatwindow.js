@@ -3,18 +3,10 @@
 export const RECENT_CHAT = 40;
 
 /** Make room in the recent-chat window WITHOUT letting one loud speaker erase
- *  everyone else.
- *
- *  A plain "keep the last N" is a lie about what a room sounded like: measured,
- *  a bot emitting 300 telemetry lines reduced the window to 40 messages
- *  spanning ZERO seconds, all its own, and the two people actually holding a
- *  conversation vanished from it completely. An arrival would have seen a
- *  machine talking to itself.
- *
- *  So the loudest voice loses its oldest line first, and nobody's LAST line is
- *  ever dropped while someone else still has several. Recency still wins
+ *  everyone else: the loudest voice loses its oldest line first, and nobody's
+ *  LAST line is dropped while someone else still has several. Recency wins
  *  within a speaker; fairness decides between them.
- *  @param {WorldState["recentChat"]} rc */
+ *  @param {{ actor: string, text: string, ts: number, seq: number }[]} rc */
 export function trimRecentChat(rc) {
   while (rc.length > RECENT_CHAT) {
     const counts = new Map();

@@ -1,4 +1,4 @@
-// mediaprefs — what THIS viewer lets their browser fetch, and what they've muted for themselves (batch 2, R 10-07).
+// mediaprefs — what THIS viewer lets their browser fetch, and what they've muted for themselves.
 // Local preferences, never logged, never sent, never seen by anyone else.
 //
 //   allow untrusted links   off by default. A picture or sound whose src is an https link to a host that isn't on the
@@ -25,7 +25,7 @@ try { muted = new Set(JSON.parse(lsGet(muteKey()) ?? '[]')); } catch { /* none *
 export const isMineMuted = (id) => muted.has(id);
 export function toggleMineMuted(id) { if (muted.has(id)) muted.delete(id); else muted.add(id); lsSet(muteKey(), JSON.stringify([...muted])); bus.emit('media:mute', { id, muted: muted.has(id) }); return muted.has(id); }
 
-/** R 10-07: no license form, a warning, before the file picker opens. */
+/** No license form: a warning, shown before the file picker opens. */
 export const RIGHTS_WARNING = 'Make sure you own the rights to this before you upload it.';
 
 /** The words the Settings row and the editor use for the setting. */

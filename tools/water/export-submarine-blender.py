@@ -2,7 +2,7 @@
 import bpy,sys,json,os
 args=sys.argv[sys.argv.index('--')+1:]
 source,output=args[:2]
-parts=args[2] if len(args)>2 else os.path.join(os.path.dirname(__file__),'../../world-data/water/vessels.json')
+parts=args[2] if len(args)>2 else os.path.join(os.path.dirname(__file__),'data/vessels.json')
 bpy.ops.wm.open_mainfile(filepath=source)
 # Unreal substitutes M_Glass after FBX import; reproduce that material intent
 # in glTF instead of exporting Blender's opaque placeholder.

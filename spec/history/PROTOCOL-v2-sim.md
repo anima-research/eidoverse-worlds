@@ -140,7 +140,7 @@ blessed exact-op set (Cody–Waite two-word reduction, fixed-order
 polynomials, explicit-endian bit assembly), in the house's no-build plain
 JS. Its coefficients are its version under Covenant II. Proven bit-identical
 across JavaScriptCore, node-V8 and deno-V8 on a 48,000-point sweep with a
-committed golden digest (tools/simmath-test.ts); accuracy ≤2 ulp on
+committed golden digest (test/shared/simmath-test.ts); accuracy ≤2 ulp on
 sin/cos/exp over the working domain. The wasm form remains the named
 fallback if any host engine is ever caught breaking IEEE exactness. No
 shipped sim uses it yet — eidosim@0.1.0's vocabulary needs none of it; it

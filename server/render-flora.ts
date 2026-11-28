@@ -1,6 +1,7 @@
+// Used outside this repo: the native-renderer bridge imports projectFlora from here; keep it until that moves.
 // Same seeded placement/biome definitions as Three.js; geometry and draw budget
 // are renderer-specific. This module never mutates folded state.
-import { mapGrassArgs, presetStrokes } from '../client/lib/flora_args.js';
+import { mapGrassArgs, presetStrokes } from '../shared/flora_args.js';
 import { placeInstances, placeRows, placeExplicit, resetFloraOccupancy } from '../shared/flora-placement.js';
 import presets from '../defs/flora/_presets.json';
 import grass from '../defs/flora/grass.json';
@@ -26,9 +27,8 @@ export function projectFlora(raw: any, heightFn: (x:number,z:number)=>number) {
       if (o.rows && ((o.rows.spacing??.76)<.1 || (o.rows.plant??.24)<.05)) throw Error('Flora row spacing below native budget');
       const explicit=Array.isArray(o.placements)&&o.placements.length>0;
       if (explicit && !o.placements.every((pl:any)=>Array.isArray(pl)&&Number.isFinite(pl[0])&&Number.isFinite(pl[1])&&(pl[2]==null||Number.isFinite(pl[2])))) throw Error('Invalid flora placements');
-      // Budget the loops placeInstances/placeRows ACTUALLY run, not the area: each loop runs at least once
-      // per row, so a sliver (depth 1e-20) with a huge density passed an area estimate while looping
-      // trillions of times — synchronously, freezing every world on the server.
+      // Budget the loops placeInstances/placeRows ACTUALLY run, not the area: each runs at least once per row, so
+      // a sliver with a huge density would pass an area estimate and loop trillions of times on the shared thread.
       const k=o.density??1;
       const loops=(span:number,step:number)=>Math.max(1,Math.ceil(span/step));
       const candidates=explicit?o.placements.length
@@ -36,9 +36,8 @@ export function projectFlora(raw: any, heightFn: (x:number,z:number)=>number) {
         :(()=>{const step=1/Math.sqrt(spec.density*k*(o.footprint==='organic'?1.45:1));return loops(o.width*1.25,step)*loops(o.depth*1.25,step);})();
       if (!Number.isFinite(candidates)||candidates>800000||candidates>candidateBudget||(spec.footRadius&&candidates>5000)) {warnings.push(`${name}: field exceeds native placement budget`);continue;}
       candidateBudget-=candidates;
-      // Large meadows retain the SAME seeded plants as the browser, but only
-      // keep a bounded, deterministic reservoir. Never drop an ordinary
-      // production field just because it has more plants than we can draw.
+      // Large meadows keep the SAME seeded plants as the browser in a bounded, deterministic reservoir: an ordinary
+      // field is never dropped just because it has more plants than we can draw.
       let seen=0, random=(Number(o.seed)>>>0)||1;
       const reservoir:any[]=[];
       if(!explicit&&!o.rows&&candidates>150000){

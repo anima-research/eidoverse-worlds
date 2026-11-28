@@ -1,23 +1,18 @@
-// server/oneshot.ts — a one-shot child (tools/protocol/world.ts) run to its answer and ended the same way wherever it runs:
-// server/upgrade.ts, server/worldindex.ts ownersOf, and inplace-check (Mica 11-05; notes WINDOWS-STALL-2026-11-05: Bun 1.3.14 on
-// Windows can sit in ExitProcess after a complete answer). This bounds the consequence; it doesn't make the stall rarer.
-//   The child frames its answer (frameAtExit, only when EIDO_ONESHOT_FRAME=<nonce>, which only runOneShot sets): at exit, the last
-//   line of stdout AND of stderr is "[oneshot <nonce>] answered (exit N); open handles: <none | Kind×n, …>".
-//   exited, framed on both streams, the frame's exit its own, no handle, nothing of its group left → accepted ("exited")
-//   framed, no handle, still alive graceMs on → its group killed, its end awaited, the group checked empty → accepted, and the
-//     receipt logged: "semantic result complete / forced process cleanup"
-//   anything else (no frame, a partial or malformed one, a handle named, a descendant at its end, a group that won't empty, no
-//     frame by guardMs) → not accepted, `why` says which; the caller's operation fails. Being alive is never an answer.
-// Its group: POSIX, its own process group (spawned detached); Windows, a job object (descendants join it even when their parent
-// has exited; a process that starts one in its first instant, before it is assigned, would escape: world.ts starts none).
+// server/oneshot.ts — a one-shot child (tools/world.ts) run to its answer and ended the same way wherever it runs (Bun on
+// Windows can sit in ExitProcess after a complete answer; this bounds the consequence).
+//   The child frames its answer (frameAtExit, only when EIDO_ONESHOT_FRAME=<nonce>, which runOneShot sets): the last line of
+//   stdout and stderr is "[oneshot <nonce>] answered (exit N); open handles: <none | Kind×n, …>".
+//   exited, framed on both streams, no handle, group empty → accepted;
+//   framed, no handle, still alive graceMs on → group killed and checked empty → accepted, receipt logged;
+//   anything else → not accepted, `why` says which. Being alive is never an answer.
+// Its group: POSIX, its own process group (spawned detached); Windows, a job object.
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { heapStats } from "bun:jsc";
 import { processTableAsync, suiteMembers, suiteMembersAsync, killSuiteAsync } from "./procgroup.ts";
 
 // ---- the child's side --------------------------------------------------------------------------------------------------
-// The event-loop handles this process holds, as Bun's heap sees them (its protected objects). Bun stubs
-// process.getActiveResourcesInfo (always []); this doesn't. Not seen: fs.watch and Worker (Bun 1.3.14 doesn't protect them).
+// The event-loop handles this process holds, as Bun's heap sees them (process.getActiveResourcesInfo is a stub in Bun). Not seen: fs.watch and Worker.
 const HANDLE = /Timeout|Immediate|Listener|Socket|Server|Watcher|Subprocess|Worker/;
 export function openHandles(): string {
   const open = Object.entries(heapStats().protectedObjectTypeCounts).filter(([k, n]) => HANDLE.test(k) && n > 0);
@@ -46,7 +41,6 @@ export type OneShotOpts = { cwd: string; env: Record<string, string | undefined>
 export const FORCED = "semantic result complete / forced process cleanup";
 
 const frameIn = (s: string, nonce: string) => new RegExp(`\\n?\\[oneshot ${nonce}\\] answered \\(exit (-?\\d+)\\); open handles: ([^\\n]*)\\n$`).exec(s);
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const within = <T>(p: Promise<T>, ms: number, v: T) => { let t: any; return Promise.race([p, new Promise<T>((r) => { t = setTimeout(() => r(v), ms); })]).finally(() => clearTimeout(t)); };
 
 export async function runOneShot(argv: string[], { cwd, env, guardMs, graceMs = 5_000, label }: OneShotOpts): Promise<OneShot> {
@@ -78,7 +72,7 @@ export async function runOneShot(argv: string[], { cwd, env, guardMs, graceMs = 
   }
   // the group, emptied: polled for a while (a killed process takes a moment to leave the table)
   let rest = await g.members();
-  for (let i = 0; i < 20 && (rest === null || rest.length) && (end !== "exited" || why); i++) { await sleep(250); rest = await g.members(); }
+  for (let i = 0; i < 20 && (rest === null || rest.length) && (end !== "exited" || why); i++) { await Bun.sleep(250); rest = await g.members(); }
   const gone = p.exitCode !== null || p.signalCode !== null ? rest !== null && rest.length === 0 : false;
   g.close();
 

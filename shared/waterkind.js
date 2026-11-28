@@ -13,18 +13,12 @@
 //           continuation and the bed are all that can say downstream.
 //   still   everything else: ponds and lakes.
 //
-// Computed on a vertex grid over the terrain square — the same grid the client's water mesh uses, so
-// each vertex is told its kind, its flow and its way to shore. Pure JS, no rendering: the agents read the
-// same answers (`look`: "standing in a river 0.6m deep, flowing east"). Not sim law — nothing here
-// moves a body, so it is free to be an estimate.
+// Computed on the client water mesh's vertex grid, so each vertex knows its kind, flow and way to shore. Pure JS: the
+// agents read the same answers (`look`: "standing in a river 0.6m deep, flowing east"). Not sim law, so free to be an
+// estimate. `water.kind` overrides the guess; `water.flow: [x, z]` gives rivers a direction.
 //
-// `water.kind` ('still' | 'river' | 'ocean') overrides the guess for every body; `water.flow: [x, z]`
-// gives rivers a direction instead.
-//
-// COST. Runs synchronously when a world's water is built (the browser's applyWater, an agent's
-// buildTerrain), so every pass is linear or N log N in the grid's cells — no per-cell neighbourhood scans.
-// Budget: the 513² maximum grid (waterGridSeg), filled wall to wall and forced to be a river (the costliest
-// case), analyses in about a third of a second on a laptop; tools/waterkind-test.ts holds it under 1.2 s.
+// COST. Runs synchronously when a world's water is built, so every pass is O(N) or O(N log N) in grid cells; the
+// worst case (a 513² grid all river) takes ~0.3 s on a laptop, and test/shared/waterkind-test.ts holds it under 1.2 s.
 
 import { riverSpeed } from './waves.js';
 
@@ -178,13 +172,9 @@ export function analyzeWater(heightAt, size, water, seg) {
     }
     bfs(b, src);
     b.source = src; b.mouth = mouth;
-    // Narrower runs faster: the current follows the channel's LOCAL width — twice its centre line's
-    // shore distance (the centre line is half the width from either bank). Each cell finds its centre
-    // line by climbing the shore-distance field: visited highest first, a cell takes the half-width of
-    // its steepest uphill neighbour (a ridge cell keeps its own) — one sorted pass, O(N log N), whatever
-    // the river's breadth. The ripples it carries run at one speed for the whole river (its mean width's),
-    // rounded to wrap with the wave clock: a speed that varied across the water would shear the ripple
-    // trains apart as the clock ran.
+    // Narrower runs faster: the current follows the channel's LOCAL width, twice the centre line's shore distance
+    // (ridgeHalfWidth). The ripples run at one speed for the whole river (its mean width's), rounded to wrap with the
+    // wave clock, else the trains would shear apart as the clock ran.
     b.waveSpeed = riverSpeed(Math.min(2.2, Math.max(0.5, 18 / b.width)));
     const halfW = ridgeHalfWidth(b, shore, comp, n, cell);
     b.cells.forEach((k, c) => { speed[k] = Math.min(2.2, Math.max(0.5, 18 / Math.max(cell, 2 * halfW[c]))); });
@@ -217,8 +207,8 @@ export function analyzeWater(heightAt, size, water, seg) {
 
   /** The water at a point: null on dry ground. Bilinear between the four grid points around it — the
    *  same continuous surface the drawn sheet interpolates — so a body floating across a cell boundary
-   *  sees no jump in depth, current or wave direction. Its body (kind, width) is the wettest corner's,
-   *  and only that body's corners are blended. */
+   *  sees no jump in depth, current or wave direction. Its body (kind, width) is the nearest wet corner's
+   *  (the heaviest bilinear weight), and only that body's corners are blended. */
   const sample = (x, z) => {
     const u = (x + half) / cell, v = (z + half) / cell;
     if (u < 0 || v < 0 || u > n - 1 || v > n - 1) return null;

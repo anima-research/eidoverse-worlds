@@ -1,5 +1,5 @@
-// shared/blast.js — the `force` request's arithmetic (R 10-28, item 4: /boom restored): a radial blast's bounds and its
-// linear falloff to the rim. Pure. The authority applies it (bodyverbs.js force): bodies through the body gate, loose
+// shared/blast.js — the `force` request's arithmetic: a radial blast's bounds and its linear falloff to the rim. Pure.
+// The authority applies it (shared/protocol/authority/bodyverbs.js): bodies through the body gate, loose
 // things through the punt. See BLAST in physconst.js for the numbers.
 import { BLAST } from "./protocol/physconst.js";
 

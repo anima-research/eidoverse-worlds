@@ -19,7 +19,7 @@ These files, at a given commit, are the eidoverse world protocol. Nothing else i
 | `spec/readback.json` | Every place the authority reads an old request's body, and what an unknown (redacted) body means there. Machine-checked. |
 | `spec/REGISTRY-CHANGELOG.md` | Every change to a pin, acknowledged. A pin can't move without a line here. |
 | `spec/conformance/` | Logs, and `expected.json`: what each must fold to (status, digest, diagnostic codes), so any implementation checks itself against this set alone. Status and digest are normative; the diagnostic codes are informative. Where the prose and a vector disagree, **the prose wins**: the vector is fixed to match it. |
-| `spec/conformance/laws.json` | The ground's height (terrain numbers and features → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
+| `spec/conformance/laws.json` | The ground's height (terrain numbers, features, named features and sculpted tiles → heights) and the sky's forecast (a policy → its segments), for fixed inputs, bit for bit. Machine-checked. |
 | `spec/conformance/trig.json` | The heading law's sine, cosine and atan2: inputs and exact float64 outputs every reader reproduces. Machine-checked. |
 | `spec/conformance/physics/` | Throw scenarios (each a log holding a throw's inputs and no rest) and `digests.json` (rests to the millimetre) with `digests-exact.json` (rests bit for bit, with the engine's final state): what each must come to rest as, per engine version. A server carries a version when it reproduces both of that version's digests. Machine-checked. |
 
@@ -54,11 +54,11 @@ The bone (normative): **every act on someone else's body goes through one reques
 | The lists | `allow` (always yes, every class, whatever the gates say) and `block` (always no, whatever the gates say), per person, standing until changed | trial |
 | Order | `block` > `allow` > my gate for the class > the world's `body-default` for that gate > the default | trial |
 | Default | `move` on, `touch` off; a world sets its own with `@world.body-default {move?, touch?}` | default |
-| A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause | **guarantee** |
+| A no | Reads the same to the requester whatever caused it (a gate, a block). The owner's own record keeps the real cause. A world's range (`@world.body-default.range`) is a separate, distance-only no, said before consent is asked at every act on another body (presence acts, the body verbs, a blast's bodies, a script's), so it reads the same whatever the gates and lists. The one exception: a drag under way was admitted in range and keeps answering to consent out to its break distance (1.5 × the range), so its dragger learns the target's gates there | **guarantee** |
 | Who sets it | Only the body's owner | **guarantee** |
 | A refused act | Leaves no record in the world log: the asker gets the uniform refusal, and the body owner's own record keeps the cause | **guarantee** · ratified tel0s 11-06 (delegated) (D6) |
 
-The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/CONSENT-TABLE-RECORD.md`, not as a direction.
+The earlier designs — eight classes × two tiers × allow/ask/deny, presets, pause, delegates (to 10-20), then one switch `accept`|`ask`|`refuse` with live asks (to 10-28) — are kept as a record in `docs/decisions/CONSENT-TABLE-RECORD.md`, not as a direction.
 
 ### World roles (who may do what in a world)
 
@@ -68,7 +68,7 @@ does, and no role overrides it).
 | Choice | Value | Status · source |
 |---|---|---|
 | The ladder | `member` 0 · `builder` 100 · `moderator` 200 · `owner` 255; custom roles at any free rank between. Rungs are named for what they let you do | trial · ratified tel0s 11-06 (delegated) |
-| States off the ladder | `banned` (not in the world); never a rank. (`ghost` was removed 10-20; a future neutral spectator role is wishlisted) | trial · ratified tel0s 11-06 (delegated) |
+| States off the ladder | `banned` (not in the world); never a rank. (A neutral spectator role is wishlisted.) | trial · ratified tel0s 11-06 (delegated) |
 | Newcomers | `@world.default-role` is the newcomer role: what anyone without a grant holds. Absent: `member` (every world founded before 10-21 keeps that); a world founded since starts with `builder` (starter config). A grant, `member` included, beats it: an owner demotes one person by hand | default · ratified tel0s 11-06 (delegated) |
 | Guests | a person without an account: an account state, never a rung, and orthogonal to role. A guest starts as `member` even where newcomers build, unless the world raises `default-role.guests`; an owner may give one guest any role, builder included, which lasts as long as that connection (there's no identity to keep it on) | trial · ratified tel0s 11-06 (delegated) |
 | No rung below the floor | `none` is gone: a grant of it is refused; a stored one (old logs) reads as no grant; a ban or a mute does what it did | trial · ratified tel0s 11-06 (delegated) |
@@ -84,7 +84,8 @@ does, and no role overrides it).
 | Q1: caption | a property of the screen it captions, not a role permission | decided · ratified tel0s 11-06 (delegated) |
 | Q2: owners fly | yes by default (v1 had flight off even for owners) | decided · ratified tel0s 11-06 (delegated) |
 | Q3: guests | can't be set above the world's default role | decided · ratified tel0s 11-06 (delegated) |
-| Q4: `editWorld` | a permission (sky, weather, ground, the card, spawn, bounds); false = owner-only | decided · ratified tel0s 11-06 (delegated) |
+| Q4: `editWorld` | a permission (sky, weather, grass, water, the card, spawn, bounds; the ground left it 11-20: the row below); false = owner-only | decided · ratified tel0s 11-06 (delegated) |
+| The ground | the terrain, its named features (`terrain-feature:<name>`) and its sculpted tiles (`terrain-tile:<i>-<j>`, written by `sculpt`) take `build`, not `editWorld`: shaping the ground is building. The pieces are partition keys (one shared ground), so whoever may shape it may change any of them | decided · antra 2026-11-20: "builders should be able to change the terrain in general" |
 | Q5: bans below owner | any length, or until lifted, the same as an owner's (the ban power is the trust) | decided · R (the fork's maintainer), 2026-11-03 22:24: "I would give moderators permanent ban powers too" |
 
 ### Known gap
@@ -92,7 +93,7 @@ does, and no role overrides it).
 A 10-17 audit found the line between the two tables isn't yet drawn for **avatars**: once an avatar's parts are entities,
 they fall under the *thing* rules (roles, log history, and an owner who can do anything), not under body consent. The
 spec's "Body ownership (avatars)" section keeps the one rule (every write to a body goes through the one request path,
-and the body's owner decides); how it is built is direction in `docs/AVATAR-DIRECTION.md` until avatars are shared. Five
+and the body's owner decides); how it is built is direction in `docs/design/AVATAR-DIRECTION.md` until avatars are shared. Five
 write paths (the hand and physics path, copying, and others in the audit) don't yet check it. **Open** · needs all three.
 
 ### Not yet listed

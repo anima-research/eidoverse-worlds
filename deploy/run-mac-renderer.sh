@@ -1,8 +1,7 @@
 #!/bin/bash
-# Mac-side /snap renderer for the GPU-less show box. Now a thin wrapper around
+# Mac-side /snap renderer for the GPU-less show box: a thin wrapper around
 # render-watchdog.ts, which keeps the renderer not just RUNNING but HEALTHY —
-# restarting it on hang, memory bloat, freeze, or a client deploy, none of which
-# the old crash-only relaunch loop could see. Same env interface as before:
+# restarting it on hang, memory bloat, freeze, or a client deploy.
 #
 #   SHOW_URL=https://eidoverse.animalabs.ai WORLD=commons KEY=doorkey \
 #     deploy/run-mac-renderer.sh

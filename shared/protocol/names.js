@@ -1,6 +1,6 @@
 // shared/protocol/names.js — the ONE mapping from an engine name (an actor, entity id, role key, component name) to the
 // §2.3 grammar, used by both the translator (old logs) and the live authority (server: who is asking). If the two ever
-// spelled one person differently, nobody in a translated world would match their own role (research 35, slice-2 #3).
+// spelled one person differently, nobody in a translated world would match their own role.
 //
 //   enc(s)     an identity / entity id / key: [a-z0-9-]{1,64}. A name the grammar already accepts, and that doesn't
 //              start with an escape prefix, is kept as it is. Anything else becomes "x--" + hex(utf8) or, when that
@@ -21,11 +21,8 @@
 // is refused by translate itself before anything is mapped (translate-v1.js loneSurrogateIn, naming the entry), so
 // nothing is written.
 //
-// The engine fix (research 35, "a real enc collision"): the lab's encName escaped a name like "0abc" (valid as an
-// identity, not as a component, which must start with a letter) by prefixing "n", giving "n0abc" — which is also
-// what a genuine component called "n0abc" keeps. Two different old names, one name. Here a component name the
-// grammar refuses always takes the x-- form, so "0abc" → "x--30616263" and "n0abc" stays "n0abc". The lab still
-// has the old rule (noted for it in research 37; the lab is not edited from here).
+// A component name the grammar refuses always takes the x-- form ("0abc" → "x--30616263"), never a letter prefix,
+// which would collide with a genuine name ("n0abc").
 import { sha256, utf8Hex } from "./hash.js";
 import { isComponent } from "./fold.js";
 
@@ -46,9 +43,9 @@ export function encName(s) {
   s = String(s);
   return HASHED.test(s) || (isComponent(s) && !ESC.test(s)) ? s : escape(s);
 }
-/** enc and encName for a name that was never an id: an old log's (the translator's, tools/protocol/import-v1). Old logs
+/** enc and encName for a name that was never an id: an old log's (the translator's, tools/import-v1). Old logs
  *  never held a hashed id, so a name already in that form is escaped like any other, never kept: a raw name equal to a long
- *  name's hashed form would otherwise be that long name's id (house 6340433633).
+ *  name's hashed form would otherwise be that long name's id.
  *  @param {unknown} s @returns {string} */
 export function encRaw(s) {
   s = String(s);
@@ -73,7 +70,7 @@ export function partSlot(node) {
   const base = s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48).replace(/-+$/, "");
   return `${base || "node"}-${sha256(s).slice(0, 8)}`;
 }
-// The node a motion moves, by its key and value (review r7, R 10-16: a node's name is DATA): a keyed motion's `node`
+// The node a motion moves, by its key and value (a node's name is DATA): a keyed motion's `node`
 // (motion:<slot> {node}); a keyed one stored before the node was data, its key's tag (the maintenance command's
 // repair writes that down); a whole motion naming `part` (the first spelling, before that repair), that part. Null: the whole
 // thing. The one reading every reader shares (renderer, seat signals, editor, agent).
@@ -84,6 +81,13 @@ export function motionNode(key, m) {
   return m && typeof m.node === "string" && m.node ? m.node : key.slice(7);
 }
 
+/** A spin's or an orbit's rate in °/s: degPerSec, else 360 / period (seconds a turn), else an old rpm × 6, else `def`. */
+export function rateOf(m, def) {
+  if (Number.isFinite(m?.degPerSec)) return m.degPerSec;
+  if (Number.isFinite(m?.period) && m.period > 0) return 360 / m.period;
+  if (Number.isFinite(m?.rpm)) return m.rpm * 6;
+  return def;
+}
 
 /** @param {string} s @returns {string | null} the original name, or null when it was hashed (h--) */
 export function dec(s) {
@@ -96,8 +100,8 @@ export function dec(s) {
   catch { return null; }
 }
 
-// ---- display names for actors (round-2 review R1) ----
-// A actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
+// ---- display names for actors ----
+// An actor is an opaque id, u- + 20 base32 (server/directory.ts). Its display name lives in the authority's
 // directory, outside the log (§2.3), and reaches clients beside the entries ({names: {id: name}}). Every client in a
 // process feeds this one registry (ids are random, so worlds and doors can't collide), and every place that shows a
 // person reads it: actorName(id) is the name, else an old escaped identity read back, else the id itself.

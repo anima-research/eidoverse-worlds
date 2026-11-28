@@ -1,30 +1,16 @@
-// prefetch — background streaming of the library into client storage.
+// prefetch — background streaming of the library into the browser's HTTP cache, once arrival has settled, so the
+// next spawn or walk-in is a disk read instead of a download.
 //
-// Once arrival has settled, everything the world COULD need next — roster
-// bodies, the model catalog, conjured store assets, other worlds' skies —
-// streams quietly into the browser's HTTP cache, so the next spawn or walk-in
-// is a disk read instead of a download. Idle bandwidth is otherwise wasted;
-// this spends it.
-//
-// Three rules keep it honest:
-//   1. Demand wins, instantly. The moment any real load starts (assets.js
-//      'demand' event), the in-flight prefetch is ABORTED — the socket is
-//      surrendered, not throttled — and the queue parks until the network has
-//      been quiet for a while. A preempted asset just retries later; HTTP
-//      caches never store partial bodies, so the demand fetch starts clean.
-//   2. Storage only, never memory. Bytes are drained and dropped — the HTTP
-//      cache keeps them, and the server's etag/immutable/max-age headers
-//      already make every real load path (fetchBytes) hit that cache. Nothing
-//      is parsed, nothing lands in the JS heap or on the GPU.
-//   3. Budgeted, and never pinned. A per-session cap plus a storage-quota
-//      floor; beyond that the browser's own LRU eviction is the eviction
-//      policy — assets that get USED are the ones that stay warm, and a newly
-//      needed asset displaces stale speculative ones by construction.
+// Three rules:
+//   1. Demand wins, instantly: any real load (assets.js 'demand' event) aborts the in-flight prefetch, and the queue
+//      parks until the network has been quiet for QUIET_MS. A preempted asset retries later.
+//   2. Storage only, never memory: bytes are drained and dropped; the HTTP cache keeps them.
+//   3. Budgeted, never pinned: a per-session cap and a storage-quota floor; beyond that the browser's own LRU evicts.
 
 import { negotiate } from '../../shared/ktx2.js';
 import { bus, CONFIG, report } from './base.js';
 import { whenBooted } from './boot.js';
-import { whenCalm } from './governor.js';
+import { whenCalm } from './render/governor.js';
 import { demandState, listLibrary, ktx2Capable, ktx2KeyReady } from './assets.js';
 
 const QUIET_MS = 1500;      // demand-free time required before (re)taking the wire
@@ -33,8 +19,7 @@ const QUOTA_FLOOR = 300e6;  // leave at least this much storage quota untouched
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Aborts the in-flight prefetch stream. Wired to the demand event permanently:
-// preemption must not wait for the prefetcher's next turn around its loop.
+// aborts the in-flight prefetch stream the instant demand starts, not at the loop's next turn
 let abortNow = null;
 bus.on('demand', () => abortNow?.());
 
@@ -80,32 +65,20 @@ async function quotaTight() {
   } catch { return false; }
 }
 
-// The queue is DISCOVERED, not hardcoded (the no-manifest rule applies here
-// too), and ordered by how soon someone is likely to feel the miss:
-//   1. roster bodies — a new walker materialising instantly is the single most
-//      felt win, and their URLs are ?v=mtime versioned, so they cache forever
-//   2. catalog previews — they turn the B picker from a wall of grey squares
-//      into an actual catalog
-//   3. everything spawnable — conjured store assets (content-addressed,
-//      immutable) and the model library, smallest first: the most assets
-//      warmed per byte, with the giants last, once the session has proven long
-//   4. sky + weather sprites — other worlds' atmospheres; this world's are
-//      warm already, so those re-pulls resolve from cache for free
+// The queue is discovered from the server's listings, ordered by how soon someone would feel the miss:
+//   1. roster bodies (a new walker materialising instantly)
+//   2. catalog previews (the B picker)
+//   3. animation clips
+//   4. everything spawnable: store assets and the model library, smallest first
+//   5. sky + weather sprites (other worlds' atmospheres; this world's are warm already)
 async function buildQueue() {
   const q = [];
   const seen = new Set();
-  // the running sequencer's key, or null — the same answer every demand
-  // fetch gets, so warmth lands in the same cache entry (assets.js)
+  // the KTX2 key demand fetches use, so warmth lands in the same cache entry (assets.js)
   const key = ktx2Capable() ? await ktx2KeyReady : null;
   const push = (path, size = 0) => {
     let url = path.startsWith('/') ? path : `/library/${path}`;
-    // Warm the SAME cache key demand fetches will use (§20c gate finding):
-    // capable clients fetch .glb/.vrm with ?ktx2=<key> — unflagged warmth lands
-    // in a different HTTP-cache entry and is pure waste for them. Loose
-    // images (§20d) negotiate too, but ONLY where the file layer does
-    // (primeFiles, i.e. the curated toolkit dirs) — catalog previews and
-    // other images are consumed unflagged, and flagging them here would be
-    // the same wasted-warmth bug in the other direction.
+    // capable clients fetch .glb/.vrm with ?ktx2=<key>; loose images negotiate only where assets.js primeFiles does
     const bare = url.split('?')[0];
     if (key && (/\.(glb|vrm)$/.test(bare)
       || (/^\/library\/eidoverse\/assets\/(grass|sky|particle_textures)\//.test(bare) && /\.(png|jpe?g)$/i.test(bare)))) {
@@ -120,12 +93,7 @@ async function buildQueue() {
   const store = (await listLibrary('store')) ?? [];
   const glbs = [...store, ...models.filter((f) => f.path.endsWith('.glb'))]
     .sort((a, b) => a.size - b.size);
-  // Clips come from /animations, not the raw directory listing, for the same
-  // reason avatars come from /avatars: the roster's paths carry ?v=<mtime>,
-  // and warming a DIFFERENT url than the one vrmaBytes will request is warmth
-  // thrown away (and the bytes pulled twice) — the §20 wasted-warmth bug, in
-  // clip clothing. The roster also resolves upstream-patched over library, so
-  // this warms the fork rather than the original it shadows.
+  // clips from /animations, not the directory listing: its paths carry the ?v=<mtime> the real fetch uses
   const clips = await fetch('/animations').then((r) => r.json()).catch(() => []);
   for (const c of clips) push(c.path, c.size);
   for (const f of glbs) push(f.path, f.size);
@@ -139,12 +107,7 @@ export async function startPrefetch() {
   if (CONFIG.params.get('prefetch') === '0') return;  // escape hatch
   if (navigator.connection?.saveData) return;         // respect data saver
   await whenBooted();
-  // The storm's edge (§16.2.D): the roster pull used to start ~5s in — 45MB
-  // of speculative VRMs racing the boot storm's own compiles. Calm is the
-  // governor's word: 5 smooth seconds with no load work in flight. This
-  // gates only the SPECULATIVE stream — anything the world actually needs
-  // goes through fetchBytes directly and never waited on prefetch, and the
-  // 'demand' abort below still preempts us the instant a real load starts.
+  // wait for the governor's calm (5 smooth seconds, no load work in flight) so speculative fetches don't race the boot storm
   await whenCalm();
   await quietWindow(); // let the join's own warm-fetches drain first
   const queue = await buildQueue().catch((e) => { report('prefetch', e); return []; });

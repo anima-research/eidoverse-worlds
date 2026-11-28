@@ -1,5 +1,5 @@
-// server/backups.ts — a world directory's verified copy, made before an in-place upgrade (docs/TRANSLATING-OLD-WORLDS.md, "Backups").
-// One path for the CLI (tools/protocol/world.ts translate) and the server's operator upgrade (which runs that CLI).
+// server/backups.ts — a world directory's verified copy, made before an in-place upgrade (docs/operator/TRANSLATING-OLD-WORLDS.md, "Backups").
+// One path for the CLI (tools/world.ts translate) and the server's operator upgrade (which runs that CLI).
 // A backup is written once and never again: nothing here, and nothing that calls it, writes to one afterwards.
 import fs from "node:fs";
 import path from "node:path";
@@ -7,11 +7,11 @@ import crypto from "node:crypto";
 import { BACKUPS_DIR } from "./config.ts";
 import { isCacheFile } from "./statecache.ts";
 import { mkdirDurable, syncDir, syncTree } from "./durable.ts";
+import { WORLD_NAME_RE } from "./limits.ts";
 import { custodyFileIn } from "./keyfiles.ts";
 import { MANIFEST, backupManifestOf, checkBackupManifest } from "./custodycheck.ts";
 
-const NAME = /^[a-z0-9_-]{1,64}$/i;
-export const SUMS = "SHA256SUMS";
+const SUMS = "SHA256SUMS";
 export type Backup = { dir: string; files: number; bytes: number };
 
 /** sha256 of a file, read in chunks (a world's log can be large). */
@@ -40,7 +40,7 @@ export const notPlainWords = (rel: string) => `${rel} is a link (or not a plain 
 function filesUnder(d: string, at = ""): string[] {
   const out: string[] = [];
   for (const f of fs.readdirSync(path.join(d, at)).sort()) { const rel = at ? `${at}/${f}` : f; const st = fs.lstatSync(path.join(d, rel));
-    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(`${path.basename(d)}/${rel}`)); }   // world-relative with "/", as the boot notice says it (Windows printed the temp path)
+    if (st.isDirectory()) out.push(...filesUnder(d, rel)); else if (st.isFile()) out.push(rel); else throw new Error(notPlainWords(`${path.basename(d)}/${rel}`)); }   // world-relative with "/", as the boot notice says it
   return out;
 }
 
@@ -48,7 +48,7 @@ function filesUnder(d: string, at = ""): string[] {
  *  (the copy against the original, and the original against what was copied). Throws, in words, on any copy error or
  *  mismatch, removing the incomplete copy (it never became a backup). `afterCopy`: tests only, runs before the verify. */
 export function backupWorld(worldsDir: string, name: string, { backupsDir = BACKUPS_DIR, now = new Date(), afterCopy, custodyFile = custodyFileIn(worldsDir) }: { backupsDir?: string; now?: Date; afterCopy?: (dir: string) => void; custodyFile?: string } = {}): Backup {
-  if (!NAME.test(name)) throw new Error(`"${name}" is not a world name`);
+  if (!WORLD_NAME_RE.test(name)) throw new Error(`"${name}" is not a world name`);
   const bad = backupsDirProblem(worldsDir, backupsDir); if (bad) throw new Error(bad);
   const src = path.join(worldsDir, name);
   if (!fs.statSync(src, { throwIfNoEntry: false })?.isDirectory()) throw new Error(`there is no world directory ${src} to back up`);
@@ -63,9 +63,7 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
       fs.mkdirSync(path.dirname(b), { recursive: true }); fs.copyFileSync(a, b);
       const st = fs.statSync(a); fs.utimesSync(b, st.atime, st.mtime); sums[rel] = hashFile(a); bytes += st.size; }
     fs.writeFileSync(path.join(dir, SUMS), files.map((rel) => `${sums[rel]}  ${rel}\n`).join(""));
-    // F-5: the keys that governed the world, as fingerprints, and the custody file's hash (server/custodycheck.ts); the written
-    // bytes are read back and checked against the custody file itself (not the builder), so a builder or serialization defect
-    // refuses the backup. No restore path reads the manifest yet (notes WISHLIST)
+    // the custody manifest (server/custodycheck.ts), read back and checked against the custody file itself, not the builder
     const manifest = backupManifestOf(custodyFile); fs.writeFileSync(path.join(dir, MANIFEST), JSON.stringify(manifest, null, 1) + "\n");
     if (fs.existsSync(custodyFile)) { const bad = checkBackupManifest(JSON.parse(fs.readFileSync(path.join(dir, MANIFEST), "utf8")), custodyFile); if (bad) throw new Error(bad); }   // a worlds dir with no keys yet (old-format worlds) records none
     afterCopy?.(dir);
@@ -77,10 +75,10 @@ export function backupWorld(worldsDir: string, name: string, { backupsDir = BACK
     for (const rel of files) {
       const h = hashFile(path.join(dir, rel)); if (h !== sums[rel]) throw new Error(`the backup's copy of ${rel} doesn't match the original (sha256 ${h.slice(0, 16)}…, the original ${sums[rel].slice(0, 16)}…)`);
       const o = hashFile(path.join(src, rel)); if (o !== sums[rel]) throw new Error(`${rel} changed while it was being backed up (something is still writing to the world: stop it first)`); }
-    syncTree(dir); syncDir(backupsDir);   // copyFileSync syncs nothing: on disk before anything moves (review L5)
+    syncTree(dir); syncDir(backupsDir);   // copyFileSync syncs nothing: on disk before anything moves
     return { dir, files: files.length, bytes };
   } catch (x) {
-    let removed = true; try { fs.rmSync(dir, { recursive: true, force: true }); } catch { removed = false; }   //
+    let removed = true; try { fs.rmSync(dir, { recursive: true, force: true }); } catch { removed = false; }
     throw new Error(`the backup of "${name}" failed${removed ? " and was removed" : `; its partial directory ${dir} could NOT be removed`}: ${(x as Error).message}`);
   }
 }

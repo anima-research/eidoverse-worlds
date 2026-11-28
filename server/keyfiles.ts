@@ -1,10 +1,8 @@
 // server/keyfiles.ts — where a worlds dir keeps the files every world in it shares, outside every log: the authority's
 // governance keys (server/custody.ts) and its identity directory (server/directory.ts). Both are written 0600.
 //
-// Before the 2026-10-07 names pass these files carried the protocol's number in their names. A worlds dir that still
-// holds only the old name has it renamed once, the first time this server (or a tool) asks for the path, so a local
-// world keeps its keys and its people keep their identities. If both names exist, the current one wins and the old one
-// is left where it is (and said so): two files are never merged here.
+// A worlds dir holding only a file's old name (the protocol's number in it) has it renamed on first ask. If both names
+// exist, the current one wins and the old one is left (and said so): two files are never merged here.
 import fs from "node:fs";
 import path from "node:path";
 
