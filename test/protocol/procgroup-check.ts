@@ -7,6 +7,7 @@
 // evidence kept, leftover files set aside, sibling builds, the output cut, OPTIONAL rows, the preflight. PG23: deploy retries.
 // PG24–PG26: the Windows table comes from the kernel's snapshot in process (PowerShell's was ~0.5 s a read, twice per suite).
 // PG27, PG28: a process still leaving as its suite ends is not a leftover (the snapshot is quick enough to see it).
+// PG29, PG30: what ran before a suite started is never its leftover and never killed for it (a reused id as a stale parent).
 //   bun test/protocol/procgroup-check.ts
 import { spawn, spawnSync } from "node:child_process";
 import { processTable, parsePsTable, parseWinTable, suiteMembers, killSuite } from "../gate/procgroup.ts";
@@ -106,7 +107,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const pg = fs.readFileSync(new URL("../../server/procgroup.ts", import.meta.url), "utf8"), rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   check("PG12 the sweep after a suite exits says so (exited), and killChild never blocks or kills an exited child",
-    /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\) \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
+    /killGroup\(child\.pid, "SIGKILL", \{ exited: \(\) => !stuck \|\| gone\(\), before: was \}\)/.test(rs) && !/killSuite\(/.test(kcBody) && /exitCode/.test(kcBody), kcBody);
 }
 
 { // a table that never answers falls back to the running root's tree (taskkill /T), and to nothing once it exited
@@ -132,7 +133,7 @@ check("PG5 a zombie in the group is not counted as left running", suiteMembers(7
   const kc = pg.slice(pg.indexOf("export function killChild")), kcBody = kc.slice(0, kc.indexOf("\n}") + 2);
   const live = {
     killChild: /exited: \(\) => p\.exitCode != null \|\| p\.signalCode != null/.test(kcBody),
-    gate: /const gone = \(\) => child\.exitCode != null \|\| child\.signalCode != null/.test(rs) && (rs.match(/killGroup\(child\.pid!?, "SIG(?:TERM|KILL)", \{ exited: (?:gone|\(\) => !stuck \|\| gone\(\)) \}\)/g) ?? []).length === 3,
+    gate: /const gone = \(\) => child\.exitCode != null \|\| child\.signalCode != null/.test(rs) && (rs.match(/killGroup\(child\.pid!?, "SIG(?:TERM|KILL)", \{ exited: (?:gone|\(\) => !stuck \|\| gone\(\)), before: was \}\)/g) ?? []).length === 3,
     client: /const gone = \(\) => ch\.exitCode != null \|\| ch\.signalCode != null/.test(rc) && /"SIGTERM", process\.platform, \{ exited: gone \}/.test(rc) && /\(exited: boolean \| \(\(\) => boolean\) = gone\)/.test(rc),
   };
   check("PG16 a Windows sweep reads whether its suite has exited once the process table has answered, and each caller hands it a reading of its own child (killChild, the gate's three sweeps, run-client's two)",
@@ -275,12 +276,37 @@ if (win) { // PG28: the same on real processes: the snapshot is quick enough to 
     let said = ""; c.stdout!.on("data", (b) => { said += b.toString(); }); await new Promise((r) => c.on("close", r)); return { root: c.pid!, grand: Number(said.match(/grandchild (\d+)/)?.[1] ?? NaN) }; };
   // the leaving one lives 3 s from its start, so it is still there at the first look however slowly it started; the wait ends when it goes
   const leaving = await start("setTimeout(()=>{},3000)"), atOnce = await PG.suiteMembersAsync(leaving.root), settled = await L?.(leaving.root, "win32", { ms: 20_000 });
-  const staying = await start("setInterval(()=>{},1000)"), left = await L?.(staying.root, "win32", { ms: 400 });
-  for (const p of left ?? []) await PG.killSuiteAsync(p, "SIGKILL", "win32");   // by its own id, as run.ts does
-  if (Number.isFinite(staying.grand)) await PG.killSuiteAsync(staying.grand, "SIGKILL", "win32");   // whatever the row found: nothing of it outlives the suite
+  // as run.ts does: the table from before the suite goes to the leftover read and to each kill, by the leftover's own id
+  const was = PG.toolhelpTable() ?? [], staying = await start("setInterval(()=>{},1000)"), left = await (L as any)?.(staying.root, "win32", { ms: 400, before: was }) as number[] | undefined;
+  for (const p of left ?? []) await (PG as any).killSuiteAsync(p, "SIGKILL", "win32", { before: was });
   const gone = await tryUntil("the process that stayed is killed", () => { const t = PG.toolhelpTable(); return !!t && !t.some((r) => r.pid === staying.grand); }, { ms: 5000, step: 100 });
+  if (Number.isFinite(staying.grand)) await PG.killSuiteAsync(staying.grand, "SIGKILL", "win32");   // whatever the row found: nothing of it outlives the suite
   check("PG28 (win32) a process still leaving as its suite exits is seen at once by the snapshot and is not a leftover once it has gone; one that stays is, and is killed by its own id",
-    atOnce.includes(leaving.grand) && settled?.length === 0 && !!left?.includes(staying.grand) && !!gone, { leaving, atOnce, settled, staying, left, gone });
+    atOnce.includes(leaving.grand) && settled?.length === 0 && was.some((r) => r.pid === process.pid) && !!left?.includes(staying.grand) && !!gone, { leaving, atOnce, settled, staying, left, gone, was: was.length });
 } else na("PG28 a leaving process is not a leftover, on real Windows processes", "Windows only; PG27 checks the rule here");
+
+{ // PG29, PG30: Windows never updates a parent id, so a suite whose id once belonged to a long-dead process looks like the
+  // parent of that process's children. CI run 46055310133: lite-graph's id was such a number and 127 processes read as its
+  // leftovers, the runner's own ancestors among them. What was running before the suite started is not the suite's.
+  const L = (PG as any).leftoverMembers as (root: number, platform: NodeJS.Platform, o: { before?: PG.Row[]; ms?: number; step?: number; table?: () => Promise<PG.Row[]> }) => Promise<number[]>;
+  const plan = (PG as any).winKillPlan as (root: number, t: PG.Row[], exited: boolean, self?: number, before?: PG.Row[]) => number[];
+  // the suite ran as 100 and has exited. 600 (parent 100: a stale id) is the session's root, with 700 → 900 (the gate) under
+  // it and a bystander 650; 640 was started under 600 while the suite ran, by someone else. The suite's own: 210, and 220 under it.
+  const before = parseWinTable("4 0\r\n600 100\r\n650 600\r\n700 600\r\n900 700\r\n"), now = [...before, ...parseWinTable("640 600\r\n210 100\r\n220 210\r\n")];
+  const left = (await L?.(100, "win32", { before, ms: 60, step: 5, table: async () => now }))?.sort((a, b) => a - b);
+  // an id that was running before, now with another parent, is a new process holding a reused id: the suite's own
+  const reborn = (await L?.(100, "win32", { before: [...before, ...parseWinTable("210 4\r\n")], ms: 60, step: 5, table: async () => now }))?.sort((a, b) => a - b);
+  check("PG29 a suite's leftovers on Windows are only what started since the suite did: processes that were already running (same id, same parent) aren't its own even when their stale parent id is the suite's, and neither is what they start",
+    JSON.stringify(left) === "[210,220]" && JSON.stringify(reborn) === "[210,220]", { left, reborn });
+  const calls: string[][] = [], rec = async (a: string[]) => { calls.push(a); }, text = (t: PG.Row[]) => t.map((r) => `${r.pid} ${r.ppid}`).join("\r\n");
+  const swept = plan?.(100, now, true, 900, before);                       // the sweep of the exited suite: its own orphans only
+  const ancestor = plan?.(700, now, false, 900), self = plan?.(900, now, false, 900);   // asked to kill the gate's shell, or the gate
+  await (PG as any).killSuiteAsync(100, "SIGKILL", "win32", { exited: true, before, query: async () => text(now), taskkill: rec });
+  const rs = fs.readFileSync(new URL("../gate/run.ts", import.meta.url), "utf8");
+  check("PG30 a Windows kill plan never holds a process that was running before the suite started, nor this process or one above it even when that is the root it was asked for; run.ts reads the table before each suite starts and gives it to the leftover read and to every kill after the suite",
+    JSON.stringify(swept) === "[220,210]" && ancestor?.length === 0 && self?.length === 0 && JSON.stringify(calls) === JSON.stringify([["/PID", "220", "/F"], ["/PID", "210", "/F"]])
+      && /const was = await tableBefore\(\);[^\n]*\n\s*const child = spawn\(/.test(rs) && /leftoverMembers\(child\.pid, process\.platform, \{ before: was \}\)/.test(rs) && !/killGroup\(p, "SIGKILL"\)/.test(rs),
+    { swept, ancestor, self, calls });
+}
 
 done();

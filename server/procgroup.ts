@@ -137,16 +137,25 @@ async function tableOrNull(platform: NodeJS.Platform, { ms = 30_000, query }: { 
 export async function suiteMembersAsync(root: number, platform: NodeJS.Platform = process.platform): Promise<number[]> {
   return suiteMembers(root, await processTableAsync(platform), platform);
 }
+/** The rows of `table` that weren't running in `before` (a table read earlier). Windows never updates a parent id and
+ *  reuses process ids, so a suite whose id once belonged to a long-dead process reads as the parent of that process's
+ *  children (CI run 46055310133: 127 processes under lite-graph's id, the runner's own ancestors among them). Whatever was
+ *  running before the suite started is not the suite's, and with those rows gone a walk can't pass through them either.
+ *  Same id and same parent is the same process; an id that has changed parent is a new process holding a reused id. */
+export function startedSince(before: Row[], table: Row[]): Row[] {
+  const was = new Map(before.map((r) => [r.pid, r.ppid]));
+  return table.filter((r) => was.get(r.pid) !== r.ppid);
+}
 /** What a suite started as `root` left running, read once it has ended. On Windows a suite's own teardown is still landing
  *  as it exits (its kill of a server is a taskkill, a process of its own; a child goes with its parent's job a moment after
  *  it): the PowerShell read took ~0.5 s to look, the snapshot looks ~5 ms on. So there a process counts only if it is
  *  still running `ms` later; one seen under the suite stays the suite's after its own parent has gone (the walk from `root`
  *  can't reach it any more), and so does what it starts. The caller kills these by id. POSIX reads once, as it always has.
- *  `table` is for tests. */
-export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { ms = 1000, step = 50, table = () => processTableAsync(platform) }: { ms?: number; step?: number; table?: () => Promise<Row[]> } = {}): Promise<number[]> {
+ *  `before` is the table read before the suite started: nothing in it is the suite's (startedSince). `table` is for tests. */
+export async function leftoverMembers(root: number, platform: NodeJS.Platform = process.platform, { before = [], ms = 1000, step = 50, table = () => processTableAsync(platform) }: { before?: Row[]; ms?: number; step?: number; table?: () => Promise<Row[]> } = {}): Promise<number[]> {
   if (platform !== "win32") return suiteMembers(root, await table(), platform);
   const seen = new Set<number>();
-  const read = async () => { const t = await table(), live = new Set(t.map((r) => r.pid));
+  const read = async () => { const t = startedSince(before, await table()), live = new Set(t.map((r) => r.pid));
     for (const from of [root, ...seen]) for (const p of suiteMembers(from, t, "win32")) seen.add(p);
     return [...seen].filter((p) => live.has(p)); };
   let m = await read();
@@ -155,13 +164,15 @@ export async function leftoverMembers(root: number, platform: NodeJS.Platform = 
 }
 /** Which Windows processes to kill for a suite started as `root`, deepest first, each by its own id (never `/T`). Windows
  *  reuses process ids: once the suite has `exited`, an id back in the table belongs to someone else, so nothing is killed; if
- *  the id is free, only its orphans are. */
-export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid): number[] {
+ *  the id is free, only its orphans are. Never a process that was running in `before` (the table read before the suite
+ *  started; see startedSince), and never this process or one above it, even as the `root` asked for. */
+export function winKillPlan(root: number, table: Row[], exited: boolean, self: number = process.pid, before: Row[] = []): number[] {
   if (exited && table.some((r) => r.pid === root)) return [];
   // never ourselves or an ancestor: once the dead root's id is reused, a stale ParentProcessId can make the gate itself look like its orphan
   const byPid = new Map(table.map((r) => [r.pid, r])), mine = new Set<number>();
   for (let p: number | undefined = self; p !== undefined && !mine.has(p); p = byPid.get(p)?.ppid) mine.add(p);
-  const kids = new Map<number, number[]>(); for (const r of table) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
+  if (byPid.has(root) && mine.has(root)) return [];   // a live root that is this process or above it (a dead root's id can be a stale link in that chain: PG14)
+  const kids = new Map<number, number[]>(); for (const r of startedSince(before, table)) { if (r.pid !== r.ppid) kids.set(r.ppid, [...(kids.get(r.ppid) ?? []), r.pid]); }
   const depth = new Map<number, number>(), todo: [number, number][] = [[root, 0]];
   while (todo.length) { const [p, d] = todo.shift()!; for (const c of kids.get(p) ?? []) if (!depth.has(c) && c !== root && !mine.has(c)) { depth.set(c, d + 1); todo.push([c, d + 1]); } }
   const out = [...depth.entries()].sort((x, y) => y[1] - x[1]).map(([p]) => p);
@@ -169,12 +180,12 @@ export function winKillPlan(root: number, table: Row[], exited: boolean, self: n
 }
 /** killSuite, without blocking: POSIX signals the group (a signal never blocks); Windows kills what winKillPlan finds,
  *  children first, each by its own id; only when the table doesn't answer, the still-running root's tree with taskkill /T. */
-export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
+export async function killSuiteAsync(root: number, sig: NodeJS.Signals, platform: NodeJS.Platform = process.platform, { exited = false, before, query, ms, taskkill = (a: string[]) => outputOf("taskkill", a, 15_000) }: { exited?: boolean | (() => boolean); before?: Row[]; query?: () => Promise<string | null>; ms?: number; taskkill?: (args: string[]) => Promise<unknown> } = {}): Promise<void> {
   if (platform !== "win32") { try { process.kill(-root, sig); } catch { /* gone */ } return; }
   const table = await tableOrNull("win32", { query, ms }), gone = () => (typeof exited === "function" ? exited() : exited);
   // no table: the root's own tree, while the root still runs (its id is still its own; an exited root's may be someone's now)
   if (table === null) { if (!gone()) await taskkill(["/PID", String(root), "/T", "/F"]); return; }
-  for (const pid of winKillPlan(root, table, gone())) await taskkill(["/PID", String(pid), "/F"]);
+  for (const pid of winKillPlan(root, table, gone(), process.pid, before)) await taskkill(["/PID", String(pid), "/F"]);
 }
 /** At exit, where nothing can be awaited: signal the group (POSIX), or start a kill of the still-running root and leave it
  *  running (Windows). The caller passes only a root it knows is still running; its children go with the next sweep. */
