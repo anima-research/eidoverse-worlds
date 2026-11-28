@@ -13,7 +13,7 @@ export async function commandsFor(getMe:()=>any, messages:string[]) {
     'player/controller.js':{myState:{pos:{x:0,y:0,z:0}},setPosture:noop,flightReport:()=>''},
     'thingphysics.js':{punt:noop,grab:noop,put:noop,drop:noop,throwHeld:noop},'ui/chat.js':{logChat:(_who:string,text:string)=>messages.push(text)},
     'ui/ui.js':{toggleHelp:noop,flashHint:noop,toast:noop},'scenegraph.js':{sceneAttach:noop,sceneDetach:noop},
-    'player/consent.js':{setPushable:noop,pushable:()=>false},'player/localbody.js':{trySitOn:noop},'player/mybody.js':{getMe},
+    'player/consent.js':{setPushable:noop,pushable:()=>false},'player/localbody.js':{trySitOn:noop,sitOnGround:noop},'player/mybody.js':{getMe},
     // the door (edit/writes.js send) and /panels' stylepanel: handlers.js imports both, and each reaches the whole edit UI
     'edit/writes.js':{send:async()=>({ok:true})},'ui/stylepanel.js':{panelAlpha:()=>1,setPanelAlpha:noop},
   };

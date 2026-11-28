@@ -267,6 +267,16 @@ function nearestSeat(arg, reach) {
   return best;
 }
 
+/** /sit ground (or /sit here): sit where you stand, never on a seat (PR #165). Those words never reach seat matching,
+ *  so a seat whose id or label starts "ground" or "here" can't take them. Seated, get off first, the way X does: a seat
+ *  that won't let you go keeps you (dismountMe's hint says how to leave), and nothing else happens. True when sitting. */
+export function sitOnGround() {
+  if (avatarMounts.has(CONFIG.name) && !dismountMe('menu')) return false;
+  myState.seat = null;
+  setPosture('sit');
+  return true;
+}
+
 /** Sit on something: the nearest socket within arm's reach (or a named entity, found anywhere; the authority checks reach). When nothing is in
  *  reach but a seat exists further out, say so. The authority is asked first (`use {id, action}`): it checks who
  *  may and answers with what the body does. Already seated, I may move straight to a socket that allows it (fromSeat). */
@@ -325,7 +335,7 @@ export function updateSeatHint(dt) {
   if (avatarMounts.has(CONFIG.name)) { const b = occupiedBody();
     hint = !b || b.leaveBy === 'any' ? (b?.input.move !== 'none' && b ? html`<kbd>X</kbd> get up · <kbd>WASD</kbd> drive` : html`<kbd>X</kbd> get up · <kbd>WASD</kbd> hop off`)
       : b.leaveBy === 'script' ? html`this seat lets you go when the world does · hold <kbd>X</kbd> to get up anyway` : b.leaveBy === 'jump' ? html`<kbd>Space</kbd> or <kbd>X</kbd> get up` : html`<kbd>X</kbd> get up`; }
-  else if (!downed && nearestSeat(null, OCCUPY_REACH.r)) hint = html`<kbd>X</kbd> — sit`;
+  else if (!downed && nearestSeat(null, OCCUPY_REACH.r)) hint = html`<kbd>X</kbd> — sit · /sit here for the ground`;
   // my hands come first: what I hold and how to let go, else what's in reach to pick up
   if (!downed) { const hh = handsHint(); if (hh && (myHoldsNow() || !hint)) hint = hh; }
   if (!hint && !downed) hint = usePromptHint();   // E: what's in front of you to use (useprompt.js)
