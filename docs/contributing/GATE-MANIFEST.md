@@ -637,7 +637,8 @@ time.
 | 456 | colour-picker | browser | `test/client/colour-picker-bench.ts` | Chromium | 8.1 s | 180 s |
 | 457 | vrmic-exec | browser | `test/client/vrmic-exec-test.mjs` | Chromium | 0.5 s | 180 s |
 | 458 | xr-nullfb | browser | `test/client/xr-nullfb-test.mjs` | Chromium | 0.3 s | 180 s |
-| 459 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
+| 459 | loading-recovery | browser | `test/client/loading-recovery-probe.mjs` | Chromium | ? | 300 s |
+| 460 | client-tools | browser | `test/harness/run-client.ts --import-only --skip-suites --strict-env` | Chromium | 202 s | 1010 s |
 
-Lanes: core 18 suites (~79 s), main 420 (~2287 s), browser 21 (~1228 s); 459 suites in all.
+Lanes: core 18 suites (~79 s), main 420 (~2287 s), browser 22 (~1228 s); 460 suites in all.
 <!-- END GENERATED -->
