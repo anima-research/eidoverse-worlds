@@ -132,9 +132,15 @@ function micFloorRow(onLook = () => {}) {
     setHint(row, floorHint()); onLook();   // the lane can change under the words with no event (a gate that fails to build)
   };
   paintLive();
+  // the gold alone, with no level read: all the bar does while nobody samples it (hidden), so it is the glyph's colour
+  // in the frame it is shown again. Not told on 'mic:hears': it is the glyph that has just said so.
+  const look = () => { const next = roomHears(); if (next !== hot) { hot = next; paintLive(); } };
   // the row's listeners go with the row (the panel can be rebuilt): beat() drops them once it is detached
   row._unsubs = [bus.on('audio:mic', paintLive), bus.on('audio:mute', paintLive),
-    bus.on('audio:micfloor', () => paintLive())];   // dragging the threshold repaints at once, not on the next sample
+    bus.on('audio:micfloor', () => paintLive()),   // dragging the threshold repaints at once, not on the next sample
+    // each change of the glyph (mictoggle.js announces it in the turn it draws it) is the bar's too, shown or hidden:
+    // talking on with Settings closed, the bar is gold beside the gold glyph in the frame Settings opens again
+    bus.on('mic:indicator', look)];
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
@@ -150,8 +156,9 @@ function micFloorRow(onLook = () => {}) {
   const beat = () => {
     if (!row.isConnected) { for (const off of row._unsubs.splice(0)) off(); return; }
     // hidden (Settings closed, another tab): no sampling for a meter nobody sees; look again 4× a second
-    // and no gold kept for a bar nobody reads: shown again it is dark until its first sample, never gold from before it was hidden
-    if (row.checkVisibility && !row.checkVisibility()) { if (hot) { hot = false; paintLive(); } setTimeout(() => requestAnimationFrame(beat), 250); return; }
+    // its gold is not left as it was when it was hidden, nor put out: it follows the glyph ('mic:indicator' above), so
+    // shown again it is gold if the voice is still going out and dark if it stopped, in that frame
+    if (row.checkVisibility && !row.checkVisibility()) { setTimeout(() => requestAnimationFrame(beat), 250); return; }
     // the next frame first, so a throw below can't end the loop (and with it the detach cleanup above)
     requestAnimationFrame(beat);
     try { sample(); } catch (e) {

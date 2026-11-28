@@ -699,6 +699,28 @@ t('gold, the panel hidden, silence, the panel shown: the bar is not gold in the 
   !gold() && !barGoldNow(), `${state()} bar=${lvlNow.style.background}`);
 room = 0.3;
 t('...and it goes gold with the voice again', !!(await tryUntil('gold on both again', () => gold() && barGoldNow())), `${state()} bar=${lvlNow.style.background}`);
+// ...nor dark while the voice goes on: talking with Settings closed, the bar is gold beside the gold glyph in the turn it
+// is shown, not one hidden-loop look (up to ~266 ms) later
+fresh.style.display = 'none';
+await pause('the hidden row sees itself hidden, over more than one of its looks, the voice still going out', 600);
+const hiddenGlyphGold = gold();
+fresh.style.display = '';
+t('gold, the panel hidden, still talking, the panel shown: the bar is gold in the turn it shows, beside a gold glyph',
+  hiddenGlyphGold && gold() && barGoldNow(), `glyph while hidden=${hiddenGlyphGold} ${state()} bar=${lvlNow.style.background}`);
+// ...because the hidden bar takes each change of the glyph in the glyph's own turn ('mic:indicator'), both ways
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const seen = [];   // (the key announced, the glyph gold?, the bar gold?) inside each announcement, after the bar's own listener
+  const offSeen = bus.on('mic:indicator', (k) => seen.push({ k, glyph: mt.micIndicatorState().startsWith('hot'), bar: barGoldNow() }));
+  room = 0;
+  await tryUntil('the glyph dark, the panel hidden', () => !gold(), { ms: 4000 });
+  room = 0.3;
+  await tryUntil('the glyph gold again, the panel hidden', () => gold(), { ms: 4000 });
+  offSeen();
+  const hots = seen.filter((x) => x.glyph), darks = seen.filter((x) => !x.glyph);
+  t('the panel hidden, the voice stops and starts: the bar is the glyph\'s colour inside each announcement of the glyph, dark and gold',
+    darks.length > 0 && hots.length > 0 && seen.every((x) => x.bar === x.glyph), JSON.stringify(seen));
+  fresh.style.display = ''; }
 room = 0.05;
 await tryUntil('dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
 room = 0.3;
