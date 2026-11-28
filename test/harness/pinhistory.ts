@@ -222,7 +222,7 @@ export function unacknowledged(root: string, files: string[], changelog: string,
  *  In a shallow clone the rule can only judge the history it has. A reused version name (v1, then v2, then v1
  *  with other data) compares the newest v1-naming version only against the base and the previous one: a limit of this
  *  design. The file as it is now must parse, or this throws; so does an
- *  earlier blob git can't read, since what it named is unknown. Callers catch a throw as one red row (TRV, LWV, EN4; N10). */
+ *  earlier blob git can't read, since what it named is unknown. Its callers, TRV and LWV, catch a throw as one red row. */
 export function sameVersionChanged(root: string, file: string, readNow: (f: string) => string | null, laws: { law: string; versionOf: (x: any) => any; data: string[] }[], norm: (field: string, x: any) => any = (_f, x) => x, argv?: string[]) {
   const t = readNow(file); let now: any; try { now = t == null ? null : JSON.parse(t); } catch (err: any) { throw new Error(`pinhistory: ${file} as it is now is not valid JSON (${err?.message ?? err})`); }
   const { revs } = revisions(root, [file], readNow, argv); const read = reader(root, [file]);
@@ -233,7 +233,7 @@ export function sameVersionChanged(root: string, file: string, readNow: (f: stri
     for (const { rev, why, was } of w.out) { const label = `${rev.slice(0, 8)} (${why})`; if (!judged.includes(label)) judged.push(label);
       const v = L.versionOf(was[file]); if (!isObj(now) || v !== L.versionOf(now)) continue;
       for (const f of L.data) if (j(f, was[file][f]) !== j(f, now[f])) out.push({ rev: rev.slice(0, 8), law: L.law, version: v, field: f }); } }
-  return { judged, unheld, unnamed: [...unnamed], out };
+  return { out, judged, unheld, unnamed: [...unnamed] };   // out first: TRV and LWV print the first 400 characters
 }
 
 /** EN4's rule, per digest, for a file of {engine version: {scenario: digest}}: "a version's digests never change under its
