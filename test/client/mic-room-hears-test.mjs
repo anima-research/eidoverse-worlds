@@ -768,6 +768,30 @@ t('gold, the panel hidden, still talking, the panel shown: the bar is gold in th
   t('the voice just starting, the glyph not yet told, a panel built (shown, and hidden): the glyph is gold with the new bar in the build\'s own turn',
     builds.every((x) => x.caught && x.bar && x.glyph), JSON.stringify(builds));
   fresh.style.display = ''; }
+// ...and its twin: a panel built in the turn the voice stops going out, before the glyph's poll has seen it: its bar starts
+// dark, so the build tells the glyph that too, or the bar would be dark beside a gold glyph until the next poll
+{ fresh.style.display = 'none';
+  await pause('the hidden row sees itself hidden', 300);
+  const builds = [];
+  for (const hiddenBuild of [false, true]) {
+    let got = null;
+    for (let i = 0; i < 5 && !got?.caught; i++) {
+      room = 0.3;
+      await tryUntil('the voice going out and the glyph gold', () => ms.roomHears() && gold(), { ms: 4000 });
+      room = 0;
+      await tryUntil('the gate closes', () => !ms.roomHears(), { ms: 4000, step: 1 });
+      const caught = !ms.roomHears() && gold();   // the turn roomHears() first reads false, the glyph not yet told
+      const at = document.createElement('div'); if (hiddenBuild) at.style.display = 'none'; document.body.appendChild(at);
+      globalThis.__builds.audio(at);
+      got = { hiddenBuild, caught, bar: GOLD.test(at.querySelector('[data-lvl]').style.background), glyph: gold() };   // in the build's own turn
+      at.remove();
+      await pause('the built row\'s frame loop sees it detached', 300);
+    }
+    builds.push(got);
+  }
+  t('the voice just stopped, the glyph not yet told, a panel built (shown, and hidden): the glyph is dark with the new dark bar in the build\'s own turn',
+    builds.every((x) => x.caught && !x.bar && !x.glyph), JSON.stringify(builds));
+  fresh.style.display = ''; }
 room = 0.05;
 await tryUntil('dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
 room = 0.3;

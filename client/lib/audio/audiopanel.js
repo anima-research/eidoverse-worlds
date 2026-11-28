@@ -141,9 +141,10 @@ function micFloorRow(onLook = () => {}) {
     // each change of the glyph (only mictoggle.js announces it, in the turn it draws it; main.js loads both) is the bar's too, shown or hidden:
     // talking on with Settings closed, the bar is gold beside the gold glyph in the frame Settings opens again
     bus.on('mic:indicator', look)];
-  // built gold before the glyph's poll has seen the voice go out: tell the glyph now (as sample() does on a change), since
-  // `hot` already matches and the first sample would announce nothing, leaving the bar gold beside a dark glyph until the poll
-  if (hot) bus.emit('mic:hears', true);
+  // built before the glyph's poll has seen the voice start or stop: tell the glyph now, either way (as sample() does on a
+  // change), since `hot` already matches and the first sample would announce nothing, leaving the bar gold beside a dark
+  // glyph, or dark beside a gold one, until the poll. The glyph reads roomHears() itself; at most this repaints it once.
+  bus.emit('mic:hears', hot);
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
