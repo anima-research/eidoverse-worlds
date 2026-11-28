@@ -28,7 +28,7 @@ import { compKeys } from '../../../shared/protocol/view.js';
 import { encName } from '../../../shared/protocol/names.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../render/scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, modelOf, offIn, readMesh, meshKeyOf, loadStatus } from './models_field.js';
 import { prepareMaterial } from '../render/materials.js';
 import { tracked, reserve, regen, untrack, release } from './lifecycle.js';
 import { stillArriving, footprintOf } from '../arrivalnear.js';   // the arrival hold's rules (arrivalhold.js)
@@ -190,6 +190,8 @@ function createModel(id, ent) {
   entities.set(id, null);   // reservation: the contract every consumer knows
   maybePlaceholder(id);     // upgraded to a sized stand-in when geom is known
   syncCompLight(id);        // a lamp lights its folded spot before (and beyond) its load
+  // a bare reservation has no entity/geom event coming: tell the open scene panel it exists (queued / "Loads when nearby")
+  if (entities.get(id) === null) bus.emit('materialization', { id });
   // Streaming: the gate works from position, stand-in or not. A far entity keeps its reservation and loads nothing
   // until the residency sweep promotes it; unknown sizes err large (DIAG_DEFAULT). Live spawns share this path.
   if (entDist(ent) > residencyRadius(ent)) return;
@@ -198,13 +200,18 @@ function createModel(id, ent) {
 
 function scheduleLoad(id, ent, gen, tier = null) {
   const t0 = tracked.get(id);
-  if (t0) t0.loading = true;   // the sweep must not re-promote a load in flight
+  if (!t0 || t0.gen !== gen || t0.loading) return;
+  t0.phase = 'queued';
+  t0.loading = true;   // the sweep must not re-promote a load in flight
   schedule({
     key: `entity:${id}`, owner: `entity:${id}`, lane: 'net',
     // live distance to the entity's current folded position, re-read at dequeue, so walking toward it promotes the load
     priority: () => bandForDistance(camWorld().distanceTo(
       _v.set(...(state.st.entities[id]?.pos ?? [0, 0, 0])))),
     run: async (signal) => {
+      if (signal.aborted || tracked.get(id)?.gen !== gen) return;
+      t0.phase = 'loading';
+      bus.emit('materialization', { id });
       // a first load chooses its tier at dequeue, once /version has answered (assets.js lodNegotiable) and from the
       // live distance; a re-tier brings the tier the sweep chose
       await negotiationReady;
@@ -222,6 +229,10 @@ function scheduleLoad(id, ent, gen, tier = null) {
         if (tracked.get(id)?.gen === gen) untrack(id);
         return;
       }
+      // the bytes arrived: this id is no longer failing, no longer queued
+      delete t.failedAt;
+      delete t.error;
+      delete t.phase;
       // a tier swap re-checks at application time: while the bytes flew a body may have sat down, cargo mounted, a
       // part motion or socket arrived, or an edit hold begun. The clone is then not worn; the sweep may retry later.
       const standing = entities.get(id);
@@ -234,9 +245,13 @@ function scheduleLoad(id, ent, gen, tier = null) {
     },
   }).done.catch((e) => {
     const t = tracked.get(id);
-    if (t?.gen === gen) t.loading = false;
+    if (t?.gen !== gen) return;
+    t.loading = false;
+    delete t.phase;
     if (e?.name === 'AbortError') return;
-    if (t) t.failedAt = Date.now();   // the sweep backs off
+    t.failedAt = Date.now();   // the sweep backs off
+    t.error = 'Could not load this object. Check your connection or try again.';
+    bus.emit('materialization', { id });
     // a failed load keeps its reservation: the id stays addressable (a later remove folds cleanly), it just doesn't
     // render until the sweep retries it (30 s after failedAt, while it is still in range)
     report(`realize spawn ${id}`, e);
@@ -894,6 +909,13 @@ export function residencySweep() {
     const obj = entities.get(id);
     const R = residencyRadius(ent);
     const d = entDist(ent);
+    // proximity decides the displayed status (deferred vs queued/failed and
+    // Retry eligibility): repaint the panel on the transition only
+    const inRange = d <= R;
+    if (t.inRange !== undefined && t.inRange !== inRange && !(obj && !isPlaceholder(obj))) {
+      bus.emit('materialization', { id });
+    }
+    t.inRange = inRange;
     if (obj && !isPlaceholder(obj) && d > R + R_HYST) {
       if (canDemote(id, ent)) demote(id);
     // inside the radius, a realized placement may want the other tier now (hysteresis in the policy, a cooldown
@@ -915,6 +937,23 @@ export function residencySweep() {
       scheduleLoad(id, ent, regen(id));   // stale in-flight completions no-op
     }
   }
+}
+
+/** One bounded client-local snapshot; no loader or folded state is duplicated. */
+export function materializationStatus(id) {
+  const ent = state.st.entities[id];
+  const t = tracked.get(id);
+  if (!ent || !t) return null;
+  const obj = entities.get(id);
+  return loadStatus(t, Boolean(obj && !isPlaceholder(obj)), entDist(ent) <= residencyRadius(ent));
+}
+
+/** Explicit recovery uses the same owned queue, residency gate and backoff. */
+export function retryMaterialization(id) {
+  if (!materializationStatus(id)?.retryAvailable) return false;
+  scheduleLoad(id, state.st.entities[id], regen(id));
+  bus.emit('materialization', { id });
+  return true;
 }
 
 export const residencyDebug = () => {

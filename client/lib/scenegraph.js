@@ -16,6 +16,7 @@ import * as Sel from './edit/selection.js';
 import { entities, metaOf, bagOf, avatarMounts } from './world.js';
 import { compEntries } from '../../shared/protocol/view.js';
 import { editorsFor, commitEdit } from './edit/inspect.js';
+import { materializationStatus, retryMaterialization } from './realize/models.js';
 import { requestDebug, replica } from './net.js';
 import { sendOps, del, revertPose } from './edit/writes.js';
 import * as OP from '../../shared/requests.js';
@@ -85,7 +86,8 @@ function paintScene(force = false) {
   const rows = [];
   const row = (id, depth) => {
     const short = kindHint(bagOf(id));   // what it carries, a model by its word (never its hex)
-    const badges = badgesFor(id);
+    const status = materializationStatus(id);
+    const badges = [...badgesFor(id), status?.label ?? ''];
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
     rows.push(`<div class="who-row sg-row${id === selected ? ' sel' : ''}" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px">
       <span class="n">${depth ? '└ ' : ''}<b>${esc(id)}</b> <span style="color:var(--dim)">${esc(short)}</span></span>
@@ -103,6 +105,7 @@ function paintScene(force = false) {
     const obj = entities.get(selected);
     const meta = metaOf(selected);
     const bag = bagOf(selected);
+    const status = materializationStatus(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
     const isLight = !!obj?.userData?.empty && !!bag?.light && bag.light.kind !== 'spot';   // a bare bulb; a spot shines along its -Z: its yaw is its aim
 
@@ -148,6 +151,8 @@ function paintScene(force = false) {
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.model != null ? modelWord(meta.model) : '')}</span></div>
       <div style="color:var(--dim)">${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
+      <div role="status" style="overflow-wrap:anywhere;margin:6px 0">${esc(status?.label ?? '')}${status?.error ? ` — ${esc(status.error)}` : ''}</div>
+      ${status?.retryAvailable ? '<button data-act="retry" style="min-height:44px">Retry loading</button>' : ''}
       ${transform}
       ${eds.map((e) => e.html).join('')}
       ${compRows.join('')}${newComp}
@@ -169,6 +174,11 @@ function paintScene(force = false) {
       if (id === selected) Sel.clear(); else Sel.set([id]);   // 'selection' repaints
     };
   }
+  const retryButton = sceneBody.querySelector('[data-act="retry"]');
+  retryButton?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+  });
+  retryButton?.addEventListener('click', () => { retryMaterialization(selected); paintScene(true); });
   sceneBody.querySelector('[data-act="find"]')?.addEventListener('click', () => {
     const obj = entities.get(selected);
     if (!obj) return;
@@ -382,6 +392,7 @@ export function initSceneGraph() {
     setTimeout(() => { repaintQueued = false; if (sceneApi?.isOpen) paintScene(); }, 300);
   };
   bus.on('entity', repaint);
+  bus.on('materialization', repaint);
   bus.on('comp', repaint);
   bus.on('mount', repaint);
   bus.on('selection', followSelection);
