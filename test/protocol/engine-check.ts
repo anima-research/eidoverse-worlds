@@ -9,6 +9,10 @@
 //                                                 new scenario); never an existing digest: a changed one means the engine
 //                                                 changed its results under the same name, which --write refuses
 //   EN4 holds the same against git: a version's digests equal that version's at the base (and at the file's previous version)
+//   (each digest walked back past versions that don't hold it). A change from main, which compared only the base and the
+//   previous version: a scenario left out and later re-added under the same version is refused unless its digest matches,
+//   since the rule can't tell 'retired' from 'left out for a commit'. Restore the old log, or use a new scenario name or a
+//   new version
 import fs from "node:fs";
 import { createHash } from "node:crypto";
 import { readLog } from "../../shared/protocol/fold.js";

@@ -124,7 +124,7 @@ const namesAny = (files: string[]) => (was: Record<string, any>) => files.some((
 function walkFrom(root: string, start: string, why: string, files: string[], names: (was: Record<string, any>) => boolean, read: (rev: string, why: string) => any) {
   const unnamed: string[] = [], passed: string[] = []; let rev = start;
   for (;;) { const r = read(rev, why);
-    if (names(r.was)) return { hit: { rev, why: passed.length ? `${why}, walked back past ${passed.join(", ")}, which name none` : why, was: r.was }, unnamed };
+    if (names(r.was)) return { hit: { rev, why: passed.length ? `${why}, walked back past ${passed.join(", ")}, which don't hold what this walk looks for` : why, was: r.was }, unnamed };
     if (r.present.length) unnamed.push(rev); passed.push(rev.slice(0, 8));
     const older = olderOf(root, rev, files); if (!older) return { hit: null, unnamed }; rev = older; }
 }
@@ -250,7 +250,7 @@ export function versionsChanged(root: string, file: string, readNow: (f: string)
   const { revs } = revisions(root, [file], readNow, argv); const read = reader(root, [file]);
   const keys = new Map<string, [string, string]>(); const add = (o: any) => { if (isObj(o)) for (const [v, d] of Object.entries<any>(o)) if (isObj(d)) for (const sc of Object.keys(d)) keys.set(JSON.stringify([v, sc]), [v, sc]); };
   const holdsAny = (was: Record<string, any>) => isObj(was[file]) && Object.values<any>(was[file]).some((d) => isObj(d) && Object.values(d).some((x) => x != null));   // {v1:{}} holds none, as {} doesn't
-  add(now); const whole = walked(root, [file], revs, holdsAny, read); for (const o of whole.out) add(o.was[file]);   // and from the newest version at or behind the base and the previous version that names any: a digest gone now behind {} or a deletion is still found
+  add(now); const whole = walked(root, [file], revs, holdsAny, read); for (const o of whole.out) add(o.was[file]);   // and from the newest version at or behind the base and the previous version that holds any digest: a digest gone now behind {} or a deletion is still found
   const out: { rev: string; why: string }[] = [], changed = new Map<string, { rev: string; version: string; entry: any; keys: [string, any][] }>();
   for (const [v, sc] of keys.values()) {
     const w = walked(root, [file], revs, (was) => isObj(was[file]) && isObj(was[file][v]) && was[file][v][sc] != null, read);
