@@ -81,11 +81,14 @@ mock.module(lib('core.js'), () => ({
   camera: new Obj(), renderer: {},
 }));
 mock.module(lib('xr/quadcolour.js'), () => ({ quadMaterial() {} }));
-// the indicator's canvas: drawImage records the glyph actually drawn; Image loads (fires onload) as a browser's would
+// the indicator's canvas: drawImage records the glyph actually drawn; an Image loads (fires onload) after the code that set
+// its src, never inside it, as a browser's does. A paint asks for its glyph once: by setting a src, or (a glyph loaded
+// before, svgimage.js) by drawing the kept Image at once; xrPaints has one entry per paint either way.
 const xrDrawn = [];
-HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {}, drawImage(img) { xrDrawn.push(img._svg); } });
+HTMLCanvasElement.prototype.getContext = () => ({ clearRect() {}, beginPath() {}, arc() {}, fill() {},
+  drawImage(img) { if (!img._loading) xrPaints.push(img._svg); xrDrawn.push(img._svg); } });
 globalThis.Image = class { set src(v) { this._svg = decodeURIComponent(v.replace(/^data:image\/svg\+xml;utf8,/, '')); xrPaints.push(this._svg);
-  queueMicrotask(() => this.onload?.()); } };
+  queueMicrotask(() => { this._loading = true; try { this.onload?.(); } finally { this._loading = false; } }); } };
 mock.module(lib('ui/ui.js'), () => ({
   flashHint: () => {},
   makeSection: (title, build, opts = {}) => { const el = document.createElement('div'); el.id = `sec-${opts.id}`; document.body.appendChild(el); build(el); (globalThis.__builds ??= {})[opts.id] = build; return el; },
@@ -369,6 +372,9 @@ t(`...and as the cut closes (${TAIL_MS} ms on, before a ${TAIL_LATE_MS} ms timer
   `${JSON.stringify(vrClosed && { ...vrClosed, xrAsked: vrClosed.xrAsked.includes('drop-shadow') ? 'gold' : 'plain' })} ${xrState()}`);
 t('...and the headset draws it once the image loads', !!(await tryUntil('the indicator draws the release', () => !xrGold() && xrShows())), xrState());
 ms.setPttHeld(true);
+// both glyphs have been drawn before: a press is in the headset in its own turn, with no frame of the disc and no glyph (finding 1 of #383's review)
+t('a press, its gold glyph loaded before: the headset has DRAWN it before the press returns, not only asked for it',
+  gold() && xrGold() && xrShows(), `${state()} ${xrState()}`);
 await tryUntil('gold again before turning the mic off', () => gold());
 await ms.toggleMic();   // V or a click: the mic off, and no synth provider to take over
 t('toggleMic off with no synth provider: no waves, not gold, and the VR key is not hot-off, in the same turn',
@@ -629,7 +635,9 @@ vc.setHush(true);
 t('the headphones hushed (voices still received): the tooltip says you are not hearing the room, as it does with none received',
   vc.receivingVoice() === true && !!(await tryUntil('the tooltip names the hush', () => /no microphone is open/.test(tip())
     && /\nyou are not hearing the room \(click the headphones to listen\)\n/.test(tip()), { ms: 2000 })), tip());
+t('...and the glyph is dimmed with those words, hushed as with none received', document.querySelector('#micbtn').style.opacity === '0.55', document.querySelector('#micbtn').style.opacity);
 vc.setHush(false);
+t('...undimmed once unhushed', document.querySelector('#micbtn').style.opacity === '1', document.querySelector('#micbtn').style.opacity);
 t('...and not once unhushed', !!(await tryUntil('the tooltip drops it', () => /no microphone is open/.test(tip()) && !/not hearing the room/.test(tip()), { ms: 2000 })), tip());
 vc.setReceiveVoice(recv0);
 playing = true;
@@ -679,6 +687,20 @@ t('the audio panel hidden: its meter stops sampling (the bar does not move), ove
   lvlNow.style.width === hiddenW && hiddenFrames >= 2, `${hiddenW} → ${lvlNow.style.width}, ${hiddenFrames} frames`);
 fresh.style.display = '';
 t('...and shown again, it resumes', !!(await tryUntil('the bar moves again', () => lvlNow.style.width !== hiddenW)), lvlNow.style.width);
+// a bar hidden while gold does not come back gold: the voice may have stopped while nobody sampled (finding 14 of #383's review)
+room = 0.3;
+await tryUntil('gold on the glyph and the bar', () => gold() && barGoldNow());
+fresh.style.display = 'none';
+await pause('the hidden row sees itself hidden', 300);
+room = 0;
+await tryUntil('the glyph dark, the panel still hidden', () => !gold(), { ms: 4000 });
+fresh.style.display = '';
+t('gold, the panel hidden, silence, the panel shown: the bar is not gold in the turn it shows, beside a dark glyph',
+  !gold() && !barGoldNow(), `${state()} bar=${lvlNow.style.background}`);
+room = 0.3;
+t('...and it goes gold with the voice again', !!(await tryUntil('gold on both again', () => gold() && barGoldNow())), `${state()} bar=${lvlNow.style.background}`);
+room = 0.05;
+await tryUntil('dark again', () => !gold() && !barGoldNow(), { ms: 4000 });
 room = 0.3;
 await tryUntil('the gate open by level', () => gold());
 gainLog.length = 0;

@@ -166,7 +166,7 @@ function paint() {
   const tip = micTip(args);
   micKey = keyOf(args, tip);   // the poll repaints when the live state leaves what was drawn
   micBtn.innerHTML = MIC_SVG(on, hot, !!muted, synth);
-  micBtn.style.opacity = on && !receivingVoice() ? '0.55' : '1';
+  micBtn.style.opacity = on && (!receivingVoice() || isHushed()) ? '0.55' : '1';   // dimmed whenever the tooltip says you are not hearing the room
   micBtn.title = tip;
   if (xrBtn) {
     const live = xrLive();

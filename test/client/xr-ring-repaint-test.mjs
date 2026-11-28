@@ -46,4 +46,28 @@ check('...on a wheel with no live glyph too: all four drawn, all four old textur
 check('liveGlyph: a function svg is live; a string svg, an icon and a spacer are not',
   liveGlyph({ svg: () => '' }) && !liveGlyph({ svg: '<svg/>' }) && !liveGlyph({ icon: 'x' }) && !liveGlyph({ spacer: true }) && !liveGlyph(undefined));
 off();
+
+// the slots' art (and the VR mic icon's) goes through svgimage.js: an Image loads after the turn that set its src, so a
+// glyph is kept once loaded and drawn in the turn from then on. An Image here loads when the row says so.
+{ const made = [];
+  const realImage = globalThis.Image;
+  globalThis.Image = class { constructor() { made.push(this); } set src(v) { this.asked = v; } };
+  const { svgImage } = await import(lib("xr/svgimage.js"));
+  const draws = [];
+  const A = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>', B = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>';
+  const first = svgImage(A, (img) => draws.push(['first', img]));
+  check('a glyph asked for the first time: an Image is made with the SVG as its data URI, and nothing is drawn before it loads',
+    first === false && made.length === 1 && made[0].asked === 'data:image/svg+xml;utf8,' + encodeURIComponent(A) && draws.length === 0, JSON.stringify({ first, made: made.length, draws: draws.length }));
+  made[0].onload();
+  check('...it loads: drawn once, with that Image', draws.length === 1 && draws[0][1] === made[0], String(draws.length));
+  const again = svgImage(A, (img) => draws.push(['again', img]));
+  check('the same glyph asked for again: drawn in the turn, with the kept Image, and no new Image is made',
+    again === true && draws.length === 2 && draws[1][0] === 'again' && draws[1][1] === made[0] && made.length === 1, JSON.stringify({ again, made: made.length, draws: draws.length }));
+  svgImage(B, (img) => draws.push(['other', img]));
+  check('another glyph is its own Image, not drawn until it loads', made.length === 2 && draws.length === 2, JSON.stringify({ made: made.length, draws: draws.length }));
+  made[1].onerror?.();   // it fails to load
+  svgImage(B, (img) => draws.push(['retry', img]));
+  check('a glyph that failed to load is not kept: the next asking makes a new Image, and draws when that one loads',
+    made.length === 3 && draws.length === 2 && (made[2].onload(), draws.length === 3 && draws[2][0] === 'retry'), JSON.stringify({ made: made.length, draws: draws.length }));
+  globalThis.Image = realImage; }
 done();

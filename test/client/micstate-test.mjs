@@ -227,7 +227,7 @@ r = ran(() => m.dropDevice());
 check("E19 dropDevice() runs: the device is stopped and the mic is not on", !r && synth2._t.stopped === false && m.micOn() === false && m.rawMicStream() === null, r);
 // the header's claim, kept true by a row: every export of the module is called somewhere in this file
 { const self = readFileSync(new URL(import.meta.url), "utf8");
-  const uncalled = Object.keys(m).filter((k) => !new RegExp(`\\bm\\.${k}\\b`).test(self));
+  const uncalled = Object.keys(m).filter((k) => !new RegExp(`\\bm\\.${k}\\s*\\(`).test(self));
   check("E20 every micstate.js export is called in this file", uncalled.length === 0, uncalled.join(", ")); }
 // a level meter that cannot be built reads silence, and says so (finding 12 of #383's review): the gate stays shut on it
 { const warns = [], realWarn = console.warn;

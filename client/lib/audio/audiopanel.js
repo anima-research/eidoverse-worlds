@@ -150,7 +150,8 @@ function micFloorRow(onLook = () => {}) {
   const beat = () => {
     if (!row.isConnected) { for (const off of row._unsubs.splice(0)) off(); return; }
     // hidden (Settings closed, another tab): no sampling for a meter nobody sees; look again 4× a second
-    if (row.checkVisibility && !row.checkVisibility()) { setTimeout(() => requestAnimationFrame(beat), 250); return; }
+    // and no gold kept for a bar nobody reads: shown again it is dark until its first sample, never gold from before it was hidden
+    if (row.checkVisibility && !row.checkVisibility()) { if (hot) { hot = false; paintLive(); } setTimeout(() => requestAnimationFrame(beat), 250); return; }
     // the next frame first, so a throw below can't end the loop (and with it the detach cleanup above)
     requestAnimationFrame(beat);
     try { sample(); } catch (e) {

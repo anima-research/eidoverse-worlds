@@ -34,6 +34,13 @@ const ROWS: Row[] = [
     must: [/import\s*\{[^}]*\bfollowMicIndicator\b[^}]*\}\s*from\s*'\.\/xrringpaint\.js'/, /^followMicIndicator\(bus, \(\) => \(radialOpen \? radial : null\), ringIconTexture\);/m,
       /^function repaintRing\(\) \{ repaintSlots\(radial, ringIconTexture\); \}/m],
     not: [[/bus\.on\(\s*['"`]mic:indicator/, "bus.on('mic:indicator', () => repaintRing())"]] },
+  // an SVG is drawn through svgimage.js, which keeps each loaded Image: one drawn before is on the canvas in the turn it is asked for
+  { name: "the ring's slots draw their SVG through svgimage.js, and xr.js makes no Image of its own", file: "client/lib/xr/xr.js",
+    must: [/import\s*\{\s*svgImage\s*\}\s*from\s*'\.\/svgimage\.js'/, /^    svgImage\(svg, \(img\) => \{ g\.save\(\); g\.setTransform\(1, 0, 0, 1, 64, 64\); g\.drawImage\(img, -30, -30, 60, 60\); g\.restore\(\); tex\.needsUpdate = true; \}\);/m],
+    not: [[/new Image\(/, "const img = new Image();"]] },
+  { name: "the VR mic icon draws its glyph through svgimage.js, keeping its stale-paint guard", file: "client/lib/xr/xrmicicon.js",
+    must: [/import\s*\{\s*svgImage\s*\}\s*from\s*'\.\/svgimage\.js'/, /^  svgImage\(svg\(84\), \(img\) => \{ if \(mine !== painted\) return; g\.drawImage\(img, 22, 22, 84, 84\); tex\.needsUpdate = true; \}\);/m],
+    not: [[/new Image\(/, "const img = new Image();"]] },
   // locomotion-clip: an extracted policy someone calls
   { name: "controller.js imports selectClip from the real policy module and calls it", file: "client/lib/player/controller.js",
     must: [/import\s*\{[^}]*\bselectClip\b[^}]*\}\s*from\s*'\.\.\/avatar\/locomotion_clip\.js'/, /\bselectClip\s*\(/, /setClip\([^)]*\.opts\s*\)/] },

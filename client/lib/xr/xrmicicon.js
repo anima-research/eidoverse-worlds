@@ -8,6 +8,7 @@ import { THREE, camera, renderer } from '../core.js';
 import { bus } from '../base.js';
 import { quadMaterial } from './quadcolour.js';
 import { micIndicator } from '../audio/mictoggle.js';
+import { svgImage } from './svgimage.js';
 
 const MIC_ICON = { x: -0.17, y: -0.15, z: -0.6, size: 0.032 };   // metres in front of the eyes: ≈3° across, ≈16° left, 14° down
 const LOOK = { off: { opacity: 0.9, scale: 1 }, on: { opacity: 0.45, scale: 0.8 }, muted: { opacity: 0.9, scale: 1 },
@@ -19,9 +20,9 @@ function paint({ state: st, svg }) {
   const panel = (css.getPropertyValue('--panel-rgb').trim() || '5 20 20').split(/\s+/).join(',');
   g.clearRect(0, 0, 128, 128);
   g.beginPath(); g.arc(64, 64, 60, 0, Math.PI * 2); g.fillStyle = `rgba(${panel},0.85)`; g.fill();
-  const img = new Image(), mine = ++painted;
-  img.onload = () => { if (mine !== painted) return; g.drawImage(img, 22, 22, 84, 84); tex.needsUpdate = true; };
-  img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg(84));
+  // a glyph drawn before is drawn here, in this turn (svgimage.js); a first one when it has loaded, unless a later paint has taken over
+  const mine = ++painted;
+  svgImage(svg(84), (img) => { if (mine !== painted) return; g.drawImage(img, 22, 22, 84, 84); tex.needsUpdate = true; });
   tex.needsUpdate = true;
   const look = LOOK[st] ?? LOOK.off;
   mesh.material.opacity = look.opacity; mesh.scale.setScalar(look.scale);
