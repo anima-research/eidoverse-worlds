@@ -472,6 +472,16 @@ t('the panel rebuilt: the detached row no longer listens (both sentinels stand)'
 t('...and the new row does (mute repaints its bar, push-to-talk dims it)',
   !!newLvl && newLvl !== oldLvl && newLvl.style.background !== 'rgb(1, 2, 3)' && newRow.style.opacity === '0.45',
   `new bar=${newLvl?.style.background} new row=${newRow?.style.opacity}`);
+// ...nor to the glyph: each change of it ('mic:indicator'), to gold and back, reaches the new bar and not the old one
+{ oldLvl.style.background = 'rgb(1, 2, 3)';
+  let told = 0; const offTold = bus.on('mic:indicator', () => told++);
+  ms.setPttHeld(true);
+  const wentGold = !!(await tryUntil('gold on the glyph and the new bar', () => gold() && GOLD.test(newLvl.style.background)));
+  ms.setPttHeld(false);
+  const wentDark = !!(await tryUntil('dark on the glyph and the new bar', () => !gold() && !GOLD.test(newLvl.style.background)));
+  offTold();
+  t('...and the glyph going gold and dark is the new bar\'s alone: the detached row no longer hears \'mic:indicator\' (its sentinel stands)',
+    wentGold && wentDark && told >= 2 && oldLvl.style.background === 'rgb(1, 2, 3)', `gold=${wentGold} dark=${wentDark} told=${told} old bar=${oldLvl.style.background}`); }
 const lvlNow = newLvl;   // the rows below read the rebuilt panel's bar
 const barGoldNow = () => GOLD.test(lvlNow.style.background);
 
@@ -707,6 +717,17 @@ const hiddenGlyphGold = gold();
 fresh.style.display = '';
 t('gold, the panel hidden, still talking, the panel shown: the bar is gold in the turn it shows, beside a gold glyph',
   hiddenGlyphGold && gold() && barGoldNow(), `glyph while hidden=${hiddenGlyphGold} ${state()} bar=${lvlNow.style.background}`);
+// ...and a panel first built while hidden, the voice already going out (no change of the glyph will come to tell it)
+{ const late = document.createElement('div'); late.style.display = 'none'; document.body.appendChild(late);
+  globalThis.__builds.audio(late);
+  const lateLvl = late.querySelector('[data-lvl]');
+  await pause('the row built hidden sees itself hidden, over more than one of its looks, the voice still going out', 600);
+  const builtGlyphGold = gold();
+  late.style.display = '';
+  t('talking, a panel built hidden, then shown: its bar is gold in the turn it shows, beside a gold glyph',
+    builtGlyphGold && gold() && GOLD.test(lateLvl.style.background), `glyph while hidden=${builtGlyphGold} ${state()} late bar=${lateLvl.style.background}`);
+  late.remove();
+  await pause('the late row\'s frame loop sees it detached', 300); }
 // ...because the hidden bar takes each change of the glyph in the glyph's own turn ('mic:indicator'), both ways
 { fresh.style.display = 'none';
   await pause('the hidden row sees itself hidden', 300);

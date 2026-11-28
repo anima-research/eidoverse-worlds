@@ -75,14 +75,18 @@ off();
   try { made[1].onerror(new Event('error')); } catch (e) { errThrew = String(e); }
   check('a glyph that fails to load: the console is told, with the start of the SVG that failed, and nothing is drawn',
     !errThrew && told.length === 1 && told[0].includes(B.slice(0, 40)) && draws.length === 2, JSON.stringify({ errThrew, told, draws: draws.length }));
+  svgImage(B, (img) => draws.push(['again, failing']));
+  try { made[2].onerror(new Event('error')); } catch (e) { errThrew = String(e); }
+  check('the same glyph failing again inside the minute is not told again (a glyph asked for at frame rate cannot flood the console)',
+    !errThrew && made.length === 3 && told.length === 1 && draws.length === 2, JSON.stringify({ errThrew, made: made.length, told: told.length, draws: draws.length }));
   svgImage(B, (img) => draws.push(['retry', img]));
   check('...and it is not kept: the next asking makes a new Image, and draws when that one loads',
-    made.length === 3 && draws.length === 2 && (made[2].onload(), draws.length === 3 && draws[2][0] === 'retry'), JSON.stringify({ made: made.length, draws: draws.length }));
+    made.length === 4 && draws.length === 2 && (made[3].onload(), draws.length === 3 && draws[2][0] === 'retry'), JSON.stringify({ made: made.length, draws: draws.length }));
   const C = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M2 2"/></svg>';
   svgImage(C, () => draws.push(['never']));
-  try { made[3].onerror(new Event('error')); } catch (e) { errThrew = String(e); }
-  check('a second failure inside the minute is not told again (a glyph asked for at frame rate cannot flood the console)',
-    !errThrew && told.length === 1 && draws.length === 3, JSON.stringify({ errThrew, told: told.length, draws: draws.length }));
+  try { made[4].onerror(new Event('error')); } catch (e) { errThrew = String(e); }
+  check('a different glyph failing inside the same minute is named too: each bad SVG is told once, not only the first',
+    !errThrew && told.length === 2 && told[1].includes(C) && !told[0].includes(C) && draws.length === 3, JSON.stringify({ errThrew, told, draws: draws.length }));
   console.warn = realWarn;
 
   // The VR mic icon (xrmicicon.js) on this same Image: each paint clears the disc and asks for its glyph, and a glyph

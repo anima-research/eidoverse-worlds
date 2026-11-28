@@ -124,7 +124,7 @@ function micFloorRow(onLook = () => {}) {
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
   // gold is micstate.js roomHears(), the HUD glyph's own answer, so the two agree on what goes out
-  let hot = false, lookAt = 0, bgNow = null;
+  let hot = roomHears(), lookAt = 0, bgNow = null;   // read at the build: a row built hidden is told only of the glyph's changes
   const micIsLive = micLive;
   const paintLive = () => {
     const bg = hot ? LVL_LIVE : (!micIsLive() || muteReason()) ? LVL_DARK : LVL_WARM;
