@@ -64,6 +64,7 @@ const overrides: Record<string, Record<string, unknown>> = {
   'colliders.js': { resolveColliders: (p: any) => p, lastBlockedTop: () => null, findSeat: () => null, raySegment: () => null },
   'world.js': { entities, bags: () => things, bagOf: (id: string) => things.get(id) ?? null, comps: new Map(), entityMeta: new Map(), editHolds: new Set() },
   'edit/myview.js': { outOfMyView: () => false },
+  'edit/selectmask.js': { clickable: () => true },   // every layer pickable: the drag pin below presses on a thing
   'xr/xrask.js': { xrActive: () => false },
   'ui/plainwords.js': { nameOf: (id: string) => id, plain: (w: string) => w },
   'net.js': { net: { myId: 'me' } },
@@ -220,6 +221,45 @@ assert.equal(cancelled, 1, 'an Esc that closes a menu still cancels the drag in 
 assert.equal(hasSelection(), true, 'and still leaves the selection');
 assert.deepEqual(actions, [], 'and is no cancel');
 setBuildMode(false, { quiet: true });
+myState.seat = null; setPosture(null);
+
+// ---- each rung that consumes a press says so (Weft's round on 29737cb1) -----
+// build.js tells controller.js "consumed" by declining the default; a rung that took the press without declining it
+// would ALSO fire `cancel`, and stand you up. Seated and not building, so a press that fell through would cancel.
+const seatedStill = (what: string, ev: KeyboardEvent) => {
+  assert.equal(ev.defaultPrevented, true, `${what} is a declined default`);
+  assert.deepEqual(actions, [], `${what} is not also a cancel`);
+  assert.equal(myState.seat, 'bench', `${what} leaves you seated`);
+  assert.equal(stands, 0);
+};
+// a gesture the escape hooks own (the gizmo's drag), no menu open
+actions.length = 0; stands = 0; sitOnABench();
+gesture = true; cancelled = 0;
+seatedStill('cancelling a hooked gesture', escape());
+assert.equal(cancelled, 1, 'fixture: the hook took the press');
+// build.js's own armed drag: a press on a thing, then travel past DRAG_SLOP
+const crate = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+crate.userData.entityId = 'crate'; crate.position.set(0, 0, -5); scene.add(crate); crate.updateMatrixWorld(true);
+camera.position.set(0, 0, 0); camera.lookAt(0, 0, -1); camera.updateMatrixWorld(true);
+entities.set('crate', crate);
+setBuildMode(true, { quiet: true });
+const cx = innerWidth / 2, cy = innerHeight / 2;
+canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0, clientX: cx, clientY: cy }));
+window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 20, clientY: cy }));
+assert.deepEqual((globalThis as any).__buildDrag?.(), { id: 'crate', armed: true, world: true, tool: 'move' }, 'fixture: a drag is armed');
+actions.length = 0; stands = 0;
+seatedStill('cancelling an armed drag', escape());
+assert.equal((globalThis as any).__buildDrag?.(), null, 'the press cancelled the drag');
+assert.equal(hasSelection(), true, 'and only the drag: the selection stays');
+// a held Escape's auto-repeat dismisses nothing: one press, one state
+const repeat = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, code: 'Escape', key: 'Escape', repeat: true });
+window.dispatchEvent(repeat);
+assert.equal(hasSelection(), true, 'an auto-repeat does not deselect');
+assert.equal(isBuilding(), true, 'nor leave build mode');
+assert.deepEqual(actions, [], 'nor cancel');
+window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+setBuildMode(false, { quiet: true });
+entities.delete('crate'); scene.remove(crate);
 myState.seat = null; setPosture(null);
 
 // ---- item 6: the legend is taught once -------------------------------------
