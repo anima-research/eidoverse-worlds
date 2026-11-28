@@ -9,7 +9,7 @@
 //       in its back-off, carried out of range), and not on every sweep
 //   L7  a failure that lands after its object was removed, or re-modelled, revives nothing
 //   L8  a world reset forgets every status, and a failure from the old world that lands after it revives none
-import { launchBrowser, ownedWorld, checker } from '../harness/probe-harness.mjs';
+import { launchBrowser, ownedWorld, checker, skyBoot } from '../harness/probe-harness.mjs';
 import { Document, NodeIO } from '@gltf-transform/core';
 import { until, pause } from '../gate/wait.ts';
 const { check, done } = checker();
@@ -26,7 +26,6 @@ const { browser, page } = await launchBrowser();
 try {
   const pg = await page();
   const errs = []; pg.on('pageerror', (e) => errs.push(String(e)));
-  await pg.addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });   // a cloudy sky bakes on the CPU here
   // fetchBytes retries a 5xx (three tries): fail the whole first load, then serve the model
   let attempts = 0, healthy = false;
   await pg.route('**/library/store/recovery.glb*', (route) => {
@@ -38,8 +37,7 @@ try {
   await pg.route('**/library/store/held-*.glb*', (route) => (release ? route.fulfill({ status: 503, body: 'stale failure' }) : held.push(route)));
   await pg.route('**/library/store/broken.glb*', (route) => route.fulfill({ status: 503, body: 'unavailable' }));   // never loads
   const failHeld = async () => { release = true; for (const r of held.splice(0)) await r.fulfill({ status: 503, body: 'stale failure' }); };
-  await pg.goto(`${world.origin}/?world=staging&name=recovery&key=${world.key}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  await pg.waitForFunction(() => globalThis.__ewEngineUp, null, { timeout: 90000 });
+  await skyBoot(pg, world, 'recovery');   // cloud quality off (a cloudy sky bakes on the CPU here), then the engine, 120 s
   await pg.evaluate(async () => {
     const { sendRequest } = await import('./lib/net.js');
     const { camera, THREE } = await import('./lib/core.js');

@@ -23,6 +23,7 @@ const modules: any = {
   'edit/writes.js': { sendOps: (_ops: any, o: any) => removed.push(o?.what), del: noop, revertPose: noop },
   'state.js': { state: {} },
   'realize/models_field.js': { offIn: () => null },
+  'realize/models.js': { materializationStatus: () => null, retryMaterialization: () => false },
   'ui/ui.js': { makeSection: (title: string, onOpen: any) => { sections.set(title, onOpen); return { isOpen: true, remove: noop }; }, flashHint: noop, html: String },
   'ui/chat.js': { logChat: noop },
   'player/controller.js': { myState: { pos: { x: 0, y: 0, z: 0 } } },
